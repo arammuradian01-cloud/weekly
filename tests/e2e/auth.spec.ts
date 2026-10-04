@@ -129,3 +129,9 @@ test("администратор не видит разделы владельц
   await page.goto("/sync");
   await expect(page).toHaveURL(/\/$/);
 });
+
+test("проверка живости для хостинга открыта без входа и не трогает базу", async ({ request }) => {
+  const live = await request.get("/api/live");
+  expect(live.status()).toBe(200);
+  expect(await live.json()).toEqual({ ok: true });
+});

@@ -2,8 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 import { sessionSecretFromEnv } from "@/lib/database-url";
 
-// Без входа открыты экран входа, первичная настройка паролей и проверка здоровья для сервера
-const PUBLIC_PATHS = ["/login", "/setup", "/api/health"];
+// Без входа открыты экран входа, первичная настройка паролей и проверки здоровья для хостинга
+const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

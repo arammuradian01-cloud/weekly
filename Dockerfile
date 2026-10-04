@@ -2,9 +2,9 @@
 # База живёт отдельно (управляемый PostgreSQL), её адрес приходит в DATABASE_URL.
 
 FROM node:22-bookworm-slim AS base
-# openssl нужен движку миграций Prisma
+# openssl нужен движку миграций Prisma, curl и wget: проверке состояния App Platform изнутри контейнера
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && apt-get install -y --no-install-recommends openssl ca-certificates curl wget \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
