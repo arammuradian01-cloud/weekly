@@ -13,6 +13,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 FROM base AS build
 COPY package.json package-lock.json prisma.config.ts ./
 COPY prisma ./prisma
+# prisma.config.ts берёт адрес базы отсюда, а prisma generate запускается уже при установке
+COPY src/lib/database-url.ts ./src/lib/database-url.ts
 RUN npm ci --no-audit --no-fund && npm cache clean --force
 COPY . .
 RUN npm run build \
