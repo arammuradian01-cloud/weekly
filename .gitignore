@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Сгенерированный клиент Prisma (создаётся при npm install)
+src/generated/
+
+# Секреты и локальные данные: в репозиторий не попадают
+.env
+.env.*
+!.env.example
+backups/
+.local/
+
+# Тесты
+test-results/
+playwright-report/
+tests/e2e/screenshots/
+
+.DS_Store
