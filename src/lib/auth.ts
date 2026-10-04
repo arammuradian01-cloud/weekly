@@ -15,10 +15,11 @@ import {
   type SessionData,
 } from "./session";
 import { clientIp } from "./client-ip";
+import { sessionSecretFromEnv } from "./database-url";
 import type { Person } from "@/generated/prisma/client";
 
 export function sessionSecret(): string {
-  return process.env.SESSION_SECRET ?? "";
+  return sessionSecretFromEnv();
 }
 
 function secureCookie(): boolean {

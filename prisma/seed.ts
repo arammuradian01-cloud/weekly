@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { prisma } from "../src/lib/db";
 import { dictionaries, people, settings } from "./seed-data";
+import { issueSetupCode } from "../src/lib/setup-status";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -61,6 +62,13 @@ async function main() {
     settings: await prisma.setting.count(),
   };
   console.log(`Стартовые данные на месте: людей ${counts.people}, значений справочников ${counts.dictionaries}, настроек ${counts.settings}`);
+
+  // Пока пароли не заданы, при каждом запуске выпускаем новый одноразовый код для страницы /setup
+  const code = await issueSetupCode();
+  if (code) {
+    console.log(`Код первичной настройки: ${code}`);
+    console.log("Откройте страницу /setup и введите код вместе с тремя паролями. Код меняется при каждом запуске и гаснет, как только пароли заданы.");
+  }
 }
 
 main()

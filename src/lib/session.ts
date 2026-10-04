@@ -26,7 +26,7 @@ export type SessionData = {
 
 function keyFrom(secret: string) {
   if (!secret || secret.length < 32) {
-    throw new Error("SESSION_SECRET должен быть не короче 32 символов. Запустите npm run setup");
+    throw new Error("Ключ сессий не задан или короче 32 символов: задайте SESSION_SECRET или пароль базы. Запустите npm run setup");
   }
   return new TextEncoder().encode(secret);
 }

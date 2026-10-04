@@ -1,6 +1,5 @@
 "use server";
 
-import { timingSafeEqual, createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -15,7 +14,7 @@ import {
 import { computeLockState, historySince } from "@/lib/rate-limit";
 import { formatTime } from "@/lib/week";
 import { requestIp } from "@/lib/auth";
-import { missingPasswords, setupEnabled } from "@/lib/setup-status";
+import { clearSetupCode, missingPasswords, setupCodeMatches, setupEnabled } from "@/lib/setup-status";
 
 export type SetupState = { error?: string } | null;
 
@@ -26,16 +25,10 @@ const TITLES: Record<PasswordKind, string> = {
   admin: "администраторов",
 };
 
-function sameToken(given: string, expected: string): boolean {
-  // Сравниваем хэши одинаковой длины, чтобы время ответа не выдавало ключ
-  const a = createHash("sha256").update(given).digest();
-  const b = createHash("sha256").update(expected).digest();
-  return timingSafeEqual(a, b);
-}
-
 export async function completeSetup(_prev: SetupState, formData: FormData): Promise<SetupState> {
-  const expected = process.env.SETUP_TOKEN ?? "";
-  if (!setupEnabled()) return { error: "Первичная настройка выключена: в панели хостинга не задан SETUP_TOKEN" };
+  if (!(await setupEnabled())) {
+    return { error: "Первичная настройка выключена: перезапустите приложение, и в журнале запуска появится новый код" };
+  }
 
   const missing = await missingPasswords();
   if (missing.length === 0) redirect("/login");
@@ -51,10 +44,10 @@ export async function completeSetup(_prev: SetupState, formData: FormData): Prom
     return { error: `Слишком много неверных попыток. Попробовать снова можно в ${formatTime(lock.lockedUntil)}` };
   }
 
-  if (!sameToken(String(formData.get("token") ?? ""), expected)) {
+  if (!(await setupCodeMatches(String(formData.get("token") ?? "")))) {
     await prisma.loginAttempt.create({ data: { ip, kind: "TEAM", ok: false } });
     await writeAudit({ action: "setup.fail", ip });
-    return { error: `Неверный ключ настройки. Осталось попыток: ${Math.max(0, lock.remaining - 1)}` };
+    return { error: `Неверный код настройки. Осталось попыток: ${Math.max(0, lock.remaining - 1)}` };
   }
 
   const fresh: Partial<Record<PasswordKind, string>> = {};
@@ -84,6 +77,7 @@ export async function completeSetup(_prev: SetupState, formData: FormData): Prom
     await setSetting(epochKey, (await getSetting<number>(epochKey, 1)) + 1);
     await writeAudit({ action: "password.set", ip, after: { kind, via: "setup" } });
   }
+  await clearSetupCode();
   await prisma.loginAttempt.create({ data: { ip, kind: "TEAM", ok: true } });
   redirect("/login?setup=done");
 }

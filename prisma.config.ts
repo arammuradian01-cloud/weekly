@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { databaseUrlFromEnv } from "./src/lib/database-url";
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
@@ -9,6 +10,6 @@ export default defineConfig({
   },
   datasource: {
     // prisma generate работает и без базы, поэтому подставляем заглушку
-    url: process.env.DATABASE_URL ?? "postgresql://localhost:5432/placeholder",
+    url: databaseUrlFromEnv() ?? "postgresql://localhost:5432/placeholder",
   },
 });

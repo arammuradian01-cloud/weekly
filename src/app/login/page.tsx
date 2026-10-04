@@ -21,7 +21,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   }
 
   const days = WEEKDAYS_SHORT.map((weekday) => ({ key: weekday, weekday }));
-  const needsSetup = (await missingPasswords()).length > 0 && setupEnabled();
+  const needsSetup = (await missingPasswords()).length > 0 && (await setupEnabled());
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">

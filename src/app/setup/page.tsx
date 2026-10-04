@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SetupPage() {
   const missing = await missingPasswords();
-  const enabled = setupEnabled();
+  const enabled = await setupEnabled();
 
   return (
     <div className="min-h-dvh bg-surface">
@@ -24,12 +24,12 @@ export default async function SetupPage() {
           </p>
         ) : !enabled ? (
           <p className="mt-3 text-[15px] text-muted">
-            Настройка выключена. Задайте переменную SETUP_TOKEN в панели хостинга (не короче 16 символов) и перезапустите приложение. На своём компьютере пароли задаются командой npm run password.
+            Кода настройки сейчас нет. Перезапустите приложение в панели хостинга: в журнале запуска появится строка «Код первичной настройки». На своём компьютере пароли задаются командой npm run password.
           </p>
         ) : (
           <>
             <p className="mb-6 mt-2 text-[15px] text-muted">
-              Задайте пароли один раз. Страница работает, только пока они не заданы. После настройки уберите SETUP_TOKEN из панели хостинга.
+              Задайте пароли один раз. Страница работает, только пока они не заданы, а код после этого гаснет.
             </p>
             <SetupForm missing={missing} />
           </>

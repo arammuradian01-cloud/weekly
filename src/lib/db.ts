@@ -1,27 +1,15 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
+import { databaseUrlFromEnv, pgConnectionConfig } from "./database-url";
+
+export { pgConnectionConfig };
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-/**
- * Параметры TLS для драйвера pg.
- * В строке подключения sslmode оставляем для движка миграций Prisma, а драйверу pg передаём
- * шифрование явно: его собственный разбор sslmode=require требует проверенный сертификат,
- * которого у управляемой базы провайдера в контейнере нет. verify-full включает полную проверку.
- */
-export function pgConnectionConfig(databaseUrl: string): { connectionString: string; ssl?: { rejectUnauthorized: boolean } } {
-  const url = new URL(databaseUrl);
-  const mode = url.searchParams.get("sslmode");
-  for (const key of ["sslmode", "sslaccept", "schema", "uselibpqcompat"]) url.searchParams.delete(key);
-  const connectionString = url.toString();
-  if (!mode || mode === "disable") return { connectionString };
-  return { connectionString, ssl: { rejectUnauthorized: mode === "verify-full" } };
-}
-
 function createClient() {
-  const databaseUrl = process.env.DATABASE_URL;
+  const databaseUrl = databaseUrlFromEnv();
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL не задан. Запустите npm run setup или задайте переменную в панели хостинга");
+    throw new Error("Адрес базы не задан: нужен DATABASE_URL или DB_HOST и DB_PASSWORD. Запустите npm run setup или задайте переменные в панели хостинга");
   }
   return new PrismaClient({ adapter: new PrismaPg(pgConnectionConfig(databaseUrl)) });
 }
@@ -33,7 +21,7 @@ function client(): PrismaClient {
 
 /**
  * Подключение создаётся при первом обращении, а не при импорте.
- * Так сборка (npm run build, Docker) проходит без DATABASE_URL.
+ * Так сборка (npm run build, Docker) проходит без адреса базы.
  */
 export const prisma = new Proxy({} as PrismaClient, {
   get(_target, prop) {

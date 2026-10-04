@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
+import { sessionSecretFromEnv } from "@/lib/database-url";
 
 // Без входа открыты экран входа, первичная настройка паролей и проверка здоровья для сервера
 const PUBLIC_PATHS = ["/login", "/setup", "/api/health"];
@@ -12,7 +13,7 @@ export async function proxy(request: NextRequest) {
 
   const session = await verifySession(
     request.cookies.get(SESSION_COOKIE)?.value,
-    process.env.SESSION_SECRET ?? "",
+    sessionSecretFromEnv(),
   );
   if (!session) {
     return NextResponse.redirect(new URL("/login", request.url));

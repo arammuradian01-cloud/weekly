@@ -8,6 +8,7 @@ import { writeAudit } from "../../src/lib/audit";
 import { getSetting } from "../../src/lib/settings";
 import { backupFileName, filesToDelete, needsMonthly } from "../../src/lib/backup-rotation";
 import { databaseName, libpqUrl, pgTool } from "./pg-tools";
+import { databaseUrlFromEnv } from "../../src/lib/database-url";
 
 const run = promisify(execFile);
 
@@ -16,9 +17,12 @@ function backupRoot(): string {
 }
 
 function databaseUrl(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL не задан");
-  return url;
+  const raw = databaseUrlFromEnv();
+  if (!raw) throw new Error("Адрес базы не задан: нужен DATABASE_URL или DB_HOST и DB_PASSWORD");
+  // sslaccept понимает только Prisma, pg_dump и pg_restore на нём спотыкаются
+  const url = new URL(raw);
+  url.searchParams.delete("sslaccept");
+  return url.toString();
 }
 
 export type BackupResult = { file: string; bytes: number; monthly: boolean; deleted: string[] };

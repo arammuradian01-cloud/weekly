@@ -3,12 +3,13 @@
 import "dotenv/config";
 import { PgBoss } from "pg-boss";
 import { disconnect, runBackup, runRestoreCheck } from "./lib/backup-core";
+import { databaseUrlFromEnv, pgConnectionConfig } from "../src/lib/database-url";
 
 const TZ = "Europe/Moscow";
 const QUEUE_BACKUP = "backup-nightly";
 const QUEUE_CHECK = "backup-restore-check";
 
-const boss = new PgBoss(process.env.DATABASE_URL!);
+const boss = new PgBoss(pgConnectionConfig(databaseUrlFromEnv()!));
 boss.on("error", (error) => console.error("[worker]", error));
 
 await boss.start();

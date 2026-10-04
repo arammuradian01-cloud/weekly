@@ -16,13 +16,16 @@ export function SetupForm({ missing }: { missing: ("team" | "owner" | "admin")[]
   return (
     <form action={action} className="flex flex-col gap-6">
       <Field
-        label="Ключ настройки"
+        label="Код настройки"
         id="token"
         name="token"
-        type="password"
+        type="text"
         autoComplete="off"
+        autoCapitalize="characters"
+        spellCheck={false}
         required
-        hint="Значение переменной SETUP_TOKEN из панели хостинга"
+        placeholder="XXXX-XXXX-XXXX-XXXX"
+        hint="Строка «Код первичной настройки» в журнале запуска приложения в панели хостинга"
       />
       {missing.map((kind) => (
         <fieldset key={kind} className="flex flex-col gap-3 border-t border-line pt-5">
