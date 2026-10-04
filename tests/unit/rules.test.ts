@@ -70,3 +70,19 @@ describe("адрес клиента для блокировки", () => {
     expect(clientIp(new Headers({ "x-real-ip": "198.51.100.9" }), true)).toBe("198.51.100.9");
   });
 });
+
+describe("подключение к базе", () => {
+  it("без sslmode шифрование не включаем", async () => {
+    const { pgConnectionConfig } = await import("@/lib/db");
+    expect(pgConnectionConfig("postgresql://u:p@h:5432/db")).toEqual({ connectionString: "postgresql://u:p@h:5432/db" });
+  });
+  it("sslmode=require шифрует без проверки сертификата и убирает параметры Prisma из строки", async () => {
+    const { pgConnectionConfig } = await import("@/lib/db");
+    const c = pgConnectionConfig("postgresql://u:p@h:5432/db?sslmode=require&sslaccept=accept_invalid_certs");
+    expect(c).toEqual({ connectionString: "postgresql://u:p@h:5432/db", ssl: { rejectUnauthorized: false } });
+  });
+  it("verify-full включает проверку сертификата", async () => {
+    const { pgConnectionConfig } = await import("@/lib/db");
+    expect(pgConnectionConfig("postgresql://u:p@h:5432/db?sslmode=verify-full").ssl).toEqual({ rejectUnauthorized: true });
+  });
+});
