@@ -38,6 +38,7 @@ export default defineConfig({
       SESSION_SECRET: "e2e-secret-0123456789-0123456789-abcdef",
       APP_URL: `http://localhost:${PORT}`,
       TRUST_PROXY: "false",
+      SETUP_TOKEN: "e2e-setup-token-0123456789",
     },
   },
 });

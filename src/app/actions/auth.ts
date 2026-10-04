@@ -61,7 +61,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
 
   if (!hash) {
     await writeAudit({ action: "login.no-password", ip });
-    return { error: "Пароль входа ещё не задан. Владелец задаёт его на сервере командой npm run password -- team" };
+    return { error: "Пароль входа ещё не задан. Владелец задаёт его на странице первичной настройки или командой npm run password -- team" };
   }
 
   const passwordOk = await verifyPassword(password, hash);

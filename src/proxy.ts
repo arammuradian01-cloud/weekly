@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, verifySession } from "@/lib/session";
 
-// Без входа открыты только экран входа и проверка здоровья для сервера
-const PUBLIC_PATHS = ["/login", "/api/health"];
+// Без входа открыты экран входа, первичная настройка паролей и проверка здоровья для сервера
+const PUBLIC_PATHS = ["/login", "/setup", "/api/health"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

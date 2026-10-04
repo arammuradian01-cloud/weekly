@@ -25,7 +25,7 @@ function parseEnv(text: string): Map<string, string> {
 
 const existing = existsSync(ENV_PATH) ? parseEnv(readFileSync(ENV_PATH, "utf8")) : new Map<string, string>();
 const values = new Map<string, string>([
-  ["DATABASE_URL", existing.get("DATABASE_URL") || `postgresql://${userInfo().username}@localhost:5432/weekly`],
+  ["DATABASE_URL", existing.get("DATABASE_URL") || process.env.DATABASE_URL || `postgresql://${userInfo().username}@localhost:5432/weekly`],
   ["SESSION_SECRET", existing.get("SESSION_SECRET") && existing.get("SESSION_SECRET")!.length >= 32 ? existing.get("SESSION_SECRET")! : randomBytes(48).toString("base64url")],
   ["APP_URL", existing.get("APP_URL") || "http://localhost:3000"],
   ["TRUST_PROXY", existing.get("TRUST_PROXY") || "false"],

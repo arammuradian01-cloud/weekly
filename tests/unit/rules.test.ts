@@ -54,11 +54,19 @@ describe("резервные копии", () => {
 });
 
 describe("адрес клиента для блокировки", () => {
-  const h = new Headers({ "x-forwarded-for": "203.0.113.5, 10.0.0.1" });
+  const h = new Headers({ "x-forwarded-for": "203.0.113.5, 198.51.100.7" });
   it("без своего прокси заголовку не верим, иначе блокировку обойдут подменой", () => {
     expect(clientIp(h, false)).toBe("local");
   });
-  it("за своим прокси берём первый адрес", () => {
-    expect(clientIp(h, true)).toBe("203.0.113.5");
+  it("за прокси берём адрес, который дописал последний доверенный узел", () => {
+    expect(clientIp(h, true, 1)).toBe("198.51.100.7");
+    expect(clientIp(h, true, 2)).toBe("203.0.113.5");
+  });
+  it("подделанный клиентом первый адрес не помогает обойти блокировку", () => {
+    const forged = new Headers({ "x-forwarded-for": "1.1.1.1, 2.2.2.2, 198.51.100.7" });
+    expect(clientIp(forged, true, 1)).toBe("198.51.100.7");
+  });
+  it("без X-Forwarded-For берём X-Real-IP", () => {
+    expect(clientIp(new Headers({ "x-real-ip": "198.51.100.9" }), true)).toBe("198.51.100.9");
   });
 });

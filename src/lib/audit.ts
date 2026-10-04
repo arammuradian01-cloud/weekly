@@ -49,6 +49,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "management.exit": "Выключен режим управления",
   logout: "Выход",
   "password.set": "Задан пароль",
+  "setup.fail": "Неверный ключ первичной настройки",
   "backup.done": "Создана резервная копия",
   "backup.failed": "Резервная копия не создалась",
   "backup.check.ok": "Копия проверена: восстанавливается",

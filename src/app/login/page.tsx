@@ -5,12 +5,15 @@ import { getEpochs } from "@/lib/settings";
 import { WeekStrip } from "@/components/brand/week-strip";
 import { Wordmark } from "@/components/brand/wordmark";
 import { WEEKDAYS_SHORT } from "@/lib/week";
+import Link from "next/link";
+import { missingPasswords, setupEnabled } from "@/lib/setup-status";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Вход" };
 export const dynamic = "force-dynamic";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ setup?: string }> }) {
+  const { setup } = await searchParams;
   const session = await readSession();
   if (session) {
     const { epoch } = await getEpochs();
@@ -18,6 +21,7 @@ export default async function LoginPage() {
   }
 
   const days = WEEKDAYS_SHORT.map((weekday) => ({ key: weekday, weekday }));
+  const needsSetup = (await missingPasswords()).length > 0 && setupEnabled();
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
@@ -40,6 +44,19 @@ export default async function LoginPage() {
           <h2 className="text-[26px] font-semibold text-ink">Вход</h2>
           <p className="mb-6 mt-1.5 text-[15px] text-muted">Общий логин и пароль команды. После входа выберите себя из списка.</p>
           <p className="-mt-3 mb-6 text-[14px] text-muted sm:hidden">Weekly сдаём до 18:00 понедельника, во вторник встреча.</p>
+          {setup === "done" ? (
+            <p role="status" className="mb-5 rounded-lg bg-green-soft px-3.5 py-2.5 text-sm text-[#08732a]">
+              Пароли заданы. Войдите с логином team и паролем общего входа.
+            </p>
+          ) : null}
+          {needsSetup ? (
+            <p className="mb-5 rounded-lg bg-blue-soft px-3.5 py-2.5 text-sm text-blue-700">
+              Пароли ещё не заданы.{" "}
+              <Link href="/setup" className="font-semibold underline underline-offset-2">
+                Перейти к первичной настройке
+              </Link>
+            </p>
+          ) : null}
           <LoginForm />
         </div>
       </section>

@@ -1,7 +1,14 @@
-import type { NextConfig } from "next";
+// За чужим прокси (например, GitHub Codespaces) Next.js отклоняет отправку форм с другого домена.
+// Разрешённые домены задаются переменной SERVER_ACTIONS_ALLOWED_ORIGINS через запятую
+const allowedOrigins = (process.env.SERVER_ACTIONS_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
-const nextConfig: NextConfig = {
+/** @type {import("next").NextConfig} */
+const nextConfig = {
   poweredByHeader: false,
+  experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
   serverExternalPackages: ["pg", "pg-boss"],
   async headers() {
     return [
