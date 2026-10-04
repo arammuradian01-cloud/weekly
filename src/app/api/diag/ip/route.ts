@@ -14,7 +14,7 @@ function isPrivate(ip: string): boolean {
  * Временная проверка для настройки хостинга: какой адрес ресурс считает адресом клиента.
  * Только для вошедших. Показывает цепочку прокси самого запрашивающего, чужих данных нет.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const session = await readSession();
   const { epoch } = await getEpochs();
   if (!session || session.epoch !== epoch) return Response.json({ error: "Нужен вход" }, { status: 401 });
@@ -22,10 +22,14 @@ export async function GET() {
   const h = await headers();
   const chain = (h.get("x-forwarded-for") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const derived = clientIp(h);
+  // ?probe=<адрес>: совпал ли вычисленный адрес с подставленным в X-Forwarded-For (подмена не должна проходить)
+  const probe = new URL(request.url).searchParams.get("probe");
   // Сами адреса не отдаём: для проверки достаточно признаков
   return Response.json({
     derivedIsPrivate: isPrivate(derived),
     derivedIsFirstInChain: chain.length > 0 && derived === chain[0],
+    derivedEqualsProbe: probe ? derived === probe : null,
+    probeInChain: probe ? chain.includes(probe) : null,
     hops: Number(process.env.TRUST_PROXY_HOPS ?? "1") || 1,
     chainLength: chain.length,
     chainPrivate: chain.map(isPrivate),
