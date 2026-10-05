@@ -118,6 +118,10 @@ describe("первая выгрузка", () => {
     const hidden = fake.requests.filter((r) => JSON.stringify(r).includes("hiddenByUser"));
     expect(hidden).toHaveLength(3);
     expect(fake.tab("Задачи").conditionalFormats).toBe(1);
+    // Строки данных обычным шрифтом и сверху ячейки на каждой вкладке, ссылка на задачу не переносится
+    const dataFormat = fake.requests.filter((r) => JSON.stringify(r).includes('"verticalAlignment":"TOP"'));
+    expect(dataFormat).toHaveLength(5);
+    expect(fake.requests.filter((r) => JSON.stringify(r).includes('"wrapStrategy":"CLIP"'))).toHaveLength(1);
     for (const title of ["Задачи", "Комментарии к задачам", "Weekly", "Журнал выгрузки", "Сводка"]) expect(fake.tab(title).protectedRanges).toHaveLength(1);
     expect(fake.requests.filter((r) => r.addProtectedRange).every((r) => JSON.stringify(r).includes(EMAIL))).toBe(true);
     expect(await prisma.setting.findUnique({ where: { key: "sheet.layout" } })).toMatchObject({ value: { spreadsheet: COPY_ID, version: LAYOUT_VERSION } });

@@ -9,8 +9,9 @@ import { ID_HEADER, LOG_TAB, RENDER, RESOURCE_TABS, SUMMARY_TAB, TASKS_TAB, same
 import type { Prisma } from "@/generated/prisma/client";
 
 export { PROD_SHEET_ID };
-/** Версия разметки вкладок: при смене оформление переделывается один раз */
-export const LAYOUT_VERSION = 2;
+/** Версия разметки вкладок: при смене оформление переделывается один раз, а все строки выгружаются заново.
+ * 3: строки данных обычным шрифтом сверху ячейки, ссылка не переносится (живая таблица 06.10 показала жирные строки и даты числами) */
+export const LAYOUT_VERSION = 3;
 export const SUMMARY_MARKER = "Сводка ресурса";
 export const ARCHIVE_SUFFIX = " (архив до запуска)";
 const PROTECTION = "Вкладка ресурса weekly: правки только через ресурс";
@@ -132,6 +133,14 @@ function formatRequests(w: Wanted, sheet: SheetInfo, serviceEmail?: string | nul
   req.push(
     { updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } },
     { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1 }, cell: { userEnteredFormat: { textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat(textFormat,wrapStrategy)" } },
+    // Строки данных: обычный шрифт, текст переносится, прижат к верху. Без этого строки, вставленные под шапку, берут её жирный шрифт
+    {
+      repeatCell: {
+        range: { sheetId, startRowIndex: 1 },
+        cell: { userEnteredFormat: { textFormat: { bold: false }, wrapStrategy: "WRAP", verticalAlignment: "TOP" } },
+        fields: "userEnteredFormat.textFormat.bold,userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment",
+      },
+    },
   );
   const dateFormat = (i: number, kind: "date" | "datetime") => ({
     repeatCell: {
@@ -151,6 +160,10 @@ function formatRequests(w: Wanted, sheet: SheetInfo, serviceEmail?: string | nul
     t.columns.forEach((c, i) => {
       req.push(width(i, c.width));
       if (c.kind === "date" || c.kind === "datetime") req.push(dateFormat(i, c.kind));
+      // Длинная ссылка в узкой колонке не переносится, иначе строка вырастает в пять строк
+      if (c.header === "Ссылка") {
+        req.push({ repeatCell: { range: { sheetId, startRowIndex: 1, startColumnIndex: i, endColumnIndex: i + 1 }, cell: { userEnteredFormat: { wrapStrategy: "CLIP" } }, fields: "userEnteredFormat.wrapStrategy" } });
+      }
     });
     if (t.key === "tasks") {
       // Просроченная задача: вся строка красная, как сейчас в таблице. Считает сама таблица по статусу и сроку.
@@ -322,8 +335,9 @@ async function apply(client: SheetsClient, t: TabSpec, sheet: SheetInfo, plan: P
     await client.batchUpdate(rows.map((r) => ({ deleteDimension: { range: { sheetId: sheet.sheetId, dimension: "ROWS", startIndex: r - 1, endIndex: r } } })));
     if (sheet.rowCount !== undefined) sheet.rowCount -= rows.length;
   }
+  // Дописывание идёт в уже размеченные пустые строки, сетка растёт только в самом конце: размер сетки здесь не прибавляем,
+  // заниженная оценка безопасна (лишний раз добавим пустые строки), завышенная нет
   await client.append(t.title, plan.appends);
-  if (sheet.rowCount !== undefined) sheet.rowCount += plan.appends.length;
   return plan.updates.length + rows.length + plan.appends.length;
 }
 

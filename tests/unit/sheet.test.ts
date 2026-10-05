@@ -38,9 +38,12 @@ describe("адреса в таблице", () => {
     await expect(small.getValues("'М'!A1:Z3")).rejects.toThrow(/exceeds grid limits/);
     expect(await small.getValues("'М'!1:3")).toEqual([]);
     await small.append("М", [["a"], ["b"], ["c"]]);
-    expect(small.tab("М").rows).toBe(6);
+    expect(small.tab("М").rows).toBe(3);
+    await small.append("М", [["d"]]);
+    expect(small.tab("М").rows).toBe(4);
+    expect(await small.getValues("'М'!A1:A")).toEqual([["a"], ["b"], ["c"], ["d"]]);
     await small.batchUpdate([{ updateSheetProperties: { properties: { sheetId: small.tab("М").sheetId, gridProperties: { frozenRowCount: 1 } }, fields: "gridProperties.frozenRowCount" } }]);
-    await expect(small.batchUpdate([{ deleteDimension: { range: { sheetId: small.tab("М").sheetId, dimension: "ROWS", startIndex: 1, endIndex: 6 } } }])).rejects.toThrow(/non-frozen/);
+    await expect(small.batchUpdate([{ deleteDimension: { range: { sheetId: small.tab("М").sheetId, dimension: "ROWS", startIndex: 1, endIndex: 4 } } }])).rejects.toThrow(/non-frozen/);
     expect(() => small.addTab("м")).toThrow(/уже есть/);
     fake.down = true;
     await expect(fake.sheets()).rejects.toThrow(/недоступен/);
@@ -123,7 +126,7 @@ describe("служебный аккаунт Google", () => {
     expect(JSON.parse(String(write.init.body)).valueInputOption).toBe("RAW");
     const append = calls.find((c) => c.url.includes(":append"))!;
     expect(append.url).toContain("valueInputOption=RAW");
-    expect(append.url).toContain("insertDataOption=INSERT_ROWS");
+    expect(append.url).toContain("insertDataOption=OVERWRITE");
     expect((write.init.headers as Record<string, string>).Authorization).toBe("Bearer tok-1");
 
     // В рабочую таблицу клиент не создаётся вовсе

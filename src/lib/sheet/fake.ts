@@ -1,7 +1,7 @@
 // Имитация Google-таблицы в памяти: для тестов выгрузки, сверки и недоступности Google.
 // Ведёт себя как Sheets API в том, что важно ресурсу: диапазоны A1, пустые хвосты строк не возвращаются, строки удаляются со сдвигом,
 // у вкладки есть размер сетки (по умолчанию 1000 строк и 26 колонок) и запись за её пределы падает, как в Google,
-// дописывание вставляет новые строки, все строки под закреплённой шапкой удалить нельзя, имена вкладок не зависят от регистра.
+// дописывание пишет в пустые строки под таблицей и растит сетку только в конце, все строки под закреплённой шапкой удалить нельзя, имена вкладок не зависят от регистра.
 
 import type { Cell, Grid, SheetInfo, SheetsClient } from "./client";
 
@@ -246,9 +246,8 @@ export class FakeSheets implements SheetsClient {
     const t = this.sheet(sheet);
     let last = t.grid.length;
     while (last > 0 && t.grid[last - 1]!.every((v) => v === "" || v === undefined)) last -= 1;
-    // INSERT_ROWS: новые строки вставляются после таблицы, сетка растёт
-    t.grid.splice(last, 0, ...values.map(() => [] as Cell[]));
-    t.rows += values.length;
+    // OVERWRITE: строки пишутся в пустые строки под таблицей, сетка растёт, только если строк не хватило
+    t.rows = Math.max(t.rows, last + values.length);
     t.cols = Math.max(t.cols, ...values.map((r) => r.length));
     values.forEach((row, i) => row.forEach((v, j) => this.put(t, last + i, j, v)));
   }

@@ -141,7 +141,9 @@ export class GoogleSheets implements SheetsClient {
     if (!values.length) return;
     await this.call(`/values/${encodeURIComponent(`${q(sheet)}!A1`)}:append`, {
       method: "POST",
-      query: { valueInputOption: "RAW", insertDataOption: "INSERT_ROWS" },
+      // OVERWRITE: строки пишутся в пустые размеченные строки под таблицей. INSERT_ROWS вставлял бы новые строки,
+      // и они брали бы оформление шапки: жирный шрифт, даты числами, сдвиг условного форматирования
+      query: { valueInputOption: "RAW", insertDataOption: "OVERWRITE" },
       body: { values },
     });
   }
