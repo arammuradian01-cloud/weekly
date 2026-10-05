@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { Role, TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
-import { priorityOf, sourceLabel, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
+import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { newTaskStatus, permissions, statusNeedsNote, type ManagementRole, type TaskPermissions, type Viewer } from "./rules";
@@ -72,7 +72,8 @@ function checkUrl(url: string): string {
 }
 
 async function peopleBySlug(db: Db) {
-  const people = await db.person.findMany({ where: { active: true } });
+  // Ответственными и соисполнителями бывают только включённые люди; наблюдатель задач не ведёт
+  const people = await db.person.findMany({ where: { active: true, role: { not: "OBSERVER" } } });
   return new Map(people.map((p) => [p.slug, p]));
 }
 
@@ -297,7 +298,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
         after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}`,
       },
     ]);
-    return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number }, actor.personId) };
+    return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
   });
 }
 
@@ -416,8 +417,9 @@ export async function editTask(actor: Actor, number: number, input: EditInput): 
     if (input.source !== undefined && input.source !== row.sourceCode) {
       const s = await tx.dictionaryItem.findFirst({ where: { kind: "TASK_SOURCE", code: input.source, active: true } });
       if (!s) fail("Выберите источник из списка");
+      const old = await tx.dictionaryItem.findFirst({ where: { kind: "TASK_SOURCE", code: row.sourceCode } });
       data.sourceCode = input.source;
-      changes.push({ field: "Источник", before: sourceLabel(row.sourceCode as never), after: s!.label });
+      changes.push({ field: "Источник", before: old?.label ?? row.sourceCode, after: s!.label });
     }
     if (input.sourceNote !== undefined) {
       const v = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
@@ -441,14 +443,16 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
       const p = (await peopleBySlug(tx)).get(owner);
       if (!p) fail("Такого ответственного нет в команде");
       ownerId = p!.id;
-      // Ответственный не бывает своим же соисполнителем
-      await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: ownerId } });
     }
-    return {
-      data: { ownerId, ownerAll: owner === "all" },
-      changes: [{ field: "Ответственный", before, after: owner === "all" ? "Все лидеры" : (names.get(owner) ?? owner) }],
-      undo: false,
-    };
+    const changes: Change[] = [{ field: "Ответственный", before, after: owner === "all" ? "Все лидеры" : (names.get(owner) ?? owner) }];
+    // Ответственный не бывает своим же соисполнителем: если он им был, это тоже правка и она в журнале
+    if (ownerId && row.coExecutors.some((c) => c.person.slug === owner)) {
+      await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: ownerId } });
+      const list = (slugs: string[]) => slugs.map((x) => names.get(x) ?? x).join(", ") || "нет";
+      const co = row.coExecutors.map((c) => c.person.slug);
+      changes.push({ field: "Соисполнители", before: list(co), after: list(co.filter((x) => x !== owner)) });
+    }
+    return { data: { ownerId, ownerAll: owner === "all" }, changes, undo: false };
   });
 }
 
@@ -458,7 +462,9 @@ export async function setCoExecutors(actor: Actor, number: number, slugs: Person
     const people = await peopleBySlug(tx);
     const owner = ownerOf(row);
     const wanted = [...new Set(slugs)].filter((s) => s !== owner);
-    const ids = wanted.map((s) => people.get(s)?.id ?? fail("Такого соисполнителя нет в команде"));
+    // Уже назначенного оставить можно, даже если его выключили: иначе задачу не отредактировать
+    const current = new Map(row.coExecutors.map((c) => [c.person.slug, c.personId]));
+    const ids = wanted.map((s) => people.get(s)?.id ?? current.get(s) ?? fail("Такого соисполнителя нет в команде"));
     const names = await nameMap(tx);
     const before = row.coExecutors.map((c) => names.get(c.person.slug) ?? c.person.slug).join(", ");
     const after = wanted.map((s) => names.get(s) ?? s).join(", ");
@@ -496,7 +502,7 @@ export async function archiveTask(actor: Actor, number: number, archived = true)
     if (archived === (row.archivedAt !== null)) fail(archived ? "Задача уже в архиве" : "Задача не в архиве");
     return {
       data: { archivedAt: archived ? new Date() : null },
-      changes: [{ action: archived ? "task.archive" : "task.restore", field: archived ? "Задача в архиве" : "Задача из архива", after: row.title }],
+      changes: [{ action: archived ? "task.archive" : "task.restore", field: `Архив: ${row.title}`, before: archived ? "в работе" : "в архиве", after: archived ? "в архиве" : "в работе" }],
     };
   });
 }
@@ -507,6 +513,7 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
   const value = required(text, LIMITS.comment, "Напишите комментарий", "Комментарий");
   return prisma.$transaction(async (tx) => {
     const row = await lockRow(tx, number);
+    if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
     const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value } });
     await audit(tx, actor, number, [{ action: "task.comment", field: "Комментарий", after: value }]);
     const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
@@ -515,6 +522,35 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
 }
 
 // ---------- Отмена ----------
+
+/** Что вернула отмена: по каждому полю, которое отличается от снимка, «было» сейчас и «стало» как до правки */
+async function restoreChanges(tx: Tx, row: TaskRow, b: TaskSnapshot): Promise<Change[]> {
+  const out: Change[] = [];
+  const add = (field: string, before: string | null | undefined, after: string | null | undefined) => {
+    if ((before ?? "") !== (after ?? "")) out.push({ action: "task.undo", field: `${field} (отмена)`, before: before || null, after: after || null });
+  };
+  const status = (v: string) => statusOf(statusCode(v as TaskStatus)).label;
+  add("Статус", status(row.status), status(b.status));
+  add("Итог или причина", row.resolution, b.resolution);
+  add("Состояние", stateLabel(stateCode(row.state)), stateLabel(stateCode(b.state as TaskState | null)));
+  add("Чем заблокирована", row.blockedBy, b.blockedBy);
+  add("Приоритет", priorityOf(priorityCode(row.priority)).label, priorityOf(priorityCode(b.priority as TaskPriority | null)).label);
+  add("Где сейчас", row.whereNow, b.whereNow);
+  add("Срок", formatLong(isoFromDbDate(row.due)), formatLong(b.due));
+  add("Задача", row.title, b.title);
+  add("Что нужно сделать", row.outcome, b.outcome);
+  add("Подробнее об источнике", row.sourceNote, b.sourceNote);
+  add("В архиве", row.archivedAt ? "да" : "нет", b.archivedAt ? "да" : "нет");
+  if (row.directionId !== b.directionId) {
+    const items = await tx.dictionaryItem.findMany({ where: { id: { in: [row.directionId, b.directionId] } } });
+    add("Направление", items.find((i) => i.id === row.directionId)?.label, items.find((i) => i.id === b.directionId)?.label);
+  }
+  if (row.sourceCode !== b.sourceCode) {
+    const items = await tx.dictionaryItem.findMany({ where: { kind: "TASK_SOURCE", code: { in: [row.sourceCode, b.sourceCode] } } });
+    add("Источник", items.find((i) => i.code === row.sourceCode)?.label ?? row.sourceCode, items.find((i) => i.code === b.sourceCode)?.label ?? b.sourceCode);
+  }
+  return out;
+}
 
 /** null в ответе: задачу отменили целиком (отмена создания) */
 export async function undoChange(actor: Actor, token: string): Promise<{ task: Task | null; number: number }> {
@@ -526,6 +562,8 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
     if (s.kind === "create") {
       if (row.createdById !== actor.personId) fail("Отменить создание может только тот, кто создал задачу");
       if (row.comments.length || row.transfers.length) fail("По задаче уже работают: создание не отменить, можно отменить задачу статусом");
+      // Чужую правку отмена создания не стирает: если задачу уже поменяли, удалить её нельзя
+      if (s.expectUpdatedAt && row.updatedAt.toISOString() !== s.expectUpdatedAt) fail("Задачу уже изменили после создания: отменить нельзя");
       await tx.task.delete({ where: { id: row.id } });
       await audit(tx, actor, s.number, [{ action: "task.undo", field: "Создание отменено", before: row.title }]);
       return { task: null, number: s.number };
@@ -541,8 +579,17 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
     // Возвращаем поля, только если с тех пор задачу никто не трогал: чужую правку отмена не затирает
     if (row.updatedAt.toISOString() !== s.expectUpdatedAt) fail("Задачу уже изменили после этого: отменить нельзя");
     const b = s.snapshot;
-    if (s.removeTransferId) await tx.taskTransfer.deleteMany({ where: { id: s.removeTransferId, taskId: row.id } });
-    if (s.removeLinkId) await tx.taskLink.deleteMany({ where: { id: s.removeLinkId, taskId: row.id } });
+    const changes = await restoreChanges(tx, row, b);
+    if (s.removeTransferId) {
+      const t = row.transfers.find((x) => x.id === s.removeTransferId);
+      await tx.taskTransfer.deleteMany({ where: { id: s.removeTransferId, taskId: row.id } });
+      if (t) changes.push({ action: "task.undo", field: "Перенос срока отменён", before: `${formatLong(isoFromDbDate(t.toDue))}. Причина: ${t.reason}` });
+    }
+    if (s.removeLinkId) {
+      const l = row.links.find((x) => x.id === s.removeLinkId);
+      await tx.taskLink.deleteMany({ where: { id: s.removeLinkId, taskId: row.id } });
+      if (l) changes.push({ action: "task.undo", field: "Ссылка отменена", before: `${l.title}: ${l.url}` });
+    }
     const updated = await tx.task.update({
       where: { id: row.id },
       data: {
@@ -564,7 +611,7 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
       },
       include: taskInclude,
     });
-    await audit(tx, actor, s.number, [{ action: "task.undo", field: "Последнее действие отменено" }]);
+    await audit(tx, actor, s.number, changes.length ? changes : [{ action: "task.undo", field: "Последнее действие отменено" }]);
     return { task: toTaskDto(updated), number: s.number };
   });
 }

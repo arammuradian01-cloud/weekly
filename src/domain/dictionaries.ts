@@ -1,10 +1,12 @@
-// Справочники экранов. Значения и порядок те же, что в prisma/seed-data.ts и разделах 3-4 ТЗ.
-// Модуль без обращений к базе: им пользуются и сервер, и браузер. Справочники из базы подключим на этапе 5.
+// Справочники экранов. Направления, блоки, типы записей и источники задач приходят из базы (этап 5):
+// layout передаёт их снимок, экран подменяет им стартовые значения ниже. Стартовые значения те же, что в prisma/seed-data.ts.
+// Статусы, приоритеты и состояния остаются в коде: на них завязаны правила просрочки и цвета.
 
 import type { BadgeTone } from "@/components/ui/badge";
 
-export type DirectionCode = "osago" | "kasko" | "red" | "deposits" | "partners" | "product" | "insurance" | "department";
-export type BlockCode = "key-changes" | "numbers" | "traffic" | "partners" | "product" | "risks" | "team";
+/** Код значения из справочника в базе. Новые значения добавляют владелец и администраторы */
+export type DirectionCode = string;
+export type BlockCode = string;
 export type EntryTypeCode = "result" | "event" | "risk" | "plan";
 export type StatusCode = "proposed" | "in-progress" | "clarify" | "done" | "failed" | "cancelled";
 /** unset: задача пришла из таблицы, где приоритета нет. Выбрать «не задан» вручную нельзя */
@@ -12,9 +14,12 @@ export type PriorityCode = "critical" | "high" | "medium" | "low" | "unset";
 /** unset: задача пришла из таблицы, где состояния нет. Выбрать «не задано» вручную нельзя */
 export type StateCode = "on-track" | "at-risk" | "blocked" | "unset";
 export type WeeklyStateCode = "not-started" | "draft" | "submitted" | "late";
-export type SourceCode = "meeting" | "weekly" | "ceo" | "other";
+export type SourceCode = string;
 
 type Item<C extends string> = { code: C; label: string };
+/** Значение справочника из базы. Скрытое пропадает из выбора, но остаётся подписью в старых записях */
+export type DictEntry = { code: string; label: string; active: boolean };
+export type EditableDictKind = "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE" | "TASK_SOURCE";
 
 export const DIRECTIONS: Item<DirectionCode>[] = [
   { code: "osago", label: "ОСАГО" },
@@ -84,18 +89,56 @@ export const SOURCES: Item<SourceCode>[] = [
   { code: "other", label: "Другое" },
 ];
 
+/** Коды типов записей, на которых держатся разделы отчёта CEO */
+export const ENTRY_TYPE_CODES: EntryTypeCode[] = ["result", "event", "risk", "plan"];
+
+// Полные списки со скрытыми значениями: по ним подписываются старые записи
+const ALL: Record<EditableDictKind, DictEntry[]> = {
+  DIRECTION: DIRECTIONS.map((d) => ({ ...d, active: true })),
+  WEEKLY_BLOCK: BLOCKS.map((d) => ({ ...d, active: true })),
+  ENTRY_TYPE: ENTRY_TYPES.map((d) => ({ ...d, active: true })),
+  TASK_SOURCE: SOURCES.map((d) => ({ ...d, active: true })),
+};
+const ACTIVE: Record<EditableDictKind, Item<string>[]> = { DIRECTION: DIRECTIONS, WEEKLY_BLOCK: BLOCKS, ENTRY_TYPE: ENTRY_TYPES, TASK_SOURCE: SOURCES };
+
+/**
+ * Подменить стартовые значения справочниками из базы. Массивы меняются на месте:
+ * DIRECTIONS, BLOCKS и остальные остаются теми же объектами, которые импортировали экраны
+ */
+export function applyDictionaries(dicts: Record<EditableDictKind, DictEntry[]>) {
+  for (const kind of Object.keys(ACTIVE) as EditableDictKind[]) {
+    const list = dicts[kind];
+    if (!list?.length) continue;
+    ALL[kind].splice(0, ALL[kind].length, ...list);
+    // Тип записи без кода из правил отчёта CEO не показываем: новых типов нет, только переименование и скрытие
+    const active = list.filter((d) => d.active && (kind !== "ENTRY_TYPE" || ENTRY_TYPE_CODES.includes(d.code as EntryTypeCode)));
+    ACTIVE[kind].splice(0, ACTIVE[kind].length, ...active.map((d) => ({ code: d.code, label: d.label })) as never[]);
+  }
+}
+
+/** Значения для выпадающего списка: видимые плюс текущее, даже если его скрыли */
+export function dictOptions(kind: EditableDictKind, current?: string): { value: string; label: string }[] {
+  const options = ACTIVE[kind].map((d) => ({ value: d.code, label: d.label }));
+  if (current && !options.some((o) => o.value === current)) options.push({ value: current, label: `${labelIn(kind, current)} (скрыто)` });
+  return options;
+}
+
+function labelIn(kind: EditableDictKind, code: string): string {
+  return ALL[kind].find((i) => i.code === code)?.label ?? code;
+}
+
 function labelOf<C extends string>(list: Item<C>[], code: C): string {
   return list.find((i) => i.code === code)?.label ?? code;
 }
 
-export const directionLabel = (c: DirectionCode) => labelOf(DIRECTIONS, c);
-export const blockLabel = (c: BlockCode) => labelOf(BLOCKS, c);
-export const entryTypeLabel = (c: EntryTypeCode) => labelOf(ENTRY_TYPES, c);
+export const directionLabel = (c: DirectionCode) => labelIn("DIRECTION", c);
+export const blockLabel = (c: BlockCode) => labelIn("WEEKLY_BLOCK", c);
+export const entryTypeLabel = (c: EntryTypeCode) => labelIn("ENTRY_TYPE", c);
 export const statusOf = (c: StatusCode) => STATUSES.find((s) => s.code === c)!;
 export const priorityOf = (c: PriorityCode) => PRIORITIES.find((p) => p.code === c) ?? PRIORITY_UNSET;
 export const stateLabel = (c: StateCode) => labelOf([...STATES, STATE_UNSET], c);
 export const weeklyStateOf = (c: WeeklyStateCode) => WEEKLY_STATES.find((s) => s.code === c)!;
-export const sourceLabel = (c: SourceCode) => labelOf(SOURCES, c);
+export const sourceLabel = (c: SourceCode) => labelIn("TASK_SOURCE", c);
 
 /** Открытые статусы: по ним считается просрочка (раздел 4 ТЗ) */
 export const OPEN_STATUSES: StatusCode[] = ["in-progress", "clarify"];

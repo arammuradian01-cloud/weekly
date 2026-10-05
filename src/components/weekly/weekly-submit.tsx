@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
+import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
@@ -113,7 +113,7 @@ export function WeeklySubmit({
     week: week.key,
     author: me.slug,
     direction: me.direction,
-    block: "key-changes",
+    block: BLOCKS.some((b) => b.code === "key-changes") ? "key-changes" : (BLOCKS[0]?.code ?? "key-changes"),
     type: "event",
     what: "",
     links: [],

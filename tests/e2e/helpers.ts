@@ -8,6 +8,21 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   await client.query("DELETE FROM login_attempts");
+  // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
+  const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
+  await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
+  await client.query("DELETE FROM weekly_entries WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
+  await client.query("DELETE FROM weekly_reports WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
+  await client.query("DELETE FROM people WHERE slug <> ALL($1)", [SEED_PEOPLE]);
+  await client.query("UPDATE people SET active = (slug NOT IN ('analyst', 'ceo'))");
+  await client.query(
+    "DELETE FROM dictionary_items WHERE kind IN ('DIRECTION', 'WEEKLY_BLOCK', 'TASK_SOURCE') AND code <> ALL($1)",
+    [["osago", "kasko", "red", "deposits", "partners", "product", "insurance", "department", "key-changes", "risks", "team", "numbers", "traffic", "meeting", "weekly", "ceo", "other"]],
+  );
+  await client.query("UPDATE dictionary_items SET active = true WHERE kind IN ('DIRECTION', 'WEEKLY_BLOCK', 'ENTRY_TYPE', 'TASK_SOURCE')");
+  await client.query(`UPDATE settings SET value = '{"weekday": 1, "time": "18:00"}'::jsonb WHERE key = 'week.deadline'`);
+  await client.query(`UPDATE settings SET value = '{"weekday": 2}'::jsonb WHERE key = 'week.meeting'`);
+  await client.query(`UPDATE settings SET value = '14'::jsonb WHERE key = 'tasks.staleDays'`);
   if (tasks) {
     await client.query("DELETE FROM tasks");
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);

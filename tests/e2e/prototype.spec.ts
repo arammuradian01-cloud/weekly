@@ -13,7 +13,8 @@ test.beforeEach(async () => {
 });
 
 async function noOverflow(page: Page, name: string) {
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  // Ширина из настроек проекта, а не window.innerWidth: на телефоне широкая страница растягивает окно и прокрутку не видно
+  const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-p-${name}.png`, fullPage: true });
 }

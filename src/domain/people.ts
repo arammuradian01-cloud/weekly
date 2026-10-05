@@ -1,6 +1,7 @@
 import type { Owner, Person, PersonSlug } from "./types";
 
-// Тот же состав, что в prisma/seed-data.ts. Аналитик и CEO выключены и в экраны не попадают. Список переедет в базу на этапе 5
+// Люди приходят из базы (этап 5): layout передаёт их снимок, экран подменяет им стартовый состав ниже.
+// PEOPLE: включённые люди, кроме наблюдателей; их выбирают в списках. Подписи старых записей берутся из полного списка
 export const PEOPLE: Person[] = [
   { slug: "muradyan", fullName: "Мурадян Арам", shortName: "Арам", role: "OWNER", zone: "Департамент целиком", direction: "department" },
   { slug: "golovkin", fullName: "Головкин Владислав", shortName: "Влад", role: "ADMIN", zone: "Департамент, ОСАГО", direction: "osago" },
@@ -12,8 +13,19 @@ export const PEOPLE: Person[] = [
   { slug: "cheychenets", fullName: "Чейченец Евгений", shortName: "Евгений Ч.", role: "LEADER", zone: "Депозиты и инвестиции", direction: "deposits" },
 ];
 
+export type PersonEntry = Person & { active: boolean };
+
+const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
+
+/** Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте */
+export function applyPeople(list: PersonEntry[]) {
+  if (!list.length) return;
+  ALL_PEOPLE.splice(0, ALL_PEOPLE.length, ...list);
+  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, ...p }) => p));
+}
+
 export function personOf(slug: PersonSlug): Person {
-  return PEOPLE.find((p) => p.slug === slug)!;
+  return ALL_PEOPLE.find((p) => p.slug === slug) ?? { slug, fullName: slug, shortName: slug, role: "LEADER", zone: "", direction: "department" };
 }
 
 export function ownerName(owner: Owner, short = false): string {
@@ -25,16 +37,16 @@ export function ownerName(owner: Owner, short = false): string {
 /** «Арам М.» для плотных таблиц */
 export function compactName(slug: PersonSlug): string {
   const [last, first] = personOf(slug).fullName.split(" ");
-  return `${first} ${last!.charAt(0)}.`;
+  return first ? `${first} ${last!.charAt(0)}.` : last!;
 }
 
 export function initials(slug: PersonSlug): string {
   const [last, first] = personOf(slug).fullName.split(" ");
-  return `${first!.charAt(0)}${last!.charAt(0)}`;
+  return first ? `${first.charAt(0)}${last!.charAt(0)}` : last!.slice(0, 2);
 }
 
 export function isPersonSlug(value: string | null | undefined): value is PersonSlug {
-  return PEOPLE.some((p) => p.slug === value);
+  return ALL_PEOPLE.some((p) => p.slug === value);
 }
 
 /** Автор записи или задачи. null: общая запись или задача со встречи без автора */

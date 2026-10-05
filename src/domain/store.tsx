@@ -11,6 +11,7 @@ import type { Person, PersonSlug, Task } from "./types";
 import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import type { NewTaskInput } from "@/lib/tasks/service";
+import { applyRegistry, type RegistrySnapshot } from "./registry";
 
 type Toast = { id: number; text: string; undoToken?: string; tone?: "error" };
 
@@ -45,16 +46,20 @@ export function PrototypeProvider({
   manageRole,
   observer = false,
   initialTasks,
+  registry,
   children,
 }: {
   today: string;
   me: PersonSlug;
+  /** Люди и справочники из базы: подменяют стартовые значения до отрисовки страниц */
+  registry: RegistrySnapshot;
   manageRole: "OWNER" | "ADMIN" | null;
   observer?: boolean;
   /** Задачи из базы на момент отрисовки страницы */
   initialTasks: Task[];
   children: React.ReactNode;
 }) {
+  applyRegistry(registry);
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [toast, setToast] = useState<Toast | null>(null);

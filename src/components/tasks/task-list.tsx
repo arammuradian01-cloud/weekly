@@ -36,12 +36,15 @@ function matches(task: Task, q: string): boolean {
 }
 
 export function TaskList() {
-  const { data, me } = usePrototype();
+  const { data, me, manageRole } = usePrototype();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [active, setActive] = useState<QuickFilter[]>([]);
   const [groupBy, setGroupBy] = useState<GroupBy>("owner");
   const [showClosed, setShowClosed] = useState(false);
+  // Архив видит только владелец в режиме управления: отсюда он возвращает задачи (раздел 6 ТЗ)
+  const [archive, setArchive] = useState(false);
+  const archivedCount = data.tasks.filter((t) => t.archived).length;
   const today = data.today;
 
   const predicates: Record<QuickFilter, (t: Task) => boolean> = {
@@ -53,29 +56,31 @@ export function TaskList() {
     stale: (t) => isStale(t, today),
   };
 
-  const base = data.tasks.filter((t) => !t.archived);
+  const base = data.tasks.filter((t) => (archive ? t.archived : !t.archived));
   const counts = Object.fromEntries(QUICK.map((f) => [f.key, base.filter(predicates[f.key]).length])) as Record<QuickFilter, number>;
 
   const filtered = useMemo(
     () =>
       defaultOrder(
-        base.filter((t) => (showClosed || !isClosed(t)) && matches(t, q) && active.every((f) => predicates[f](t))),
+        base.filter((t) => (archive || showClosed || !isClosed(t)) && matches(t, q) && active.every((f) => predicates[f](t))),
         today,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.tasks, q, active, showClosed, today, me.slug],
+    [data.tasks, q, active, showClosed, archive, today, me.slug],
   );
   const closedCount = base.filter((t) => isClosed(t) && matches(t, q) && active.every((f) => predicates[f](t))).length;
 
   const groups = useMemo(() => {
     if (groupBy === "none") return [{ key: "all", title: "", tasks: filtered }];
     const keyOf = (t: Task) => (groupBy === "owner" ? t.owner : groupBy === "direction" ? t.direction : t.priority);
-    const order =
+    // Порядок справочника, а в конце те, кого уже выключили или скрыли: их задачи не пропадают из списка
+    const known =
       groupBy === "owner"
         ? [...PEOPLE.map((p) => p.slug as string), "all"]
         : groupBy === "direction"
           ? DIRECTIONS.map((d) => d.code as string)
           : [...PRIORITIES.map((p) => p.code as string), "unset"];
+    const order = [...new Set([...known, ...filtered.map((t) => keyOf(t) as string)])];
     const titleOf = (k: string) =>
       groupBy === "owner"
         ? ownerName(k as Task["owner"])
@@ -132,7 +137,7 @@ export function TaskList() {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[14px] text-muted">
         <p aria-live="polite">
-          Показано {filtered.length} {active.length || q ? "по фильтрам" : "открытых"}
+          Показано {filtered.length} {active.length || q ? "по фильтрам" : archive ? "в архиве" : "открытых"}
           {active.length || q ? (
             <button
               type="button"
@@ -147,15 +152,28 @@ export function TaskList() {
             </button>
           ) : null}
         </p>
-        <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">
-          <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} className="h-4 w-4 accent-[#0073a8]" />
-          Показать закрытые ({closedCount})
-        </label>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          {archive ? null : (
+            <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">
+              <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} className="h-4 w-4 accent-[#0073a8]" />
+              Показать закрытые ({closedCount})
+            </label>
+          )}
+          {manageRole === "OWNER" ? (
+            <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">
+              <input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} className="h-4 w-4 accent-[#0073a8]" />
+              Архив ({archivedCount})
+            </label>
+          ) : null}
+        </div>
       </div>
 
+      {archive ? (
+        <p className="mt-3 rounded-xl bg-surface px-5 py-3 text-[15px] text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
+      ) : null}
       {filtered.length === 0 ? (
-        <EmptyState title="Под эти фильтры задач нет" className="mt-4">
-          Снимите часть фильтров или поищите по номеру задачи.
+        <EmptyState title={archive ? "В архиве пусто" : "Под эти фильтры задач нет"} className="mt-4">
+          {archive ? "Сюда попадают задачи, которые владелец отправил в архив." : "Снимите часть фильтров или поищите по номеру задачи."}
         </EmptyState>
       ) : (
         <TaskTable groups={groups} />

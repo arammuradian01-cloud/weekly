@@ -28,7 +28,7 @@ export type TaskSnapshot = {
 export type UndoSpec =
   | { kind: "restore"; number: number; snapshot: TaskSnapshot; expectUpdatedAt: string; removeTransferId?: string; removeLinkId?: string }
   | { kind: "comment"; number: number; commentId: string }
-  | { kind: "create"; number: number };
+  | { kind: "create"; number: number; expectUpdatedAt?: string };
 
 type Payload = UndoSpec & { by: string; exp: number };
 

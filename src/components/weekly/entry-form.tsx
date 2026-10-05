@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ListPlus } from "lucide-react";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import { dictOptions, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { WeeklyEntry } from "@/domain/types";
 import { saveEntryAction, type Result } from "@/app/(app)/weekly/actions";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
@@ -140,9 +140,9 @@ export function EntryForm({
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl bg-surface p-4 sm:p-5">
       <div className="grid gap-4 sm:grid-cols-3">
-        <SelectField label="Направление" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))} />
-        <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={BLOCKS.map((b) => ({ value: b.code, label: b.label }))} />
-        <SelectField label="Тип" id={`${initial.id}-type`} value={e.type} onChange={(ev) => set("type", ev.target.value as EntryTypeCode)} options={ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))} />
+        <SelectField label="Направление" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={dictOptions("DIRECTION", e.direction)} />
+        <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={dictOptions("WEEKLY_BLOCK", e.block)} />
+        <SelectField label="Тип" id={`${initial.id}-type`} value={e.type} onChange={(ev) => set("type", ev.target.value as EntryTypeCode)} options={dictOptions("ENTRY_TYPE", e.type)} />
       </div>
       <TextArea label="Что произошло" id={`${initial.id}-what`} value={e.what} onChange={(ev) => set("what", ev.target.value)} rows={2} counter={{ value: e.what.length, max: WEEKLY_LIMITS.what }} autoFocus />
       <TextArea label="Подробнее" id={`${initial.id}-details`} value={e.details ?? ""} onChange={(ev) => set("details", ev.target.value)} counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }} />

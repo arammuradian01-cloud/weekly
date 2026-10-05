@@ -5,6 +5,7 @@
 import { unstable_rethrow } from "next/navigation";
 import { requestIp, requireContext } from "@/lib/auth";
 import * as svc from "@/lib/tasks/service";
+import { canSeeTaskHistory } from "@/lib/tasks/rules";
 import type { EditInput, NewTaskInput } from "@/lib/tasks/service";
 import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries";
 import type { IsoDate } from "@/domain/dates";
@@ -110,8 +111,7 @@ export async function taskHistoryAction(number: number): Promise<{ ok: true; ite
   const a = await actor();
   const task = await svc.getTask(checkNumber(number));
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
-  const participant =
-    a.management !== null || task.owner === a.slug || task.owner === "all" || task.coExecutors.includes(a.slug) || task.createdBy === a.slug;
-  if (!participant) return { ok: false, error: "История видна участникам задачи, владельцу и администраторам" };
+  if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
+  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER" })) return { ok: false, error: "История видна участникам задачи, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };
 }
