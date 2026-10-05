@@ -15,6 +15,8 @@ import { HeaderSearch } from "@/components/prototype/header-search";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
+import { syncLagging } from "@/lib/sheet/runner";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +28,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const [tasks, registry] = await Promise.all([listTasks({ archived: ctx.management?.role === "OWNER" }), loadRegistry()]);
+  const [tasks, registry, lagging] = await Promise.all([
+    listTasks({ archived: ctx.management?.role === "OWNER" }),
+    loadRegistry(),
+    // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
+    ctx.management ? syncLagging() : Promise.resolve(false),
+  ]);
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -82,6 +89,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
+        {lagging ? (
+          <div role="status" className="border-b border-warning/30 bg-warning-soft px-4 py-2.5 text-[14px] text-warning-ink sm:px-6 lg:px-10">
+            Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к копии. Изменения ждут в очереди и не теряются.{" "}
+            {ctx.management?.role === "OWNER" ? (
+              <Link href="/sync" className="font-medium underline underline-offset-2">
+                Открыть синхронизацию
+              </Link>
+            ) : (
+              "Подробности у владельца на странице «Синхронизация»."
+            )}
+          </div>
+        ) : null}
         <PrototypeBanner />
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
       </div>

@@ -84,4 +84,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "settings.person.enable": "Человек включён",
   "settings.update": "Ритм недели изменён",
   "export.excel": "Выгрузка в Excel",
+  "sync.revert": "Сверка вернула значение в таблице",
+  "sync.rebuild": "Вкладки таблицы пересобраны",
+  "sync.settings": "Изменена таблица для выгрузки",
 };

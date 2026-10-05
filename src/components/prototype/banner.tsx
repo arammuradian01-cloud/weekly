@@ -6,7 +6,7 @@ export function PrototypeBanner() {
     <div className="flex items-center gap-2.5 border-b border-[#f0dfa6] bg-warning-soft px-4 py-2 text-[13px] text-warning-ink sm:px-6 lg:px-10">
       <FlaskConical className="h-4 w-4 shrink-0" aria-hidden="true" />
       <p>
-        <span className="font-semibold">Тестовый стенд.</span> Задачи, weekly и настройки сохраняются в базе ресурса, в Google-таблицу пока не уходят.
+        <span className="font-semibold">Тестовый стенд.</span> Задачи, weekly и настройки сохраняются в базе ресурса. В Google-таблицу они уходят только в копию, рабочая таблица Insurance&Invest Bord не подключена.
       </p>
     </div>
   );
