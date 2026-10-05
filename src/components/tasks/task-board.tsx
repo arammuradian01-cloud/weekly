@@ -14,13 +14,13 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
-import { usePrototype } from "@/prototype/store";
-import { ownerName } from "@/prototype/people";
-import { STATUSES, type StatusCode } from "@/prototype/dictionaries";
-import { formatShort } from "@/prototype/dates";
+import { usePrototype } from "@/domain/store";
+import { ownerName } from "@/domain/people";
+import { STATUSES, type StatusCode } from "@/domain/dictionaries";
+import { formatShort } from "@/domain/dates";
 import { defaultOrder, isOverdue, overdueDays, permissions } from "@/lib/tasks/rules";
 import { useViewer } from "./task-fields";
-import type { Task } from "@/prototype/types";
+import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { OverdueNote, PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
 import { Chip } from "@/components/ui/primitives";

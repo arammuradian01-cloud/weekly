@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Download, Plus } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, PRIORITIES, SOURCES, STATES, STATUSES } from "@/prototype/dictionaries";
-import type { Role } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { BLOCKS, DIRECTIONS, ENTRY_TYPES, PRIORITIES, SOURCES, STATES, STATUSES } from "@/domain/dictionaries";
+import type { Role } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,7 @@ export function SettingsView({ owner, passwords }: { owner: boolean; passwords: 
   const [newName, setNewName] = useState("");
   const [dicts, setDicts] = useState({
     Направления: DIRECTIONS.map((d) => ({ label: d.label, active: true })),
-    "Блоки weekly": [...BLOCKS.map((b) => ({ label: b.label, active: true })), { label: "Цифры и прогноз", active: false }],
+    "Блоки weekly": BLOCKS.map((b) => ({ label: b.label, active: true })),
     "Типы записей": ENTRY_TYPES.map((t) => ({ label: t.label, active: true })),
     "Источники задач": SOURCES.map((s) => ({ label: s.label, active: true })),
   });
@@ -46,12 +46,15 @@ export function SettingsView({ owner, passwords }: { owner: boolean; passwords: 
 
   return (
     <div>
+      <p className="mb-8 rounded-xl bg-warning-soft px-5 py-3 text-[15px] text-warning-ink">
+        Это образец экрана. Срок сдачи и встреча сейчас берутся из базы как есть, а правки здесь пока не сохраняются: люди, справочники и ритм недели переедут сюда на этапе 5.
+      </p>
       <Section title="Ритм недели" description="Срок сдачи, встреча и пороги">
         <form
           className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
           onSubmit={(e) => {
             e.preventDefault();
-            notify("Настройки недели сохранены");
+            notify("Это образец: настройки недели подключим на этапе 5");
           }}
         >
           <SelectField label="День сдачи weekly" id="s-day" defaultValue="0" options={WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))} />

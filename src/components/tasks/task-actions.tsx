@@ -5,11 +5,11 @@
 // С этапа 3 правки уходят на сервер: он проверяет те же правила и права ещё раз.
 
 import { createContext, useContext, useState } from "react";
-import { usePrototype } from "@/prototype/store";
-import { formatLong, type IsoDate } from "@/prototype/dates";
-import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/prototype/dictionaries";
+import { usePrototype } from "@/domain/store";
+import { formatLong, type IsoDate } from "@/domain/dates";
+import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
 import { statusNeedsNote } from "@/lib/tasks/rules";
-import type { Task } from "@/prototype/types";
+import type { Task } from "@/domain/types";
 import {
   changePriorityAction,
   changeStateAction,

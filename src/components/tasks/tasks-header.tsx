@@ -1,8 +1,8 @@
 "use client";
 
-import { usePrototype } from "@/prototype/store";
-import { isClosed, isOverdue } from "@/prototype/rules";
-import { plural } from "@/prototype/dates";
+import { usePrototype } from "@/domain/store";
+import { isClosed, isOverdue } from "@/domain/rules";
+import { plural } from "@/domain/dates";
 import { PageHeader } from "@/components/page-header";
 import { NewTaskButton } from "@/components/prototype/new-task";
 

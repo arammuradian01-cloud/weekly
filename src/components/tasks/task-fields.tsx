@@ -2,10 +2,10 @@
 
 // Поля задачи, которые меняются в один клик: и в строке списка, и в карточке.
 
-import { PRIORITIES, STATES, STATUSES, priorityOf, stateLabel } from "@/prototype/dictionaries";
+import { PRIORITIES, STATES, STATUSES, priorityOf, stateLabel } from "@/domain/dictionaries";
 import { permissions, type Viewer } from "@/lib/tasks/rules";
-import { usePrototype } from "@/prototype/store";
-import type { Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import type { Task } from "@/domain/types";
 import { InlineSelect } from "@/components/ui/overlays";
 import { PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
 import { useTaskActions } from "./task-actions";

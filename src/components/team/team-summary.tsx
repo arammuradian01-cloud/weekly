@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { isClosedThisWeek, isOverdue, isStale } from "@/prototype/rules";
-import type { Person, Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
+import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
@@ -20,7 +20,7 @@ type Row = {
 };
 
 /** Сводка по каждому, как сводка по лидерам над таблицей задач сейчас (раздел 4 ТЗ) */
-export function TeamSummary() {
+export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; weekNumber: number }) {
   const { data, me } = usePrototype();
   const rows: Row[] = PEOPLE.map((p) => {
     const own = data.tasks.filter((t: Task) => t.owner === p.slug && !t.archived);
@@ -57,12 +57,12 @@ export function TeamSummary() {
               <th scope="col" className="px-3 py-3 text-right font-medium">С риском</th>
               <th scope="col" className="px-3 py-3 text-right font-medium">Закрыто за неделю</th>
               <th scope="col" className="px-3 py-3 text-right font-medium">Давно не обновлялись</th>
-              <th scope="col" className="px-5 py-3 font-medium">Weekly</th>
+              <th scope="col" className="px-5 py-3 font-medium">Weekly за неделю {weekNumber}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {rows.map((r) => {
-              const weekly = data.weeklies.find((w) => w.week === data.reportingWeek && w.author === r.person.slug);
+              const weekly = reports.find((w) => w.author === r.person.slug);
               return (
                 <tr key={r.person.slug} className="hover:bg-surface/60">
                   <td className="px-5 py-3">
@@ -103,7 +103,7 @@ export function TeamSummary() {
 
         <ul className="divide-y divide-line md:hidden">
           {rows.map((r) => {
-            const weekly = data.weeklies.find((w) => w.week === data.reportingWeek && w.author === r.person.slug);
+            const weekly = reports.find((w) => w.author === r.person.slug);
             return (
               <li key={r.person.slug} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-3">

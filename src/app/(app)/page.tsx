@@ -16,6 +16,8 @@ import {
 import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
 import { Suspense } from "react";
 import { MyWeek } from "@/components/weekly/my-week";
+import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
+import { fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 
 export const metadata: Metadata = { title: "Моя неделя" };
@@ -25,7 +27,7 @@ function sameDay(a: { year: number; month: number; day: number }, b: { year: num
 }
 
 export default async function MyWeekPage() {
-  const { person } = await requireContext();
+  const { person, management } = await requireContext();
   const deadlineSetting = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const now = new Date();
   const week = reportingWeek(now, deadlineSetting);
@@ -41,6 +43,8 @@ export default async function MyWeekPage() {
     return { key: weekday, weekday, date: date.day, state: isToday ? "today" : isPast ? "past" : "future" };
   });
   const deadlineDay = moscowDate(deadline);
+  const weekKey = fromCalendar(week.start);
+  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), management ? weeklyStates(weekKey) : Promise.resolve(null)]);
   const currentWeek = isoWeekOf(today);
 
   return (
@@ -62,7 +66,15 @@ export default async function MyWeekPage() {
       </header>
 
       <Suspense>
-        <MyWeek deadlineText={formatMoment(deadline)} timeLeft={formatDuration(Math.max(0, msLeft))} late={msLeft < 0} />
+        <MyWeek
+          deadlineText={formatMoment(deadline)}
+          timeLeft={formatDuration(Math.max(0, msLeft))}
+          late={msLeft < 0}
+          weekNumber={week.week}
+          report={mine.report}
+          entriesCount={mine.entries.length}
+          team={team}
+        />
         <TaskDrawer />
       </Suspense>
     </>

@@ -1,8 +1,8 @@
-// Задача из базы в том виде, в каком её показывают экраны (тип Task из src/prototype/types.ts).
+// Задача из базы в том виде, в каком её показывают экраны (тип Task из src/domain/types.ts).
 
 import type { Prisma } from "@/generated/prisma/client";
-import type { DirectionCode, SourceCode } from "@/prototype/dictionaries";
-import type { Comment, Owner, PersonSlug, Task, Transfer } from "@/prototype/types";
+import type { DirectionCode, SourceCode } from "@/domain/dictionaries";
+import type { Comment, Owner, PersonSlug, Task, Transfer } from "@/domain/types";
 import { priorityCode, stateCode, statusCode } from "./codes";
 import { isoFromDbDate, moscowIso, moscowTime } from "./dates";
 

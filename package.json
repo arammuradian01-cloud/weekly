@@ -27,6 +27,7 @@
     "test:e2e": "playwright test",
     "up": "npm run build && npm run local",
     "import:bord": "tsx scripts/import-bord.ts",
+    "import:bord-weekly": "tsx scripts/import-bord-weekly.ts",
     "reconcile:bord": "tsx scripts/reconcile-bord.ts",
     "test:db": "vitest run --config vitest.db.config.ts"
   },

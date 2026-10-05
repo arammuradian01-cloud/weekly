@@ -1,7 +1,7 @@
 // Перевод значений базы в коды экранов и обратно. Экраны говорят «in-progress», база IN_PROGRESS.
 
 import type { TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
-import type { PriorityCode, StateCode, StatusCode } from "@/prototype/dictionaries";
+import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries";
 
 const STATUS: Record<TaskStatus, StatusCode> = {
   PROPOSED: "proposed",

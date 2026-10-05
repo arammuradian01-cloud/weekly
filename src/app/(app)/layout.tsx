@@ -5,9 +5,9 @@ import { formatTime, formatWeekRange, reportingWeek, type DeadlineSetting } from
 import { Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
 import { ProfileMenu } from "@/components/shell/profile-menu";
-import { PrototypeProvider } from "@/prototype/store";
-import { fromCalendar } from "@/prototype/dates";
-import { isPersonSlug } from "@/prototype/people";
+import { PrototypeProvider } from "@/domain/store";
+import { fromCalendar } from "@/domain/dates";
+import { isPersonSlug } from "@/domain/people";
 import { moscowDate } from "@/lib/week";
 import { PrototypeBanner } from "@/components/prototype/banner";
 import { Toaster } from "@/components/prototype/toaster";
@@ -41,7 +41,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <PrototypeProvider
       today={today}
-      reportingWeek={week.week}
       me={prototypeMe}
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}

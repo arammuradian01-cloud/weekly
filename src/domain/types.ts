@@ -1,4 +1,4 @@
-// Модель данных прототипа. Повторяет раздел 8 ТЗ, чтобы на этапах 3-4 экраны переехали на базу без переделки.
+// Модель данных экранов. Повторяет раздел 8 ТЗ; задачи и weekly приходят в этом виде из базы (этапы 3 и 4).
 
 import type { IsoDate } from "./dates";
 import type {
@@ -84,9 +84,27 @@ export type Task = {
   archived?: boolean;
 };
 
+/** Неделя определяется своим понедельником: «2026-09-28». Номер ISO для подписи считается из даты */
+export type WeekKey = IsoDate;
+
+export type WeekInfo = {
+  key: WeekKey;
+  /** Номер недели по ISO: 21-27.09.2026 это неделя 39 */
+  number: number;
+  year: number;
+  start: IsoDate;
+  end: IsoDate;
+  /** Срок сдачи, момент в ISO */
+  deadline: string;
+  meetingDate: IsoDate;
+  closed: boolean;
+  /** Отчётная неделя: за неё сейчас пишут weekly */
+  reporting: boolean;
+};
+
 export type WeeklyEntry = {
   id: string;
-  week: number;
+  week: WeekKey;
   /** null: общая запись без автора («Все лидеры» в таблице), ждёт распределения */
   author: PersonSlug | null;
   direction: DirectionCode;
@@ -106,11 +124,26 @@ export type WeeklyEntry = {
 };
 
 export type PersonWeekly = {
-  week: number;
+  week: WeekKey;
   author: PersonSlug;
   headline: string;
   state: WeeklyStateCode;
+  /** Когда сдан, момент в ISO */
   submittedAt?: string;
+};
+
+/** Всё про одну неделю для ленты, режима встречи и отчёта CEO */
+export type WeekView = {
+  week: WeekInfo;
+  /** Соседние недели для переключателя. next = null: дальше отчётной недели не листаем */
+  prev: WeekKey;
+  next: WeekKey | null;
+  reportingKey: WeekKey;
+  reportingNumber: number;
+  /** Отчётная неделя пустая, поэтому открыта последняя неделя с записями */
+  fallback: boolean;
+  reports: PersonWeekly[];
+  entries: WeeklyEntry[];
 };
 
 export type JournalEvent = {

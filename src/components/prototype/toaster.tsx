@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
+import { usePrototype } from "@/domain/store";
 
 /** «Сохранено» после каждой правки и отмена последнего действия в течение 5 секунд (раздел 7 ТЗ). Ошибки сервера здесь же */
 export function Toaster() {
@@ -19,7 +19,7 @@ export function Toaster() {
             <CheckCircle2 className="h-5 w-5 shrink-0 text-green" aria-hidden="true" />
           )}
           <span>{toast.text}</span>
-          {toast.undo || toast.undoToken ? (
+          {toast.undoToken ? (
             <button type="button" onClick={undo} className="h-9 rounded-lg px-3 font-semibold text-blue hover:bg-white/10">
               Отменить
             </button>

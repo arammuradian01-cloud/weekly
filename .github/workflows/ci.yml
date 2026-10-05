@@ -34,7 +34,7 @@ jobs:
       - run: npx prisma migrate deploy
       - run: npm run typecheck
       - run: npm test
-      - name: Правила задач на настоящей базе
+      - name: Правила задач и weekly на настоящей базе
         run: npm run test:db
       - name: Сверка импорта с выгрузкой таблицы (0 расхождений)
         run: npx tsx prisma/seed.ts && npm run reconcile:bord

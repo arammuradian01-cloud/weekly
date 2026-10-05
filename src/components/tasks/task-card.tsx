@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, Pencil, History as HistoryIcon } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { authorName, compactName, ownerName, personOf } from "@/prototype/people";
-import { directionLabel, sourceLabel } from "@/prototype/dictionaries";
-import { formatAgo, formatLong, formatShort } from "@/prototype/dates";
-import { isOverdue, isStale, overdueDays } from "@/prototype/rules";
-import type { HistoryItem, Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { authorName, compactName, ownerName, personOf } from "@/domain/people";
+import { directionLabel, sourceLabel } from "@/domain/dictionaries";
+import { formatAgo, formatLong, formatShort } from "@/domain/dates";
+import { isOverdue, isStale, overdueDays } from "@/domain/rules";
+import type { HistoryItem, Task } from "@/domain/types";
 import { archiveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";

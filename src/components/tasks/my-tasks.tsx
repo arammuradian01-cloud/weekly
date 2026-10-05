@@ -1,7 +1,7 @@
 "use client";
 
-import { usePrototype } from "@/prototype/store";
-import { isClosed, isClosedThisWeek, isDueNextWeek, isDueThisWeek, isMine, isOverdue, myTasksOrder } from "@/prototype/rules";
+import { usePrototype } from "@/domain/store";
+import { isClosed, isClosedThisWeek, isDueNextWeek, isDueThisWeek, isMine, isOverdue, myTasksOrder } from "@/domain/rules";
 import { EmptyState } from "@/components/empty-state";
 import { TaskTable } from "./task-list";
 

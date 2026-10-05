@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { setCeoFlagAction } from "@/app/(app)/weekly/actions";
+import { useRunWeekly } from "./use-weekly";
 import { ExternalLink, HandHelping, Star } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/prototype/dictionaries";
-import { authorName } from "@/prototype/people";
-import type { WeeklyEntry } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/domain/dictionaries";
+import { authorName } from "@/domain/people";
+import type { WeeklyEntry } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 
@@ -23,8 +26,17 @@ export function EntryTypeBadge({ type }: { type: EntryTypeCode }) {
 /**
  * Одна запись weekly: одно событие. Флажок «В отчёт CEO» видят и ставят только владелец и администраторы.
  */
-export function EntryItem({ entry, showAuthor, large }: { entry: WeeklyEntry; showAuthor?: boolean; large?: boolean }) {
-  const { manage, toggleCeo } = usePrototype();
+export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEntry; showAuthor?: boolean; large?: boolean; demo?: boolean }) {
+  const { manage, notify } = usePrototype();
+  const run = useRunWeekly();
+  const [ceo, setCeo] = useState(entry.ceo);
+  useEffect(() => setCeo(entry.ceo), [entry.ceo]);
+  const toggleCeo = async () => {
+    if (demo) return notify("Это образец: у настоящих записей отметка сохраняется");
+    setCeo(!ceo);
+    const saved = await run(() => setCeoFlagAction(entry.id, !ceo), !ceo ? "Запись попадёт в отчёт CEO" : "Запись убрана из отчёта CEO");
+    if (!saved) setCeo(ceo);
+  };
   return (
     <article className={cn("flex flex-col gap-1.5", entry.help && "rounded-lg bg-warning-soft/60 p-3 -mx-3")}>
       <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
@@ -80,15 +92,15 @@ export function EntryItem({ entry, showAuthor, large }: { entry: WeeklyEntry; sh
         {manage ? (
           <button
             type="button"
-            onClick={() => toggleCeo(entry.id)}
-            aria-pressed={entry.ceo}
+            onClick={toggleCeo}
+            aria-pressed={ceo}
             className={cn(
               "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition-colors",
-              entry.ceo ? "bg-navy text-white" : "text-muted ring-1 ring-line hover:text-ink",
+              ceo ? "bg-navy text-white" : "text-muted ring-1 ring-line hover:text-ink",
             )}
           >
-            <Star className={cn("h-3.5 w-3.5", entry.ceo && "fill-current")} aria-hidden="true" />
-            {entry.ceo ? "В отчёте CEO" : "В отчёт CEO"}
+            <Star className={cn("h-3.5 w-3.5", ceo && "fill-current")} aria-hidden="true" />
+            {ceo ? "В отчёте CEO" : "В отчёт CEO"}
           </button>
         ) : null}
       </div>

@@ -4,9 +4,9 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { Role, TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
-import { priorityOf, sourceLabel, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/prototype/dictionaries";
-import { formatLong, type IsoDate } from "@/prototype/dates";
-import type { HistoryItem, Owner, PersonSlug, Task } from "@/prototype/types";
+import { priorityOf, sourceLabel, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
+import { formatLong, type IsoDate } from "@/domain/dates";
+import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { newTaskStatus, permissions, statusNeedsNote, type ManagementRole, type TaskPermissions, type Viewer } from "./rules";
 import { CLOSED_DB, priorityCode, priorityDb, stateCode, stateDb, statusCode, statusDb } from "./codes";
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } from "./dates";
@@ -213,6 +213,8 @@ export type NewTaskInput = {
   source?: string;
   sourceNote?: string;
   links?: { title?: string; url: string }[];
+  /** Запись weekly, из которой сделана задача («Сделать задачей») */
+  weeklyEntryId?: string;
 };
 
 /** Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе */
@@ -256,6 +258,10 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
     const coIds = co.map((s) => people.get(s)?.id ?? fail("Такого соисполнителя нет в команде"));
     const links = (input.links ?? []).map((l) => ({ title: optional(l.title, LIMITS.linkTitle, "Название ссылки") ?? new URL(checkUrl(l.url)).hostname, url: checkUrl(l.url) }));
 
+    if (input.weeklyEntryId) {
+      const entry = await tx.weeklyEntry.findUnique({ where: { id: input.weeklyEntryId }, select: { id: true } });
+      if (!entry) fail("Запись weekly, из которой делается задача, не найдена");
+    }
     const status = newTaskStatus(input.owner, viewer);
     const number = await nextNumber(tx);
     const today = dbDate(moscowToday());
@@ -277,6 +283,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
         sourceNote,
         sourceDate: sourceCode === "meeting" ? today : null,
         createdById: actor.personId,
+        weeklyEntryId: input.weeklyEntryId ?? null,
         coExecutors: { create: coIds.map((personId) => ({ personId })) },
         links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
       },

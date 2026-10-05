@@ -23,8 +23,9 @@ export const dictionaries: Record<DictKind, DictSeed[]> = {
     { code: "product", label: "Продукт и CJM" },
     { code: "risks", label: "Риски и решения" },
     { code: "team", label: "Команда и процессы" },
-    // Зарезервирован под этапы 10-11, пока скрыт
-    { code: "numbers", label: "Цифры и прогноз", active: false },
+    // Команда уже ведёт эти блоки во вкладке Weekly CEO: открыты 05.10.2026
+    { code: "numbers", label: "Цифры и прогноз" },
+    { code: "traffic", label: "Трафик и маркетинг" },
   ],
   ENTRY_TYPE: [
     { code: "result", label: "Результат" },

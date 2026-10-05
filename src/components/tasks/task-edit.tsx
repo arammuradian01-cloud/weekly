@@ -5,10 +5,10 @@
 
 import { useEffect, useState } from "react";
 import { ExternalLink, Plus, X } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { DIRECTIONS, SOURCES, type DirectionCode, type SourceCode } from "@/prototype/dictionaries";
-import type { Owner, PersonSlug, Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { DIRECTIONS, SOURCES, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
+import type { Owner, PersonSlug, Task } from "@/domain/types";
 import { addLinkAction, assignOwnerAction, editTaskAction, removeLinkAction, setCoExecutorsAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";

@@ -6,7 +6,7 @@ import { importBordTasks, reconcileBordTasks } from "@/lib/tasks/bord-import";
 import * as svc from "@/lib/tasks/service";
 import { isOverdue } from "@/lib/tasks/rules";
 import { moscowToday } from "@/lib/tasks/dates";
-import { addDays } from "@/prototype/dates";
+import { addDays } from "@/domain/dates";
 
 const CSV = readFileSync("data/bord/zadachi-2026-10-05.csv", "utf8");
 const BATCH = "bord-2026-10-05";

@@ -2,52 +2,42 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronRight, MonitorPlay, PenLine } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { feedWeek, meetingDateOf } from "@/prototype/data";
-import { formatLong } from "@/prototype/dates";
-import { PEOPLE, authorName } from "@/prototype/people";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/prototype/dictionaries";
-import type { PersonSlug, WeeklyEntry } from "@/prototype/types";
+import { useRouter } from "next/navigation";
+import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine } from "lucide-react";
+import { usePrototype } from "@/domain/store";
+import { formatLong } from "@/domain/dates";
+import { PEOPLE, authorName } from "@/domain/people";
+import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
+import { assignEntryAuthorAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { cn } from "@/lib/cn";
-import { buttonClass } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Segmented, SelectField } from "@/components/ui/primitives";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { EntryItem } from "./entry-item";
 import { SubmissionStrip } from "./submission-strip";
+import { useRunWeekly } from "./use-weekly";
 
 type View = "people" | "blocks";
 
-export function useWeekParam() {
-  const { data } = usePrototype();
-  const params = useSearchParams();
+/** Переключатель недель: прошлые недели листаются без ограничения, дальше отчётной нельзя */
+export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekView, "week" | "prev" | "next" | "reportingKey">; basePath?: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  // Пока за отчётную неделю никто не сдал, по умолчанию открывается последняя разобранная
-  const fallback = feedWeek(data);
-  const week = Number(params.get("week")) || fallback;
-  const setWeek = (w: number) => router.replace(w === fallback ? pathname : `${pathname}?week=${w}`, { scroll: false });
-  return { week, setWeek, isFallback: !params.get("week") && fallback !== data.reportingWeek };
-}
-
-export function WeekSwitcher({ week, setWeek }: { week: number; setWeek: (w: number) => void }) {
-  const { data } = usePrototype();
-  const current = week === data.reportingWeek;
+  const go = (key: string) => router.push(`${basePath}?week=${key}`, { scroll: false });
   return (
     <div className="inline-flex items-center gap-1 rounded-lg bg-surface p-1" role="group" aria-label="Выбор недели">
-      <button type="button" onClick={() => setWeek(week - 1)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white" aria-label="Предыдущая неделя">
+      <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white" aria-label="Предыдущая неделя">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       </button>
       <span className="min-w-36 px-2 text-center text-[14px] font-semibold text-ink" aria-live="polite">
-        Неделя {week}
-        {current ? <span className="font-normal text-muted"> отчётная</span> : null}
+        Неделя {view.week.number}
+        {view.week.reporting ? <span className="font-normal text-muted"> отчётная</span> : null}
       </span>
       <button
         type="button"
-        onClick={() => setWeek(week + 1)}
-        disabled={current}
+        onClick={() => view.next && go(view.next)}
+        disabled={!view.next}
         className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white disabled:text-line disabled:hover:bg-transparent"
         aria-label="Следующая неделя"
       >
@@ -57,9 +47,26 @@ export function WeekSwitcher({ week, setWeek }: { week: number; setWeek: (w: num
   );
 }
 
-export function WeeklyFeed() {
-  const { data, me } = usePrototype();
-  const { week, setWeek, isFallback } = useWeekParam();
+/** Закрыть неделю после встречи: дальше записи правят только владелец и администраторы */
+function WeekLock({ week }: { week: WeekInfo }) {
+  const run = useRunWeekly();
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    setBusy(true);
+    await run(() => setWeekClosedAction(week.key, !week.closed), week.closed ? `Неделя ${week.number} снова открыта` : `Неделя ${week.number} закрыта`);
+    setBusy(false);
+  };
+  return (
+    <Button variant="secondary" onClick={toggle} disabled={busy} className="px-3 sm:px-5">
+      {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+      {week.closed ? "Открыть неделю" : "Закрыть неделю"}
+    </Button>
+  );
+}
+
+export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport: PersonWeekly }) {
+  const { manage } = usePrototype();
+  const week = data.week;
   const [view, setView] = useState<View>("people");
   const [direction, setDirection] = useState<DirectionCode | "">("");
   const [block, setBlock] = useState<BlockCode | "">("");
@@ -68,7 +75,7 @@ export function WeeklyFeed() {
   const [helpOnly, setHelpOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
 
-  const all = data.entries.filter((e) => e.week === week);
+  const all = data.entries;
   const entries = all.filter(
     (e) =>
       (!direction || e.direction === direction) &&
@@ -78,8 +85,8 @@ export function WeeklyFeed() {
       (!helpOnly || !!e.help),
   );
   const helpEntries = entries.filter((e) => e.help);
-  const myWeekly = data.weeklies.find((w) => w.week === data.reportingWeek && w.author === me.slug);
   const filtersOn = !!(direction || block || type || author || helpOnly);
+  const myState = myReport.state;
 
   return (
     <div>
@@ -90,31 +97,38 @@ export function WeeklyFeed() {
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <div className="col-span-2 sm:col-span-1">
-            <WeekSwitcher week={week} setWeek={setWeek} />
+            <WeekSwitcher view={data} />
           </div>
-          <Link href="/weekly/meeting" className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
+          <Link href={`/weekly/meeting?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <MonitorPlay className="h-4 w-4" aria-hidden="true" />
             <span className="sm:hidden">Встреча</span>
             <span className="hidden sm:inline">Режим встречи</span>
           </Link>
           <Link href="/weekly/submit" className={buttonClass("primary", "md", "px-3 sm:px-5")}>
             <PenLine className="h-4 w-4" aria-hidden="true" />
-            {myWeekly?.state === "submitted" || myWeekly?.state === "late" ? "Мой weekly" : myWeekly?.state === "draft" ? "Продолжить weekly" : "Сдать weekly"}
+            {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
           </Link>
+          {manage ? <WeekLock week={week} /> : null}
         </div>
       </header>
 
-      {isFallback ? (
+      {data.fallback ? (
         <p className="mb-4 rounded-xl border border-line px-5 py-3 text-[15px] text-ink">
-          За неделю {data.reportingWeek} записей пока нет. Показана неделя {week}
-          {meetingDateOf(week) ? `, её разбирали на встрече ${formatLong(meetingDateOf(week)!)}` : ""}.{" "}
-          <button type="button" onClick={() => setWeek(data.reportingWeek)} className="font-medium text-blue-700 hover:underline">
-            Открыть неделю {data.reportingWeek}
-          </button>
+          За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
+          <Link href={`/weekly?week=${data.reportingKey}`} className="font-medium text-blue-700 hover:underline">
+            Открыть неделю {data.reportingNumber}
+          </Link>
         </p>
       ) : null}
 
-      <SubmissionStrip week={week} />
+      {week.closed ? (
+        <p className="mb-4 inline-flex items-center gap-2 text-[14px] text-muted">
+          <Lock className="h-4 w-4" aria-hidden="true" />
+          Неделя закрыта: записи правят только владелец и администраторы
+        </p>
+      ) : null}
+
+      <SubmissionStrip reports={data.reports} />
 
       <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="flex items-center justify-between gap-3">
@@ -150,8 +164,8 @@ export function WeeklyFeed() {
       </div>
 
       {all.length === 0 ? (
-        <EmptyState title={`За неделю ${week} записей нет`} className="mt-6">
-          В прототипе есть недели {[...new Set(data.entries.map((e) => e.week))].sort((a, b) => a - b).join(" и ")} из Insurance&Invest Bord. В рабочей версии архив хранится без ограничения срока.
+        <EmptyState title={`За неделю ${week.number} записей нет`} className="mt-6">
+          {week.reporting ? "Записи появятся, как только лидеры начнут писать weekly." : "Архив хранится без ограничения срока: листайте недели назад."}
         </EmptyState>
       ) : entries.length === 0 ? (
         <EmptyState title="Под эти фильтры записей нет" className="mt-6">
@@ -160,7 +174,7 @@ export function WeeklyFeed() {
       ) : view === "people" ? (
         <div className="mt-6 flex flex-col gap-6">
           {helpEntries.length && !helpOnly ? <HelpBlock entries={helpEntries} /> : null}
-          <PeopleView week={week} entries={entries} />
+          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} />
         </div>
       ) : (
         <BlocksView entries={entries} />
@@ -188,14 +202,18 @@ function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
   );
 }
 
-function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] }) {
-  const { data, manage, assignAuthor } = usePrototype();
+function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; entries: WeeklyEntry[]; reporting: boolean }) {
+  const { manage } = usePrototype();
+  const run = useRunWeekly();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
-  const stateOf = (slug: PersonSlug) => data.weeklies.find((w) => w.week === week && w.author === slug)?.state ?? "not-started";
+  const reportOf = (slug: PersonSlug) => reports.find((w) => w.author === slug);
+  const stateOf = (slug: PersonSlug) => reportOf(slug)?.state ?? "not-started";
   // Сначала сдавшие, потом черновики, в конце те, кто не начинал
-  const authors = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug) || data.weeklies.some((w) => w.week === week && w.author === p.slug)).sort(
+  const authors = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug) || reports.some((w) => w.author === p.slug)).sort(
     (a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)],
   );
+  const assignAuthor = (id: string, slug: PersonSlug) =>
+    void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${PEOPLE.find((p) => p.slug === slug)?.fullName ?? slug}`);
   const common = entries.filter((e) => !e.author);
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
@@ -229,7 +247,7 @@ function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] })
         </section>
       ) : null}
       {authors.map((p) => {
-        const weekly = data.weeklies.find((w) => w.week === week && w.author === p.slug);
+        const weekly = reportOf(p.slug);
         const own = entries.filter((e) => e.author === p.slug);
         const state = weekly?.state ?? "not-started";
         return (
@@ -240,13 +258,13 @@ function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] })
                   {p.fullName}
                 </h2>
                 <div className="flex items-center gap-2">
-                  {weekly?.submittedAt ? <span className="text-[13px] text-muted">{weekly.submittedAt}</span> : null}
+                  {weekly?.submittedAt ? <span className="text-[13px] text-muted">{submittedText(weekly.submittedAt)}</span> : null}
                   <WeeklyBadge state={state} />
                 </div>
               </div>
               {weekly?.headline ? (
                 <p className="mt-2 text-[16px] leading-snug text-ink">{weekly.headline}</p>
-              ) : week === data.reportingWeek ? (
+              ) : reporting ? (
                 <p className="mt-2 text-[15px] text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
               ) : null}
             </header>
@@ -295,3 +313,11 @@ function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
   );
 }
 
+
+/** «пн 17:42»: когда сдан weekly */
+export function submittedText(iso: string): string {
+  const at = new Date(iso);
+  const day = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", weekday: "short", day: "numeric", month: "short" }).format(at);
+  const time = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit" }).format(at);
+  return `сдан ${day}, ${time}`;
+}

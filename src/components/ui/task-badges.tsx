@@ -11,7 +11,7 @@ import {
   type StateCode,
   type StatusCode,
   type WeeklyStateCode,
-} from "@/prototype/dictionaries";
+} from "@/domain/dictionaries";
 
 export function StatusBadge({ status, className }: { status: StatusCode; className?: string }) {
   const s = statusOf(status);
