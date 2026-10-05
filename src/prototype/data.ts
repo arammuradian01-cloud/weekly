@@ -3,7 +3,7 @@
 // Поля, которых в таблице нет (приоритет, состояние, тип записи), заполнены по умолчанию и помечены в хэндоффе.
 
 import bord from "./bord.json";
-import { addDays, formatLong, weekOf, type IsoDate } from "./dates";
+import { addDays, formatLong, plural, weekOf, type IsoDate } from "./dates";
 import type { BlockCode, DirectionCode, EntryTypeCode, StatusCode } from "./dictionaries";
 import type { HistoryItem, JournalEvent, Owner, PersonSlug, PersonWeekly, Task, WeeklyEntry } from "./types";
 import { PEOPLE } from "./people";
@@ -133,7 +133,7 @@ function buildJournal(tasks: Task[], entries: WeeklyEntry[]): JournalEvent[] {
     const list = entries.filter((e) => e.week === w);
     const meeting = meetingDateOf(w);
     if (!meeting) continue;
-    events.push({ id: `j-wk-${w}`, at: meeting, time: "", by: "system", source: "sheet", kind: "weekly", object: `Weekly за неделю ${w}`, field: "Разобрано на встрече", after: `${list.length} записей, в отчёт CEO ${list.filter((e) => e.ceo).length}` });
+    events.push({ id: `j-wk-${w}`, at: meeting, time: "", by: "system", source: "sheet", kind: "weekly", object: `Weekly за неделю ${w}`, field: "Разобрано на встрече", after: `${list.length} ${plural(list.length, "запись", "записи", "записей")}, в отчёт CEO ${list.filter((e) => e.ceo).length}` });
   }
   return events.sort((a, b) => (a.at + a.time < b.at + b.time ? 1 : -1));
 }

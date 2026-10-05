@@ -5,7 +5,7 @@ import { useState } from "react";
 import { ClipboardCopy, RefreshCw } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
 import { feedWeek, meetingDateOf } from "@/prototype/data";
-import { formatLong } from "@/prototype/dates";
+import { formatLong, plural } from "@/prototype/dates";
 import { authorName } from "@/prototype/people";
 import type { WeeklyEntry } from "@/prototype/types";
 import { Button } from "@/components/ui/button";
@@ -76,7 +76,7 @@ export function CeoReport() {
       <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[15px] text-ink">
-            Собрано из {flaggedCount} записей с отметкой «В отчёт CEO». Отметки ставятся в{" "}
+            Собрано из {flaggedCount} {plural(flaggedCount, "записи", "записей", "записей")} с отметкой «В отчёт CEO». Отметки ставятся в{" "}
             <Link href="/weekly" className="font-medium text-blue-700 hover:underline">
               ленте weekly
             </Link>
@@ -115,7 +115,10 @@ export function CeoReport() {
             <li key={w} className="px-4 py-3">
               <p className="text-[15px] font-medium text-ink">Неделя {w}</p>
               <p className="text-[13px] text-muted">
-                {data.entries.filter((e) => e.week === w && e.ceo).length} записей в отчёт CEO
+                {(() => {
+                  const n = data.entries.filter((e) => e.week === w && e.ceo).length;
+                  return `${n} ${plural(n, "запись", "записи", "записей")} в отчёт CEO`;
+                })()}
                 {meetingDateOf(w) ? `, встреча ${formatLong(meetingDateOf(w)!)}` : ""}. Собирали в таблице
               </p>
             </li>
