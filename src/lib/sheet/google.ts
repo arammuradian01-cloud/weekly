@@ -24,6 +24,17 @@ export function serviceAccountFromEnv(env: Record<string, string | undefined> = 
   }
 }
 
+/** Короткая причина из ответа Google: поле error.message, иначе начало текста одной строкой */
+export function googleDetail(text: string): string {
+  try {
+    const message = (JSON.parse(text) as { error?: { message?: unknown } }).error?.message;
+    if (typeof message === "string" && message.trim()) return `Google: ${message.trim()}`;
+  } catch {
+    // не JSON: ниже берём сам текст
+  }
+  return text.replace(/\s+/g, " ").trim().slice(0, 200);
+}
+
 export class GoogleSheetsError extends Error {
   constructor(
     message: string,
@@ -91,7 +102,7 @@ export class GoogleSheets implements SheetsClient {
           : res.status === 404
             ? "Таблица не найдена: проверьте ID таблицы"
             : `Google Sheets ответил ${res.status}`;
-      throw new GoogleSheetsError(`${message}. ${text.slice(0, 200)}`.trim(), res.status);
+      throw new GoogleSheetsError(`${message}. ${googleDetail(text)}`.trim(), res.status);
     }
     return (await res.json()) as T;
   }

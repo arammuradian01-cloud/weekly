@@ -4,7 +4,7 @@ import { decodeJwt, decodeProtectedHeader } from "jose";
 import { describe, expect, it } from "vitest";
 import { colLetter, q } from "@/lib/sheet/client";
 import { FakeSheets, parseRange } from "@/lib/sheet/fake";
-import { GoogleSheets, GoogleSheetsError, serviceAccountFromEnv } from "@/lib/sheet/google";
+import { GoogleSheets, GoogleSheetsError, googleDetail, serviceAccountFromEnv } from "@/lib/sheet/google";
 import { sameCell, serialDate, serialMoment } from "@/lib/sheet/rows";
 import { nextDelay, reconcileWindowStart } from "@/lib/sheet/runner";
 import { PROD_SHEET_ID } from "@/lib/sheet/client";
@@ -136,5 +136,13 @@ describe("служебный аккаунт Google", () => {
     const error = await denied.sheets().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GoogleSheetsError);
     expect((error as GoogleSheetsError).message).toMatch(/^Нет доступа к таблице: дайте служебному аккаунту права редактора/);
+  });
+
+  it("причина ошибки Google показывается одной строкой, без сырого JSON", () => {
+    // Так Google ответил 06.10 на копии, когда у служебного аккаунта забрали доступ
+    const body = '{\n  "error": {\n    "code": 403,\n    "message": "The caller does not have permission",\n    "status": "PERMISSION_DENIED"\n  }\n}\n';
+    expect(googleDetail(body)).toBe("Google: The caller does not have permission");
+    expect(googleDetail("<html>\n  Bad   gateway\n</html>")).toBe("<html> Bad gateway </html>");
+    expect(googleDetail("")).toBe("");
   });
 });
