@@ -10,8 +10,9 @@ import type { Prisma } from "@/generated/prisma/client";
 
 export { PROD_SHEET_ID };
 /** Версия разметки вкладок: при смене оформление переделывается один раз, а все строки выгружаются заново.
- * 3: строки данных обычным шрифтом сверху ячейки, ссылка не переносится (живая таблица 06.10 показала жирные строки и даты числами) */
-export const LAYOUT_VERSION = 3;
+ * 3: строки данных обычным шрифтом сверху ячейки, ссылка не переносится (живая таблица 06.10 показала жирные строки и даты числами)
+ * 4: ширина колонок «Сводки» */
+export const LAYOUT_VERSION = 4;
 export const SUMMARY_MARKER = "Сводка ресурса";
 export const ARCHIVE_SUFFIX = " (архив до запуска)";
 const PROTECTION = "Вкладка ресурса weekly: правки только через ресурс";
@@ -153,6 +154,7 @@ function formatRequests(w: Wanted, sheet: SheetInfo, serviceEmail?: string | nul
   if (w.title === LOG_TAB.title) {
     req.push(dateFormat(0, "datetime"), width(0, 130), width(1, 160), width(2, 70), width(3, 320), width(4, 480));
   }
+  if (w.title === SUMMARY_TAB.title) req.push(width(0, 220), width(1, 110), width(2, 110), width(3, 110), width(4, 200));
   if (t) {
     const n = t.columns.length;
     // Служебный ID прячем: людям он не нужен, выгрузке нужен
