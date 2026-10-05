@@ -1,0 +1,16 @@
+node_modules
+.next
+src/generated
+.env
+.env.*
+!.env.example
+backups
+.local
+test-results
+playwright-report
+tests/e2e/screenshots
+.git
+.github
+.devcontainer
+*.tsbuildinfo
+.DS_Store

@@ -1,0 +1,23 @@
+# Окружение GitHub Codespaces: приложение и PostgreSQL 16 рядом
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    network_mode: service:db
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weekly
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: weekly
+
+volumes:
+  postgres-data:

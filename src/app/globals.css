@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+/* Цвета Сравни задаются здесь и только здесь (раздел 7 ТЗ) */
+@theme {
+  --font-sans: "Golos Text Variable", "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-navy: #002a3a;
+  --color-navy-900: #001f2b;
+  --color-navy-700: #0d3d50;
+  --color-navy-600: #1d5065;
+  --color-green: #0dd149;
+  --color-green-600: #0bbb41;
+  --color-green-soft: #e3f9e9;
+  --color-blue: #00afff;
+  --color-blue-700: #0073a8;
+  --color-blue-soft: #e0f5ff;
+
+  --color-ink: #002a3a;
+  --color-muted: #5a6e77;
+  --color-line: #dce4e8;
+  --color-surface: #f3f6f8;
+
+  --color-danger: #d93c41;
+  --color-danger-soft: #fdecec;
+  --color-warning: #c98a00;
+  --color-warning-soft: #fff4d2;
+  --color-orange: #e8730c;
+  --color-slate: #6b8290;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-white text-ink antialiased;
+    font-feature-settings: "tnum" 0;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
