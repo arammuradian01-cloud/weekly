@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
+import { usePrototype } from "@/domain/store";
 
 /** «Сохранено» после каждой правки и отмена последнего действия в течение 5 секунд (раздел 7 ТЗ). Ошибки сервера здесь же */
 export function Toaster() {

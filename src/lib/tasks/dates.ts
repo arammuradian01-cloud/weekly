@@ -2,7 +2,7 @@
 // время событий как момент, который показываем по Москве.
 
 import { TIME_ZONE, moscowDate } from "@/lib/week";
-import { fromCalendar, type IsoDate } from "@/prototype/dates";
+import { fromCalendar, type IsoDate } from "@/domain/dates";
 
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

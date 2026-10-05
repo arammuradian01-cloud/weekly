@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, diffDays, plural } from "@/prototype/dates";
+import { addDays, diffDays, plural } from "@/domain/dates";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekKeyOf, weekKeyOfMeeting, weekNumberOf } from "@/lib/weekly/weeks";
 import { buildCeoSections, canEditWeekly, splitWhat, submitState } from "@/lib/weekly/rules";
 import { directionLabelKey, entryTypeFor, readWeeklyTable } from "@/lib/weekly/bord-import";
@@ -7,7 +7,7 @@ import { normalizeCell, overdueText, parseCsv, readTasksTable, whereUpdatedFrom 
 import { issueUndoToken, readUndoToken } from "@/lib/tasks/undo";
 import { readFileSync } from "node:fs";
 import { isDueThisWeek, isMine, isOverdue, isStale, myTasksOrder, newTaskStatus, overdueDays, permissions, statusNeedsNote } from "@/lib/tasks/rules";
-import type { Task, WeeklyEntry } from "@/prototype/types";
+import type { Task, WeeklyEntry } from "@/domain/types";
 
 /** Задача для проверки правил: сами правила от данных не зависят */
 function makeTask(patch: Partial<Task> = {}): Task {

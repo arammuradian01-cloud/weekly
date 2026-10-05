@@ -1,8 +1,8 @@
 "use client";
 
-import { PEOPLE } from "@/prototype/people";
-import type { PersonWeekly } from "@/prototype/types";
-import type { WeeklyStateCode } from "@/prototype/dictionaries";
+import { PEOPLE } from "@/domain/people";
+import type { PersonWeekly } from "@/domain/types";
+import type { WeeklyStateCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
 
 const DOT: Record<WeeklyStateCode, string> = {

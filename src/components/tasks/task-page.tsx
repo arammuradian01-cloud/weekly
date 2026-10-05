@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
+import { usePrototype } from "@/domain/store";
 import { EmptyState } from "@/components/empty-state";
 import { TaskCard } from "./task-card";
 

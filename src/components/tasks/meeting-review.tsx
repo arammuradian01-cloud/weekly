@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE, personOf } from "@/prototype/people";
-import { formatLong, formatShort } from "@/prototype/dates";
-import { isClosedThisWeek, isOverdue, overdueDays } from "@/prototype/rules";
-import type { PersonSlug, Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE, personOf } from "@/domain/people";
+import { formatLong, formatShort } from "@/domain/dates";
+import { isClosedThisWeek, isOverdue, overdueDays } from "@/domain/rules";
+import type { PersonSlug, Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { OverdueNote, StatusBadge } from "@/components/ui/task-badges";

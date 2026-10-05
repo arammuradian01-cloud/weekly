@@ -4,8 +4,8 @@ import { requireContext } from "@/lib/auth";
 import { formatDuration, formatMoment } from "@/lib/week";
 import { currentReportingKey, getMyWeekly } from "@/lib/weekly/service";
 import { canEditWeekly } from "@/lib/weekly/rules";
-import { formatLong } from "@/prototype/dates";
-import type { PersonSlug } from "@/prototype/types";
+import { formatLong } from "@/domain/dates";
+import type { PersonSlug } from "@/domain/types";
 import { WeeklySubmit } from "@/components/weekly/weekly-submit";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 

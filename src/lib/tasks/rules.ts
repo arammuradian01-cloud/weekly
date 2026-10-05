@@ -1,8 +1,8 @@
 // Правила задач из разделов 2 и 4 ТЗ. Чистые функции: ими пользуются сервер (проверка прав и правил) и экраны (что показать).
 
-import { addDays, diffDays, weekOf, fromCalendar, type IsoDate } from "@/prototype/dates";
-import { OPEN_STATUSES, priorityOf, type StatusCode } from "@/prototype/dictionaries";
-import type { PersonSlug, Role, Task } from "@/prototype/types";
+import { addDays, diffDays, weekOf, fromCalendar, type IsoDate } from "@/domain/dates";
+import { OPEN_STATUSES, priorityOf, type StatusCode } from "@/domain/dictionaries";
+import type { PersonSlug, Role, Task } from "@/domain/types";
 
 /** Просрочена: срок прошёл, а статус «В работе» или «Требует уточнений» */
 export function isOverdue(task: Task, today: IsoDate): boolean {

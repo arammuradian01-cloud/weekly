@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ListPlus } from "lucide-react";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/prototype/dictionaries";
-import type { WeeklyEntry } from "@/prototype/types";
+import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import type { WeeklyEntry } from "@/domain/types";
 import { saveEntryAction, type Result } from "@/app/(app)/weekly/actions";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { Button } from "@/components/ui/button";

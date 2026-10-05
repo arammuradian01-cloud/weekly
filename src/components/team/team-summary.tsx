@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { isClosedThisWeek, isOverdue, isStale } from "@/prototype/rules";
-import type { Person, PersonWeekly, Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
+import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";

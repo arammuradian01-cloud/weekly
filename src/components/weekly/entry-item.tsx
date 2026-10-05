@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { setCeoFlagAction } from "@/app/(app)/weekly/actions";
 import { useRunWeekly } from "./use-weekly";
 import { ExternalLink, HandHelping, Star } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/prototype/dictionaries";
-import { authorName } from "@/prototype/people";
-import type { WeeklyEntry } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/domain/dictionaries";
+import { authorName } from "@/domain/people";
+import type { WeeklyEntry } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 

@@ -4,9 +4,9 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { Role, TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
-import { priorityOf, sourceLabel, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/prototype/dictionaries";
-import { formatLong, type IsoDate } from "@/prototype/dates";
-import type { HistoryItem, Owner, PersonSlug, Task } from "@/prototype/types";
+import { priorityOf, sourceLabel, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
+import { formatLong, type IsoDate } from "@/domain/dates";
+import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { newTaskStatus, permissions, statusNeedsNote, type ManagementRole, type TaskPermissions, type Viewer } from "./rules";
 import { CLOSED_DB, priorityCode, priorityDb, stateCode, stateDb, statusCode, statusDb } from "./codes";
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } from "./dates";

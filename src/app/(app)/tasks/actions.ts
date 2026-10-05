@@ -6,9 +6,9 @@ import { unstable_rethrow } from "next/navigation";
 import { requestIp, requireContext } from "@/lib/auth";
 import * as svc from "@/lib/tasks/service";
 import type { EditInput, NewTaskInput } from "@/lib/tasks/service";
-import type { PriorityCode, StateCode, StatusCode } from "@/prototype/dictionaries";
-import type { IsoDate } from "@/prototype/dates";
-import type { HistoryItem, Owner, PersonSlug, Task } from "@/prototype/types";
+import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries";
+import type { IsoDate } from "@/domain/dates";
+import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
 

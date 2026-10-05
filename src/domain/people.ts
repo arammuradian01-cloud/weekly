@@ -1,6 +1,6 @@
 import type { Owner, Person, PersonSlug } from "./types";
 
-// Тот же состав, что в prisma/seed-data.ts. Аналитик и CEO выключены и в прототип не попадают
+// Тот же состав, что в prisma/seed-data.ts. Аналитик и CEO выключены и в экраны не попадают. Список переедет в базу на этапе 5
 export const PEOPLE: Person[] = [
   { slug: "muradyan", fullName: "Мурадян Арам", shortName: "Арам", role: "OWNER", zone: "Департамент целиком", direction: "department" },
   { slug: "golovkin", fullName: "Головкин Владислав", shortName: "Влад", role: "ADMIN", zone: "Департамент, ОСАГО", direction: "osago" },

@@ -3,11 +3,11 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { addDays } from "@/prototype/dates";
-import { DIRECTIONS, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/prototype/dictionaries";
-import type { Owner } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { addDays } from "@/domain/dates";
+import { DIRECTIONS, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
+import type { Owner } from "@/domain/types";
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";

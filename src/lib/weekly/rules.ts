@@ -1,6 +1,6 @@
 // Правила weekly из разделов 2 и 3 ТЗ. Чистые функции: ими пользуются сервер и экраны.
 
-import type { PersonSlug, WeekInfo, WeekKey, WeeklyEntry } from "@/prototype/types";
+import type { PersonSlug, WeekInfo, WeekKey, WeeklyEntry } from "@/domain/types";
 import type { Viewer } from "@/lib/tasks/rules";
 
 export const WEEKLY_LIMITS = { headline: 150, what: 150, details: 1000, impact: 500, fact: 300, next: 500, help: 300, linkTitle: 120, url: 500 };

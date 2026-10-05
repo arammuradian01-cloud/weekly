@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE, compactName } from "@/prototype/people";
-import { diffDays, formatShort } from "@/prototype/dates";
-import type { JournalEvent, PersonSlug } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE, compactName } from "@/domain/people";
+import { diffDays, formatShort } from "@/domain/dates";
+import type { JournalEvent, PersonSlug } from "@/domain/types";
 import { SelectField } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/empty-state";
 

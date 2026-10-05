@@ -2,7 +2,7 @@
 // Одна строка вкладки = одна запись weekly. Неделя записи: та, что закончилась перед встречей.
 
 import type { PrismaClient } from "@/generated/prisma/client";
-import { formatLong, type IsoDate } from "@/prototype/dates";
+import { formatLong, type IsoDate } from "@/domain/dates";
 import { normalizeCell, parseCsv } from "@/lib/tasks/bord-import";
 import { dbDate, isoFromRuDate } from "@/lib/tasks/dates";
 import { splitWhat } from "./rules";

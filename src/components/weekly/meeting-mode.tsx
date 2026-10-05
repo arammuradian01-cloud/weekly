@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
-import { PEOPLE, authorName, personOf } from "@/prototype/people";
+import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
-import type { PersonSlug, WeekView } from "@/prototype/types";
+import type { PersonSlug, WeekView } from "@/domain/types";
 import { EntryItem } from "./entry-item";
 
 /**

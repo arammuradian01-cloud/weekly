@@ -1,8 +1,8 @@
 // Ключи недель: неделю определяет её понедельник. Так нет путаницы на стыке лет, где номер ISO начинается заново.
 
-import { addDays, fromCalendar, toCalendar, weekOf, type IsoDate } from "@/prototype/dates";
+import { addDays, fromCalendar, toCalendar, weekOf, type IsoDate } from "@/domain/dates";
 import { moscowDateTime, reportingWeek, weeklyDeadline, type DeadlineSetting } from "@/lib/week";
-import type { WeekKey } from "@/prototype/types";
+import type { WeekKey } from "@/domain/types";
 
 export type MeetingSetting = { weekday: number };
 

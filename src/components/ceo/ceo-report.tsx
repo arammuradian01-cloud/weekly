@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { ClipboardCopy, RefreshCw, Save } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { authorName } from "@/prototype/people";
-import { formatLong } from "@/prototype/dates";
-import type { WeekView } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { authorName } from "@/domain/people";
+import { formatLong } from "@/domain/dates";
+import type { WeekView } from "@/domain/types";
 import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
 import type { CeoReportView } from "@/lib/weekly/service";
 import { saveCeoReportAction } from "@/app/(app)/weekly/actions";

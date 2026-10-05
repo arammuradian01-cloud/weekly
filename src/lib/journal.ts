@@ -4,7 +4,7 @@ import { prisma } from "./db";
 import { AUDIT_ACTION_LABELS } from "./audit";
 import { moscowIso, moscowTime } from "./tasks/dates";
 import { weekNumberOf } from "./weekly/weeks";
-import type { JournalEvent, PersonSlug } from "@/prototype/types";
+import type { JournalEvent, PersonSlug } from "@/domain/types";
 
 function kindOf(action: string): JournalEvent["kind"] {
   if (action === "task.comment") return "comment";

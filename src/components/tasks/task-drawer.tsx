@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback } from "react";
-import { usePrototype } from "@/prototype/store";
+import { usePrototype } from "@/domain/store";
 import { Drawer } from "@/components/ui/overlays";
 import { TaskCard } from "./task-card";
 

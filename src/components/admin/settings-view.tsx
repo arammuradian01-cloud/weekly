@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Download, Plus } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE } from "@/prototype/people";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, PRIORITIES, SOURCES, STATES, STATUSES } from "@/prototype/dictionaries";
-import type { Role } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE } from "@/domain/people";
+import { BLOCKS, DIRECTIONS, ENTRY_TYPES, PRIORITIES, SOURCES, STATES, STATUSES } from "@/domain/dictionaries";
+import type { Role } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

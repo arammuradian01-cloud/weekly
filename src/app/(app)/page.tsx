@@ -17,7 +17,7 @@ import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
 import { Suspense } from "react";
 import { MyWeek } from "@/components/weekly/my-week";
 import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
-import { fromCalendar } from "@/prototype/dates";
+import { fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 
 export const metadata: Metadata = { title: "Моя неделя" };

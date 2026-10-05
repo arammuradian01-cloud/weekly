@@ -3,7 +3,7 @@
 
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
-import { formatLong, type IsoDate } from "@/prototype/dates";
+import { formatLong, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
 import { isOverdue, overdueDays } from "./rules";
 import { dbDate, isoFromDbDate, isoFromRuDate } from "./dates";

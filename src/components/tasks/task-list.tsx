@@ -3,12 +3,12 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PEOPLE, compactName, ownerName } from "@/prototype/people";
-import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/prototype/dictionaries";
-import { formatShort } from "@/prototype/dates";
-import { defaultOrder, isClosed, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/prototype/rules";
-import type { Task } from "@/prototype/types";
+import { usePrototype } from "@/domain/store";
+import { PEOPLE, compactName, ownerName } from "@/domain/people";
+import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
+import { formatShort } from "@/domain/dates";
+import { defaultOrder, isClosed, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/domain/rules";
+import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Chip, SelectField } from "@/components/ui/primitives";
 import { OverdueNote, StaleNote } from "@/components/ui/task-badges";

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { PRIORITIES, STATES, STATUSES, WEEKLY_STATES, ENTRY_TYPES } from "@/prototype/dictionaries";
+import { usePrototype } from "@/domain/store";
+import { PRIORITIES, STATES, STATUSES, WEEKLY_STATES, ENTRY_TYPES } from "@/domain/dictionaries";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Chip, Segmented, SelectField, Skeleton, TextArea, TextInput, Avatar } from "@/components/ui/primitives";
@@ -14,8 +14,8 @@ import { WeekStrip } from "@/components/brand/week-strip";
 import { TaskTable } from "@/components/tasks/task-list";
 import { EntryItem, EntryTypeBadge } from "@/components/weekly/entry-item";
 import { DemoTaskActions, useTaskActions } from "@/components/tasks/task-actions";
-import type { Task, WeeklyEntry } from "@/prototype/types";
-import { addDays } from "@/prototype/dates";
+import type { Task, WeeklyEntry } from "@/domain/types";
+import { addDays } from "@/domain/dates";
 
 const COLORS = [
   { name: "Тёмно-синий", token: "navy", hex: "#002A3A", use: "Шапка, боковое меню, заголовки, основной текст" },

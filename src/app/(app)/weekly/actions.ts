@@ -7,7 +7,7 @@ import { requestIp, requireContext } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
 import type { CeoSections } from "@/lib/weekly/rules";
-import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/prototype/types";
+import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 

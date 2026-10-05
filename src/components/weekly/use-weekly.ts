@@ -4,7 +4,7 @@
 
 import { useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { usePrototype } from "@/prototype/store";
+import { usePrototype } from "@/domain/store";
 import type { Result } from "@/app/(app)/weekly/actions";
 
 export function useRunWeekly() {

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { CheckCircle2, CloudUpload, RotateCcw, TriangleAlert } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { formatShort, addDays } from "@/prototype/dates";
+import { usePrototype } from "@/domain/store";
+import { formatShort, addDays } from "@/domain/dates";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 

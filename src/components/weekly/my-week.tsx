@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { MessageSquare } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { compactName } from "@/prototype/people";
-import { diffDays, formatShort } from "@/prototype/dates";
-import { isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/prototype/rules";
+import { usePrototype } from "@/domain/store";
+import { compactName } from "@/domain/people";
+import { diffDays, formatShort } from "@/domain/dates";
+import { isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { buttonClass } from "@/components/ui/button";
 import { OverdueNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "@/components/tasks/task-drawer";
 import { SubmissionStrip } from "./submission-strip";
 import { submittedText } from "./weekly-feed";
-import type { PersonWeekly } from "@/prototype/types";
+import type { PersonWeekly } from "@/domain/types";
 
 /** Стартовый экран: мой weekly и срок, мои просроченные и срочные задачи, новые комментарии (раздел 7 ТЗ) */
 export function MyWeek({
