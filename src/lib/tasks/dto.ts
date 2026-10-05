@@ -10,7 +10,7 @@ export const taskInclude = {
   owner: { select: { slug: true } },
   createdBy: { select: { slug: true } },
   direction: { select: { code: true } },
-  coExecutors: { select: { person: { select: { slug: true, sortOrder: true } } } },
+  coExecutors: { select: { personId: true, person: { select: { slug: true, sortOrder: true } } } },
   transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true } } } },
   comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } } } },
   links: { orderBy: { at: "asc" } },

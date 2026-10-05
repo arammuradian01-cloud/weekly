@@ -6,7 +6,7 @@ import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { PEOPLE } from "@/domain/people";
 import { addDays } from "@/domain/dates";
-import { DIRECTIONS, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
+import { dictOptions, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner } from "@/domain/types";
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
@@ -41,6 +41,9 @@ function isTyping(target: EventTarget | null): boolean {
  * Горячие клавиши (раздел 7 ТЗ): N новая задача, / поиск.
  * Диалог создания задачи живёт здесь один на всё приложение.
  */
+/** «Встреча», если её не скрыли в справочнике, иначе первый видимый источник */
+const defaultSource = (): SourceCode => (SOURCES.some((s) => s.code === "meeting") ? "meeting" : (SOURCES[0]?.code ?? "meeting"));
+
 export function GlobalHotkeys() {
   const { data, me, manage, observer, createTask } = usePrototype();
   const router = useRouter();
@@ -51,7 +54,7 @@ export function GlobalHotkeys() {
   const [direction, setDirection] = useState<DirectionCode>(me.direction);
   const [priority, setPriority] = useState<PriorityCode>("medium");
   const [due, setDue] = useState(addDays(data.today, 7));
-  const [source, setSource] = useState<SourceCode>("meeting");
+  const [source, setSource] = useState<SourceCode>(defaultSource());
   const [sourceNote, setSourceNote] = useState("");
   const [weeklyEntryId, setWeeklyEntryId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +65,7 @@ export function GlobalHotkeys() {
       setWeeklyEntryId(detail?.weeklyEntryId);
       setTitle(detail?.title ?? "");
       setOutcome(detail?.outcome ?? "");
-      setSource(detail?.source ?? "meeting");
+      setSource(detail?.source ?? defaultSource());
       setSourceNote(detail?.sourceNote ?? "");
       setOwner(me.slug);
       setDirection(me.direction);
@@ -147,10 +150,10 @@ export function GlobalHotkeys() {
         <TextArea label="Что нужно сделать" id="nt-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} hint="По чему понять, что задача сделана" />
         <div className="grid gap-4 sm:grid-cols-2">
           <SelectField label="Ответственный" id="nt-owner" value={owner} onChange={(e) => setOwner(e.target.value as Owner)} options={ownerOptions} />
-          <SelectField label="Направление" id="nt-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))} />
+          <SelectField label="Направление" id="nt-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={dictOptions("DIRECTION", direction)} />
           <SelectField label="Приоритет" id="nt-pr" value={priority} onChange={(e) => setPriority(e.target.value as PriorityCode)} options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />
           <TextInput label="Срок" id="nt-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
-          <SelectField label="Источник" id="nt-src" value={source} onChange={(e) => setSource(e.target.value as SourceCode)} options={SOURCES.map((s) => ({ value: s.code, label: s.label }))} />
+          <SelectField label="Источник" id="nt-src" value={source} onChange={(e) => setSource(e.target.value as SourceCode)} options={dictOptions("TASK_SOURCE", source)} />
           <TextInput label="Подробнее об источнике" id="nt-src-note" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="Например, встреча 6 октября" />
         </div>
         {proposing ? (

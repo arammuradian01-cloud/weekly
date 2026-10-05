@@ -18,7 +18,9 @@ import { useOpenTask } from "./task-drawer";
 /** Разбор на встрече: по каждому лидеру подряд критичные, просроченные, заблокированные и закрытые за неделю */
 export function MeetingReview() {
   const { data, manage } = usePrototype();
-  const order = PEOPLE.filter((p) => p.role !== "OWNER").map((p) => p.slug);
+  // Выключенные с открытыми задачами тоже разбираются: их задачи надо передать
+  const gone = [...new Set(data.tasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))];
+  const order = [...PEOPLE.filter((p) => p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
   const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
   const slug = order[index]!;

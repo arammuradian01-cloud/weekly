@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE } from "@/domain/people";
+import { PEOPLE, personOf } from "@/domain/people";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
 import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { ROLE_LABELS } from "@/lib/roles";
@@ -22,7 +22,9 @@ type Row = {
 /** Сводка по каждому, как сводка по лидерам над таблицей задач сейчас (раздел 4 ТЗ) */
 export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; weekNumber: number }) {
   const { data, me } = usePrototype();
-  const rows: Row[] = PEOPLE.map((p) => {
+  // Выключенные с открытыми задачами остаются в сводке, пока их задачи не передали другим
+  const gone = [...new Set(data.tasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
+  const rows: Row[] = [...PEOPLE, ...gone].map((p) => {
     const own = data.tasks.filter((t: Task) => t.owner === p.slug && !t.archived);
     const open = own.filter((t) => t.status === "in-progress" || t.status === "clarify");
     return {

@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { usePrototype } from "@/domain/store";
-import { PEOPLE, compactName } from "@/domain/people";
-import { diffDays, formatShort } from "@/domain/dates";
-import type { JournalEvent, PersonSlug } from "@/domain/types";
+import { useTransition } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { compactName } from "@/domain/people";
+import { formatShort } from "@/domain/dates";
+import type { JournalEvent } from "@/domain/types";
+import type { JournalPage, JournalQuery } from "@/lib/journal";
 import { SelectField } from "@/components/ui/primitives";
+import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
+import { cn } from "@/lib/cn";
 
 const KINDS: { value: JournalEvent["kind"] | ""; label: string }[] = [
   { value: "", label: "Все события" },
@@ -28,25 +32,36 @@ const SOURCES: { value: JournalEvent["source"] | ""; label: string }[] = [
 
 const SOURCE_WORD = { app: "ресурс", sheet: "таблица", system: "система" } as const;
 
+const plural = (n: number) => {
+  const d = n % 10;
+  const t = n % 100;
+  return d === 1 && t !== 11 ? "событие" : d >= 2 && d <= 4 && (t < 12 || t > 14) ? "события" : "событий";
+};
+
 /**
  * Общий журнал с фильтрами: человек, период, тип события, источник (раздел 6 ТЗ).
- * live: события из базы: задачи, weekly, входы, настройки
+ * Фильтры записываются в адрес, выборку собирает сервер; «Показать ещё» добавляет следующую сотню
  */
-export function JournalView({ live }: { live: JournalEvent[] }) {
-  const { data } = usePrototype();
-  const all = live;
-  const [who, setWho] = useState<PersonSlug | "system" | "">("");
-  const [period, setPeriod] = useState<"7" | "30" | "all">("30");
-  const [kind, setKind] = useState<JournalEvent["kind"] | "">("");
-  const [source, setSource] = useState<JournalEvent["source"] | "">("");
+export function JournalView({ page, people, query }: { page: JournalPage; people: { slug: string; fullName: string; active: boolean }[]; query: JournalQuery }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [pending, start] = useTransition();
+  const { events, total } = page;
+  const nameOf = (slug: string) => (slug === "system" ? "Система" : people.some((p) => p.slug === slug) ? compactName(slug) : slug);
 
-  const events = all.filter(
-    (e) =>
-      (!who || e.by === who) &&
-      (period === "all" || diffDays(e.at, data.today) <= Number(period)) &&
-      (!kind || e.kind === kind) &&
-      (!source || e.source === source),
-  );
+  const href = (patch: Partial<JournalQuery>) => {
+    const next = { ...query, ...patch };
+    const sp = new URLSearchParams();
+    if (next.who) sp.set("who", next.who);
+    if (next.period !== "30") sp.set("period", next.period);
+    if (next.kind) sp.set("kind", next.kind);
+    if (next.source) sp.set("source", next.source);
+    if (next.n > 100) sp.set("n", String(next.n));
+    const qs = sp.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  };
+  // Новый фильтр начинает выборку с первой сотни
+  const go = (patch: Partial<JournalQuery>) => start(() => router.replace(href({ n: 100, ...patch }), { scroll: false }));
 
   return (
     <div>
@@ -54,16 +69,20 @@ export function JournalView({ live }: { live: JournalEvent[] }) {
         <SelectField
           label="Кто"
           id="j-who"
-          value={who}
-          onChange={(e) => setWho(e.target.value as PersonSlug | "system" | "")}
+          value={query.who}
+          onChange={(e) => go({ who: e.target.value })}
           className="sm:w-52"
-          options={[{ value: "", label: "Все" }, ...PEOPLE.map((p) => ({ value: p.slug, label: p.fullName })), { value: "system", label: "Система" }]}
+          options={[
+            { value: "", label: "Все" },
+            ...people.map((p) => ({ value: p.slug, label: p.active ? p.fullName : `${p.fullName} (выключен)` })),
+            { value: "system", label: "Система" },
+          ]}
         />
         <SelectField
           label="Период"
           id="j-period"
-          value={period}
-          onChange={(e) => setPeriod(e.target.value as "7" | "30" | "all")}
+          value={query.period}
+          onChange={(e) => go({ period: e.target.value as JournalQuery["period"] })}
           className="sm:w-44"
           options={[
             { value: "7", label: "Неделя" },
@@ -71,17 +90,17 @@ export function JournalView({ live }: { live: JournalEvent[] }) {
             { value: "all", label: "Всё время" },
           ]}
         />
-        <SelectField label="Тип события" id="j-kind" value={kind} onChange={(e) => setKind(e.target.value as JournalEvent["kind"] | "")} className="sm:w-48" options={KINDS} />
-        <SelectField label="Источник" id="j-source" value={source} onChange={(e) => setSource(e.target.value as JournalEvent["source"] | "")} className="sm:w-44" options={SOURCES} />
+        <SelectField label="Тип события" id="j-kind" value={query.kind} onChange={(e) => go({ kind: e.target.value as JournalQuery["kind"] })} className="sm:w-48" options={KINDS} />
+        <SelectField label="Источник" id="j-source" value={query.source} onChange={(e) => go({ source: e.target.value as JournalQuery["source"] })} className="sm:w-44" options={SOURCES} />
       </div>
-      <p className="mt-3 text-[14px] text-muted" aria-live="polite">
-        Событий: {events.length}. Журнал только дописывается: править и удалять записи нельзя. События до запуска ресурса помечены источником «таблица»: это перенос задач и weekly из Insurance&Invest Bord.
+      <p className={cn("mt-3 text-[14px] text-muted transition-opacity", pending && "opacity-60")} aria-live="polite">
+        {total ? `${total} ${plural(total)}${total > events.length ? `, показаны последние ${events.length}` : ""}.` : ""} Журнал только дописывается: править и удалять записи нельзя. События с источником «таблица» это перенос задач и weekly из Insurance&Invest Bord.
       </p>
 
       {events.length === 0 ? (
         <EmptyState title="Событий под эти фильтры нет" className="mt-4" />
       ) : (
-        <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-line">
+        <div className={cn("mt-4 overflow-hidden rounded-xl ring-1 ring-line transition-opacity", pending && "opacity-60")}>
           <table className="hidden w-full text-left text-[14px] md:table">
             <caption className="sr-only">Журнал изменений</caption>
             <thead className="bg-surface text-[13px] text-muted">
@@ -94,14 +113,16 @@ export function JournalView({ live }: { live: JournalEvent[] }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {events.slice(0, 120).map((e) => (
+              {events.map((e) => (
                 <tr key={e.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted">
                     {formatShort(e.at)}
                     {e.time ? `, ${e.time}` : ""}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-ink">{e.by === "system" ? "Система" : compactName(e.by)}</td>
-                  <td className="whitespace-nowrap px-3 py-3 text-ink">{e.object}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-ink">{nameOf(e.by)}</td>
+                  <td className="px-3 py-3 text-ink">
+                    <ObjectLabel e={e} />
+                  </td>
                   <td className="px-3 py-3">
                     <Change e={e} />
                   </td>
@@ -114,21 +135,43 @@ export function JournalView({ live }: { live: JournalEvent[] }) {
             </tbody>
           </table>
           <ul className="divide-y divide-line md:hidden">
-            {events.slice(0, 60).map((e) => (
+            {events.map((e) => (
               <li key={e.id} className="px-4 py-3 text-[14px]">
                 <p className="text-[13px] text-muted">
                   {formatShort(e.at)}
-                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : compactName(e.by)}, {SOURCE_WORD[e.source]}
+                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : nameOf(e.by)}, {SOURCE_WORD[e.source]}
                 </p>
-                <p className="mt-0.5 font-medium text-ink">{e.object}</p>
+                <p className="mt-0.5 font-medium text-ink">
+                  <ObjectLabel e={e} />
+                </p>
                 <Change e={e} />
               </li>
             ))}
           </ul>
         </div>
       )}
+      {total > events.length ? (
+        <div className="mt-4">
+          <Link href={href({ n: query.n + 100 })} scroll={false} replace className={buttonClass("secondary")}>
+            Показать ещё {Math.min(100, total - events.length)}
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+/** Задача открывается по ссылке прямо из журнала */
+function ObjectLabel({ e }: { e: JournalEvent }) {
+  const m = /^Задача (\d+)$/.exec(e.object);
+  if (m) {
+    return (
+      <Link href={`/tasks?task=${m[1]}`} className="text-blue-700 hover:underline">
+        {e.object}
+      </Link>
+    );
+  }
+  return <>{e.object}</>;
 }
 
 function Change({ e }: { e: JournalEvent }) {

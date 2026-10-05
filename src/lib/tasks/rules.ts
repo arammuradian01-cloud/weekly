@@ -13,8 +13,29 @@ export function overdueDays(task: Task, today: IsoDate): number {
   return Math.max(0, diffDays(task.due, today));
 }
 
+/**
+ * История изменений задачи (журнал в карточке): участникам задачи и режиму управления.
+ * Матрица раздела 2: лидер видит историю своих задач, весь журнал только у владельца и администраторов
+ */
+export function canSeeTaskHistory(task: Pick<Task, "owner" | "coExecutors" | "createdBy">, v: Viewer): boolean {
+  if (v.observer) return false;
+  if (v.management) return true;
+  return task.owner === v.slug || task.owner === "all" || task.coExecutors.includes(v.slug) || task.createdBy === v.slug;
+}
+
+let staleDaysSetting = 14;
+
+/** Порог «давно не обновлялась» из настроек: экран получает его вместе со справочниками */
+export function setStaleDays(days: number) {
+  if (Number.isInteger(days) && days > 0) staleDaysSetting = days;
+}
+
+export function staleDays(): number {
+  return staleDaysSetting;
+}
+
 /** «Давно не обновлялась»: открытая задача без обновления «Где сейчас» дольше порога */
-export function isStale(task: Task, today: IsoDate, staleDays = 14): boolean {
+export function isStale(task: Task, today: IsoDate, staleDays = staleDaysSetting): boolean {
   return OPEN_STATUSES.includes(task.status) && diffDays(task.whereUpdatedAt, today) > staleDays;
 }
 

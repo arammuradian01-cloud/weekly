@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong } from "@/domain/dates";
-import { PEOPLE, authorName } from "@/domain/people";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import { PEOPLE, authorName, personOf } from "@/domain/people";
+import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
 import { assignEntryAuthorAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { cn } from "@/lib/cn";
@@ -209,7 +209,9 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
   const reportOf = (slug: PersonSlug) => reports.find((w) => w.author === slug);
   const stateOf = (slug: PersonSlug) => reportOf(slug)?.state ?? "not-started";
   // Сначала сдавшие, потом черновики, в конце те, кто не начинал
-  const authors = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug) || reports.some((w) => w.author === p.slug)).sort(
+  // Записи тех, кого уже выключили, остаются в ленте прошлых недель
+  const gone = [...new Set(entries.map((e) => e.author).filter((s): s is PersonSlug => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
+  const authors = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug) || reports.some((w) => w.author === p.slug)).sort(
     (a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)],
   );
   const assignAuthor = (id: string, slug: PersonSlug) =>
@@ -287,8 +289,9 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
 }
 
 function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
-  // Риски первыми: с них начинается разбор
-  const order: BlockCode[] = ["risks", "key-changes", "numbers", "traffic", "partners", "product", "team"];
+  // Риски первыми: с них начинается разбор. Дальше порядок справочника, в конце блоки, которые уже скрыли
+  const known = BLOCKS.map((b) => b.code);
+  const order: BlockCode[] = [...new Set(["risks", ...known, ...entries.map((e) => e.block)])];
   return (
     <div className="mt-6 flex flex-col gap-6">
       {order.map((code) => {
@@ -297,7 +300,7 @@ function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
         return (
           <section key={code} aria-labelledby={`blk-${code}`} className="rounded-xl ring-1 ring-line">
             <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-[17px] font-semibold text-ink">
-              {BLOCKS.find((b) => b.code === code)!.label} <span className="font-normal text-muted">{list.length}</span>
+              {blockLabel(code)} <span className="font-normal text-muted">{list.length}</span>
             </h2>
             <ul className="flex flex-col divide-y divide-line">
               {list.map((e) => (

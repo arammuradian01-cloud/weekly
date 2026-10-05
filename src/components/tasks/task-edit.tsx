@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Plus, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE } from "@/domain/people";
-import { DIRECTIONS, SOURCES, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
+import { PEOPLE, personOf } from "@/domain/people";
+import { dictOptions, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner, PersonSlug, Task } from "@/domain/types";
 import { addLinkAction, assignOwnerAction, editTaskAction, removeLinkAction, setCoExecutorsAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import { Modal } from "@/components/ui/overlays";
@@ -81,6 +81,10 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
   };
 
   const people = PEOPLE.map((p) => ({ value: p.slug, label: p.fullName }));
+  // Выключенный ответственный или соисполнитель остаётся в форме: иначе выбор незаметно сменится или его не снять
+  const gone = (slug: string) => !PEOPLE.some((p) => p.slug === slug);
+  if (task.owner !== "all" && gone(task.owner)) people.push({ value: task.owner, label: `${personOf(task.owner).fullName} (выключен)` });
+  const coChoices = [...PEOPLE, ...task.coExecutors.filter(gone).map(personOf)].filter((p) => p.slug !== owner);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={`Изменить задачу ${task.number}`} description="Каждая правка попадёт в историю задачи">
@@ -90,8 +94,8 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
             <TextInput label="Задача" id="te-title" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={140} hint={`${title.trim().length} из 120 знаков`} />
             <TextArea label="Что нужно сделать" id="te-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} hint="По чему понять, что задача сделана" />
             <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField label="Направление" id="te-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))} />
-              <SelectField label="Источник" id="te-src" value={source} onChange={(e) => setSource(e.target.value as SourceCode)} options={SOURCES.map((s) => ({ value: s.code, label: s.label }))} />
+              <SelectField label="Направление" id="te-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={dictOptions("DIRECTION", direction)} />
+              <SelectField label="Источник" id="te-src" value={source} onChange={(e) => setSource(e.target.value as SourceCode)} options={dictOptions("TASK_SOURCE", source)} />
               <TextInput label="Подробнее об источнике" id="te-src-note" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} className="sm:col-span-2" />
             </div>
           </>
@@ -103,7 +107,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
           <fieldset>
             <legend className="mb-2 text-sm font-medium text-ink">Соисполнители</legend>
             <div className="grid gap-1 sm:grid-cols-2">
-              {PEOPLE.filter((p) => p.slug !== owner).map((p) => (
+              {coChoices.map((p) => (
                 <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-[15px] text-ink hover:bg-surface">
                   <input
                     type="checkbox"
@@ -112,6 +116,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
                     className="h-4 w-4 accent-[#0073a8]"
                   />
                   {p.fullName}
+                  {gone(p.slug) ? " (выключен)" : ""}
                 </label>
               ))}
             </div>

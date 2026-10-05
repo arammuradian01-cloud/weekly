@@ -6,7 +6,7 @@ import { getSetting } from "@/lib/settings";
 import type { DeadlineSetting } from "@/lib/week";
 import type { Prisma } from "@/generated/prisma/client";
 import type { WeeklyState } from "@/generated/prisma/enums";
-import type { BlockCode, DirectionCode, EntryTypeCode, WeeklyStateCode } from "@/domain/dictionaries";
+import { ENTRY_TYPE_CODES, type BlockCode, type DirectionCode, type EntryTypeCode, type WeeklyStateCode } from "@/domain/dictionaries";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import type { Link, PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
@@ -74,9 +74,9 @@ function weekInfo(row: WeekRow, reporting: WeekKey): WeekInfo {
 const entryInclude = {
   week: { select: { start: true } },
   author: { select: { slug: true } },
-  direction: { select: { code: true } },
-  block: { select: { code: true } },
-  type: { select: { code: true } },
+  direction: { select: { code: true, label: true } },
+  block: { select: { code: true, label: true } },
+  type: { select: { code: true, label: true } },
   tasks: { select: { number: true }, orderBy: { number: "asc" as const }, take: 1 },
 } satisfies Prisma.WeeklyEntryInclude;
 
@@ -272,10 +272,16 @@ export type EntryInput = {
   links?: Link[];
 };
 
-async function dictId(tx: Tx, kind: "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE", code: string, message: string): Promise<string> {
-  const item = await tx.dictionaryItem.findFirst({ where: { kind, code, active: true } });
-  if (!item) fail(message);
-  return item!.id;
+/** Значение справочника по коду. Скрытое в справочнике можно оставить, если запись уже с ним, выбрать заново нельзя */
+async function dictItem(tx: Tx, kind: "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE", code: string, message: string, currentId?: string) {
+  const item = await tx.dictionaryItem.findFirst({ where: { kind, code } });
+  if (!item || (!item.active && item.id !== currentId)) fail(message);
+  return item!;
+}
+
+function linksText(value: unknown): string | null {
+  const list = Array.isArray(value) ? (value as { title?: string; url?: string }[]) : [];
+  return list.length ? list.map((l) => (l.title ? `${l.title}: ${l.url}` : (l.url ?? ""))).join(", ") : null;
 }
 
 /** Создать или поправить запись. Автор: тот, кто пишет; чужие записи правят владелец и администраторы */
@@ -297,10 +303,14 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
     const { row, info, reporting } = await weekContext(tx, key);
     const author = existing ? ((existing.author?.slug as PersonSlug | undefined) ?? null) : actor.slug;
     canEdit(info, reporting, actor, author);
+    if (!(ENTRY_TYPE_CODES as string[]).includes(input.type)) fail("Выберите тип записи");
+    const direction = await dictItem(tx, "DIRECTION", input.direction, "Выберите направление из списка", existing?.directionId);
+    const block = await dictItem(tx, "WEEKLY_BLOCK", input.block, "Выберите блок из списка", existing?.blockId);
+    const type = await dictItem(tx, "ENTRY_TYPE", input.type, "Выберите тип записи", existing?.typeId);
     const data = {
-      directionId: await dictId(tx, "DIRECTION", input.direction, "Выберите направление из списка"),
-      blockId: await dictId(tx, "WEEKLY_BLOCK", input.block, "Выберите блок из списка"),
-      typeId: await dictId(tx, "ENTRY_TYPE", input.type, "Выберите тип записи"),
+      directionId: direction.id,
+      blockId: block.id,
+      typeId: type.id,
       what,
       details,
       impact,
@@ -313,8 +323,9 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
     if (existing) {
       saved = await tx.weeklyEntry.update({ where: { id: existing.id }, data, include: entryInclude });
       const report = existing.authorId ? await reportOf(tx, row.id, existing.authorId) : null;
-      // Пока weekly черновик, автосохранение журнал не засоряет. После сдачи и в закрытой неделе пишем каждую правку
-      if (report?.state !== "DRAFT" || info.closed) {
+      // Пока weekly черновик, автосохранение автора журнал не засоряет. После сдачи, в закрытой неделе
+      // и когда чужую запись правит владелец или администратор, пишем каждую правку
+      if (report?.state !== "DRAFT" || info.closed || existing.authorId !== actor.personId) {
         const changes: [string, string | null | undefined, string | null | undefined][] = [
           ["Что произошло", existing.what, what],
           ["Подробнее", existing.details, details],
@@ -322,9 +333,10 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
           ["Цифра или факт", existing.fact, fact],
           ["Что делаем дальше", existing.next, next],
           ["Нужна помощь", existing.help, help],
-          ["Блок", existing.block.code, input.block],
-          ["Направление", existing.direction.code, input.direction],
-          ["Тип", existing.type.code, input.type],
+          ["Блок", existing.block.label, block.label],
+          ["Направление", existing.direction.label, direction.label],
+          ["Тип", existing.type.label, type.label],
+          ["Ссылки", linksText(existing.links), linksText(links)],
         ];
         for (const [field, before, after] of changes) {
           if ((before ?? null) !== (after ?? null)) await audit(tx, actor, "weekly.entry.update", "weekly-entry", existing.id, field, before, after);
@@ -367,7 +379,7 @@ export async function submitWeekly(actor: Actor, key: WeekKey, now = new Date())
     if (report!.state !== "DRAFT") fail("Weekly уже сдан");
     const state = submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
     const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now } });
-    await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, state === "LATE" ? "Weekly сдан с опозданием" : "Weekly сдан", null, `Неделя ${info.number}, записей ${entries}`);
+    await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", state === "LATE" ? "Сдан с опозданием" : "Сдан");
     return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString() };
   });
 }
@@ -379,8 +391,12 @@ function requireManagement(actor: Actor, what: string) {
 export async function setCeoFlag(actor: Actor, id: string, ceo: boolean): Promise<WeeklyEntry> {
   requireManagement(actor, "Отметка «В отчёт CEO»");
   return prisma.$transaction(async (tx) => {
+    const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: entryInclude });
+    if (!entry) return fail("Запись уже удалена");
+    // Отметка уже стоит как надо: ничего не меняем и не пишем в журнал выдуманную правку
+    if (entry.ceo === ceo) return toEntryDto(entry);
     const saved = await tx.weeklyEntry.update({ where: { id }, data: { ceo }, include: entryInclude });
-    await audit(tx, actor, "weekly.entry.ceo", "weekly-entry", id, "В отчёт CEO", ceo ? "нет" : "да", ceo ? "да" : "нет");
+    await audit(tx, actor, "weekly.entry.ceo", "weekly-entry", id, "В отчёт CEO", entry.ceo ? "да" : "нет", ceo ? "да" : "нет");
     return toEntryDto(saved);
   });
 }
@@ -389,12 +405,13 @@ export async function setCeoFlag(actor: Actor, id: string, ceo: boolean): Promis
 export async function assignEntryAuthor(actor: Actor, id: string, slug: PersonSlug): Promise<WeeklyEntry> {
   requireManagement(actor, "Автора записи назначают");
   return prisma.$transaction(async (tx) => {
-    const person = await tx.person.findFirst({ where: { slug, active: true } });
+    const person = await tx.person.findFirst({ where: { slug, active: true, role: { not: "OBSERVER" } } });
     if (!person) fail("Такого человека нет в команде");
     const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: entryInclude });
     if (!entry) fail("Запись уже удалена");
     const saved = await tx.weeklyEntry.update({ where: { id }, data: { authorId: person!.id }, include: entryInclude });
-    await audit(tx, actor, "weekly.entry.author", "weekly-entry", id, "Автор записи", entry!.author?.slug ?? "Все лидеры", person!.fullName);
+    const previous = entry!.authorId ? (await tx.person.findUnique({ where: { id: entry!.authorId } }))?.fullName : null;
+    await audit(tx, actor, "weekly.entry.author", "weekly-entry", id, "Автор записи", previous ?? "Все лидеры", person!.fullName);
     return toEntryDto(saved);
   });
 }
@@ -406,7 +423,7 @@ export async function setWeekClosed(actor: Actor, key: WeekKey, closed: boolean)
     const { row, info, reporting } = await weekContext(tx, key);
     if (info.closed === closed) fail(closed ? "Неделя уже закрыта" : "Неделя уже открыта");
     const saved = await tx.week.update({ where: { id: row.id }, data: { closedAt: closed ? new Date() : null, closedById: closed ? actor.personId : null } });
-    await audit(tx, actor, closed ? "weekly.week.close" : "weekly.week.open", "week", key, closed ? "Неделя закрыта" : "Неделя открыта", null, `Неделя ${info.number}`);
+    await audit(tx, actor, closed ? "weekly.week.close" : "weekly.week.open", "week", key, `Неделя ${info.number}`, closed ? "открыта" : "закрыта", closed ? "закрыта" : "открыта");
     return weekInfo(saved, reporting);
   });
 }
@@ -430,7 +447,15 @@ export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSec
     const before = await tx.ceoReport.findUnique({ where: { weekId: row.id } });
     const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), updatedById: actor.personId };
     const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
-    await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO за неделю ${info.number}`, before ? "прежняя версия" : null, `${data.main.length + data.risks.length + data.next.length} знаков`);
+    // Было и стало по каждому разделу, который поменялся
+    const parts: [string, string | null, string][] = [
+      ["главное", before?.main ?? null, data.main],
+      ["риски", before?.risks ?? null, data.risks],
+      ["что дальше", before?.next ?? null, data.next],
+    ];
+    const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
+    for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
+    if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
     return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
   });
 }

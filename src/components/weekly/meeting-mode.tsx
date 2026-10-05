@@ -19,7 +19,8 @@ export function MeetingMode({ view }: { view: WeekView }) {
   const week = view.week.number;
   const entries = view.entries;
   // Лидеры по очереди, владелец последним. Общие записи без автора отдельным шагом после рисков
-  const leaders = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => Number(a.role === "OWNER") - Number(b.role === "OWNER"));
+  const gone = [...new Set(entries.map((e) => e.author).filter((s): s is string => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
+  const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => Number(a.role === "OWNER") - Number(b.role === "OWNER"));
   const hasCommon = entries.some((e) => !e.author);
   const slides: string[] = ["risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   const [index, setIndex] = useState(0);

@@ -7,7 +7,6 @@ import { MobileNav, SidebarNav } from "@/components/shell/nav";
 import { ProfileMenu } from "@/components/shell/profile-menu";
 import { PrototypeProvider } from "@/domain/store";
 import { fromCalendar } from "@/domain/dates";
-import { isPersonSlug } from "@/domain/people";
 import { moscowDate } from "@/lib/week";
 import { PrototypeBanner } from "@/components/prototype/banner";
 import { Toaster } from "@/components/prototype/toaster";
@@ -15,6 +14,7 @@ import { GlobalHotkeys } from "@/components/prototype/new-task";
 import { HeaderSearch } from "@/components/prototype/header-search";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
+import { loadRegistry } from "@/lib/registry";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +25,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const managementUntil = ctx.management ? formatTime(new Date(ctx.management.until)) : null;
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
-  const prototypeMe = isPersonSlug(ctx.person.slug) ? ctx.person.slug : "golovkin";
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const tasks = await listTasks({ archived: ctx.management?.role === "OWNER" });
+  const [tasks, registry] = await Promise.all([listTasks({ archived: ctx.management?.role === "OWNER" }), loadRegistry()]);
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -41,10 +40,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <PrototypeProvider
       today={today}
-      me={prototypeMe}
+      me={ctx.person.slug}
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
       initialTasks={tasks}
+      registry={registry}
     >
     <TaskActionsProvider>
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">

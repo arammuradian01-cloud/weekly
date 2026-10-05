@@ -12,15 +12,8 @@ import type {
   WeeklyStateCode,
 } from "./dictionaries";
 
-export type PersonSlug =
-  | "muradyan"
-  | "golovkin"
-  | "reva"
-  | "loginova"
-  | "fatyanov"
-  | "sakhibullina"
-  | "afanasyev"
-  | "cheychenets";
+/** Короткое имя человека из базы: «reva», «golovkin». Новых людей добавляет владелец в настройках */
+export type PersonSlug = string;
 
 export type Role = "OWNER" | "ADMIN" | "LEADER" | "OBSERVER";
 
