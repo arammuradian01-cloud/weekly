@@ -1,18 +1,21 @@
 import type { Metadata } from "next";
-import { requireContext } from "@/lib/auth";
-import { PageHeader } from "@/components/page-header";
-import { EmptyState } from "@/components/empty-state";
+import { Suspense } from "react";
+import { TasksHeader } from "@/components/tasks/tasks-header";
+import { TasksNav } from "@/components/tasks/tasks-nav";
+import { TaskList } from "@/components/tasks/task-list";
+import { TaskDrawer } from "@/components/tasks/task-drawer";
 
 export const metadata: Metadata = { title: "Задачи" };
 
-export default async function TasksPage() {
-  await requireContext();
+export default function TasksPage() {
   return (
     <>
-      <PageHeader title="Задачи" description="Общий список задач команды" />
-      <EmptyState title="Список задач пока пустой" stage="Этап 3">
-        Сюда переедет вкладка «Задачи» из Insurance&amp;Invest Bord: 51 задача с теми же номерами, новые начнутся с 52. Статус, состояние и приоритет будут меняться прямо в строке.
-      </EmptyState>
+      <TasksHeader />
+      <TasksNav />
+      <Suspense>
+        <TaskList />
+        <TaskDrawer />
+      </Suspense>
     </>
   );
 }

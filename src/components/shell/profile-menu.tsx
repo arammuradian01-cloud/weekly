@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronDown, KeyRound, LayoutGrid, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
@@ -84,6 +84,13 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
               <Menu.Separator className="my-1 h-px bg-line" />
             </div>
           ) : null}
+
+          <Menu.Item asChild>
+            <Link href="/ui" className={itemClass}>
+              <LayoutGrid className="h-5 w-5 text-muted" aria-hidden="true" />
+              Образец компонентов
+            </Link>
+          </Menu.Item>
 
           <Menu.Item asChild>
             <Link href="/choose" className={itemClass}>

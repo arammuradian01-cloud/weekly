@@ -8,6 +8,8 @@ const allowedOrigins = (process.env.SERVER_ACTIONS_ALLOWED_ORIGINS ?? "")
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // next dev не дописывает в репозиторий свои AGENTS.md и CLAUDE.md
+  agentRules: false,
   experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
   serverExternalPackages: ["pg", "pg-boss"],
   async headers() {
