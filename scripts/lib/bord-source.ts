@@ -2,6 +2,8 @@
 // Таблица считала «Статус просроченности» на 04.10.2026: так получаются её «Просрочена на N дн.»
 export const BORD_DEFAULT = {
   file: "data/bord/zadachi-2026-10-05.csv",
+  /** Вкладка Weekly CEO той же выгрузки */
+  weeklyFile: "data/bord/weekly-ceo-2026-10-05.csv",
   batch: "bord-2026-10-05",
   overdueAsOf: "2026-10-04",
 };

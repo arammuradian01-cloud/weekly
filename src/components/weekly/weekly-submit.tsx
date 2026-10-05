@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Cloud, Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2 } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
 import { entryTypeLabel, ENTRY_TYPES } from "@/prototype/dictionaries";
 import { formatShort } from "@/prototype/dates";
-import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/prototype/rules";
-import type { PersonWeekly, Task, WeeklyEntry } from "@/prototype/types";
+import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
+import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/prototype/types";
+import { deleteEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { OverdueNote, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
@@ -15,10 +18,11 @@ import { TextArea } from "@/components/ui/primitives";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
-import { EntryForm } from "./entry-form";
+import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
+import { submittedText } from "./weekly-feed";
 
-const HEADLINE_MAX = 150;
+const HEADLINE_MAX = WEEKLY_LIMITS.headline;
 
 function nowTime() {
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit" }).format(new Date());
@@ -27,45 +31,86 @@ function nowTime() {
 /**
  * Сдача weekly в три шага на одном экране (раздел 3 ТЗ):
  * обновить свои задачи, написать главное и записи, проверить и сдать.
+ * Черновик сохраняется на сервере сам: главная фраза через пару секунд после ввода, записи так же
  */
-export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: string; timeLeft: string; late: boolean }) {
-  const { data, me, saveWeekly, saveEntry, removeEntry } = usePrototype();
-  const week = data.reportingWeek;
-  const weekly: PersonWeekly = data.weeklies.find((w) => w.week === week && w.author === me.slug) ?? { week, author: me.slug, headline: "", state: "not-started" };
-  const entries = data.entries.filter((e) => e.week === week && e.author === me.slug);
+export function WeeklySubmit({
+  week,
+  initialReport,
+  initialEntries,
+  canEdit,
+  deadlineText,
+  timeLeft,
+  late,
+}: {
+  week: WeekInfo;
+  initialReport: PersonWeekly;
+  initialEntries: WeeklyEntry[];
+  canEdit: boolean;
+  deadlineText: string;
+  timeLeft: string;
+  late: boolean;
+}) {
+  const { data, me, notify } = usePrototype();
+  const router = useRouter();
+  const [weekly, setWeekly] = useState<PersonWeekly>(initialReport);
+  const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
   const submitted = weekly.state === "submitted" || weekly.state === "late";
 
-  const [headline, setHeadline] = useState(weekly.headline);
+  const [headline, setHeadline] = useState(initialReport.headline);
   const [editing, setEditing] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedHeadline = useRef(initialReport.headline);
+  const pendingHeadline = useRef(initialReport.headline);
+  pendingHeadline.current = headline;
 
-  // Черновик сохраняется на сервере сам. В прототипе показываем, как это будет выглядеть
-  useEffect(() => {
-    if (headline === weekly.headline) return;
+  const saveHeadline = useCallback(async () => {
+    const value = pendingHeadline.current;
+    if (value === savedHeadline.current || value.length > HEADLINE_MAX) return;
     setSaving(true);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      saveWeekly({ ...weekly, headline, state: weekly.state === "not-started" ? "draft" : weekly.state }, "Черновик сохранён");
+    try {
+      const result = await saveHeadlineAction(week.key, value);
+      if (result.ok) {
+        savedHeadline.current = value;
+        setWeekly(result.value);
+        setSavedAt(nowTime());
+      } else notify(result.error, "error");
+    } catch {
+      notify("Нет связи с сервером: черновик не сохранился", "error");
+    } finally {
       setSaving(false);
-      setSavedAt(nowTime());
-    }, 900);
+    }
+  }, [week.key, notify]);
+
+  // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
+  useEffect(() => {
+    if (!canEdit || headline === savedHeadline.current) return;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => void saveHeadline(), 2000);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [headline]);
+  }, [headline, canEdit, saveHeadline]);
+  useEffect(() => {
+    const flush = () => {
+      if (document.visibilityState === "hidden") void saveHeadline();
+    };
+    document.addEventListener("visibilitychange", flush);
+    return () => document.removeEventListener("visibilitychange", flush);
+  }, [saveHeadline]);
 
   const tasks = data.tasks.filter(
     (t) =>
+      !t.archived &&
       isMine(t, me.slug, me.role) &&
       (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today)),
   );
 
   const newEntry = (): WeeklyEntry => ({
     id: `new-${Date.now()}`,
-    week,
+    week: week.key,
     author: me.slug,
     direction: me.direction,
     block: "key-changes",
@@ -75,17 +120,55 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
     ceo: false,
   });
   const [draft, setDraft] = useState<WeeklyEntry | null>(null);
+  /** id, который получил на сервере черновик новой записи: пока форма открыта, в списке его не показываем */
+  const [draftId, setDraftId] = useState<string | null>(null);
 
-  const onSaveEntry = (entry: WeeklyEntry) => {
-    saveEntry(entry);
-    if (weekly.state === "not-started") saveWeekly({ ...weekly, headline, state: "draft" }, "Запись сохранена");
-    setDraft(null);
-    setEditing(null);
+  const upsert = (entry: WeeklyEntry) => {
+    setEntries((prev) => (prev.some((e) => e.id === entry.id) ? prev.map((e) => (e.id === entry.id ? entry : e)) : [...prev, entry]));
+    if (weekly.state === "not-started") setWeekly((w) => ({ ...w, state: "draft" }));
     setSavedAt(nowTime());
   };
 
-  const submit = () => {
-    saveWeekly({ ...weekly, headline, state: late ? "late" : "submitted", submittedAt: nowTime() }, late ? "Weekly сдан с опозданием" : "Weekly сдан");
+  const onSaved = (entry: WeeklyEntry) => {
+    upsert(entry);
+    setDraft(null);
+    setDraftId(null);
+    setEditing(null);
+    notify("Запись сохранена");
+  };
+
+  // Черновик новой записи сохранился сам: форма остаётся открытой, курсор на месте
+  const onAutosaved = (entry: WeeklyEntry) => {
+    upsert(entry);
+    setDraftId(entry.id);
+  };
+
+  const remove = async (entry: WeeklyEntry) => {
+    if (isLocalId(entry.id)) return;
+    try {
+      const result = await deleteEntryAction(entry.id);
+      if (!result.ok) return notify(result.error, "error");
+      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      notify("Запись удалена");
+    } catch {
+      notify("Нет связи с сервером: запись не удалилась", "error");
+    }
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    await saveHeadline();
+    try {
+      const result = await submitWeeklyAction(week.key);
+      if (!result.ok) return notify(result.error, "error");
+      setWeekly(result.value);
+      notify(result.value.state === "late" ? "Weekly сдан с опозданием" : "Weekly сдан");
+      router.refresh();
+    } catch {
+      notify("Нет связи с сервером: weekly не сдан", "error");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const problems = [
@@ -104,7 +187,7 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
           </p>
           <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-muted" aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
-            {saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется сам каждые 10 секунд"}
+            {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
           </p>
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
             <ol className="flex flex-col gap-1">
@@ -127,6 +210,12 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
       </aside>
 
       <div className="flex min-w-0 flex-col gap-10">
+        {!canEdit ? (
+          <p className="inline-flex items-start gap-2 rounded-xl bg-surface px-5 py-4 text-[15px] text-ink">
+            <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
+          </p>
+        ) : null}
         <Step id="step-tasks" n={1} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
           {tasks.length === 0 ? (
             <p className="text-[15px] text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
@@ -145,7 +234,9 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
             id="headline"
             value={headline}
             onChange={(e) => setHeadline(e.target.value)}
+            onBlur={() => void saveHeadline()}
             rows={2}
+            readOnly={!canEdit}
             counter={{ value: headline.length, max: HEADLINE_MAX }}
           />
           <div className="mt-6 flex flex-col gap-4">
@@ -154,31 +245,39 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
             </h3>
             {entries.length === 0 && !draft ? <p className="text-[15px] text-muted">Пока ни одной записи.</p> : null}
             <ul className="flex flex-col gap-3">
-              {entries.map((e) =>
+              {entries.filter((e) => !(draft && e.id === draftId)).map((e) =>
                 editing === e.id ? (
                   <li key={e.id}>
-                    <EntryForm initial={e} onSave={onSaveEntry} onCancel={() => setEditing(null)} />
+                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} />
                   </li>
                 ) : (
                   <li key={e.id} className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <EntryItem entry={e} />
                     </div>
-                    <div className="flex shrink-0 gap-1">
+                    {canEdit ? <div className="flex shrink-0 gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(e.id)} aria-label={`Изменить запись «${e.what}»`}>
                         <Pencil className="h-4 w-4" aria-hidden="true" />
                         Изменить
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => removeEntry(e.id)} aria-label={`Удалить запись «${e.what}»`}>
+                      <Button size="sm" variant="ghost" onClick={() => void remove(e)} aria-label={`Удалить запись «${e.what}»`}>
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </Button>
-                    </div>
+                    </div> : null}
                   </li>
                 ),
               )}
             </ul>
-            {draft ? (
-              <EntryForm initial={draft} onSave={onSaveEntry} onCancel={() => setDraft(null)} />
+            {!canEdit ? null : draft ? (
+              <EntryForm
+                initial={draft}
+                onSaved={onSaved}
+                onAutosaved={onAutosaved}
+                onCancel={() => {
+                  setDraft(null);
+                  setDraftId(null);
+                }}
+              />
             ) : (
               <div>
                 <Button variant="secondary" onClick={() => setDraft(newEntry())}>
@@ -197,10 +296,10 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <span>
                   <span className="font-semibold">{weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}</span>
-                  {weekly.submittedAt ? ` в ${weekly.submittedAt}` : ""}. Правки до закрытия недели разрешены.
+                  {weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}. Правки до закрытия недели разрешены.
                 </span>
               </p>
-              <Link href="/weekly" className="inline-flex h-11 items-center rounded-lg px-4 text-[15px] font-semibold text-navy hover:bg-white/60">
+              <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-[15px] font-semibold text-navy hover:bg-white/60">
                 Открыть ленту недели
               </Link>
             </div>
@@ -239,8 +338,8 @@ export function WeeklySubmit({ deadlineText, timeLeft, late }: { deadlineText: s
                 ) : (
                   <p className="text-[14px] text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
                 )}
-                <Button onClick={submit} disabled={problems.length > 0} className="sm:min-w-44">
-                  Сдать weekly
+                <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} className="sm:min-w-44">
+                  {submitting ? "Сдаю…" : "Сдать weekly"}
                 </Button>
               </div>
             </div>

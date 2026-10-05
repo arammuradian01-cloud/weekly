@@ -14,7 +14,7 @@ import { WeekStrip } from "@/components/brand/week-strip";
 import { TaskTable } from "@/components/tasks/task-list";
 import { EntryItem, EntryTypeBadge } from "@/components/weekly/entry-item";
 import { DemoTaskActions, useTaskActions } from "@/components/tasks/task-actions";
-import type { Task } from "@/prototype/types";
+import type { Task, WeeklyEntry } from "@/prototype/types";
 import { addDays } from "@/prototype/dates";
 
 const COLORS = [
@@ -91,7 +91,22 @@ function UiSampleBody() {
   const [seg, setSeg] = useState<"list" | "board">("list");
   const [chip, setChip] = useState(true);
   const sample = sampleTasks(data.today, me.slug);
-  const entry = data.entries.find((e) => e.help) ?? data.entries[0]!;
+  // Выдуманная запись: образец не трогает настоящий weekly
+  const entry: WeeklyEntry = {
+    id: "sample",
+    week: data.today,
+    author: me.slug,
+    direction: "partners",
+    block: "partners",
+    type: "event",
+    what: "Пример: партнёр готов к пилоту в ноябре",
+    details: "Договорились о пилоте на двух регионах, ждём согласования тарифов.",
+    fact: "2 региона",
+    next: "Согласовать тарифы до пятницы",
+    help: "Нужен контакт в андеррайтинге СК",
+    links: [],
+    ceo: false,
+  };
 
   return (
     <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
@@ -251,7 +266,7 @@ function UiSampleBody() {
 
         <Block id="entry" title="Запись weekly" description="Одна запись равна одному событию. Запрос помощи подсвечен и поднимается наверх ленты.">
           <div className="max-w-2xl rounded-xl px-5 py-4 ring-1 ring-line">
-            <EntryItem entry={entry} showAuthor />
+            <EntryItem entry={entry} showAuthor demo />
           </div>
         </Block>
 

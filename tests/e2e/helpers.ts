@@ -3,8 +3,8 @@ import { expect, type Page } from "@playwright/test";
 import pg from "pg";
 import { E2E_PASSWORDS } from "./global-setup";
 
-/** Снимает блокировку входа и возвращает задачи к выгрузке таблицы: тесты меняют задачи в базе */
-export async function resetDatabase({ tasks = true } = {}) {
+/** Снимает блокировку входа и возвращает задачи и weekly к выгрузке таблицы: тесты меняют их в базе */
+export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   await client.query("DELETE FROM login_attempts");
@@ -12,8 +12,16 @@ export async function resetDatabase({ tasks = true } = {}) {
     await client.query("DELETE FROM tasks");
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);
   }
+  if (weekly) {
+    await client.query("DELETE FROM weekly_entries");
+    await client.query("DELETE FROM weekly_reports");
+    await client.query("DELETE FROM ceo_reports");
+    await client.query("DELETE FROM weeks");
+  }
   await client.end();
-  if (tasks) execSync("npx tsx scripts/import-bord.ts", { env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL }, stdio: "ignore" });
+  const env = { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL };
+  if (tasks) execSync("npx tsx scripts/import-bord.ts", { env, stdio: "ignore" });
+  if (weekly) execSync("npx tsx scripts/import-bord-weekly.ts", { env, stdio: "ignore" });
 }
 
 export async function enter(page: Page, fullName: string) {

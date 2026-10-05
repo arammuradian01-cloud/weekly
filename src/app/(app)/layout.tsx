@@ -41,7 +41,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <PrototypeProvider
       today={today}
-      reportingWeek={week.week}
       me={prototypeMe}
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}

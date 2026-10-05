@@ -1,7 +1,7 @@
 "use client";
 
-import { usePrototype } from "@/prototype/store";
 import { PEOPLE } from "@/prototype/people";
+import type { PersonWeekly } from "@/prototype/types";
 import type { WeeklyStateCode } from "@/prototype/dictionaries";
 import { cn } from "@/lib/cn";
 
@@ -20,11 +20,11 @@ const WORD: Record<WeeklyStateCode, string> = {
 };
 
 /** Полоса сдачи: кто сдал, кто в черновике, кто не начинал */
-export function SubmissionStrip({ week, className }: { week: number; className?: string }) {
-  const { data } = usePrototype();
-  const states = PEOPLE.map((p) => ({
+export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[]; className?: string }) {
+  // Люди в порядке команды, но только те, кого сервер считает участниками weekly (без выключенных и наблюдателей)
+  const states = PEOPLE.filter((p) => reports.some((r) => r.author === p.slug)).map((p) => ({
     person: p,
-    state: (data.weeklies.find((w) => w.week === week && w.author === p.slug)?.state ?? "not-started") as WeeklyStateCode,
+    state: (reports.find((w) => w.author === p.slug)?.state ?? "not-started") as WeeklyStateCode,
   }));
   const done = states.filter((s) => s.state === "submitted" || s.state === "late").length;
   return (

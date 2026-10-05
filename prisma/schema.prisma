@@ -61,6 +61,13 @@ enum TaskState {
   BLOCKED
 }
 
+/// Состояние weekly человека за неделю. Нет строки: «Не начат»
+enum WeeklyState {
+  DRAFT
+  SUBMITTED
+  LATE
+}
+
 /// Участник команды. Состав меняет владелец, без разработчика.
 model Person {
   id                 String          @id @default(cuid())
@@ -78,29 +85,36 @@ model Person {
   createdAt          DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
 
-  ownedTasks   Task[]           @relation("TaskOwner")
-  createdTasks Task[]           @relation("TaskCreator")
-  coTasks      TaskCoExecutor[]
-  transfers    TaskTransfer[]
-  taskComments TaskComment[]
-  taskLinks    TaskLink[]
+  ownedTasks    Task[]           @relation("TaskOwner")
+  createdTasks  Task[]           @relation("TaskCreator")
+  coTasks       TaskCoExecutor[]
+  transfers     TaskTransfer[]
+  taskComments  TaskComment[]
+  taskLinks     TaskLink[]
+  weeks         Week[]
+  weeklyReports WeeklyReport[]
+  weeklyEntries WeeklyEntry[]
+  ceoReports    CeoReport[]
 
   @@map("people")
 }
 
 /// Все справочники: направления, блоки, типы записей, статусы, приоритеты, состояния.
 model DictionaryItem {
-  id        String   @id @default(cuid())
-  kind      DictKind
-  code      String
-  label     String
+  id                 String        @id @default(cuid())
+  kind               DictKind
+  code               String
+  label              String
   /// Имя цвета из набора токенов интерфейса (green, blue, yellow, red, gray, outline и т.п.)
-  color     String?
-  sortOrder Int      @default(0)
-  active    Boolean  @default(true)
-  isDefault Boolean  @default(false)
-  people    Person[]
-  tasks     Task[]
+  color              String?
+  sortOrder          Int           @default(0)
+  active             Boolean       @default(true)
+  isDefault          Boolean       @default(false)
+  people             Person[]
+  tasks              Task[]
+  entriesByDirection WeeklyEntry[] @relation("EntryDirection")
+  entriesByBlock     WeeklyEntry[] @relation("EntryBlock")
+  entriesByType      WeeklyEntry[] @relation("EntryType")
 
   @@unique([kind, code])
   @@map("dictionary_items")
@@ -181,8 +195,9 @@ model Task {
   sourceNote     String?
   /// Дата встречи, на которой поставили задачу
   sourceDate     DateTime?      @db.Date
-  /// Запись weekly, из которой сделана задача (этап 4)
+  /// Запись weekly, из которой сделана задача
   weeklyEntryId  String?
+  weeklyEntry    WeeklyEntry?   @relation(fields: [weeklyEntryId], references: [id], onDelete: SetNull)
   /// null: задача поставлена на встрече, автор в таблице не записан
   createdById    String?
   createdBy      Person?        @relation("TaskCreator", fields: [createdById], references: [id])
@@ -260,4 +275,96 @@ model TaskLink {
 
   @@index([taskId])
   @@map("task_links")
+}
+
+/// Неделя с понедельника по воскресенье, номер по ISO (раздел 3 ТЗ). Строка создаётся при первом обращении
+model Week {
+  id          String    @id @default(cuid())
+  /// Понедельник недели: ключ, по которому неделю ищут экраны
+  start       DateTime  @unique @db.Date
+  isoYear     Int
+  isoNumber   Int
+  /// Срок сдачи weekly: по настройке week.deadline на момент создания недели
+  deadline    DateTime  @db.Timestamptz(3)
+  meetingDate DateTime  @db.Date
+  /// После встречи администратор закрывает неделю: дальше правят только владелец и администраторы
+  closedAt    DateTime? @db.Timestamptz(3)
+  closedById  String?
+  closedBy    Person?   @relation(fields: [closedById], references: [id])
+
+  reports   WeeklyReport[]
+  entries   WeeklyEntry[]
+  ceoReport CeoReport?
+
+  @@unique([isoYear, isoNumber])
+  @@map("weeks")
+}
+
+/// Weekly человека за неделю: главное одной фразой и состояние сдачи
+model WeeklyReport {
+  id          String      @id @default(cuid())
+  weekId      String
+  week        Week        @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      Person      @relation(fields: [authorId], references: [id])
+  headline    String      @default("")
+  state       WeeklyState @default(DRAFT)
+  submittedAt DateTime?   @db.Timestamptz(3)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+
+  @@unique([weekId, authorId])
+  @@map("weekly_reports")
+}
+
+/// Запись weekly: одно событие (раздел 3 ТЗ)
+model WeeklyEntry {
+  id          String         @id @default(cuid())
+  weekId      String
+  week        Week           @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  /// null: общая запись «Все лидеры», автора назначает владелец или администратор
+  authorId    String?
+  author      Person?        @relation(fields: [authorId], references: [id])
+  directionId String
+  direction   DictionaryItem @relation("EntryDirection", fields: [directionId], references: [id])
+  blockId     String
+  block       DictionaryItem @relation("EntryBlock", fields: [blockId], references: [id])
+  typeId      String
+  type        DictionaryItem @relation("EntryType", fields: [typeId], references: [id])
+  /// Что произошло: одна фраза до 150 знаков
+  what        String
+  details     String?
+  impact      String?
+  /// «Цифра или факт» из вкладки Weekly CEO
+  fact        String?
+  next        String?
+  /// Какая помощь нужна и от кого. Есть текст: запись поднимается наверх ленты
+  help        String?
+  /// Ссылки на артефакты: [{ title, url }]
+  links       Json           @default("[]")
+  ceo         Boolean        @default(false)
+  sortOrder   Int            @default(0)
+  importBatch String?
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  tasks Task[]
+
+  @@index([weekId, authorId])
+  @@map("weekly_entries")
+}
+
+/// Черновик отчёта CEO за неделю: видят только владелец и администраторы, в таблицу не выгружается
+model CeoReport {
+  id          String   @id @default(cuid())
+  weekId      String   @unique
+  week        Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  main        String   @default("")
+  risks       String   @default("")
+  next        String   @default("")
+  updatedById String?
+  updatedBy   Person?  @relation(fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("ceo_reports")
 }

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { buildPrototypeData, feedWeek, latestWeekWithEntries } from "@/prototype/data";
 import { addDays, diffDays, plural } from "@/prototype/dates";
-import { BLOCKS, DIRECTIONS } from "@/prototype/dictionaries";
-import { isPersonSlug } from "@/prototype/people";
+import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekKeyOf, weekKeyOfMeeting, weekNumberOf } from "@/lib/weekly/weeks";
+import { buildCeoSections, canEditWeekly, splitWhat, submitState } from "@/lib/weekly/rules";
+import { directionLabelKey, entryTypeFor, readWeeklyTable } from "@/lib/weekly/bord-import";
 import { normalizeCell, overdueText, parseCsv, readTasksTable, whereUpdatedFrom } from "@/lib/tasks/bord-import";
 import { issueUndoToken, readUndoToken } from "@/lib/tasks/undo";
 import { readFileSync } from "node:fs";
 import { isDueThisWeek, isMine, isOverdue, isStale, myTasksOrder, newTaskStatus, overdueDays, permissions, statusNeedsNote } from "@/lib/tasks/rules";
-import type { Task } from "@/prototype/types";
+import type { Task, WeeklyEntry } from "@/prototype/types";
 
 /** Задача для проверки правил: сами правила от данных не зависят */
 function makeTask(patch: Partial<Task> = {}): Task {
@@ -38,38 +38,97 @@ function makeTask(patch: Partial<Task> = {}): Task {
 }
 
 const TODAY = "2026-10-05"; // понедельник, неделя 41, отчётная неделя 40
-const data = buildPrototypeData(TODAY, 40);
 
-// Weekly из Insurance&Invest Bord (решение Арама 05.10.2026). Проверяем свойства, а не конкретные строки
-describe("weekly прототипа из Insurance&Invest Bord", () => {
-  it("в данных прототипа нет задач: с этапа 3 они живут в базе", () => {
-    expect("tasks" in data).toBe(false);
+describe("недели (раздел 3 ТЗ)", () => {
+  it("неделя определяется понедельником, номер по ISO: 21-27.09.2026 это неделя 39", () => {
+    expect(weekKeyOf("2026-09-23")).toBe("2026-09-21");
+    expect(weekNumberOf("2026-09-21")).toBe(39);
+    expect(isWeekKey("2026-09-21")).toBe(true);
+    expect(isWeekKey("2026-09-22")).toBe(false);
+    expect(isWeekKey("2026-02-30")).toBe(false);
   });
-  it("в текстах нет длинного тире", () => {
-    expect(JSON.stringify(data)).not.toMatch(/[—–]/);
+  it("на стыке лет номер начинается заново, а ключи идут подряд", () => {
+    expect(weekNumberOf("2026-12-28")).toBe(53);
+    expect(shiftWeek("2026-12-28", 1)).toBe("2027-01-04");
+    expect(weekNumberOf("2027-01-04")).toBe(1);
   });
-  it("записи weekly относятся к неделе перед встречей во вторник, блоки и направления из справочника", () => {
-    expect(new Set(data.entries.map((e) => e.week))).toEqual(new Set([38, 39]));
-    for (const e of data.entries) {
-      expect(BLOCKS.some((b) => b.code === e.block)).toBe(true);
-      expect(DIRECTIONS.some((d) => d.code === e.direction)).toBe(true);
-      expect(e.what.length).toBeLessThanOrEqual(150);
-      expect(e.author === null || isPersonSlug(e.author)).toBe(true);
-    }
-    expect(data.entries.some((e) => e.author === null)).toBe(true);
+  it("срок сдачи понедельник 18:00 по Москве после недели, встреча во вторник", () => {
+    expect(deadlineOf("2026-09-28", { weekday: 1, time: "18:00" }).toISOString()).toBe("2026-10-05T15:00:00.000Z");
+    expect(meetingOf("2026-09-28", { weekday: 2 })).toBe("2026-10-06");
+    expect(weekKeyOfMeeting("2026-09-29")).toBe("2026-09-21");
   });
-  it("сдал тот, кто писал записи. Отчётная неделя ещё не начата ни у кого", () => {
-    for (const w of data.weeklies.filter((x) => x.week !== 40)) {
-      const wrote = data.entries.some((e) => e.week === w.week && e.author === w.author);
-      expect(w.state).toBe(wrote ? "submitted" : "not-started");
-    }
-    expect(data.weeklies.filter((w) => w.week === 40).every((w) => w.state === "not-started")).toBe(true);
+  it("отчётная неделя меняется через сутки после срока", () => {
+    const s = { weekday: 1, time: "18:00" };
+    expect(reportingKey(new Date("2026-10-05T10:00:00Z"), s)).toBe("2026-09-28");
+    expect(reportingKey(new Date("2026-10-06T14:59:00Z"), s)).toBe("2026-09-28");
+    expect(reportingKey(new Date("2026-10-06T15:01:00Z"), s)).toBe("2026-10-05");
   });
-  it("пока за отчётную неделю записей нет, лента открывает последнюю разобранную", () => {
-    expect(latestWeekWithEntries(data)).toBe(39);
-    expect(feedWeek(data)).toBe(39);
-    const withEntry = { ...data, entries: [...data.entries, { ...data.entries[0]!, id: "x", week: 40 }] };
-    expect(feedWeek(withEntry)).toBe(40);
+});
+
+describe("правила weekly", () => {
+  const week = { key: "2026-09-28", closed: false };
+  it("свой weekly пишет каждый, кроме наблюдателя, пока неделя открыта и не будущая", () => {
+    expect(canEditWeekly(week, "2026-09-28", { slug: "reva" }, "reva")).toBe(true);
+    expect(canEditWeekly(week, "2026-09-28", { slug: "reva" }, "loginova")).toBe(false);
+    expect(canEditWeekly(week, "2026-09-28", { slug: "reva" }, null)).toBe(false);
+    expect(canEditWeekly({ ...week, closed: true }, "2026-09-28", { slug: "reva" }, "reva")).toBe(false);
+    expect(canEditWeekly({ key: "2026-10-05", closed: false }, "2026-09-28", { slug: "reva" }, "reva")).toBe(false);
+    expect(canEditWeekly(week, "2026-09-28", { slug: "reva", observer: true }, "reva")).toBe(false);
+  });
+  it("владелец и администраторы в режиме управления правят любой weekly, и закрытую неделю тоже", () => {
+    expect(canEditWeekly({ ...week, closed: true }, "2026-09-28", { slug: "golovkin", management: "ADMIN" }, "reva")).toBe(true);
+    expect(canEditWeekly(week, "2026-09-28", { slug: "golovkin" }, "reva")).toBe(false);
+  });
+  it("сдан вовремя до срока включительно, позже: с опозданием", () => {
+    const deadline = new Date("2026-10-05T15:00:00Z");
+    expect(submitState(new Date("2026-10-05T15:00:00Z"), deadline)).toBe("submitted");
+    expect(submitState(new Date("2026-10-05T15:00:01Z"), deadline)).toBe("late");
+  });
+  it("отчёт CEO раскладывает отмеченные записи по разделам и меняет длинное тире и стрелки на дефис", () => {
+    const e = (patch: Partial<WeeklyEntry>): WeeklyEntry => ({ id: "x", week: "2026-09-28", author: "reva", direction: "osago", block: "product", type: "event", what: "Событие.", links: [], ceo: true, ...patch });
+    const s = buildCeoSections(
+      [
+        e({ what: "Запустили тест — первые итоги.", fact: "+5%" }),
+        e({ type: "risk", what: "Баг на пути заказ → оплата" }),
+        e({ type: "result", what: "Не в отчёт", ceo: false }),
+        e({ what: "Договорились", next: "Подписать допсоглашение", author: null }),
+      ],
+      (slug) => (slug ? "Тарас" : "все лидеры"),
+    );
+    expect(s.main).toBe("- Запустили тест - первые итоги. +5% (Тарас)\n- Договорились (все лидеры)");
+    expect(s.risks).toBe("- Баг на пути заказ - оплата (Тарас)");
+    expect(s.next).toBe("- Подписать допсоглашение (все лидеры)");
+  });
+  it("«что произошло»: первая фраза, длинная режется по слову, полный текст в «Подробнее»", () => {
+    expect(splitWhat("Трафик вырос. Продажи упали.")).toEqual({ what: "Трафик вырос.", details: "Продажи упали." });
+    expect(splitWhat("Одна фраза без точки")).toEqual({ what: "Одна фраза без точки", details: undefined });
+    const long = `${"слово ".repeat(40)}конец.`;
+    const r = splitWhat(long);
+    expect(r.what.length).toBeLessThanOrEqual(150);
+    expect(r.what.endsWith("…")).toBe(true);
+    expect(r.details).toBe(long.trim());
+  });
+});
+
+describe("вкладка Weekly CEO Insurance&Invest Bord", () => {
+  const csv = readFileSync("data/bord/weekly-ceo-2026-10-05.csv", "utf8");
+  it("51 запись за две встречи, у каждой текст, блок и направление", () => {
+    const rows = readWeeklyTable(csv);
+    expect(rows).toHaveLength(51);
+    expect(new Set(rows.map((r) => r.meeting))).toEqual(new Set(["2026-09-22", "2026-09-29"]));
+    expect(rows.every((r) => r.text && r.block && r.direction)).toBe(true);
+    expect(rows.filter((r) => r.ceo)).toHaveLength(35);
+    expect(JSON.stringify(rows)).not.toMatch(/[—–]/);
+  });
+  it("направление «RED (ДВС, ипотека, ВЗР, ИФЛ)» это RED, тип записи по блоку", () => {
+    expect(directionLabelKey("RED (ДВС, ипотека, ВЗР, ИФЛ)")).toBe("red");
+    expect(directionLabelKey("Партнёрка")).toBe("партнёрка");
+    expect(entryTypeFor("risks")).toBe("risk");
+    expect(entryTypeFor("numbers")).toBe("result");
+    expect(entryTypeFor("partners")).toBe("event");
+  });
+  it("другой заголовок вкладки останавливает импорт", () => {
+    expect(() => readWeeklyTable(csv.replace("Цифра или факт", "Цифра"))).toThrow(/Колонка 5/);
   });
 });
 

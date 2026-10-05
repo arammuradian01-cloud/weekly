@@ -3,24 +3,21 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
-import { usePrototype } from "@/prototype/store";
-import { feedWeek } from "@/prototype/data";
 import { PEOPLE, authorName, personOf } from "@/prototype/people";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
-import type { PersonSlug } from "@/prototype/types";
+import type { PersonSlug, WeekView } from "@/prototype/types";
 import { EntryItem } from "./entry-item";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
  * Сначала риски и запросы помощи, потом лидеры по очереди (раздел 3 ТЗ).
  */
-export function MeetingMode() {
-  const { data } = usePrototype();
-  // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе
-  const week = feedWeek(data);
-  const entries = data.entries.filter((e) => e.week === week);
+export function MeetingMode({ view }: { view: WeekView }) {
+  // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе (сервер выбирает её сам)
+  const week = view.week.number;
+  const entries = view.entries;
   // Лидеры по очереди, владелец последним. Общие записи без автора отдельным шагом после рисков
   const leaders = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => Number(a.role === "OWNER") - Number(b.role === "OWNER"));
   const hasCommon = entries.some((e) => !e.author);
@@ -38,7 +35,7 @@ export function MeetingMode() {
   }, [slides.length]);
 
   const risky = entries.filter((e) => e.type === "risk" || e.help).sort((a, b) => Number(!!b.help) - Number(!!a.help));
-  const weekly = slide !== "risks" && slide !== "common" ? data.weeklies.find((w) => w.week === week && w.author === slide) : undefined;
+  const weekly = slide !== "risks" && slide !== "common" ? view.reports.find((w) => w.author === slide) : undefined;
 
   return (
     <div className="flex min-h-[70vh] flex-col">
@@ -69,7 +66,7 @@ export function MeetingMode() {
             <Maximize2 className="h-4 w-4" aria-hidden="true" />
             На весь экран
           </Button>
-          <Link href="/weekly" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy hover:bg-surface">
+          <Link href={`/weekly?week=${view.week.key}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy hover:bg-surface">
             <X className="h-4 w-4" aria-hidden="true" />
             Выйти
           </Link>
@@ -81,6 +78,7 @@ export function MeetingMode() {
           <>
             <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">Риски и запросы помощи</h1>
             <p className="mt-2 text-[19px] text-muted">Неделя {week}. С этого начинаем</p>
+            {risky.length === 0 ? <p className="mt-8 text-[19px] text-muted">Рисков и запросов помощи на этой неделе нет.</p> : null}
             <ul className="mt-8 flex flex-col gap-8">
               {risky.map((e) => (
                 <li key={e.id} className="border-l-4 border-danger pl-5">

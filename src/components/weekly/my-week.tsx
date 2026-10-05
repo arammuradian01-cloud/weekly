@@ -12,14 +12,32 @@ import { OverdueNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui
 import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "@/components/tasks/task-drawer";
 import { SubmissionStrip } from "./submission-strip";
+import { submittedText } from "./weekly-feed";
+import type { PersonWeekly } from "@/prototype/types";
 
 /** Стартовый экран: мой weekly и срок, мои просроченные и срочные задачи, новые комментарии (раздел 7 ТЗ) */
-export function MyWeek({ deadlineText, timeLeft, late }: { deadlineText: string; timeLeft: string; late: boolean }) {
-  const { data, me, manage } = usePrototype();
+export function MyWeek({
+  deadlineText,
+  timeLeft,
+  late,
+  weekNumber,
+  report,
+  entriesCount,
+  team,
+}: {
+  deadlineText: string;
+  timeLeft: string;
+  late: boolean;
+  weekNumber: number;
+  report: PersonWeekly;
+  entriesCount: number;
+  /** Кто сдал: только в режиме управления */
+  team: PersonWeekly[] | null;
+}) {
+  const { data, me } = usePrototype();
   const { open } = useOpenTask();
-  const weekly = data.weeklies.find((w) => w.week === data.reportingWeek && w.author === me.slug);
-  const state = weekly?.state ?? "not-started";
-  const entries = data.entries.filter((e) => e.week === data.reportingWeek && e.author === me.slug);
+  const weekly = report;
+  const state = report.state;
   const mine = data.tasks.filter((t) => isMine(t, me.slug, me.role) && !t.archived);
   const urgent = myTasksOrder(mine.filter((t) => isOverdue(t, data.today) || isDueThisWeek(t, data.today)), data.today);
   const comments = mine
@@ -34,14 +52,14 @@ export function MyWeek({ deadlineText, timeLeft, late }: { deadlineText: string;
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <h2 id="my-weekly" className="text-[19px] font-semibold text-ink">
-                Мой weekly за неделю {data.reportingWeek}
+                Мой weekly за неделю {weekNumber}
               </h2>
               <WeeklyBadge state={state} />
             </div>
             <p className="mt-1.5 text-[15px] text-muted">
               {submitted
-                ? `Сдан${weekly?.submittedAt ? ` ${weekly.submittedAt}` : ""}. Записей: ${entries.length}. Правки до закрытия недели разрешены.`
-                : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entries.length}.` : ""}`}
+                ? `${weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан"}. Записей: ${entriesCount}. Правки до закрытия недели разрешены.`
+                : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entriesCount}.` : ""}`}
             </p>
           </div>
           <Link href="/weekly/submit" className={cn(buttonClass(submitted ? "secondary" : "primary"), "shrink-0")}>
@@ -50,7 +68,7 @@ export function MyWeek({ deadlineText, timeLeft, late }: { deadlineText: string;
         </div>
       </section>
 
-      {manage ? <SubmissionStrip week={data.reportingWeek} className="mt-4" /> : null}
+      {team ? <SubmissionStrip reports={team} className="mt-4" /> : null}
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section aria-labelledby="my-tasks">

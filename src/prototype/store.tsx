@@ -1,20 +1,23 @@
 "use client";
 
-// Состояние экранов. Задачи с этапа 3 живут в базе: экран получает их с сервера и правит через server actions.
-// Weekly пока прототип в памяти браузера (этап 4): правки видны сразу, после обновления страницы всё возвращается.
+// Общее состояние экранов: кто я, режим управления, задачи и тост «Сохранено» с отменой.
+// Задачи живут в базе (этап 3): экран получает их с сервера и правит через server actions.
+// Weekly с этапа 4 тоже в базе, но каждая страница берёт свою неделю с сервера сама.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { buildPrototypeData, type PrototypeData } from "./data";
 import { personOf } from "./people";
-import type { Person, PersonSlug, PersonWeekly, Task, WeeklyEntry } from "./types";
+import type { Person, PersonSlug, Task } from "./types";
+import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import type { NewTaskInput } from "@/lib/tasks/service";
 
-type Toast = { id: number; text: string; undo?: Omit<PrototypeData, "tasks">; undoToken?: string; tone?: "error" };
+type Toast = { id: number; text: string; undoToken?: string; tone?: "error" };
+
+export type AppData = { today: IsoDate; tasks: Task[] };
 
 type Store = {
-  data: PrototypeData;
+  data: AppData;
   me: Person;
   /** Включён режим управления владельца или администратора */
   manage: boolean;
@@ -28,14 +31,8 @@ type Store = {
   addComment: (number: number, text: string) => Promise<boolean>;
   /** Номер новой задачи или текст ошибки */
   createTask: (input: NewTaskInput) => Promise<{ number: number } | { error: string }>;
-  saveEntry: (entry: WeeklyEntry) => void;
-  /** Общая запись без автора получает автора: только владелец и администратор */
-  assignAuthor: (id: string, author: PersonSlug) => void;
-  removeEntry: (id: string) => void;
-  saveWeekly: (weekly: PersonWeekly, toast?: string) => void;
-  toggleCeo: (id: string) => void;
   toast: Toast | null;
-  notify: (text: string) => void;
+  notify: (text: string, tone?: "error") => void;
   dismissToast: () => void;
   undo: () => void;
 };
@@ -44,7 +41,6 @@ const StoreContext = createContext<Store | null>(null);
 
 export function PrototypeProvider({
   today,
-  reportingWeek,
   me,
   manageRole,
   observer = false,
@@ -52,7 +48,6 @@ export function PrototypeProvider({
   children,
 }: {
   today: string;
-  reportingWeek: number;
   me: PersonSlug;
   manageRole: "OWNER" | "ADMIN" | null;
   observer?: boolean;
@@ -61,7 +56,6 @@ export function PrototypeProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [proto, setProto] = useState<Omit<PrototypeData, "tasks">>(() => buildPrototypeData(today, reportingWeek));
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [toast, setToast] = useState<Toast | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -95,18 +89,6 @@ export function PrototypeProvider({
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
-  const mutate = useCallback(
-    (fn: (d: Omit<PrototypeData, "tasks">) => Omit<PrototypeData, "tasks">, toastText = "Сохранено") => {
-      setProto((prev) => {
-        const next = fn(prev);
-        // Тост показываем вне setState, иначе React ругается на обновление во время рендера
-        queueMicrotask(() => showToast(toastText, { undo: prev }));
-        return next;
-      });
-    },
-    [showToast],
-  );
-
   const applyTaskResult = useCallback(
     (result: TaskActionResult, toastText: string): boolean => {
       if (!result.ok) {
@@ -126,7 +108,7 @@ export function PrototypeProvider({
     [router, showToast],
   );
 
-  const data = useMemo<PrototypeData>(() => ({ ...proto, tasks }), [proto, tasks]);
+  const data = useMemo<AppData>(() => ({ today, tasks }), [today, tasks]);
 
   const store = useMemo<Store>(() => {
     return {
@@ -162,31 +144,8 @@ export function PrototypeProvider({
           return { error: "Нет связи с сервером: задача не сохранилась" };
         }
       },
-      saveEntry: (entry) =>
-        mutate((d) => {
-          const exists = d.entries.some((e) => e.id === entry.id);
-          return { ...d, entries: exists ? d.entries.map((e) => (e.id === entry.id ? entry : e)) : [...d.entries, entry] };
-        }),
-      assignAuthor: (id, author) =>
-        mutate(
-          (d) => ({ ...d, entries: d.entries.map((e) => (e.id === id ? { ...e, author } : e)) }),
-          `Запись передана: ${personOf(author).fullName}`,
-        ),
-      removeEntry: (id) => mutate((d) => ({ ...d, entries: d.entries.filter((e) => e.id !== id) }), "Запись удалена"),
-      saveWeekly: (weekly, toastText) =>
-        mutate((d) => {
-          const exists = d.weeklies.some((w) => w.week === weekly.week && w.author === weekly.author);
-          return {
-            ...d,
-            weeklies: exists
-              ? d.weeklies.map((w) => (w.week === weekly.week && w.author === weekly.author ? weekly : w))
-              : [...d.weeklies, weekly],
-          };
-        }, toastText),
-      toggleCeo: (id) =>
-        mutate((d) => ({ ...d, entries: d.entries.map((e) => (e.id === id ? { ...e, ceo: !e.ceo } : e)) })),
       toast,
-      notify: (text) => showToast(text),
+      notify: (text, tone) => showToast(text, tone ? { tone } : undefined),
       dismissToast: () => setToast(null),
       undo: () => {
         if (toast?.undoToken) {
@@ -197,13 +156,9 @@ export function PrototypeProvider({
             .catch(() => showToast("Нет связи с сервером: отменить не получилось", { tone: "error" }));
           return;
         }
-        if (toast?.undo) {
-          setProto(toast.undo);
-          setToast(null);
-        }
       },
     };
-  }, [data, me, manageRole, observer, mutate, toast, showToast, applyTaskResult]);
+  }, [data, me, manageRole, observer, toast, showToast, applyTaskResult]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

@@ -16,7 +16,7 @@ const RUNS = [
 ] as const;
 
 /** Страница синхронизации для владельца: последняя выгрузка, очередь, ошибки (раздел 5 ТЗ) */
-export function SyncStatus() {
+export function SyncStatus({ counts }: { counts: { tasks: number; comments: number; entries: number } }) {
   const { data, notify } = usePrototype();
   const [confirm, setConfirm] = useState(false);
   return (
@@ -60,9 +60,9 @@ export function SyncStatus() {
         <h2 id="sync-tabs" className="mb-3 text-[19px] font-semibold text-ink">Вкладки ресурса в таблице</h2>
         <ul className="grid gap-2 sm:grid-cols-2">
           {[
-            ["Задачи", `${data.tasks.length} строк`],
-            ["Комментарии к задачам", `${data.tasks.reduce((n, t) => n + t.comments.length, 0)} строк`],
-            ["Weekly", `${data.entries.length} строк`],
+            ["Задачи", `${counts.tasks} строк`],
+            ["Комментарии к задачам", `${counts.comments} строк`],
+            ["Weekly", `${counts.entries} строк`],
             ["Журнал выгрузки", "последние 1000 событий"],
           ].map(([name, note]) => (
             <li key={name} className="flex items-center justify-between rounded-lg px-4 py-3 ring-1 ring-line">

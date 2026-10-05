@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, resetDatabase } from "./helpers";
 
-// Экраны на задачах из базы (этап 3) и weekly прототипа из Insurance&Invest Bord.
+// Все экраны и сценарии задач на базе. Сценарии weekly в weekly.spec.ts.
 // Тесты не завязаны на число строк: таблица меняется, проверяем правила и сценарии
 
 const SHOTS = "tests/e2e/screenshots";
@@ -39,16 +39,6 @@ test("все экраны прототипа открываются без го�
     await expect(page.getByText("Тестовый стенд.").first()).toBeVisible();
     await noOverflow(page, path.replace(/\W+/g, "_") || "home");
   }
-});
-
-test("лента weekly: последняя разобранная неделя и общие записи без автора", async ({ page }) => {
-  await enter(page, "Головкин Владислав");
-  await page.goto("/weekly");
-  await expect(page.getByText(/За неделю \d+ записей пока нет\. Показана неделя 39/)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
-  await page.getByRole("radio", { name: "По блокам" }).click();
-  await expect(page.getByRole("heading", { name: /^Цифры и прогноз/ })).toBeVisible();
 });
 
 test("быстрые фильтры, поиск и карточка задачи по ссылке", async ({ page }) => {
@@ -102,22 +92,6 @@ test("перенос срока без причины невозможен", asy
   await dialog.getByLabel("Причина переноса").fill("Проверка сценария переноса");
   await dialog.getByRole("button", { name: "Перенести" }).click();
   await expect(page.getByText(/переносов 2/)).toBeVisible();
-});
-
-test("лидер сдаёт weekly в три шага", async ({ page }) => {
-  await enter(page, "Афанасьев Павел");
-  await page.getByRole("link", { name: "Сдать weekly" }).click();
-  await expect(page).toHaveURL(/\/weekly\/submit$/);
-  await expect(page.getByRole("button", { name: "Сдать weekly" })).toBeDisabled();
-
-  await page.getByLabel("Главное одной фразой").fill("Договорились с двумя дилерами о пилоте");
-  await page.getByRole("button", { name: "Добавить запись" }).click();
-  await page.getByLabel("Что произошло").fill("Два дилера готовы к пилоту в ноябре");
-  await page.getByRole("button", { name: "Сохранить запись" }).click();
-  await expect(page.getByRole("heading", { name: "Два дилера готовы к пилоту в ноябре" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Сдать weekly" }).click();
-  await expect(page.getByText("Weekly сдан").first()).toBeVisible();
 });
 
 test("лидер предлагает задачу другому по клавише N", async ({ page }) => {

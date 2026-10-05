@@ -13,9 +13,13 @@ import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
 const OPEN_EVENT = "weekly:new-task";
+/** Задачу поставили по записи weekly: форма записи показывает её номер, человек остаётся на экране сдачи */
+export const TASK_FROM_ENTRY_EVENT = "weekly:task-from-entry";
 
 /** Кнопка «Новая задача» из любого места открывает один и тот же диалог */
-export function openNewTask(prefill?: { title?: string; outcome?: string; source?: SourceCode; sourceNote?: string }) {
+type Prefill = { title?: string; outcome?: string; source?: SourceCode; sourceNote?: string; weeklyEntryId?: string };
+
+export function openNewTask(prefill?: Prefill) {
   window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: prefill }));
 }
 
@@ -49,11 +53,13 @@ export function GlobalHotkeys() {
   const [due, setDue] = useState(addDays(data.today, 7));
   const [source, setSource] = useState<SourceCode>("meeting");
   const [sourceNote, setSourceNote] = useState("");
+  const [weeklyEntryId, setWeeklyEntryId] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const onOpen = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { title?: string; outcome?: string; source?: SourceCode; sourceNote?: string } | undefined;
+      const detail = (e as CustomEvent).detail as Prefill | undefined;
+      setWeeklyEntryId(detail?.weeklyEntryId);
       setTitle(detail?.title ?? "");
       setOutcome(detail?.outcome ?? "");
       setSource(detail?.source ?? "meeting");
@@ -109,10 +115,15 @@ export function GlobalHotkeys() {
       due,
       source,
       sourceNote: sourceNote.trim() || undefined,
+      weeklyEntryId,
     });
     setBusy(false);
     if ("error" in result) return setError(result.error);
     setOpen(false);
+    if (weeklyEntryId) {
+      window.dispatchEvent(new CustomEvent(TASK_FROM_ENTRY_EVENT, { detail: { entryId: weeklyEntryId, number: result.number } }));
+      return;
+    }
     router.push(`/tasks?task=${result.number}`);
   };
 
