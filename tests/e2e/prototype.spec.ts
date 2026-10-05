@@ -1,30 +1,16 @@
 import { expect, test, type Page } from "@playwright/test";
-import pg from "pg";
 import { mkdirSync } from "node:fs";
-import { E2E_PASSWORDS } from "./global-setup";
+import { enter, resetDatabase } from "./helpers";
 
-// Прототип этапа 2: экраны на задачах и weekly из Insurance&Invest Bord, правки живут в памяти браузера.
+// Экраны на задачах из базы (этап 3) и weekly прототипа из Insurance&Invest Bord.
 // Тесты не завязаны на число строк: таблица меняется, проверяем правила и сценарии
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 
 test.beforeEach(async () => {
-  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
-  await client.connect();
-  await client.query("DELETE FROM login_attempts");
-  await client.end();
+  await resetDatabase();
 });
-
-async function enter(page: Page, fullName: string) {
-  await page.goto("/login");
-  await page.getByLabel("Логин").fill("team");
-  await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
-  await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page).toHaveURL(/\/choose$/);
-  await page.getByRole("button", { name: new RegExp(fullName) }).click();
-  await expect(page).toHaveURL(/\/$/);
-}
 
 async function noOverflow(page: Page, name: string) {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -50,7 +36,7 @@ test("все экраны прототипа открываются без го�
   for (const [path, marker] of pages) {
     await page.goto(path);
     await expect(page.getByText(marker).filter({ visible: true }).first()).toBeVisible();
-    await expect(page.getByText("Прототип.").first()).toBeVisible();
+    await expect(page.getByText("Тестовый стенд.").first()).toBeVisible();
     await noOverflow(page, path.replace(/\W+/g, "_") || "home");
   }
 });

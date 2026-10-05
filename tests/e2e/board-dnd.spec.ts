@@ -1,13 +1,10 @@
 import { expect, test } from "@playwright/test";
-import pg from "pg";
 import { E2E_PASSWORDS } from "./global-setup";
+import { resetDatabase } from "./helpers";
 
 // Доска: перетаскивание своей карточки мышью меняет статус, отмена возвращает
 test.beforeEach(async () => {
-  const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
-  await client.connect();
-  await client.query("DELETE FROM login_attempts");
-  await client.end();
+  await resetDatabase();
 });
 
 test("ответственный перетаскивает свою карточку в другую колонку", async ({ page }, info) => {

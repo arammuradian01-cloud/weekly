@@ -106,10 +106,10 @@ test("владелец включает режим управления толь
 
   await page.goto("/journal");
   await expect(page).toHaveURL(/\/journal$/);
-  // Живые события ресурса лежат под журналом прототипа в раскрывающемся блоке
-  await page.getByText("Живые события ресурса").click();
-  await expect(page.getByRole("cell", { name: "Включён режим управления" }).first()).toBeVisible();
-  await expect(page.getByRole("cell", { name: "Неверный пароль режима управления" }).first()).toBeVisible();
+  // Входы и режим управления лежат в общем журнале вместе с правками задач
+  await page.getByLabel("Тип события").selectOption("login");
+  await expect(page.getByText("Включён режим управления").filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText("Неверный пароль режима управления").filter({ visible: true }).first()).toBeVisible();
   await shot(page, "06-journal");
 
   await page.goto("/sync");

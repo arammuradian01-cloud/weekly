@@ -3,49 +3,47 @@ import { buildPrototypeData, feedWeek, latestWeekWithEntries } from "@/prototype
 import { addDays, diffDays, plural } from "@/prototype/dates";
 import { BLOCKS, DIRECTIONS } from "@/prototype/dictionaries";
 import { isPersonSlug } from "@/prototype/people";
-import { isDueThisWeek, isMine, isOverdue, isStale, myTasksOrder, overdueDays, permissions, statusNeedsNote } from "@/prototype/rules";
+import { normalizeCell, overdueText, parseCsv, readTasksTable, whereUpdatedFrom } from "@/lib/tasks/bord-import";
+import { issueUndoToken, readUndoToken } from "@/lib/tasks/undo";
+import { readFileSync } from "node:fs";
+import { isDueThisWeek, isMine, isOverdue, isStale, myTasksOrder, newTaskStatus, overdueDays, permissions, statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/prototype/types";
+
+/** Задача для проверки правил: сами правила от данных не зависят */
+function makeTask(patch: Partial<Task> = {}): Task {
+  return {
+    number: 1,
+    title: "Проверочная задача",
+    outcome: "Результат",
+    owner: "sakhibullina",
+    coExecutors: ["golovkin"],
+    direction: "partners",
+    priority: "medium",
+    status: "in-progress",
+    state: "on-track",
+    where: "",
+    whereUpdatedAt: TODAY,
+    due: TODAY,
+    originalDue: TODAY,
+    transfers: [],
+    source: { kind: "meeting", note: "" },
+    links: [],
+    comments: [],
+    history: [],
+    createdBy: "afanasyev",
+    createdAt: TODAY,
+    updatedAt: TODAY,
+    ...patch,
+  };
+}
 
 const TODAY = "2026-10-05"; // понедельник, неделя 41, отчётная неделя 40
 const data = buildPrototypeData(TODAY, 40);
 
-// Данные из Insurance&Invest Bord (решение Арама 05.10.2026). Проверяем свойства, а не конкретные строки:
-// таблица будет меняться, тесты не должны ломаться от новой задачи
-describe("данные прототипа из Insurance&Invest Bord", () => {
-  it("задачи со сквозными номерами без пропусков, как во вкладке «Задачи»", () => {
-    expect(data.tasks.length).toBeGreaterThan(0);
-    expect(data.tasks.map((t) => t.number)).toEqual(Array.from({ length: data.tasks.length }, (_, i) => i + 1));
-  });
-  it("у каждой задачи ответственный или «все лидеры», результат, срок и источник", () => {
-    for (const t of data.tasks) {
-      expect(t.owner === "all" || isPersonSlug(t.owner), `задача ${t.number}`).toBe(true);
-      expect(t.title.length).toBeLessThanOrEqual(120);
-      expect(t.outcome.length).toBeGreaterThan(0);
-      expect(t.due).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(t.source.kind).toBe("meeting");
-      expect(t.source.note).toMatch(/^\d{1,2} [а-я]+$/);
-      expect(DIRECTIONS.some((d) => d.code === t.direction)).toBe(true);
-    }
-  });
-  it("«Перенесена» из таблицы стала «В работе» с одним переносом без исходного срока", () => {
-    const moved = data.tasks.filter((t) => t.transfers.length);
-    expect(moved.length).toBeGreaterThan(0);
-    for (const t of moved) {
-      expect(t.status).toBe("in-progress");
-      expect(t.transfers).toHaveLength(1);
-      expect(t.transfers[0]!.from).toBeNull();
-      expect(t.transfers[0]!.to).toBe(t.due);
-    }
-  });
-  it("закрытые задачи с итогом или причиной и датой закрытия", () => {
-    for (const t of data.tasks.filter((x) => ["done", "failed", "cancelled"].includes(x.status))) {
-      expect(t.resolution).toBeTruthy();
-      expect(t.closedAt).toBeTruthy();
-    }
-  });
-  it("выдуманных событий нет: ни входов, ни комментариев, ни авторов задач", () => {
-    expect(data.journal.every((e) => e.source === "sheet" && e.by === "system")).toBe(true);
-    expect(data.tasks.every((t) => t.comments.length === 0 && t.createdBy === null)).toBe(true);
+// Weekly из Insurance&Invest Bord (решение Арама 05.10.2026). Проверяем свойства, а не конкретные строки
+describe("weekly прототипа из Insurance&Invest Bord", () => {
+  it("в данных прототипа нет задач: с этапа 3 они живут в базе", () => {
+    expect("tasks" in data).toBe(false);
   });
   it("в текстах нет длинного тире", () => {
     expect(JSON.stringify(data)).not.toMatch(/[—–]/);
@@ -76,7 +74,7 @@ describe("данные прототипа из Insurance&Invest Bord", () => {
 });
 
 describe("правила задач (раздел 4 ТЗ)", () => {
-  const base: Task = { ...data.tasks[0]!, status: "in-progress", owner: "sakhibullina", coExecutors: ["golovkin"], createdBy: "afanasyev", closedAt: undefined };
+  const base: Task = makeTask();
   const at = (patch: Partial<Task>): Task => ({ ...base, ...patch });
 
   it("просрочена: срок прошёл, статус «В работе» или «Требует уточнений»", () => {
@@ -105,7 +103,15 @@ describe("правила задач (раздел 4 ТЗ)", () => {
     expect(isMine(at({ owner: "all", coExecutors: [] }), "golovkin", "ADMIN")).toBe(false);
   });
   it("порядок «Моих задач»: просроченные, срок на неделе, остальные", () => {
-    const ordered = myTasksOrder(data.tasks.filter((t) => isMine(t, "fatyanov", "LEADER")), TODAY);
+    const mine = [
+      at({ number: 1, due: addDays(TODAY, 20) }),
+      at({ number: 2, due: addDays(TODAY, -2) }),
+      at({ number: 3, due: addDays(TODAY, 3) }),
+      at({ number: 4, due: addDays(TODAY, -9) }),
+      at({ number: 5, due: addDays(TODAY, -1), status: "done", resolution: "Готово" }),
+    ];
+    const ordered = myTasksOrder(mine, TODAY);
+    expect(ordered.map((t) => t.number)).toEqual([4, 2, 3, 1, 5]);
     const firstNormal = ordered.findIndex((t) => !isOverdue(t, TODAY));
     expect(ordered.slice(firstNormal).some((t) => isOverdue(t, TODAY))).toBe(false);
   });
@@ -120,6 +126,28 @@ describe("правила задач (раздел 4 ТЗ)", () => {
     // Задача со встречи без автора: приоритет меняет только владелец или администратор
     expect(permissions(at({ createdBy: null }), "sakhibullina", false).priority).toBe(false);
     expect(permissions(at({ createdBy: null }), "sakhibullina", true).priority).toBe(true);
+  });
+  it("права режима управления, наблюдателя и предложенных задач (матрица раздела 2)", () => {
+    const owner = { slug: "muradyan" as const, management: "OWNER" as const };
+    const admin = { slug: "golovkin" as const, management: "ADMIN" as const };
+    expect(permissions(base, owner).archive).toBe(true);
+    expect(permissions(base, admin).archive).toBe(false);
+    expect(permissions(base, admin).owner).toBe(true);
+    expect(permissions(base, { slug: "sakhibullina" }).owner).toBe(false);
+    expect(permissions(base, { slug: "sakhibullina" }).coExecutors).toBe(true); // ответственный зовёт соисполнителей
+    expect(permissions(at({ owner: "all" }), { slug: "sakhibullina" }).coExecutors).toBe(false);
+    expect(permissions(base, { slug: "afanasyev" }).edit).toBe(true); // поставил задачу
+    expect(permissions(base, { slug: "reva" }).edit).toBe(false);
+    const observer = permissions(base, { slug: "sakhibullina", observer: true });
+    expect(Object.values(observer).every((v) => v === false)).toBe(true);
+    // Предложенную задачу ответственный не берёт в работу сам: её подтверждает режим управления
+    const proposed = at({ status: "proposed" });
+    expect(permissions(proposed, { slug: "sakhibullina" }).status).toBe(false);
+    expect(permissions(proposed, admin).confirm).toBe(true);
+    expect(newTaskStatus("reva", { slug: "reva" })).toBe("in-progress");
+    expect(newTaskStatus("loginova", { slug: "reva" })).toBe("proposed");
+    expect(newTaskStatus("all", { slug: "reva" })).toBe("proposed");
+    expect(newTaskStatus("loginova", admin)).toBe("in-progress");
   });
   it("«Выполнена» требует итог, «Не выполнена» и «Отменена» требуют причину", () => {
     expect(statusNeedsNote("done")).toBe("result");
@@ -136,5 +164,59 @@ describe("даты прототипа", () => {
   });
   it("склонение", () => {
     expect([1, 2, 5, 11, 21, 22].map((n) => plural(n, "задача", "задачи", "задач"))).toEqual(["задача", "задачи", "задач", "задач", "задача", "задачи"]);
+  });
+});
+
+describe("вкладка «Задачи» Insurance&Invest Bord", () => {
+  const csv = readFileSync("data/bord/zadachi-2026-10-05.csv", "utf8");
+
+  it("CSV: кавычки, удвоенные кавычки и перевод строки внутри ячейки", () => {
+    expect(parseCsv('a,"b, c","d ""e""",f\n1,"x\ny",3\n')).toEqual([
+      ["a", "b, c", 'd "e"', "f"],
+      ["1", "x\ny", "3"],
+    ]);
+  });
+  it("в выгрузке 51 задача со сквозными номерами и всеми девятью колонками", () => {
+    const rows = readTasksTable(csv);
+    expect(rows).toHaveLength(51);
+    expect(rows.map((r) => r.number)).toEqual(Array.from({ length: 51 }, (_, i) => i + 1));
+    expect(rows.every((r) => r.title && r.outcome && r.due && r.status && r.overdue)).toBe(true);
+  });
+  it("заголовок вкладки поменялся: импорт останавливается с понятной ошибкой", () => {
+    expect(() => readTasksTable(csv.replace("Срок,Статус", "Дедлайн,Статус"))).toThrow(/Колонка 6/);
+    expect(() => readTasksTable("просто текст")).toThrow(/нет таблицы задач/);
+  });
+  it("читает и выгрузку всей таблицы с блоками вкладок", () => {
+    const dump = `## Sheet name: Отчёт CEO\nчто-то\n\n## Sheet name: Задачи\nInsurance\n${csv}\n## Sheet name: Цели\n1,2,3\n`;
+    expect(readTasksTable(dump)).toHaveLength(51);
+  });
+  it("дата «где сейчас»: самая поздняя пометка ДД.ММ: в комментарии, иначе дата встречи", () => {
+    expect(whereUpdatedFrom("02.10: финал модели. 29.09: тезисы", "2026-09-22")).toBe("2026-10-02");
+    expect(whereUpdatedFrom("Встреча 01.10, договорились", "2026-09-30")).toBe("2026-09-30");
+    expect(whereUpdatedFrom("05.01: после праздников", "2026-12-20")).toBe("2027-01-05");
+  });
+  it("длинное тире в ячейке становится дефисом, пробелы по краям уходят", () => {
+    expect(normalizeCell("  Бюджет — 2027 ")).toBe("Бюджет - 2027");
+  });
+  it("статус просроченности считается так же, как в таблице", () => {
+    const t = makeTask({ due: "2026-09-25" });
+    expect(overdueText(t, "2026-10-04")).toBe("Просрочена на 9 дн.");
+    expect(overdueText(makeTask({ due: "2026-10-05" }), "2026-10-04")).toBe("В сроке");
+    expect(overdueText(makeTask({ status: "done", resolution: "Готово" }), "2026-10-04")).toBe("Закрыта");
+  });
+});
+
+describe("отмена последнего действия", () => {
+  it("токен читает только тот, кто действовал, и только минуту", () => {
+    process.env.SESSION_SECRET ??= "unit-test-secret-0123456789-0123456789";
+    const now = Date.now();
+    const token = issueUndoToken({ kind: "comment", number: 5, commentId: "c1" }, "person-1", now);
+    expect(readUndoToken(token, "person-1", now + 1000)).toEqual({ kind: "comment", number: 5, commentId: "c1" });
+    expect(readUndoToken(token, "person-2", now + 1000)).toBeNull();
+    expect(readUndoToken(token, "person-1", now + 61_000)).toBeNull();
+    const [body, mac] = token.split(".");
+    const forged = Buffer.from(JSON.stringify({ kind: "comment", number: 6, commentId: "c1", by: "person-1", exp: now + 60000 })).toString("base64url");
+    expect(readUndoToken(`${forged}.${mac}`, "person-1", now)).toBeNull();
+    expect(readUndoToken(`${body}.x${mac!.slice(1)}`, "person-1", now)).toBeNull();
   });
 });

@@ -164,9 +164,19 @@ export function TaskList() {
   );
 }
 
-export function TaskTable({ groups, showOwner = true }: { groups: { key: string; title: string; tasks: Task[] }[]; showOwner?: boolean }) {
+export function TaskTable({
+  groups,
+  showOwner = true,
+  onOpen,
+}: {
+  groups: { key: string; title: string; tasks: Task[] }[];
+  showOwner?: boolean;
+  /** Своё действие по щелчку на задаче: образец компонентов не открывает карточку */
+  onOpen?: (number: number) => void;
+}) {
   const { data } = usePrototype();
-  const { open } = useOpenTask();
+  const { open: openTask } = useOpenTask();
+  const open = onOpen ?? openTask;
   return (
     <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-line">
       {/* Ноутбук: таблица */}

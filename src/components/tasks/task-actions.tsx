@@ -2,13 +2,22 @@
 
 // Правки задачи с правилами раздела 4 ТЗ: перенос, отмена и «Не выполнена» без причины невозможны,
 // для «Выполнена» нужен итог, для «Заблокирована» нужно написать, чем и кто может помочь.
+// С этапа 3 правки уходят на сервер: он проверяет те же правила и права ещё раз.
 
 import { createContext, useContext, useState } from "react";
 import { usePrototype } from "@/prototype/store";
 import { formatLong, type IsoDate } from "@/prototype/dates";
 import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/prototype/dictionaries";
-import { statusNeedsNote } from "@/prototype/rules";
+import { statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/prototype/types";
+import {
+  changePriorityAction,
+  changeStateAction,
+  changeStatusAction,
+  transferDueAction,
+  updateWhereAction,
+  type TaskActionResult,
+} from "@/app/(app)/tasks/actions";
 import { Modal } from "@/components/ui/overlays";
 import { TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
@@ -17,7 +26,7 @@ type Actions = {
   changeStatus: (task: Task, next: StatusCode) => void;
   changeState: (task: Task, next: StateCode) => void;
   changePriority: (task: Task, next: PriorityCode) => void;
-  updateWhere: (task: Task, text: string) => void;
+  updateWhere: (task: Task, text: string) => Promise<boolean>;
   transfer: (task: Task) => void;
 };
 
@@ -29,36 +38,32 @@ type Pending =
 const ActionsContext = createContext<Actions | null>(null);
 
 export function TaskActionsProvider({ children }: { children: React.ReactNode }) {
-  const { updateTask, data, me } = usePrototype();
+  const { runTask, applyTaskResult } = usePrototype();
   const [pending, setPending] = useState<Pending | null>(null);
   const [text, setText] = useState("");
   const [date, setDate] = useState<IsoDate>("");
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const close = () => {
     setPending(null);
     setText("");
     setError(null);
+    setBusy(false);
   };
 
-  const applyStatus = (task: Task, next: StatusCode, note?: string) => {
-    const closed = next === "done" || next === "failed" || next === "cancelled";
-    updateTask(
-      task.number,
-      { status: next, resolution: note ?? task.resolution, closedAt: closed ? data.today : undefined },
-      { field: "Статус", before: statusOf(task.status).label, after: note ? `${statusOf(next).label}. ${note}` : statusOf(next).label },
-      `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`,
-    );
-  };
+  const statusToast = (task: Task, next: StatusCode) =>
+    task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
 
   const actions: Actions = {
     changeStatus: (task, next) => {
       const note = statusNeedsNote(next);
       if (note) {
+        setText("");
         setPending({ kind: "status", task, next, note });
         return;
       }
-      applyStatus(task, next);
+      void runTask(() => changeStatusAction(task.number, next), statusToast(task, next));
     },
     changeState: (task, next) => {
       if (next === "blocked") {
@@ -66,32 +71,43 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
         setPending({ kind: "blocked", task });
         return;
       }
-      updateTask(task.number, { state: next, blockedBy: undefined }, { field: "Состояние", before: stateLabel(task.state), after: stateLabel(next) });
+      void runTask(() => changeStateAction(task.number, next), `Состояние: ${stateLabel(next).toLowerCase()}`);
     },
-    changePriority: (task, next) =>
-      updateTask(task.number, { priority: next }, { field: "Приоритет", before: priorityOf(task.priority).label, after: priorityOf(next).label }),
-    updateWhere: (task, value) =>
-      updateTask(task.number, { where: value, whereUpdatedAt: data.today }, { field: "Где сейчас", before: task.where, after: value }),
+    changePriority: (task, next) => void runTask(() => changePriorityAction(task.number, next), `Приоритет: ${priorityOf(next).label.toLowerCase()}`),
+    updateWhere: (task, value) => runTask(() => updateWhereAction(task.number, value), "«Где сейчас» обновлено"),
     transfer: (task) => {
       setDate(task.due);
+      setText("");
       setPending({ kind: "transfer", task });
     },
   };
 
+  /** Ошибку правила показываем в самом окне, чтобы не потерять написанное */
+  const finish = async (call: () => Promise<TaskActionResult>, toastText: string) => {
+    setBusy(true);
+    try {
+      const result = await call();
+      if (!result.ok) {
+        setError(result.error);
+        setBusy(false);
+        return;
+      }
+      applyTaskResult(result, toastText);
+      close();
+    } catch {
+      setError("Нет связи с сервером: попробуйте ещё раз");
+      setBusy(false);
+    }
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pending) return;
+    if (!pending || busy) return;
     if (pending.kind === "transfer") {
       if (!date || date === pending.task.due) return setError("Выберите новый срок");
       if (!text.trim()) return setError("Без причины перенести нельзя");
       const t = pending.task;
-      updateTask(
-        t.number,
-        { due: date, transfers: [...t.transfers, { from: t.due, to: date, by: me.slug, reason: text.trim(), at: data.today }] },
-        { field: "Срок", before: formatLong(t.due), after: `${formatLong(date)}. Причина: ${text.trim()}` },
-        `Срок задачи ${t.number} перенесён`,
-      );
-      return close();
+      return void finish(() => transferDueAction(t.number, date, text.trim()), `Срок задачи ${t.number} перенесён на ${formatLong(date)}`);
     }
     if (!text.trim()) {
       return setError(
@@ -103,15 +119,11 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       );
     }
     if (pending.kind === "blocked") {
-      updateTask(
-        pending.task.number,
-        { state: "blocked", blockedBy: text.trim() },
-        { field: "Состояние", before: stateLabel(pending.task.state), after: `Заблокирована. ${text.trim()}` },
-      );
-    } else {
-      applyStatus(pending.task, pending.next, text.trim());
+      const t = pending.task;
+      return void finish(() => changeStateAction(t.number, "blocked", text.trim()), `Задача ${t.number} заблокирована`);
     }
-    close();
+    const { task, next } = pending;
+    void finish(() => changeStatusAction(task.number, next, text.trim()), statusToast(task, next));
   };
 
   const title =
@@ -163,13 +175,32 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
               <Button type="button" variant="secondary" onClick={close}>
                 Отмена
               </Button>
-              <Button type="submit">{pending.kind === "transfer" ? "Перенести" : "Сохранить"}</Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Сохраняю…" : pending.kind === "transfer" ? "Перенести" : "Сохранить"}
+              </Button>
             </div>
           </form>
         ) : null}
       </Modal>
     </ActionsContext.Provider>
   );
+}
+
+/** Действия для образца компонентов: ничего не сохраняют, только показывают, как выглядит отклик */
+export function DemoTaskActions({ children }: { children: React.ReactNode }) {
+  const { notify } = usePrototype();
+  const say = () => notify("Это образец: на настоящих задачах здесь сохраняется правка");
+  const actions: Actions = {
+    changeStatus: say,
+    changeState: say,
+    changePriority: say,
+    updateWhere: async () => {
+      say();
+      return true;
+    },
+    transfer: say,
+  };
+  return <ActionsContext.Provider value={actions}>{children}</ActionsContext.Provider>;
 }
 
 export function useTaskActions(): Actions {

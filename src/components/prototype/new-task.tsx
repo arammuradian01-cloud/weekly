@@ -38,7 +38,7 @@ function isTyping(target: EventTarget | null): boolean {
  * Диалог создания задачи живёт здесь один на всё приложение.
  */
 export function GlobalHotkeys() {
-  const { data, me, manage, createTask } = usePrototype();
+  const { data, me, manage, observer, createTask } = usePrototype();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -67,7 +67,7 @@ export function GlobalHotkeys() {
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
-      if (e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т") {
+      if (!observer && (e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т")) {
         e.preventDefault();
         openNewTask();
       }
@@ -85,35 +85,35 @@ export function GlobalHotkeys() {
       window.removeEventListener(OPEN_EVENT, onOpen);
       window.removeEventListener("keydown", onKey);
     };
-  }, [data.today, me.slug, me.direction]);
+  }, [data.today, me.slug, me.direction, observer]);
 
   // Лидер ставит задачу только себе, другому может только предложить (раздел 2 ТЗ)
   const proposing = !manage && owner !== me.slug;
 
-  const submit = (e: React.FormEvent) => {
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     if (!title.trim()) return setError("Напишите, что за задача");
     if (title.length > 120) return setError("Название длиннее 120 знаков: оставьте одну мысль");
     if (!outcome.trim()) return setError("Опишите результат: по чему понять, что задача сделана");
-    const number = createTask({
+    if (!due) return setError("Укажите срок");
+    setBusy(true);
+    const result = await createTask({
       title: title.trim(),
       outcome: outcome.trim(),
       owner,
-      coExecutors: [],
       direction,
       priority,
-      status: proposing ? "proposed" : "in-progress",
-      state: "on-track",
-      where: proposing ? "Ждёт подтверждения владельца или администратора" : "Только что поставлена",
-      whereUpdatedAt: data.today,
       due,
-      originalDue: due,
-      transfers: [],
-      source: { kind: source, note: sourceNote || SOURCES.find((s) => s.code === source)!.label },
-      links: [],
+      source,
+      sourceNote: sourceNote.trim() || undefined,
     });
+    setBusy(false);
+    if ("error" in result) return setError(result.error);
     setOpen(false);
-    router.push(`/tasks?task=${number}`);
+    router.push(`/tasks?task=${result.number}`);
   };
 
   const ownerOptions = [
@@ -156,7 +156,9 @@ export function GlobalHotkeys() {
           <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
             Отмена
           </Button>
-          <Button type="submit">{proposing ? "Предложить задачу" : "Поставить задачу"}</Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Сохраняю…" : proposing ? "Предложить задачу" : "Поставить задачу"}
+          </Button>
         </div>
       </form>
     </Modal>

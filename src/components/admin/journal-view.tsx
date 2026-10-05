@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { usePrototype } from "@/prototype/store";
 import { PEOPLE, compactName } from "@/prototype/people";
 import { diffDays, formatShort } from "@/prototype/dates";
@@ -16,6 +16,7 @@ const KINDS: { value: JournalEvent["kind"] | ""; label: string }[] = [
   { value: "login", label: "Входы" },
   { value: "settings", label: "Настройки" },
   { value: "sync", label: "Синхронизация" },
+  { value: "system", label: "Служебные" },
 ];
 
 const SOURCES: { value: JournalEvent["source"] | ""; label: string }[] = [
@@ -27,15 +28,19 @@ const SOURCES: { value: JournalEvent["source"] | ""; label: string }[] = [
 
 const SOURCE_WORD = { app: "ресурс", sheet: "таблица", system: "система" } as const;
 
-/** Общий журнал с фильтрами: человек, период, тип события, источник (раздел 6 ТЗ) */
-export function JournalView() {
+/**
+ * Общий журнал с фильтрами: человек, период, тип события, источник (раздел 6 ТЗ).
+ * live: события из базы (задачи, входы, настройки), к ним добавлены разборы weekly из таблицы, пока weekly прототип
+ */
+export function JournalView({ live }: { live: JournalEvent[] }) {
   const { data } = usePrototype();
+  const all = useMemo(() => [...live, ...data.journal].sort((a, b) => (a.at + a.time < b.at + b.time ? 1 : a.at + a.time > b.at + b.time ? -1 : 0)), [live, data.journal]);
   const [who, setWho] = useState<PersonSlug | "system" | "">("");
   const [period, setPeriod] = useState<"7" | "30" | "all">("30");
   const [kind, setKind] = useState<JournalEvent["kind"] | "">("");
   const [source, setSource] = useState<JournalEvent["source"] | "">("");
 
-  const events = data.journal.filter(
+  const events = all.filter(
     (e) =>
       (!who || e.by === who) &&
       (period === "all" || diffDays(e.at, data.today) <= Number(period)) &&
@@ -70,7 +75,7 @@ export function JournalView() {
         <SelectField label="Источник" id="j-source" value={source} onChange={(e) => setSource(e.target.value as JournalEvent["source"] | "")} className="sm:w-44" options={SOURCES} />
       </div>
       <p className="mt-3 text-[14px] text-muted" aria-live="polite">
-        Событий: {events.length}. Журнал только дописывается: править и удалять записи нельзя. События до запуска ресурса восстановлены из Insurance&Invest Bord по датам встреч и колонке «Обновлено», время изменений там не записано.
+        Событий: {events.length}. Журнал только дописывается: править и удалять записи нельзя. Разборы weekly на встречах восстановлены из Insurance&Invest Bord по датам встреч, время там не записано.
       </p>
 
       {events.length === 0 ? (
@@ -100,7 +105,10 @@ export function JournalView() {
                   <td className="px-3 py-3">
                     <Change e={e} />
                   </td>
-                  <td className="px-4 py-3 text-muted">{SOURCE_WORD[e.source]}</td>
+                  <td className="px-4 py-3 text-muted">
+                    {SOURCE_WORD[e.source]}
+                    {e.ip ? <span className="block text-[12px]">{e.ip}</span> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

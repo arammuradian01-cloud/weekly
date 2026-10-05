@@ -2,17 +2,21 @@
 
 // Поля задачи, которые меняются в один клик: и в строке списка, и в карточке.
 
-import { PRIORITIES, STATES, STATUSES } from "@/prototype/dictionaries";
-import { permissions } from "@/prototype/rules";
+import { PRIORITIES, STATES, STATUSES, priorityOf, stateLabel } from "@/prototype/dictionaries";
+import { permissions, type Viewer } from "@/lib/tasks/rules";
 import { usePrototype } from "@/prototype/store";
 import type { Task } from "@/prototype/types";
 import { InlineSelect } from "@/components/ui/overlays";
 import { PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
 import { useTaskActions } from "./task-actions";
 
+export function useViewer(): Viewer {
+  const { me, manageRole, observer } = usePrototype();
+  return { slug: me.slug, management: manageRole, observer };
+}
+
 export function useTaskPermissions(task: Task) {
-  const { me, manage } = usePrototype();
-  return permissions(task, me.slug, manage);
+  return permissions(task, useViewer());
 }
 
 export function StatusSelect({ task }: { task: Task }) {
@@ -25,7 +29,7 @@ export function StatusSelect({ task }: { task: Task }) {
       label="Статус"
       value={task.status}
       options={options}
-      disabled={!can.status}
+      disabled={task.status === "proposed" ? !can.confirm : !can.status}
       onChange={(v) => actions.changeStatus(task, v)}
       render={(v) => <StatusBadge status={v} />}
     />
@@ -39,6 +43,7 @@ export function StateSelect({ task }: { task: Task }) {
     <InlineSelect
       label="Состояние"
       value={task.state}
+      valueLabel={stateLabel(task.state)}
       options={STATES.map((s) => ({ value: s.code, label: s.label }))}
       disabled={!can.state}
       onChange={(v) => actions.changeState(task, v)}
@@ -54,6 +59,7 @@ export function PrioritySelect({ task }: { task: Task }) {
     <InlineSelect
       label="Приоритет"
       value={task.priority}
+      valueLabel={priorityOf(task.priority).label}
       options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))}
       disabled={!can.priority}
       onChange={(v) => actions.changePriority(task, v)}

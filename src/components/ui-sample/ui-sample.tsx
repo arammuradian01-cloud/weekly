@@ -13,7 +13,9 @@ import { EmptyState } from "@/components/empty-state";
 import { WeekStrip } from "@/components/brand/week-strip";
 import { TaskTable } from "@/components/tasks/task-list";
 import { EntryItem, EntryTypeBadge } from "@/components/weekly/entry-item";
-import { useTaskActions } from "@/components/tasks/task-actions";
+import { DemoTaskActions, useTaskActions } from "@/components/tasks/task-actions";
+import type { Task } from "@/prototype/types";
+import { addDays } from "@/prototype/dates";
 
 const COLORS = [
   { name: "Тёмно-синий", token: "navy", hex: "#002A3A", use: "Шапка, боковое меню, заголовки, основной текст" },
@@ -49,14 +51,46 @@ function Block({ id, title, description, children }: { id: string; title: string
   );
 }
 
+/** Выдуманные задачи образца: образец не трогает настоящие задачи команды */
+function sampleTasks(today: string, me: Task["owner"]): Task[] {
+  const base: Omit<Task, "number" | "title" | "outcome" | "status" | "state" | "priority" | "due" | "where"> = {
+    owner: me,
+    coExecutors: [],
+    direction: "department",
+    whereUpdatedAt: today,
+    originalDue: today,
+    transfers: [],
+    source: { kind: "other", note: "Образец" },
+    links: [],
+    comments: [],
+    history: [],
+    createdBy: null,
+    createdAt: today,
+    updatedAt: today,
+  };
+  return [
+    { ...base, number: 901, title: "Пример: просроченная задача в работе", outcome: "Строка на бледно-красном фоне", status: "in-progress", state: "at-risk", priority: "high", due: addDays(today, -3), originalDue: addDays(today, -10), where: "Ждём ответа партнёра", transfers: [{ from: addDays(today, -10), to: addDays(today, -3), by: null, reason: "Пример переноса", at: addDays(today, -10) }] },
+    { ...base, number: 902, title: "Пример: задача в графике со сроком на этой неделе", outcome: "Обычная строка", status: "in-progress", state: "on-track", priority: "medium", due: addDays(today, 2), where: "Черновик готов, показываем в четверг" },
+    { ...base, number: 903, title: "Пример: выполненная задача", outcome: "Закрытая строка приглушена", status: "done", state: "on-track", priority: "low", due: addDays(today, -1), where: "Готово", resolution: "Итог: ссылка на результат", closedAt: addDays(today, -1) },
+  ];
+}
+
 export function UiSample() {
-  const { data } = usePrototype();
+  return (
+    <DemoTaskActions>
+      <UiSampleBody />
+    </DemoTaskActions>
+  );
+}
+
+function UiSampleBody() {
+  const { data, me, notify } = usePrototype();
   const actions = useTaskActions();
   const [drawer, setDrawer] = useState(false);
   const [modal, setModal] = useState(false);
   const [seg, setSeg] = useState<"list" | "board">("list");
   const [chip, setChip] = useState(true);
-  const sample = [data.tasks.find((t) => t.number === 2)!, data.tasks.find((t) => t.number === 1)!, data.tasks.find((t) => t.number === 10)!];
+  const sample = sampleTasks(data.today, me.slug);
   const entry = data.entries.find((e) => e.help) ?? data.entries[0]!;
 
   return (
@@ -212,7 +246,7 @@ export function UiSample() {
         </Block>
 
         <Block id="table" title="Таблица задач" description="Статус, состояние и приоритет меняются в строке в один клик. Просроченная строка целиком на бледно-красном фоне с подписью «просрочена на N дн.».">
-          <TaskTable groups={[{ key: "sample", title: "", tasks: sample }]} />
+          <TaskTable groups={[{ key: "sample", title: "", tasks: sample }]} onOpen={() => notify("Это образец: у настоящих задач здесь открывается карточка")} />
         </Block>
 
         <Block id="entry" title="Запись weekly" description="Одна запись равна одному событию. Запрос помощи подсвечен и поднимается наверх ленты.">

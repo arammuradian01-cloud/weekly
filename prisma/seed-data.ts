@@ -13,6 +13,8 @@ export const dictionaries: Record<DictKind, DictSeed[]> = {
     { code: "deposits", label: "Депозиты и инвестиции" },
     { code: "partners", label: "Партнёрка" },
     { code: "product", label: "Продукт и CJM" },
+    // Есть в Insurance&Invest Bord (вкладка Weekly CEO), добавлено 05.10.2026
+    { code: "insurance", label: "Страхование в целом" },
     { code: "department", label: "Департамент" },
   ],
   WEEKLY_BLOCK: [

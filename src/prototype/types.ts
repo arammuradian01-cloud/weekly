@@ -51,7 +51,7 @@ export type HistoryItem = {
   after?: string;
 };
 
-export type Link = { title: string; url: string };
+export type Link = { id?: string; title: string; url: string };
 
 export type Task = {
   number: number;
@@ -115,11 +115,13 @@ export type PersonWeekly = {
 
 export type JournalEvent = {
   id: string;
+  /** Адрес, с которого пришла правка: только у событий ресурса */
+  ip?: string;
   at: IsoDate;
   time: string;
   by: PersonSlug | "system";
   source: "app" | "sheet" | "system";
-  kind: "task" | "weekly" | "comment" | "login" | "settings" | "sync";
+  kind: "task" | "weekly" | "comment" | "login" | "settings" | "sync" | "system";
   object: string;
   field?: string;
   before?: string;

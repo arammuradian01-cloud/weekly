@@ -2,6 +2,9 @@ import "dotenv/config";
 import { prisma } from "../src/lib/db";
 import { dictionaries, people, settings } from "./seed-data";
 import { issueSetupCode } from "../src/lib/setup-status";
+import { readFileSync } from "node:fs";
+import { importBordTasks } from "../src/lib/tasks/bord-import";
+import { BORD_DEFAULT } from "../scripts/lib/bord-source";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -56,12 +59,19 @@ async function main() {
     skipDuplicates: true,
   });
 
+  // Задачи из Insurance&Invest Bord загружаются один раз, в пустую базу. BORD_IMPORT=off отключает
+  if (process.env.BORD_IMPORT !== "off" && (await prisma.task.count()) === 0) {
+    const report = await importBordTasks(prisma, readFileSync(BORD_DEFAULT.file, "utf8"), { batch: BORD_DEFAULT.batch });
+    console.log(`Задачи из Insurance&Invest Bord загружены: ${report.created.length}, следующий номер ${report.nextNumber}`);
+  }
+
   const counts = {
     people: await prisma.person.count(),
     dictionaries: await prisma.dictionaryItem.count(),
     settings: await prisma.setting.count(),
+    tasks: await prisma.task.count(),
   };
-  console.log(`Стартовые данные на месте: людей ${counts.people}, значений справочников ${counts.dictionaries}, настроек ${counts.settings}`);
+  console.log(`Стартовые данные на месте: людей ${counts.people}, значений справочников ${counts.dictionaries}, настроек ${counts.settings}, задач ${counts.tasks}`);
 
   // Пока пароли не заданы, при каждом запуске выпускаем новый одноразовый код для страницы /setup
   const code = await issueSetupCode();

@@ -54,4 +54,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "backup.failed": "Резервная копия не создалась",
   "backup.check.ok": "Копия проверена: восстанавливается",
   "backup.check.failed": "Копия не восстановилась",
+  "task.create": "Задача создана",
+  "task.propose": "Задача предложена",
+  "task.update": "Задача изменена",
+  "task.comment": "Комментарий к задаче",
+  "task.archive": "Задача в архиве",
+  "task.restore": "Задача из архива",
+  "task.undo": "Действие отменено",
+  "task.import": "Задача перенесена из таблицы",
 };
