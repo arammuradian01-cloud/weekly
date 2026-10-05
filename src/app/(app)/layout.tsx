@@ -14,6 +14,7 @@ import { Toaster } from "@/components/prototype/toaster";
 import { GlobalHotkeys } from "@/components/prototype/new-task";
 import { HeaderSearch } from "@/components/prototype/header-search";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
+import { listTasks } from "@/lib/tasks/service";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const deadline = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const week = reportingWeek(new Date(), deadline);
   const managementUntil = ctx.management ? formatTime(new Date(ctx.management.until)) : null;
-  // Прототип этапа 2 считает сроки от сегодняшней даты по Москве: одинаково на сервере и в браузере
+  // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
   const prototypeMe = isPersonSlug(ctx.person.slug) ? ctx.person.slug : "golovkin";
+  // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
+  const tasks = await listTasks({ archived: ctx.management?.role === "OWNER" });
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -36,7 +39,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
-    <PrototypeProvider today={today} reportingWeek={week.week} me={prototypeMe} manageRole={ctx.management?.role ?? null}>
+    <PrototypeProvider
+      today={today}
+      reportingWeek={week.week}
+      me={prototypeMe}
+      manageRole={ctx.management?.role ?? null}
+      observer={ctx.person.role === "OBSERVER"}
+      initialTasks={tasks}
+    >
     <TaskActionsProvider>
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-navy px-3 py-5 lg:flex">

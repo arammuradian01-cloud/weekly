@@ -1,20 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { CalendarClock, Check, ExternalLink, Link2, MessageSquare, History as HistoryIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, Pencil, History as HistoryIcon } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
 import { authorName, compactName, ownerName, personOf } from "@/prototype/people";
 import { directionLabel, sourceLabel } from "@/prototype/dictionaries";
 import { formatAgo, formatLong, formatShort } from "@/prototype/dates";
 import { isOverdue, isStale, overdueDays } from "@/prototype/rules";
-import type { Task } from "@/prototype/types";
+import type { HistoryItem, Task } from "@/prototype/types";
+import { archiveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
 import { OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from "./task-fields";
 import { useTaskActions } from "./task-actions";
+import { TaskEditModal, TaskLinks } from "./task-edit";
 
 function personInitials(slug: string) {
   const p = personOf(slug as Parameters<typeof personOf>[0]);
@@ -23,12 +25,35 @@ function personInitials(slug: string) {
 }
 
 export function TaskCard({ task, standalone }: { task: Task; standalone?: boolean }) {
-  const { data, me, manage, addComment, updateTask, notify } = usePrototype();
+  const { data, me, addComment, runTask, notify } = usePrototype();
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   const [where, setWhere] = useState(task.where);
   const [comment, setComment] = useState("");
+  const [sending, setSending] = useState(false);
   const [tab, setTab] = useState<"comments" | "history">("comments");
+  const [editing, setEditing] = useState(false);
+  const [history, setHistory] = useState<HistoryItem[] | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+
+  // Задачу поменяли (здесь или у коллеги): поле «где сейчас» и история берутся заново
+  useEffect(() => setWhere(task.where), [task.where]);
+  useEffect(() => {
+    if (tab !== "history") return;
+    let alive = true;
+    taskHistoryAction(task.number)
+      .then((result) => {
+        if (!alive) return;
+        if (result.ok) {
+          setHistory(result.items);
+          setHistoryError(null);
+        } else setHistoryError(result.error);
+      })
+      .catch(() => alive && setHistoryError("История не загрузилась. Обновите страницу"));
+    return () => {
+      alive = false;
+    };
+  }, [tab, task.number, task.updatedAt, task.comments.length]);
   const overdue = isOverdue(task, data.today);
   const stale = isStale(task, data.today);
   const whereChanged = where.trim() !== task.where;
@@ -54,18 +79,36 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
         <PrioritySelect task={task} />
       </div>
 
-      {task.status === "proposed" && manage ? (
+      {task.status === "proposed" && can.confirm ? (
         <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-[14px] text-blue-700">Предложил {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет после вашего подтверждения.</p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => actions.changeStatus(task, "cancelled")}>
               Отклонить
             </Button>
-            <Button size="sm" onClick={() => updateTask(task.number, { status: "in-progress" }, { field: "Статус", before: "Предложена", after: "В работе" }, `Задача ${task.number} принята в работу`)}>
+            <Button size="sm" onClick={() => actions.changeStatus(task, "in-progress")}>
               <Check className="h-4 w-4" aria-hidden="true" />
               Принять в работу
             </Button>
           </div>
+        </div>
+      ) : null}
+
+      {task.status === "proposed" && !can.confirm ? (
+        <p className="rounded-xl bg-blue-soft px-4 py-3 text-[14px] text-blue-700">
+          Задача предложена. Задачей она станет после подтверждения владельцем или администратором.
+        </p>
+      ) : null}
+
+      {task.archived ? (
+        <div className="flex flex-col gap-3 rounded-xl bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[14px] text-ink">Задача в архиве: её видит только владелец.</p>
+          {can.archive ? (
+            <Button size="sm" variant="secondary" onClick={() => void runTask(() => archiveTaskAction(task.number, false), `Задача ${task.number} возвращена из архива`)}>
+              <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
+              Вернуть из архива
+            </Button>
+          ) : null}
         </div>
       ) : null}
 
@@ -91,7 +134,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (whereChanged) actions.updateWhere(task, where.trim());
+              if (whereChanged) void actions.updateWhere(task, where.trim());
             }}
             className="flex flex-col gap-2"
           >
@@ -115,7 +158,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
         ) : (
           <>
             <H id={`where-${task.number}`} className="text-sm font-medium text-ink">Где сейчас</H>
-            <p className="mt-1 text-[15px] text-ink">{task.where}</p>
+            <p className="mt-1 whitespace-pre-line text-[15px] text-ink">{task.where || <span className="text-muted">Пока без комментария</span>}</p>
             <p className="mt-1 text-[13px] text-muted">
               Обновлено {formatAgo(task.whereUpdatedAt, data.today)} {stale ? <StaleNote className="ml-1" /> : null}
             </p>
@@ -124,7 +167,9 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
       </section>
 
       <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-        <Meta label="Что нужно сделать" className="sm:col-span-2">{task.outcome}</Meta>
+        <Meta label="Что нужно сделать" className="sm:col-span-2">
+          <span className="whitespace-pre-line">{task.outcome}</span>
+        </Meta>
         <Meta label="Ответственный">
           <span className="inline-flex items-center gap-2">
             {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" /> : null}
@@ -155,20 +200,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           {task.source.note && task.source.note !== sourceLabel(task.source.kind) ? <span className="block text-[13px] text-muted">{task.source.note}</span> : null}
         </Meta>
         <Meta label="Ссылки на артефакты">
-          {task.links.length ? (
-            <ul className="flex flex-col gap-1">
-              {task.links.map((l) => (
-                <li key={l.url}>
-                  <a href={l.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-blue-700 hover:underline">
-                    {l.title}
-                    <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-                  </a>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-muted">Пока нет</span>
-          )}
+          <TaskLinks task={task} />
         </Meta>
         <Meta label="Поставлена">
           {formatLong(task.createdAt)}, {task.createdBy ? compactName(task.createdBy) : "на встрече"}
@@ -202,7 +234,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           onChange={setTab}
           options={[
             { value: "comments", label: "Комментарии", count: task.comments.length },
-            { value: "history", label: "История", count: task.history.length },
+            { value: "history", label: "История", count: history?.length },
           ]}
         />
         {tab === "comments" ? (
@@ -222,17 +254,19 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
               ))}
             </ol>
             <form
-              onSubmit={(e) => {
+              onSubmit={async (e) => {
                 e.preventDefault();
-                if (!comment.trim()) return;
-                addComment(task.number, comment.trim());
-                setComment("");
+                if (!comment.trim() || sending) return;
+                setSending(true);
+                const ok = await addComment(task.number, comment.trim());
+                setSending(false);
+                if (ok) setComment("");
               }}
               className="flex flex-col gap-2"
             >
               <TextArea id={`comment-${task.number}`} label="Новый комментарий" value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
               <div>
-                <Button size="sm" type="submit" variant="secondary" disabled={!comment.trim()}>
+                <Button size="sm" type="submit" variant="secondary" disabled={!comment.trim() || sending}>
                   <MessageSquare className="h-4 w-4" aria-hidden="true" />
                   Отправить
                 </Button>
@@ -240,12 +274,15 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
             </form>
           </div>
         ) : (
-          <ol className="mt-4 flex flex-col gap-3 border-l-2 border-line pl-4">
-            {task.history.map((h) => (
+          <ol className="mt-4 flex flex-col gap-3 border-l-2 border-line pl-4" aria-busy={history === null}>
+            {historyError ? <li className="text-[14px] text-danger-ink">{historyError}</li> : null}
+            {history === null && !historyError ? <li className="text-[14px] text-muted">Загружаю историю…</li> : null}
+            {history?.length === 0 ? <li className="text-[14px] text-muted">Изменений пока нет.</li> : null}
+            {(history ?? []).map((h) => (
               <li key={h.id} className="text-[14px]">
                 <p className="text-[13px] text-muted">
                   {formatShort(h.at)}
-                  {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by)}
+                  {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by as Parameters<typeof compactName>[0])}
                 </p>
                 <p className="text-ink">
                   <span className="font-medium">{h.field}</span>
@@ -259,6 +296,12 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
       </section>
 
       <div className="flex flex-wrap gap-2 border-t border-line pt-4">
+        {can.edit || can.owner || can.coExecutors ? (
+          <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+            <Pencil className="h-4 w-4" aria-hidden="true" />
+            Изменить
+          </Button>
+        ) : null}
         <Button size="sm" variant="secondary" onClick={copyLink}>
           <Link2 className="h-4 w-4" aria-hidden="true" />
           Скопировать ссылку
@@ -269,7 +312,14 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
             Открыть отдельной страницей
           </Link>
         ) : null}
+        {can.archive && !task.archived ? (
+          <Button size="sm" variant="ghost" onClick={() => void runTask(() => archiveTaskAction(task.number, true), `Задача ${task.number} в архиве`)}>
+            <Archive className="h-4 w-4" aria-hidden="true" />
+            В архив
+          </Button>
+        ) : null}
       </div>
+      <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
     </div>
   );
 }

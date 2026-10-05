@@ -22,7 +22,7 @@ export function SyncStatus() {
   return (
     <div className="flex flex-col gap-8">
       <p className="rounded-xl border border-dashed border-line px-5 py-3 text-[15px] text-ink">
-        Синхронизации с таблицей пока нет, она появится на этапе 7. Время выгрузок и записи журнала ниже показывают, как будет выглядеть страница. Число строк во вкладках посчитано по данным прототипа.
+        Синхронизации с таблицей пока нет, она появится на этапе 7. Время выгрузок и записи журнала ниже показывают, как будет выглядеть страница. Число строк во вкладках посчитано по данным ресурса.
       </p>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl bg-green-soft px-5 py-4">

@@ -92,6 +92,7 @@ export function InlineSelect<V extends string>({
   onChange,
   render,
   label,
+  valueLabel,
   disabled,
   align = "start",
 }: {
@@ -100,6 +101,8 @@ export function InlineSelect<V extends string>({
   onChange: (value: V) => void;
   render: (value: V) => React.ReactNode;
   label: string;
+  /** Подпись текущего значения, если его нет среди вариантов (например, «Не задан») */
+  valueLabel?: string;
   disabled?: boolean;
   align?: "start" | "end";
 }) {
@@ -107,7 +110,7 @@ export function InlineSelect<V extends string>({
   return (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`${label}: ${options.find((o) => o.value === value)?.label ?? value}. Изменить`}
+        aria-label={`${label}: ${options.find((o) => o.value === value)?.label ?? valueLabel ?? value}. Изменить`}
         className="group -mx-1.5 inline-flex min-h-9 items-center gap-1 rounded-md px-1.5 hover:bg-surface data-[state=open]:bg-surface"
       >
         {render(value)}

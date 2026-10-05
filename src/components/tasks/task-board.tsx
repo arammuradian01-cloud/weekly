@@ -18,7 +18,8 @@ import { usePrototype } from "@/prototype/store";
 import { ownerName } from "@/prototype/people";
 import { STATUSES, type StatusCode } from "@/prototype/dictionaries";
 import { formatShort } from "@/prototype/dates";
-import { defaultOrder, isOverdue, overdueDays, permissions } from "@/prototype/rules";
+import { defaultOrder, isOverdue, overdueDays, permissions } from "@/lib/tasks/rules";
+import { useViewer } from "./task-fields";
 import type { Task } from "@/prototype/types";
 import { cn } from "@/lib/cn";
 import { OverdueNote, PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
@@ -100,7 +101,8 @@ function Column({ status, tasks, children }: { status: StatusCode; tasks: Task[]
 }
 
 export function TaskBoard() {
-  const { data, me, manage, notify } = usePrototype();
+  const { data, me, notify } = usePrototype();
+  const viewer = useViewer();
   const actions = useTaskActions();
   const { open } = useOpenTask();
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -148,7 +150,7 @@ export function TaskBoard() {
             return (
               <Column key={col.code} status={col.code} tasks={colTasks}>
                 {colTasks.map((t) => (
-                  <BoardCard key={t.number} task={t} today={data.today} onOpen={() => open(t.number)} canMove={permissions(t, me.slug, manage).status} />
+                  <BoardCard key={t.number} task={t} today={data.today} onOpen={() => open(t.number)} canMove={t.status === "proposed" ? permissions(t, viewer).confirm : permissions(t, viewer).status} />
                 ))}
               </Column>
             );

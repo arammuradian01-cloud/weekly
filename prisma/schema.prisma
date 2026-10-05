@@ -38,6 +38,29 @@ enum AttemptKind {
   MANAGEMENT
 }
 
+/// Статусы задач завязаны на правила просрочки (раздел 4 ТЗ), поэтому это перечисление, а не справочник
+enum TaskStatus {
+  PROPOSED
+  IN_PROGRESS
+  CLARIFY
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum TaskState {
+  ON_TRACK
+  AT_RISK
+  BLOCKED
+}
+
 /// Участник команды. Состав меняет владелец, без разработчика.
 model Person {
   id                 String          @id @default(cuid())
@@ -55,6 +78,13 @@ model Person {
   createdAt          DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
 
+  ownedTasks   Task[]           @relation("TaskOwner")
+  createdTasks Task[]           @relation("TaskCreator")
+  coTasks      TaskCoExecutor[]
+  transfers    TaskTransfer[]
+  taskComments TaskComment[]
+  taskLinks    TaskLink[]
+
   @@map("people")
 }
 
@@ -70,6 +100,7 @@ model DictionaryItem {
   active    Boolean  @default(true)
   isDefault Boolean  @default(false)
   people    Person[]
+  tasks     Task[]
 
   @@unique([kind, code])
   @@map("dictionary_items")
@@ -115,4 +146,118 @@ model LoginAttempt {
 
   @@index([ip, kind, at])
   @@map("login_attempts")
+}
+
+/// Задача (раздел 4 ТЗ). Номер сквозной и не меняется, новые выдаются из настройки tasks.nextNumber.
+model Task {
+  id             String         @id @default(cuid())
+  number         Int            @unique
+  /// До 120 знаков, одна мысль
+  title          String
+  /// Ожидаемый результат: по чему понять, что задача сделана
+  outcome        String
+  /// null и ownerAll = false: ответственный не назначен
+  ownerId        String?
+  owner          Person?        @relation("TaskOwner", fields: [ownerId], references: [id])
+  /// «Все лидеры»: только для общих задач
+  ownerAll       Boolean        @default(false)
+  directionId    String
+  direction      DictionaryItem @relation(fields: [directionId], references: [id])
+  /// null: приоритет не задан (задачи из таблицы, где его нет)
+  priority       TaskPriority?
+  status         TaskStatus     @default(IN_PROGRESS)
+  /// null: состояние не задано (задачи из таблицы)
+  state          TaskState?
+  /// Чем заблокирована и кто может помочь: обязательно при BLOCKED
+  blockedBy      String?
+  /// «Где сейчас»: одна-две фразы о текущем состоянии
+  whereNow       String         @default("")
+  whereUpdatedAt DateTime       @db.Date
+  due            DateTime       @db.Date
+  /// Исходный срок не меняется. null: срок переносили в таблице до запуска ресурса, прежний не записан
+  originalDue    DateTime?      @db.Date
+  /// Код из справочника TASK_SOURCE: meeting, weekly, ceo, other
+  sourceCode     String         @default("other")
+  sourceNote     String?
+  /// Дата встречи, на которой поставили задачу
+  sourceDate     DateTime?      @db.Date
+  /// Запись weekly, из которой сделана задача (этап 4)
+  weeklyEntryId  String?
+  /// null: задача поставлена на встрече, автор в таблице не записан
+  createdById    String?
+  createdBy      Person?        @relation("TaskCreator", fields: [createdById], references: [id])
+  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
+  closedAt       DateTime?      @db.Timestamptz(3)
+  /// Итог для DONE, причина для FAILED и CANCELLED
+  resolution     String?
+  archivedAt     DateTime?      @db.Timestamptz(3)
+  /// Партия импорта из таблицы, например bord-2026-10-05. Нужна сверке
+  importBatch    String?
+
+  coExecutors TaskCoExecutor[]
+  transfers   TaskTransfer[]
+  comments    TaskComment[]
+  links       TaskLink[]
+
+  @@index([status])
+  @@index([ownerId])
+  @@map("tasks")
+}
+
+model TaskCoExecutor {
+  taskId   String
+  task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  personId String
+  person   Person @relation(fields: [personId], references: [id])
+
+  @@id([taskId, personId])
+  @@map("task_co_executors")
+}
+
+/// Перенос срока: с какой даты на какую, кто и почему
+model TaskTransfer {
+  id      String    @id @default(cuid())
+  taskId  String
+  task    Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// null: прежний срок не записан (перенос в таблице до запуска ресурса)
+  fromDue DateTime? @db.Date
+  toDue   DateTime  @db.Date
+  reason  String
+  byId    String?
+  by      Person?   @relation(fields: [byId], references: [id])
+  /// null: время переноса не записано
+  at      DateTime? @db.Timestamptz(3)
+
+  @@index([taskId])
+  @@map("task_transfers")
+}
+
+/// Комментарии не затираются: только добавляются
+model TaskComment {
+  id       String       @id @default(cuid())
+  taskId   String
+  task     Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId String
+  author   Person       @relation(fields: [authorId], references: [id])
+  text     String
+  source   ChangeSource @default(APP)
+  at       DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@index([taskId, at])
+  @@map("task_comments")
+}
+
+model TaskLink {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  title     String
+  url       String
+  addedById String?
+  addedBy   Person?  @relation(fields: [addedById], references: [id])
+  at        DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([taskId])
+  @@map("task_links")
 }
