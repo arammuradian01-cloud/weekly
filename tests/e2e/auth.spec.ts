@@ -106,7 +106,7 @@ test("владелец включает режим управления толь
 
   await page.goto("/journal");
   await expect(page).toHaveURL(/\/journal$/);
-  // Живые события ресурса лежат под выдуманным журналом прототипа в раскрывающемся блоке
+  // Живые события ресурса лежат под журналом прототипа в раскрывающемся блоке
   await page.getByText("Живые события ресурса").click();
   await expect(page.getByRole("cell", { name: "Включён режим управления" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Неверный пароль режима управления" }).first()).toBeVisible();

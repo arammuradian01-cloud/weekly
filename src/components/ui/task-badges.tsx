@@ -27,6 +27,7 @@ const PRIORITY_MARK: Record<PriorityCode, string> = {
   high: "bg-orange",
   medium: "bg-slate",
   low: "bg-[#b4c2c9]",
+  unset: "border border-dashed border-[#90a4ae] bg-transparent",
 };
 
 const PRIORITY_TEXT: Record<PriorityCode, string> = {
@@ -34,6 +35,7 @@ const PRIORITY_TEXT: Record<PriorityCode, string> = {
   high: "text-[#9a4a05] font-medium",
   medium: "text-ink",
   low: "text-muted",
+  unset: "text-muted",
 };
 
 export function PriorityTag({ priority, className }: { priority: PriorityCode; className?: string }) {
@@ -49,11 +51,12 @@ const STATE_DOT: Record<StateCode, string> = {
   "on-track": "bg-green",
   "at-risk": "bg-[#f2b600]",
   blocked: "bg-danger",
+  unset: "border border-dashed border-[#90a4ae] bg-transparent",
 };
 
 export function StateDot({ state, className }: { state: StateCode; className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-2 whitespace-nowrap text-[14px] text-ink", state === "blocked" && "font-medium text-danger-ink", className)}>
+    <span className={cn("inline-flex items-center gap-2 whitespace-nowrap text-[14px] text-ink", state === "blocked" && "font-medium text-danger-ink", state === "unset" && "text-muted", className)}>
       <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATE_DOT[state])} aria-hidden="true" />
       {stateLabel(state)}
     </span>

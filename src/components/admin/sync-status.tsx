@@ -21,6 +21,9 @@ export function SyncStatus() {
   const [confirm, setConfirm] = useState(false);
   return (
     <div className="flex flex-col gap-8">
+      <p className="rounded-xl border border-dashed border-line px-5 py-3 text-[15px] text-ink">
+        Синхронизации с таблицей пока нет, она появится на этапе 7. Время выгрузок и записи журнала ниже показывают, как будет выглядеть страница. Число строк во вкладках посчитано по данным прототипа.
+      </p>
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-xl bg-green-soft px-5 py-4">
           <p className="inline-flex items-center gap-2 text-[14px] font-medium text-green-ink">
@@ -100,7 +103,7 @@ export function SyncStatus() {
             <span className="text-ink">Сверка</span>
             <span className="inline-flex items-center gap-1.5 text-warning-ink">
               <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-              Задача 21: статус правили в таблице руками, вернули значение ресурса
+              Пример: статус задачи правили в таблице руками, вернули значение ресурса
             </span>
           </li>
         </ul>

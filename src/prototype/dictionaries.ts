@@ -3,12 +3,14 @@
 
 import type { BadgeTone } from "@/components/ui/badge";
 
-export type DirectionCode = "osago" | "kasko" | "red" | "deposits" | "partners" | "product" | "department";
-export type BlockCode = "key-changes" | "partners" | "product" | "risks" | "team";
+export type DirectionCode = "osago" | "kasko" | "red" | "deposits" | "partners" | "product" | "insurance" | "department";
+export type BlockCode = "key-changes" | "numbers" | "traffic" | "partners" | "product" | "risks" | "team";
 export type EntryTypeCode = "result" | "event" | "risk" | "plan";
 export type StatusCode = "proposed" | "in-progress" | "clarify" | "done" | "failed" | "cancelled";
-export type PriorityCode = "critical" | "high" | "medium" | "low";
-export type StateCode = "on-track" | "at-risk" | "blocked";
+/** unset: задача пришла из таблицы, где приоритета нет. Выбрать «не задан» вручную нельзя */
+export type PriorityCode = "critical" | "high" | "medium" | "low" | "unset";
+/** unset: задача пришла из таблицы, где состояния нет. Выбрать «не задано» вручную нельзя */
+export type StateCode = "on-track" | "at-risk" | "blocked" | "unset";
 export type WeeklyStateCode = "not-started" | "draft" | "submitted" | "late";
 export type SourceCode = "meeting" | "weekly" | "ceo" | "other";
 
@@ -21,11 +23,16 @@ export const DIRECTIONS: Item<DirectionCode>[] = [
   { code: "deposits", label: "Депозиты и инвестиции" },
   { code: "partners", label: "Партнёрка" },
   { code: "product", label: "Продукт и CJM" },
+  // Есть в Insurance&Invest Bord, в справочнике ТЗ не было: сверить с Арамом
+  { code: "insurance", label: "Страхование в целом" },
   { code: "department", label: "Департамент" },
 ];
 
 export const BLOCKS: Item<BlockCode>[] = [
   { code: "key-changes", label: "Ключевые изменения" },
+  // «Цифры и прогноз» и «Трафик и маркетинг» команда уже использует во вкладке Weekly CEO
+  { code: "numbers", label: "Цифры и прогноз" },
+  { code: "traffic", label: "Трафик и маркетинг" },
   { code: "partners", label: "Партнёры и СК" },
   { code: "product", label: "Продукт и CJM" },
   { code: "risks", label: "Риски и решения" },
@@ -54,12 +61,14 @@ export const PRIORITIES: (Item<PriorityCode> & { rank: number })[] = [
   { code: "medium", label: "Средний", rank: 2 },
   { code: "low", label: "Низкий", rank: 3 },
 ];
+const PRIORITY_UNSET = { code: "unset" as const, label: "Не задан", rank: 2 };
 
 export const STATES: Item<StateCode>[] = [
   { code: "on-track", label: "В графике" },
   { code: "at-risk", label: "Есть риск" },
   { code: "blocked", label: "Заблокирована" },
 ];
+const STATE_UNSET = { code: "unset" as const, label: "Не задано" };
 
 export const WEEKLY_STATES: (Item<WeeklyStateCode> & { tone: BadgeTone })[] = [
   { code: "submitted", label: "Сдан", tone: "green" },
@@ -83,8 +92,8 @@ export const directionLabel = (c: DirectionCode) => labelOf(DIRECTIONS, c);
 export const blockLabel = (c: BlockCode) => labelOf(BLOCKS, c);
 export const entryTypeLabel = (c: EntryTypeCode) => labelOf(ENTRY_TYPES, c);
 export const statusOf = (c: StatusCode) => STATUSES.find((s) => s.code === c)!;
-export const priorityOf = (c: PriorityCode) => PRIORITIES.find((p) => p.code === c)!;
-export const stateLabel = (c: StateCode) => labelOf(STATES, c);
+export const priorityOf = (c: PriorityCode) => PRIORITIES.find((p) => p.code === c) ?? PRIORITY_UNSET;
+export const stateLabel = (c: StateCode) => labelOf([...STATES, STATE_UNSET], c);
 export const weeklyStateOf = (c: WeeklyStateCode) => WEEKLY_STATES.find((s) => s.code === c)!;
 export const sourceLabel = (c: SourceCode) => labelOf(SOURCES, c);
 

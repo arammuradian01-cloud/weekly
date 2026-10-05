@@ -36,6 +36,8 @@ export function EntryForm({
     onSave({
       ...e,
       what: e.what.trim(),
+      fact: e.fact?.trim() || undefined,
+      impact: e.impact?.trim() || undefined,
       help: needHelp ? e.help?.trim() : undefined,
       links: link.trim() ? [{ title: "Ссылка", url: link.trim() }] : [],
     });
@@ -50,7 +52,10 @@ export function EntryForm({
       </div>
       <TextArea label="Что произошло" id={`${e.id}-what`} value={e.what} onChange={(ev) => set("what", ev.target.value)} rows={2} counter={{ value: e.what.length, max: WHAT_MAX }} autoFocus />
       <TextArea label="Подробнее" id={`${e.id}-details`} value={e.details ?? ""} onChange={(ev) => set("details", ev.target.value)} counter={{ value: (e.details ?? "").length, max: DETAILS_MAX }} />
-      <TextArea label="Влияние на бизнес" id={`${e.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} hint="Словами, без отдельных цифр" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <TextArea label="Влияние на бизнес" id={`${e.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} hint="Словами: что это меняет для выручки, маржи или клиентов" />
+        <TextArea label="Цифра или факт" id={`${e.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} hint="Одна цифра или факт, на который опирается запись" />
+      </div>
       <div className="flex flex-col gap-2">
         <TextArea label="Что делаем дальше" id={`${e.id}-next`} value={e.next ?? ""} onChange={(ev) => set("next", ev.target.value)} rows={2} />
         <div>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { CalendarClock, Check, ExternalLink, Link2, MessageSquare, History as HistoryIcon } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
-import { compactName, ownerName, personOf } from "@/prototype/people";
+import { authorName, compactName, ownerName, personOf } from "@/prototype/people";
 import { directionLabel, sourceLabel } from "@/prototype/dictionaries";
 import { formatAgo, formatLong, formatShort } from "@/prototype/dates";
 import { isOverdue, isStale, overdueDays } from "@/prototype/rules";
@@ -56,7 +56,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
 
       {task.status === "proposed" && manage ? (
         <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[14px] text-blue-700">Предложил {personOf(task.createdBy).fullName}. Задачей она станет после вашего подтверждения.</p>
+          <p className="text-[14px] text-blue-700">Предложил {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет после вашего подтверждения.</p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => actions.changeStatus(task, "cancelled")}>
               Отклонить
@@ -139,7 +139,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           </span>
           {task.transfers.length ? (
             <span className="mt-0.5 block text-[13px] text-muted">
-              Исходный срок {formatLong(task.originalDue)}, переносов {task.transfers.length}
+              {task.transfers[0]?.from === null ? "Исходный срок не записан" : `Исходный срок ${formatLong(task.originalDue)}`}, переносов {task.transfers.length}
             </span>
           ) : null}
           {can.due && task.status !== "done" && task.status !== "cancelled" && task.status !== "failed" ? (
@@ -171,7 +171,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           )}
         </Meta>
         <Meta label="Поставлена">
-          {formatLong(task.createdAt)}, {compactName(task.createdBy)}
+          {formatLong(task.createdAt)}, {task.createdBy ? compactName(task.createdBy) : "на встрече"}
         </Meta>
         <Meta label="Обновлена">{formatAgo(task.updatedAt, data.today)}</Meta>
       </dl>
@@ -185,9 +185,9 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
             {task.transfers.map((t, i) => (
               <li key={i} className="rounded-lg bg-surface px-3.5 py-2.5 text-[14px]">
                 <span className="font-medium tabular-nums text-ink">
-                  {formatShort(t.from)} на {formatShort(t.to)}
+                  {t.from ? `${formatShort(t.from)} на ${formatShort(t.to)}` : `На ${formatShort(t.to)}`}
                 </span>
-                <span className="text-muted">, {compactName(t.by)}, {formatShort(t.at)}</span>
+                {t.by && t.at ? <span className="text-muted">, {compactName(t.by)}, {formatShort(t.at)}</span> : null}
                 <p className="mt-0.5 text-ink">{t.reason}</p>
               </li>
             ))}
@@ -244,7 +244,8 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
             {task.history.map((h) => (
               <li key={h.id} className="text-[14px]">
                 <p className="text-[13px] text-muted">
-                  {formatShort(h.at)}, {h.time}, {h.by === "system" ? "система" : compactName(h.by)}
+                  {formatShort(h.at)}
+                  {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by)}
                 </p>
                 <p className="text-ink">
                   <span className="font-medium">{h.field}</span>

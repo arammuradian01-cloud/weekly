@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ExternalLink, HandHelping, Star } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
 import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/prototype/dictionaries";
-import { compactName } from "@/prototype/people";
+import { authorName } from "@/prototype/people";
 import type { WeeklyEntry } from "@/prototype/types";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -35,16 +35,22 @@ export function EntryItem({ entry, showAuthor, large }: { entry: WeeklyEntry; sh
         {showAuthor ? (
           <>
             <span aria-hidden="true">/</span>
-            <span className="font-medium text-ink">{compactName(entry.author)}</span>
+            <span className="font-medium text-ink">{authorName(entry.author, "compact", "Общее, без автора")}</span>
           </>
         ) : null}
       </div>
       <h3 className={cn("font-semibold leading-snug text-ink", large ? "text-[24px]" : "text-[16px]")}>{entry.what}</h3>
-      {entry.details ? <p className={cn("leading-relaxed text-ink", large ? "text-[19px]" : "text-[15px]")}>{entry.details}</p> : null}
+      {entry.details ? <p className={cn("whitespace-pre-line leading-relaxed text-ink", large ? "text-[19px]" : "text-[15px]")}>{entry.details}</p> : null}
       {entry.impact ? (
         <p className={cn("leading-relaxed", large ? "text-[19px]" : "text-[15px]")}>
           <span className="text-muted">Влияние на бизнес: </span>
           {entry.impact}
+        </p>
+      ) : null}
+      {entry.fact ? (
+        <p className={cn("leading-relaxed", large ? "text-[19px]" : "text-[15px]")}>
+          <span className="text-muted">Цифра или факт: </span>
+          {entry.fact}
         </p>
       ) : null}
       {entry.next ? (

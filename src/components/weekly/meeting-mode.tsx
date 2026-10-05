@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
-import { PEOPLE, personOf } from "@/prototype/people";
+import { feedWeek } from "@/prototype/data";
+import { PEOPLE, authorName, personOf } from "@/prototype/people";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
+import type { PersonSlug } from "@/prototype/types";
 import { EntryItem } from "./entry-item";
 
 /**
@@ -16,10 +18,13 @@ import { EntryItem } from "./entry-item";
  */
 export function MeetingMode() {
   const { data } = usePrototype();
-  const week = data.reportingWeek;
+  // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе
+  const week = feedWeek(data);
   const entries = data.entries.filter((e) => e.week === week);
-  const leaders = PEOPLE.filter((p) => p.role !== "OWNER" && entries.some((e) => e.author === p.slug));
-  const slides = ["risks", ...leaders.map((p) => p.slug)] as const;
+  // Лидеры по очереди, владелец последним. Общие записи без автора отдельным шагом после рисков
+  const leaders = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => Number(a.role === "OWNER") - Number(b.role === "OWNER"));
+  const hasCommon = entries.some((e) => !e.author);
+  const slides: string[] = ["risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   const [index, setIndex] = useState(0);
   const slide = slides[index]!;
 
@@ -33,7 +38,7 @@ export function MeetingMode() {
   }, [slides.length]);
 
   const risky = entries.filter((e) => e.type === "risk" || e.help).sort((a, b) => Number(!!b.help) - Number(!!a.help));
-  const weekly = slide !== "risks" ? data.weeklies.find((w) => w.week === week && w.author === slide) : undefined;
+  const weekly = slide !== "risks" && slide !== "common" ? data.weeklies.find((w) => w.week === week && w.author === slide) : undefined;
 
   return (
     <div className="flex min-h-[70vh] flex-col">
@@ -50,7 +55,7 @@ export function MeetingMode() {
                   i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                 )}
               >
-                {s === "risks" ? "Риски и помощь" : personOf(s).shortName}
+                {s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
               </button>
             </li>
           ))}
@@ -79,19 +84,35 @@ export function MeetingMode() {
             <ul className="mt-8 flex flex-col gap-8">
               {risky.map((e) => (
                 <li key={e.id} className="border-l-4 border-danger pl-5">
-                  <p className="text-[17px] font-semibold text-muted">{personOf(e.author).fullName}</p>
+                  <h2 className="text-[17px] font-semibold text-muted">{authorName(e.author, "full", "Общее, без автора")}</h2>
                   <EntryItem entry={e} large />
                 </li>
               ))}
             </ul>
           </>
+        ) : slide === "common" ? (
+          <>
+            <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">Общее, без автора</h1>
+            <p className="mt-2 text-[19px] text-muted">Записи на «Все лидеры»: решаем, кто их берёт</p>
+            <h2 className="sr-only">Записи weekly</h2>
+            <ul className="mt-8 flex flex-col gap-8">
+              {entries
+                .filter((e) => !e.author)
+                .map((e) => (
+                  <li key={e.id} className="max-w-[72ch]">
+                    <EntryItem entry={e} large />
+                  </li>
+                ))}
+            </ul>
+          </>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">{personOf(slide).fullName}</h1>
+              <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">{personOf(slide as PersonSlug).fullName}</h1>
               <WeeklyBadge state={weekly?.state ?? "not-started"} />
             </div>
             {weekly?.headline ? <p className="mt-3 max-w-[60ch] text-[24px] leading-snug text-ink">{weekly.headline}</p> : null}
+            <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries
                 .filter((e) => e.author === slide)

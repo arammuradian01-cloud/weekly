@@ -75,7 +75,7 @@ export function TaskList() {
         ? [...PEOPLE.map((p) => p.slug as string), "all"]
         : groupBy === "direction"
           ? DIRECTIONS.map((d) => d.code as string)
-          : PRIORITIES.map((p) => p.code as string);
+          : [...PRIORITIES.map((p) => p.code as string), "unset"];
     const titleOf = (k: string) =>
       groupBy === "owner"
         ? ownerName(k as Task["owner"])
@@ -236,9 +236,9 @@ export function TaskTable({ groups, showOwner = true }: { groups: { key: string;
         {groups.map((g) => (
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
-              <h3 className="border-b border-line bg-surface px-4 py-2 text-[15px] font-semibold text-ink">
+              <h2 className="border-b border-line bg-surface px-4 py-2 text-[15px] font-semibold text-ink">
                 {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
-              </h3>
+              </h2>
             ) : null}
             <ul className="divide-y divide-line">
               {g.tasks.map((t) => {

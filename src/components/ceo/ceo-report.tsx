@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 import { ClipboardCopy, RefreshCw } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
-import { personOf } from "@/prototype/people";
+import { feedWeek, meetingDateOf } from "@/prototype/data";
+import { formatLong } from "@/prototype/dates";
+import { authorName } from "@/prototype/people";
 import type { WeeklyEntry } from "@/prototype/types";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/primitives";
@@ -17,8 +19,9 @@ function clean(text: string): string {
 }
 
 function line(e: WeeklyEntry): string {
-  const who = personOf(e.author).shortName;
-  return `- ${e.what}${e.impact ? `. ${e.impact.replace(/\.$/, "")}` : ""} (${who})`;
+  const who = authorName(e.author, "short", "все лидеры");
+  const extra = e.fact ?? e.impact;
+  return `- ${e.what.replace(/\.$/, "")}${extra ? `. ${extra.replace(/\.$/, "")}` : ""} (${who})`;
 }
 
 function build(entries: WeeklyEntry[]): Sections {
@@ -28,15 +31,17 @@ function build(entries: WeeklyEntry[]): Sections {
     risks: flagged.filter((e) => e.type === "risk").map(line).join("\n"),
     next: flagged
       .filter((e) => e.next || e.type === "plan")
-      .map((e) => `- ${e.next ?? e.what} (${personOf(e.author).shortName})`)
+      .map((e) => `- ${e.next ?? e.what} (${authorName(e.author, "short", "все лидеры")})`)
       .join("\n"),
   };
 }
 
 export function CeoReport() {
   const { data, notify } = usePrototype();
-  const week = data.reportingWeek;
+  // Пока за отчётную неделю записей нет, отчёт собирается по последней разобранной неделе
+  const week = feedWeek(data);
   const entries = data.entries.filter((e) => e.week === week);
+  const pastWeeks = [...new Set(data.entries.map((e) => e.week))].filter((w) => w < week).sort((a, b) => b - a);
   const flaggedCount = entries.filter((e) => e.ceo).length;
   const [sections, setSections] = useState<Sections>(() => build(entries));
   const set = (key: keyof Sections, value: string) => setSections((s) => ({ ...s, [key]: clean(value) }));
@@ -106,10 +111,13 @@ export function CeoReport() {
             <p className="text-[15px] font-medium text-ink">Неделя {week}</p>
             <p className="text-[13px] text-muted">Черновик, правите сейчас</p>
           </li>
-          {[1, 2].map((d) => (
-            <li key={d} className="px-4 py-3">
-              <p className="text-[15px] font-medium text-ink">Неделя {week - d}</p>
-              <p className="text-[13px] text-muted">Собран, правил Арам</p>
+          {pastWeeks.map((w) => (
+            <li key={w} className="px-4 py-3">
+              <p className="text-[15px] font-medium text-ink">Неделя {w}</p>
+              <p className="text-[13px] text-muted">
+                {data.entries.filter((e) => e.week === w && e.ceo).length} записей в отчёт CEO
+                {meetingDateOf(w) ? `, встреча ${formatLong(meetingDateOf(w)!)}` : ""}. Собирали в таблице
+              </p>
             </li>
           ))}
         </ul>

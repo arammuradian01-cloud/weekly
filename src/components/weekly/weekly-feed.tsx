@@ -5,7 +5,9 @@ import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, MonitorPlay, PenLine } from "lucide-react";
 import { usePrototype } from "@/prototype/store";
-import { PEOPLE, personOf } from "@/prototype/people";
+import { feedWeek, meetingDateOf } from "@/prototype/data";
+import { formatLong } from "@/prototype/dates";
+import { PEOPLE, authorName } from "@/prototype/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/prototype/dictionaries";
 import type { PersonSlug, WeeklyEntry } from "@/prototype/types";
 import { cn } from "@/lib/cn";
@@ -23,9 +25,11 @@ export function useWeekParam() {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const week = Number(params.get("week")) || data.reportingWeek;
-  const setWeek = (w: number) => router.replace(w === data.reportingWeek ? pathname : `${pathname}?week=${w}`, { scroll: false });
-  return { week, setWeek };
+  // Пока за отчётную неделю никто не сдал, по умолчанию открывается последняя разобранная
+  const fallback = feedWeek(data);
+  const week = Number(params.get("week")) || fallback;
+  const setWeek = (w: number) => router.replace(w === fallback ? pathname : `${pathname}?week=${w}`, { scroll: false });
+  return { week, setWeek, isFallback: !params.get("week") && fallback !== data.reportingWeek };
 }
 
 export function WeekSwitcher({ week, setWeek }: { week: number; setWeek: (w: number) => void }) {
@@ -55,7 +59,7 @@ export function WeekSwitcher({ week, setWeek }: { week: number; setWeek: (w: num
 
 export function WeeklyFeed() {
   const { data, me } = usePrototype();
-  const { week, setWeek } = useWeekParam();
+  const { week, setWeek, isFallback } = useWeekParam();
   const [view, setView] = useState<View>("people");
   const [direction, setDirection] = useState<DirectionCode | "">("");
   const [block, setBlock] = useState<BlockCode | "">("");
@@ -90,7 +94,8 @@ export function WeeklyFeed() {
           </div>
           <Link href="/weekly/meeting" className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <MonitorPlay className="h-4 w-4" aria-hidden="true" />
-            Режим встречи
+            <span className="sm:hidden">Встреча</span>
+            <span className="hidden sm:inline">Режим встречи</span>
           </Link>
           <Link href="/weekly/submit" className={buttonClass("primary", "md", "px-3 sm:px-5")}>
             <PenLine className="h-4 w-4" aria-hidden="true" />
@@ -98,6 +103,16 @@ export function WeeklyFeed() {
           </Link>
         </div>
       </header>
+
+      {isFallback ? (
+        <p className="mb-4 rounded-xl border border-line px-5 py-3 text-[15px] text-ink">
+          За неделю {data.reportingWeek} записей пока нет. Показана неделя {week}
+          {meetingDateOf(week) ? `, её разбирали на встрече ${formatLong(meetingDateOf(week)!)}` : ""}.{" "}
+          <button type="button" onClick={() => setWeek(data.reportingWeek)} className="font-medium text-blue-700 hover:underline">
+            Открыть неделю {data.reportingWeek}
+          </button>
+        </p>
+      ) : null}
 
       <SubmissionStrip week={week} />
 
@@ -136,7 +151,7 @@ export function WeeklyFeed() {
 
       {all.length === 0 ? (
         <EmptyState title={`За неделю ${week} записей нет`} className="mt-6">
-          В прототипе есть три недели. В рабочей версии архив хранится без ограничения срока.
+          В прототипе есть недели {[...new Set(data.entries.map((e) => e.week))].sort((a, b) => a - b).join(" и ")} из Insurance&Invest Bord. В рабочей версии архив хранится без ограничения срока.
         </EmptyState>
       ) : entries.length === 0 ? (
         <EmptyState title="Под эти фильтры записей нет" className="mt-6">
@@ -164,7 +179,7 @@ function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
       <ul className="mt-3 flex flex-col gap-3">
         {entries.map((e) => (
           <li key={e.id} className="text-[15px]">
-            <span className="font-semibold text-ink">{personOf(e.author).shortName}:</span> {e.what}.{" "}
+            <span className="font-semibold text-ink">{authorName(e.author, "short", "Общее")}:</span> {e.what}.{" "}
             <span className="font-medium text-warning-ink">{e.help}</span>
           </li>
         ))}
@@ -174,15 +189,45 @@ function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
 }
 
 function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] }) {
-  const { data } = usePrototype();
+  const { data, manage, assignAuthor } = usePrototype();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
   const stateOf = (slug: PersonSlug) => data.weeklies.find((w) => w.week === week && w.author === slug)?.state ?? "not-started";
   // Сначала сдавшие, потом черновики, в конце те, кто не начинал
   const authors = PEOPLE.filter((p) => entries.some((e) => e.author === p.slug) || data.weeklies.some((w) => w.week === week && w.author === p.slug)).sort(
     (a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)],
   );
+  const common = entries.filter((e) => !e.author);
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
+      {common.length ? (
+        <section aria-labelledby="wk-common" className="flex flex-col rounded-xl ring-1 ring-line xl:col-span-2">
+          <header className="border-b border-line px-5 py-4">
+            <h2 id="wk-common" className="text-[17px] font-semibold text-ink">
+              Общее, без автора <span className="font-normal text-muted">{common.length}</span>
+            </h2>
+            <p className="mt-1 text-[15px] text-muted">
+              В таблице записаны на «Все лидеры».{manage ? " Назначьте автора, и запись переедет в его weekly" : " Автора назначает владелец или администратор"}
+            </p>
+          </header>
+          <ul className="flex flex-col divide-y divide-line">
+            {common.map((e) => (
+              <li key={e.id} className="flex flex-col gap-3 px-5 py-4">
+                <EntryItem entry={e} />
+                {manage ? (
+                  <SelectField
+                    label="Автор"
+                    id={`assign-${e.id}`}
+                    value=""
+                    onChange={(ev) => ev.target.value && assignAuthor(e.id, ev.target.value as PersonSlug)}
+                    className="sm:w-72"
+                    options={[{ value: "", label: "Выберите, кто берёт" }, ...PEOPLE.map((p) => ({ value: p.slug, label: p.fullName }))]}
+                  />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {authors.map((p) => {
         const weekly = data.weeklies.find((w) => w.week === week && w.author === p.slug);
         const own = entries.filter((e) => e.author === p.slug);
@@ -201,9 +246,9 @@ function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] })
               </div>
               {weekly?.headline ? (
                 <p className="mt-2 text-[16px] leading-snug text-ink">{weekly.headline}</p>
-              ) : (
+              ) : week === data.reportingWeek ? (
                 <p className="mt-2 text-[15px] text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
-              )}
+              ) : null}
             </header>
             {own.length ? (
               <ul className="flex flex-col divide-y divide-line">
@@ -225,7 +270,7 @@ function PeopleView({ week, entries }: { week: number; entries: WeeklyEntry[] })
 
 function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
   // Риски первыми: с них начинается разбор
-  const order: BlockCode[] = ["risks", "key-changes", "partners", "product", "team"];
+  const order: BlockCode[] = ["risks", "key-changes", "numbers", "traffic", "partners", "product", "team"];
   return (
     <div className="mt-6 flex flex-col gap-6">
       {order.map((code) => {

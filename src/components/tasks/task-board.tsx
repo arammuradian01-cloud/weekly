@@ -34,10 +34,13 @@ function CardBody({ task, today }: { task: Task; today: string }) {
         <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
         {task.title}
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <PriorityTag priority={task.priority} className="text-[13px]" />
-        <StateDot state={task.state} className="text-[13px]" />
-      </div>
+      {/* «Не задан» на доске только шумит: из таблицы задачи приходят без приоритета и состояния */}
+      {task.priority !== "unset" || task.state !== "unset" ? (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {task.priority !== "unset" ? <PriorityTag priority={task.priority} className="text-[13px]" /> : null}
+          {task.state !== "unset" ? <StateDot state={task.state} className="text-[13px]" /> : null}
+        </div>
+      ) : null}
       <p className="mt-2 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
         <span>{ownerName(task.owner, true)}</span>
         <span className={cn("tabular-nums", overdue && "font-semibold text-danger-ink")}>
@@ -57,7 +60,7 @@ function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string
       <div
         ref={setNodeRef}
         className={cn(
-          "rounded-lg border bg-white p-3 transition-shadow",
+          "select-none rounded-lg border bg-white p-3 transition-shadow",
           overdue ? "border-l-4 border-[#f3c4c6] border-l-danger bg-danger-soft" : "border-line",
           canMove && "cursor-grab active:cursor-grabbing",
           isDragging && "opacity-40",

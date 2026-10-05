@@ -36,7 +36,8 @@ export type Person = {
 /** «Все лидеры» допустимы только для общих задач (раздел 4 ТЗ) */
 export type Owner = PersonSlug | "all";
 
-export type Transfer = { from: IsoDate; to: IsoDate; by: PersonSlug; reason: string; at: IsoDate };
+/** from = null: срок переносили в таблице до запуска ресурса, прежний срок не записан */
+export type Transfer = { from: IsoDate | null; to: IsoDate; by: PersonSlug | null; reason: string; at: IsoDate | null };
 
 export type Comment = { id: string; author: PersonSlug; text: string; at: IsoDate; time: string };
 
@@ -73,7 +74,8 @@ export type Task = {
   links: Link[];
   comments: Comment[];
   history: HistoryItem[];
-  createdBy: PersonSlug;
+  /** null: задача поставлена на встрече, автор в таблице не записан */
+  createdBy: PersonSlug | null;
   createdAt: IsoDate;
   updatedAt: IsoDate;
   closedAt?: IsoDate;
@@ -85,13 +87,16 @@ export type Task = {
 export type WeeklyEntry = {
   id: string;
   week: number;
-  author: PersonSlug;
+  /** null: общая запись без автора («Все лидеры» в таблице), ждёт распределения */
+  author: PersonSlug | null;
   direction: DirectionCode;
   block: BlockCode;
   type: EntryTypeCode;
   what: string;
   details?: string;
   impact?: string;
+  /** «Цифра или факт» из вкладки Weekly CEO */
+  fact?: string;
   next?: string;
   help?: string;
   links: Link[];

@@ -137,7 +137,11 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
                   type="date"
                   value={date}
                   onChange={(e) => setDate(e.target.value)}
-                  hint={`Сейчас ${formatLong(pending.task.due)}. Исходный срок ${formatLong(pending.task.originalDue)} сохранится`}
+                  hint={
+                    pending.task.transfers[0]?.from === null
+                      ? `Сейчас ${formatLong(pending.task.due)}. Исходный срок в таблице не записан`
+                      : `Сейчас ${formatLong(pending.task.due)}. Исходный срок ${formatLong(pending.task.originalDue)} сохранится`
+                  }
                 />
                 <TextArea label="Причина переноса" id="tr-reason" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
               </>

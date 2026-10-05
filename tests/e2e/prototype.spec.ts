@@ -3,7 +3,8 @@ import pg from "pg";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
 
-// Прототип этапа 2: экраны на выдуманных данных, правки живут в памяти браузера
+// Прототип этапа 2: экраны на задачах и weekly из Insurance&Invest Bord, правки живут в памяти браузера.
+// Тесты не завязаны на число строк: таблица меняется, проверяем правила и сценарии
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -40,9 +41,9 @@ test("все экраны прототипа открываются без го�
     ["/weekly/meeting", /Риски и запросы помощи/],
     ["/tasks", /Задача и где сейчас|Показано/],
     ["/tasks/board", /Перетащите карточку/],
-    ["/tasks/mine", /Просроченные|Срок на этой неделе/],
+    ["/tasks/mine", /Просроченные|Срок на этой неделе|Срок на следующей неделе|Остальные в работе/],
     ["/tasks/review", /Задача со встречи|Критичные/],
-    ["/tasks/13", /Запустить калькулятор КАСКО по VIN/],
+    ["/tasks/13", /Договориться с ВСК о лучших условиях/],
     ["/team", /Вся команда|В работе/],
     ["/ui", /Образец компонентов/],
   ];
@@ -54,19 +55,32 @@ test("все экраны прототипа открываются без го�
   }
 });
 
+test("лента weekly: последняя разобранная неделя и общие записи без автора", async ({ page }) => {
+  await enter(page, "Головкин Владислав");
+  await page.goto("/weekly");
+  await expect(page.getByText(/За неделю \d+ записей пока нет\. Показана неделя 39/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
+  await page.getByRole("radio", { name: "По блокам" }).click();
+  await expect(page.getByRole("heading", { name: /^Цифры и прогноз/ })).toBeVisible();
+});
+
 test("быстрые фильтры, поиск и карточка задачи по ссылке", async ({ page }) => {
   await enter(page, "Рева Тарас");
   await page.goto("/tasks");
-  await page.getByRole("button", { name: /^Просроченные/ }).click();
-  await expect(page.getByText("Показано 7 по фильтрам")).toBeVisible();
-  await page.getByRole("button", { name: /^Просроченные/ }).click();
+  const overdue = page.getByRole("button", { name: /^Просроченные/ });
+  const count = Number((await overdue.textContent())!.replace(/\D+/g, ""));
+  await overdue.click();
+  await expect(page.getByText(`Показано ${count} по фильтрам`)).toBeVisible();
+  await overdue.click();
 
-  await page.getByLabel("Поиск по тексту и номеру").fill("13");
+  // Задача 12 перенесена в таблице до запуска ресурса: исходный срок не записан
+  await page.getByLabel("Поиск по тексту и номеру").fill("12");
   await expect(page.getByText("Показано 1 по фильтрам")).toBeVisible();
-  await page.getByRole("button", { name: "Запустить калькулятор КАСКО по VIN" }).filter({ visible: true }).click();
-  await expect(page).toHaveURL(/task=13/);
+  await page.getByRole("button", { name: "Оценить рынок КАСКО" }).filter({ visible: true }).click();
+  await expect(page).toHaveURL(/task=12/);
   const card = page.getByRole("dialog");
-  await expect(card.getByText("Исходный срок")).toBeVisible();
+  await expect(card.getByText(/Исходный срок не записан, переносов 1/)).toBeVisible();
   await expect(card.getByText("История переносов")).toBeVisible();
   // Чужую задачу лидер не меняет: статус показан меткой без выбора
   await expect(card.getByRole("button", { name: /^Статус:/ })).toHaveCount(0);
@@ -76,32 +90,32 @@ test("быстрые фильтры, поиск и карточка задачи
 
 test("закрыть свою задачу можно только с итогом, последнее действие отменяется", async ({ page }) => {
   await enter(page, "Фатьянов Евгений");
-  await page.goto("/tasks/28");
-  await page.getByRole("button", { name: /^Статус: Требует уточнений/ }).click();
+  await page.goto("/tasks/13");
+  await page.getByRole("button", { name: /^Статус: В работе/ }).click();
   await page.getByRole("menuitem", { name: "Выполнена", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Нужен короткий итог");
-  await dialog.getByLabel("Итог или ссылка на результат").fill("Условия пилота согласованы");
+  await dialog.getByLabel("Итог или ссылка на результат").fill("Проверка сценария закрытия");
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByRole("button", { name: /^Статус: Выполнена/ })).toBeVisible();
-  await expect(page.getByText("Условия пилота согласованы").first()).toBeVisible();
+  await expect(page.getByText("Проверка сценария закрытия").first()).toBeVisible();
 
   await page.getByRole("status").getByRole("button", { name: "Отменить" }).click();
-  await expect(page.getByRole("button", { name: /^Статус: Требует уточнений/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Статус: В работе/ })).toBeVisible();
 });
 
 test("перенос срока без причины невозможен", async ({ page }) => {
   await enter(page, "Фатьянов Евгений");
-  await page.goto("/tasks/13");
+  await page.goto("/tasks/12");
   await page.getByRole("button", { name: "Перенести срок" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Новый срок").fill("2030-01-15");
   await dialog.getByRole("button", { name: "Перенести" }).click();
   await expect(dialog.getByRole("alert")).toContainText("Без причины перенести нельзя");
-  await dialog.getByLabel("Причина переноса").fill("Ждём второго поставщика VIN-базы");
+  await dialog.getByLabel("Причина переноса").fill("Проверка сценария переноса");
   await dialog.getByRole("button", { name: "Перенести" }).click();
-  await expect(page.getByText(/переносов 3/)).toBeVisible();
+  await expect(page.getByText(/переносов 2/)).toBeVisible();
 });
 
 test("лидер сдаёт weekly в три шага", async ({ page }) => {

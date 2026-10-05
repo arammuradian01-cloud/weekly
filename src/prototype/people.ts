@@ -36,3 +36,11 @@ export function initials(slug: PersonSlug): string {
 export function isPersonSlug(value: string | null | undefined): value is PersonSlug {
   return PEOPLE.some((p) => p.slug === value);
 }
+
+/** Автор записи или задачи. null: общая запись или задача со встречи без автора */
+export function authorName(slug: PersonSlug | null, style: "short" | "compact" | "full" = "compact", empty = "Общее"): string {
+  if (!slug) return empty;
+  if (style === "short") return personOf(slug).shortName;
+  if (style === "full") return personOf(slug).fullName;
+  return compactName(slug);
+}

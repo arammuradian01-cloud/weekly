@@ -19,6 +19,8 @@ type Store = {
   addComment: (number: number, text: string) => void;
   createTask: (task: Omit<Task, "number" | "history" | "comments" | "createdAt" | "updatedAt" | "createdBy">) => number;
   saveEntry: (entry: WeeklyEntry) => void;
+  /** Общая запись без автора получает автора: только владелец и администратор */
+  assignAuthor: (id: string, author: PersonSlug) => void;
   removeEntry: (id: string) => void;
   saveWeekly: (weekly: PersonWeekly, toast?: string) => void;
   toggleCeo: (id: string) => void;
@@ -139,6 +141,11 @@ export function PrototypeProvider({
           const exists = d.entries.some((e) => e.id === entry.id);
           return { ...d, entries: exists ? d.entries.map((e) => (e.id === entry.id ? entry : e)) : [...d.entries, entry] };
         }),
+      assignAuthor: (id, author) =>
+        mutate(
+          (d) => ({ ...d, entries: d.entries.map((e) => (e.id === id ? { ...e, author } : e)) }),
+          `Запись передана: ${personOf(author).fullName}`,
+        ),
       removeEntry: (id) => mutate((d) => ({ ...d, entries: d.entries.filter((e) => e.id !== id) }), "Запись удалена"),
       saveWeekly: (weekly, toastText) =>
         mutate((d) => {

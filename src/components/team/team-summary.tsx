@@ -30,7 +30,7 @@ export function TeamSummary() {
       total: own.length,
       inWork: open.length,
       overdue: own.filter((t) => isOverdue(t, data.today)).length,
-      risk: open.filter((t) => t.state !== "on-track").length,
+      risk: open.filter((t) => t.state === "at-risk" || t.state === "blocked").length,
       closedWeek: own.filter((t) => isClosedThisWeek(t, data.today)).length,
       stale: own.filter((t) => isStale(t, data.today)).length,
     };

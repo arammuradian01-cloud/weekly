@@ -70,7 +70,7 @@ export function JournalView() {
         <SelectField label="Источник" id="j-source" value={source} onChange={(e) => setSource(e.target.value as JournalEvent["source"] | "")} className="sm:w-44" options={SOURCES} />
       </div>
       <p className="mt-3 text-[14px] text-muted" aria-live="polite">
-        Событий: {events.length}. Журнал только дописывается: править и удалять записи нельзя.
+        Событий: {events.length}. Журнал только дописывается: править и удалять записи нельзя. События до запуска ресурса восстановлены из Insurance&Invest Bord по датам встреч и колонке «Обновлено», время изменений там не записано.
       </p>
 
       {events.length === 0 ? (
@@ -92,7 +92,8 @@ export function JournalView() {
               {events.slice(0, 120).map((e) => (
                 <tr key={e.id} className="align-top">
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted">
-                    {formatShort(e.at)}, {e.time}
+                    {formatShort(e.at)}
+                    {e.time ? `, ${e.time}` : ""}
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-ink">{e.by === "system" ? "Система" : compactName(e.by)}</td>
                   <td className="whitespace-nowrap px-3 py-3 text-ink">{e.object}</td>
@@ -108,7 +109,8 @@ export function JournalView() {
             {events.slice(0, 60).map((e) => (
               <li key={e.id} className="px-4 py-3 text-[14px]">
                 <p className="text-[13px] text-muted">
-                  {formatShort(e.at)}, {e.time}, {e.by === "system" ? "система" : compactName(e.by)}, {SOURCE_WORD[e.source]}
+                  {formatShort(e.at)}
+                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : compactName(e.by)}, {SOURCE_WORD[e.source]}
                 </p>
                 <p className="mt-0.5 font-medium text-ink">{e.object}</p>
                 <Change e={e} />
