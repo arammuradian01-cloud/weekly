@@ -5,6 +5,15 @@ import { formatTime, formatWeekRange, reportingWeek, type DeadlineSetting } from
 import { Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
 import { ProfileMenu } from "@/components/shell/profile-menu";
+import { PrototypeProvider } from "@/prototype/store";
+import { fromCalendar } from "@/prototype/dates";
+import { isPersonSlug } from "@/prototype/people";
+import { moscowDate } from "@/lib/week";
+import { PrototypeBanner } from "@/components/prototype/banner";
+import { Toaster } from "@/components/prototype/toaster";
+import { GlobalHotkeys } from "@/components/prototype/new-task";
+import { HeaderSearch } from "@/components/prototype/header-search";
+import { TaskActionsProvider } from "@/components/tasks/task-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +22,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const deadline = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const week = reportingWeek(new Date(), deadline);
   const managementUntil = ctx.management ? formatTime(new Date(ctx.management.until)) : null;
+  // Прототип этапа 2 считает сроки от сегодняшней даты по Москве: одинаково на сервере и в браузере
+  const today = fromCalendar(moscowDate(new Date()));
+  const prototypeMe = isPersonSlug(ctx.person.slug) ? ctx.person.slug : "golovkin";
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -24,6 +36,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   };
 
   return (
+    <PrototypeProvider today={today} reportingWeek={week.week} me={prototypeMe} manageRole={ctx.management?.role ?? null}>
+    <TaskActionsProvider>
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-navy px-3 py-5 lg:flex">
         <div className="flex flex-col gap-8">
@@ -40,9 +54,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="lg:hidden">
             <Wordmark tone="light" compact />
           </div>
-          <div className="hidden items-center gap-3 lg:flex">
-            <span className="text-[15px] font-semibold text-ink">Неделя {week.week}</span>
-            <span className="text-[15px] text-muted">{formatWeekRange(week)}</span>
+          <div className="hidden min-w-0 flex-1 items-center gap-6 lg:flex">
+            <div className="flex shrink-0 items-baseline gap-2">
+              <span className="text-[15px] font-semibold text-ink">Неделя {week.week}</span>
+              <span className="text-[14px] text-muted">{formatWeekRange(week)}</span>
+            </div>
+            <HeaderSearch />
           </div>
           <div className="flex items-center gap-3">
             {managementUntil ? (
@@ -56,10 +73,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1120px] flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-10">{children}</main>
+        <PrototypeBanner />
+        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
       </div>
 
       <MobileNav />
+      <Toaster />
+      <GlobalHotkeys />
     </div>
+    </TaskActionsProvider>
+    </PrototypeProvider>
   );
 }

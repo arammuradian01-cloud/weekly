@@ -14,9 +14,9 @@ import {
   type DeadlineSetting,
 } from "@/lib/week";
 import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
-import { EmptyState } from "@/components/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Suspense } from "react";
+import { MyWeek } from "@/components/weekly/my-week";
+import { TaskDrawer } from "@/components/tasks/task-drawer";
 
 export const metadata: Metadata = { title: "Моя неделя" };
 
@@ -61,45 +61,10 @@ export default async function MyWeekPage() {
         </div>
       </header>
 
-      <section aria-labelledby="my-weekly" className="rounded-xl bg-surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 id="my-weekly" className="text-[19px] font-semibold text-ink">
-                Мой weekly за неделю {week.week}
-              </h2>
-              <Badge tone="outline">Не начат</Badge>
-            </div>
-            <p className="mt-1.5 text-[15px] text-muted">
-              Срок сдачи: {formatMoment(deadline)}.{" "}
-              {msLeft > 0 ? `Осталось ${formatDuration(msLeft)}.` : `Срок прошёл ${formatDuration(-msLeft)} назад.`}
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-1.5 sm:items-end">
-            <Button disabled>Сдать weekly</Button>
-            <span className="text-[13px] text-muted">Сдача weekly появится на этапе 4</span>
-          </div>
-        </div>
-      </section>
-
-      <div className="mt-8 grid gap-8 xl:grid-cols-2">
-        <section aria-labelledby="my-tasks">
-          <h2 id="my-tasks" className="mb-3 text-[19px] font-semibold text-ink">
-            Мои задачи
-          </h2>
-          <EmptyState title="Задач пока нет" stage="Этап 3">
-            Сюда переедут задачи из Insurance&amp;Invest Bord: сверху просроченные, потом со сроком на этой неделе.
-          </EmptyState>
-        </section>
-        <section aria-labelledby="my-comments">
-          <h2 id="my-comments" className="mb-3 text-[19px] font-semibold text-ink">
-            Новые комментарии
-          </h2>
-          <EmptyState title="Новых комментариев нет" stage="Этап 3">
-            Здесь будут комментарии коллег к вашим задачам.
-          </EmptyState>
-        </section>
-      </div>
+      <Suspense>
+        <MyWeek deadlineText={formatMoment(deadline)} timeLeft={formatDuration(Math.max(0, msLeft))} late={msLeft < 0} />
+        <TaskDrawer />
+      </Suspense>
     </>
   );
 }

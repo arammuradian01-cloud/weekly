@@ -25,7 +25,7 @@ export function Field({
 export function FormError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
+    <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-sm text-danger-ink">
       {message}
     </p>
   );

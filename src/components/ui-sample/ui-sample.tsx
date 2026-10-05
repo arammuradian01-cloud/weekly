@@ -1,0 +1,281 @@
+"use client";
+
+import { useState } from "react";
+import { Plus } from "lucide-react";
+import { usePrototype } from "@/prototype/store";
+import { PRIORITIES, STATES, STATUSES, WEEKLY_STATES, ENTRY_TYPES } from "@/prototype/dictionaries";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Chip, Segmented, SelectField, Skeleton, TextArea, TextInput, Avatar } from "@/components/ui/primitives";
+import { Drawer, Modal } from "@/components/ui/overlays";
+import { OverdueNote, PriorityTag, StaleNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
+import { EmptyState } from "@/components/empty-state";
+import { WeekStrip } from "@/components/brand/week-strip";
+import { TaskTable } from "@/components/tasks/task-list";
+import { EntryItem, EntryTypeBadge } from "@/components/weekly/entry-item";
+import { useTaskActions } from "@/components/tasks/task-actions";
+
+const COLORS = [
+  { name: "Тёмно-синий", token: "navy", hex: "#002A3A", use: "Шапка, боковое меню, заголовки, основной текст" },
+  { name: "Зелёный", token: "green", hex: "#0DD149", use: "Главная кнопка на экране, «выполнено». Текст на нём тёмно-синий" },
+  { name: "Голубой", token: "blue", hex: "#00AFFF", use: "Выбранные элементы, «в работе», фокус" },
+  { name: "Голубой для текста", token: "blue-700", hex: "#0073A8", use: "Ссылки: контраст на белом не ниже 4,5" },
+  { name: "Светло-серый", token: "surface", hex: "#F3F6F8", use: "Фон карточек, шапки таблиц" },
+  { name: "Линии", token: "line", hex: "#DCE4E8", use: "Границы, разделители" },
+  { name: "Вторичный текст", token: "muted", hex: "#5A6E77", use: "Подписи, даты, пояснения" },
+  { name: "Красный", token: "danger", hex: "#D93C41", use: "Просрочка, критичный приоритет, «заблокирована»" },
+];
+
+const SWATCH: Record<string, string> = {
+  navy: "bg-navy",
+  green: "bg-green",
+  blue: "bg-blue",
+  "blue-700": "bg-blue-700",
+  surface: "bg-surface ring-1 ring-line",
+  line: "bg-line",
+  muted: "bg-muted",
+  danger: "bg-danger",
+};
+
+function Block({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <section id={id} aria-labelledby={`${id}-t`} className="scroll-mt-24 border-t border-line py-8 first:border-t-0 first:pt-0">
+      <h2 id={`${id}-t`} className="text-[20px] font-semibold text-ink">
+        {title}
+      </h2>
+      {description ? <p className="mt-1 max-w-[70ch] text-[14px] text-muted">{description}</p> : null}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+export function UiSample() {
+  const { data } = usePrototype();
+  const actions = useTaskActions();
+  const [drawer, setDrawer] = useState(false);
+  const [modal, setModal] = useState(false);
+  const [seg, setSeg] = useState<"list" | "board">("list");
+  const [chip, setChip] = useState(true);
+  const sample = [data.tasks.find((t) => t.number === 2)!, data.tasks.find((t) => t.number === 1)!, data.tasks.find((t) => t.number === 10)!];
+  const entry = data.entries.find((e) => e.help) ?? data.entries[0]!;
+
+  return (
+    <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
+      <nav aria-label="Разделы образца" className="mb-6 hidden lg:block">
+        <ul className="sticky top-24 flex flex-col gap-0.5 text-[14px]">
+          {[
+            ["colors", "Цвета"],
+            ["type", "Шрифт"],
+            ["buttons", "Кнопки"],
+            ["fields", "Поля"],
+            ["badges", "Метки"],
+            ["filters", "Фильтры"],
+            ["table", "Таблица задач"],
+            ["entry", "Запись weekly"],
+            ["states", "Пустые и загрузка"],
+            ["feedback", "Сохранено и отмена"],
+            ["overlays", "Панель и диалог"],
+            ["brand", "Фирменный знак"],
+          ].map(([id, label]) => (
+            <li key={id}>
+              <a href={`#${id}`} className="block rounded-md px-2 py-1.5 text-muted hover:bg-surface hover:text-ink">
+                {label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="min-w-0">
+        <Block id="colors" title="Цвета" description="Все цвета задаются одним набором переменных в src/app/globals.css. Цвет никогда не единственный носитель смысла: рядом всегда есть слово.">
+          <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {COLORS.map((c) => (
+              <li key={c.token} className="rounded-xl ring-1 ring-line">
+                <div className={`h-16 rounded-t-xl ${SWATCH[c.token]}`} aria-hidden="true" />
+                <div className="px-3 py-2.5">
+                  <p className="text-[15px] font-semibold text-ink">{c.name}</p>
+                  <p className="text-[13px] tabular-nums text-muted">{c.hex}</p>
+                  <p className="mt-1 text-[13px] text-muted">{c.use}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Block>
+
+        <Block id="type" title="Шрифт" description="Golos Text, он уже служит заменой фирменному Aeroport в презентациях. Aeroport подставляется одной переменной, если появится веб-лицензия.">
+          <div className="flex flex-col gap-3">
+            <p className="text-[30px] font-semibold leading-tight text-ink">Заголовок страницы, 30</p>
+            <p className="text-[20px] font-semibold text-ink">Заголовок раздела, 20</p>
+            <p className="text-[16px] font-semibold text-ink">Заголовок карточки, 16</p>
+            <p className="max-w-[65ch] text-[15px] leading-relaxed text-ink">
+              Основной текст, 15. Строки не длиннее 80 знаков, чтобы глазу было удобно возвращаться к началу. Тексты простые и человеческие, без длинного тире и стрелок.
+            </p>
+            <p className="text-[13px] text-muted">Подпись и даты, 13</p>
+            <p className="text-[15px] tabular-nums text-ink">Цифры в таблицах моноширинные: 12, 108, 1 254</p>
+          </div>
+        </Block>
+
+        <Block id="buttons" title="Кнопки" description="Зелёная кнопка одна на экране: главное действие. Высота не меньше 44 пикселей, на телефоне по всей ширине.">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Новая задача
+            </Button>
+            <Button variant="secondary">Перенести срок</Button>
+            <Button variant="ghost">Отмена</Button>
+            <Button disabled>Сдать weekly</Button>
+            <Button size="sm">Маленькая</Button>
+            <Button size="sm" variant="secondary">
+              Маленькая вторичная
+            </Button>
+          </div>
+        </Block>
+
+        <Block id="fields" title="Поля" description="Подпись над полем, подсказка под ним, ошибка словами: что не так и как исправить.">
+          <div className="grid max-w-3xl gap-4 sm:grid-cols-2">
+            <TextInput label="Задача" id="ui-title" defaultValue="Подключить банк Д к витрине ОСАГО" hint="До 120 знаков, одна мысль" />
+            <SelectField label="Приоритет" id="ui-pr" defaultValue="medium" options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />
+            <TextArea label="Что произошло" id="ui-what" defaultValue="СК А прислала тарифы на годовой ВЗР" counter={{ value: 35, max: 150 }} className="sm:col-span-2" rows={2} />
+            <TextInput label="Срок" id="ui-date" type="date" defaultValue={data.today} />
+            <label className="inline-flex min-h-11 items-center gap-2 self-end text-[15px] text-ink">
+              <input type="checkbox" defaultChecked className="h-4 w-4 accent-[#0073a8]" />
+              Нужна помощь
+            </label>
+            <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink sm:col-span-2">
+              Без причины перенести нельзя
+            </p>
+          </div>
+        </Block>
+
+        <Block id="badges" title="Метки" description="Статус, приоритет и состояние задачи, состояние weekly, тип записи, просрочка.">
+          <dl className="grid gap-4 sm:grid-cols-[160px_1fr]">
+            <dt className="text-[14px] text-muted">Статус</dt>
+            <dd className="flex flex-wrap gap-2">
+              {STATUSES.map((s) => (
+                <StatusBadge key={s.code} status={s.code} />
+              ))}
+            </dd>
+            <dt className="text-[14px] text-muted">Приоритет</dt>
+            <dd className="flex flex-wrap gap-4">
+              {PRIORITIES.map((p) => (
+                <PriorityTag key={p.code} priority={p.code} />
+              ))}
+            </dd>
+            <dt className="text-[14px] text-muted">Состояние</dt>
+            <dd className="flex flex-wrap gap-4">
+              {STATES.map((s) => (
+                <StateDot key={s.code} state={s.code} />
+              ))}
+            </dd>
+            <dt className="text-[14px] text-muted">Weekly</dt>
+            <dd className="flex flex-wrap gap-2">
+              {WEEKLY_STATES.map((s) => (
+                <WeeklyBadge key={s.code} state={s.code} />
+              ))}
+            </dd>
+            <dt className="text-[14px] text-muted">Тип записи</dt>
+            <dd className="flex flex-wrap gap-2">
+              {ENTRY_TYPES.map((t) => (
+                <EntryTypeBadge key={t.code} type={t.code} />
+              ))}
+            </dd>
+            <dt className="text-[14px] text-muted">Сроки</dt>
+            <dd className="flex flex-wrap items-center gap-4">
+              <OverdueNote days={3} />
+              <StaleNote />
+              <Badge tone="navy">Владелец</Badge>
+              <span className="inline-flex items-center gap-2 text-[14px] text-ink">
+                <Avatar text="ВГ" size="sm" /> Влад
+              </span>
+            </dd>
+          </dl>
+        </Block>
+
+        <Block id="filters" title="Фильтры и переключатели" description="Быстрый фильтр включается одним нажатием и показывает, сколько под ним задач.">
+          <div className="flex flex-wrap items-center gap-3">
+            <Chip active={chip} onClick={() => setChip((v) => !v)} count={10}>
+              Мои
+            </Chip>
+            <Chip active={false} onClick={() => undefined} count={7} tone="danger">
+              Просроченные
+            </Chip>
+            <Segmented
+              label="Вид"
+              value={seg}
+              onChange={setSeg}
+              options={[
+                { value: "list", label: "Список" },
+                { value: "board", label: "Доска" },
+              ]}
+            />
+          </div>
+        </Block>
+
+        <Block id="table" title="Таблица задач" description="Статус, состояние и приоритет меняются в строке в один клик. Просроченная строка целиком на бледно-красном фоне с подписью «просрочена на N дн.».">
+          <TaskTable groups={[{ key: "sample", title: "", tasks: sample }]} />
+        </Block>
+
+        <Block id="entry" title="Запись weekly" description="Одна запись равна одному событию. Запрос помощи подсвечен и поднимается наверх ленты.">
+          <div className="max-w-2xl rounded-xl px-5 py-4 ring-1 ring-line">
+            <EntryItem entry={entry} showAuthor />
+          </div>
+        </Block>
+
+        <Block id="states" title="Пустые состояния и загрузка" description="Пустой экран говорит, что делать дальше. Пока данные грузятся, вместо них серые блоки той же формы.">
+          <div className="grid gap-4 xl:grid-cols-2">
+            <EmptyState title="Под эти фильтры задач нет">Снимите часть фильтров или поищите по номеру задачи.</EmptyState>
+            <div role="group" className="flex flex-col gap-3 rounded-xl px-5 py-4 ring-1 ring-line" aria-label="Пример загрузки">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-4 w-1/2" />
+              <div className="flex gap-3">
+                <Skeleton className="h-6 w-20" />
+                <Skeleton className="h-6 w-24" />
+                <Skeleton className="h-6 w-16" />
+              </div>
+            </div>
+          </div>
+        </Block>
+
+        <Block id="feedback" title="«Сохранено» и отмена" description="После каждой правки внизу появляется «Сохранено». Последнее действие можно отменить 5 секунд.">
+          <Button variant="secondary" onClick={() => actions.changePriority(sample[0]!, sample[0]!.priority === "high" ? "critical" : "high")}>
+            Поменять приоритет задачи {sample[0]!.number}
+          </Button>
+        </Block>
+
+        <Block id="overlays" title="Боковая панель и диалог" description="Карточка задачи открывается боковой панелью. Перенос срока и закрытие задачи спрашивают причину в диалоге.">
+          <div className="flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={() => setDrawer(true)}>
+              Открыть боковую панель
+            </Button>
+            <Button variant="secondary" onClick={() => setModal(true)}>
+              Открыть диалог
+            </Button>
+            <Button variant="secondary" onClick={() => actions.transfer(sample[1]!)}>
+              Перенести срок задачи {sample[1]!.number}
+            </Button>
+          </div>
+          <Drawer open={drawer} onOpenChange={setDrawer} title="Боковая панель" description="Закрывается крестиком, клавишей Esc и щелчком мимо">
+            <p className="text-[15px] text-ink">Здесь открывается карточка задачи со всеми полями, комментариями и историей.</p>
+          </Drawer>
+          <Modal open={modal} onOpenChange={setModal} title="Диалог" description="Короткий вопрос с понятными кнопками">
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setModal(false)}>
+                Отмена
+              </Button>
+              <Button onClick={() => setModal(false)}>Понятно</Button>
+            </div>
+          </Modal>
+        </Block>
+
+        <Block id="brand" title="Фирменный знак" description="Параллелограмм Сравни только как декор: экран входа, шапки разделов, пустые состояния. В рабочих таблицах и формах его нет.">
+          <div className="-mx-2 max-w-xl">
+            <WeekStrip
+              days={["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d, i) => ({ key: d, weekday: d, date: 28 + i > 30 ? i - 2 : 28 + i, state: i < 3 ? "past" : i === 3 ? "today" : "future" }))}
+              deadline={{ weekday: "Пн", date: 5, time: "18:00" }}
+            />
+          </div>
+        </Block>
+      </div>
+    </div>
+  );
+}

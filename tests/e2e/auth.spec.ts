@@ -71,7 +71,7 @@ test("лидер входит, выбирает себя и видит свою 
   await chooseMe(page, "Рева Тарас");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
   await expect(page.getByText(/Отчётная неделя \d+/)).toBeVisible();
-  await expect(page.getByText(/Срок сдачи:/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Мой weekly за неделю/ })).toBeVisible();
   await shot(page, "04-my-week");
 
   await openProfileMenu(page);
@@ -84,7 +84,7 @@ test("лидер входит, выбирает себя и видит свою 
   await expect(page).toHaveURL(/\/$/);
 
   await page.goto("/team");
-  await expect(page.getByText("Мурадян Арам")).toBeVisible();
+  await expect(page.getByText("Мурадян Арам").filter({ visible: true }).first()).toBeVisible();
   await shot(page, "05-team");
 });
 
@@ -106,6 +106,8 @@ test("владелец включает режим управления толь
 
   await page.goto("/journal");
   await expect(page).toHaveURL(/\/journal$/);
+  // Живые события ресурса лежат под журналом прототипа в раскрывающемся блоке
+  await page.getByText("Живые события ресурса").click();
   await expect(page.getByRole("cell", { name: "Включён режим управления" }).first()).toBeVisible();
   await expect(page.getByRole("cell", { name: "Неверный пароль режима управления" }).first()).toBeVisible();
   await shot(page, "06-journal");
