@@ -23,6 +23,7 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query(`UPDATE settings SET value = '{"weekday": 1, "time": "18:00"}'::jsonb WHERE key = 'week.deadline'`);
   await client.query(`UPDATE settings SET value = '{"weekday": 2}'::jsonb WHERE key = 'week.meeting'`);
   await client.query(`UPDATE settings SET value = '14'::jsonb WHERE key = 'tasks.staleDays'`);
+  await client.query(`UPDATE settings SET value = '"test"'::jsonb WHERE key = 'stand.banner'`);
   if (tasks) {
     await client.query("DELETE FROM tasks");
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);

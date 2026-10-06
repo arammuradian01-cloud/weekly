@@ -16,6 +16,8 @@ import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
 import { syncLagging } from "@/lib/sheet/runner";
+import { getStandBanner } from "@/lib/admin/service";
+import { prisma } from "@/lib/db";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -28,11 +30,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const [tasks, registry, lagging] = await Promise.all([
+  const [tasks, registry, lagging, banner, owner] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER" }),
     loadRegistry(),
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
     ctx.management ? syncLagging() : Promise.resolve(false),
+    getStandBanner(),
+    prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" }, select: { fullName: true } }),
   ]);
 
   const profile = {
@@ -101,7 +105,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         ) : null}
-        <PrototypeBanner />
+        <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} />
         <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
       </div>
 

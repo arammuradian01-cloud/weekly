@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, LayoutGrid, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
@@ -86,11 +86,21 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           ) : null}
 
           <Menu.Item asChild>
-            <Link href="/ui" className={itemClass}>
-              <LayoutGrid className="h-5 w-5 text-muted" aria-hidden="true" />
-              Образец компонентов
+            <Link href="/help" className={itemClass}>
+              <CircleHelp className="h-5 w-5 text-muted" aria-hidden="true" />
+              Как работать
             </Link>
           </Menu.Item>
+
+          {/* Образец компонентов нужен разработке и управлению, команде в меню он только мешает */}
+          {management ? (
+            <Menu.Item asChild>
+              <Link href="/ui" className={itemClass}>
+                <LayoutGrid className="h-5 w-5 text-muted" aria-hidden="true" />
+                Образец компонентов
+              </Link>
+            </Menu.Item>
+          ) : null}
 
           <Menu.Item asChild>
             <Link href="/choose" className={itemClass}>

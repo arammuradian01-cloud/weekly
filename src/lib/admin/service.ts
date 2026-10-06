@@ -333,3 +333,25 @@ export async function saveRhythm(actor: Actor, input: Rhythm, now = new Date()) 
     return { changed: changes.length, weeks: open.length };
   });
 }
+
+/** Плашка над страницами: тестовый стенд, пилот или без плашки. Меняет только владелец */
+export const STAND_BANNERS = ["test", "pilot", "off"] as const;
+export type StandBanner = (typeof STAND_BANNERS)[number];
+const STAND_BANNER_LABELS: Record<StandBanner, string> = { test: "Тестовый стенд", pilot: "Пилот", off: "Без плашки" };
+
+export async function getStandBanner(): Promise<StandBanner> {
+  const value = await getSetting<string>("stand.banner", "test");
+  return (STAND_BANNERS as readonly string[]).includes(value) ? (value as StandBanner) : "test";
+}
+
+export async function saveStandBanner(actor: Actor, mode: StandBanner): Promise<StandBanner> {
+  requirePeople(actor);
+  if (!(STAND_BANNERS as readonly string[]).includes(mode)) fail("Выберите вид плашки из списка");
+  const before = await getStandBanner();
+  if (before === mode) return mode;
+  await prisma.$transaction(async (tx) => {
+    await tx.setting.upsert({ where: { key: "stand.banner" }, update: { value: mode }, create: { key: "stand.banner", value: mode } });
+    await audit(tx, actor, "settings.banner", "settings", "stand.banner", "Плашка над страницами", STAND_BANNER_LABELS[before], STAND_BANNER_LABELS[mode]);
+  });
+  return mode;
+}

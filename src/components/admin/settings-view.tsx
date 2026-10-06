@@ -4,13 +4,14 @@ import { useState } from "react";
 import { Download, EyeOff, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
-import type { DictItemView, PersonView, Rhythm } from "@/lib/admin/service";
+import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
 import { DICT_TITLES, WEEKDAYS } from "@/lib/admin/labels";
 import {
   addDictItemAction,
   createPersonAction,
   renameDictItemAction,
   saveRhythmAction,
+  saveStandBannerAction,
   setDictItemActiveAction,
   setPersonActiveAction,
   updatePersonAction,
@@ -18,7 +19,7 @@ import {
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { SelectField, TextInput } from "@/components/ui/primitives";
+import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 
@@ -66,6 +67,7 @@ export function SettingsView({
   people,
   passwords,
   sessionKey,
+  banner,
 }: {
   owner: boolean;
   me: string;
@@ -75,6 +77,8 @@ export function SettingsView({
   passwords: { title: string; set: boolean }[];
   /** Откуда ключ сессий: свой SESSION_SECRET или выведен из пароля базы */
   sessionKey: "env" | "derived" | "none";
+  /** Плашка над страницами: тестовый стенд, пилот или без плашки */
+  banner: StandBanner;
 }) {
   return (
     <div>
@@ -127,6 +131,8 @@ export function SettingsView({
               </p>
             ) : null}
           </Section>
+
+          <BannerSection initial={banner} />
 
           <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
             <p className="text-[15px] text-ink">
@@ -438,3 +444,33 @@ function PeopleSection({ people, me }: { people: PersonView[]; me: string }) {
     </Section>
   );
 }
+
+const BANNER_OPTIONS: { value: StandBanner; label: string }[] = [
+  { value: "test", label: "Тестовый стенд" },
+  { value: "pilot", label: "Пилот" },
+  { value: "off", label: "Без плашки" },
+];
+
+/** Плашка над всеми страницами: на пилоте она ведёт к инструкции и говорит, кому писать замечания */
+function BannerSection({ initial }: { initial: StandBanner }) {
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [value, setValue] = useState<StandBanner>(initial);
+  return (
+    <Section title="Плашка над страницами" description="Видна всем. На пилоте ведёт к инструкции «Как работать» и подсказывает, кому писать замечания">
+      <Segmented
+        label="Плашка над страницами"
+        options={BANNER_OPTIONS}
+        value={value}
+        onChange={async (next) => {
+          const previous = value;
+          setValue(next);
+          const r = await run(() => saveStandBannerAction(next));
+          if (r) notify("Плашка сохранена");
+          else setValue(previous);
+        }}
+      />
+    </Section>
+  );
+}
+

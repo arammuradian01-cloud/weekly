@@ -48,3 +48,7 @@ export async function saveRhythmAction(input: svc.Rhythm) {
     ),
   );
 }
+
+export async function saveStandBannerAction(mode: svc.StandBanner) {
+  return done(await runAction("Плашка над страницами", (a) => svc.saveStandBanner(a, mode)));
+}

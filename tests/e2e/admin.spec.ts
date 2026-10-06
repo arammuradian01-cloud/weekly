@@ -145,3 +145,35 @@ test("владелец выгружает всё в Excel одним файло�
   await page.goto("/journal?kind=settings");
   await expect(page.getByText("Выгрузка в Excel").filter({ visible: true }).first()).toBeVisible();
 });
+
+test("инструкция «Как работать» из меню и плашка пилота, которую включает владелец (этап 7)", async ({ page, browser }) => {
+  // Лидер находит инструкцию в меню профиля, сроки в ней из настроек
+  const leader = await browser.newPage({ viewport: page.viewportSize() ?? undefined });
+  await enter(leader, "Рева Тарас");
+  await leader.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
+  await leader.getByRole("menuitem", { name: "Как работать" }).click();
+  await expect(leader).toHaveURL(/\/help$/);
+  await expect(leader.getByRole("heading", { name: "Как работать в Weekly" })).toBeVisible();
+  await expect(leader.getByText(/до понедельника 18:00 по Москве, встреча команды во вторник/)).toBeVisible();
+  await expect(leader.getByText("Тестовый стенд.")).toBeVisible();
+  await shot(leader, "help");
+
+  // Владелец включает плашку пилота: у лидера она ведёт к инструкции
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/settings");
+  await page.getByRole("radiogroup", { name: "Плашка над страницами" }).getByRole("radio", { name: "Пилот" }).click();
+  await expect(page.getByText("Плашка сохранена")).toBeVisible();
+  await leader.reload();
+  await expect(leader.getByText("Пилот.")).toBeVisible();
+  await expect(leader.getByText(/Замечания и ошибки присылайте владельцу ресурса \(Мурадян Арам\)/)).toBeVisible();
+  await expect(leader.getByRole("link", { name: "Как работать" })).toBeVisible();
+
+  await page.getByRole("radiogroup", { name: "Плашка над страницами" }).getByRole("radio", { name: "Без плашки" }).click();
+  await expect(page.getByText("Плашка сохранена")).toBeVisible();
+  await leader.reload();
+  await expect(leader.getByText("Пилот.")).toHaveCount(0);
+  await expect(leader.getByText("Тестовый стенд.")).toHaveCount(0);
+  await leader.close();
+});
+
