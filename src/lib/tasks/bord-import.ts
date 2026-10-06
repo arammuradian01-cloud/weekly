@@ -24,6 +24,8 @@ export const STATUS_FROM_TABLE: Record<string, TaskStatus> = {
   "Отменена": "CANCELLED",
   // Статус «Перенесена» заменён счётчиком переносов: «В работе» и один перенос (решение 04.10.2026)
   "Перенесена": "IN_PROGRESS",
+  // В рабочем Bord с 06.10 так помечают только что поставленную задачу
+  "Поставлена": "IN_PROGRESS",
 };
 
 export const STATUS_TO_TABLE: Record<TaskStatus, string> = {
