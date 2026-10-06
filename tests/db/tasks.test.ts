@@ -131,8 +131,10 @@ describe("правила просрочки и переносов (раздел 
   it("перенос без причины и в прошлое невозможен, исходный срок и история переносов сохраняются", async () => {
     const fat = await actors.fatyanov();
     await expectRule(svc.transferDue(fat, 13, future, "  "), /Без причины/);
-    await expectRule(svc.transferDue(fat, 13, addDays(today, -1), "Причина"), /в прошлом/);
     const before = (await svc.getTask(13))!;
+    // Вчера может совпасть с нынешним сроком задачи (срок 13-й задачи в выгрузке 06.10): тогда сработало бы «Выберите новый срок»
+    const past = addDays(today, -1) === before.due ? addDays(today, -2) : addDays(today, -1);
+    await expectRule(svc.transferDue(fat, 13, past, "Причина"), /в прошлом/);
     const r = await svc.transferDue(fat, 13, future, "Ждём ВСК");
     expect(r.task.due).toBe(future);
     expect(r.task.originalDue).toBe(before.due);
