@@ -1,8 +1,12 @@
 // Подключение к таблице, состояние синхронизации и фоновый цикл: выгрузка раз в 30 секунд, сверка раз в сутки после 03:30 по Москве.
 // Цикл живёт в процессе сервера (src/instrumentation.ts). Отдельный сервис для фоновых задач не нужен.
 
+import { readFileSync } from "node:fs";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
+import { parseCsv } from "@/lib/tasks/bord-import";
+import { BORD_TAB } from "@/lib/bord/parse";
+import { pullState, runPull, type BordReader } from "@/lib/bord/pull";
 import type { SheetsClient } from "./client";
 import { FakeSheets } from "./fake";
 import { GoogleSheets, serviceAccountFromEnv } from "./google";
@@ -20,9 +24,17 @@ export type Connection = { client: SheetsClient; serviceEmail: string; mode: Mod
 
 const g = globalThis as unknown as {
   __sheetFake?: FakeSheets;
+  __bordFake?: FakeSheets;
   __sheetGoogle?: { id: string; email: string; client: GoogleSheets };
+  __bordGoogle?: { id: string; email: string; client: GoogleSheets };
   __sheetLoop?: { timer: ReturnType<typeof setTimeout>; failures: number };
 };
+
+/** Забор из Bord: раз в 5 минут, после ошибки через 15 минут */
+export const PULL_EVERY_MS = 5 * 60_000;
+export const PULL_RETRY_MS = 15 * 60_000;
+/** Выгрузка Bord для имитации забора: вкладка «Задачи» на 05.10.2026 */
+const BORD_IMITATION_FILE = "data/bord/zadachi-2026-10-05.csv";
 
 /** Имитация Google в памяти процесса: для e2e-тестов и показа страницы без ключа (SHEET_FAKE=1) */
 export function imitation(): FakeSheets {
@@ -43,8 +55,10 @@ export async function connection(): Promise<Connection | null> {
   const account = imitationOn() ? null : serviceAccountFromEnv();
   if (!imitationOn() && !account) return null;
   const id = await getSetting<string | null>("sheet.spreadsheetId", null);
-  // Рабочая таблица подключается только на этапе 7: до этого код к ней не пишет, даже если ID задали в базе руками
+  // В рабочий Bord зеркало не пишет, даже если его ID задали в базе руками: Bord ресурс только читает
   if (!id || id === PROD_SHEET_ID) return null;
+  // Таблица, из которой забираем задачи, только читается: зеркало в неё не пишет, даже если её ID другой
+  if (id === (await getSetting<string | null>("bord.sourceId", null))) return null;
   if (imitationOn()) {
     // Сбой Google в имитации включается настройкой: так e2e-тест проверяет ошибки и предупреждение об отставании
     imitation().down = await getSetting<boolean>("sheet.imitationDown", false);
@@ -54,6 +68,56 @@ export async function connection(): Promise<Connection | null> {
     g.__sheetGoogle = { id, email: account!.client_email, client: new GoogleSheets(id, account!) };
   }
   return { client: g.__sheetGoogle.client, serviceEmail: account!.client_email, mode: "google", spreadsheetId: id };
+}
+
+/** Имитация рабочего Bord для забора в e2e-тестах (SHEET_FAKE=1): вкладка «Задачи» из выгрузки в репозитории */
+export function imitationBord(): FakeSheets {
+  if (!g.__bordFake) {
+    const fake = new FakeSheets();
+    fake.addTab(BORD_TAB, parseCsv(readFileSync(BORD_IMITATION_FILE, "utf8")), { rows: 400, cols: 10 });
+    g.__bordFake = fake;
+  }
+  return g.__bordFake;
+}
+
+export type BordConnection = { reader: BordReader; mode: Mode; sourceId: string };
+
+/** Откуда забирать задачи: рабочий Bord только на чтение. null: забор не включён или нет ключа служебного аккаунта */
+export async function bordConnection(): Promise<BordConnection | null> {
+  const id = await getSetting<string | null>("bord.sourceId", null);
+  if (!id) return null;
+  if (imitationOn()) {
+    imitationBord().down = await getSetting<boolean>("bord.imitationDown", false);
+    return { reader: imitationBord(), mode: "imitation", sourceId: id };
+  }
+  const account = serviceAccountFromEnv();
+  if (!account) return null;
+  if (!g.__bordGoogle || g.__bordGoogle.id !== id || g.__bordGoogle.email !== account.client_email) {
+    g.__bordGoogle = { id, email: account.client_email, client: new GoogleSheets(id, account, fetch, "read") };
+  }
+  // Наружу отдаём только чтение: записи в Bord нет даже в типе
+  const client = g.__bordGoogle.client;
+  return { reader: { getValues: (range) => client.getValues(range) }, mode: "google", sourceId: id };
+}
+
+/** Пора ли забирать: раз в 5 минут, после ошибки через 15 */
+export async function pullDue(now: Date): Promise<boolean> {
+  const state = await pullState();
+  if (!state.lastAttemptAt) return true;
+  const wait = state.ok === false ? PULL_RETRY_MS : PULL_EVERY_MS;
+  return now.getTime() - new Date(state.lastAttemptAt).getTime() >= wait;
+}
+
+/** Забор, если включён и пора. Ошибки не бросает: они видны на странице «Синхронизация», зеркало от них не страдает */
+export async function pullIfDue(now = new Date()): Promise<void> {
+  try {
+    const conn = await bordConnection();
+    if (!conn || !(await pullDue(now))) return;
+    const result = await runPull(conn.reader, "auto", { now, sourceId: conn.sourceId });
+    if (result?.error) console.error("Забор задач из Bord не прошёл, повторим через 15 минут:", result.error);
+  } catch (error) {
+    console.error("Забор задач из Bord не прошёл:", error instanceof Error ? error.message : error);
+  }
 }
 
 /** Начало сегодняшнего окна сверки по Москве: 03:30 */
@@ -81,6 +145,8 @@ export async function reconcileDue(now: Date): Promise<boolean> {
  * Ошибка сверки выгрузку не тормозит: сверка повторится сама через 15 минут
  */
 export async function tick(now = new Date()): Promise<void> {
+  // Сначала забор из Bord: новые задачи из Bord уйдут в таблицу для просмотра тем же проходом
+  await pullIfDue(now);
   const conn = await connection();
   if (!conn) return;
   const opts = { serviceEmail: conn.serviceEmail, spreadsheetId: conn.spreadsheetId, now };

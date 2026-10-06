@@ -15,7 +15,7 @@ export const ALL_LEADERS = "Все лидеры";
 export const IMPORT_TRANSFER_REASON = "Перенесена в таблице до запуска ресурса";
 export const IMPORT_RESOLUTION = "Закрыта в таблице до запуска ресурса";
 
-const STATUS_FROM_TABLE: Record<string, TaskStatus> = {
+export const STATUS_FROM_TABLE: Record<string, TaskStatus> = {
   "Предложена": "PROPOSED",
   "В работе": "IN_PROGRESS",
   "Требует уточнений": "CLARIFY",
@@ -26,7 +26,7 @@ const STATUS_FROM_TABLE: Record<string, TaskStatus> = {
   "Перенесена": "IN_PROGRESS",
 };
 
-const STATUS_TO_TABLE: Record<TaskStatus, string> = {
+export const STATUS_TO_TABLE: Record<TaskStatus, string> = {
   PROPOSED: "Предложена",
   IN_PROGRESS: "В работе",
   CLARIFY: "Требует уточнений",

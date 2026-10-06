@@ -10,6 +10,7 @@ import { TextInput } from "@/components/ui/primitives";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 import { pushNowAction, rebuildNowAction, reconcileNowAction, setSpreadsheetAction } from "@/app/(app)/sync/actions";
+import { BordPull, type BordView } from "./bord-pull";
 
 type Tone = "ok" | "warn" | "error" | "pending";
 
@@ -27,6 +28,7 @@ export type SyncView = {
   error: { at: string; kind: string; message: string } | null;
   runs: { id: string; at: string; kind: string; text: string; tone: Tone }[];
   counts: { tasks: number; comments: number; entries: number };
+  bord: BordView;
 };
 
 const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
@@ -47,7 +49,7 @@ function ToneIcon({ tone }: { tone: Tone }) {
   return <CircleDashed className={cn(cls, "text-muted")} aria-hidden="true" />;
 }
 
-/** Страница синхронизации для владельца: подключение копии, последняя выгрузка, очередь, сверка, история запусков (раздел 5 ТЗ) */
+/** Страница синхронизации для владельца: забор задач из Bord, затем таблица для просмотра: подключение, последняя выгрузка, очередь, сверка, история (раздел 5 ТЗ) */
 export function SyncStatus({ view }: { view: SyncView }) {
   const router = useRouter();
   const run = useRunAction();
@@ -55,12 +57,13 @@ export function SyncStatus({ view }: { view: SyncView }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
 
-  // Страница живая: состояние очереди обновляется само раз в 30 секунд, как и цикл выгрузки
+  // Страница живая: состояние очереди и забора обновляется само раз в 30 секунд, как и фоновый цикл
+  const live = view.connected || view.bord.connected;
   useEffect(() => {
-    if (!view.connected) return;
+    if (!live) return;
     const id = setInterval(() => router.refresh(), 30_000);
     return () => clearInterval(id);
-  }, [router, view.connected]);
+  }, [router, live]);
 
   async function act<T>(name: string, fn: () => Promise<{ ok: true; value: T } | { ok: false; error: string }>, okText: (v: T) => string) {
     setBusy(name);
@@ -73,12 +76,24 @@ export function SyncStatus({ view }: { view: SyncView }) {
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-12">
       {view.imitation ? (
         <p className="rounded-xl border border-dashed border-line px-5 py-3 text-body text-ink">
-          Режим имитации: вместо Google ресурс пишет в таблицу в памяти сервера. Так проверяют выгрузку без ключа служебного аккаунта.
+          Режим имитации: вместо Google ресурс читает и пишет таблицы в памяти сервера. Так проверяют забор и выгрузку без ключа служебного аккаунта.
         </p>
       ) : null}
+
+      <BordPull view={view.bord} />
+
+      <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
+      <div>
+        <h2 id="sync-mirror" className="text-title font-semibold text-ink">
+          Таблица для просмотра
+        </h2>
+        <p className="mt-1 max-w-[760px] text-body text-ink">
+          Ресурс сам пишет в отдельную Google-таблицу все задачи, и из Bord, и заведённые в ресурсе, а ещё комментарии и weekly. В одну сторону: таблицу правит только ресурс.
+        </p>
+      </div>
 
       {view.connected ? <Tiles view={view} /> : null}
 
@@ -124,9 +139,9 @@ export function SyncStatus({ view }: { view: SyncView }) {
       <Connection view={view} />
 
       <section aria-labelledby="sync-tabs">
-        <h2 id="sync-tabs" className="mb-3 text-title font-semibold text-ink">
+        <h3 id="sync-tabs" className="mb-3 text-title-sm font-semibold text-ink">
           Вкладки ресурса в таблице
-        </h2>
+        </h3>
         <ul className="grid gap-2 sm:grid-cols-2">
           {[
             ["Задачи", `${view.counts.tasks} ${plural(view.counts.tasks, "строка", "строки", "строк")}, без архива`],
@@ -147,9 +162,9 @@ export function SyncStatus({ view }: { view: SyncView }) {
       </section>
 
       <section aria-labelledby="sync-log">
-        <h2 id="sync-log" className="mb-3 text-title font-semibold text-ink">
-          История запусков
-        </h2>
+        <h3 id="sync-log" className="mb-3 text-title-sm font-semibold text-ink">
+          История выгрузок
+        </h3>
         {view.runs.length ? (
           <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
             {view.runs.map((r) => (
@@ -166,8 +181,9 @@ export function SyncStatus({ view }: { view: SyncView }) {
             ))}
           </ul>
         ) : (
-          <p className="rounded-xl px-5 py-4 text-body text-muted ring-1 ring-line">Запусков ещё не было. Первая выгрузка начнётся в течение 30 секунд после подключения копии.</p>
+          <p className="rounded-xl px-5 py-4 text-body text-muted ring-1 ring-line">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
         )}
+      </section>
       </section>
 
       <Modal
@@ -243,7 +259,7 @@ function Connection({ view }: { view: SyncView }) {
       const res = await run(() => setSpreadsheetAction(value));
       if (!res) return;
       if (!res.id) notify("Таблица отключена");
-      else if (res.access === "ok") notify("Копия подключена, доступ есть. Первая выгрузка в течение 30 секунд");
+      else if (res.access === "ok") notify("Таблица подключена, доступ есть. Первая выгрузка в течение 30 секунд");
       else if (res.access === "no-key") notify("Ссылка сохранена. Выгрузка начнётся, когда на сервере появится ключ служебного аккаунта");
       else notify(`Ссылка сохранена, но ${res.access.charAt(0).toLowerCase()}${res.access.slice(1)}`, "error");
       setLink(res.id ? sheetUrl(res.id) : "");
@@ -254,16 +270,16 @@ function Connection({ view }: { view: SyncView }) {
 
   return (
     <section aria-labelledby="sync-connection" className="rounded-xl px-5 py-5 ring-1 ring-line">
-      <h2 id="sync-connection" className="text-title font-semibold text-ink">
-        Подключение
-      </h2>
+      <h3 id="sync-connection" className="text-title-sm font-semibold text-ink">
+        Подключение таблицы для просмотра
+      </h3>
 
       {!view.connected ? (
         <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-body text-ink marker:text-muted">
           <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Создать проект в Google Cloud, включить Google Sheets API, создать служебный аккаунт с ключом JSON (пошагово в инструкции к этапу 6)</li>
           <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Положить ключ в переменную GOOGLE_SERVICE_ACCOUNT_JSON в настройках приложения на Timeweb</li>
-          <li>Сделать копию таблицы Insurance&Invest Bord и дать адресу служебного аккаунта доступ редактора</li>
-          <li>Вставить ссылку на копию ниже и сохранить</li>
+          <li>Создать Google-таблицу для просмотра и дать адресу служебного аккаунта доступ редактора. Рабочий Bord сюда не подходит: в него ресурс не пишет</li>
+          <li>Вставить ссылку на таблицу ниже и сохранить</li>
         </ol>
       ) : null}
 
@@ -293,7 +309,7 @@ function Connection({ view }: { view: SyncView }) {
             <span className="text-muted">появится, когда задан ключ</span>
           )}
         </dd>
-        <dt className="text-muted">Копия таблицы</dt>
+        <dt className="text-muted">Таблица для просмотра</dt>
         <dd className="min-w-0">
           {view.spreadsheetId ? (
             <a href={sheetUrl(view.spreadsheetId)} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all text-blue-700 underline-offset-2 hover:underline">
@@ -307,6 +323,7 @@ function Connection({ view }: { view: SyncView }) {
       </dl>
 
       <form
+        aria-label="Ссылка на таблицу для просмотра"
         className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end"
         onSubmit={(e) => {
           e.preventDefault();
@@ -314,13 +331,13 @@ function Connection({ view }: { view: SyncView }) {
         }}
       >
         <TextInput
-          label="Ссылка на копию таблицы"
+          label="Ссылка на таблицу для просмотра"
           id="sync-link"
           className="min-w-0 flex-1"
           value={link}
           onChange={(e) => setLink(e.target.value)}
           placeholder="https://docs.google.com/spreadsheets/d/…"
-          hint="Рабочую таблицу подключаем только на этапе 7 и с согласия Арама. Сейчас нужна копия"
+          hint="Сюда ресурс пишет все задачи. Рабочий Bord сюда не вставляйте: в него ресурс не пишет"
           autoComplete="off"
           spellCheck={false}
         />

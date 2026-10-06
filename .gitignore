@@ -21,3 +21,6 @@ tests/e2e/screenshots/
 tests/visual/__screenshots__/
 
 .DS_Store
+
+# Эталон снимков экранов (npm run test:visual, этап 10) снимается локально и в репозиторий не идёт
+tests/visual/__screenshots__/

@@ -25,7 +25,7 @@ export function PrototypeBanner({ mode, ownerName }: { mode: StandBanner; ownerN
     <div className="flex items-center gap-2.5 border-b border-warning-line bg-warning-soft px-4 py-2 text-caption text-warning-ink sm:px-6 lg:px-10">
       <FlaskConical className="h-4 w-4 shrink-0" aria-hidden="true" />
       <p>
-        <span className="font-semibold">Тестовый стенд.</span> Задачи, weekly и настройки сохраняются в базе ресурса. В Google-таблицу они уходят только в копию, рабочая таблица Insurance&Invest Bord не подключена.
+        <span className="font-semibold">Тестовый стенд.</span> Bord остаётся главным: ресурс забирает из него задачи и ничего в него не пишет. Задачи, weekly и настройки сохраняются в базе ресурса.
       </p>
     </div>
   );
