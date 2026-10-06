@@ -244,3 +244,75 @@ describe("удаление записи с отменой (этап 7)", () => {
   });
 });
 
+
+describe("нет на неделе (этап 9)", () => {
+  beforeEach(async () => {
+    await prisma.absence.deleteMany();
+  });
+
+  it("человек отмечает себя с замещающим: weekly не ждём, в ленте он отсутствует, журнал пишет было и стало", async () => {
+    const reva = await actor.reva();
+    const saved = await svc.setAbsence(reva, { slug: "reva", week: W40, substitute: "golovkin" }, NOW);
+    expect(saved).toMatchObject({ week: W40, number: 40, substitute: "golovkin" });
+    const view = await svc.getWeekView(W40, NOW);
+    expect(view.reports.find((r) => r.author === "reva")?.absent).toEqual({ substitute: "golovkin" });
+    expect(view.reports.find((r) => r.author === "loginova")?.absent).toBeUndefined();
+    const mine = await svc.getMyWeekly(reva.personId, W40, NOW);
+    expect(mine.report.absent).toEqual({ substitute: "golovkin" });
+
+    // Смена замещающего и отмена
+    await svc.setAbsence(reva, { slug: "reva", week: W40, substitute: null }, NOW);
+    const logs = await prisma.auditLog.findMany({ where: { action: "weekly.absence.set" }, orderBy: { id: "asc" } });
+    expect(logs.map((l) => [l.entityId, l.before, l.after])).toEqual([
+      [`${W40}/reva`, "на месте", "нет, замещает Головкин Владислав"],
+      [`${W40}/reva`, "нет, замещает Головкин Владислав", "нет, без замещающего"],
+    ]);
+    expect(await svc.upcomingAbsences(reva.personId, NOW)).toEqual([{ week: W40, number: 40, start: W40, end: "2026-10-04", substitute: null }]);
+    await svc.removeAbsence(reva, "reva", W40, NOW);
+    expect((await svc.getWeekView(W40, NOW)).reports.find((r) => r.author === "reva")?.absent).toBeUndefined();
+    expect(await prisma.auditLog.count({ where: { action: "weekly.absence.remove" } })).toBe(1);
+  });
+
+  it("правила: не в прошлое, не дальше 12 недель, замещающий не сам человек, за коллегу только управление", async () => {
+    const reva = await actor.reva();
+    await expectRule(svc.setAbsence(reva, { slug: "reva", week: W39, substitute: null }, NOW), /Прошедшую неделю/);
+    await expectRule(svc.setAbsence(reva, { slug: "reva", week: shiftWeek(W40, 13), substitute: null }, NOW), /не дальше чем на 12 недель/);
+    await expectRule(svc.setAbsence(reva, { slug: "reva", week: W40, substitute: "reva" }, NOW), /сам отсутствующий/);
+    await expectRule(svc.setAbsence(reva, { slug: "reva", week: W40, substitute: "ceo" }, NOW), /из списка команды/);
+    await expectRule(svc.setAbsence(reva, { slug: "loginova", week: W40, substitute: null }, NOW), /только владелец и администраторы/);
+    await expectRule(svc.setAbsence(await actor.observer(), { slug: "ceo", week: W40, substitute: null }, NOW), /Наблюдатель/);
+    // Владелец в режиме управления отмечает коллегу на больничном
+    const saved = await svc.setAbsence(await actor.owner(), { slug: "loginova", week: shiftWeek(W40, 12), substitute: "reva" }, NOW);
+    expect(saved.number).toBe(52);
+  });
+
+  it("себе задним числом нельзя: после срока или на закрытой неделе; коллеге после срока может управление", async () => {
+    const afterDeadline = new Date("2026-10-05T19:00:00Z");
+    await expectRule(svc.setAbsence(await actor.loginova(), { slug: "loginova", week: W40, substitute: null }, afterDeadline), /задним числом может владелец или администратор/);
+    // Владелец отмечает больничный задним числом: сданный после срока weekly не опоздание
+    await svc.setAbsence(await actor.owner(), { slug: "loginova", week: W40, substitute: "reva" }, afterDeadline);
+    const loginova = await actor.loginova();
+    await svc.saveHeadline(loginova, W40, "Неделя на больничном");
+    await svc.saveEntry(loginova, entry(W40, { what: "Коротко о неделе" }));
+    expect((await svc.submitWeekly(loginova, W40, afterDeadline)).state).toBe("submitted");
+    // Закрытую неделю не трогает никто
+    await svc.setWeekClosed(await actor.admin(), W40, true);
+    await expectRule(svc.removeAbsence(await actor.owner(), "loginova", W40, afterDeadline), /закрыта/);
+  });
+
+  it("отсутствующий может сдать weekly после срока, опозданием это не считается", async () => {
+    const reva = await actor.reva();
+    await svc.setAbsence(reva, { slug: "reva", week: W40, substitute: "golovkin" }, NOW);
+    await svc.saveHeadline(reva, W40, "Неделя в отпуске, коротко");
+    await svc.saveEntry(reva, entry());
+    const afterDeadline = new Date("2026-10-05T19:00:00Z");
+    const done = await svc.submitWeekly(reva, W40, afterDeadline);
+    expect(done.state).toBe("submitted");
+
+    // Без отметки та же сдача после срока: «Сдан с опозданием»
+    const loginova = await actor.loginova();
+    await svc.saveHeadline(loginova, W40, "Кросс к ипотеке работает");
+    await svc.saveEntry(loginova, entry(W40, { what: "Кросс к ипотеке" }));
+    expect((await svc.submitWeekly(loginova, W40, afterDeadline)).state).toBe("late");
+  });
+});

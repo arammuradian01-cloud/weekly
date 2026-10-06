@@ -15,6 +15,7 @@ export async function currentActor(): Promise<Actor> {
     role: ctx.person.role,
     management: ctx.management?.role ?? null,
     ip: await requestIp(),
+    via: ctx.via,
   };
 }
 

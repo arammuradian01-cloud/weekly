@@ -5,6 +5,7 @@ import { usePrototype } from "@/domain/store";
 import { PEOPLE, personOf } from "@/domain/people";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
 import type { Person, PersonWeekly, Task } from "@/domain/types";
+import { AbsentBadge, substituteText } from "@/components/weekly/absence";
 import { ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
@@ -83,7 +84,14 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                   <td className="px-3 py-3 text-right">{num(r.closedWeek)}</td>
                   <td className="px-3 py-3 text-right">{num(r.stale, true)}</td>
                   <td className="px-5 py-3">
-                    <WeeklyBadge state={weekly?.state ?? "not-started"} />
+                    {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
+                      <>
+                        <AbsentBadge />
+                        <span className="mt-1 block text-[13px] text-muted">{substituteText(weekly.absent.substitute)}</span>
+                      </>
+                    ) : (
+                      <WeeklyBadge state={weekly?.state ?? "not-started"} />
+                    )}
                   </td>
                 </tr>
               );
@@ -112,8 +120,11 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                   <Link href={`/tasks/review?person=${r.person.slug}`} className="text-[16px] font-semibold text-ink">
                     {r.person.fullName}
                   </Link>
-                  <WeeklyBadge state={weekly?.state ?? "not-started"} />
+                  {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
                 </div>
+                {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
+                  <p className="mt-1 text-[13px] text-muted">Нет на неделе, {substituteText(weekly.absent.substitute)}</p>
+                ) : null}
                 <dl className="mt-2 grid grid-cols-3 gap-2 text-[13px]">
                   {[
                     ["В работе", r.inWork, false],

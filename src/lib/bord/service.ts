@@ -61,6 +61,7 @@ export async function setBordSource(actor: Actor, input: string): Promise<{ id: 
           before: before ?? "забор выключен",
           after: id ?? "забор выключен",
           ip: actor.ip,
+          via: actor.via ?? null,
         },
       });
     });

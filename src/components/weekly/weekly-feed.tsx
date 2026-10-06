@@ -17,6 +17,7 @@ import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { EntryItem } from "./entry-item";
 import { SubmissionStrip } from "./submission-strip";
+import { AbsentBadge, substituteText } from "./absence";
 import { useRunWeekly } from "./use-weekly";
 
 type View = "people" | "blocks";
@@ -261,11 +262,13 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
                 </h2>
                 <div className="flex items-center gap-2">
                   {weekly?.submittedAt ? <span className="text-[13px] text-muted">{submittedText(weekly.submittedAt)}</span> : null}
-                  <WeeklyBadge state={state} />
+                  {weekly?.absent && state !== "submitted" && state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={state} />}
                 </div>
               </div>
               {weekly?.headline ? (
                 <p className="mt-2 text-[16px] leading-snug text-ink">{weekly.headline}</p>
+              ) : weekly?.absent ? (
+                <p className="mt-2 text-[15px] text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p>
               ) : reporting ? (
                 <p className="mt-2 text-[15px] text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
               ) : null}

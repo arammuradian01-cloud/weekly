@@ -46,6 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     canManage: ctx.managementRole !== null,
     management: ctx.management?.role ?? null,
     managementUntil,
+    personal: ctx.via !== "TEAM",
   };
 
   return (

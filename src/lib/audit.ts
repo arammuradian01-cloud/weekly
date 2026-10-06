@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import type { ChangeSource, Prisma } from "@/generated/prisma/client";
+import type { ChangeSource, LoginMethod, Prisma } from "@/generated/prisma/client";
 
 export type AuditInput = {
   action: string;
@@ -12,6 +12,7 @@ export type AuditInput = {
   before?: Prisma.InputJsonValue;
   after?: Prisma.InputJsonValue;
   ip?: string | null;
+  via?: LoginMethod | null;
 };
 
 /** Запись в журнал. Ошибка записи журнала не должна ронять действие пользователя, но попадает в лог сервера */
@@ -29,6 +30,7 @@ export async function writeAudit(input: AuditInput): Promise<void> {
         before: input.before,
         after: input.after,
         ip: input.ip ?? null,
+        via: input.via ?? null,
       },
     });
   } catch (error) {
@@ -76,6 +78,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "weekly.week.close": "Неделя закрыта",
   "weekly.week.open": "Неделя открыта",
   "weekly.import": "Weekly перенесён из таблицы",
+  "weekly.absence.set": "Отмечено отсутствие на неделе",
+  "weekly.absence.remove": "Отметка отсутствия снята",
   "data.reload": "База перезалита из выгрузки Bord",
   "ceo.save": "Отчёт CEO сохранён",
   "settings.dict.create": "Значение справочника добавлено",
@@ -93,4 +97,10 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "sync.rebuild": "Вкладки таблицы пересобраны",
   "sync.settings": "Изменена таблица для выгрузки",
   "sync.bord": "Изменён Bord для забора задач",
+  "auth.login": "Вход по личной ссылке",
+  "auth.invite": "Выдана ссылка для входа",
+  "auth.email-link": "Ссылка для входа отправлена на почту",
+  "auth.device.revoke": "Вход на устройстве завершён",
+  "auth.device.revoke-all": "Завершены все входы",
+  "auth.team-login": "Изменён общий логин team",
 };

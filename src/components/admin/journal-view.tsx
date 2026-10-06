@@ -30,6 +30,9 @@ const SOURCES: { value: JournalEvent["source"] | ""; label: string }[] = [
   { value: "system", label: "Система" },
 ];
 
+/** Как вошёл автор: при общем логине имя выбрано из списка, а не подтверждено */
+const VIA_WORD: Record<NonNullable<JournalEvent["via"]>, string> = { personal: "личный вход", team: "общий логин" };
+
 const SOURCE_WORD = { app: "ресурс", sheet: "таблица", system: "система" } as const;
 
 const plural = (n: number) => {
@@ -119,7 +122,10 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
                     {formatShort(e.at)}
                     {e.time ? `, ${e.time}` : ""}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-ink">{nameOf(e.by)}</td>
+                  <td className="whitespace-nowrap px-3 py-3 text-ink">
+                    {nameOf(e.by)}
+                    {e.via ? <span className="block text-[12px] text-muted">{VIA_WORD[e.via]}</span> : null}
+                  </td>
                   <td className="px-3 py-3 text-ink">
                     <ObjectLabel e={e} />
                   </td>
@@ -139,7 +145,8 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
               <li key={e.id} className="px-4 py-3 text-[14px]">
                 <p className="text-[13px] text-muted">
                   {formatShort(e.at)}
-                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : nameOf(e.by)}, {SOURCE_WORD[e.source]}
+                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : nameOf(e.by)}
+                  {e.via ? ` (${VIA_WORD[e.via]})` : ""}, {SOURCE_WORD[e.source]}
                 </p>
                 <p className="mt-0.5 font-medium text-ink">
                   <ObjectLabel e={e} />

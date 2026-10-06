@@ -63,6 +63,7 @@ export async function setSpreadsheet(actor: Actor, input: string): Promise<{ id:
           before: before ?? "не подключена",
           after: id ?? "не подключена",
           ip: actor.ip,
+          via: actor.via ?? null,
         },
       });
     });

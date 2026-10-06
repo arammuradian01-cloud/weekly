@@ -6,6 +6,10 @@
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/admin/service";
+import { baseUrl } from "@/lib/auth";
+import { issueInvite, linkUrl, revokeAllDevices, saveTeamLogin, type TeamLogin } from "@/lib/login/service";
+import { removeAbsence, setAbsence } from "@/lib/weekly/service";
+import type { WeekKey } from "@/domain/types";
 
 async function done<T>(result: Result<T>): Promise<Result<T>> {
   if (result.ok) revalidatePath("/", "layout");
@@ -59,4 +63,28 @@ export async function previewReloadAction(tasksText: string, weeklyText: string)
 
 export async function runReloadAction(tasksText: string, weeklyText: string, confirm: string) {
   return done(await runAction("Перезаливка из выгрузки Bord", (a) => svc.runReload(a, String(tasksText ?? ""), String(weeklyText ?? ""), String(confirm ?? ""))));
+}
+
+export async function issueInviteAction(slug: string) {
+  const base = await baseUrl();
+  return runAction("Ссылка для входа", async (a) => {
+    const invite = await issueInvite(a, String(slug));
+    return { url: linkUrl(base, invite.token), expiresAt: invite.expiresAt.toISOString(), fullName: invite.fullName };
+  });
+}
+
+export async function revokePersonDevicesAction(slug: string) {
+  return done(await runAction("Завершение входов человека", (a) => revokeAllDevices(a, String(slug))));
+}
+
+export async function saveTeamLoginAction(mode: TeamLogin) {
+  return done(await runAction("Общий логин", (a) => saveTeamLogin(a, mode)));
+}
+
+export async function setAbsenceForAction(slug: string, week: string, substitute: string | null) {
+  return done(await runAction("Отсутствие коллеги", (a) => setAbsence(a, { slug: String(slug), week: String(week) as WeekKey, substitute: substitute ? String(substitute) : null })));
+}
+
+export async function removeAbsenceForAction(slug: string, week: string) {
+  return done(await runAction("Отмена отсутствия коллеги", (a) => removeAbsence(a, String(slug), String(week) as WeekKey)));
 }

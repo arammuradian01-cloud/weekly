@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { requireContext } from "@/lib/auth";
 import { getRhythm } from "@/lib/admin/service";
+import { getTeamLogin } from "@/lib/login/service";
+import { mailConfigured } from "@/lib/mail";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { PageHeader } from "@/components/page-header";
 
@@ -26,7 +28,8 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
  */
 export default async function HelpPage() {
   await requireContext();
-  const rhythm = await getRhythm();
+  const [rhythm, teamLogin] = await Promise.all([getRhythm(), getTeamLogin()]);
+  const mail = mailConfigured();
   const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
   const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
 
@@ -38,8 +41,14 @@ export default async function HelpPage() {
       />
       <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
         <Block title="Вход">
-          <p>Логин team и общий пароль. На следующем экране выберите себя: всё, что вы делаете, записывается на выбранного человека. Чужое имя не выбирайте.</p>
-          <p className="text-muted">Сменить профиль и выйти можно в меню профиля.</p>
+          <p>
+            По личной ссылке: {mail ? "на экране входа введите рабочую почту, ссылка придёт письмом, или попросите её у владельца" : "её выдаёт владелец ресурса"}. Вход
+            запомнится на устройстве на 30 дней, всё, что вы делаете, записывается на вас.
+          </p>
+          {teamLogin === "on" ? (
+            <p>Пока идёт переходный период, работает и общий логин team: после входа выберите себя из списка, чужое имя не выбирайте.</p>
+          ) : null}
+          <p className="text-muted">Где открыт ваш вход и выход на всех устройствах: «Профиль и входы» в меню профиля.</p>
         </Block>
 
         <Block title="Ритм недели">
@@ -48,6 +57,7 @@ export default async function HelpPage() {
             администраторы.
           </p>
           <p className="text-muted">После срока weekly всё равно можно сдать, он будет с отметкой «Сдан с опозданием».</p>
+          <p className="text-muted">В отпуске или на больничном отметьте неделю в профиле, «Нет на неделе»: weekly за неё не ждём, на встрече видно, кто замещает.</p>
         </Block>
 
         <Block title="Сдать weekly">

@@ -104,8 +104,10 @@ describe("люди и роли", () => {
 
   it("правка роли и зоны пишет в журнал каждое поле: было и стало", async () => {
     const o = await owner();
+    // Журнал общий для всех файлов тестов: смотрим только записи этой правки
+    const since = await prisma.auditLog.aggregate({ _max: { id: true } });
     await admin.updatePerson(o, "reva", { role: "ADMIN", zone: "Продукт" });
-    const rows = await prisma.auditLog.findMany({ where: { action: "settings.person.update", entityId: "reva" }, orderBy: { id: "asc" } });
+    const rows = await prisma.auditLog.findMany({ where: { action: "settings.person.update", entityId: "reva", id: { gt: since._max.id ?? 0n } }, orderBy: { id: "asc" } });
     expect(rows.map((r) => [r.field, r.before, r.after])).toEqual([
       ["Зона", "Продукт и CJM по всем линиям", "Продукт"],
       ["Роль", "Лидер", "Администратор"],

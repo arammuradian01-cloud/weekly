@@ -3,7 +3,7 @@
 
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
-import type { Role, TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
+import type { LoginMethod, Role, TaskPriority, TaskState, TaskStatus } from "@/generated/prisma/enums";
 import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
@@ -23,6 +23,8 @@ export type Actor = {
   role: Role;
   management: ManagementRole | null;
   ip?: string | null;
+  /** Как вошёл: общий логин или личная ссылка. Пишется в журнал рядом с автором (этап 9) */
+  via?: LoginMethod | null;
 };
 
 /** Ошибка правила: текст показывается человеку как есть */
@@ -135,6 +137,7 @@ async function audit(db: Db, actor: Actor, number: number, changes: Change[]): P
       before: c.before ?? undefined,
       after: c.after ?? undefined,
       ip: actor.ip ?? null,
+      via: actor.via ?? null,
     })),
   });
 }
