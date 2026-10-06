@@ -18,6 +18,8 @@ import { loadRegistry } from "@/lib/registry";
 import { syncLagging } from "@/lib/sheet/runner";
 import { getStandBanner } from "@/lib/admin/service";
 import { prisma } from "@/lib/db";
+import { inboxCount } from "@/lib/inbox/service";
+import { InboxCountProvider } from "@/components/inbox/inbox-count";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -30,13 +32,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const [tasks, registry, lagging, banner, owner] = await Promise.all([
+  const [tasks, registry, lagging, banner, owner, inbox] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER" }),
     loadRegistry(),
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
     ctx.management ? syncLagging() : Promise.resolve(false),
     getStandBanner(),
     prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" }, select: { fullName: true } }),
+    inboxCount(ctx.person.id),
   ]);
 
   const profile = {
@@ -59,6 +62,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       registry={registry}
     >
     <TaskActionsProvider>
+    <InboxCountProvider initial={inbox}>
     <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
       <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-navy px-3 py-5 lg:flex">
         <div className="flex flex-col gap-8">
@@ -114,6 +118,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <Toaster />
       <GlobalHotkeys />
     </div>
+    </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>
   );

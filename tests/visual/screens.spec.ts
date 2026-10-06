@@ -63,6 +63,7 @@ test("лидер: неделя, weekly, задачи, команда, инстр
   await enter(page, "Рева Тарас");
   for (const [path, name] of [
     ["/", "my-week"],
+    ["/me", "inbox"],
     ["/weekly", "weekly-feed"],
     ["/weekly/submit", "weekly-submit"],
     ["/tasks", "tasks"],

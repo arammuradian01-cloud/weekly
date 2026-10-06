@@ -115,6 +115,7 @@ model Person {
   devices       DeviceSession[]
   absences      Absence[]        @relation("AbsencePerson")
   substitutions Absence[]        @relation("AbsenceSubstitute")
+  inbox         InboxEvent[]     @relation("InboxRecipient")
 
   @@map("people")
 }
@@ -236,6 +237,7 @@ model Task {
   transfers   TaskTransfer[]
   comments    TaskComment[]
   links       TaskLink[]
+  inboxEvents InboxEvent[]
 
   @@index([status])
   @@index([ownerId])
@@ -272,14 +274,15 @@ model TaskTransfer {
 
 /// Комментарии не затираются: только добавляются
 model TaskComment {
-  id       String       @id @default(cuid())
-  taskId   String
-  task     Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  authorId String
-  author   Person       @relation(fields: [authorId], references: [id])
-  text     String
-  source   ChangeSource @default(APP)
-  at       DateTime     @default(now()) @db.Timestamptz(3)
+  id          String       @id @default(cuid())
+  taskId      String
+  task        Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      Person       @relation(fields: [authorId], references: [id])
+  text        String
+  source      ChangeSource @default(APP)
+  at          DateTime     @default(now()) @db.Timestamptz(3)
+  inboxEvents InboxEvent[]
 
   @@index([taskId, at])
   @@map("task_comments")
@@ -444,18 +447,18 @@ model LoginLink {
 
 /// Личный вход на устройстве (этап 9): живёт 30 дней, виден в профиле, завершается «выйти везде»
 model DeviceSession {
-  id           String      @id @default(cuid())
-  personId     String
-  person       Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
-  method       LoginMethod
-  userAgent    String?
-  ip           String?
-  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
-  lastSeenAt   DateTime    @default(now()) @db.Timestamptz(3)
-  expiresAt    DateTime    @db.Timestamptz(3)
-  revokedAt    DateTime?   @db.Timestamptz(3)
+  id         String      @id @default(cuid())
+  personId   String
+  person     Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  method     LoginMethod
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime    @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime    @db.Timestamptz(3)
+  revokedAt  DateTime?   @db.Timestamptz(3)
   /// Кто завершил: сам человек, владелец, выключение человека
-  revokedBy    String?
+  revokedBy  String?
 
   @@index([personId])
   @@map("device_sessions")
@@ -476,4 +479,42 @@ model Absence {
   @@unique([personId, weekId])
   @@index([weekId])
   @@map("absences")
+}
+
+/// Что случилось в «Мне» (этап 11): поставили или передали задачу, предложили, добавили соисполнителем, прокомментировали
+enum InboxKind {
+  TASK_ASSIGNED
+  TASK_PROPOSED
+  TASK_CONFIRMED
+  TASK_COEXECUTOR
+  TASK_COMMENT
+  TASK_DUE
+}
+
+/// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
+/// «Разобрано» закрывает все события предмета, новое событие возвращает его наверх
+model InboxEvent {
+  id          String       @id @default(cuid())
+  recipientId String
+  recipient   Person       @relation("InboxRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  kind        InboxKind
+  actorId     String?
+  actorName   String?
+  /// task:47
+  subject     String
+  taskId      String?
+  task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  commentId   String?
+  comment     TaskComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  /// Коротко, что случилось: «передал вам задачу», «прокомментировал: ...»
+  text        String
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  /// «Разобрано»
+  doneAt      DateTime?    @db.Timestamptz(3)
+  /// «Напомнить»: до этого момента событие скрыто
+  snoozeUntil DateTime?    @db.Timestamptz(3)
+
+  @@index([recipientId, doneAt])
+  @@index([recipientId, subject])
+  @@map("inbox_events")
 }
