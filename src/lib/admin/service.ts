@@ -14,6 +14,7 @@ import type { DeadlineSetting } from "@/lib/week";
 import type { MeetingSetting } from "@/lib/weekly/weeks";
 import type { EditableDictKind } from "@/domain/dictionaries";
 import type { Prisma, Role } from "@/generated/prisma/client";
+import { ReloadProblemsError, planReload, reloadFromBord, type ReloadPlan, type ReloadResult } from "./reload";
 
 type Tx = Prisma.TransactionClient;
 
@@ -332,4 +333,61 @@ export async function saveRhythm(actor: Actor, input: Rhythm, now = new Date()) 
     for (const [field, b, a] of changes) await audit(tx, actor, "settings.update", "settings", "rhythm", field, b, a);
     return { changed: changes.length, weeks: open.length };
   });
+}
+
+/** Плашка над страницами: тестовый стенд, пилот или без плашки. Меняет только владелец */
+export const STAND_BANNERS = ["test", "pilot", "off"] as const;
+export type StandBanner = (typeof STAND_BANNERS)[number];
+const STAND_BANNER_LABELS: Record<StandBanner, string> = { test: "Тестовый стенд", pilot: "Пилот", off: "Без плашки" };
+
+export async function getStandBanner(): Promise<StandBanner> {
+  const value = await getSetting<string>("stand.banner", "test");
+  return (STAND_BANNERS as readonly string[]).includes(value) ? (value as StandBanner) : "test";
+}
+
+export async function saveStandBanner(actor: Actor, mode: StandBanner): Promise<StandBanner> {
+  requirePeople(actor);
+  if (!(STAND_BANNERS as readonly string[]).includes(mode)) fail("Выберите вид плашки из списка");
+  const before = await getStandBanner();
+  if (before === mode) return mode;
+  await prisma.$transaction(async (tx) => {
+    await tx.setting.upsert({ where: { key: "stand.banner" }, update: { value: mode }, create: { key: "stand.banner", value: mode } });
+    await audit(tx, actor, "settings.banner", "settings", "stand.banner", "Плашка над страницами", STAND_BANNER_LABELS[before], STAND_BANNER_LABELS[mode]);
+  });
+  return mode;
+}
+
+// Перезаливка из выгрузки Bord: только владелец и только до пилота, пока плашка «Тестовый стенд»
+
+/** Слово, которое владелец вводит перед перезаливкой */
+export const RELOAD_CONFIRM_WORD = "перезалить";
+const RELOAD_LIMIT = 2_000_000;
+
+async function requireReload(actor: Actor, tasksText: string, weeklyText: string) {
+  requirePeople(actor);
+  if ((await getStandBanner()) !== "test") {
+    fail("Перезаливка доступна только до пилота, пока в настройках выбрана плашка «Тестовый стенд»");
+  }
+  if (!tasksText.trim() || !weeklyText.trim()) fail("Выберите оба файла: CSV вкладки «Задачи» и CSV вкладки «Weekly CEO»");
+  if (tasksText.length > RELOAD_LIMIT || weeklyText.length > RELOAD_LIMIT) fail("Файл больше 2 МБ: скачайте только одну вкладку, «Файл», «Скачать», «CSV»");
+}
+
+/** Пробный запуск: что сейчас в базе, сколько строк в выгрузке и почему её не загрузить */
+export async function previewReload(actor: Actor, tasksText: string, weeklyText: string): Promise<ReloadPlan> {
+  await requireReload(actor, tasksText, weeklyText);
+  return planReload(prisma, tasksText, weeklyText);
+}
+
+export async function runReload(actor: Actor, tasksText: string, weeklyText: string, confirm: string, now = new Date()): Promise<ReloadResult> {
+  await requireReload(actor, tasksText, weeklyText);
+  if (confirm.trim().toLowerCase() !== RELOAD_CONFIRM_WORD) fail(`Чтобы перезалить, введите слово «${RELOAD_CONFIRM_WORD}»`);
+  try {
+    return await reloadFromBord(prisma, tasksText, weeklyText, {
+      batch: `bord-${now.toISOString().slice(0, 10)}`,
+      actor: { personId: actor.personId, name: actor.fullName, source: "APP", ip: actor.ip ?? null },
+    });
+  } catch (error) {
+    if (error instanceof ReloadProblemsError) fail(`Выгрузку не загрузить, база не тронута: ${error.problems.slice(0, 5).join("; ")}`);
+    throw error;
+  }
 }

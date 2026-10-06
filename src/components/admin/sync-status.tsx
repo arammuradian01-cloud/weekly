@@ -1,115 +1,181 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, CloudUpload, RotateCcw, TriangleAlert } from "lucide-react";
-import { usePrototype } from "@/domain/store";
-import { formatShort, addDays } from "@/domain/dates";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { CheckCircle2, CircleDashed, CloudUpload, Copy, ExternalLink, RotateCcw, ScanSearch, TriangleAlert, XCircle } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
+import { TextInput } from "@/components/ui/primitives";
+import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
+import { usePrototype } from "@/domain/store";
+import { pushNowAction, rebuildNowAction, reconcileNowAction, setSpreadsheetAction } from "@/app/(app)/sync/actions";
 
-const RUNS = [
-  { time: "03:41", items: 3, result: "ok" },
-  { time: "03:40", items: 1, result: "ok" },
-  { time: "03:12", items: 7, result: "ok" },
-  { time: "02:55", items: 2, result: "retry" },
-  { time: "02:54", items: 2, result: "ok" },
-] as const;
+type Tone = "ok" | "warn" | "error" | "pending";
 
-/** Страница синхронизации для владельца: последняя выгрузка, очередь, ошибки (раздел 5 ТЗ) */
-export function SyncStatus({ counts }: { counts: { tasks: number; comments: number; entries: number } }) {
-  const { data, notify } = usePrototype();
+export type SyncView = {
+  connected: boolean;
+  imitation: boolean;
+  spreadsheetId: string | null;
+  serviceEmail: string | null;
+  hasKey: boolean;
+  queue: { size: number; waitingMin: number | null };
+  lagging: boolean;
+  lastPush: { ago: string; at: string } | null;
+  reconcile: { at: string; text: string; tone: Tone } | null;
+  nextReconcile: string;
+  error: { at: string; kind: string; message: string } | null;
+  runs: { id: string; at: string; kind: string; text: string; tone: Tone }[];
+  counts: { tasks: number; comments: number; entries: number };
+};
+
+const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
+
+function plural(n: number, one: string, few: string, many: string) {
+  const d = n % 10;
+  const h = n % 100;
+  if (d === 1 && h !== 11) return one;
+  if (d >= 2 && d <= 4 && (h < 12 || h > 14)) return few;
+  return many;
+}
+
+function ToneIcon({ tone }: { tone: Tone }) {
+  const cls = "h-4 w-4 shrink-0";
+  if (tone === "ok") return <CheckCircle2 className={cn(cls, "text-green-ink")} aria-hidden="true" />;
+  if (tone === "warn") return <TriangleAlert className={cn(cls, "text-warning-ink")} aria-hidden="true" />;
+  if (tone === "error") return <XCircle className={cn(cls, "text-danger-ink")} aria-hidden="true" />;
+  return <CircleDashed className={cn(cls, "text-muted")} aria-hidden="true" />;
+}
+
+/** Страница синхронизации для владельца: подключение копии, последняя выгрузка, очередь, сверка, история запусков (раздел 5 ТЗ) */
+export function SyncStatus({ view }: { view: SyncView }) {
+  const router = useRouter();
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [busy, setBusy] = useState<string | null>(null);
   const [confirm, setConfirm] = useState(false);
+
+  // Страница живая: состояние очереди обновляется само раз в 30 секунд, как и цикл выгрузки
+  useEffect(() => {
+    if (!view.connected) return;
+    const id = setInterval(() => router.refresh(), 30_000);
+    return () => clearInterval(id);
+  }, [router, view.connected]);
+
+  async function act<T>(name: string, fn: () => Promise<{ ok: true; value: T } | { ok: false; error: string }>, okText: (v: T) => string) {
+    setBusy(name);
+    try {
+      const value = await run(fn);
+      if (value !== null) notify(okText(value));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-8">
-      <p className="rounded-xl border border-dashed border-line px-5 py-3 text-[15px] text-ink">
-        Синхронизации с таблицей пока нет, она появится на этапе 7. Время выгрузок и записи журнала ниже показывают, как будет выглядеть страница. Число строк во вкладках посчитано по данным ресурса.
-      </p>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-xl bg-green-soft px-5 py-4">
-          <p className="inline-flex items-center gap-2 text-[14px] font-medium text-green-ink">
-            <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-            Последняя выгрузка
-          </p>
-          <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">1 мин назад</p>
-          <p className="text-[13px] text-muted">Изменение в ресурсе видно в таблице примерно через минуту</p>
-        </div>
-        <div className="rounded-xl bg-surface px-5 py-4">
-          <p className="text-[14px] font-medium text-muted">Очередь отправки</p>
-          <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">0</p>
-          <p className="text-[13px] text-muted">Пакет уходит раз в 30 секунд</p>
-        </div>
-        <div className="rounded-xl bg-surface px-5 py-4">
-          <p className="text-[14px] font-medium text-muted">Сверка с таблицей</p>
-          <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">0 расхождений</p>
-          <p className="text-[13px] text-muted">Ночью {formatShort(data.today)} в 03:00</p>
-        </div>
-      </div>
+      {view.imitation ? (
+        <p className="rounded-xl border border-dashed border-line px-5 py-3 text-[15px] text-ink">
+          Режим имитации: вместо Google ресурс пишет в таблицу в памяти сервера. Так проверяют выгрузку без ключа служебного аккаунта.
+        </p>
+      ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => notify("Выгрузка запущена")}>
-          <CloudUpload className="h-4 w-4" aria-hidden="true" />
-          Выгрузить сейчас
-        </Button>
-        <Button variant="secondary" onClick={() => setConfirm(true)}>
-          <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          Пересобрать вкладки
-        </Button>
-      </div>
+      {view.connected ? <Tiles view={view} /> : null}
+
+      {view.error ? (
+        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-[15px] text-ink">
+          <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
+          <div className="min-w-0">
+            <p className="font-medium text-danger-ink">
+              {view.error.kind} не прошла {view.error.at}
+            </p>
+            <p className="mt-0.5 break-words">{view.error.message}</p>
+            <p className="mt-1 text-[14px] text-muted">Правки ждут в очереди и не теряются. Повтор через минуту, при новых ошибках реже, до раза в 5 минут.</p>
+          </div>
+        </div>
+      ) : null}
+
+      {view.connected ? (
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy !== null} onClick={() => act("push", pushNowAction, (r) => (r.items ? `Выгружено: ${r.items} ${plural(r.items, "строка", "строки", "строк")}` : "Таблица уже совпадает с ресурсом"))}>
+            <CloudUpload className="h-4 w-4" aria-hidden="true" />
+            {busy === "push" ? "Выгружаем…" : "Выгрузить сейчас"}
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={busy !== null}
+            onClick={() =>
+              act("reconcile", reconcileNowAction, (r) => {
+                const n = r.details.diffs.length + r.details.removed.length + r.details.restored.length;
+                return n ? `Сверка вернула значения ресурса: ${n}` : "Сверка: расхождений нет";
+              })
+            }
+          >
+            <ScanSearch className="h-4 w-4" aria-hidden="true" />
+            {busy === "reconcile" ? "Сверяем…" : "Сверить сейчас"}
+          </Button>
+          <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirm(true)}>
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            {busy === "rebuild" ? "Пересобираем…" : "Пересобрать вкладки"}
+          </Button>
+        </div>
+      ) : null}
+
+      <Connection view={view} />
 
       <section aria-labelledby="sync-tabs">
-        <h2 id="sync-tabs" className="mb-3 text-[19px] font-semibold text-ink">Вкладки ресурса в таблице</h2>
+        <h2 id="sync-tabs" className="mb-3 text-[19px] font-semibold text-ink">
+          Вкладки ресурса в таблице
+        </h2>
         <ul className="grid gap-2 sm:grid-cols-2">
           {[
-            ["Задачи", `${counts.tasks} строк`],
-            ["Комментарии к задачам", `${counts.comments} строк`],
-            ["Weekly", `${counts.entries} строк`],
-            ["Журнал выгрузки", "последние 1000 событий"],
+            ["Задачи", `${view.counts.tasks} ${plural(view.counts.tasks, "строка", "строки", "строк")}, без архива`],
+            ["Комментарии к задачам", `${view.counts.comments} ${plural(view.counts.comments, "строка", "строки", "строк")}`],
+            ["Weekly", `${view.counts.entries} ${plural(view.counts.entries, "строка", "строки", "строк")}`],
+            ["Журнал выгрузки", "что и когда выгружено, ночью сокращается до 2000 строк"],
+            ["Сводка", "формулы по лидерам"],
           ].map(([name, note]) => (
-            <li key={name} className="flex items-center justify-between rounded-lg px-4 py-3 ring-1 ring-line">
+            <li key={name} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-lg px-4 py-3 ring-1 ring-line">
               <span className="text-[15px] font-medium text-ink">{name}</span>
               <span className="text-[14px] text-muted">{note}</span>
             </li>
           ))}
         </ul>
         <p className="mt-3 text-[14px] text-muted">
-          Пишет только служебный аккаунт Google. Отчёт CEO в таблицу не выгружается. Разработка идёт на копии таблицы, прод подключается на этапе 7 с согласия Арама.
+          Вкладки защищены: кроме служебного аккаунта их может править только владелец таблицы, и такую правку ночная сверка вернёт и запишет в журнал. Вкладки с такими же названиями, которые были в таблице до подключения, ресурс переименовывает в «… (архив до запуска)», остальные вкладки не трогает. Отчёт CEO в таблицу не выгружается.
         </p>
       </section>
 
       <section aria-labelledby="sync-log">
-        <h2 id="sync-log" className="mb-3 text-[19px] font-semibold text-ink">Журнал выгрузок</h2>
-        <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
-          {RUNS.map((r, i) => (
-            <li key={i} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[15px]">
-              <span className="tabular-nums text-muted">
-                {formatShort(data.today)}, {r.time}
-              </span>
-              <span className="text-ink">Изменений: {r.items}</span>
-              {r.result === "ok" ? (
-                <span className="inline-flex items-center gap-1.5 text-green-ink">
-                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                  Выгружено
+        <h2 id="sync-log" className="mb-3 text-[19px] font-semibold text-ink">
+          История запусков
+        </h2>
+        {view.runs.length ? (
+          <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+            {view.runs.map((r) => (
+              <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-[15px] sm:grid-cols-[150px_110px_1fr]">
+                <span className="tabular-nums text-muted">{r.at}</span>
+                <span className="text-ink">{r.kind}</span>
+                <span className={cn("col-span-2 inline-flex min-w-0 items-start gap-1.5 sm:col-span-1", r.tone === "error" ? "text-danger-ink" : r.tone === "warn" ? "text-warning-ink" : "text-ink")}>
+                  <span className="mt-0.5">
+                    <ToneIcon tone={r.tone} />
+                  </span>
+                  <span className="min-w-0 break-words">{r.text}</span>
                 </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 text-warning-ink">
-                  <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-                  Google не ответил, повторили через минуту
-                </span>
-              )}
-            </li>
-          ))}
-          <li className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[15px]">
-            <span className="tabular-nums text-muted">{formatShort(addDays(data.today, -3))}, 03:00</span>
-            <span className="text-ink">Сверка</span>
-            <span className="inline-flex items-center gap-1.5 text-warning-ink">
-              <TriangleAlert className="h-4 w-4" aria-hidden="true" />
-              Пример: статус задачи правили в таблице руками, вернули значение ресурса
-            </span>
-          </li>
-        </ul>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-xl px-5 py-4 text-[15px] text-muted ring-1 ring-line">Запусков ещё не было. Первая выгрузка начнётся в течение 30 секунд после подключения копии.</p>
+        )}
       </section>
 
-      <Modal open={confirm} onOpenChange={setConfirm} title="Пересобрать вкладки ресурса?" description="Вкладки «Задачи», «Комментарии к задачам», «Weekly» и «Журнал выгрузки» перепишутся целиком из ресурса. Остальные вкладки таблицы не трогаем.">
+      <Modal
+        open={confirm}
+        onOpenChange={setConfirm}
+        title="Пересобрать вкладки ресурса?"
+        description="Вкладки «Задачи», «Комментарии к задачам» и «Weekly» перепишутся целиком из ресурса, «Сводка» пересчитается. Остальные вкладки таблицы не трогаем."
+      >
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirm(false)}>
             Отмена
@@ -117,7 +183,7 @@ export function SyncStatus({ counts }: { counts: { tasks: number; comments: numb
           <Button
             onClick={() => {
               setConfirm(false);
-              notify("Вкладки пересобираются");
+              void act("rebuild", rebuildNowAction, (r) => `Вкладки пересобраны: ${r.items} ${plural(r.items, "строка", "строки", "строк")}`);
             }}
           >
             Пересобрать
@@ -125,5 +191,150 @@ export function SyncStatus({ counts }: { counts: { tasks: number; comments: numb
         </div>
       </Modal>
     </div>
+  );
+}
+
+function Tiles({ view }: { view: SyncView }) {
+  const fresh = view.lastPush && !view.lagging && !view.error;
+  return (
+    <div className="grid gap-4 sm:grid-cols-3">
+      <div className={cn("rounded-xl px-5 py-4", fresh ? "bg-green-soft" : view.lagging ? "bg-warning-soft" : "bg-surface")}>
+        <p className={cn("inline-flex items-center gap-2 text-[14px] font-medium", fresh ? "text-green-ink" : view.lagging ? "text-warning-ink" : "text-muted")}>
+          {fresh ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : view.lagging ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : null}
+          Последняя выгрузка
+        </p>
+        <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">{view.lastPush ? view.lastPush.ago : "ещё не было"}</p>
+        <p className="text-[13px] text-muted">{view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд"}</p>
+      </div>
+      <div className={cn("rounded-xl px-5 py-4", view.lagging ? "bg-warning-soft" : "bg-surface")}>
+        <p className={cn("text-[14px] font-medium", view.lagging ? "text-warning-ink" : "text-muted")}>Очередь отправки</p>
+        <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">{view.queue.size}</p>
+        <p className="text-[13px] text-muted">
+          {view.queue.size === 0
+            ? "Всё выгружено. Пакет уходит раз в 30 секунд"
+            : view.queue.waitingMin
+              ? `Самая старая правка ждёт ${view.queue.waitingMin} мин`
+              : "Уйдёт в ближайшие 30 секунд"}
+        </p>
+      </div>
+      <div className="rounded-xl bg-surface px-5 py-4">
+        <p className="text-[14px] font-medium text-muted">Сверка с таблицей</p>
+        <p className={cn("mt-1 text-[22px] font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
+          {view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было"}
+        </p>
+        <p className="mt-1 text-[13px] text-muted">
+          {view.reconcile ? `${view.reconcile.at}. ` : ""}Следующая: {view.nextReconcile}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Connection({ view }: { view: SyncView }) {
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [link, setLink] = useState(view.spreadsheetId ? sheetUrl(view.spreadsheetId) : "");
+  const [saving, setSaving] = useState(false);
+  const changed = link.trim() !== (view.spreadsheetId ? sheetUrl(view.spreadsheetId) : "");
+
+  async function save(value: string) {
+    setSaving(true);
+    try {
+      const res = await run(() => setSpreadsheetAction(value));
+      if (!res) return;
+      if (!res.id) notify("Таблица отключена");
+      else if (res.access === "ok") notify("Копия подключена, доступ есть. Первая выгрузка в течение 30 секунд");
+      else if (res.access === "no-key") notify("Ссылка сохранена. Выгрузка начнётся, когда на сервере появится ключ служебного аккаунта");
+      else notify(`Ссылка сохранена, но ${res.access.charAt(0).toLowerCase()}${res.access.slice(1)}`, "error");
+      setLink(res.id ? sheetUrl(res.id) : "");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="sync-connection" className="rounded-xl px-5 py-5 ring-1 ring-line">
+      <h2 id="sync-connection" className="text-[19px] font-semibold text-ink">
+        Подключение
+      </h2>
+
+      {!view.connected ? (
+        <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-[15px] text-ink marker:text-muted">
+          <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Создать проект в Google Cloud, включить Google Sheets API, создать служебный аккаунт с ключом JSON (пошагово в инструкции к этапу 6)</li>
+          <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Положить ключ в переменную GOOGLE_SERVICE_ACCOUNT_JSON в настройках приложения на Timeweb</li>
+          <li>Сделать копию таблицы Insurance&Invest Bord и дать адресу служебного аккаунта доступ редактора</li>
+          <li>Вставить ссылку на копию ниже и сохранить</li>
+        </ol>
+      ) : null}
+
+      <dl className="mt-4 grid gap-x-6 gap-y-3 text-[15px] sm:grid-cols-[200px_1fr]">
+        <dt className="text-muted">Ключ служебного аккаунта</dt>
+        <dd className={view.hasKey ? "text-ink" : "text-warning-ink"}>{view.hasKey ? "задан на сервере" : "не задан: выгрузка не начнётся"}</dd>
+        <dt className="text-muted">Адрес служебного аккаунта</dt>
+        <dd className="flex min-w-0 flex-wrap items-center gap-2">
+          {view.serviceEmail ? (
+            <>
+              <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-[14px] text-ink">{view.serviceEmail}</code>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(view.serviceEmail!).then(
+                    () => notify("Адрес скопирован"),
+                    () => notify("Не получилось скопировать: выделите адрес и скопируйте вручную", "error"),
+                  );
+                }}
+              >
+                <Copy className="h-4 w-4" aria-hidden="true" />
+                Скопировать
+              </Button>
+            </>
+          ) : (
+            <span className="text-muted">появится, когда задан ключ</span>
+          )}
+        </dd>
+        <dt className="text-muted">Копия таблицы</dt>
+        <dd className="min-w-0">
+          {view.spreadsheetId ? (
+            <a href={sheetUrl(view.spreadsheetId)} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 break-all text-blue-700 underline-offset-2 hover:underline">
+              <span className="min-w-0 break-all">{view.spreadsheetId}</span>
+              <ExternalLink className="h-4 w-4 shrink-0" aria-hidden="true" />
+            </a>
+          ) : (
+            <span className="text-muted">не подключена</span>
+          )}
+        </dd>
+      </dl>
+
+      <form
+        className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save(link);
+        }}
+      >
+        <TextInput
+          label="Ссылка на копию таблицы"
+          id="sync-link"
+          className="min-w-0 flex-1"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          placeholder="https://docs.google.com/spreadsheets/d/…"
+          hint="Рабочую таблицу подключаем только на этапе 7 и с согласия Арама. Сейчас нужна копия"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div className="flex gap-2 sm:pb-[26px]">
+          <Button type="submit" disabled={saving || !changed}>
+            {saving ? "Сохраняем…" : "Сохранить"}
+          </Button>
+          {view.spreadsheetId ? (
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => void save("")}>
+              Отключить
+            </Button>
+          ) : null}
+        </div>
+      </form>
+    </section>
   );
 }

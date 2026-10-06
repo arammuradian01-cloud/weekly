@@ -368,3 +368,33 @@ model CeoReport {
 
   @@map("ceo_reports")
 }
+
+/// Очередь отправки в Google-таблицу: что поменялось с прошлой выгрузки. Пишут триггеры базы в той же транзакции,
+/// что и правку, поэтому пропустить изменение нельзя. kind: task (номер), comment (id), entry (id), all (*)
+model SheetOutbox {
+  id   BigInt   @id @default(autoincrement())
+  kind String
+  key  String
+  at   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([at])
+  @@map("sheet_outbox")
+}
+
+/// Прогоны выгрузки, сверки и пересборки: для страницы «Синхронизация» и вкладки «Журнал выгрузки»
+model SheetRun {
+  id         BigInt    @id @default(autoincrement())
+  /// push, reconcile, rebuild
+  kind       String
+  startedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  finishedAt DateTime? @db.Timestamptz(3)
+  ok         Boolean   @default(false)
+  /// Сколько строк записано или исправлено
+  items      Int       @default(0)
+  error      String?
+  /// Что именно вернула сверка: вкладка, строка, поле, было, стало
+  details    Json?
+
+  @@index([kind, startedAt])
+  @@map("sheet_runs")
+}

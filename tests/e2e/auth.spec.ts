@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
+import { enter } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -138,3 +139,15 @@ test("проверка живости для хостинга открыта б�
   expect(live.status()).toBe(200);
   expect(await live.json()).toEqual({ ok: true });
 });
+
+test("чужой адрес показывает понятную страницу и ведёт обратно (этап 7)", async ({ page }) => {
+  await enter(page, "Рева Тарас");
+  const response = await page.goto("/takoi-stranicy-net");
+  expect(response?.status()).toBe(404);
+  await expect(page.getByRole("heading", { name: "Такой страницы нет" })).toBeVisible();
+  await shot(page, "06-not-found");
+  await page.getByRole("link", { name: "На мою неделю" }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
+});
+

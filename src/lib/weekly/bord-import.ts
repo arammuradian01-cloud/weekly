@@ -76,13 +76,8 @@ export function entryTypeFor(blockCode: string): string {
 
 export type WeeklyImportReport = { created: number; skipped: boolean; weeks: number[] };
 
-/**
- * Импорт в пустой weekly: записи, сданные weekly у авторов и закрытые недели (их уже разобрали на встрече).
- * Если записи уже есть, ничего не делает: повторный запуск безопасен
- */
-export async function importBordWeekly(db: PrismaClient, text: string, opts: { batch: string }): Promise<WeeklyImportReport> {
-  if ((await db.weeklyEntry.count()) > 0) return { created: 0, skipped: true, weeks: [] };
-  const rows = readWeeklyTable(text);
+/** Сопоставляет строки вкладки со справочниками и людьми и собирает, что помешает импорту */
+async function mapWeeklyRows(db: PrismaClient, rows: WeeklyRow[]) {
   const [people, dicts] = await Promise.all([db.person.findMany(), db.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "WEEKLY_BLOCK", "ENTRY_TYPE"] } } })]);
   const byName = new Map(people.map((p) => [p.fullName, p]));
   const find = (kind: string, pred: (label: string, code: string) => boolean) => dicts.find((d) => d.kind === kind && pred(d.label, d.code));
@@ -99,6 +94,24 @@ export async function importBordWeekly(db: PrismaClient, text: string, opts: { b
     const type = block ? find("ENTRY_TYPE", (_l, c) => c === entryTypeFor(block.code)) : undefined;
     return { r, block, direction, person, type };
   });
+  return { mapped, problems };
+}
+
+/** Проверка выгрузки weekly без записи в базу: сколько строк и что помешает импорту */
+export async function checkBordWeekly(db: PrismaClient, text: string): Promise<{ rows: number; problems: string[] }> {
+  const rows = readWeeklyTable(text);
+  const { problems } = await mapWeeklyRows(db, rows);
+  return { rows: rows.length, problems };
+}
+
+/**
+ * Импорт в пустой weekly: записи, сданные weekly у авторов и закрытые недели (их уже разобрали на встрече).
+ * Если записи уже есть, ничего не делает: повторный запуск безопасен
+ */
+export async function importBordWeekly(db: PrismaClient, text: string, opts: { batch: string }): Promise<WeeklyImportReport> {
+  if ((await db.weeklyEntry.count()) > 0) return { created: 0, skipped: true, weeks: [] };
+  const rows = readWeeklyTable(text);
+  const { mapped, problems } = await mapWeeklyRows(db, rows);
   if (problems.length) throw new Error(`Импорт weekly остановлен, ничего не записано:\n- ${problems.join("\n- ")}`);
 
   const weeks = new Set<string>();

@@ -117,6 +117,15 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     if (entity === "person" && id) return `Человек: ${nameOf(id)}`;
     if (entity === "settings") return "Ритм недели";
     if (entity === "export") return "Выгрузка в Excel";
+    if (entity === "sheet") {
+      if (action === "sync.settings") return "Google-таблица: подключение";
+      if (action === "sync.rebuild") return "Google-таблица: все вкладки";
+      const [tab, key] = (id ?? "").split("/");
+      if (!tab) return "Google-таблица";
+      if (key === "шапка") return `Google-таблица, вкладка «${tab}»: шапка`;
+      if (key && tab === "Задачи") return `Google-таблица, вкладка «${tab}»: задача ${key}`;
+      return `Google-таблица, вкладка «${tab}»`;
+    }
     return AUDIT_ACTION_LABELS[action] ?? action;
   }
 

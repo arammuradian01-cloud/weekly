@@ -31,6 +31,7 @@ beforeEach(async () => {
   await prisma.setting.update({ where: { key: "week.deadline" }, data: { value: { weekday: 1, time: "18:00" } } });
   await prisma.setting.update({ where: { key: "week.meeting" }, data: { value: { weekday: 2 } } });
   await prisma.setting.update({ where: { key: "tasks.staleDays" }, data: { value: 14 } });
+  await prisma.setting.upsert({ where: { key: "stand.banner" }, update: { value: "test" }, create: { key: "stand.banner", value: "test" } });
 });
 afterAll(() => prisma.$disconnect());
 
@@ -199,3 +200,21 @@ describe("выгрузка в Excel", () => {
     expect(at.getTime() - audit.at.getTime()).toBe(3 * 3600 * 1000);
   });
 });
+
+describe("плашка над страницами (этап 7)", () => {
+  it("переключает только владелец, в журнале было и стало, неизвестный вид не проходит", async () => {
+    expect(await admin.getStandBanner()).toBe("test");
+    await expect(admin.saveStandBanner(await adminActor(), "pilot")).rejects.toThrow(/только владелец/);
+    await expect(admin.saveStandBanner(await owner(), "nope" as admin.StandBanner)).rejects.toThrow(/из списка/);
+    expect(await admin.saveStandBanner(await owner(), "pilot")).toBe("pilot");
+    expect(await admin.getStandBanner()).toBe("pilot");
+    const log = await lastAudit("settings.banner");
+    expect([log?.field, log?.before, log?.after]).toEqual(["Плашка над страницами", "Тестовый стенд", "Пилот"]);
+    // Повтор того же вида журнал не засоряет
+    await admin.saveStandBanner(await owner(), "pilot");
+    expect(await prisma.auditLog.count({ where: { action: "settings.banner" } })).toBe(1);
+    await prisma.setting.update({ where: { key: "stand.banner" }, data: { value: "garbage" } });
+    expect(await admin.getStandBanner()).toBe("test");
+  });
+});
+

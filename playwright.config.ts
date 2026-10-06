@@ -39,6 +39,8 @@ export default defineConfig({
       APP_URL: `http://localhost:${PORT}`,
       TRUST_PROXY: "false",
       SETUP_TOKEN: "e2e-setup-token-0123456789",
+      // Выгрузка в таблицу идёт в имитацию Google в памяти сервера
+      SHEET_FAKE: "1",
     },
   },
 });

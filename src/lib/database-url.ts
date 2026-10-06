@@ -73,3 +73,12 @@ export function sessionSecretFromEnv(env: Env = process.env): string {
   if (!password) return "";
   return createHmac("sha256", password).update("weekly/session/v1").digest("base64url");
 }
+
+/**
+ * Откуда взят ключ сессий: env (свой SESSION_SECRET), derived (выведен из пароля базы) или none.
+ * Для пилота нужен свой ключ: тогда смена пароля базы не выводит всех, а утечка одного не раскрывает другой
+ */
+export function sessionSecretSource(env: Env = process.env): "env" | "derived" | "none" {
+  if (env.SESSION_SECRET) return "env";
+  return sessionSecretFromEnv(env) ? "derived" : "none";
+}
