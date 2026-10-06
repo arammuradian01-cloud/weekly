@@ -178,6 +178,10 @@ describe("забор задач из Bord", () => {
 
     const next = await tasks.createTask(await owner(), { title: "Ещё одна", outcome: "Готово", owner: "reva", direction: "product", due: addDays(moscowToday(), 7) });
     expect(next.task.number).toBe(RESOURCE_FIRST_NUMBER + 1);
+    // Событие «Мне» о задаче ресурса переехало на её новый номер (Рева получил задачу от владельца)
+    const events = await prisma.inboxEvent.findMany({ where: { task: { title: "Задача из ресурса" } } });
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.subject === `task:${RESOURCE_FIRST_NUMBER}`)).toBe(true);
   });
 
   it("битая строка не мешает остальным и видна, пока её не поправят; «Евгений» не становится новым человеком", async () => {

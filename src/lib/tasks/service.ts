@@ -12,6 +12,7 @@ import { CLOSED_DB, priorityCode, priorityDb, stateCode, stateDb, statusCode, st
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } from "./dates";
 import { ownerOf, taskInclude, toTaskDto, type TaskRow } from "./dto";
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
+import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -293,6 +294,17 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
       },
       include: taskInclude,
     });
+    // «Мне»: ответственному поставили или предложили задачу, соисполнителей добавили
+    const subject = taskSubject(number);
+    await notify(tx, {
+      kind: status === "proposed" ? "TASK_PROPOSED" : "TASK_ASSIGNED",
+      recipients: [ownerId],
+      actor,
+      subject,
+      taskId: row.id,
+      text: status === "proposed" ? "Вам предложена задача, её подтвердит владелец или администратор" : "Новая задача для вас",
+    });
+    await notify(tx, { kind: "TASK_COEXECUTOR", recipients: coIds, actor, subject, taskId: row.id, text: "Вы соисполнитель" });
     const names = await nameMap(tx);
     await audit(tx, actor, number, [
       {
@@ -308,7 +320,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
 // ---------- Правки ----------
 
 export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string): Promise<TaskResult> {
-  return mutate(actor, number, async (row, can) => {
+  return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     if (current === "proposed" ? !can.confirm : !can.status) {
       fail(current === "proposed" ? "Предложенную задачу подтверждает владелец или администратор" : "Статус меняет ответственный, владелец или администратор");
@@ -327,6 +339,10 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       );
     }
     const closing = CLOSED_DB.includes(db);
+    // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
+    if (current === "proposed") {
+      await notify(tx, { kind: "TASK_CONFIRMED", recipients: [row.ownerId, row.createdById], actor, subject: taskSubject(number), taskId: row.id, text: "Задача подтверждена" });
+    }
     return {
       data: { status: db, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null },
       changes: [{ field: "Статус", before: statusOf(current).label, after: resolution ? `${statusOf(next).label}. ${resolution}` : statusOf(next).label }],
@@ -381,6 +397,8 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
     const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
+    // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
+    await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
     return {
       data: { due: dbDate(to) },
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
@@ -448,6 +466,7 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
       ownerId = p!.id;
     }
     const changes: Change[] = [{ field: "Ответственный", before, after: owner === "all" ? "Все лидеры" : (names.get(owner) ?? owner) }];
+    await notify(tx, { kind: "TASK_ASSIGNED", recipients: [ownerId], actor, subject: taskSubject(number), taskId: row.id, text: "Задача передана вам" });
     // Ответственный не бывает своим же соисполнителем: если он им был, это тоже правка и она в журнале
     if (ownerId && row.coExecutors.some((c) => c.person.slug === owner)) {
       await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: ownerId } });
@@ -474,6 +493,8 @@ export async function setCoExecutors(actor: Actor, number: number, slugs: Person
     if (before === after) fail("Соисполнители не изменились");
     await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id } });
     if (ids.length) await tx.taskCoExecutor.createMany({ data: ids.map((personId) => ({ taskId: row.id, personId })) });
+    const added = ids.filter((id) => !row.coExecutors.some((c) => c.personId === id));
+    await notify(tx, { kind: "TASK_COEXECUTOR", recipients: added, actor, subject: taskSubject(number), taskId: row.id, text: "Вы соисполнитель" });
     return { data: { updatedAt: new Date() }, changes: [{ field: "Соисполнители", before: before || "нет", after: after || "нет" }], undo: false };
   });
 }
@@ -518,6 +539,16 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
     const row = await lockRow(tx, number);
     if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
     const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value } });
+    // Комментарий видят в «Мне» ответственный, соисполнители и тот, кто поставил задачу
+    await notify(tx, {
+      kind: "TASK_COMMENT",
+      recipients: [row.ownerId, row.createdById, ...row.coExecutors.map((c) => c.personId)],
+      actor,
+      subject: taskSubject(number),
+      taskId: row.id,
+      commentId: comment.id,
+      text: `Комментарий: «${quote(value)}»`,
+    });
     await audit(tx, actor, number, [{ action: "task.comment", field: "Комментарий", after: value }]);
     const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
     return { task: toTaskDto(updated), undo: issueUndoToken({ kind: "comment", number, commentId: comment.id }, actor.personId) };

@@ -23,6 +23,7 @@ import { GoogleSheetsError } from "@/lib/sheet/google";
 import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { IMPORT_TRANSFER_REASON, STATUS_FROM_TABLE, STATUS_TO_TABLE, whereUpdatedFrom } from "@/lib/tasks/bord-import";
 import { slugify, uniqueSlug } from "@/lib/translit";
+import { taskSubject } from "@/lib/inbox/notify";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import { ALL_LEADERS, NameIndex, normName, personNameFromBord, splitOwners } from "./names";
 import { BORD_RANGE, BordFormatError, parseBordGrid, type BordRow } from "./parse";
@@ -197,6 +198,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       for (const t of ownMade) {
         const to = nextFree++;
         await tx.task.update({ where: { id: t.id }, data: { number: to } });
+        // События «Мне» склеиваются по номеру задачи: со старым номером они слиплись бы с задачей Bord под тем же номером
+        await tx.inboxEvent.updateMany({ where: { taskId: t.id }, data: { subject: taskSubject(to) } });
         report.renumbered.push({ from: t.number, to });
         await audit(to, "task.renumber", `Номер задачи: задачи ресурса идут от ${RESOURCE_FIRST_NUMBER}, номера ниже у задач из Bord`, String(t.number), String(to));
       }
@@ -220,6 +223,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         if (!wasMeeting || wasTitle === undefined || wasMeeting === row.meeting || wasTitle === clipTitle(row.title)) continue;
         const to = nextFree++;
         await tx.task.update({ where: { id: task.id }, data: { number: to } });
+        await tx.inboxEvent.updateMany({ where: { taskId: task.id }, data: { subject: taskSubject(to) } });
         report.reused.push({ number: row.number, to });
         await audit(to, "task.renumber", `Номер задачи: номер ${row.number} в Bord отдан новой задаче`, String(row.number), String(to));
         byNumber.delete(row.number);
