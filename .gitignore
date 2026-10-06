@@ -20,3 +20,6 @@ playwright-report/
 tests/e2e/screenshots/
 
 .DS_Store
+
+# Эталон снимков экранов (npm run test:visual, этап 10) снимается локально и в репозиторий не идёт
+tests/visual/__screenshots__/
