@@ -25,6 +25,7 @@ function reload(args: string[]): { code: number; out: string } {
 }
 
 beforeEach(async () => {
+  await prisma.setting.deleteMany({ where: { key: { startsWith: "bord." } } });
   await prisma.task.deleteMany();
   await prisma.weeklyEntry.deleteMany();
   await prisma.weeklyReport.deleteMany();
@@ -60,6 +61,15 @@ describe("перезаливка из выгрузки Bord", () => {
     expect(await prisma.auditLog.count({ where: { action: "data.reload" } })).toBe(logsBefore + 1);
     const log = await prisma.auditLog.findFirstOrThrow({ where: { action: "data.reload" }, orderBy: { id: "desc" } });
     expect([log.entityId, log.before]).toEqual(["bord-test", "задач 52, записей weekly 51"]);
+  });
+
+  it("при заборе из Bord перезаливка забывает прошлые значения полей и оставляет задачам ресурса номера от 1001", async () => {
+    await prisma.setting.create({ data: { key: "bord.sourceId", value: "1ASfJQp1_sjEEqQPt49y7uL4edxX0WHMagRRfXZb4_Hs" } });
+    await prisma.setting.create({ data: { key: "bord.snapshot", value: { source: "x", rows: {} } } });
+    const real = reload(["--tasks", TASKS, "--weekly", WEEKLY, "--batch", "bord-test", "--yes"]);
+    expect(real.code, real.out).toBe(0);
+    expect((await prisma.setting.findUniqueOrThrow({ where: { key: "tasks.nextNumber" } })).value).toBe(1001);
+    expect(await prisma.setting.findUnique({ where: { key: "bord.snapshot" } })).toBeNull();
   });
 
   it("битая выгрузка останавливает перезаливку до удаления, база не тронута", async () => {

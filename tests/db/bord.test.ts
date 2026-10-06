@@ -47,7 +47,14 @@ beforeEach(async () => {
 afterEach(() => {
   delete process.env.SHEET_FAKE;
 });
-afterAll(() => prisma.$disconnect());
+// Другие файлы тестов идут на той же базе в любом порядке: забор не должен оставаться включённым после этого файла
+afterAll(async () => {
+  await prisma.task.deleteMany({ where: { OR: [{ owner: { zone: BORD_ZONE } }, { coExecutors: { some: { person: { zone: BORD_ZONE } } } }] } });
+  await prisma.person.deleteMany({ where: { zone: BORD_ZONE } });
+  await prisma.setting.deleteMany({ where: { key: { startsWith: "bord." } } });
+  await prisma.setting.upsert({ where: { key: "tasks.nextNumber" }, update: { value: 52 }, create: { key: "tasks.nextNumber", value: 52 } });
+  await prisma.$disconnect();
+});
 
 describe("забор задач из Bord", () => {
   it("тот же Bord, что уже загружен, ничего не меняет и в журнал не пишет", async () => {
