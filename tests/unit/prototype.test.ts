@@ -276,6 +276,7 @@ describe("отмена последнего действия", () => {
     const [body, mac] = token.split(".");
     const forged = Buffer.from(JSON.stringify({ kind: "comment", number: 6, commentId: "c1", by: "person-1", exp: now + 60000 })).toString("base64url");
     expect(readUndoToken(`${forged}.${mac}`, "person-1", now)).toBeNull();
-    expect(readUndoToken(`${body}.x${mac!.slice(1)}`, "person-1", now)).toBeNull();
+    // Подпись с другой первой буквой: если она и так «x», замена на «x» ничего бы не меняла и тест падал бы раз в 64 запуска
+    expect(readUndoToken(`${body}.${mac![0] === "x" ? "y" : "x"}${mac!.slice(1)}`, "person-1", now)).toBeNull();
   });
 });
