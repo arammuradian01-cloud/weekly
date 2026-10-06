@@ -100,7 +100,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
         {lagging ? (
           <div role="status" className="border-b border-warning/30 bg-warning-soft px-4 py-2.5 text-small text-warning-ink sm:px-6 lg:px-10">
-            Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к копии. Изменения ждут в очереди и не теряются.{" "}
+            Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к таблице для просмотра. Изменения ждут в очереди и не теряются.{" "}
             {ctx.management?.role === "OWNER" ? (
               <Link href="/sync" className="font-medium underline underline-offset-2">
                 Открыть синхронизацию

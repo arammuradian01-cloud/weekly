@@ -3,7 +3,7 @@
 
 export type Cell = string | number;
 
-/** Рабочая таблица Insurance&Invest Bord: к ней ресурс подключается только на этапе 7 и только с согласия владельца */
+/** Рабочий Insurance&Invest Bord. Решение Арама 06.10.2026: Bord главный до финальной версии ресурса, ресурс его только читает (забор задач) и никогда в него не пишет */
 export const PROD_SHEET_ID = "1ASfJQp1_sjEEqQPt49y7uL4edxX0WHMagRRfXZb4_Hs";
 export type Grid = Cell[][];
 

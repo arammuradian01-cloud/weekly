@@ -406,8 +406,8 @@ describe("пересборка", () => {
 describe("подключение таблицы и права", () => {
   it("рабочую таблицу подключить нельзя ни ссылкой, ни через базу", async () => {
     process.env.SHEET_FAKE = "1";
-    expect(() => sync.parseSpreadsheetId(`https://docs.google.com/spreadsheets/d/${PROD_SHEET_ID}/edit#gid=1`)).toThrow(/этапе 7/);
-    await expect(sync.setSpreadsheet(await owner(), PROD_SHEET_ID)).rejects.toThrow(/этапе 7/);
+    expect(() => sync.parseSpreadsheetId(`https://docs.google.com/spreadsheets/d/${PROD_SHEET_ID}/edit#gid=1`)).toThrow(/Ресурс в него не пишет/);
+    await expect(sync.setSpreadsheet(await owner(), PROD_SHEET_ID)).rejects.toThrow(/Ресурс в него не пишет/);
     await prisma.setting.update({ where: { key: "sheet.spreadsheetId" }, data: { value: PROD_SHEET_ID } });
     expect(await connection()).toBeNull();
   });
