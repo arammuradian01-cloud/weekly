@@ -223,6 +223,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         if (!wasMeeting || wasTitle === undefined || wasMeeting === row.meeting || wasTitle === clipTitle(row.title)) continue;
         const to = nextFree++;
         await tx.task.update({ where: { id: task.id }, data: { number: to } });
+        await tx.inboxEvent.updateMany({ where: { taskId: task.id }, data: { subject: taskSubject(to) } });
         report.reused.push({ number: row.number, to });
         await audit(to, "task.renumber", `Номер задачи: номер ${row.number} в Bord отдан новой задаче`, String(row.number), String(to));
         byNumber.delete(row.number);
