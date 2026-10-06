@@ -198,9 +198,11 @@ test("инструкция «Как работать» из меню и плаш
   await expect(leader.getByRole("link", { name: "Как работать" })).toBeVisible();
 
   await page.getByRole("radiogroup", { name: "Плашка над страницами" }).getByRole("radio", { name: "Без плашки" }).click();
-  await expect(page.getByText("Плашка сохранена")).toBeVisible();
-  await leader.reload();
-  await expect(leader.getByText("Пилот.")).toHaveCount(0);
+  // Тост прошлого сохранения ещё может висеть: ждём, пока новое сохранение дойдёт до лидера
+  await expect(async () => {
+    await leader.reload();
+    await expect(leader.getByText("Пилот.")).toHaveCount(0, { timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
   await expect(leader.getByText("Тестовый стенд.")).toHaveCount(0);
   await leader.close();
 });
