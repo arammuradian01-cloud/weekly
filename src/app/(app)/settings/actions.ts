@@ -52,3 +52,11 @@ export async function saveRhythmAction(input: svc.Rhythm) {
 export async function saveStandBannerAction(mode: svc.StandBanner) {
   return done(await runAction("Плашка над страницами", (a) => svc.saveStandBanner(a, mode)));
 }
+
+export async function previewReloadAction(tasksText: string, weeklyText: string) {
+  return runAction("Проверка выгрузки Bord", (a) => svc.previewReload(a, String(tasksText ?? ""), String(weeklyText ?? "")));
+}
+
+export async function runReloadAction(tasksText: string, weeklyText: string, confirm: string) {
+  return done(await runAction("Перезаливка из выгрузки Bord", (a) => svc.runReload(a, String(tasksText ?? ""), String(weeklyText ?? ""), String(confirm ?? ""))));
+}

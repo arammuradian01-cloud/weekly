@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import { importBordTasks } from "@/lib/tasks/bord-import";
 import { importBordWeekly } from "@/lib/weekly/bord-import";
+import * as admin from "@/lib/admin/service";
 
 const TASKS = "data/bord/zadachi-2026-10-05.csv";
 const WEEKLY = "data/bord/weekly-ceo-2026-10-05.csv";
@@ -31,6 +32,7 @@ beforeEach(async () => {
   await prisma.week.deleteMany();
   await importBordTasks(prisma, readFileSync(TASKS, "utf8"), { batch: "bord-2026-10-05" });
   await importBordWeekly(prisma, readFileSync(WEEKLY, "utf8"), { batch: "bord-2026-10-05" });
+  await prisma.setting.upsert({ where: { key: "stand.banner" }, update: { value: "test" }, create: { key: "stand.banner", value: "test" } });
 });
 afterAll(() => prisma.$disconnect());
 
@@ -76,5 +78,41 @@ describe("перезаливка из выгрузки Bord", () => {
     const missing = reload(["--tasks", TASKS]);
     expect(missing.code).toBe(1);
     expect(missing.out).toMatch(/Укажите обе выгрузки/);
+  });
+
+  it("из настроек: только владелец, только до пилота, только со словом подтверждения", async () => {
+    const tasksText = readFileSync(TASKS, "utf8");
+    const weeklyText = readFileSync(WEEKLY, "utf8");
+    const owner = await tasks.actorFor("muradyan", "OWNER");
+    const admin1 = await tasks.actorFor("golovkin", "ADMIN");
+    const reva = await tasks.actorFor("reva");
+
+    await expect(admin.previewReload(admin1, tasksText, weeklyText)).rejects.toThrow(/только владелец/);
+    await expect(admin.runReload(reva, tasksText, weeklyText, "перезалить")).rejects.toThrow(/только владелец/);
+    await expect(admin.previewReload(owner, tasksText, "")).rejects.toThrow(/оба файла/);
+
+    const plan = await admin.previewReload(owner, tasksText, weeklyText);
+    expect(plan).toMatchObject({ problems: [], rows: { tasks: 51, weekly: 51 }, now: { tasks: 51, entries: 51 } });
+
+    // Перепутанные файлы: проверка называет проблему, база не тронута
+    const swapped = await admin.previewReload(owner, weeklyText, tasksText);
+    expect(swapped.problems.length).toBeGreaterThan(0);
+    await expect(admin.runReload(owner, weeklyText, tasksText, "перезалить")).rejects.toThrow(/база не тронута/);
+
+    await expect(admin.runReload(owner, tasksText, weeklyText, "да")).rejects.toThrow(/введите слово «перезалить»/);
+
+    const reva2 = await tasks.actorFor("reva");
+    await tasks.createTask(reva2, { title: "Задача со стенда", outcome: "Проверка", owner: "reva", direction: "product", due: "2030-01-15", source: "weekly" });
+    const before = await prisma.auditLog.count({ where: { action: "data.reload" } });
+    const result = await admin.runReload(owner, tasksText, weeklyText, " Перезалить ", new Date("2026-10-06T09:00:00Z"));
+    expect(result).toMatchObject({ tasks: 51, entries: 51, nextNumber: 52 });
+    expect(await prisma.task.findFirst({ where: { title: "Задача со стенда" } })).toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "data.reload" } })).toBe(before + 1);
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: "data.reload" }, orderBy: { id: "desc" } });
+    expect([log.source, log.actorId, log.entityId]).toEqual(["APP", owner.personId, "bord-2026-10-06"]);
+
+    // После включения плашки «Пилот» перезаливка закрыта
+    await prisma.setting.update({ where: { key: "stand.banner" }, data: { value: "pilot" } });
+    await expect(admin.previewReload(owner, tasksText, weeklyText)).rejects.toThrow(/только до пилота/);
   });
 });

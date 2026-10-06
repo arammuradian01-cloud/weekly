@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Download, EyeOff, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { Download, EyeOff, FileUp, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
+import type { ReloadPlan, ReloadResult } from "@/lib/admin/reload";
 import { DICT_TITLES, WEEKDAYS } from "@/lib/admin/labels";
 import {
   addDictItemAction,
   createPersonAction,
+  previewReloadAction,
   renameDictItemAction,
+  runReloadAction,
   saveRhythmAction,
   saveStandBannerAction,
   setDictItemActiveAction,
@@ -133,6 +136,8 @@ export function SettingsView({
           </Section>
 
           <BannerSection initial={banner} />
+
+          {banner === "test" ? <ReloadSection /> : null}
 
           <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
             <p className="text-[15px] text-ink">
@@ -474,3 +479,146 @@ function BannerSection({ initial }: { initial: StandBanner }) {
   );
 }
 
+
+/** Слово подтверждения, как в сервисе: перед удалением задач и weekly владелец вводит его руками */
+const RELOAD_WORD = "перезалить";
+
+type CsvFile = { name: string; text: string };
+
+function CsvField({ id, label, file, onFile }: { id: string; label: string; file: CsvFile | null; onFile: (file: CsvFile | null) => void }) {
+  // Своя кнопка вместо системной: у системной подпись на языке браузера и второе имя файла
+  return (
+    <div>
+      <input
+        id={id}
+        type="file"
+        accept=".csv,text/csv"
+        className="peer sr-only"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          onFile(f ? { name: f.name, text: await f.text() } : null);
+        }}
+      />
+      <label
+        htmlFor={id}
+        className="flex cursor-pointer flex-col gap-1.5 rounded-lg peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue"
+      >
+        <span className="text-sm font-medium text-ink">{label}</span>
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-surface px-4 text-[14px] font-medium text-ink hover:bg-line">
+            <FileUp className="h-4 w-4" aria-hidden="true" />
+            Выбрать файл
+          </span>
+          <span className="truncate text-[14px] text-muted">{file ? file.name : "Файл не выбран"}</span>
+        </span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * Перезаливка задач и weekly из свежей выгрузки Bord перед пилотом. Файлы читаются в браузере и уходят только в базу стенда:
+ * ни в чат, ни в репозиторий. Раздел виден владельцу, пока плашка «Тестовый стенд»
+ */
+function ReloadSection() {
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [tasks, setTasks] = useState<CsvFile | null>(null);
+  const [weekly, setWeekly] = useState<CsvFile | null>(null);
+  const [plan, setPlan] = useState<ReloadPlan | null>(null);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<ReloadResult | null>(null);
+
+  const reset = () => {
+    setPlan(null);
+    setConfirm("");
+    setResult(null);
+  };
+
+  const check = async () => {
+    if (!tasks || !weekly) return;
+    setBusy(true);
+    const p = await run(() => previewReloadAction(tasks.text, weekly.text), undefined, { refresh: false });
+    setBusy(false);
+    if (p) setPlan(p);
+  };
+
+  const reload = async () => {
+    if (!tasks || !weekly) return;
+    setBusy(true);
+    const r = await run(() => runReloadAction(tasks.text, weekly.text, confirm));
+    setBusy(false);
+    if (r) {
+      setResult(r);
+      setPlan(null);
+      setConfirm("");
+      notify("Выгрузка загружена");
+    }
+  };
+
+  return (
+    <Section
+      title="Перезаливка из выгрузки"
+      description="Один раз перед пилотом: задачи и weekly стенда заменяются свежей выгрузкой рабочей таблицы. Раздел пропадёт, когда плашка сменится на «Пилот»"
+    >
+      <div className="flex max-w-xl flex-col gap-4">
+        <p className="text-[14px] text-muted">
+          В рабочей таблице откройте вкладку, затем «Файл», «Скачать», «CSV (текущий лист)». Файлы читаются здесь и уходят только в базу ресурса.
+        </p>
+        <CsvField id="reload-tasks" label="Вкладка «Задачи», CSV" file={tasks} onFile={(f) => (setTasks(f), reset())} />
+        <CsvField id="reload-weekly" label="Вкладка «Weekly CEO», CSV" file={weekly} onFile={(f) => (setWeekly(f), reset())} />
+        <div>
+          <Button variant="secondary" onClick={check} disabled={!tasks || !weekly || busy}>
+            Проверить выгрузку
+          </Button>
+        </div>
+
+        {plan && plan.problems.length ? (
+          <div role="alert" className="rounded-lg bg-danger-soft px-4 py-3 text-[14px] text-danger-ink">
+            <p className="font-semibold">Выгрузку не загрузить, база не тронута</p>
+            <ul className="mt-1 list-disc pl-5">
+              {plan.problems.slice(0, 20).map((p) => (
+                <li key={p}>{p}</li>
+              ))}
+            </ul>
+            {plan.problems.length > 20 ? <p className="mt-1">И ещё {plan.problems.length - 20}.</p> : null}
+          </div>
+        ) : null}
+
+        {plan && !plan.problems.length ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-line px-4 py-3 text-[14px] text-ink">
+            <p>
+              <span className="font-semibold">Проверка прошла.</span> Будет удалено: задач {plan.now.tasks}, комментариев к ним {plan.now.comments}, записей weekly{" "}
+              {plan.now.entries}, сданных и начатых weekly {plan.now.reports}, черновиков отчёта CEO {plan.now.ceo}. Будет загружено: задач {plan.rows.tasks}, строк weekly{" "}
+              {plan.rows.weekly}.
+            </p>
+            <p className="text-muted">Люди, справочники, настройки и журнал останутся. Вернуть удалённое можно только из ночной копии базы.</p>
+            <TextInput
+              id="reload-confirm"
+              label={`Чтобы продолжить, введите слово «${RELOAD_WORD}»`}
+              value={confirm}
+              autoComplete="off"
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+            <div>
+              <Button variant="danger" onClick={reload} disabled={busy || confirm.trim().toLowerCase() !== RELOAD_WORD}>
+                Удалить и загрузить заново
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {result ? (
+          <p role="status" className="rounded-lg bg-green-soft px-4 py-3 text-[14px] text-green-ink">
+            Загружено: задач {result.tasks}, записей weekly {result.entries}. Следующая новая задача получит номер {result.nextNumber}. Теперь на странице{" "}
+            <a href="/sync" className="font-medium underline underline-offset-2">
+              «Синхронизация»
+            </a>{" "}
+            нажмите «Пересобрать вкладки», чтобы таблица совпала с базой.
+          </p>
+        ) : null}
+      </div>
+    </Section>
+  );
+}

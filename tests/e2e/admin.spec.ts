@@ -146,6 +146,31 @@ test("владелец выгружает всё в Excel одним файло�
   await expect(page.getByText("Выгрузка в Excel").filter({ visible: true }).first()).toBeVisible();
 });
 
+test("перезаливка из выгрузки: проверка файлов и подтверждение словом (этап 7)", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/settings");
+  const check = page.getByRole("button", { name: "Проверить выгрузку" });
+  await expect(check).toBeDisabled();
+  // Перепутанные вкладки: проверка называет проблему, кнопки удаления нет
+  await page.getByLabel("Вкладка «Задачи», CSV").setInputFiles("data/bord/weekly-ceo-2026-10-05.csv");
+  await page.getByLabel("Вкладка «Weekly CEO», CSV").setInputFiles("data/bord/zadachi-2026-10-05.csv");
+  await check.click();
+  await expect(page.getByText("Выгрузку не загрузить, база не тронута")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Удалить и загрузить заново" })).toHaveCount(0);
+
+  await page.getByLabel("Вкладка «Задачи», CSV").setInputFiles("data/bord/zadachi-2026-10-05.csv");
+  await page.getByLabel("Вкладка «Weekly CEO», CSV").setInputFiles("data/bord/weekly-ceo-2026-10-05.csv");
+  await check.click();
+  await expect(page.getByText(/Проверка прошла\. Будет удалено: задач \d+/)).toBeVisible();
+  await expect(page.getByText(/Будет загружено: задач 51, строк weekly 51/)).toBeVisible();
+  const go = page.getByRole("button", { name: "Удалить и загрузить заново" });
+  await expect(go).toBeDisabled();
+  await page.getByLabel("Чтобы продолжить, введите слово «перезалить»").fill("перезалить");
+  await expect(go).toBeEnabled();
+  await shot(page, "settings-reload");
+});
+
 test("инструкция «Как работать» из меню и плашка пилота, которую включает владелец (этап 7)", async ({ page, browser }) => {
   // Лидер находит инструкцию в меню профиля, сроки в ней из настроек
   const leader = await browser.newPage({ viewport: page.viewportSize() ?? undefined });
@@ -162,8 +187,11 @@ test("инструкция «Как работать» из меню и плаш
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Перезаливка из выгрузки" })).toBeVisible();
   await page.getByRole("radiogroup", { name: "Плашка над страницами" }).getByRole("radio", { name: "Пилот" }).click();
   await expect(page.getByText("Плашка сохранена")).toBeVisible();
+  // С плашкой «Пилот» перезаливка из настроек пропадает
+  await expect(page.getByRole("heading", { name: "Перезаливка из выгрузки" })).toHaveCount(0);
   await leader.reload();
   await expect(leader.getByText("Пилот.")).toBeVisible();
   await expect(leader.getByText(/Замечания и ошибки присылайте владельцу ресурса \(Мурадян Арам\)/)).toBeVisible();
