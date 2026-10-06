@@ -1,5 +1,6 @@
 "use server";
 
+import { topTeamOnly } from "@/lib/org/people";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -89,7 +90,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
 export async function chooseProfile(formData: FormData): Promise<void> {
   const session = await requireSignedIn();
   const personId = String(formData.get("personId") ?? "");
-  const person = await prisma.person.findFirst({ where: { id: personId, active: true } });
+  const person = await prisma.person.findFirst({ where: { id: personId, active: true, ...topTeamOnly } });
   if (!person) redirect("/choose");
   await writeSession({ epoch: session.epoch, personId: person.id, via: "TEAM" });
   await writeAudit({

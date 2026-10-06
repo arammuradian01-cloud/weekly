@@ -44,7 +44,7 @@ export function TaskList() {
   const [showClosed, setShowClosed] = useState(false);
   // Архив видит только владелец в режиме управления: отсюда он возвращает задачи (раздел 6 ТЗ)
   const [archive, setArchive] = useState(false);
-  const archivedCount = data.tasks.filter((t) => t.archived).length;
+  const archivedCount = data.teamTasks.filter((t) => t.archived).length;
   const today = data.today;
 
   const predicates: Record<QuickFilter, (t: Task) => boolean> = {
@@ -56,7 +56,7 @@ export function TaskList() {
     stale: (t) => isStale(t, today),
   };
 
-  const base = data.tasks.filter((t) => (archive ? t.archived : !t.archived));
+  const base = data.teamTasks.filter((t) => (archive ? t.archived : !t.archived));
   const counts = Object.fromEntries(QUICK.map((f) => [f.key, base.filter(predicates[f.key]).length])) as Record<QuickFilter, number>;
 
   const filtered = useMemo(
@@ -66,7 +66,7 @@ export function TaskList() {
         today,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.tasks, q, active, showClosed, archive, today, me.slug],
+    [data.teamTasks, q, active, showClosed, archive, today, me.slug],
   );
   const closedCount = base.filter((t) => isClosed(t) && matches(t, q) && active.every((f) => predicates[f](t))).length;
 

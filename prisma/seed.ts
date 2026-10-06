@@ -61,6 +61,21 @@ async function main() {
     skipDuplicates: true,
   });
 
+  // Топ-команда (этап 14): миграция создаёт её без людей, если база была пустой. Тогда руководитель: владелец,
+  // участники: все остальные из стартового состава. Один раз: дальше состав правят в «Структуре», сид его не трогает
+  const top = await prisma.team.upsert({ where: { id: "top" }, update: {}, create: { id: "top", name: "Топ-команда", kind: "TOP" } });
+  if (!top.leaderId) {
+    const owner = await prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] });
+    if (owner) {
+      const memberCount = await prisma.teamMember.count({ where: { teamId: "top" } });
+      await prisma.team.update({ where: { id: "top" }, data: { leaderId: owner.id } });
+      if (memberCount === 0) {
+        const rest = await prisma.person.findMany({ where: { id: { not: owner.id } }, select: { id: true } });
+        await prisma.teamMember.createMany({ data: rest.map((p) => ({ teamId: "top", personId: p.id })), skipDuplicates: true });
+      }
+    }
+  }
+
   // Задачи и weekly из Insurance&Invest Bord загружаются только по явной команде: BORD_IMPORT=on при запуске
   // или npm run import:bord. Иначе пустая база после сбоя или пересоздания тихо заполнилась бы старой выгрузкой
   const bordImport = process.env.BORD_IMPORT === "on";

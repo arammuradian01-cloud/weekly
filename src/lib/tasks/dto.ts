@@ -71,5 +71,6 @@ export function toTaskDto(row: TaskRow): Task {
     closedAt: row.closedAt ? moscowIso(row.closedAt) : undefined,
     resolution: row.resolution ?? undefined,
     archived: row.archivedAt !== null,
+    team: row.teamId,
   };
 }

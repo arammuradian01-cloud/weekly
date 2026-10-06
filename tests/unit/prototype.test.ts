@@ -33,6 +33,7 @@ function makeTask(patch: Partial<Task> = {}): Task {
     createdBy: "afanasyev",
     createdAt: TODAY,
     updatedAt: TODAY,
+    team: "top",
     ...patch,
   };
 }

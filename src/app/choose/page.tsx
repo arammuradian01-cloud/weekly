@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { topTeamOnly } from "@/lib/org/people";
 import { prisma } from "@/lib/db";
 import { requireSignedIn } from "@/lib/auth";
 import { chooseProfile } from "@/app/actions/auth";
@@ -12,8 +13,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ChoosePage() {
   const session = await requireSignedIn();
+  // Общий логин team остался только у топ-команды: остальные сотрудники входят по личной ссылке (этап 14)
   const people = await prisma.person.findMany({
-    where: { active: true },
+    where: { active: true, ...topTeamOnly },
     orderBy: { sortOrder: "asc" },
   });
 

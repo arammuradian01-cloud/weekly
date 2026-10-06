@@ -15,6 +15,7 @@ import {
 } from "@/lib/week";
 import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
 import { Suspense } from "react";
+import { audienceOf, currentTeam } from "@/lib/org/current";
 import { MyWeek } from "@/components/weekly/my-week";
 import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
 import { fromCalendar } from "@/domain/dates";
@@ -44,7 +45,8 @@ export default async function MyWeekPage() {
   });
   const deadlineDay = moscowDate(deadline);
   const weekKey = fromCalendar(week.start);
-  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), management ? weeklyStates(weekKey) : Promise.resolve(null)]);
+  const current = management ? await currentTeam({ id: person.id, role: person.role }) : null;
+  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null)]);
   const currentWeek = isoWeekOf(today);
 
   return (

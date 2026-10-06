@@ -13,6 +13,7 @@ import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } 
 import { ownerOf, taskInclude, toTaskDto, type TaskRow } from "./dto";
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
+import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -40,8 +41,20 @@ const fail = (message: string): never => {
   throw new TaskRuleError(message);
 };
 
-function viewerOf(actor: Actor): Viewer {
-  return { slug: actor.slug, management: actor.management, observer: actor.role === "OBSERVER" };
+function viewerOf(actor: Actor, scope?: Scope): Viewer {
+  return { slug: actor.slug, management: actor.management, observer: actor.role === "OBSERVER", leads: scope?.leads ?? [] };
+}
+
+async function scopeOfActor(db: Db, actor: Actor): Promise<Scope> {
+  return loadScope(db, { id: actor.personId, role: actor.role });
+}
+
+/** Видит ли человек задачу: её команда в его командах, или он участник задачи, или он функциональный руководитель ответственного */
+export function canSeeRow(scope: Scope, row: Pick<TaskRow, "teamId" | "ownerId" | "createdById" | "coExecutors">, personId: string): boolean {
+  if (scope.all || scope.visible.includes(row.teamId)) return true;
+  if (row.ownerId === personId || row.createdById === personId) return true;
+  if (row.coExecutors.some((c) => c.personId === personId)) return true;
+  return !!row.ownerId && scope.functional.includes(row.ownerId);
 }
 
 function clean(text: string | null | undefined): string {
@@ -94,11 +107,13 @@ async function nameMap(db: Db): Promise<Map<string, string>> {
   return new Map(people.map((p) => [p.slug, p.fullName]));
 }
 
-async function lockRow(tx: Tx, number: number): Promise<TaskRow> {
+async function lockRow(tx: Tx, number: number, scope?: { scope: Scope; personId: string }): Promise<TaskRow> {
   // Блокировка строки: два человека не перепишут одну задачу одновременно
   await tx.$queryRaw`SELECT id FROM "tasks" WHERE "number" = ${number} FOR UPDATE`;
   const row = await tx.task.findUnique({ where: { number }, include: taskInclude });
   if (!row) fail(`Задачи ${number} нет`);
+  // Чужая команда: задачу не видно, поэтому и номер не подтверждаем
+  if (scope && !canSeeRow(scope.scope, row!, scope.personId)) fail(`Задачи ${number} нет`);
   return row!;
 }
 
@@ -151,9 +166,10 @@ type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: O
  */
 async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
   return prisma.$transaction(async (tx) => {
-    const row = await lockRow(tx, number);
+    const scope = await scopeOfActor(tx, actor);
+    const row = await lockRow(tx, number, { scope, personId: actor.personId });
     if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
-    const can = permissions(toTaskDto(row), viewerOf(actor));
+    const can = permissions(toTaskDto(row), viewerOf(actor, scope));
     const before = snapshot(row);
     const p = await plan(row, can, tx);
     if (!p.changes.length) fail("Ничего не изменилось");
@@ -169,18 +185,37 @@ async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: Ta
 
 // ---------- Чтение ----------
 
-export async function listTasks(opts: { archived?: boolean } = {}): Promise<Task[]> {
-  const rows = await prisma.task.findMany({
-    where: opts.archived ? {} : { archivedAt: null },
-    include: taskInclude,
-    orderBy: { number: "asc" },
-  });
+export type TaskReader = { personId: string; role: Role };
+
+/**
+ * Задачи для экранов. reader: только то, что человек видит (этап 14). team: задачи этой команды
+ * и свои задачи в любой команде, чтобы «Мои задачи» и «Моя неделя» были полными
+ */
+export async function listTasks(opts: { archived?: boolean; reader?: TaskReader; team?: string } = {}): Promise<Task[]> {
+  const and: Prisma.TaskWhereInput[] = [opts.archived ? {} : { archivedAt: null }];
+  if (opts.reader) {
+    const scope = await loadScope(prisma, { id: opts.reader.personId, role: opts.reader.role });
+    and.push(visibleTasksWhere(scope, opts.reader.personId));
+    if (opts.team) {
+      const me = opts.reader.personId;
+      and.push({ OR: [{ teamId: opts.team }, { ownerId: me }, { createdById: me }, { coExecutors: { some: { personId: me } } }] });
+    }
+  } else if (opts.team) {
+    and.push({ teamId: opts.team });
+  }
+  const rows = await prisma.task.findMany({ where: { AND: and }, include: taskInclude, orderBy: { number: "asc" } });
   return rows.map(toTaskDto);
 }
 
-export async function getTask(number: number): Promise<Task | null> {
+/** Одна задача. reader: null, если человек её не видит */
+export async function getTask(number: number, reader?: TaskReader): Promise<Task | null> {
   const row = await prisma.task.findUnique({ where: { number }, include: taskInclude });
-  return row ? toTaskDto(row) : null;
+  if (!row) return null;
+  if (reader) {
+    const scope = await loadScope(prisma, { id: reader.personId, role: reader.role });
+    if (!canSeeRow(scope, row, reader.personId)) return null;
+  }
+  return toTaskDto(row);
 }
 
 /** История задачи из журнала: новые сверху */
@@ -220,6 +255,8 @@ export type NewTaskInput = {
   links?: { title?: string; url: string }[];
   /** Запись weekly, из которой сделана задача («Сделать задачей») */
   weeklyEntryId?: string;
+  /** Команда задачи (этап 14). Не задана: топ-команда, если человек в ней, иначе первая его команда */
+  team?: string;
 };
 
 /** Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе */
@@ -237,8 +274,7 @@ async function nextNumber(tx: Tx): Promise<number> {
 }
 
 export async function createTask(actor: Actor, input: NewTaskInput): Promise<TaskResult> {
-  const viewer = viewerOf(actor);
-  if (viewer.observer) fail("Наблюдатель задачи не ставит");
+  if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
   if (!isIsoDate(input.due)) fail("Укажите срок");
@@ -246,6 +282,10 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
   const sourceNote = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
 
   return prisma.$transaction(async (tx) => {
+    const scope = await scopeOfActor(tx, actor);
+    const viewer = viewerOf(actor, scope);
+    const teamId = pickTeam(scope, actor, input.team);
+    if (input.owner === "all" && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
     const people = await peopleBySlug(tx);
     let ownerId: string | null = null;
     if (input.owner !== "all") {
@@ -267,7 +307,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
       const entry = await tx.weeklyEntry.findUnique({ where: { id: input.weeklyEntryId }, select: { id: true } });
       if (!entry) fail("Запись weekly, из которой делается задача, не найдена");
     }
-    const status = newTaskStatus(input.owner, viewer);
+    const status = newTaskStatus(input.owner, viewer, teamId);
     const number = await nextNumber(tx);
     const today = dbDate(moscowToday());
     const row = await tx.task.create({
@@ -289,6 +329,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
         sourceDate: sourceCode === "meeting" ? today : null,
         createdById: actor.personId,
         weeklyEntryId: input.weeklyEntryId ?? null,
+        teamId,
         coExecutors: { create: coIds.map((personId) => ({ personId })) },
         links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
       },
@@ -302,7 +343,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
       actor,
       subject,
       taskId: row.id,
-      text: status === "proposed" ? "Вам предложена задача, её подтвердит владелец или администратор" : "Новая задача для вас",
+      text: status === "proposed" ? (teamId === TOP_TEAM ? "Вам предложена задача, её подтвердит владелец или администратор" : "Вам предложена задача, её подтвердит руководитель команды") : "Новая задача для вас",
     });
     await notify(tx, { kind: "TASK_COEXECUTOR", recipients: coIds, actor, subject, taskId: row.id, text: "Вы соисполнитель" });
     const names = await nameMap(tx);
@@ -315,6 +356,21 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
     ]);
     return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
   });
+}
+
+/**
+ * В какую команду ставится задача. Ставить можно в свои команды и в команды, которыми руководишь;
+ * владелец и администраторы в режиме управления: в любую
+ */
+function pickTeam(scope: Scope, actor: Actor, wanted: string | undefined): string {
+  const own = [...new Set([...scope.member, ...scope.leads])];
+  if (!wanted) {
+    if (own.includes(TOP_TEAM) || (actor.management && scope.all)) return TOP_TEAM;
+    return own[0] ?? fail("Вас ещё не добавили ни в одну команду: задачу поставить некуда");
+  }
+  if (own.includes(wanted)) return wanted;
+  if (actor.management && scope.visible.includes(wanted)) return wanted;
+  return fail("В эту команду задачу поставить нельзя: вы в ней не состоите");
 }
 
 // ---------- Правки ----------
@@ -459,6 +515,7 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
     const names = await nameMap(tx);
     const before = ownerLabel(row, names);
     if (owner === ownerOf(row)) fail("Ответственный уже этот");
+    if (owner === "all" && row.teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
     let ownerId: string | null = null;
     if (owner !== "all") {
       const p = (await peopleBySlug(tx)).get(owner);
@@ -532,11 +589,11 @@ export async function archiveTask(actor: Actor, number: number, archived = true)
 }
 
 export async function addComment(actor: Actor, number: number, text: string): Promise<TaskResult> {
-  const viewer = viewerOf(actor);
-  if (viewer.observer) fail("Наблюдатель не комментирует");
+  if (actor.role === "OBSERVER") fail("Наблюдатель не комментирует");
   const value = required(text, LIMITS.comment, "Напишите комментарий", "Комментарий");
   return prisma.$transaction(async (tx) => {
-    const row = await lockRow(tx, number);
+    const scope = await scopeOfActor(tx, actor);
+    const row = await lockRow(tx, number, { scope, personId: actor.personId });
     if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
     const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value } });
     // Комментарий видят в «Мне» ответственный, соисполнители и тот, кто поставил задачу

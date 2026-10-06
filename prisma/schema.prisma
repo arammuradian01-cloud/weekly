@@ -14,6 +14,26 @@ enum Role {
   ADMIN
   LEADER
   OBSERVER
+  /// Сотрудник департамента вне топ-команды (этап 14): ведёт задачи своих команд, weekly пишет по решению руководителя
+  EMPLOYEE
+}
+
+/// Уровень подразделения в структуре департамента (этап 14)
+enum UnitKind {
+  DEPARTMENT
+  MANAGEMENT
+  DIVISION
+  SECTOR
+  STREAM
+  FUNCTION
+  EXTERNAL
+}
+
+/// TOP: топ-команда директора, состав как сейчас. UNIT: команда руководителя подразделения. CUSTOM: собранная руками
+enum TeamKind {
+  TOP
+  UNIT
+  CUSTOM
 }
 
 enum DictKind {
@@ -86,36 +106,52 @@ enum WeeklyState {
 
 /// Участник команды. Состав меняет владелец, без разработчика.
 model Person {
-  id                 String          @id @default(cuid())
-  slug               String          @unique
-  fullName           String
-  shortName          String
-  role               Role            @default(LEADER)
-  zone               String
-  defaultDirectionId String?
-  defaultDirection   DictionaryItem? @relation(fields: [defaultDirectionId], references: [id])
+  id                  String          @id @default(cuid())
+  slug                String          @unique
+  fullName            String
+  shortName           String
+  role                Role            @default(LEADER)
+  zone                String
+  defaultDirectionId  String?
+  defaultDirection    DictionaryItem? @relation(fields: [defaultDirectionId], references: [id])
   /// Почта для личного входа по ссылке (этап 9), в нижнем регистре
-  email              String?         @unique
-  active             Boolean         @default(true)
-  sortOrder          Int             @default(0)
-  createdAt          DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
+  email               String?         @unique
+  active              Boolean         @default(true)
+  sortOrder           Int             @default(0)
+  /// Должность по структуре (этап 14). Кадровые поля не храним
+  position            String?
+  /// Подразделение по структуре
+  unitId              String?
+  unit                OrgUnit?        @relation("UnitPeople", fields: [unitId], references: [id], onDelete: SetNull)
+  /// Административный руководитель
+  managerId           String?
+  manager             Person?         @relation("PersonManager", fields: [managerId], references: [id], onDelete: SetNull)
+  /// Функциональный руководитель: видит работу человека, но не управляет его задачами
+  functionalManagerId String?
+  functionalManager   Person?         @relation("PersonFunctionalManager", fields: [functionalManagerId], references: [id], onDelete: SetNull)
+  createdAt           DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
-  ownedTasks    Task[]           @relation("TaskOwner")
-  createdTasks  Task[]           @relation("TaskCreator")
-  coTasks       TaskCoExecutor[]
-  transfers     TaskTransfer[]
-  taskComments  TaskComment[]
-  taskLinks     TaskLink[]
-  weeks         Week[]
-  weeklyReports WeeklyReport[]
-  weeklyEntries WeeklyEntry[]
-  ceoReports    CeoReport[]
-  loginLinks    LoginLink[]
-  devices       DeviceSession[]
-  absences      Absence[]        @relation("AbsencePerson")
-  substitutions Absence[]        @relation("AbsenceSubstitute")
-  inbox         InboxEvent[]     @relation("InboxRecipient")
+  reports           Person[]         @relation("PersonManager")
+  functionalReports Person[]         @relation("PersonFunctionalManager")
+  headOf            OrgUnit[]        @relation("UnitHead")
+  leads             Team[]           @relation("TeamLeader")
+  teams             TeamMember[]
+  ownedTasks        Task[]           @relation("TaskOwner")
+  createdTasks      Task[]           @relation("TaskCreator")
+  coTasks           TaskCoExecutor[]
+  transfers         TaskTransfer[]
+  taskComments      TaskComment[]
+  taskLinks         TaskLink[]
+  weeks             Week[]
+  weeklyReports     WeeklyReport[]
+  weeklyEntries     WeeklyEntry[]
+  ceoReports        CeoReport[]
+  loginLinks        LoginLink[]
+  devices           DeviceSession[]
+  absences          Absence[]        @relation("AbsencePerson")
+  substitutions     Absence[]        @relation("AbsenceSubstitute")
+  inbox             InboxEvent[]     @relation("InboxRecipient")
 
   @@map("people")
 }
@@ -232,6 +268,9 @@ model Task {
   archivedAt     DateTime?      @db.Timestamptz(3)
   /// Партия импорта из таблицы, например bord-2026-10-05. Нужна сверке
   importBatch    String?
+  /// Команда задачи (этап 14). Всё, что было до команд, принадлежит топ-команде
+  teamId         String         @default("top")
+  team           Team           @relation(fields: [teamId], references: [id])
 
   coExecutors TaskCoExecutor[]
   transfers   TaskTransfer[]
@@ -241,6 +280,7 @@ model Task {
 
   @@index([status])
   @@index([ownerId])
+  @@index([teamId])
   @@map("tasks")
 }
 
@@ -517,4 +557,85 @@ model InboxEvent {
   @@index([recipientId, doneAt])
   @@index([recipientId, subject])
   @@map("inbox_events")
+}
+
+/// Подразделение департамента (этап 14): дерево от департамента до сектора, направления и функции
+model OrgUnit {
+  id        String    @id @default(cuid())
+  name      String
+  kind      UnitKind
+  parentId  String?
+  parent    OrgUnit?  @relation("UnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children  OrgUnit[] @relation("UnitTree")
+  /// Руководитель подразделения. null: не выделен, пояснение в headNote
+  headId    String?
+  head      Person?   @relation("UnitHead", fields: [headId], references: [id], onDelete: SetNull)
+  /// «Отдельный руководитель не выделен», «Роль делят CPO, PMM и CRM Lead»
+  headNote  String?
+  sortOrder Int       @default(0)
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+
+  people    Person[]  @relation("UnitPeople")
+  vacancies Vacancy[]
+  teams     Team[]
+
+  @@index([parentId])
+  @@map("org_units")
+}
+
+/// Вакансия: пустое место в подразделении. Видят только руководители этой ветки
+model Vacancy {
+  id        String    @id @default(cuid())
+  unitId    String
+  unit      OrgUnit   @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  position  String
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  closedAt  DateTime? @db.Timestamptz(3)
+
+  @@index([unitId])
+  @@map("vacancies")
+}
+
+/// Команда руководителя (этап 14). У каждой задачи и weekly есть команда. Топ-команда: id «top»
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  kind      TeamKind @default(UNIT)
+  /// Руководитель команды. null: пока не назначен
+  leaderId  String?
+  leader    Person?  @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  /// Команда уровнем выше: в неё руководитель сдаёт свой weekly
+  parentId  String?
+  parent    Team?    @relation("TeamTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Team[]   @relation("TeamTree")
+  /// Подразделение, по которому собрана команда
+  unitId    String?
+  unit      OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  members TeamMember[]
+  tasks   Task[]
+
+  @@index([leaderId])
+  @@index([parentId])
+  @@map("teams")
+}
+
+/// Участник команды. Руководитель команды в участниках не числится, он в Team.leaderId
+model TeamMember {
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  personId  String
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  addedById String?
+  addedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([teamId, personId])
+  @@index([personId])
+  @@map("team_members")
 }

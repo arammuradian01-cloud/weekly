@@ -24,9 +24,9 @@ type Row = {
 export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; weekNumber: number }) {
   const { data, me } = usePrototype();
   // Выключенные с открытыми задачами остаются в сводке, пока их задачи не передали другим
-  const gone = [...new Set(data.tasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
+  const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
   const rows: Row[] = [...PEOPLE, ...gone].map((p) => {
-    const own = data.tasks.filter((t: Task) => t.owner === p.slug && !t.archived);
+    const own = data.teamTasks.filter((t: Task) => t.owner === p.slug && !t.archived);
     const open = own.filter((t) => t.status === "in-progress" || t.status === "clarify");
     return {
       person: p,
@@ -38,7 +38,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
       stale: own.filter((t) => isStale(t, data.today)).length,
     };
   });
-  const shared = data.tasks.filter((t) => t.owner === "all" && (t.status === "in-progress" || t.status === "clarify")).length;
+  const shared = data.teamTasks.filter((t) => t.owner === "all" && (t.status === "in-progress" || t.status === "clarify")).length;
   const totals = rows.reduce(
     (acc, r) => ({ total: acc.total + r.total, inWork: acc.inWork + r.inWork, overdue: acc.overdue + r.overdue, risk: acc.risk + r.risk, closedWeek: acc.closedWeek + r.closedWeek, stale: acc.stale + r.stale }),
     { total: 0, inWork: 0, overdue: 0, risk: 0, closedWeek: 0, stale: 0 },

@@ -107,15 +107,28 @@ const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft", SUBMI
 
 // ---------- Чтение ----------
 
+/**
+ * Чей weekly показывать (этап 14): люди выбранной команды. shared: показывать и общие записи без автора
+ * («Все лидеры» из таблицы), они бывают только у топ-команды. Без аудитории: все включённые люди, как до команд
+ */
+export type WeekAudience = { personIds: string[]; shared: boolean };
+
+function entryScope(audience: WeekAudience | undefined): Prisma.WeeklyEntryWhereInput {
+  if (!audience) return {};
+  return { OR: [{ authorId: { in: audience.personIds } }, ...(audience.shared ? [{ authorId: null }] : [])] };
+}
+
 /** Неделя для ленты, режима встречи и отчёта CEO. Без ключа: отчётная, а если она пустая, последняя с записями */
-export async function getWeekView(key: WeekKey | null, now = new Date()): Promise<WeekView> {
+export async function getWeekView(key: WeekKey | null, now = new Date(), audience?: WeekAudience): Promise<WeekView> {
   const reporting = await currentReportingKey(now);
   let target = key && isWeekKey(key) ? key : reporting;
   let fallback = false;
+  const scope = entryScope(audience);
   if (!key) {
-    const reportingWeek = await prisma.week.findUnique({ where: { start: dbDate(reporting) }, select: { _count: { select: { entries: true } } } });
-    if (!reportingWeek?._count.entries) {
-      const latest = await prisma.week.findFirst({ where: { entries: { some: {} }, start: { lt: dbDate(reporting) } }, orderBy: { start: "desc" } });
+    const reportingWeek = await prisma.week.findUnique({ where: { start: dbDate(reporting) }, select: { id: true } });
+    const filled = reportingWeek ? await prisma.weeklyEntry.count({ where: { AND: [{ weekId: reportingWeek.id }, scope] } }) : 0;
+    if (!filled) {
+      const latest = await prisma.week.findFirst({ where: { entries: { some: scope }, start: { lt: dbDate(reporting) } }, orderBy: { start: "desc" } });
       if (latest) {
         target = isoFromDbDate(latest.start);
         fallback = true;
@@ -126,8 +139,11 @@ export async function getWeekView(key: WeekKey | null, now = new Date()): Promis
   const row = await ensureWeek(prisma, target);
   const [reports, entries, people, absences] = await Promise.all([
     prisma.weeklyReport.findMany({ where: { weekId: row.id }, include: { author: { select: { slug: true } } } }),
-    prisma.weeklyEntry.findMany({ where: { weekId: row.id }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, orderBy: { sortOrder: "asc" } }),
+    prisma.weeklyEntry.findMany({ where: { AND: [{ weekId: row.id }, scope] }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.person.findMany({
+      where: { active: true, role: { not: "OBSERVER" }, ...(audience ? { id: { in: audience.personIds } } : {}) },
+      orderBy: { sortOrder: "asc" },
+    }),
     absenceMap(row.id),
   ]);
   const byAuthor = new Map(reports.map((r) => [r.author.slug, r]));
@@ -178,8 +194,8 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
 }
 
 /** Состояние сдачи у всех за неделю: для «Команды» и «Моей недели» */
-export async function weeklyStates(key: WeekKey): Promise<PersonWeekly[]> {
-  const view = await getWeekView(key);
+export async function weeklyStates(key: WeekKey, audience?: WeekAudience): Promise<PersonWeekly[]> {
+  const view = await getWeekView(key, new Date(), audience);
   return view.reports;
 }
 

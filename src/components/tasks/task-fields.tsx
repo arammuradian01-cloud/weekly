@@ -11,8 +11,8 @@ import { PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges"
 import { useTaskActions } from "./task-actions";
 
 export function useViewer(): Viewer {
-  const { me, manageRole, observer } = usePrototype();
-  return { slug: me.slug, management: manageRole, observer };
+  const { me, manageRole, observer, leads } = usePrototype();
+  return { slug: me.slug, management: manageRole, observer, leads };
 }
 
 export function useTaskPermissions(task: Task) {

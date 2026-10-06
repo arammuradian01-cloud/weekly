@@ -19,7 +19,7 @@ import { useOpenTask } from "./task-drawer";
 export function MeetingReview() {
   const { data, manage } = usePrototype();
   // Выключенные с открытыми задачами тоже разбираются: их задачи надо передать
-  const gone = [...new Set(data.tasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))];
+  const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))];
   const order = [...PEOPLE.filter((p) => p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
   const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
@@ -28,14 +28,14 @@ export function MeetingReview() {
   const own = (t: Task) => (t.owner === slug || t.owner === "all") && !t.archived;
 
   const blocks: { key: string; title: string; empty: string; tasks: Task[] }[] = [
-    { key: "critical", title: "Критичные", empty: "Критичных задач нет", tasks: data.tasks.filter((t) => own(t) && t.priority === "critical" && (t.status === "in-progress" || t.status === "clarify")) },
-    { key: "overdue", title: "Просроченные", empty: "Просроченных нет", tasks: data.tasks.filter((t) => own(t) && isOverdue(t, data.today)) },
-    { key: "blocked", title: "Заблокированные", empty: "Заблокированных нет", tasks: data.tasks.filter((t) => own(t) && t.state === "blocked" && (t.status === "in-progress" || t.status === "clarify")) },
-    { key: "closed", title: "Закрыто за неделю", empty: "За неделю ничего не закрыто", tasks: data.tasks.filter((t) => own(t) && isClosedThisWeek(t, data.today)) },
+    { key: "critical", title: "Критичные", empty: "Критичных задач нет", tasks: data.teamTasks.filter((t) => own(t) && t.priority === "critical" && (t.status === "in-progress" || t.status === "clarify")) },
+    { key: "overdue", title: "Просроченные", empty: "Просроченных нет", tasks: data.teamTasks.filter((t) => own(t) && isOverdue(t, data.today)) },
+    { key: "blocked", title: "Заблокированные", empty: "Заблокированных нет", tasks: data.teamTasks.filter((t) => own(t) && t.state === "blocked" && (t.status === "in-progress" || t.status === "clarify")) },
+    { key: "closed", title: "Закрыто за неделю", empty: "За неделю ничего не закрыто", tasks: data.teamTasks.filter((t) => own(t) && isClosedThisWeek(t, data.today)) },
   ];
 
   const attention = (s: PersonSlug) =>
-    data.tasks.filter((t) => (t.owner === s || t.owner === "all") && (isOverdue(t, data.today) || (t.state === "blocked" && t.status === "in-progress"))).length;
+    data.teamTasks.filter((t) => (t.owner === s || t.owner === "all") && (isOverdue(t, data.today) || (t.state === "blocked" && t.status === "in-progress"))).length;
 
   return (
     <div>

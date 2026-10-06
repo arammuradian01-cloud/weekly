@@ -10,6 +10,8 @@ import type { EditInput, NewTaskInput } from "@/lib/tasks/service";
 import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries";
 import type { IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
+import { prisma } from "@/lib/db";
+import { loadScope } from "@/lib/org/scope";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
 
@@ -22,6 +24,7 @@ async function actor(): Promise<svc.Actor> {
     role: ctx.person.role,
     management: ctx.management?.role ?? null,
     ip: await requestIp(),
+    via: ctx.via,
   };
 }
 
@@ -109,9 +112,11 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
 /** История задачи (матрица раздела 2): лидер видит историю своих задач, владелец и администраторы всю */
 export async function taskHistoryAction(number: number): Promise<{ ok: true; items: HistoryItem[] } | { ok: false; error: string }> {
   const a = await actor();
-  const task = await svc.getTask(checkNumber(number));
+  const task = await svc.getTask(checkNumber(number), { personId: a.personId, role: a.role });
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
   if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
-  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER" })) return { ok: false, error: "История видна участникам задачи, владельцу и администраторам" };
+  const scope = await loadScope(prisma, { id: a.personId, role: a.role });
+  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads }))
+    return { ok: false, error: "История видна участникам задачи, руководителю команды, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };
 }

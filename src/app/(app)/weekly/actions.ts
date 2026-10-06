@@ -8,6 +8,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
 import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
+import { audienceOf, currentTeam } from "@/lib/org/current";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -21,6 +22,7 @@ async function actor(): Promise<Actor> {
     role: ctx.person.role,
     management: ctx.management?.role ?? null,
     ip: await requestIp(),
+    via: ctx.via,
   };
 }
 
@@ -82,6 +84,7 @@ export async function saveCeoReportAction(week: WeekKey, sections: CeoSections):
 
 /** Неделя для режима встречи и ленты без перезагрузки страницы */
 export async function weekViewAction(week: WeekKey | null): Promise<WeekView> {
-  await requireContext();
-  return svc.getWeekView(week);
+  const { person } = await requireContext();
+  const team = await currentTeam({ id: person.id, role: person.role });
+  return svc.getWeekView(week, new Date(), audienceOf(team));
 }

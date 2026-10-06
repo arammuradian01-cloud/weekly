@@ -13,6 +13,7 @@
 // - задачу, которую удалили из Bord, ресурс не трогает и показывает в списке «нет в Bord».
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
+import { TOP_TEAM } from "@/domain/teams";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db";
@@ -155,6 +156,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
           data: { slug, fullName, shortName, role: "LEADER", zone: BORD_ZONE, defaultDirectionId: fallback!.id, sortOrder, active: true },
           select: { id: true, slug: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true },
         });
+        // Ответственные из Bord работают в топ-команде (этап 14)
+        await tx.teamMember.createMany({ data: [{ teamId: TOP_TEAM, personId: p.id }], skipDuplicates: true });
         byId.set(p.id, p);
         index.add(p);
         report.newPeople.push(fullName);
