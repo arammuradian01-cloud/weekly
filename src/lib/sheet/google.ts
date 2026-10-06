@@ -8,6 +8,8 @@ import { PROD_SHEET_ID, q, type Grid, type SheetInfo, type SheetsClient } from "
 type ServiceAccount = { client_email: string; private_key: string; token_uri?: string };
 
 const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+/** Для чтения рабочего Bord: токен с таким доступом Google не даст использовать для записи */
+const READ_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
 /** Служебный аккаунт из окружения или null, если его не задали */
@@ -44,6 +46,8 @@ export class GoogleSheetsError extends Error {
   }
 }
 
+export type AccessMode = "write" | "read";
+
 export class GoogleSheets implements SheetsClient {
   private token: { value: string; until: number } | null = null;
 
@@ -51,9 +55,15 @@ export class GoogleSheets implements SheetsClient {
     private readonly spreadsheetId: string,
     private readonly account: ServiceAccount,
     private readonly fetchImpl: typeof fetch = fetch,
+    /** read: только чтение (забор задач из Bord). Запросы на запись падают до обращения к Google, токен выдаётся только на чтение */
+    readonly mode: AccessMode = "write",
   ) {
-    // Второй рубеж после проверки ссылки: в рабочую таблицу этот код не пишет, откуда бы ни пришёл её ID
-    if (spreadsheetId === PROD_SHEET_ID) throw new GoogleSheetsError("Рабочая таблица подключается только на этапе 7", 0);
+    // Второй рубеж после проверки ссылки: в рабочий Bord ресурс не пишет, откуда бы ни пришёл его ID. Читать его можно
+    if (mode === "write" && spreadsheetId === PROD_SHEET_ID) throw new GoogleSheetsError("В рабочий Bord ресурс не пишет: его можно только читать", 0);
+  }
+
+  private writable() {
+    if (this.mode === "read") throw new GoogleSheetsError("Доступ к этой таблице только на чтение: ресурс в неё не пишет", 0);
   }
 
   get email() {
@@ -64,7 +74,7 @@ export class GoogleSheets implements SheetsClient {
     if (this.token && this.token.until > Date.now() + 60_000) return this.token.value;
     const aud = this.account.token_uri ?? "https://oauth2.googleapis.com/token";
     const key = await importPKCS8(this.account.private_key.replace(/\\n/g, "\n"), "RS256");
-    const assertion = await new SignJWT({ scope: SCOPE })
+    const assertion = await new SignJWT({ scope: this.mode === "read" ? READ_SCOPE : SCOPE })
       .setProtectedHeader({ alg: "RS256", typ: "JWT" })
       .setIssuer(this.account.client_email)
       .setAudience(aud)
@@ -98,9 +108,13 @@ export class GoogleSheets implements SheetsClient {
         res.status === 403 && /protected/i.test(text)
           ? "Вкладка защищена от правок служебного аккаунта: владелец таблицы должен снять старую защиту (Данные, Защищённые листы и диапазоны)"
           : res.status === 403
-          ? "Нет доступа к таблице: дайте служебному аккаунту права редактора на копию"
+          ? this.mode === "read"
+            ? "Нет доступа к Bord: дайте служебному аккаунту право «Читатель» на таблицу"
+            : "Нет доступа к таблице: дайте служебному аккаунту права редактора"
           : res.status === 404
             ? "Таблица не найдена: проверьте ID таблицы"
+            : res.status === 400 && /unable to parse range/i.test(text)
+              ? "В таблице нет нужной вкладки"
             : `Google Sheets ответил ${res.status}`;
       throw new GoogleSheetsError(`${message}. ${googleDetail(text)}`.trim(), res.status);
     }
@@ -128,6 +142,7 @@ export class GoogleSheets implements SheetsClient {
   }
 
   async batchUpdate(requests: Record<string, unknown>[]): Promise<void> {
+    this.writable();
     if (!requests.length) return;
     await this.call(":batchUpdate", { method: "POST", body: { requests } });
   }
@@ -140,15 +155,18 @@ export class GoogleSheets implements SheetsClient {
   }
 
   async setValues(data: { range: string; values: Grid }[]): Promise<void> {
+    this.writable();
     if (!data.length) return;
     await this.call("/values:batchUpdate", { method: "POST", body: { valueInputOption: "RAW", data } });
   }
 
   async setFormulas(range: string, values: Grid): Promise<void> {
+    this.writable();
     await this.call(`/values/${encodeURIComponent(range)}`, { method: "PUT", query: { valueInputOption: "USER_ENTERED" }, body: { values } });
   }
 
   async append(sheet: string, values: Grid): Promise<void> {
+    this.writable();
     if (!values.length) return;
     await this.call(`/values/${encodeURIComponent(`${q(sheet)}!A1`)}:append`, {
       method: "POST",
@@ -160,6 +178,7 @@ export class GoogleSheets implements SheetsClient {
   }
 
   async clear(range: string): Promise<void> {
+    this.writable();
     await this.call(`/values/${encodeURIComponent(range)}:clear`, { method: "POST", body: {} });
   }
 }
