@@ -29,8 +29,8 @@ export function SetupForm({ missing }: { missing: ("team" | "owner" | "admin")[]
       />
       {missing.map((kind) => (
         <fieldset key={kind} className="flex flex-col gap-3 border-t border-line pt-5">
-          <legend className="text-[17px] font-semibold text-ink">{LABELS[kind].title}</legend>
-          <p className="-mt-1 text-[14px] text-muted">{LABELS[kind].hint}. Не короче 12 символов.</p>
+          <legend className="text-title-sm font-semibold text-ink">{LABELS[kind].title}</legend>
+          <p className="-mt-1 text-small text-muted">{LABELS[kind].hint}. Не короче 12 символов.</p>
           <Field label="Пароль" id={kind} name={kind} type="password" autoComplete="new-password" required />
           <Field label="Ещё раз" id={`${kind}-repeat`} name={`${kind}-repeat`} type="password" autoComplete="new-password" required />
         </fieldset>

@@ -16,6 +16,7 @@ import { EntryItem, EntryTypeBadge } from "@/components/weekly/entry-item";
 import { DemoTaskActions, useTaskActions } from "@/components/tasks/task-actions";
 import type { Task, WeeklyEntry } from "@/domain/types";
 import { addDays } from "@/domain/dates";
+import { SHADOWS, TEXT_SIZES, type TextSize } from "@/lib/design-tokens";
 
 const COLORS = [
   { name: "Тёмно-синий", token: "navy", hex: "#002A3A", use: "Шапка, боковое меню, заголовки, основной текст" },
@@ -26,6 +27,10 @@ const COLORS = [
   { name: "Линии", token: "line", hex: "#DCE4E8", use: "Границы, разделители" },
   { name: "Вторичный текст", token: "muted", hex: "#5A6E77", use: "Подписи, даты, пояснения" },
   { name: "Красный", token: "danger", hex: "#D93C41", use: "Просрочка, критичный приоритет, «заблокирована»" },
+  { name: "Янтарный", token: "amber", hex: "#F2B600", use: "Точки «сдан с опозданием» и «под риском»" },
+  { name: "Туман", token: "mist", hex: "#B4C2C9", use: "Точки «не начинал» и низкий приоритет" },
+  { name: "Сталь", token: "steel", hex: "#90A4AE", use: "Пунктир «не задано»" },
+  { name: "Оранжевый текст", token: "orange-ink", hex: "#9A4A05", use: "Высокий приоритет, оранжевая метка" },
 ];
 
 const SWATCH: Record<string, string> = {
@@ -37,15 +42,69 @@ const SWATCH: Record<string, string> = {
   line: "bg-line",
   muted: "bg-muted",
   danger: "bg-danger",
+  amber: "bg-amber",
+  mist: "bg-mist",
+  steel: "bg-steel",
+  "orange-ink": "bg-orange-ink",
+};
+
+/** Где какой размер: подсказка для нового дизайна, значения в globals.css */
+const TEXT_ROLES: Record<TextSize, string> = {
+  micro: "Инициалы в маленьком кружке",
+  tiny: "Мелкие пометки: адрес, число переносов, подписи меню",
+  caption: "Подписи, даты, пояснения под полями",
+  small: "Вторичный текст, ячейки таблиц, пункты меню",
+  body: "Основной текст",
+  lead: "Заголовок карточки, крупная строка в списке",
+  "title-sm": "Заголовок блока в карточке",
+  title: "Заголовок раздела на странице",
+  "title-lg": "Крупный заголовок раздела",
+  "headline-sm": "Имя на разборе задач, крупная цифра",
+  headline: "Заголовок окна входа и страницы задачи на телефоне",
+  page: "Заголовок страницы на телефоне",
+  "headline-lg": "Крупные цифры синхронизации",
+  "page-lg": "Заголовок страницы",
+  "display-sm": "Режим встречи на телефоне",
+  hero: "Главная фраза экрана входа",
+  display: "Режим встречи на экране переговорной",
+};
+
+const TEXT_CLASS: Record<TextSize, string> = {
+  micro: "text-micro",
+  tiny: "text-tiny",
+  caption: "text-caption",
+  small: "text-small",
+  body: "text-body",
+  lead: "text-lead",
+  "title-sm": "text-title-sm",
+  title: "text-title",
+  "title-lg": "text-title-lg",
+  "headline-sm": "text-headline-sm",
+  headline: "text-headline",
+  page: "text-page",
+  "headline-lg": "text-headline-lg",
+  "page-lg": "text-page-lg",
+  "display-sm": "text-display-sm",
+  hero: "text-hero",
+  display: "text-display",
+};
+
+const SHADOW_CLASS: Record<(typeof SHADOWS)[number], [string, string]> = {
+  menu: ["shadow-menu", "Выпадающее меню"],
+  modal: ["shadow-modal", "Окно"],
+  segment: ["shadow-segment", "Выбранный пункт переключателя"],
+  toast: ["shadow-toast", "Уведомление внизу"],
+  drag: ["shadow-drag", "Перетаскиваемая карточка"],
+  drawer: ["shadow-drawer", "Боковая панель"],
 };
 
 function Block({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
   return (
     <section id={id} aria-labelledby={`${id}-t`} className="scroll-mt-24 border-t border-line py-8 first:border-t-0 first:pt-0">
-      <h2 id={`${id}-t`} className="text-[20px] font-semibold text-ink">
+      <h2 id={`${id}-t`} className="text-title-lg font-semibold text-ink">
         {title}
       </h2>
-      {description ? <p className="mt-1 max-w-[70ch] text-[14px] text-muted">{description}</p> : null}
+      {description ? <p className="mt-1 max-w-[70ch] text-small text-muted">{description}</p> : null}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -111,10 +170,11 @@ function UiSampleBody() {
   return (
     <div className="lg:grid lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-10">
       <nav aria-label="Разделы образца" className="mb-6 hidden lg:block">
-        <ul className="sticky top-24 flex flex-col gap-0.5 text-[14px]">
+        <ul className="sticky top-24 flex flex-col gap-0.5 text-small">
           {[
             ["colors", "Цвета"],
             ["type", "Шрифт"],
+            ["shadows", "Тени"],
             ["buttons", "Кнопки"],
             ["fields", "Поля"],
             ["badges", "Метки"],
@@ -142,26 +202,45 @@ function UiSampleBody() {
               <li key={c.token} className="rounded-xl ring-1 ring-line">
                 <div className={`h-16 rounded-t-xl ${SWATCH[c.token]}`} aria-hidden="true" />
                 <div className="px-3 py-2.5">
-                  <p className="text-[15px] font-semibold text-ink">{c.name}</p>
-                  <p className="text-[13px] tabular-nums text-muted">{c.hex}</p>
-                  <p className="mt-1 text-[13px] text-muted">{c.use}</p>
+                  <p className="text-body font-semibold text-ink">{c.name}</p>
+                  <p className="text-caption tabular-nums text-muted">{c.hex}</p>
+                  <p className="mt-1 text-caption text-muted">{c.use}</p>
                 </div>
               </li>
             ))}
           </ul>
         </Block>
 
-        <Block id="type" title="Шрифт" description="Golos Text, он уже служит заменой фирменному Aeroport в презентациях. Aeroport подставляется одной переменной, если появится веб-лицензия.">
-          <div className="flex flex-col gap-3">
-            <p className="text-[30px] font-semibold leading-tight text-ink">Заголовок страницы, 30</p>
-            <p className="text-[20px] font-semibold text-ink">Заголовок раздела, 20</p>
-            <p className="text-[16px] font-semibold text-ink">Заголовок карточки, 16</p>
-            <p className="max-w-[65ch] text-[15px] leading-relaxed text-ink">
-              Основной текст, 15. Строки не длиннее 80 знаков, чтобы глазу было удобно возвращаться к началу. Тексты простые и человеческие, без длинного тире и стрелок.
-            </p>
-            <p className="text-[13px] text-muted">Подпись и даты, 13</p>
-            <p className="text-[15px] tabular-nums text-ink">Цифры в таблицах моноширинные: 12, 108, 1 254</p>
-          </div>
+        <Block
+          id="type"
+          title="Шрифт"
+          description="Golos Text, он уже служит заменой фирменному Aeroport в презентациях. Размеры заданы по ролям в src/app/globals.css: класс text-caption, text-body и так далее. Числом размер в экранах не пишем, это проверяет тест."
+        >
+          <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+            {(Object.keys(TEXT_SIZES) as TextSize[]).map((name) => (
+              <li key={name} className="grid gap-1 px-4 py-3 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-baseline sm:gap-4">
+                <p className="text-caption tabular-nums text-muted">
+                  text-{name}, {TEXT_SIZES[name]}
+                </p>
+                <p className={`${TEXT_CLASS[name]} truncate font-semibold leading-tight text-ink`}>{TEXT_ROLES[name]}</p>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 max-w-[65ch] text-body leading-relaxed text-ink">
+            Основной текст: строки не длиннее 80 знаков, чтобы глазу было удобно возвращаться к началу. Тексты простые и человеческие, без длинного тире и стрелок. Цифры в
+            таблицах моноширинные: 12, 108, 1 254.
+          </p>
+        </Block>
+
+        <Block id="shadows" title="Тени" description="Тени тоже токены: shadow-menu, shadow-modal и другие. Меняются в одном месте.">
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {SHADOWS.map((name) => (
+              <li key={name} className={`rounded-xl bg-white px-4 py-5 ${SHADOW_CLASS[name][0]}`}>
+                <p className="text-body font-semibold text-ink">{SHADOW_CLASS[name][1]}</p>
+                <p className="text-caption text-muted">{SHADOW_CLASS[name][0]}</p>
+              </li>
+            ))}
+          </ul>
         </Block>
 
         <Block id="buttons" title="Кнопки" description="Зелёная кнопка одна на экране: главное действие. Высота не меньше 44 пикселей, на телефоне по всей ширине.">
@@ -186,11 +265,11 @@ function UiSampleBody() {
             <SelectField label="Приоритет" id="ui-pr" defaultValue="medium" options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />
             <TextArea label="Что произошло" id="ui-what" defaultValue="СК А прислала тарифы на годовой ВЗР" counter={{ value: 35, max: 150 }} className="sm:col-span-2" rows={2} />
             <TextInput label="Срок" id="ui-date" type="date" defaultValue={data.today} />
-            <label className="inline-flex min-h-11 items-center gap-2 self-end text-[15px] text-ink">
-              <input type="checkbox" defaultChecked className="h-4 w-4 accent-[#0073a8]" />
+            <label className="inline-flex min-h-11 items-center gap-2 self-end text-body text-ink">
+              <input type="checkbox" defaultChecked className="h-4 w-4 accent-blue-700" />
               Нужна помощь
             </label>
-            <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink sm:col-span-2">
+            <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink sm:col-span-2">
               Без причины перенести нельзя
             </p>
           </div>
@@ -198,42 +277,42 @@ function UiSampleBody() {
 
         <Block id="badges" title="Метки" description="Статус, приоритет и состояние задачи, состояние weekly, тип записи, просрочка.">
           <dl className="grid gap-4 sm:grid-cols-[160px_1fr]">
-            <dt className="text-[14px] text-muted">Статус</dt>
+            <dt className="text-small text-muted">Статус</dt>
             <dd className="flex flex-wrap gap-2">
               {STATUSES.map((s) => (
                 <StatusBadge key={s.code} status={s.code} />
               ))}
             </dd>
-            <dt className="text-[14px] text-muted">Приоритет</dt>
+            <dt className="text-small text-muted">Приоритет</dt>
             <dd className="flex flex-wrap gap-4">
               {PRIORITIES.map((p) => (
                 <PriorityTag key={p.code} priority={p.code} />
               ))}
             </dd>
-            <dt className="text-[14px] text-muted">Состояние</dt>
+            <dt className="text-small text-muted">Состояние</dt>
             <dd className="flex flex-wrap gap-4">
               {STATES.map((s) => (
                 <StateDot key={s.code} state={s.code} />
               ))}
             </dd>
-            <dt className="text-[14px] text-muted">Weekly</dt>
+            <dt className="text-small text-muted">Weekly</dt>
             <dd className="flex flex-wrap gap-2">
               {WEEKLY_STATES.map((s) => (
                 <WeeklyBadge key={s.code} state={s.code} />
               ))}
             </dd>
-            <dt className="text-[14px] text-muted">Тип записи</dt>
+            <dt className="text-small text-muted">Тип записи</dt>
             <dd className="flex flex-wrap gap-2">
               {ENTRY_TYPES.map((t) => (
                 <EntryTypeBadge key={t.code} type={t.code} />
               ))}
             </dd>
-            <dt className="text-[14px] text-muted">Сроки</dt>
+            <dt className="text-small text-muted">Сроки</dt>
             <dd className="flex flex-wrap items-center gap-4">
               <OverdueNote days={3} />
               <StaleNote />
               <Badge tone="navy">Владелец</Badge>
-              <span className="inline-flex items-center gap-2 text-[14px] text-ink">
+              <span className="inline-flex items-center gap-2 text-small text-ink">
                 <Avatar text="ВГ" size="sm" /> Влад
               </span>
             </dd>
@@ -304,7 +383,7 @@ function UiSampleBody() {
             </Button>
           </div>
           <Drawer open={drawer} onOpenChange={setDrawer} title="Боковая панель" description="Закрывается крестиком, клавишей Esc и щелчком мимо">
-            <p className="text-[15px] text-ink">Здесь открывается карточка задачи со всеми полями, комментариями и историей.</p>
+            <p className="text-body text-ink">Здесь открывается карточка задачи со всеми полями, комментариями и историей.</p>
           </Drawer>
           <Modal open={modal} onOpenChange={setModal} title="Диалог" description="Короткий вопрос с понятными кнопками">
             <div className="flex justify-end gap-2">

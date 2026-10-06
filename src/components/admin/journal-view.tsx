@@ -96,7 +96,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
         <SelectField label="Тип события" id="j-kind" value={query.kind} onChange={(e) => go({ kind: e.target.value as JournalQuery["kind"] })} className="sm:w-48" options={KINDS} />
         <SelectField label="Источник" id="j-source" value={query.source} onChange={(e) => go({ source: e.target.value as JournalQuery["source"] })} className="sm:w-44" options={SOURCES} />
       </div>
-      <p className={cn("mt-3 text-[14px] text-muted transition-opacity", pending && "opacity-60")} aria-live="polite">
+      <p className={cn("mt-3 text-small text-muted transition-opacity", pending && "opacity-60")} aria-live="polite">
         {total ? `${total} ${plural(total)}${total > events.length ? `, показаны последние ${events.length}` : ""}.` : ""} Журнал только дописывается: править и удалять записи нельзя. События с источником «таблица» это перенос задач и weekly из Insurance&Invest Bord.
       </p>
 
@@ -104,9 +104,9 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
         <EmptyState title="Событий под эти фильтры нет" className="mt-4" />
       ) : (
         <div className={cn("mt-4 overflow-hidden rounded-xl ring-1 ring-line transition-opacity", pending && "opacity-60")}>
-          <table className="hidden w-full text-left text-[14px] md:table">
+          <table className="hidden w-full text-left text-small md:table">
             <caption className="sr-only">Журнал изменений</caption>
-            <thead className="bg-surface text-[13px] text-muted">
+            <thead className="bg-surface text-caption text-muted">
               <tr>
                 <th scope="col" className="px-4 py-2.5 font-medium">Когда</th>
                 <th scope="col" className="px-3 py-2.5 font-medium">Кто</th>
@@ -124,7 +124,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
                   </td>
                   <td className="whitespace-nowrap px-3 py-3 text-ink">
                     {nameOf(e.by)}
-                    {e.via ? <span className="block text-[12px] text-muted">{VIA_WORD[e.via]}</span> : null}
+                    {e.via ? <span className="block text-tiny text-muted">{VIA_WORD[e.via]}</span> : null}
                   </td>
                   <td className="px-3 py-3 text-ink">
                     <ObjectLabel e={e} />
@@ -134,7 +134,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
                   </td>
                   <td className="px-4 py-3 text-muted">
                     {SOURCE_WORD[e.source]}
-                    {e.ip ? <span className="block text-[12px]">{e.ip}</span> : null}
+                    {e.ip ? <span className="block text-tiny">{e.ip}</span> : null}
                   </td>
                 </tr>
               ))}
@@ -142,8 +142,8 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
           </table>
           <ul className="divide-y divide-line md:hidden">
             {events.map((e) => (
-              <li key={e.id} className="px-4 py-3 text-[14px]">
-                <p className="text-[13px] text-muted">
+              <li key={e.id} className="px-4 py-3 text-small">
+                <p className="text-caption text-muted">
                   {formatShort(e.at)}
                   {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : nameOf(e.by)}
                   {e.via ? ` (${VIA_WORD[e.via]})` : ""}, {SOURCE_WORD[e.source]}

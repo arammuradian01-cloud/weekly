@@ -154,7 +154,7 @@ export function EntryForm({
         <TextArea label="Что делаем дальше" id={`${initial.id}-next`} value={e.next ?? ""} onChange={(ev) => set("next", ev.target.value)} rows={2} />
         <div className="flex flex-wrap items-center gap-3">
           {e.taskNumber ? (
-            <span className="text-[14px] text-muted">По записи уже есть задача {e.taskNumber}</span>
+            <span className="text-small text-muted">По записи уже есть задача {e.taskNumber}</span>
           ) : (
             <Button
               type="button"
@@ -167,11 +167,11 @@ export function EntryForm({
               Сделать задачей
             </Button>
           )}
-          {!saved && (e.next ?? "").trim() ? <span className="text-[13px] text-muted">Сначала сохраните запись</span> : null}
+          {!saved && (e.next ?? "").trim() ? <span className="text-caption text-muted">Сначала сохраните запись</span> : null}
         </div>
       </div>
       <div className="flex flex-col gap-2">
-        <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-[15px] text-ink">
+        <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-body text-ink">
           <input
             type="checkbox"
             checked={needHelp}
@@ -179,7 +179,7 @@ export function EntryForm({
               dirty.current = true;
               setNeedHelp(ev.target.checked);
             }}
-            className="h-4 w-4 accent-[#0073a8]"
+            className="h-4 w-4 accent-blue-700"
           />
           Нужна помощь
         </label>
@@ -197,12 +197,12 @@ export function EntryForm({
         placeholder="https://"
       />
       {error ? (
-        <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink">
+        <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
           {error}
         </p>
       ) : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <span className="text-[13px] text-muted sm:mr-auto" aria-live="polite">
+        <span className="text-caption text-muted sm:mr-auto" aria-live="polite">
           {autoState === "saving" ? "Сохраняю черновик записи" : autoState === "saved" ? "Черновик записи сохранён" : ""}
         </span>
         <Button type="button" variant="ghost" onClick={onCancel}>

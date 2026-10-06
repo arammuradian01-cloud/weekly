@@ -18,5 +18,6 @@ backups/
 test-results/
 playwright-report/
 tests/e2e/screenshots/
+tests/visual/__screenshots__/
 
 .DS_Store

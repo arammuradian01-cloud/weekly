@@ -31,7 +31,7 @@ export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekVi
       <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white" aria-label="Предыдущая неделя">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       </button>
-      <span className="min-w-36 px-2 text-center text-[14px] font-semibold text-ink" aria-live="polite">
+      <span className="min-w-36 px-2 text-center text-small font-semibold text-ink" aria-live="polite">
         Неделя {view.week.number}
         {view.week.reporting ? <span className="font-normal text-muted"> отчётная</span> : null}
       </span>
@@ -93,8 +93,8 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
     <div>
       <header className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div className="min-w-0">
-          <h1 className="text-[26px] font-semibold leading-tight text-ink sm:text-[30px]">Weekly</h1>
-          <p className="mt-1.5 text-[15px] text-muted">Итоги недели команды по людям и по блокам</p>
+          <h1 className="text-page font-semibold leading-tight text-ink sm:text-page-lg">Weekly</h1>
+          <p className="mt-1.5 text-body text-muted">Итоги недели команды по людям и по блокам</p>
         </div>
         <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <div className="col-span-2 sm:col-span-1">
@@ -114,7 +114,7 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
       </header>
 
       {data.fallback ? (
-        <p className="mb-4 rounded-xl border border-line px-5 py-3 text-[15px] text-ink">
+        <p className="mb-4 rounded-xl border border-line px-5 py-3 text-body text-ink">
           За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
           <Link href={`/weekly?week=${data.reportingKey}`} className="font-medium text-blue-700 hover:underline">
             Открыть неделю {data.reportingNumber}
@@ -123,7 +123,7 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
       ) : null}
 
       {week.closed ? (
-        <p className="mb-4 inline-flex items-center gap-2 text-[14px] text-muted">
+        <p className="mb-4 inline-flex items-center gap-2 text-small text-muted">
           <Lock className="h-4 w-4" aria-hidden="true" />
           Неделя закрыта: записи правят только владелец и администраторы
         </p>
@@ -146,7 +146,7 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
-            className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-[15px] font-medium text-blue-700 hover:bg-surface lg:hidden"
+            className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-surface lg:hidden"
           >
             Фильтры{filtersOn ? " включены" : ""}
           </button>
@@ -187,13 +187,13 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
 /** Запросы помощи поднимаются наверх ленты: с них удобно начинать встречу */
 function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
   return (
-    <section aria-labelledby="help-title" className="rounded-xl border border-[#f0dfa6] bg-warning-soft/50 px-5 py-4">
-      <h2 id="help-title" className="text-[17px] font-semibold text-ink">
+    <section aria-labelledby="help-title" className="rounded-xl border border-warning-line bg-warning-soft/50 px-5 py-4">
+      <h2 id="help-title" className="text-title-sm font-semibold text-ink">
         Нужна помощь <span className="font-normal text-muted">{entries.length}</span>
       </h2>
       <ul className="mt-3 flex flex-col gap-3">
         {entries.map((e) => (
-          <li key={e.id} className="text-[15px]">
+          <li key={e.id} className="text-body">
             <span className="font-semibold text-ink">{authorName(e.author, "short", "Общее")}:</span> {e.what}.{" "}
             <span className="font-medium text-warning-ink">{e.help}</span>
           </li>
@@ -223,10 +223,10 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
       {common.length ? (
         <section aria-labelledby="wk-common" className="flex flex-col rounded-xl ring-1 ring-line xl:col-span-2">
           <header className="border-b border-line px-5 py-4">
-            <h2 id="wk-common" className="text-[17px] font-semibold text-ink">
+            <h2 id="wk-common" className="text-title-sm font-semibold text-ink">
               Общее, без автора <span className="font-normal text-muted">{common.length}</span>
             </h2>
-            <p className="mt-1 text-[15px] text-muted">
+            <p className="mt-1 text-body text-muted">
               В таблице записаны на «Все лидеры».{manage ? " Назначьте автора, и запись переедет в его weekly" : " Автора назначает владелец или администратор"}
             </p>
           </header>
@@ -257,20 +257,20 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
           <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col rounded-xl ring-1 ring-line">
             <header className="border-b border-line px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 id={`wk-${p.slug}`} className="text-[17px] font-semibold text-ink">
+                <h2 id={`wk-${p.slug}`} className="text-title-sm font-semibold text-ink">
                   {p.fullName}
                 </h2>
                 <div className="flex items-center gap-2">
-                  {weekly?.submittedAt ? <span className="text-[13px] text-muted">{submittedText(weekly.submittedAt)}</span> : null}
+                  {weekly?.submittedAt ? <span className="text-caption text-muted">{submittedText(weekly.submittedAt)}</span> : null}
                   {weekly?.absent && state !== "submitted" && state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={state} />}
                 </div>
               </div>
               {weekly?.headline ? (
-                <p className="mt-2 text-[16px] leading-snug text-ink">{weekly.headline}</p>
+                <p className="mt-2 text-lead leading-snug text-ink">{weekly.headline}</p>
               ) : weekly?.absent ? (
-                <p className="mt-2 text-[15px] text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p>
+                <p className="mt-2 text-body text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p>
               ) : reporting ? (
-                <p className="mt-2 text-[15px] text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
+                <p className="mt-2 text-body text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
               ) : null}
             </header>
             {own.length ? (
@@ -282,7 +282,7 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
                 ))}
               </ul>
             ) : (
-              <p className={cn("px-5 py-4 text-[15px] text-muted")}>Записей нет</p>
+              <p className={cn("px-5 py-4 text-body text-muted")}>Записей нет</p>
             )}
           </section>
         );
@@ -302,7 +302,7 @@ function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
         if (!list.length) return null;
         return (
           <section key={code} aria-labelledby={`blk-${code}`} className="rounded-xl ring-1 ring-line">
-            <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-[17px] font-semibold text-ink">
+            <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-title-sm font-semibold text-ink">
               {blockLabel(code)} <span className="font-normal text-muted">{list.length}</span>
             </h2>
             <ul className="flex flex-col divide-y divide-line">

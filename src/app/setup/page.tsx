@@ -17,18 +17,18 @@ export default async function SetupPage() {
         <Wordmark />
       </header>
       <main className="mx-auto w-full max-w-md px-5 py-8 sm:py-12">
-        <h1 className="text-[26px] font-semibold text-ink">Первичная настройка</h1>
+        <h1 className="text-page font-semibold text-ink">Первичная настройка</h1>
         {missing.length === 0 ? (
-          <p className="mt-3 text-[15px] text-muted">
+          <p className="mt-3 text-body text-muted">
             Пароли уже заданы. <Link href="/login" className="font-medium text-blue-700 underline-offset-2 hover:underline">Перейти ко входу</Link>
           </p>
         ) : !enabled ? (
-          <p className="mt-3 text-[15px] text-muted">
+          <p className="mt-3 text-body text-muted">
             Кода настройки сейчас нет. Перезапустите приложение в панели хостинга: в журнале запуска появится строка «Код первичной настройки». На своём компьютере пароли задаются командой npm run password.
           </p>
         ) : (
           <>
-            <p className="mb-6 mt-2 text-[15px] text-muted">
+            <p className="mb-6 mt-2 text-body text-muted">
               Задайте пароли один раз. Страница работает, только пока они не заданы, а код после этого гаснет.
             </p>
             <SetupForm missing={missing} />

@@ -16,8 +16,8 @@ const ON = ["в понедельник", "во вторник", "в среду",
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2">
-      <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
-      <div className="flex flex-col gap-2 text-[15px] leading-relaxed text-ink">{children}</div>
+      <h2 className="text-title-sm font-semibold text-ink">{title}</h2>
+      <div className="flex flex-col gap-2 text-body leading-relaxed text-ink">{children}</div>
     </section>
   );
 }

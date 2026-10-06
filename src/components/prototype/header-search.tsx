@@ -29,9 +29,9 @@ export function HeaderSearch() {
         onChange={(e) => setQ(e.target.value)}
         placeholder="Поиск задач"
         aria-keyshortcuts="/"
-        className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-10 text-[15px] text-ink placeholder:text-muted focus:border-blue focus:bg-white focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="h-10 w-full rounded-lg border border-line bg-surface pl-9 pr-10 text-body text-ink placeholder:text-muted focus:border-blue focus:bg-white focus:outline-none focus:ring-3 focus:ring-blue/25"
       />
-      <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-line bg-white px-1.5 text-[12px] text-muted" aria-hidden="true">
+      <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-line bg-white px-1.5 text-tiny text-muted" aria-hidden="true">
         /
       </kbd>
     </form>

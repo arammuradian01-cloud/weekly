@@ -26,7 +26,7 @@ function initials(fullName: string) {
 }
 
 const itemClass =
-  "flex h-11 cursor-pointer select-none items-center gap-3 rounded-md px-3 text-[15px] text-ink outline-none data-[highlighted]:bg-surface";
+  "flex h-11 cursor-pointer select-none items-center gap-3 rounded-md px-3 text-body text-ink outline-none data-[highlighted]:bg-surface";
 
 export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
@@ -43,15 +43,15 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
       >
         <span
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold",
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-caption font-semibold",
             dark ? "bg-white/12 text-white" : "bg-navy text-white",
           )}
         >
           {initials(fullName)}
         </span>
         <span className={cn("min-w-0 flex-1 leading-tight", tone === "light" && "hidden sm:block")}>
-          <span className="block truncate text-[15px] font-semibold">{shortName}</span>
-          <span className={cn("block truncate text-[13px]", dark ? "text-white/60" : "text-muted")}>
+          <span className="block truncate text-body font-semibold">{shortName}</span>
+          <span className={cn("block truncate text-caption", dark ? "text-white/60" : "text-muted")}>
             {management ? "Режим управления" : roleLabel}
           </span>
         </span>
@@ -62,13 +62,13 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
         <Menu.Content
           align="end"
           sideOffset={8}
-          className="z-50 w-72 rounded-xl border border-line bg-white p-1.5 shadow-[0_12px_32px_-12px_rgba(0,42,58,0.35)]"
+          className="z-50 w-72 rounded-xl border border-line bg-white p-1.5 shadow-menu"
         >
           <div className="px-3 pb-2 pt-1.5">
-            <div className="text-[15px] font-semibold text-ink">{fullName}</div>
-            <div className="text-[13px] text-muted">{roleLabel}</div>
+            <div className="text-body font-semibold text-ink">{fullName}</div>
+            <div className="text-caption text-muted">{roleLabel}</div>
             {management && managementUntil ? (
-              <div className="mt-1 text-[13px] text-blue-700">Режим управления до {managementUntil}</div>
+              <div className="mt-1 text-caption text-blue-700">Режим управления до {managementUntil}</div>
             ) : null}
           </div>
           <Menu.Separator className="my-1 h-px bg-line" />

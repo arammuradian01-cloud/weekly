@@ -9,7 +9,7 @@ export function PrototypeBanner({ mode, ownerName }: { mode: StandBanner; ownerN
   if (mode === "off") return null;
   if (mode === "pilot") {
     return (
-      <div className="flex items-center gap-2.5 border-b border-blue/20 bg-blue-soft px-4 py-2 text-[13px] text-blue-700 sm:px-6 lg:px-10">
+      <div className="flex items-center gap-2.5 border-b border-blue/20 bg-blue-soft px-4 py-2 text-caption text-blue-700 sm:px-6 lg:px-10">
         <Megaphone className="h-4 w-4 shrink-0" aria-hidden="true" />
         <p>
           <span className="font-semibold">Пилот.</span> Weekly и задачи ведём здесь, таблица обновляется сама.{" "}
@@ -22,7 +22,7 @@ export function PrototypeBanner({ mode, ownerName }: { mode: StandBanner; ownerN
     );
   }
   return (
-    <div className="flex items-center gap-2.5 border-b border-[#f0dfa6] bg-warning-soft px-4 py-2 text-[13px] text-warning-ink sm:px-6 lg:px-10">
+    <div className="flex items-center gap-2.5 border-b border-warning-line bg-warning-soft px-4 py-2 text-caption text-warning-ink sm:px-6 lg:px-10">
       <FlaskConical className="h-4 w-4 shrink-0" aria-hidden="true" />
       <p>
         <span className="font-semibold">Тестовый стенд.</span> Задачи, weekly и настройки сохраняются в базе ресурса. В Google-таблицу они уходят только в копию, рабочая таблица Insurance&Invest Bord не подключена.

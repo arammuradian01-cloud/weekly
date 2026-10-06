@@ -32,20 +32,20 @@ export default async function LinkPage({ searchParams }: { searchParams: Promise
         <div className="w-full max-w-md rounded-xl bg-white px-6 py-7 ring-1 ring-line sm:px-8">
           {ok ? (
             <>
-              <h1 className="text-[24px] font-semibold text-ink">Вход в Weekly</h1>
-              <p className="mt-2 text-[15px] text-muted">
+              <h1 className="text-headline font-semibold text-ink">Вход в Weekly</h1>
+              <p className="mt-2 text-body text-muted">
                 Вы входите как <span className="font-semibold text-ink">{link.fullName}</span>. Вход запомнится на этом устройстве на 30 дней, завершить его можно в
                 профиле.
               </p>
               <LinkLoginForm token={t} fullName={link.fullName ?? ""} />
-              <p className="mt-4 text-[13px] text-muted">Это не вы? Закройте страницу и сообщите владельцу ресурса.</p>
+              <p className="mt-4 text-caption text-muted">Это не вы? Закройте страницу и сообщите владельцу ресурса.</p>
             </>
           ) : (
             <>
-              <h1 className="text-[24px] font-semibold text-ink">Ссылка не подходит</h1>
-              <p className="mt-2 text-[15px] text-ink">{link.kind === "STEP_UP" ? "Это ссылка подтверждения режима управления, а не входа." : PROBLEMS[link.status as keyof typeof PROBLEMS]}</p>
-              <p className="mt-2 text-[15px] text-muted">Попросите новую ссылку у владельца ресурса или запросите её на почту на экране входа.</p>
-              <Link href="/login" className="mt-5 inline-block text-[15px] font-medium text-blue-700 underline-offset-2 hover:underline">
+              <h1 className="text-headline font-semibold text-ink">Ссылка не подходит</h1>
+              <p className="mt-2 text-body text-ink">{link.kind === "STEP_UP" ? "Это ссылка подтверждения режима управления, а не входа." : PROBLEMS[link.status as keyof typeof PROBLEMS]}</p>
+              <p className="mt-2 text-body text-muted">Попросите новую ссылку у владельца ресурса или запросите её на почту на экране входа.</p>
+              <Link href="/login" className="mt-5 inline-block text-body font-medium text-blue-700 underline-offset-2 hover:underline">
                 На экран входа
               </Link>
             </>

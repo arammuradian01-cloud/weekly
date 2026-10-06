@@ -157,12 +157,12 @@ export function GlobalHotkeys() {
           <TextInput label="Подробнее об источнике" id="nt-src-note" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="Например, встреча 6 октября" />
         </div>
         {proposing ? (
-          <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-[14px] text-blue-700">
+          <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-small text-blue-700">
             Задача уйдёт со статусом «Предложена». Задачей она станет после подтверждения владельцем или администратором.
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink">
+          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
             {error}
           </p>
         ) : null}

@@ -51,9 +51,9 @@ export function WeekStrip({
                   : "bg-white text-ink ring-1 ring-line",
           )}
         >
-          <span className="skew-x-12 text-[12px] font-medium leading-none">{d.weekday}</span>
+          <span className="skew-x-12 text-tiny font-medium leading-none">{d.weekday}</span>
           {d.date !== undefined ? (
-            <span className="skew-x-12 text-[17px] font-semibold leading-none tabular-nums sm:text-lg">{d.date}</span>
+            <span className="skew-x-12 text-title-sm font-semibold leading-none tabular-nums sm:text-lg">{d.date}</span>
           ) : null}
         </div>
       ))}
@@ -66,11 +66,11 @@ export function WeekStrip({
               size === "lg" ? "w-[4.5rem] sm:w-28" : "w-[4.5rem] sm:w-24",
             )}
           >
-            <span className="skew-x-12 text-[12px] font-semibold leading-none">
+            <span className="skew-x-12 text-tiny font-semibold leading-none">
               {deadline.weekday}
               {deadline.date !== undefined ? ` ${deadline.date}` : ""}
             </span>
-            <span className="skew-x-12 text-[13px] font-semibold leading-tight">
+            <span className="skew-x-12 text-caption font-semibold leading-tight">
               <span className="hidden sm:inline">weekly </span>до {deadline.time}
             </span>
           </div>
@@ -82,7 +82,7 @@ export function WeekStrip({
                 size === "lg" ? "w-24" : "w-20",
               )}
             >
-              <span className="skew-x-12 text-[13px] font-semibold leading-tight">{meeting.label}</span>
+              <span className="skew-x-12 text-caption font-semibold leading-tight">{meeting.label}</span>
             </div>
           ) : null}
         </>

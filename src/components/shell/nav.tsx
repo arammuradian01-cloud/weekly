@@ -47,7 +47,7 @@ export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | nul
           href={item.href}
           aria-current={active ? "page" : undefined}
           className={cn(
-            "relative flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] transition-colors",
+            "relative flex h-11 items-center gap-3 rounded-lg px-3 text-body transition-colors",
             active ? "bg-white/10 font-semibold text-white" : "text-white/75 hover:bg-white/6 hover:text-white",
           )}
         >
@@ -64,7 +64,7 @@ export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | nul
       <ul className="flex flex-col gap-1">{MAIN_NAV.map(link)}</ul>
       {management ? (
         <div>
-          <p className="mb-2 px-3 text-[13px] text-white/50">Управление</p>
+          <p className="mb-2 px-3 text-caption text-white/50">Управление</p>
           <ul className="flex flex-col gap-1">{managementItems.map(link)}</ul>
         </div>
       ) : null}
@@ -89,7 +89,7 @@ export function MobileNav() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-16 flex-col items-center justify-center gap-1 text-[12px]",
+                  "flex h-16 flex-col items-center justify-center gap-1 text-tiny",
                   active ? "font-semibold text-blue-700" : "text-muted",
                 )}
               >

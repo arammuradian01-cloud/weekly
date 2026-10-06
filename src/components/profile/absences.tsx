@@ -48,8 +48,8 @@ export function Absences({
               <div className="flex items-start gap-3">
                 <CalendarOff className="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
                 <div>
-                  <p className="text-[15px] font-medium text-ink">{rangeOf(a).replace(/^н/, "Н")}</p>
-                  <p className="text-[13px] text-muted">{substituteText(a.substitute).replace(/^з/, "З").replace(/^б/, "Б")}</p>
+                  <p className="text-body font-medium text-ink">{rangeOf(a).replace(/^н/, "Н")}</p>
+                  <p className="text-caption text-muted">{substituteText(a.substitute).replace(/^з/, "З").replace(/^б/, "Б")}</p>
                 </div>
               </div>
               <Button
@@ -70,7 +70,7 @@ export function Absences({
           ))}
         </ul>
       ) : (
-        <p className="text-[15px] text-muted">Отсутствий не отмечено.</p>
+        <p className="text-body text-muted">Отсутствий не отмечено.</p>
       )}
 
       {free.length ? (

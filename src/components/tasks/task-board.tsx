@@ -31,18 +31,18 @@ function CardBody({ task, today }: { task: Task; today: string }) {
   const overdue = isOverdue(task, today);
   return (
     <>
-      <p className="text-[15px] font-medium leading-snug text-ink">
+      <p className="text-body font-medium leading-snug text-ink">
         <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
         {task.title}
       </p>
       {/* «Не задан» на доске только шумит: из таблицы задачи приходят без приоритета и состояния */}
       {task.priority !== "unset" || task.state !== "unset" ? (
         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-          {task.priority !== "unset" ? <PriorityTag priority={task.priority} className="text-[13px]" /> : null}
-          {task.state !== "unset" ? <StateDot state={task.state} className="text-[13px]" /> : null}
+          {task.priority !== "unset" ? <PriorityTag priority={task.priority} className="text-caption" /> : null}
+          {task.state !== "unset" ? <StateDot state={task.state} className="text-caption" /> : null}
         </div>
       ) : null}
-      <p className="mt-2 flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
+      <p className="mt-2 flex flex-wrap items-center gap-x-2 text-caption text-muted">
         <span>{ownerName(task.owner, true)}</span>
         <span className={cn("tabular-nums", overdue && "font-semibold text-danger-ink")}>
           {task.closedAt ? `закрыта ${formatShort(task.closedAt)}` : `до ${formatShort(task.due)}`}
@@ -62,7 +62,7 @@ function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string
         ref={setNodeRef}
         className={cn(
           "select-none rounded-lg border bg-white p-3 transition-shadow",
-          overdue ? "border-l-4 border-[#f3c4c6] border-l-danger bg-danger-soft" : "border-line",
+          overdue ? "border-l-4 border-danger-line border-l-danger bg-danger-soft" : "border-line",
           canMove && "cursor-grab active:cursor-grabbing",
           isDragging && "opacity-40",
         )}
@@ -93,7 +93,7 @@ function Column({ status, tasks, children }: { status: StatusCode; tasks: Task[]
     >
       <header className="flex items-center justify-between px-1.5 pb-2 pt-1">
         <StatusBadge status={status} />
-        <span className="text-[13px] tabular-nums text-muted">{tasks.length}</span>
+        <span className="text-caption tabular-nums text-muted">{tasks.length}</span>
       </header>
       <ul className="flex min-h-24 flex-col gap-2">{children}</ul>
     </section>
@@ -141,7 +141,7 @@ export function TaskBoard() {
         <Chip active={showClosed} onClick={() => setShowClosed((v) => !v)}>
           Не выполненные и отменённые
         </Chip>
-        <p className="text-[14px] text-muted">Перетащите карточку в другую колонку, чтобы сменить статус. На телефоне подержите карточку.</p>
+        <p className="text-small text-muted">Перетащите карточку в другую колонку, чтобы сменить статус. На телефоне подержите карточку.</p>
       </div>
       <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
@@ -158,7 +158,7 @@ export function TaskBoard() {
         </div>
         <DragOverlay>
           {active ? (
-            <div className="w-[264px] rotate-2 rounded-lg border border-line bg-white p-3 shadow-[0_16px_40px_-16px_rgba(0,42,58,0.5)]">
+            <div className="w-[264px] rotate-2 rounded-lg border border-line bg-white p-3 shadow-drag">
               <CardBody task={active} today={data.today} />
             </div>
           ) : null}

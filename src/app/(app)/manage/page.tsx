@@ -24,8 +24,8 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
       <ManageForm passwordLabel={owner ? "Пароль владельца" : "Пароль администраторов"} next={target} />
       {ctx.via !== "TEAM" && mailConfigured() && ctx.person.email ? (
         <div className="mt-8 border-t border-line pt-6">
-          <h2 className="text-[17px] font-semibold text-ink">Без пароля</h2>
-          <p className="mb-4 mt-1 text-[14px] text-muted">Ссылка подтверждения придёт на {ctx.person.email}. Откройте её на этом же устройстве.</p>
+          <h2 className="text-title-sm font-semibold text-ink">Без пароля</h2>
+          <p className="mb-4 mt-1 text-small text-muted">Ссылка подтверждения придёт на {ctx.person.email}. Откройте её на этом же устройстве.</p>
           <StepUpForm />
         </div>
       ) : null}

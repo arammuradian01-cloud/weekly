@@ -77,14 +77,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
           <div className="hidden min-w-0 flex-1 items-center gap-6 lg:flex">
             <div className="flex shrink-0 items-baseline gap-2">
-              <span className="text-[15px] font-semibold text-ink">Неделя {week.week}</span>
-              <span className="text-[14px] text-muted">{formatWeekRange(week)}</span>
+              <span className="text-body font-semibold text-ink">Неделя {week.week}</span>
+              <span className="text-small text-muted">{formatWeekRange(week)}</span>
             </div>
             <HeaderSearch />
           </div>
           <div className="flex items-center gap-3">
             {managementUntil ? (
-              <span className="hidden rounded-md bg-blue-soft px-2.5 py-1 text-[13px] font-medium text-blue-700 sm:inline">
+              <span className="hidden rounded-md bg-blue-soft px-2.5 py-1 text-caption font-medium text-blue-700 sm:inline">
                 Режим управления до {managementUntil}
               </span>
             ) : null}
@@ -95,7 +95,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
 
         {lagging ? (
-          <div role="status" className="border-b border-warning/30 bg-warning-soft px-4 py-2.5 text-[14px] text-warning-ink sm:px-6 lg:px-10">
+          <div role="status" className="border-b border-warning/30 bg-warning-soft px-4 py-2.5 text-small text-warning-ink sm:px-6 lg:px-10">
             Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к копии. Изменения ждут в очереди и не теряются.{" "}
             {ctx.management?.role === "OWNER" ? (
               <Link href="/sync" className="font-medium underline underline-offset-2">
@@ -107,7 +107,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         ) : null}
         <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} />
-        <main className="mx-auto w-full max-w-[1240px] flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
+        <main className="mx-auto w-full max-w-page flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
       </div>
 
       <MobileNav />

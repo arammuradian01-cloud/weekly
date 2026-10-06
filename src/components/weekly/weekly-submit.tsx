@@ -203,7 +203,7 @@ export function WeeklySubmit({
         title="Удалить запись?"
         description={confirmDelete?.what}
       >
-        <p className="text-[14px] text-muted">Удаление можно отменить в течение 5 секунд кнопкой «Отменить» внизу экрана.</p>
+        <p className="text-small text-muted">Удаление можно отменить в течение 5 секунд кнопкой «Отменить» внизу экрана.</p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
             Не удалять
@@ -223,10 +223,10 @@ export function WeeklySubmit({
       <aside className="mb-6 lg:mb-0">
         <div className="lg:sticky lg:top-24">
           <WeeklyBadge state={weekly.state} />
-          <p className="mt-3 text-[14px] text-muted">
+          <p className="mt-3 text-small text-muted">
             Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
           </p>
-          <p className="mt-2 inline-flex items-center gap-1.5 text-[13px] text-muted" aria-live="polite">
+          <p className="mt-2 inline-flex items-center gap-1.5 text-caption text-muted" aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
           </p>
@@ -238,10 +238,10 @@ export function WeeklySubmit({
                 { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "" },
               ].map((s, i) => (
                 <li key={s.href}>
-                  <a href={s.href} className="flex h-10 items-center gap-3 rounded-lg px-2 text-[15px] text-ink hover:bg-surface">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-navy text-[12px] font-semibold text-white">{i + 1}</span>
+                  <a href={s.href} className="flex h-10 items-center gap-3 rounded-lg px-2 text-body text-ink hover:bg-surface">
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-navy text-tiny font-semibold text-white">{i + 1}</span>
                     <span className="flex-1">{s.label}</span>
-                    <span className="text-[13px] tabular-nums text-muted">{s.note}</span>
+                    <span className="text-caption tabular-nums text-muted">{s.note}</span>
                   </a>
                 </li>
               ))}
@@ -252,14 +252,14 @@ export function WeeklySubmit({
 
       <div className="flex min-w-0 flex-col gap-10">
         {!canEdit ? (
-          <p className="inline-flex items-start gap-2 rounded-xl bg-surface px-5 py-4 text-[15px] text-ink">
+          <p className="inline-flex items-start gap-2 rounded-xl bg-surface px-5 py-4 text-body text-ink">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
           </p>
         ) : null}
         <Step id="step-tasks" n={1} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
           {tasks.length === 0 ? (
-            <p className="text-[15px] text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
+            <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
           ) : (
             <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
               {tasks.map((t) => (
@@ -281,10 +281,10 @@ export function WeeklySubmit({
             counter={{ value: headline.length, max: HEADLINE_MAX }}
           />
           <div className="mt-6 flex flex-col gap-4">
-            <h3 className="text-[16px] font-semibold text-ink">
+            <h3 className="text-lead font-semibold text-ink">
               Записи <span className="font-normal text-muted">{entries.length}</span>
             </h3>
-            {entries.length === 0 && !draft ? <p className="text-[15px] text-muted">Пока ни одной записи.</p> : null}
+            {entries.length === 0 && !draft ? <p className="text-body text-muted">Пока ни одной записи.</p> : null}
             <ul className="flex flex-col gap-3">
               {entries.filter((e) => !(draft && e.id === draftId)).map((e) =>
                 editing === e.id ? (
@@ -333,14 +333,14 @@ export function WeeklySubmit({
         <Step id="step-submit" n={3} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
           {submitted ? (
             <div className="flex flex-col gap-3 rounded-xl bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="inline-flex items-start gap-2 text-[16px] text-green-ink">
+              <p className="inline-flex items-start gap-2 text-lead text-green-ink">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <span>
                   <span className="font-semibold">{weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}</span>
                   {weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}. Правки до закрытия недели разрешены.
                 </span>
               </p>
-              <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-[15px] font-semibold text-navy hover:bg-white/60">
+              <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-navy hover:bg-white/60">
                 Открыть ленту недели
               </Link>
             </div>
@@ -348,12 +348,12 @@ export function WeeklySubmit({
             <div className="rounded-xl ring-1 ring-line">
               <dl className="grid gap-4 p-5 sm:grid-cols-3">
                 <div>
-                  <dt className="text-[13px] text-muted">Главное</dt>
-                  <dd className={cn("mt-1 text-[15px]", headline.trim() ? "text-ink" : "text-danger-ink")}>{headline.trim() || "Не написано"}</dd>
+                  <dt className="text-caption text-muted">Главное</dt>
+                  <dd className={cn("mt-1 text-body", headline.trim() ? "text-ink" : "text-danger-ink")}>{headline.trim() || "Не написано"}</dd>
                 </div>
                 <div>
-                  <dt className="text-[13px] text-muted">Записи</dt>
-                  <dd className="mt-1 text-[15px] text-ink">
+                  <dt className="text-caption text-muted">Записи</dt>
+                  <dd className="mt-1 text-body text-ink">
                     {entries.length
                       ? ENTRY_TYPES.map((t) => ({ t, n: entries.filter((e) => e.type === t.code).length }))
                           .filter((x) => x.n)
@@ -363,21 +363,21 @@ export function WeeklySubmit({
                   </dd>
                 </div>
                 <div>
-                  <dt className="text-[13px] text-muted">Задачи на внимание</dt>
-                  <dd className="mt-1 text-[15px] text-ink">
+                  <dt className="text-caption text-muted">Задачи на внимание</dt>
+                  <dd className="mt-1 text-body text-ink">
                     {tasks.filter((t) => t.whereUpdatedAt === data.today).length} из {tasks.length} обновлены сегодня
                   </dd>
                 </div>
               </dl>
               <div className="flex flex-col gap-3 border-t border-line p-5 sm:flex-row sm:items-center sm:justify-between">
                 {problems.length ? (
-                  <ul className="text-[14px] text-danger-ink">
+                  <ul className="text-small text-danger-ink">
                     {problems.map((p) => (
                       <li key={p}>{p}</li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-[14px] text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
+                  <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
                 )}
                 <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} className="sm:min-w-44">
                   {submitting ? "Сдаю…" : "Сдать weekly"}
@@ -395,15 +395,15 @@ function Step({ id, n, title, description, children }: { id: string; n: number; 
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-24">
       <div className="mb-4 flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy text-[15px] font-semibold text-white" aria-hidden="true">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy text-body font-semibold text-white" aria-hidden="true">
           {n}
         </span>
         <div>
-          <h2 id={`${id}-title`} className="text-[20px] font-semibold text-ink">
+          <h2 id={`${id}-title`} className="text-title-lg font-semibold text-ink">
             <span className="sr-only">Шаг {n}. </span>
             {title}
           </h2>
-          <p className="mt-0.5 text-[14px] text-muted">{description}</p>
+          <p className="mt-0.5 text-small text-muted">{description}</p>
         </div>
       </div>
       {children}
@@ -422,11 +422,11 @@ function TaskUpdateRow({ task }: { task: Task }) {
   return (
     <li className={cn("flex flex-col gap-2 px-4 py-3", overdue && "bg-danger-soft")}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-        <button type="button" onClick={() => open(task.number)} className="text-left text-[15px] font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
+        <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
           <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
           {task.title}
         </button>
-        <span className="flex shrink-0 items-center gap-2 text-[13px]">
+        <span className="flex shrink-0 items-center gap-2 text-caption">
           <span className={cn("tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
           {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
           {isStale(task, data.today) ? <StaleNote /> : null}
@@ -450,14 +450,14 @@ function TaskUpdateRow({ task }: { task: Task }) {
           id={`w-${task.number}`}
           value={where}
           onChange={(e) => setWhere(e.target.value)}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-[14px] text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
+          className="h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-small text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
         />
         {changed ? (
           <Button size="sm" type="submit" className="h-11 sm:h-10">
             Сохранить
           </Button>
         ) : task.whereUpdatedAt === data.today ? (
-          <span className="text-[13px] text-green-ink">Обновлено сегодня</span>
+          <span className="text-caption text-green-ink">Обновлено сегодня</span>
         ) : null}
       </form>
     </li>

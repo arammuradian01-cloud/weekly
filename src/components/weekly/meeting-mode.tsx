@@ -50,7 +50,7 @@ export function MeetingMode({ view }: { view: WeekView }) {
                 onClick={() => setIndex(i)}
                 aria-current={i === index ? "step" : undefined}
                 className={cn(
-                  "inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-[15px]",
+                  "inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-body",
                   i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                 )}
               >
@@ -78,14 +78,14 @@ export function MeetingMode({ view }: { view: WeekView }) {
       <section aria-live="polite" className="flex-1">
         {slide === "risks" ? (
           <>
-            <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">Риски и запросы помощи</h1>
-            <p className="mt-2 text-[19px] text-muted">Неделя {week}. С этого начинаем</p>
-            {absentLine(view.reports) ? <p className="mt-3 text-[17px] text-ink">Нет на этой неделе: {absentLine(view.reports)}.</p> : null}
-            {risky.length === 0 ? <p className="mt-8 text-[19px] text-muted">Рисков и запросов помощи на этой неделе нет.</p> : null}
+            <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Риски и запросы помощи</h1>
+            <p className="mt-2 text-title text-muted">Неделя {week}. С этого начинаем</p>
+            {absentLine(view.reports) ? <p className="mt-3 text-title-sm text-ink">Нет на этой неделе: {absentLine(view.reports)}.</p> : null}
+            {risky.length === 0 ? <p className="mt-8 text-title text-muted">Рисков и запросов помощи на этой неделе нет.</p> : null}
             <ul className="mt-8 flex flex-col gap-8">
               {risky.map((e) => (
                 <li key={e.id} className="border-l-4 border-danger pl-5">
-                  <h2 className="text-[17px] font-semibold text-muted">{authorName(e.author, "full", "Общее, без автора")}</h2>
+                  <h2 className="text-title-sm font-semibold text-muted">{authorName(e.author, "full", "Общее, без автора")}</h2>
                   <EntryItem entry={e} large />
                 </li>
               ))}
@@ -93,8 +93,8 @@ export function MeetingMode({ view }: { view: WeekView }) {
           </>
         ) : slide === "common" ? (
           <>
-            <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">Общее, без автора</h1>
-            <p className="mt-2 text-[19px] text-muted">Записи на «Все лидеры»: решаем, кто их берёт</p>
+            <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Общее, без автора</h1>
+            <p className="mt-2 text-title text-muted">Записи на «Все лидеры»: решаем, кто их берёт</p>
             <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries
@@ -109,11 +109,11 @@ export function MeetingMode({ view }: { view: WeekView }) {
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">{personOf(slide as PersonSlug).fullName}</h1>
+              <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">{personOf(slide as PersonSlug).fullName}</h1>
               {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
             </div>
-            {weekly?.headline ? <p className="mt-3 max-w-[60ch] text-[24px] leading-snug text-ink">{weekly.headline}</p> : null}
-            {weekly?.absent && !weekly.headline ? <p className="mt-3 text-[19px] text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p> : null}
+            {weekly?.headline ? <p className="mt-3 max-w-[60ch] text-headline leading-snug text-ink">{weekly.headline}</p> : null}
+            {weekly?.absent && !weekly.headline ? <p className="mt-3 text-title text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p> : null}
             <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries
@@ -134,7 +134,7 @@ export function MeetingMode({ view }: { view: WeekView }) {
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Назад
         </Button>
-        <span className="text-[15px] tabular-nums text-muted">
+        <span className="text-body tabular-nums text-muted">
           {index + 1} из {slides.length}
         </span>
         <Button onClick={() => setIndex((i) => Math.min(slides.length - 1, i + 1))} disabled={index === slides.length - 1}>

@@ -20,9 +20,9 @@ export function EmptyState({
         <span className="block h-13 w-4 -skew-x-12 rounded-sm bg-green-soft" />
       </div>
       <div className="max-w-xl">
-        <h3 className="text-[17px] font-semibold text-ink">{title}</h3>
-        {children ? <div className="mt-1 text-[15px] leading-relaxed text-muted">{children}</div> : null}
-        {stage ? <p className="mt-2 text-[13px] text-muted">{stage}</p> : null}
+        <h3 className="text-title-sm font-semibold text-ink">{title}</h3>
+        {children ? <div className="mt-1 text-body leading-relaxed text-muted">{children}</div> : null}
+        {stage ? <p className="mt-2 text-caption text-muted">{stage}</p> : null}
       </div>
     </div>
   );

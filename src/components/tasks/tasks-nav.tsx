@@ -25,7 +25,7 @@ export function TasksNav() {
                 href={v.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "relative inline-flex h-11 items-center px-3 text-[15px] transition-colors",
+                  "relative inline-flex h-11 items-center px-3 text-body transition-colors",
                   active ? "font-semibold text-ink" : "text-muted hover:text-ink",
                 )}
               >
