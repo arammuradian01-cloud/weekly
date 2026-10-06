@@ -130,7 +130,7 @@ describe("служебный аккаунт Google", () => {
     expect((write.init.headers as Record<string, string>).Authorization).toBe("Bearer tok-1");
 
     // В рабочую таблицу клиент не создаётся вовсе
-    expect(() => new GoogleSheets(PROD_SHEET_ID, account, fetchMock)).toThrow(/этапе 7/);
+    expect(() => new GoogleSheets(PROD_SHEET_ID, account, fetchMock)).toThrow(/только читать/);
 
     const denied = new GoogleSheets("forbidden", account, fetchMock);
     const error = await denied.sheets().catch((e: unknown) => e);

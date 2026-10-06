@@ -5,6 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/sheet/service";
+import * as bord from "@/lib/bord/service";
 
 async function done<T>(result: Result<T>): Promise<Result<T>> {
   if (result.ok) revalidatePath("/sync");
@@ -25,4 +26,12 @@ export async function reconcileNowAction() {
 
 export async function rebuildNowAction() {
   return done(await runAction("Пересборка вкладок", (a) => svc.rebuildNow(a)));
+}
+
+export async function setBordSourceAction(input: string) {
+  return done(await runAction("Ссылка на Bord", (a) => bord.setBordSource(a, String(input ?? ""))));
+}
+
+export async function pullBordNowAction() {
+  return done(await runAction("Забор задач из Bord", (a) => bord.pullBordNow(a)));
 }

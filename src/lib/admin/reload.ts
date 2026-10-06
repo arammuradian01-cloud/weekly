@@ -70,8 +70,12 @@ export async function reloadFromBord(db: PrismaClient, tasksText: string, weekly
     await tx.weeklyReport.deleteMany();
     await tx.ceoReport.deleteMany();
     await tx.week.deleteMany();
-    // Номера новых задач начнутся после самой старшей задачи из выгрузки
-    await tx.setting.upsert({ where: { key: "tasks.nextNumber" }, update: { value: 1 }, create: { key: "tasks.nextNumber", value: 1 } });
+    // Номера новых задач начнутся после самой старшей задачи из выгрузки, а при заборе из Bord от 1001
+    const pullOn = await tx.setting.findUnique({ where: { key: "bord.sourceId" } });
+    const first = typeof pullOn?.value === "string" && pullOn.value ? 1001 : 1;
+    await tx.setting.upsert({ where: { key: "tasks.nextNumber" }, update: { value: first }, create: { key: "tasks.nextNumber", value: first } });
+    // Прошлые значения полей забора относились к удалённым задачам: следующий забор сверит всё с Bord заново
+    await tx.setting.deleteMany({ where: { key: "bord.snapshot" } });
     await tx.auditLog.create({
       data: {
         action: "data.reload",

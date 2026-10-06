@@ -126,6 +126,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     if (entity === "export") return "Выгрузка в Excel";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";
+      if (action === "sync.bord") return "Bord: забор задач";
       if (action === "sync.rebuild") return "Google-таблица: все вкладки";
       const [tab, key] = (id ?? "").split("/");
       if (!tab) return "Google-таблица";
