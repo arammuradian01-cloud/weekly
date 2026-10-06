@@ -14,11 +14,17 @@ const base = "https://weekly.example.ru";
 
 let sent: Mail[] = [];
 
+/** Люди как в стартовых данных: без почты, включены все, кроме аналитика встречи и CEO */
+async function resetPeople() {
+  await prisma.person.updateMany({ data: { email: null, active: true } });
+  await prisma.person.updateMany({ where: { slug: { in: ["analyst", "ceo"] } }, data: { active: false } });
+}
+
 beforeEach(async () => {
   await prisma.deviceSession.deleteMany();
   await prisma.loginLink.deleteMany();
   await prisma.loginAttempt.deleteMany({ where: { kind: "LINK" } });
-  await prisma.person.updateMany({ data: { email: null, active: true } });
+  await resetPeople();
   await prisma.setting.upsert({ where: { key: "auth.teamLogin" }, update: { value: "on" }, create: { key: "auth.teamLogin", value: "on" } });
   sent = [];
   setMailTransport(async (mail) => {
@@ -26,7 +32,11 @@ beforeEach(async () => {
   });
 });
 afterEach(() => setMailTransport(null));
-afterAll(() => prisma.$disconnect());
+afterAll(async () => {
+  // Остальные файлы тестов ждут людей как в стартовых данных
+  await resetPeople();
+  await prisma.$disconnect();
+});
 
 const tokenFrom = (mail: Mail) => new URL(mail.text.split("\n").find((l) => l.startsWith("http"))!).searchParams.get("t")!;
 
