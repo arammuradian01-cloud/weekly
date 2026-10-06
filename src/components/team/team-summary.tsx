@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, personOf } from "@/domain/people";
+import { PEOPLE, personOf, positionOf } from "@/domain/people";
+import { TOP_TEAM } from "@/domain/teams";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
 import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { AbsentBadge, substituteText } from "@/components/weekly/absence";
@@ -74,7 +75,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                     </Link>
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <p className="text-caption text-muted">
-                      {ROLE_LABELS[r.person.role]}, {r.person.zone}
+                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}
                     </p>
                   </td>
                   <td className="px-3 py-3 text-right">{num(r.total)}</td>
@@ -146,7 +147,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
         </ul>
       </div>
       <p className="mt-4 text-small text-muted">
-        Общих задач для всех лидеров в работе: {shared}. Имя открывает разбор задач человека.
+        {data.team === TOP_TEAM ? `Общих задач для всех лидеров в работе: ${shared}. ` : ""}Имя открывает разбор задач человека.
       </p>
     </>
   );

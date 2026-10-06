@@ -53,7 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const profile = {
     fullName: ctx.person.fullName,
     shortName: ctx.person.shortName,
-    roleLabel: ROLE_LABELS[ctx.person.role],
+    // Сотрудник, который руководит командой, подписан как руководитель (этап 14)
+    roleLabel: ctx.person.role === "EMPLOYEE" && team.scope.leads.length ? "Руководитель команды" : ROLE_LABELS[ctx.person.role],
     canManage: ctx.managementRole !== null,
     management: ctx.management?.role ?? null,
     managementUntil,
@@ -86,7 +87,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <div className="flex min-w-0 flex-col">
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-white/95 px-4 backdrop-blur sm:px-6 lg:h-16 lg:px-10">
-          <div className="flex min-w-0 items-center gap-2 lg:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
             <Wordmark tone="light" compact />
             <TeamSwitcher compact />
           </div>

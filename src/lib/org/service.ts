@@ -150,7 +150,7 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
         if (known) return known;
         const parentId = await unitOf(path.slice(0, -1));
         const sortOrder = (await tx.orgUnit.count({ where: { parentId } })) * 10 + 10;
-        const created = await tx.orgUnit.create({ data: { name: path.at(-1)!, kind: kindOfDepth(path.length - 1), parentId, sortOrder } });
+        const created = await tx.orgUnit.create({ data: { name: path.at(-1)!, kind: kindOfDepth(path.length - 1, path.at(-1)), parentId, sortOrder } });
         byPath.set(key, created.id);
         unitsCreated += 1;
         await audit(tx, actor, "structure.unit.create", "unit", created.id, "Подразделение добавлено", null, path.join(" / "));
@@ -251,32 +251,39 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
 }
 
 /**
- * Команды руководителей подразделений: у каждого руководителя подразделения своя команда (кроме владельца,
- * его команда: топ-команда). Участники новой команды: прямые подчинённые руководителя. В существующую команду
- * добавляются только новые прямые подчинённые. Команда уровнем выше: команда руководителя руководителя, иначе топ-команда
+ * Команды руководителей: у каждого, у кого есть прямые подчинённые, своя команда (кроме владельца: его команда
+ * топ-команда). Название: подразделение, которым он руководит, иначе его подразделение и имя. Участники новой
+ * команды: прямые подчинённые. В существующую команду добавляются только новые прямые подчинённые, ручной состав
+ * не трогается. Команда уровнем выше: команда руководителя руководителя, иначе топ-команда
  */
 export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: number; members: number }> {
   const top = await tx.team.findUnique({ where: { id: TOP_TEAM } });
-  const heads = await tx.orgUnit.findMany({ where: { active: true, headId: { not: null }, kind: { not: "DEPARTMENT" } }, include: { head: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] });
+  const managers = await tx.person.findMany({
+    where: { active: true, reports: { some: { active: true } } },
+    include: { headOf: { where: { active: true, kind: { not: "DEPARTMENT" } }, orderBy: { sortOrder: "asc" } }, unit: true },
+    orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
+  });
   let createdTeams = 0;
   let addedMembers = 0;
-  const teamOfLeader = new Map<string, string>();
   const existing = await tx.team.findMany({ where: { active: true } });
+  const teamOfLeader = new Map<string, string>();
   for (const t of existing) if (t.leaderId && t.id !== TOP_TEAM && !teamOfLeader.has(t.leaderId)) teamOfLeader.set(t.leaderId, t.id);
-  for (const unit of heads) {
-    const head = unit.head!;
-    if (head.id === top?.leaderId) continue;
-    let team = existing.find((t) => t.unitId === unit.id && t.active) ?? (teamOfLeader.has(head.id) ? existing.find((t) => t.id === teamOfLeader.get(head.id)) : undefined);
+  for (const m of managers) {
+    if (m.id === top?.leaderId) continue;
+    const headed = m.headOf[0] ?? null;
+    let team = teamOfLeader.has(m.id) ? existing.find((t) => t.id === teamOfLeader.get(m.id)) : undefined;
     if (!team) {
-      team = await tx.team.create({ data: { name: unit.name, kind: "UNIT", leaderId: head.id, unitId: unit.id, sortOrder: (existing.length + createdTeams + 1) * 10 } });
+      // Не руководит подразделением (например, ведущий разработчик в отделе): команда по имени и должности
+      const name = (headed?.name ?? (m.position ? `${m.fullName}, ${m.position}` : `Команда: ${m.fullName}`)).slice(0, 120);
+      team = await tx.team.create({ data: { name, kind: "UNIT", leaderId: m.id, unitId: headed?.id ?? m.unitId, sortOrder: (existing.length + createdTeams + 1) * 10 } });
       existing.push(team);
-      teamOfLeader.set(head.id, team.id);
+      teamOfLeader.set(m.id, team.id);
       createdTeams += 1;
-      await audit(tx, actor, "team.create", "team", team.id, "Команда создана по структуре", null, `${unit.name}, руководитель ${head.fullName}`);
+      await audit(tx, actor, "team.create", "team", team.id, "Команда создана по структуре", null, `${name}, руководитель ${m.fullName}`);
     }
-    const reports = await tx.person.findMany({ where: { managerId: head.id, active: true }, select: { id: true } });
-    const current = new Set((await tx.teamMember.findMany({ where: { teamId: team.id }, select: { personId: true } })).map((m) => m.personId));
-    const fresh = reports.filter((r) => !current.has(r.id) && r.id !== head.id);
+    const reports = await tx.person.findMany({ where: { managerId: m.id, active: true }, select: { id: true } });
+    const current = new Set((await tx.teamMember.findMany({ where: { teamId: team.id }, select: { personId: true } })).map((x) => x.personId));
+    const fresh = reports.filter((r) => !current.has(r.id) && r.id !== m.id);
     if (fresh.length) {
       await tx.teamMember.createMany({ data: fresh.map((r) => ({ teamId: team!.id, personId: r.id, addedById: actor.personId })), skipDuplicates: true });
       addedMembers += fresh.length;
@@ -574,3 +581,31 @@ export async function syncTeams(actor: Actor): Promise<{ teams: number; members:
 }
 
 export { ancestorsOf };
+
+/**
+ * Кого можно добавить в команду: владельцу в режиме управления все включённые люди, кроме наблюдателей;
+ * руководителю: люди его ветки структуры и участники его команд ниже
+ */
+export async function memberCandidates(actor: Actor): Promise<{ slug: string; fullName: string; position: string | null }[]> {
+  const people = await prisma.person.findMany({
+    where: { active: true, role: { not: "OBSERVER" } },
+    orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
+    select: { id: true, slug: true, fullName: true, position: true, managerId: true },
+  });
+  if (canManagePeople(actor)) return people.map(({ slug, fullName, position }) => ({ slug, fullName, position }));
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const underMe = (id: string) => {
+    const seen = new Set<string>();
+    let cur = byId.get(id);
+    while (cur?.managerId && !seen.has(cur.managerId)) {
+      if (cur.managerId === actor.personId) return true;
+      seen.add(cur.managerId);
+      cur = byId.get(cur.managerId);
+    }
+    return false;
+  };
+  const nodes = await loadTeamNodes(prisma);
+  const led = new Set(nodes.filter((n) => n.leaderId === actor.personId && n.id !== TOP_TEAM).flatMap((n) => subtreeOf(nodes, n.id)));
+  const inLed = new Set(nodes.filter((n) => led.has(n.id)).flatMap((n) => [...n.members, ...(n.leaderId ? [n.leaderId] : [])]));
+  return people.filter((p) => p.id !== actor.personId && (underMe(p.id) || inLed.has(p.id))).map(({ slug, fullName, position }) => ({ slug, fullName, position }));
+}

@@ -12,6 +12,7 @@ import type { IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { prisma } from "@/lib/db";
 import { loadScope } from "@/lib/org/scope";
+import { moveTask } from "@/lib/org/service";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
 
@@ -106,6 +107,21 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
     if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
     console.error("Отмена не прошла", error);
     return { ok: false, error: "Не получилось отменить" };
+  }
+}
+
+/** Перенести задачу в другую команду (этап 14): режим управления или руководитель обеих команд */
+export async function moveTaskAction(number: number, team: string): Promise<TaskActionResult> {
+  try {
+    const a = await actor();
+    await moveTask(a, checkNumber(number), String(team ?? ""));
+    const task = await svc.getTask(number, { personId: a.personId, role: a.role });
+    return { ok: true, task, number };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Перенос задачи в другую команду не прошёл", error);
+    return { ok: false, error: "Не получилось перенести. Обновите страницу и попробуйте ещё раз" };
   }
 }
 

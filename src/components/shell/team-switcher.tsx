@@ -18,11 +18,11 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
   if (team.options.length <= 1) return null;
   const id = compact ? "team-switcher-m" : "team-switcher";
   return (
-    <div className={cn("relative flex min-w-0 items-center", compact ? "max-w-[180px]" : "max-w-[280px] shrink-0")}>
+    <div className={cn("relative flex min-w-0 items-center", compact ? "flex-1" : "w-[260px] shrink-0")}>
       <label htmlFor={id} className="sr-only">
         Команда
       </label>
-      <Users className="pointer-events-none absolute left-3 h-4 w-4 text-muted" aria-hidden="true" />
+      {!compact ? <Users className="pointer-events-none absolute left-3 h-4 w-4 text-muted" aria-hidden="true" /> : null}
       <select
         id={id}
         value={team.id ?? ""}
@@ -36,11 +36,14 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
             router.refresh();
           });
         }}
-        className="h-10 w-full min-w-0 truncate rounded-lg border border-line bg-white pl-9 pr-8 text-body font-medium text-ink hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:opacity-60"
+        className={cn(
+          "h-10 w-full min-w-0 truncate rounded-lg border border-line bg-white pr-8 font-medium text-ink hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:opacity-60",
+          compact ? "pl-3 text-small" : "pl-9 text-body",
+        )}
       >
         {team.options.map((o) => (
           <option key={o.id} value={o.id}>
-            {`${"  ".repeat(o.depth)}${o.name}${o.relation === "leader" ? " (руководитель)" : ""}`}
+            {`${"  ".repeat(o.depth)}${o.name}`}
           </option>
         ))}
         <option value={ALL_TEAMS}>Все мои команды</option>

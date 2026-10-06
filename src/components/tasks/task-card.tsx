@@ -9,7 +9,8 @@ import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { HistoryItem, Task } from "@/domain/types";
-import { archiveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { archiveTaskAction, moveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { TOP_TEAM, teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
@@ -25,7 +26,7 @@ function personInitials(slug: string) {
 }
 
 export function TaskCard({ task, standalone }: { task: Task; standalone?: boolean }) {
-  const { data, me, addComment, runTask, notify } = usePrototype();
+  const { data, me, addComment, runTask, notify, team, leads, manage, observer } = usePrototype();
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   const [where, setWhere] = useState(task.where);
@@ -96,7 +97,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
 
       {task.status === "proposed" && !can.confirm ? (
         <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700">
-          Задача предложена. Задачей она станет после подтверждения владельцем или администратором.
+          Задача предложена. Задачей она станет после подтверждения {task.team === TOP_TEAM ? "владельцем или администратором" : "руководителем команды"}.
         </p>
       ) : null}
 
@@ -193,6 +194,9 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
               Перенести срок
             </button>
           ) : null}
+        </Meta>
+        <Meta label="Команда">
+          <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
         </Meta>
         <Meta label="Направление">{directionLabel(task.direction)}</Meta>
         <Meta label="Источник">
@@ -321,5 +325,46 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
       </div>
       <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
     </div>
+  );
+}
+
+/** Команда задачи и перенос в другую команду: режим управления или руководитель обеих команд (этап 14) */
+function TaskTeam({
+  task,
+  options,
+  movable,
+  leads,
+  manage,
+  onMove,
+}: {
+  task: Task;
+  options: { id: string; name: string }[];
+  movable: boolean;
+  leads: string[];
+  manage: boolean;
+  onMove: (to: string) => void;
+}) {
+  const targets = options.filter((o) => o.id !== task.team && (manage || leads.includes(o.id)));
+  if (!movable || !targets.length) return <>{teamName(task.team)}</>;
+  return (
+    <span className="flex flex-col gap-1">
+      <span>{teamName(task.team)}</span>
+      <label className="sr-only" htmlFor={`move-${task.number}`}>
+        Перенести задачу в другую команду
+      </label>
+      <select
+        id={`move-${task.number}`}
+        value=""
+        onChange={(e) => e.target.value && onMove(e.target.value)}
+        className="h-9 max-w-[260px] rounded-md border border-line bg-white px-2 text-small text-blue-700 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+      >
+        <option value="">Перенести в команду…</option>
+        {targets.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }

@@ -32,6 +32,11 @@ export function applyPeople(list: PersonEntry[], team?: PersonSlug[]) {
   );
 }
 
+/** Должность по структуре (этап 14): null, если структура не загружена */
+export function positionOf(slug: PersonSlug): string | null {
+  return ALL_PEOPLE.find((p) => p.slug === slug)?.position ?? null;
+}
+
 /** Все люди департамента, включённые и нет: для выбора людей вне выбранной команды */
 export function allPeople(): PersonEntry[] {
   return ALL_PEOPLE;

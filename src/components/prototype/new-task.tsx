@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE } from "@/domain/people";
+import { PEOPLE, allPeople } from "@/domain/people";
+import { ALL_TEAMS, TOP_TEAM, teamOf, teamPeople } from "@/domain/teams";
 import { addDays } from "@/domain/dates";
 import { dictOptions, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner } from "@/domain/types";
@@ -45,7 +46,12 @@ function isTyping(target: EventTarget | null): boolean {
 const defaultSource = (): SourceCode => (SOURCES.some((s) => s.code === "meeting") ? "meeting" : (SOURCES[0]?.code ?? "meeting"));
 
 export function GlobalHotkeys() {
-  const { data, me, manage, observer, createTask } = usePrototype();
+  const { data, me, manage, observer, createTask, team, leads } = usePrototype();
+  // Куда можно поставить задачу: свои команды, команды, которыми руковожу, а в режиме управления любая видимая
+  const teamChoices = team.options.filter((o) => manage || o.relation === "member" || o.relation === "leader" || o.relation === "below");
+  const defaultTeam = (): string =>
+    team.id && team.id !== ALL_TEAMS && teamChoices.some((o) => o.id === team.id) ? team.id : (teamChoices.find((o) => o.relation === "member" || o.relation === "leader")?.id ?? teamChoices[0]?.id ?? TOP_TEAM);
+  const [taskTeam, setTaskTeam] = useState<string>(defaultTeam());
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -71,6 +77,7 @@ export function GlobalHotkeys() {
       setDirection(me.direction);
       setPriority("medium");
       setDue(addDays(data.today, 7));
+      setTaskTeam(defaultTeam());
       setError(null);
       setOpen(true);
     };
@@ -94,10 +101,12 @@ export function GlobalHotkeys() {
       window.removeEventListener(OPEN_EVENT, onOpen);
       window.removeEventListener("keydown", onKey);
     };
-  }, [data.today, me.slug, me.direction, observer]);
+    // Выбор команды по умолчанию зависит от выбранной команды и режима управления: при их смене обработчик пересоздаётся
+  }, [data.today, me.slug, me.direction, observer, team.id, manage]);
 
-  // Лидер ставит задачу только себе, другому может только предложить (раздел 2 ТЗ)
-  const proposing = !manage && owner !== me.slug;
+  // Себе ставит каждый. Другому: режим управления и руководитель команды задачи, остальные только предлагают (этап 14)
+  const leadsTarget = leads.includes(taskTeam);
+  const proposing = !manage && !leadsTarget && owner !== me.slug;
 
   const [busy, setBusy] = useState(false);
 
@@ -119,6 +128,7 @@ export function GlobalHotkeys() {
       source,
       sourceNote: sourceNote.trim() || undefined,
       weeklyEntryId,
+      team: taskTeam,
     });
     setBusy(false);
     if ("error" in result) return setError(result.error);
@@ -130,9 +140,14 @@ export function GlobalHotkeys() {
     router.push(`/tasks?task=${result.number}`);
   };
 
+  // Ответственный из людей команды задачи. У команды не из снимка (старый снимок): люди выбранной команды
+  const target = teamOf(taskTeam);
+  const pool = target
+    ? allPeople().filter((p) => p.active && p.role !== "OBSERVER" && (teamPeople(target).includes(p.slug) || p.slug === me.slug))
+    : PEOPLE;
   const ownerOptions = [
-    ...PEOPLE.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName })),
-    ...(manage ? [{ value: "all", label: "Все лидеры" }] : []),
+    ...pool.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName })),
+    ...(manage && taskTeam === TOP_TEAM ? [{ value: "all", label: "Все лидеры" }] : []),
   ];
 
   return (
@@ -149,6 +164,19 @@ export function GlobalHotkeys() {
         />
         <TextArea label="Что нужно сделать" id="nt-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} hint="По чему понять, что задача сделана" />
         <div className="grid gap-4 sm:grid-cols-2">
+          {teamChoices.length > 1 ? (
+            <SelectField
+              label="Команда"
+              id="nt-team"
+              value={taskTeam}
+              onChange={(e) => {
+                setTaskTeam(e.target.value);
+                setOwner(me.slug);
+              }}
+              options={teamChoices.map((o) => ({ value: o.id, label: o.name }))}
+              className="sm:col-span-2"
+            />
+          ) : null}
           <SelectField label="Ответственный" id="nt-owner" value={owner} onChange={(e) => setOwner(e.target.value as Owner)} options={ownerOptions} />
           <SelectField label="Направление" id="nt-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={dictOptions("DIRECTION", direction)} />
           <SelectField label="Приоритет" id="nt-pr" value={priority} onChange={(e) => setPriority(e.target.value as PriorityCode)} options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />
@@ -158,7 +186,8 @@ export function GlobalHotkeys() {
         </div>
         {proposing ? (
           <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-small text-blue-700">
-            Задача уйдёт со статусом «Предложена». Задачей она станет после подтверждения владельцем или администратором.
+            Задача уйдёт со статусом «Предложена». Задачей она станет после подтверждения{" "}
+            {taskTeam === TOP_TEAM ? "владельцем или администратором" : "руководителем команды"}.
           </p>
         ) : null}
         {error ? (

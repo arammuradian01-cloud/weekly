@@ -139,8 +139,14 @@ export const pathKey = (path: string[]) => path.map((p) => normName(p)).join(" /
 /** Фамилия и имя без отчества: «антонов дмитрий» */
 export const nameKey2 = (name: string) => normName(name).split(" ").slice(0, 2).join(" ");
 
-/** Уровень подразделения по глубине пути: управление, отдел, сектор, направление */
-export function kindOfDepth(depth: number): "MANAGEMENT" | "DIVISION" | "SECTOR" | "STREAM" {
+/** Уровень подразделения: по первому слову названия («Сектор телемаркетинга»), иначе по глубине пути */
+export function kindOfDepth(depth: number, name = ""): "MANAGEMENT" | "DIVISION" | "SECTOR" | "STREAM" | "FUNCTION" {
+  const first = normName(name).split(" ")[0] ?? "";
+  if (first.startsWith("управлен")) return "MANAGEMENT";
+  if (first.startsWith("отдел")) return "DIVISION";
+  if (first.startsWith("сектор")) return "SECTOR";
+  if (first.startsWith("направлен") || first.startsWith("групп")) return "STREAM";
+  if (first.startsWith("функц")) return "FUNCTION";
   return (["MANAGEMENT", "DIVISION", "SECTOR", "STREAM"] as const)[Math.min(depth, 3)]!;
 }
 

@@ -31,6 +31,7 @@
     "reconcile:bord": "tsx scripts/reconcile-bord.ts",
     "reload:bord": "tsx scripts/reload-bord.ts",
     "login-link": "tsx scripts/login-link.ts",
+    "structure": "tsx scripts/load-structure.ts",
     "test:visual": "playwright test -c playwright.visual.config.ts",
     "test:db": "vitest run --config vitest.db.config.ts"
   },
