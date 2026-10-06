@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/db";
 import { requireManagement } from "@/lib/auth";
 import { PASSWORD_SETTING_KEYS, type PasswordKind } from "@/lib/passwords";
+import { sessionSecretSource } from "@/lib/database-url";
 import { getRhythm, listDictionaries, listPeople } from "@/lib/admin/service";
 import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
@@ -32,7 +33,7 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Настройки" description="Ритм недели, справочники, люди и роли. Время везде московское" />
-      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} />
+      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} />
     </>
   );
 }

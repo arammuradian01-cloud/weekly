@@ -68,6 +68,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "weekly.entry.create": "Запись weekly добавлена",
   "weekly.entry.update": "Запись weekly изменена",
   "weekly.entry.delete": "Запись weekly удалена",
+  "weekly.entry.restore": "Удаление записи weekly отменено",
   "weekly.entry.ceo": "Отметка «В отчёт CEO»",
   "weekly.entry.author": "Автор записи назначен",
   "weekly.week.close": "Неделя закрыта",

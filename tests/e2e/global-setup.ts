@@ -19,7 +19,8 @@ export default async function globalSetup() {
   await admin.query(`CREATE DATABASE "${dbName}"`);
   await admin.end();
 
-  const env = { ...process.env, DATABASE_URL: url };
+  // Сценарии опираются на задачи и weekly из выгрузки Bord: загружаем их явно, как командой на сервере
+  const env = { ...process.env, DATABASE_URL: url, BORD_IMPORT: "on" };
   execSync("npx prisma migrate deploy", { env, stdio: "ignore" });
   execSync("npx tsx prisma/seed.ts", { env, stdio: "ignore" });
   for (const [kind, password] of Object.entries(E2E_PASSWORDS)) {

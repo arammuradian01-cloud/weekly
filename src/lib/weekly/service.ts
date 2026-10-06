@@ -13,6 +13,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
 import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections } from "./rules";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
+import type { EntrySnapshot } from "./undo";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -356,14 +357,79 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
   });
 }
 
-export async function deleteEntry(actor: Actor, id: string): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    const existing = await tx.weeklyEntry.findUnique({ where: { id }, include: entryInclude });
-    if (!existing) fail("Запись уже удалена");
-    const { info, reporting } = await weekContext(tx, isoFromDbDate(existing!.week.start));
-    canEdit(info, reporting, actor, (existing!.author?.slug as PersonSlug | undefined) ?? null);
+/** Удаление возвращает полную копию записи: по ней отмена вернёт запись с тем же id */
+export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapshot> {
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.weeklyEntry.findUnique({ where: { id }, include: { ...entryInclude, tasks: { select: { id: true } } } });
+    if (!existing) return fail("Запись уже удалена");
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(existing.week.start));
+    canEdit(info, reporting, actor, (existing.author?.slug as PersonSlug | undefined) ?? null);
+    const snapshot: EntrySnapshot = {
+      id: existing.id,
+      weekId: existing.weekId,
+      authorId: existing.authorId,
+      directionId: existing.directionId,
+      blockId: existing.blockId,
+      typeId: existing.typeId,
+      what: existing.what,
+      details: existing.details,
+      impact: existing.impact,
+      fact: existing.fact,
+      next: existing.next,
+      help: existing.help,
+      links: existing.links,
+      ceo: existing.ceo,
+      sortOrder: existing.sortOrder,
+      importBatch: existing.importBatch,
+      createdAt: existing.createdAt.toISOString(),
+      taskIds: existing.tasks.map((t) => t.id),
+    };
     await tx.weeklyEntry.delete({ where: { id } });
-    await audit(tx, actor, "weekly.entry.delete", "weekly-entry", id, "Запись weekly удалена", existing!.what, null);
+    await audit(tx, actor, "weekly.entry.delete", "weekly-entry", id, "Запись weekly удалена", existing.what, null);
+    return snapshot;
+  });
+}
+
+/**
+ * Отмена удаления: запись возвращается с тем же id, автором, порядком и связью с задачами.
+ * Права те же, что на удаление: если неделю за это время закрыли, вернуть может только управление
+ */
+export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promise<WeeklyEntry> {
+  return prisma.$transaction(async (tx) => {
+    if (await tx.weeklyEntry.findUnique({ where: { id: snapshot.id }, select: { id: true } })) fail("Запись уже на месте");
+    const week = await tx.week.findUnique({ where: { id: snapshot.weekId } });
+    if (!week) return fail("Неделя этой записи больше не существует");
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(week.start));
+    const author = snapshot.authorId ? await tx.person.findUnique({ where: { id: snapshot.authorId }, select: { slug: true } }) : null;
+    canEdit(info, reporting, actor, (author?.slug as PersonSlug | undefined) ?? null);
+    const saved = await tx.weeklyEntry.create({
+      data: {
+        id: snapshot.id,
+        weekId: snapshot.weekId,
+        authorId: snapshot.authorId,
+        directionId: snapshot.directionId,
+        blockId: snapshot.blockId,
+        typeId: snapshot.typeId,
+        what: snapshot.what,
+        details: snapshot.details,
+        impact: snapshot.impact,
+        fact: snapshot.fact,
+        next: snapshot.next,
+        help: snapshot.help,
+        links: (snapshot.links ?? []) as Prisma.InputJsonValue,
+        ceo: snapshot.ceo,
+        sortOrder: snapshot.sortOrder,
+        importBatch: snapshot.importBatch,
+        createdAt: new Date(snapshot.createdAt),
+      },
+      include: entryInclude,
+    });
+    // Связь с задачами возвращаем прямым запросом: так у задач не меняется «Обновлена», как и при удалении записи
+    if (snapshot.taskIds.length) {
+      await tx.$executeRaw`UPDATE tasks SET "weeklyEntryId" = ${snapshot.id} WHERE id = ANY(${snapshot.taskIds}::text[]) AND "weeklyEntryId" IS NULL`;
+    }
+    await audit(tx, actor, "weekly.entry.restore", "weekly-entry", snapshot.id, "Удаление записи weekly отменено", null, snapshot.what);
+    return toEntryDto(await tx.weeklyEntry.findUniqueOrThrow({ where: { id: saved.id }, include: entryInclude }));
   });
 }
 

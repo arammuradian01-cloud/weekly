@@ -13,7 +13,7 @@ import { addCommentAction, createTaskAction, undoAction, type TaskActionResult }
 import type { NewTaskInput } from "@/lib/tasks/service";
 import { applyRegistry, type RegistrySnapshot } from "./registry";
 
-type Toast = { id: number; text: string; undoToken?: string; tone?: "error" };
+type Toast = { id: number; text: string; undoToken?: string; onUndo?: () => void; tone?: "error" };
 
 export type AppData = { today: IsoDate; tasks: Task[] };
 
@@ -34,6 +34,8 @@ type Store = {
   createTask: (input: NewTaskInput) => Promise<{ number: number } | { error: string }>;
   toast: Toast | null;
   notify: (text: string, tone?: "error") => void;
+  /** Тост с кнопкой «Отменить» для правок не по задачам, например удаления записи weekly */
+  notifyUndo: (text: string, onUndo: () => void) => void;
   dismissToast: () => void;
   undo: () => void;
 };
@@ -151,8 +153,15 @@ export function PrototypeProvider({
       },
       toast,
       notify: (text, tone) => showToast(text, tone ? { tone } : undefined),
+      notifyUndo: (text, onUndo) => showToast(text, { onUndo }),
       dismissToast: () => setToast(null),
       undo: () => {
+        if (toast?.onUndo) {
+          const run = toast.onUndo;
+          setToast(null);
+          run();
+          return;
+        }
         if (toast?.undoToken) {
           const token = toast.undoToken;
           setToast(null);

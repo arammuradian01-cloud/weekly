@@ -19,7 +19,7 @@ export function Toaster() {
             <CheckCircle2 className="h-5 w-5 shrink-0 text-green" aria-hidden="true" />
           )}
           <span>{toast.text}</span>
-          {toast.undoToken ? (
+          {toast.undoToken || toast.onUndo ? (
             <button type="button" onClick={undo} className="h-9 rounded-lg px-3 font-semibold text-blue hover:bg-white/10">
               Отменить
             </button>

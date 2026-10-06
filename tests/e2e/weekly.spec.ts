@@ -73,6 +73,35 @@ test("лидер сдаёт weekly в три шага, черновик живё
   await expect(page.getByText(/Записей: 1/)).toBeVisible();
 });
 
+test("удаление записи спрашивает подтверждение и отменяется кнопкой «Отменить» (этап 7)", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  await page.goto("/weekly/submit");
+  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByLabel("Что произошло").fill("Запись для проверки удаления");
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  const heading = page.getByRole("heading", { name: "Запись для проверки удаления" });
+  await expect(heading).toBeVisible();
+
+  // Сначала окно подтверждения: «Не удалять» оставляет запись на месте
+  await page.getByRole("button", { name: "Удалить запись «Запись для проверки удаления»" }).click();
+  const dialog = page.getByRole("dialog", { name: "Удалить запись?" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Не удалять" }).click();
+  await expect(heading).toBeVisible();
+
+  // Удалили и сразу отменили: запись вернулась и пережила перезагрузку
+  await page.getByRole("button", { name: "Удалить запись «Запись для проверки удаления»" }).click();
+  await page.getByRole("dialog", { name: "Удалить запись?" }).getByRole("button", { name: "Удалить" }).click();
+  await expect(page.getByText("Запись удалена")).toBeVisible();
+  await expect(heading).toHaveCount(0);
+  await page.getByRole("button", { name: "Отменить" }).click();
+  await expect(page.getByText("Запись возвращена")).toBeVisible();
+  await expect(heading).toBeVisible();
+  await page.reload();
+  await expect(heading).toBeVisible();
+  await shot(page, "entry-restored");
+});
+
 test("по записи weekly ставится задача, человек остаётся на экране сдачи", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   await page.goto("/weekly/submit");

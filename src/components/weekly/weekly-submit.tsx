@@ -9,12 +9,13 @@ import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
-import { deleteEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { deleteEntryAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { OverdueNote, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
 import { TextArea } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/overlays";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
@@ -50,7 +51,7 @@ export function WeeklySubmit({
   timeLeft: string;
   late: boolean;
 }) {
-  const { data, me, notify } = usePrototype();
+  const { data, me, notify, notifyUndo } = usePrototype();
   const router = useRouter();
   const [weekly, setWeekly] = useState<PersonWeekly>(initialReport);
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
@@ -58,6 +59,8 @@ export function WeeklySubmit({
 
   const [headline, setHeadline] = useState(initialReport.headline);
   const [editing, setEditing] = useState<string | null>(null);
+  /** Запись, которую просят удалить: сначала окно подтверждения */
+  const [confirmDelete, setConfirmDelete] = useState<WeeklyEntry | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -143,13 +146,28 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
+  const restore = async (token: string, index: number) => {
+    try {
+      const result = await restoreEntryAction(token);
+      if (!result.ok) return notify(result.error, "error");
+      const back = result.value;
+      // Запись встаёт на прежнее место, а не в конец
+      setEntries((prev) => (prev.some((e) => e.id === back.id) ? prev : [...prev.slice(0, index), back, ...prev.slice(index)]));
+      notify("Запись возвращена");
+    } catch {
+      notify("Нет связи с сервером: запись не вернулась", "error");
+    }
+  };
+
   const remove = async (entry: WeeklyEntry) => {
     if (isLocalId(entry.id)) return;
     try {
+      const index = entries.findIndex((e) => e.id === entry.id);
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
-      notify("Запись удалена");
+      const token = result.value.undo;
+      notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0)));
     } catch {
       notify("Нет связи с сервером: запись не удалилась", "error");
     }
@@ -179,6 +197,29 @@ export function WeeklySubmit({
 
   return (
     <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:gap-10">
+      <Modal
+        open={confirmDelete !== null}
+        onOpenChange={(open) => !open && setConfirmDelete(null)}
+        title="Удалить запись?"
+        description={confirmDelete?.what}
+      >
+        <p className="text-[14px] text-muted">Удаление можно отменить в течение 5 секунд кнопкой «Отменить» внизу экрана.</p>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setConfirmDelete(null)}>
+            Не удалять
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              const entry = confirmDelete;
+              setConfirmDelete(null);
+              if (entry) void remove(entry);
+            }}
+          >
+            Удалить
+          </Button>
+        </div>
+      </Modal>
       <aside className="mb-6 lg:mb-0">
         <div className="lg:sticky lg:top-24">
           <WeeklyBadge state={weekly.state} />
@@ -260,7 +301,7 @@ export function WeeklySubmit({
                         <Pencil className="h-4 w-4" aria-hidden="true" />
                         Изменить
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => void remove(e)} aria-label={`Удалить запись «${e.what}»`}>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(e)} aria-label={`Удалить запись «${e.what}»`}>
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
                       </Button>
                     </div> : null}

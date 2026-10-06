@@ -65,6 +65,7 @@ export function SettingsView({
   dicts,
   people,
   passwords,
+  sessionKey,
 }: {
   owner: boolean;
   me: string;
@@ -72,6 +73,8 @@ export function SettingsView({
   dicts: Record<EditableDictKind, DictItemView[]>;
   people: PersonView[];
   passwords: { title: string; set: boolean }[];
+  /** Откуда ключ сессий: свой SESSION_SECRET или выведен из пароля базы */
+  sessionKey: "env" | "derived" | "none";
 }) {
   return (
     <div>
@@ -114,10 +117,25 @@ export function SettingsView({
               ))}
             </ul>
             <p className="mt-3 text-[14px] text-muted">После смены общего пароля все выходят. Сменить пароль: команда npm run password на сервере.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-[15px]">
+              <span className="w-72 text-ink">Ключ сессий</span>
+              <Badge tone={sessionKey === "env" ? "green" : "yellow"}>{sessionKey === "env" ? "Свой, SESSION_SECRET" : "Из пароля базы"}</Badge>
+            </div>
+            {sessionKey !== "env" ? (
+              <p className="mt-2 text-[14px] text-muted">
+                До пилота задайте в переменных приложения SESSION_SECRET: случайную строку не короче 32 символов. После этого все один раз войдут заново.
+              </p>
+            ) : null}
           </Section>
 
           <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
-            <p className="text-[15px] text-ink">Зеркало в копию Insurance&Invest Bord подключается на этапе 6, рабочая таблица только на этапе 7 и с согласия владельца.</p>
+            <p className="text-[15px] text-ink">
+              Ссылка на таблицу, очередь и история выгрузок на странице{" "}
+              <a href="/sync" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+                «Синхронизация»
+              </a>
+              . Рабочая таблица Insurance&Invest Bord подключается только с согласия владельца.
+            </p>
           </Section>
 
           <Section title="Выгрузка данных" description="Второй уровень защиты вместе с историей версий таблицы">

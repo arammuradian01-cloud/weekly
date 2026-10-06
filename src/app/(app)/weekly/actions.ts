@@ -6,6 +6,7 @@ import { unstable_rethrow } from "next/navigation";
 import { requestIp, requireContext } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
+import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 
@@ -42,10 +43,20 @@ export async function saveEntryAction(input: svc.EntryInput): Promise<Result<Wee
   return run((a) => svc.saveEntry(a, input));
 }
 
-export async function deleteEntryAction(id: string): Promise<Result<true>> {
+/** Удалить запись. В ответе токен отмены: он живёт минуту, кнопка «Отменить» на экране 5 секунд */
+export async function deleteEntryAction(id: string): Promise<Result<{ undo: string }>> {
   return run(async (a) => {
-    await svc.deleteEntry(a, String(id));
-    return true as const;
+    const snapshot = await svc.deleteEntry(a, String(id));
+    return { undo: issueEntryUndoToken(snapshot, a.personId) };
+  });
+}
+
+/** Вернуть удалённую запись по токену отмены */
+export async function restoreEntryAction(token: string): Promise<Result<WeeklyEntry>> {
+  return run(async (a) => {
+    const snapshot = readEntryUndoToken(String(token ?? ""), a.personId);
+    if (!snapshot) throw new TaskRuleError("Отменить уже нельзя: прошло больше минуты");
+    return svc.restoreEntry(a, snapshot);
   });
 }
 
