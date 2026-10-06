@@ -58,6 +58,8 @@ export type PullReport = {
   /** Сколько правок, сделанных в ресурсе, заменило новое значение из Bord */
   overwritten: number;
   renumbered: { from: number; to: number }[];
+  /** Номер в Bord отдали новой задаче: прежняя задача ресурса получила новый номер, а под старым создана новая */
+  reused: { number: number; to: number }[];
   newPeople: string[];
   problems: string[];
   /** Задачи из Bord, которых в Bord больше нет: в ресурсе они остаются как были */
@@ -121,6 +123,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         fields: 0,
         overwritten: 0,
         renumbered: [],
+        reused: [],
         newPeople: [],
         problems: [
           ...parsed.problems.map((p) => p.text),
@@ -208,6 +211,23 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       for (const n of parsed.skipped) if (snapshot[String(n)]) nextSnapshot[String(n)] = snapshot[String(n)]!;
       const existing = await tx.task.findMany({ where: { number: { in: bordNumbers } }, include: { coExecutors: { select: { personId: true } } } });
       const byNumber = new Map(existing.map((t) => [t.number, t]));
+
+      // Номер отдали новой задаче: в Bord у строки другая дата встречи и другое название. Это не правка, а другая задача:
+      // прежняя уходит на свободный номер ресурса со всей историей и попадает в список «нет в Bord», под номером создаётся новая
+      for (const row of rows) {
+        const task = byNumber.get(row.number);
+        if (!task || !row.meeting || !row.title) continue;
+        const snap = snapshot[String(row.number)];
+        const wasMeeting = snap ? snap.meeting : task.sourceDate ? isoFromDbDate(task.sourceDate) : null;
+        const wasTitle = snap ? (snap.title === undefined ? undefined : clipTitle(snap.title)) : task.title;
+        if (!wasMeeting || wasTitle === undefined || wasMeeting === row.meeting || wasTitle === clipTitle(row.title)) continue;
+        const to = nextFree++;
+        await tx.task.update({ where: { id: task.id }, data: { number: to } });
+        report.reused.push({ number: row.number, to });
+        await audit(to, "task.renumber", `Номер задачи: номер ${row.number} в Bord отдан новой задаче`, String(row.number), String(to));
+        byNumber.delete(row.number);
+        delete snapshot[String(row.number)];
+      }
       const today = moscowToday(now);
 
       for (const row of rows) {

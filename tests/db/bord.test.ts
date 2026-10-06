@@ -123,6 +123,30 @@ describe("забор задач из Bord", () => {
     expect(log.find((l) => l.action === "settings.person.create")).toMatchObject({ field: "Человек добавлен из Bord" });
   });
 
+  it("номер, отданный в Bord новой задаче, не переписывает прежнюю: она уходит на номер ресурса, под номером новая задача", async () => {
+    const fake = fakeBord();
+    await tasks.addComment(await tasks.actorFor("muradyan", "OWNER"), 47, "Комментарий к прежней задаче");
+    // Так в рабочем Bord 06.10: под номером 47 поставили другую задачу на встрече 06.10
+    const row = rowOf(fake, 47);
+    row[1] = "06.10.2026";
+    row[2] = "Все лидеры";
+    row[3] = "Новая задача под старым номером";
+    row[6] = "Поставлена";
+    const report = (await pullBord(fake))!;
+    expect(report.reused).toEqual([{ number: 47, to: RESOURCE_FIRST_NUMBER }]);
+    expect(report.created).toEqual([47]);
+    expect(report.missing).toEqual([RESOURCE_FIRST_NUMBER]);
+    expect(report.problems).toEqual([]);
+    const fresh47 = await task(47);
+    expect(fresh47).toMatchObject({ title: "Новая задача под старым номером", ownerAll: true, status: "IN_PROGRESS" });
+    expect(fresh47.transfers).toHaveLength(0);
+    const old = await prisma.task.findUniqueOrThrow({ where: { number: RESOURCE_FIRST_NUMBER }, include: { comments: true } });
+    expect(old.title).not.toBe("Новая задача под старым номером");
+    expect(old.comments.map((c) => c.text)).toEqual(["Комментарий к прежней задаче"]);
+    // Повтор: новая задача уже на месте, ничего не меняется
+    expect(await pullBord(fake)).toMatchObject({ reused: [], created: [], updated: [] });
+  });
+
   it("правка в ресурсе живёт, пока это поле не поменяют в Bord; потом побеждает Bord", async () => {
     const fake = fakeBord();
     await pullBord(fake);
