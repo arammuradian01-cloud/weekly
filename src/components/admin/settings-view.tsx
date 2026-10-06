@@ -1,20 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { Download, EyeOff, FileUp, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { CalendarOff, Copy, Download, EyeOff, FileUp, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
 import type { ReloadPlan, ReloadResult } from "@/lib/admin/reload";
+import type { AbsenceView } from "@/lib/weekly/service";
+import { Absences } from "@/components/profile/absences";
 import { DICT_TITLES, WEEKDAYS } from "@/lib/admin/labels";
 import {
   addDictItemAction,
   createPersonAction,
+  issueInviteAction,
   previewReloadAction,
+  revokePersonDevicesAction,
   renameDictItemAction,
   runReloadAction,
   saveRhythmAction,
   saveStandBannerAction,
+  saveTeamLoginAction,
   setDictItemActiveAction,
   setPersonActiveAction,
   updatePersonAction,
@@ -23,6 +28,7 @@ import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/overlays";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 
@@ -71,6 +77,9 @@ export function SettingsView({
   passwords,
   sessionKey,
   banner,
+  login,
+  absences,
+  weeks,
 }: {
   owner: boolean;
   me: string;
@@ -82,6 +91,11 @@ export function SettingsView({
   sessionKey: "env" | "derived" | "none";
   /** Плашка над страницами: тестовый стенд, пилот или без плашки */
   banner: StandBanner;
+  /** Вход (этап 9): работает ли общий логин, настроена ли почта, вошёл ли владелец лично */
+  login: { team: "on" | "off"; mail: boolean; personal: boolean };
+  /** Отсутствия людей с отчётной недели и недели, которые можно отметить (этап 9) */
+  absences: Record<string, AbsenceView[]>;
+  weeks: { value: string; label: string }[];
 }) {
   return (
     <div>
@@ -112,7 +126,9 @@ export function SettingsView({
 
       {owner ? (
         <>
-          <PeopleSection people={people} me={me} />
+          <PeopleSection people={people} me={me} absences={absences} weeks={weeks} />
+
+          <LoginSection login={login} />
 
           <Section title="Пароли" description="Задаются на странице первичной настройки или командой на сервере. В интерфейсе их не видно">
             <ul className="flex flex-col gap-2 text-[15px]">
@@ -315,7 +331,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
   );
 }
 
-type PersonForm = { fullName: string; shortName: string; zone: string; role: Role; direction: string };
+type PersonForm = { fullName: string; shortName: string; zone: string; role: Role; direction: string; email: string };
 
 function PersonFields({ id, form, set }: { id: string; form: PersonForm; set: (patch: Partial<PersonForm>) => void }) {
   return (
@@ -323,19 +339,43 @@ function PersonFields({ id, form, set }: { id: string; form: PersonForm; set: (p
       <TextInput label="Фамилия и имя" id={`${id}-name`} value={form.fullName} onChange={(e) => set({ fullName: e.target.value })} placeholder="Фамилия Имя" />
       <TextInput label="Короткое имя" id={`${id}-short`} value={form.shortName} onChange={(e) => set({ shortName: e.target.value })} hint="Как подписывать в ленте. Пусто: имя" />
       <TextInput label="Зона ответственности" id={`${id}-zone`} value={form.zone} onChange={(e) => set({ zone: e.target.value })} className="sm:col-span-2" />
+      <TextInput
+        label="Рабочая почта"
+        id={`${id}-email`}
+        type="email"
+        autoComplete="off"
+        value={form.email}
+        onChange={(e) => set({ email: e.target.value })}
+        hint="Для входа по ссылке на почту. Можно оставить пустой"
+        className="sm:col-span-2"
+      />
       <SelectField label="Роль" id={`${id}-role`} value={form.role} onChange={(e) => set({ role: e.target.value as Role })} options={ROLES} />
       <SelectField label="Направление по умолчанию" id={`${id}-dir`} value={form.direction} onChange={(e) => set({ direction: e.target.value })} options={dictOptions("DIRECTION", form.direction)} />
     </div>
   );
 }
 
-function PeopleSection({ people, me }: { people: PersonView[]; me: string }) {
+function PeopleSection({
+  people,
+  me,
+  absences,
+  weeks,
+}: {
+  people: PersonView[];
+  me: string;
+  absences: Record<string, AbsenceView[]>;
+  weeks: { value: string; label: string }[];
+}) {
   const run = useRunAction();
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmOff, setConfirmOff] = useState<string | null>(null);
-  const [form, setForm] = useState<PersonForm>({ fullName: "", shortName: "", zone: "", role: "LEADER", direction: "" });
+  const [form, setForm] = useState<PersonForm>({ fullName: "", shortName: "", zone: "", role: "LEADER", direction: "", email: "" });
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<PersonForm>({ fullName: "", shortName: "", zone: "", role: "LEADER", direction: dictOptions("DIRECTION")[0]?.value ?? "" });
+  const [draft, setDraft] = useState<PersonForm>({ fullName: "", shortName: "", zone: "", role: "LEADER", direction: dictOptions("DIRECTION")[0]?.value ?? "", email: "" });
+  const [invite, setInvite] = useState<{ url: string; expiresAt: string; fullName: string } | null>(null);
+  const [revoke, setRevoke] = useState<PersonView | null>(null);
+  const [away, setAway] = useState<PersonView | null>(null);
+  const team = people.filter((p) => p.active && p.role !== "OBSERVER");
 
   const toggle = async (p: PersonView) => {
     if (p.active && p.openTasks > 0 && confirmOff !== p.slug) return setConfirmOff(p.slug);
@@ -379,15 +419,50 @@ function PeopleSection({ people, me }: { people: PersonView[]; me: string }) {
                     {roleLabel(p.role)}. {p.zone}
                     {p.openTasks ? `. Открытых задач: ${p.openTasks}` : ""}
                   </p>
+                  {absences[p.slug]?.length ? (
+                    <p className="text-[13px] text-muted">Нет на неделе {absences[p.slug]!.map((a) => a.number).join(", ")}</p>
+                  ) : null}
+                  {p.active ? (
+                    <p className="text-[13px] text-muted">
+                      {p.email ?? "Почта не указана"}.{" "}
+                      {p.devices ? `Личных входов: ${p.devices}, последний раз ${shortWhen(p.lastSeenAt)}` : "Личного входа нет"}
+                    </p>
+                  ) : null}
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                  {p.active ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Ссылка для входа: ${p.fullName}`}
+                      onClick={async () => {
+                        const r = await run(() => issueInviteAction(p.slug), undefined, { refresh: false });
+                        if (r) setInvite(r);
+                      }}
+                    >
+                      <Link2 className="h-4 w-4" aria-hidden="true" />
+                      Ссылка для входа
+                    </Button>
+                  ) : null}
+                  {p.active && p.role !== "OBSERVER" ? (
+                    <Button size="sm" variant="ghost" aria-label={`Отсутствие: ${p.fullName}`} onClick={() => setAway(p)}>
+                      <CalendarOff className="h-4 w-4" aria-hidden="true" />
+                      Отсутствие
+                    </Button>
+                  ) : null}
+                  {p.devices ? (
+                    <Button size="sm" variant="ghost" aria-label={`Завершить входы: ${p.fullName}`} onClick={() => setRevoke(p)}>
+                      <LogOut className="h-4 w-4" aria-hidden="true" />
+                      Завершить входы
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"
                     aria-label={`Изменить: ${p.fullName}`}
                     onClick={() => {
                       setEditing(p.slug);
-                      setForm({ fullName: p.fullName, shortName: p.shortName, zone: p.zone, role: p.role, direction: p.direction });
+                      setForm({ fullName: p.fullName, shortName: p.shortName, zone: p.zone, role: p.role, direction: p.direction, email: p.email ?? "" });
                     }}
                   >
                     <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -446,7 +521,85 @@ function PeopleSection({ people, me }: { people: PersonView[]; me: string }) {
           Добавить человека
         </Button>
       )}
+      <InviteModal invite={invite} onClose={() => setInvite(null)} />
+      <Modal open={away !== null} onOpenChange={(open) => !open && setAway(null)} title={`Нет на неделе: ${away?.fullName ?? ""}`}>
+        <p className="text-[14px] text-muted">Weekly за отмеченную неделю не ждём, на встрече видно, кто замещает.</p>
+        {away ? (
+          <Absences
+            slug={away.slug}
+            absences={absences[away.slug] ?? []}
+            weeks={weeks}
+            people={team.filter((p) => p.slug !== away.slug).map((p) => ({ value: p.slug, label: p.fullName }))}
+          />
+        ) : null}
+      </Modal>
+      <Modal open={revoke !== null} onOpenChange={(open) => !open && setRevoke(null)} title={`Завершить входы: ${revoke?.fullName ?? ""}?`}>
+        <p className="text-[14px] text-muted">
+          Личный вход закроется на всех устройствах человека, неиспользованные ссылки перестанут работать. Снова войти он сможет по новой ссылке.
+        </p>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setRevoke(null)}>
+            Не завершать
+          </Button>
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const person = revoke;
+              setRevoke(null);
+              if (person) await run(() => revokePersonDevicesAction(person.slug), `Входы завершены: ${person.fullName}`);
+            }}
+          >
+            Завершить входы
+          </Button>
+        </div>
+      </Modal>
     </Section>
+  );
+}
+
+const shortWhen = (iso: string | null) =>
+  iso ? new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)) : "давно";
+
+/** Ссылка показывается один раз: в базе только её отпечаток, повторно её не достать */
+function InviteModal({ invite, onClose }: { invite: { url: string; expiresAt: string; fullName: string } | null; onClose: () => void }) {
+  const { notify } = usePrototype();
+  return (
+    <Modal open={invite !== null} onOpenChange={(open) => !open && onClose()} title={`Ссылка для входа: ${invite?.fullName ?? ""}`}>
+      <p className="text-[14px] text-muted">
+        Действует до {invite ? shortWhen(invite.expiresAt) : ""} и открывает вход один раз. Отправьте её лично, не в общий чат. Прежняя неиспользованная ссылка этого человека
+        больше не работает.
+      </p>
+      <label htmlFor="invite-url" className="mt-4 block text-sm font-medium text-ink">
+        Ссылка
+      </label>
+      <input
+        id="invite-url"
+        readOnly
+        value={invite?.url ?? ""}
+        onFocus={(e) => e.currentTarget.select()}
+        className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3 text-[14px] text-ink"
+      />
+      <p className="mt-2 text-[13px] text-muted">После закрытия окна ссылку не показать снова: только выдать новую.</p>
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button variant="secondary" onClick={onClose}>
+          Готово
+        </Button>
+        <Button
+          onClick={async () => {
+            if (!invite) return;
+            try {
+              await navigator.clipboard.writeText(invite.url);
+              notify("Ссылка скопирована");
+            } catch {
+              notify("Не получилось скопировать: выделите ссылку и скопируйте вручную", "error");
+            }
+          }}
+        >
+          <Copy className="h-4 w-4" aria-hidden="true" />
+          Скопировать
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -619,6 +772,46 @@ function ReloadSection() {
           </p>
         ) : null}
       </div>
+    </Section>
+  );
+}
+
+const TEAM_LOGIN_OPTIONS: { value: "on" | "off"; label: string }[] = [
+  { value: "on", label: "Общий и личный" },
+  { value: "off", label: "Только личный" },
+];
+
+/** Переходный период: общий логин team работает, пока владелец его не выключит */
+function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; personal: boolean } }) {
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [value, setValue] = useState(login.team);
+  return (
+    <Section title="Вход" description="Личный вход записывает в журнал настоящего автора. Общий логин team работает переходную неделю, потом владелец его выключает">
+      <Segmented
+        label="Способ входа"
+        options={TEAM_LOGIN_OPTIONS}
+        value={value}
+        onChange={async (next) => {
+          const previous = value;
+          setValue(next);
+          const r = await run(() => saveTeamLoginAction(next));
+          if (r) notify(next === "off" ? "Общий логин выключен" : "Общий логин снова работает");
+          else setValue(previous);
+        }}
+      />
+      {!login.personal && value === "on" ? (
+        <p className="mt-3 text-[14px] text-muted">Чтобы выключить общий логин, сначала войдите сами по личной ссылке: выдайте её себе в списке людей.</p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-[15px]">
+        <span className="w-72 text-ink">Письма со ссылкой для входа</span>
+        <Badge tone={login.mail ? "green" : "yellow"}>{login.mail ? "Почта настроена" : "Почта не настроена"}</Badge>
+      </div>
+      <p className="mt-2 text-[14px] text-muted">
+        {login.mail
+          ? "Человек с почтой в списке людей получает ссылку сам на экране входа. Режим управления можно подтвердить ссылкой на почту вместо пароля."
+          : "Пока почта не настроена, личные ссылки выдаёт владелец кнопкой «Ссылка для входа» в списке людей. Почтовый сервер задаётся переменными SMTP_URL и MAIL_FROM."}
+      </p>
     </Section>
   );
 }

@@ -15,6 +15,7 @@ import type { MeetingSetting } from "@/lib/weekly/weeks";
 import type { EditableDictKind } from "@/domain/dictionaries";
 import type { Prisma, Role } from "@/generated/prisma/client";
 import { ReloadProblemsError, planReload, reloadFromBord, type ReloadPlan, type ReloadResult } from "./reload";
+import { deviceSummary, normalizeEmail, revokeOnDeactivate } from "@/lib/login/service";
 
 type Tx = Prisma.TransactionClient;
 
@@ -63,6 +64,7 @@ async function audit(tx: Tx, actor: Actor, action: string, entity: string, entit
       before: before ?? undefined,
       after: after ?? undefined,
       ip: actor.ip ?? null,
+      via: actor.via ?? null,
     },
   });
 }
@@ -163,9 +165,15 @@ export type PersonView = {
   direction: string;
   active: boolean;
   openTasks: number;
+  /** Почта для личного входа (этап 9) */
+  email: string | null;
+  /** Сколько действующих личных входов и когда заходил последний раз */
+  devices: number;
+  lastSeenAt: string | null;
 };
 
 export async function listPeople(): Promise<PersonView[]> {
+  const devices = await deviceSummary();
   const people = await prisma.person.findMany({
     orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { fullName: "asc" }],
     include: { defaultDirection: true, _count: { select: { ownedTasks: { where: { status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } } } } },
@@ -179,10 +187,22 @@ export async function listPeople(): Promise<PersonView[]> {
     direction: p.defaultDirection?.code ?? "",
     active: p.active,
     openTasks: p._count.ownedTasks,
+    email: p.email,
+    devices: devices.get(p.id)?.devices ?? 0,
+    lastSeenAt: devices.get(p.id)?.lastSeenAt ?? null,
   }));
 }
 
-export type PersonInput = { fullName: string; shortName?: string; role: string; zone: string; direction: string };
+export type PersonInput = { fullName: string; shortName?: string; role: string; zone: string; direction: string; email?: string | null };
+
+/** Почта уникальна: два человека с одним адресом войти не смогут */
+async function checkEmail(tx: Tx, value: string | null | undefined, slug?: string): Promise<string | null> {
+  const email = normalizeEmail(value);
+  if (!email) return null;
+  const taken = await tx.person.findFirst({ where: { email, ...(slug ? { slug: { not: slug } } : {}) } });
+  if (taken) fail(`Почта ${email} уже указана у ${taken.fullName}`);
+  return email;
+}
 
 const ROLES: Role[] = ["OWNER", "ADMIN", "LEADER", "OBSERVER"];
 
@@ -212,12 +232,13 @@ export async function createPerson(actor: Actor, input: PersonInput) {
   const role = checkRole(input.role);
   return prisma.$transaction(async (tx) => {
     const direction = await directionOf(tx, input.direction);
+    const email = await checkEmail(tx, input.email);
     const all = await tx.person.findMany({ select: { slug: true, fullName: true, sortOrder: true, active: true } });
     if (all.some((p) => p.active && p.fullName.toLowerCase() === fullName.toLowerCase())) fail(`${fullName} уже есть в команде`);
     // «all» и «system» заняты: так ресурс помечает «Все лидеры» и события системы
     const slug = uniqueSlug(slugify(last ?? fullName, 24), [...all.map((p) => p.slug), "all", "system"]);
     const sortOrder = Math.max(0, ...all.map((p) => p.sortOrder)) + 10;
-    await tx.person.create({ data: { slug, fullName, shortName, role, zone, defaultDirectionId: direction.id, sortOrder, active: true } });
+    await tx.person.create({ data: { slug, fullName, shortName, role, zone, email, defaultDirectionId: direction.id, sortOrder, active: true } });
     await audit(tx, actor, "settings.person.create", "person", slug, "Человек добавлен", null, `${fullName}, ${ROLE_LABELS[role].toLowerCase()}, ${zone}`);
     return { slug };
   });
@@ -259,6 +280,13 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
         changes.push(["Роль", ROLE_LABELS[p.role], ROLE_LABELS[role]]);
       }
     }
+    if (input.email !== undefined) {
+      const v = await checkEmail(tx, input.email, slug);
+      if (v !== p.email) {
+        data.email = v;
+        changes.push(["Почта", p.email, v ?? "не указана"]);
+      }
+    }
     if (input.direction !== undefined && input.direction !== p.defaultDirection?.code) {
       const d = await directionOf(tx, input.direction, p.defaultDirectionId);
       data.defaultDirectionId = d.id;
@@ -280,6 +308,8 @@ export async function setPersonActive(actor: Actor, slug: string, active: boolea
     if (p.active === active) return { slug, active };
     if (!active && p.role === "OWNER") await keepOwner(tx, slug);
     await tx.person.update({ where: { slug }, data: { active } });
+    // Выключенный человек сразу теряет личные входы и неиспользованные ссылки
+    if (!active) await revokeOnDeactivate(tx, p.id);
     await audit(tx, actor, active ? "settings.person.enable" : "settings.person.disable", "person", slug, "В команде", active ? "выключен" : "да", active ? "да" : "выключен");
     return { slug, active };
   });

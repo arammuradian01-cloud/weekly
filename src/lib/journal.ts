@@ -22,7 +22,7 @@ export type JournalFilter = {
   limit?: number;
 };
 
-const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout"];
+const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth."];
 const SETTINGS_PREFIXES = ["password", "setup", "settings", "export"];
 const KNOWN_PREFIXES = ["task.", "weekly.", "ceo.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
 
@@ -114,8 +114,15 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       const item = dicts.find((d) => d.kind === kind && d.code === code);
       return `Справочник «${DICT_TITLES[kind as EditableDictKind] ?? kind}»${item ? `: ${item.label}` : ""}`;
     }
+    // Входы и ссылки: что случилось и с кем, «Человек: ...» здесь ничего не говорит
+    if (entity === "person" && id && action.startsWith("auth.")) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
     if (entity === "person" && id) return `Человек: ${nameOf(id)}`;
-    if (entity === "settings") return "Ритм недели";
+    if (entity === "settings") {
+      if (id === "stand.banner") return "Плашка над страницами";
+      if (id === "auth.teamLogin") return "Вход: общий логин team";
+      return "Ритм недели";
+    }
+    if (entity === "data") return "Задачи и weekly";
     if (entity === "export") return "Выгрузка в Excel";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";
@@ -141,6 +148,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     before: text(r.before),
     after: text(r.after),
     ip: r.ip ?? undefined,
+    via: r.via ? (r.via === "TEAM" ? "team" : "personal") : undefined,
   })) satisfies JournalEvent[];
   return { events, total, limit };
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
@@ -15,6 +15,8 @@ type Props = {
   canManage: boolean;
   management: "OWNER" | "ADMIN" | null;
   managementUntil: string | null;
+  /** Личный вход: профиль не выбирается из списка, «Сменить профиль» не нужен */
+  personal: boolean;
   tone?: "dark" | "light";
 };
 
@@ -26,7 +28,7 @@ function initials(fullName: string) {
 const itemClass =
   "flex h-11 cursor-pointer select-none items-center gap-3 rounded-md px-3 text-[15px] text-ink outline-none data-[highlighted]:bg-surface";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
   const dark = tone === "dark";
 
@@ -86,6 +88,13 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           ) : null}
 
           <Menu.Item asChild>
+            <Link href="/profile" className={itemClass}>
+              <UserRound className="h-5 w-5 text-muted" aria-hidden="true" />
+              Профиль и входы
+            </Link>
+          </Menu.Item>
+
+          <Menu.Item asChild>
             <Link href="/help" className={itemClass}>
               <CircleHelp className="h-5 w-5 text-muted" aria-hidden="true" />
               Как работать
@@ -102,12 +111,14 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             </Menu.Item>
           ) : null}
 
-          <Menu.Item asChild>
-            <Link href="/choose" className={itemClass}>
-              <UserRound className="h-5 w-5 text-muted" aria-hidden="true" />
-              Сменить профиль
-            </Link>
-          </Menu.Item>
+          {personal ? null : (
+            <Menu.Item asChild>
+              <Link href="/choose" className={itemClass}>
+                <Users className="h-5 w-5 text-muted" aria-hidden="true" />
+                Сменить профиль
+              </Link>
+            </Menu.Item>
+          )}
 
           {canManage && !management ? (
             <Menu.Item asChild>

@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
 import pg from "pg";
 import { E2E_PASSWORDS } from "./global-setup";
@@ -8,6 +9,11 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   const client = new pg.Client({ connectionString: process.env.E2E_DATABASE_URL });
   await client.connect();
   await client.query("DELETE FROM login_attempts");
+  // Этап 9: личные входы, ссылки и почта начинаются с чистого листа, общий логин работает
+  await client.query("DELETE FROM device_sessions");
+  await client.query("DELETE FROM login_links");
+  await client.query("UPDATE people SET email = NULL");
+  await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
   // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
   await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
@@ -72,4 +78,20 @@ export async function enterManagement(page: Page, role: "owner" | "admin") {
   await page.getByLabel(/Пароль/).fill(E2E_PASSWORDS[role]);
   await page.getByRole("button", { name: "Включить на 12 часов" }).click();
   await expect(page).toHaveURL(/\/$/);
+}
+
+/** Последнее письмо на адрес из файла писем тестового сервера */
+export function lastMailTo(to: string): { to: string; subject: string; text: string } | null {
+  const file = process.env.E2E_MAIL_LOG!;
+  if (!existsSync(file)) return null;
+  const mails = readFileSync(file, "utf8")
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { to: string; subject: string; text: string });
+  return mails.filter((m) => m.to === to).at(-1) ?? null;
+}
+
+/** Ссылка из текста письма */
+export function linkFrom(text: string): string {
+  return text.split("\n").find((line) => line.startsWith("http"))!;
 }

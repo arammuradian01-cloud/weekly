@@ -12,6 +12,7 @@ import { OverdueNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui
 import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "@/components/tasks/task-drawer";
 import { SubmissionStrip } from "./submission-strip";
+import { AbsentBadge, substituteText } from "./absence";
 import { submittedText } from "./weekly-feed";
 import type { PersonWeekly } from "@/domain/types";
 
@@ -54,13 +55,19 @@ export function MyWeek({
               <h2 id="my-weekly" className="text-[19px] font-semibold text-ink">
                 Мой weekly за неделю {weekNumber}
               </h2>
-              <WeeklyBadge state={state} />
+              {weekly.absent && !submitted ? <AbsentBadge /> : <WeeklyBadge state={state} />}
             </div>
-            <p className="mt-1.5 text-[15px] text-muted">
-              {submitted
-                ? `${weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан"}. Записей: ${entriesCount}. Правки до закрытия недели разрешены.`
-                : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entriesCount}.` : ""}`}
-            </p>
+            {weekly.absent && !submitted ? (
+              <p className="mt-1.5 text-[15px] text-muted">
+                На этой неделе вас нет, {substituteText(weekly.absent.substitute)}. Weekly не ждём, но сдать его можно, опозданием это не будет.
+              </p>
+            ) : (
+              <p className="mt-1.5 text-[15px] text-muted">
+                {submitted
+                  ? `${weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан"}. Записей: ${entriesCount}. Правки до закрытия недели разрешены.`
+                  : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entriesCount}.` : ""}`}
+              </p>
+            )}
           </div>
           <Link href="/weekly/submit" className={cn(buttonClass(submitted ? "secondary" : "primary"), "shrink-0")}>
             {submitted ? "Открыть мой weekly" : state === "draft" ? "Продолжить weekly" : "Сдать weekly"}

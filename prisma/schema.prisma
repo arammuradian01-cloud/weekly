@@ -36,6 +36,22 @@ enum ChangeSource {
 enum AttemptKind {
   TEAM
   MANAGEMENT
+  /// Запрос ссылки для входа на почту
+  LINK
+}
+
+/// Как человек вошёл (этап 9): общий логин team, ссылка на почту или ссылка-приглашение от владельца
+enum LoginMethod {
+  TEAM
+  EMAIL
+  INVITE
+}
+
+/// Одноразовая ссылка: вход по почте, приглашение от владельца, подтверждение режима управления
+enum LinkKind {
+  EMAIL
+  INVITE
+  STEP_UP
 }
 
 /// Статусы задач завязаны на правила просрочки (раздел 4 ТЗ), поэтому это перечисление, а не справочник
@@ -78,7 +94,7 @@ model Person {
   zone               String
   defaultDirectionId String?
   defaultDirection   DictionaryItem? @relation(fields: [defaultDirectionId], references: [id])
-  /// Задел на персональные логины (этап 9)
+  /// Почта для личного входа по ссылке (этап 9), в нижнем регистре
   email              String?         @unique
   active             Boolean         @default(true)
   sortOrder          Int             @default(0)
@@ -95,6 +111,10 @@ model Person {
   weeklyReports WeeklyReport[]
   weeklyEntries WeeklyEntry[]
   ceoReports    CeoReport[]
+  loginLinks    LoginLink[]
+  devices       DeviceSession[]
+  absences      Absence[]        @relation("AbsencePerson")
+  substitutions Absence[]        @relation("AbsenceSubstitute")
 
   @@map("people")
 }
@@ -143,6 +163,8 @@ model AuditLog {
   before    Json?
   after     Json?
   ip        String?
+  /// Как вошёл автор: TEAM (общий логин и выбор профиля), EMAIL или INVITE (личный вход). Пусто: система и таблица
+  via       LoginMethod?
 
   @@index([at])
   @@index([entity, entityId])
@@ -295,6 +317,7 @@ model Week {
   reports   WeeklyReport[]
   entries   WeeklyEntry[]
   ceoReport CeoReport?
+  absences  Absence[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -397,4 +420,58 @@ model SheetRun {
 
   @@index([kind, startedAt])
   @@map("sheet_runs")
+}
+
+/// Одноразовая ссылка (этап 9). В базе только хэш, сама ссылка показывается или уходит письмом один раз
+model LoginLink {
+  id          String    @id @default(cuid())
+  tokenHash   String    @unique
+  kind        LinkKind
+  personId    String
+  person      Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Кто выдал приглашение
+  createdById String?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime  @db.Timestamptz(3)
+  usedAt      DateTime? @db.Timestamptz(3)
+  usedIp      String?
+
+  @@index([personId, kind])
+  @@map("login_links")
+}
+
+/// Личный вход на устройстве (этап 9): живёт 30 дней, виден в профиле, завершается «выйти везде»
+model DeviceSession {
+  id           String      @id @default(cuid())
+  personId     String
+  person       Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  method       LoginMethod
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime    @default(now()) @db.Timestamptz(3)
+  lastSeenAt   DateTime    @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime    @db.Timestamptz(3)
+  revokedAt    DateTime?   @db.Timestamptz(3)
+  /// Кто завершил: сам человек, владелец, выключение человека
+  revokedBy    String?
+
+  @@index([personId])
+  @@map("device_sessions")
+}
+
+/// «Нет на неделе»: отпуск или отсутствие с замещающим (этап 9)
+model Absence {
+  id           String   @id @default(cuid())
+  personId     String
+  person       Person   @relation("AbsencePerson", fields: [personId], references: [id], onDelete: Cascade)
+  weekId       String
+  week         Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  substituteId String?
+  substitute   Person?  @relation("AbsenceSubstitute", fields: [substituteId], references: [id], onDelete: SetNull)
+  createdById  String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([personId, weekId])
+  @@index([weekId])
+  @@map("absences")
 }

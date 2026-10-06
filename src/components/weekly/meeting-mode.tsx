@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import type { PersonSlug, WeekView } from "@/domain/types";
 import { EntryItem } from "./entry-item";
+import { absentLine } from "./absence";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
@@ -79,6 +80,7 @@ export function MeetingMode({ view }: { view: WeekView }) {
           <>
             <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">Риски и запросы помощи</h1>
             <p className="mt-2 text-[19px] text-muted">Неделя {week}. С этого начинаем</p>
+            {absentLine(view.reports) ? <p className="mt-3 text-[17px] text-ink">Нет на этой неделе: {absentLine(view.reports)}.</p> : null}
             {risky.length === 0 ? <p className="mt-8 text-[19px] text-muted">Рисков и запросов помощи на этой неделе нет.</p> : null}
             <ul className="mt-8 flex flex-col gap-8">
               {risky.map((e) => (

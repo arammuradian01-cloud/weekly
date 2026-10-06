@@ -11,7 +11,7 @@ const nextConfig = {
   // next dev не дописывает в репозиторий свои AGENTS.md и CLAUDE.md
   agentRules: false,
   experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
-  serverExternalPackages: ["pg", "pg-boss"],
+  serverExternalPackages: ["pg", "pg-boss", "nodemailer"],
   async headers() {
     return [
       {

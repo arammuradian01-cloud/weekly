@@ -42,6 +42,8 @@ export type HistoryItem = {
   field: string;
   before?: string;
   after?: string;
+  /** Как вошёл автор (этап 9): личный вход или общий логин. Пусто у системы и старых событий */
+  via?: "personal" | "team";
 };
 
 export type Link = { id?: string; title: string; url: string };
@@ -123,6 +125,8 @@ export type PersonWeekly = {
   state: WeeklyStateCode;
   /** Когда сдан, момент в ISO */
   submittedAt?: string;
+  /** Нет на этой неделе (этап 9): weekly не ждём, в счёт «сдали N из M» человек не входит */
+  absent?: { substitute: PersonSlug | null };
 };
 
 /** Всё про одну неделю для ленты, режима встречи и отчёта CEO */
@@ -152,4 +156,6 @@ export type JournalEvent = {
   field?: string;
   before?: string;
   after?: string;
+  /** Как вошёл автор (этап 9): личный вход или общий логин. Пусто у системы и старых событий */
+  via?: "personal" | "team";
 };

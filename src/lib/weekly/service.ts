@@ -124,10 +124,11 @@ export async function getWeekView(key: WeekKey | null, now = new Date()): Promis
   }
   if (target > reporting) target = reporting;
   const row = await ensureWeek(prisma, target);
-  const [reports, entries, people] = await Promise.all([
+  const [reports, entries, people, absences] = await Promise.all([
     prisma.weeklyReport.findMany({ where: { weekId: row.id }, include: { author: { select: { slug: true } } } }),
     prisma.weeklyEntry.findMany({ where: { weekId: row.id }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, orderBy: { sortOrder: "asc" } }),
+    absenceMap(row.id),
   ]);
   const byAuthor = new Map(reports.map((r) => [r.author.slug, r]));
   return {
@@ -145,6 +146,7 @@ export async function getWeekView(key: WeekKey | null, now = new Date()): Promis
         headline: r?.headline ?? "",
         state: r ? STATE_CODE[r.state] : "not-started",
         submittedAt: r?.submittedAt?.toISOString(),
+        ...(absences.has(p.id) ? { absent: { substitute: absences.get(p.id)! } } : {}),
       } satisfies PersonWeekly;
     }),
     entries: entries.map(toEntryDto),
@@ -156,9 +158,10 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
   const reporting = await currentReportingKey(now);
   const row = await ensureWeek(prisma, key);
   const person = await prisma.person.findUniqueOrThrow({ where: { id: personId } });
-  const [report, entries] = await Promise.all([
+  const [report, entries, absence] = await Promise.all([
     prisma.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId: personId } } }),
     prisma.weeklyEntry.findMany({ where: { weekId: row.id, authorId: personId }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.absence.findUnique({ where: { personId_weekId: { personId, weekId: row.id } }, include: { substitute: { select: { slug: true } } } }),
   ]);
   return {
     week: weekInfo(row, reporting),
@@ -168,6 +171,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
       headline: report?.headline ?? "",
       state: report ? STATE_CODE[report.state] : "not-started",
       submittedAt: report?.submittedAt?.toISOString(),
+      ...(absence ? { absent: { substitute: (absence.substitute?.slug as PersonSlug | undefined) ?? null } } : {}),
     } satisfies PersonWeekly,
     entries: entries.map(toEntryDto),
   };
@@ -215,7 +219,7 @@ function checkLinks(links: unknown): Link[] {
 
 async function audit(db: Tx, actor: Actor, action: string, entity: string, entityId: string, field: string, before?: string | null, after?: string | null) {
   await db.auditLog.create({
-    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null },
+    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
   });
 }
 
@@ -443,7 +447,9 @@ export async function submitWeekly(actor: Actor, key: WeekKey, now = new Date())
     if (!report?.headline.trim()) fail("Напишите главное за неделю одной фразой");
     if (!entries) fail("Добавьте хотя бы одну запись");
     if (report!.state !== "DRAFT") fail("Weekly уже сдан");
-    const state = submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
+    // Отсутствие на неделе: сдать можно, но опозданием это не считается
+    const absent = await tx.absence.findUnique({ where: { personId_weekId: { personId: actor.personId, weekId: row.id } } });
+    const state = absent || submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
     const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now } });
     await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", state === "LATE" ? "Сдан с опозданием" : "Сдан");
     return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString() };
@@ -545,3 +551,101 @@ export async function ceoReportHistory(limit = 20) {
 }
 
 export type { IsoDate };
+
+// ---------- Отсутствие (этап 9) ----------
+
+/** Кто отсутствует на неделе: id человека и короткое имя замещающего */
+async function absenceMap(weekId: string): Promise<Map<string, PersonSlug | null>> {
+  const rows = await prisma.absence.findMany({ where: { weekId }, include: { substitute: { select: { slug: true } } } });
+  return new Map(rows.map((a) => [a.personId, (a.substitute?.slug as PersonSlug | undefined) ?? null]));
+}
+
+/** На сколько недель вперёд можно отметить отсутствие */
+export const ABSENCE_WEEKS_AHEAD = 12;
+
+export type AbsenceView = { week: WeekKey; number: number; start: string; end: string; substitute: PersonSlug | null };
+
+async function absenceTarget(actor: Actor, slug: string, key: WeekKey, now: Date) {
+  if (actor.role === "OBSERVER") fail("Наблюдатель отсутствие не отмечает");
+  if (slug !== actor.slug) requireManagement(actor, "Отсутствие коллеги");
+  if (!isWeekKey(key)) fail("Неделя задаётся понедельником");
+  const reporting = await currentReportingKey(now);
+  if (key < reporting) fail("Прошедшую неделю отметить нельзя: её weekly уже разобрали");
+  if (key > shiftWeek(reporting, ABSENCE_WEEKS_AHEAD)) fail(`Отсутствие отмечается не дальше чем на ${ABSENCE_WEEKS_AHEAD} недель вперёд`);
+  const person = await prisma.person.findUnique({ where: { slug } });
+  if (!person || !person.active) fail("Человек не найден или выключен");
+  if (person!.role === "OBSERVER") fail("У наблюдателя нет weekly");
+  return person!;
+}
+
+/** «Нет на неделе N»: weekly за эту неделю не ждём, на встрече видно, кто замещает */
+export async function setAbsence(actor: Actor, input: { slug: string; week: WeekKey; substitute: string | null }, now = new Date()): Promise<AbsenceView> {
+  const person = await absenceTarget(actor, input.slug, input.week, now);
+  let substitute: { id: string; slug: string; fullName: string } | null = null;
+  if (input.substitute) {
+    const s = await prisma.person.findUnique({ where: { slug: input.substitute } });
+    if (!s || !s.active || s.role === "OBSERVER") fail("Замещающего выберите из списка команды");
+    if (s!.id === person.id) fail("Замещающим не может быть сам отсутствующий");
+    substitute = s!;
+  }
+  return prisma.$transaction(async (tx) => {
+    const week = await ensureWeek(tx, input.week);
+    const before = await tx.absence.findUnique({ where: { personId_weekId: { personId: person.id, weekId: week.id } }, include: { substitute: true } });
+    await tx.absence.upsert({
+      where: { personId_weekId: { personId: person.id, weekId: week.id } },
+      update: { substituteId: substitute?.id ?? null },
+      create: { personId: person.id, weekId: week.id, substituteId: substitute?.id ?? null, createdById: actor.personId },
+    });
+    const describe = (name: string | null | undefined) => (name ? `нет, замещает ${name}` : "нет, без замещающего");
+    await audit(tx, actor, "weekly.absence.set", "weekly", `${input.week}/${person.slug}`, "Отсутствие", before ? describe(before.substitute?.fullName) : "на месте", describe(substitute?.fullName));
+    return { week: input.week, number: week.isoNumber, start: input.week, end: weekEndOf(input.week), substitute: (substitute?.slug as PersonSlug | undefined) ?? null };
+  });
+}
+
+export async function removeAbsence(actor: Actor, slug: string, key: WeekKey, now = new Date()): Promise<void> {
+  const person = await absenceTarget(actor, slug, key, now);
+  await prisma.$transaction(async (tx) => {
+    const week = await ensureWeek(tx, key);
+    const removed = await tx.absence.deleteMany({ where: { personId: person.id, weekId: week.id } });
+    if (removed.count) await audit(tx, actor, "weekly.absence.remove", "weekly", `${key}/${person.slug}`, "Отсутствие", "нет", "на месте");
+  });
+}
+
+/** Отсутствия человека с отчётной недели и дальше: для профиля */
+export async function upcomingAbsences(personId: string, now = new Date()): Promise<AbsenceView[]> {
+  const reporting = await currentReportingKey(now);
+  const rows = await prisma.absence.findMany({
+    where: { personId, week: { start: { gte: dbDate(reporting) } } },
+    include: { week: true, substitute: { select: { slug: true } } },
+    orderBy: { week: { start: "asc" } },
+  });
+  return rows.map((a) => {
+    const key = isoFromDbDate(a.week.start);
+    return { week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null };
+  });
+}
+
+/** Отсутствия всех с отчётной недели: короткое имя человека и его недели */
+export async function upcomingAbsencesAll(now = new Date()): Promise<Record<string, AbsenceView[]>> {
+  const reporting = await currentReportingKey(now);
+  const rows = await prisma.absence.findMany({
+    where: { week: { start: { gte: dbDate(reporting) } } },
+    include: { week: true, person: { select: { slug: true } }, substitute: { select: { slug: true } } },
+    orderBy: { week: { start: "asc" } },
+  });
+  const out: Record<string, AbsenceView[]> = {};
+  for (const a of rows) {
+    const key = isoFromDbDate(a.week.start);
+    (out[a.person.slug] ??= []).push({ week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null });
+  }
+  return out;
+}
+
+/** Недели, на которые можно отметить отсутствие: отчётная и 12 следующих */
+export async function absenceWeeks(now = new Date()): Promise<{ value: WeekKey; label: string }[]> {
+  const reporting = await currentReportingKey(now);
+  return Array.from({ length: ABSENCE_WEEKS_AHEAD + 1 }, (_, i) => {
+    const key = shiftWeek(reporting, i);
+    return { value: key, label: `Неделя ${weekNumberOf(key)}, ${formatLong(key)} - ${formatLong(weekEndOf(key))}${i === 0 ? ", отчётная" : ""}` };
+  });
+}
