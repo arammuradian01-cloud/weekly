@@ -26,6 +26,8 @@ export type BordView = {
     fields: number;
     overwritten: number;
     renumbered: { from: number; to: number }[];
+    /** Нет в отчётах до 07.10 */
+    reused?: { number: number; to: number }[];
     newPeople: string[];
     problems: string[];
     missing: number[];
@@ -267,6 +269,15 @@ function ReportDetails({ report: r, firstNumber }: { report: NonNullable<BordVie
       tone: "warn",
       title: `Задачи ресурса получили новые номера: ${r.renumbered.length}`,
       body: `${r.renumbered.slice(0, 12).map((x) => `${x.from} стала ${x.to}`).join(", ")}${r.renumbered.length > 12 ? ` и ещё ${r.renumbered.length - 12}` : ""}. Номера до ${firstNumber - 1} у задач из Bord, задачи, заведённые в ресурсе, идут от ${firstNumber}`,
+    });
+  }
+  const reused = r.reused ?? [];
+  if (reused.length) {
+    items.push({
+      key: "reused",
+      tone: "warn",
+      title: `Номера в Bord отданы новым задачам: ${reused.length}`,
+      body: `${reused.slice(0, 12).map((x) => `под номером ${x.number} теперь новая задача, прежняя стала ${x.to}`).join(", ")}${reused.length > 12 ? ` и ещё ${reused.length - 12}` : ""}. Прежние задачи остались в ресурсе со своей историей и попали в список «нет в Bord»: если они больше не нужны, отправьте их в архив`,
     });
   }
   if (r.problems.length) {
