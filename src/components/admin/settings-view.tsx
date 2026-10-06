@@ -803,6 +803,11 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
       {!login.personal && value === "on" ? (
         <p className="mt-3 text-[14px] text-muted">Чтобы выключить общий логин, сначала войдите сами по личной ссылке: выдайте её себе в списке людей.</p>
       ) : null}
+      {value === "off" ? (
+        <p className="mt-3 text-[14px] text-muted">
+          Если вы сами потеряете вход, новую ссылку печатает команда npm run login-link в консоли приложения Timeweb, например npm run login-link -- muradyan.
+        </p>
+      ) : null}
       <div className="mt-4 flex flex-wrap items-center gap-3 text-[15px]">
         <span className="w-72 text-ink">Письма со ссылкой для входа</span>
         <Badge tone={login.mail ? "green" : "yellow"}>{login.mail ? "Почта настроена" : "Почта не настроена"}</Badge>

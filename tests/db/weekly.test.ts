@@ -286,6 +286,20 @@ describe("нет на неделе (этап 9)", () => {
     expect(saved.number).toBe(52);
   });
 
+  it("себе задним числом нельзя: после срока или на закрытой неделе; коллеге после срока может управление", async () => {
+    const afterDeadline = new Date("2026-10-05T19:00:00Z");
+    await expectRule(svc.setAbsence(await actor.loginova(), { slug: "loginova", week: W40, substitute: null }, afterDeadline), /задним числом может владелец или администратор/);
+    // Владелец отмечает больничный задним числом: сданный после срока weekly не опоздание
+    await svc.setAbsence(await actor.owner(), { slug: "loginova", week: W40, substitute: "reva" }, afterDeadline);
+    const loginova = await actor.loginova();
+    await svc.saveHeadline(loginova, W40, "Неделя на больничном");
+    await svc.saveEntry(loginova, entry(W40, { what: "Коротко о неделе" }));
+    expect((await svc.submitWeekly(loginova, W40, afterDeadline)).state).toBe("submitted");
+    // Закрытую неделю не трогает никто
+    await svc.setWeekClosed(await actor.admin(), W40, true);
+    await expectRule(svc.removeAbsence(await actor.owner(), "loginova", W40, afterDeadline), /закрыта/);
+  });
+
   it("отсутствующий может сдать weekly после срока, опозданием это не считается", async () => {
     const reva = await actor.reva();
     await svc.setAbsence(reva, { slug: "reva", week: W40, substitute: "golovkin" }, NOW);

@@ -12,9 +12,10 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { formatDay, formatTime, moscowDate } from "@/lib/week";
-import { mailConfigured, sendMail } from "@/lib/mail";
+import { mailConfigured, sendMail, type Mail } from "@/lib/mail";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { LinkKind, LoginMethod } from "@/generated/prisma/enums";
+import type { Prisma } from "@/generated/prisma/client";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -76,6 +77,12 @@ export async function saveTeamLogin(actor: Actor, mode: TeamLogin): Promise<Team
   if (mode === "off" && actor.via === "TEAM") fail("Сначала войдите сами по личной ссылке: после выключения общего логина войти по нему не сможет никто, и вы тоже");
   await prisma.$transaction(async (tx) => {
     await tx.setting.upsert({ where: { key: "auth.teamLogin" }, update: { value: mode }, create: { key: "auth.teamLogin", value: mode } });
+    // Новое поколение общего логина: если его потом включат обратно, старые сессии не оживут
+    if (mode === "off") {
+      const epoch = await tx.setting.findUnique({ where: { key: "auth.epoch" } });
+      const next = (typeof epoch?.value === "number" ? epoch.value : 1) + 1;
+      await tx.setting.upsert({ where: { key: "auth.epoch" }, update: { value: next }, create: { key: "auth.epoch", value: next } });
+    }
     await tx.auditLog.create({
       data: {
         action: "auth.team-login",
@@ -96,14 +103,20 @@ export async function saveTeamLogin(actor: Actor, mode: TeamLogin): Promise<Team
 
 // Ссылки
 
-async function createLink(kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null) {
+type Tx = Prisma.TransactionClient;
+
+/** Замок на время транзакции: параллельные запросы по одному ключу идут по очереди, ограничения не обходятся */
+async function lock(tx: Tx, key: string): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text`;
+}
+
+async function createLinkTx(tx: Tx, kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null, deviceId: string | null = null) {
+  await lock(tx, `login-link:${personId}`);
   const token = newToken();
   const expiresAt = new Date(now.getTime() + ttlMs);
-  await prisma.$transaction(async (tx) => {
-    // Действует одна свежая ссылка каждого вида: новая гасит прежние неиспользованные
-    await tx.loginLink.updateMany({ where: { personId, kind, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
-    await tx.loginLink.create({ data: { tokenHash: hashToken(token), kind, personId, createdById, expiresAt, createdAt: now } });
-  });
+  // Действует одна свежая ссылка каждого вида: новая гасит прежние неиспользованные
+  await tx.loginLink.updateMany({ where: { personId, kind, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  await tx.loginLink.create({ data: { tokenHash: hashToken(token), kind, personId, createdById, deviceId, expiresAt, createdAt: now } });
   return { token, expiresAt };
 }
 
@@ -113,19 +126,22 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
   if (!person!.active) fail("Человек выключен: сначала включите его в списке");
-  const link = await createLink("INVITE", person!.id, INVITE_TTL_MS, now, actor.personId);
-  await prisma.auditLog.create({
-    data: {
-      action: "auth.invite",
-      actorId: actor.personId,
-      actorName: actor.fullName,
-      entity: "person",
-      entityId: person!.slug,
-      field: person!.fullName,
-      after: `действует до ${until(link.expiresAt)}`,
-      ip: actor.ip ?? null,
-      via: actor.via ?? null,
-    },
+  const link = await prisma.$transaction(async (tx) => {
+    const created = await createLinkTx(tx, "INVITE", person!.id, INVITE_TTL_MS, now, actor.personId);
+    await tx.auditLog.create({
+      data: {
+        action: "auth.invite",
+        actorId: actor.personId,
+        actorName: actor.fullName,
+        entity: "person",
+        entityId: person!.slug,
+        field: person!.fullName,
+        after: `действует до ${until(created.expiresAt)}`,
+        ip: actor.ip ?? null,
+        via: actor.via ?? null,
+      },
+    });
+    return created;
   });
   return { ...link, fullName: person!.fullName };
 }
@@ -144,53 +160,69 @@ export async function peekLink(token: string, now = new Date()): Promise<{ statu
   return { status: "ok", ...base };
 }
 
+/** Почему ссылку не взять: текст для человека */
+async function linkProblem(token: string, now: Date): Promise<never> {
+  const { status } = await peekLink(token, now);
+  if (status === "used") fail("Ссылка уже использована. Попросите новую");
+  if (status === "expired") fail("Срок ссылки истёк. Попросите новую");
+  if (status === "inactive") fail("Этот человек выключен в списке команды");
+  return fail("Ссылка не найдена: проверьте, что она скопирована целиком");
+}
+
 /** Ссылку можно использовать один раз: условие в самом UPDATE, две вкладки одновременно не войдут обе */
-async function takeLink(token: string, kinds: LinkKind[], ip: string | null, now: Date) {
+async function takeLinkTx(tx: Tx, token: string, kinds: LinkKind[], ip: string | null, now: Date) {
   const tokenHash = hashToken(token);
-  const taken = await prisma.loginLink.updateMany({
+  const taken = await tx.loginLink.updateMany({
     where: { tokenHash, kind: { in: kinds }, usedAt: null, expiresAt: { gt: now }, person: { active: true } },
     data: { usedAt: now, usedIp: ip },
   });
-  if (taken.count !== 1) {
-    const { status } = await peekLink(token, now);
-    if (status === "used") fail("Ссылка уже использована. Попросите новую");
-    if (status === "expired") fail("Срок ссылки истёк. Попросите новую");
-    if (status === "inactive") fail("Этот человек выключен в списке команды");
-    fail("Ссылка не найдена: проверьте, что она скопирована целиком");
-  }
-  return prisma.loginLink.findUniqueOrThrow({ where: { tokenHash }, include: { person: true } });
+  if (taken.count !== 1) return null;
+  return tx.loginLink.findUniqueOrThrow({ where: { tokenHash }, include: { person: true } });
 }
 
 export type DeviceInfo = { ip: string | null; userAgent: string | null };
 
-/** Вход по ссылке: устройство на 30 дней и запись в журнал */
-export async function consumeLoginLink(token: string, device: DeviceInfo, now = new Date()) {
-  const link = await takeLink(token, ["INVITE", "EMAIL"], device.ip, now);
-  const method: LoginMethod = link.kind === "INVITE" ? "INVITE" : "EMAIL";
-  const session = await prisma.deviceSession.create({
-    data: {
-      personId: link.personId,
-      method,
-      ip: device.ip,
-      userAgent: device.userAgent?.slice(0, 400) ?? null,
-      createdAt: now,
-      lastSeenAt: now,
-      expiresAt: new Date(now.getTime() + DEVICE_TTL_MS),
-    },
+/**
+ * Вход по ссылке: ссылка тратится и устройство появляется в одной транзакции, сбой не сжигает ссылку.
+ * replaces: прежняя запись устройства в этом браузере, она завершается
+ */
+export async function consumeLoginLink(token: string, device: DeviceInfo, now = new Date(), replaces: string | null = null) {
+  const result = await prisma.$transaction(async (tx) => {
+    const link = await takeLinkTx(tx, token, ["INVITE", "EMAIL"], device.ip, now);
+    if (!link) return null;
+    const method: LoginMethod = link.kind === "INVITE" ? "INVITE" : "EMAIL";
+    if (replaces) await tx.deviceSession.updateMany({ where: { id: replaces, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
+    const session = await tx.deviceSession.create({
+      data: {
+        personId: link.personId,
+        method,
+        ip: device.ip,
+        userAgent: device.userAgent?.slice(0, 400) ?? null,
+        createdAt: now,
+        lastSeenAt: now,
+        expiresAt: new Date(now.getTime() + DEVICE_TTL_MS),
+      },
+    });
+    await tx.auditLog.create({
+      data: { action: "auth.login", actorId: link.person.id, actorName: link.person.fullName, entity: "person", entityId: link.person.slug, ip: device.ip, via: method },
+    });
+    return { session, person: link.person, method };
   });
-  await prisma.auditLog.create({
-    data: { action: "auth.login", actorId: link.person.id, actorName: link.person.fullName, entity: "person", entityId: link.person.slug, ip: device.ip, via: method },
-  });
-  return { session, person: link.person, method };
+  return result ?? linkProblem(token, now);
 }
 
 // Почта
 
 export type EmailRequest = { ok: true } | { ok: false; error: string };
 
+/** Письмо уходит в фоне: ответ и его время не зависят от того, есть ли адрес в списке и как работает почтовый сервер */
+function deliver(mail: Mail): void {
+  void sendMail(mail).catch((error) => console.error("Письмо не отправилось", mail.subject, error));
+}
+
 /**
  * Запрос ссылки на почту. Ответ одинаковый, есть адрес в списке команды или нет: по ответу не узнать, кто в команде.
- * Ограничения: 5 запросов с одного адреса и 3 письма одному человеку за 15 минут
+ * Ограничения: 5 запросов с одного адреса и 3 письма одному человеку за 15 минут, параллельные запросы их не обходят
  */
 export async function requestEmailLink(emailInput: string, ctx: { ip: string; baseUrl: string }, now = new Date()): Promise<EmailRequest> {
   if (!mailConfigured()) return { ok: false, error: "Почта для входа ещё не настроена. Личную ссылку выдаёт владелец ресурса" };
@@ -203,47 +235,59 @@ export async function requestEmailLink(emailInput: string, ctx: { ip: string; ba
   if (!email) return { ok: false, error: "Введите рабочую почту" };
 
   const since = new Date(now.getTime() - WINDOW_MS);
-  const fromIp = await prisma.loginAttempt.count({ where: { ip: ctx.ip, kind: "LINK", at: { gte: since } } });
-  if (fromIp >= EMAIL_REQUESTS_PER_IP) {
-    return { ok: false, error: "Слишком много запросов. Попробуйте через 15 минут или попросите ссылку у владельца" };
-  }
-  const person = await prisma.person.findFirst({ where: { email, active: true } });
-  await prisma.loginAttempt.create({ data: { ip: ctx.ip, kind: "LINK", ok: Boolean(person), at: now } });
-  if (!person) return { ok: true };
-
-  const recent = await prisma.loginLink.count({ where: { personId: person.id, kind: "EMAIL", createdAt: { gte: since } } });
-  if (recent >= EMAIL_LINKS_PER_PERSON) return { ok: true };
-
-  const link = await createLink("EMAIL", person.id, EMAIL_TTL_MS, now, null);
-  await sendMail({
-    to: email,
-    subject: "Вход в Weekly",
-    text: [
-      `${person.fullName}, ссылка для входа в Weekly:`,
-      linkUrl(ctx.baseUrl, link.token),
-      "",
-      `Ссылка действует 15 минут, до ${formatTime(link.expiresAt)} по Москве, и открывает вход один раз.`,
-      "Если вы не запрашивали вход, просто удалите письмо.",
-    ].join("\n"),
+  const result = await prisma.$transaction(async (tx) => {
+    await lock(tx, `email-ip:${ctx.ip}`);
+    const fromIp = await tx.loginAttempt.count({ where: { ip: ctx.ip, kind: "LINK", at: { gte: since } } });
+    if (fromIp >= EMAIL_REQUESTS_PER_IP) return { limited: true as const };
+    const person = await tx.person.findFirst({ where: { email, active: true } });
+    await tx.loginAttempt.create({ data: { ip: ctx.ip, kind: "LINK", ok: Boolean(person), at: now } });
+    if (!person) return { limited: false as const, mail: null };
+    await lock(tx, `login-link:${person.id}`);
+    const recent = await tx.loginLink.count({ where: { personId: person.id, kind: "EMAIL", createdAt: { gte: since } } });
+    if (recent >= EMAIL_LINKS_PER_PERSON) return { limited: false as const, mail: null };
+    const link = await createLinkTx(tx, "EMAIL", person.id, EMAIL_TTL_MS, now, null);
+    await tx.auditLog.create({
+      data: { action: "auth.email-link", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, ip: ctx.ip },
+    });
+    return {
+      limited: false as const,
+      mail: {
+        to: email!,
+        subject: "Вход в Weekly",
+        text: [
+          `${person.fullName}, ссылка для входа в Weekly:`,
+          linkUrl(ctx.baseUrl, link.token),
+          "",
+          `Ссылка действует 15 минут, до ${formatTime(link.expiresAt)} по Москве, и открывает вход один раз.`,
+          "Если вы не запрашивали вход, просто удалите письмо.",
+        ].join("\n"),
+      },
+    };
   });
-  await prisma.auditLog.create({
-    data: { action: "auth.email-link", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, ip: ctx.ip },
-  });
+  if (result.limited) return { ok: false, error: "Слишком много запросов. Попробуйте через 15 минут или попросите ссылку у владельца" };
+  if (result.mail) deliver(result.mail);
   return { ok: true };
 }
 
 // Подтверждение режима управления по почте
 
-/** Человек с ролью управления просит ссылку подтверждения на свою почту вместо пароля управления */
-export async function requestStepUp(actor: Actor, baseUrl: string, now = new Date()): Promise<{ email: string }> {
-  if (actor.role !== "OWNER" && actor.role !== "ADMIN") fail("Режим управления доступен только владельцу и администраторам");
-  if (!actor.via || actor.via === "TEAM") fail("Подтверждение по почте работает при личном входе. Войдите по своей ссылке или введите пароль управления");
+/**
+ * Администратор просит ссылку подтверждения на свою почту вместо пароля управления. Ссылка привязана к устройству,
+ * с которого её запросили. Владелец включает режим только паролем: доступ к одной почте не должен давать права владельца
+ */
+export async function requestStepUp(actor: Actor, deviceId: string | null, baseUrl: string, now = new Date()): Promise<{ email: string }> {
+  if (actor.role === "OWNER") fail("Владелец включает режим управления паролем владельца");
+  if (actor.role !== "ADMIN") fail("Режим управления доступен только владельцу и администраторам");
+  if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе. Войдите по своей ссылке или введите пароль управления");
   if (!mailConfigured()) fail("Почта не настроена: введите пароль управления");
   const person = await prisma.person.findUniqueOrThrow({ where: { id: actor.personId } });
   if (!person.email) fail("У вас в профиле нет почты: её добавляет владелец в настройках");
-  const recent = await prisma.loginLink.count({ where: { personId: person.id, kind: "STEP_UP", createdAt: { gte: new Date(now.getTime() - WINDOW_MS) } } });
-  if (recent >= EMAIL_LINKS_PER_PERSON) fail("Письмо уже отправлено несколько раз. Проверьте почту или попробуйте через 15 минут");
-  const link = await createLink("STEP_UP", person.id, STEP_UP_TTL_MS, now, person.id);
+  const link = await prisma.$transaction(async (tx) => {
+    await lock(tx, `login-link:${person.id}`);
+    const recent = await tx.loginLink.count({ where: { personId: person.id, kind: "STEP_UP", createdAt: { gte: new Date(now.getTime() - WINDOW_MS) } } });
+    if (recent >= EMAIL_LINKS_PER_PERSON) fail("Письмо уже отправлено несколько раз. Проверьте почту или попробуйте через 15 минут");
+    return createLinkTx(tx, "STEP_UP", person.id, STEP_UP_TTL_MS, now, person.id, deviceId);
+  });
   await sendMail({
     to: person.email!,
     subject: "Подтверждение режима управления Weekly",
@@ -258,13 +302,14 @@ export async function requestStepUp(actor: Actor, baseUrl: string, now = new Dat
   return { email: person.email! };
 }
 
-/** Ссылка подтверждения работает только у того же человека, который её запросил, и только при личном входе */
-export async function consumeStepUp(token: string, actor: Actor, now = new Date()): Promise<void> {
-  if (!actor.via || actor.via === "TEAM") fail("Подтверждение по почте работает при личном входе");
-  const tokenHash = hashToken(token);
-  const link = await prisma.loginLink.findUnique({ where: { tokenHash } });
+/** Ссылка подтверждения работает только у того же человека, на том же устройстве и только при личном входе */
+export async function consumeStepUp(token: string, actor: Actor, deviceId: string | null, now = new Date()): Promise<void> {
+  if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе");
+  const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (link && link.kind === "STEP_UP" && link.personId !== actor.personId) fail("Эта ссылка выдана другому человеку");
-  await takeLink(token, ["STEP_UP"], actor.ip ?? null, now);
+  if (link && link.kind === "STEP_UP" && link.deviceId !== deviceId) fail("Откройте ссылку на том устройстве, с которого её запросили");
+  const taken = await prisma.$transaction((tx) => takeLinkTx(tx, token, ["STEP_UP"], actor.ip ?? null, now));
+  if (!taken) await linkProblem(token, now);
 }
 
 // Устройства
@@ -278,9 +323,10 @@ export async function loadDevice(sid: string, now = new Date()) {
   return device;
 }
 
+/** Скользящий срок: кто заходит, тот не вылетает через 30 дней. Неактивное 30 дней устройство гаснет само */
 export async function touchDevice(sid: string, lastSeenAt: Date, now = new Date()): Promise<void> {
   if (now.getTime() - lastSeenAt.getTime() < TOUCH_MS) return;
-  await prisma.deviceSession.updateMany({ where: { id: sid, revokedAt: null }, data: { lastSeenAt: now } });
+  await prisma.deviceSession.updateMany({ where: { id: sid, revokedAt: null }, data: { lastSeenAt: now, expiresAt: new Date(now.getTime() + DEVICE_TTL_MS) } });
 }
 
 export async function listDevices(personId: string, now = new Date()): Promise<DeviceView[]> {
@@ -293,6 +339,7 @@ export async function listDevices(personId: string, now = new Date()): Promise<D
 
 /** Человек завершает вход на одном своём устройстве */
 export async function revokeDevice(actor: Actor, id: string, now = new Date()): Promise<void> {
+  if (actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
   const device = await prisma.deviceSession.findUnique({ where: { id } });
   if (!device || device.personId !== actor.personId) fail("Устройство не найдено");
   if (device!.revokedAt) return;
@@ -308,6 +355,8 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
   if (!person) fail("Человек не найден");
   const own = person!.id === actor.personId;
   if (!own && (actor.management !== "OWNER" || actor.role === "OBSERVER")) fail("Чужие входы завершает только владелец в режиме управления");
+  // По общему логину любой может выбрать чужое имя: завершать «свои» личные входы так нельзя
+  if (own && actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
   const result = await prisma.deviceSession.updateMany({
     where: { personId: person!.id, revokedAt: null, expiresAt: { gt: now } },
     data: { revokedAt: now, revokedBy: own ? "self" : "owner" },

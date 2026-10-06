@@ -23,8 +23,13 @@ function logFile(): string {
   return process.env.MAIL_LOG_FILE ?? ".local/mail.log";
 }
 
+/**
+ * Почта работает, только когда заданы сервер, отправитель и APP_URL. Без APP_URL адрес в письме пришлось бы брать
+ * из заголовка запроса, и подделанный заголовок увёл бы ссылку на чужой сайт
+ */
 export function mailConfigured(env: Record<string, string | undefined> = process.env): boolean {
   if (override) return true;
+  if (!env.APP_URL) return false;
   if (env.MAIL_TRANSPORT === "log") return true;
   return Boolean(env.SMTP_URL && env.MAIL_FROM);
 }

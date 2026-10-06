@@ -285,6 +285,8 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
       if (v !== p.email) {
         data.email = v;
         changes.push(["Почта", p.email, v ?? "не указана"]);
+        // Ссылки, ушедшие на старый адрес, больше не работают
+        await tx.loginLink.updateMany({ where: { personId: p.id, kind: { in: ["EMAIL", "STEP_UP"] }, usedAt: null, expiresAt: { gt: new Date() } }, data: { expiresAt: new Date() } });
       }
     }
     if (input.direction !== undefined && input.direction !== p.defaultDirection?.code) {

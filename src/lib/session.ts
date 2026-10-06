@@ -89,3 +89,22 @@ export function activeManagement(
   if (m.epoch !== managementEpoch) return null;
   return m;
 }
+
+/** Через сколько после подписи сессию продлевать: раз в сутки, чтобы не подписывать на каждом запросе */
+export const SESSION_REFRESH_SEC = 24 * 60 * 60;
+
+/**
+ * Скользящая сессия: если cookie подписана больше суток назад, та же сессия подписывается заново на 30 дней.
+ * Кто заходит, тот не вылетает; кто не заходил 30 дней, входит заново. null: продлевать не нужно или cookie чужая
+ */
+export async function refreshSessionToken(token: string | undefined, secret: string, now = Date.now()): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, keyFrom(secret), { algorithms: ["HS256"], currentDate: new Date(now) });
+    if (typeof payload.iat !== "number" || now / 1000 - payload.iat < SESSION_REFRESH_SEC) return null;
+    const data = await verifySession(token, secret, now);
+    return data ? signSession(data, secret, now) : null;
+  } catch {
+    return null;
+  }
+}

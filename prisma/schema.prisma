@@ -431,6 +431,8 @@ model LoginLink {
   person      Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
   /// Кто выдал приглашение
   createdById String?
+  /// Ссылка подтверждения режима управления работает только на устройстве, с которого её запросили
+  deviceId    String?
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   expiresAt   DateTime  @db.Timestamptz(3)
   usedAt      DateTime? @db.Timestamptz(3)

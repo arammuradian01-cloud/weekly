@@ -447,9 +447,11 @@ export async function submitWeekly(actor: Actor, key: WeekKey, now = new Date())
     if (!report?.headline.trim()) fail("Напишите главное за неделю одной фразой");
     if (!entries) fail("Добавьте хотя бы одну запись");
     if (report!.state !== "DRAFT") fail("Weekly уже сдан");
-    // Отсутствие на неделе: сдать можно, но опозданием это не считается
+    // Отсутствие на неделе: сдать можно, но опозданием это не считается. Своя отметка считается, только если поставлена
+    // до срока; задним числом отсутствие отмечают владелец или администратор, тогда оно считается всегда
     const absent = await tx.absence.findUnique({ where: { personId_weekId: { personId: actor.personId, weekId: row.id } } });
-    const state = absent || submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
+    const excused = absent !== null && (absent.createdById !== actor.personId || absent.createdAt <= row.deadline);
+    const state = excused || submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
     const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now } });
     await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", state === "LATE" ? "Сдан с опозданием" : "Сдан");
     return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString() };
@@ -590,11 +592,16 @@ export async function setAbsence(actor: Actor, input: { slug: string; week: Week
   }
   return prisma.$transaction(async (tx) => {
     const week = await ensureWeek(tx, input.week);
+    if (week.closedAt) fail(`Неделя ${week.isoNumber} закрыта: её уже разобрали на встрече`);
+    // Себе задним числом отметить нельзя, иначе отметка снимала бы «сдан с опозданием». Коллеге может управление
+    if (input.slug === actor.slug && now >= week.deadline) {
+      fail(`Срок сдачи недели ${week.isoNumber} уже прошёл: отметить отсутствие задним числом может владелец или администратор`);
+    }
     const before = await tx.absence.findUnique({ where: { personId_weekId: { personId: person.id, weekId: week.id } }, include: { substitute: true } });
     await tx.absence.upsert({
       where: { personId_weekId: { personId: person.id, weekId: week.id } },
       update: { substituteId: substitute?.id ?? null },
-      create: { personId: person.id, weekId: week.id, substituteId: substitute?.id ?? null, createdById: actor.personId },
+      create: { personId: person.id, weekId: week.id, substituteId: substitute?.id ?? null, createdById: actor.personId, createdAt: now },
     });
     const describe = (name: string | null | undefined) => (name ? `нет, замещает ${name}` : "нет, без замещающего");
     await audit(tx, actor, "weekly.absence.set", "weekly", `${input.week}/${person.slug}`, "Отсутствие", before ? describe(before.substitute?.fullName) : "на месте", describe(substitute?.fullName));
@@ -606,6 +613,7 @@ export async function removeAbsence(actor: Actor, slug: string, key: WeekKey, no
   const person = await absenceTarget(actor, slug, key, now);
   await prisma.$transaction(async (tx) => {
     const week = await ensureWeek(tx, key);
+    if (week.closedAt) fail(`Неделя ${week.isoNumber} закрыта: её уже разобрали на встрече`);
     const removed = await tx.absence.deleteMany({ where: { personId: person.id, weekId: week.id } });
     if (removed.count) await audit(tx, actor, "weekly.absence.remove", "weekly", `${key}/${person.slug}`, "Отсутствие", "нет", "на месте");
   });
@@ -641,11 +649,14 @@ export async function upcomingAbsencesAll(now = new Date()): Promise<Record<stri
   return out;
 }
 
-/** Недели, на которые можно отметить отсутствие: отчётная и 12 следующих */
-export async function absenceWeeks(now = new Date()): Promise<{ value: WeekKey; label: string }[]> {
-  const reporting = await currentReportingKey(now);
-  return Array.from({ length: ABSENCE_WEEKS_AHEAD + 1 }, (_, i) => {
-    const key = shiftWeek(reporting, i);
-    return { value: key, label: `Неделя ${weekNumberOf(key)}, ${formatLong(key)} - ${formatLong(weekEndOf(key))}${i === 0 ? ", отчётная" : ""}` };
-  });
+/**
+ * Недели, на которые можно отметить отсутствие: отчётная и 12 следующих.
+ * Себе только недели, срок сдачи которых ещё впереди; владелец отмечает коллегу и задним числом (own: false)
+ */
+export async function absenceWeeks(now = new Date(), opts: { own: boolean } = { own: true }): Promise<{ value: WeekKey; label: string }[]> {
+  const { deadline } = await weekSettings();
+  const reporting = reportingKey(now, deadline);
+  return Array.from({ length: ABSENCE_WEEKS_AHEAD + 1 }, (_, i) => shiftWeek(reporting, i))
+    .filter((key) => !opts.own || deadlineOf(key, deadline) > now)
+    .map((key) => ({ value: key, label: `Неделя ${weekNumberOf(key)}, ${formatLong(key)} - ${formatLong(weekEndOf(key))}${key === reporting ? ", отчётная" : ""}` }));
 }

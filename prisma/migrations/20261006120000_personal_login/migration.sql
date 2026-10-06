@@ -19,6 +19,7 @@ CREATE TABLE "login_links" (
     "kind" "LinkKind" NOT NULL,
     "personId" TEXT NOT NULL,
     "createdById" TEXT,
+    "deviceId" TEXT,
     "createdAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "expiresAt" TIMESTAMPTZ(3) NOT NULL,
     "usedAt" TIMESTAMPTZ(3),

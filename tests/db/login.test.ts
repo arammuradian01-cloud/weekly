@@ -178,23 +178,93 @@ describe("ссылка на почту", () => {
 });
 
 describe("режим управления по почте", () => {
-  it("ссылку получает только владелец или администратор при личном входе, тратит только он сам", async () => {
+  it("только администратор при личном входе, ссылка работает у него же и на том же устройстве; владелец только паролем", async () => {
     await admin.updatePerson(await owner(), "golovkin", { email: "golovkin@sravni.ru" });
+    await admin.updatePerson(await owner(), "muradyan", { email: "muradyan@sravni.ru" });
     const teamAdmin = { ...(await tasks.actorFor("golovkin")), via: "TEAM" as const };
-    await expect(login.requestStepUp(teamAdmin, base, t0)).rejects.toThrow(/при личном входе/);
+    await expect(login.requestStepUp(teamAdmin, null, base, t0)).rejects.toThrow(/при личном входе/);
     const reva = { ...(await tasks.actorFor("reva")), via: "INVITE" as const };
-    await expect(login.requestStepUp(reva, base, t0)).rejects.toThrow(/только владельцу и администраторам/);
+    await expect(login.requestStepUp(reva, "d-reva", base, t0)).rejects.toThrow(/только владельцу и администраторам/);
+    const personalOwner = { ...(await tasks.actorFor("muradyan")), via: "INVITE" as const };
+    await expect(login.requestStepUp(personalOwner, "d-owner", base, t0)).rejects.toThrow(/паролем владельца/);
 
-    const golovkin = { ...(await tasks.actorFor("golovkin")), via: "EMAIL" as const };
-    expect(await login.requestStepUp(golovkin, base, t0)).toEqual({ email: "golovkin@sravni.ru" });
+    const invite = await login.issueInvite(await owner(), "golovkin", t0);
+    const { session } = await login.consumeLoginLink(invite.token, device, t0);
+    const golovkin = { ...(await tasks.actorFor("golovkin")), via: "INVITE" as const };
+    expect(await login.requestStepUp(golovkin, session.id, base, t0)).toEqual({ email: "golovkin@sravni.ru" });
     expect(sent[0]!.text).toContain(`${base}/manage/confirm?t=`);
     const token = tokenFrom(sent[0]!);
-    // Ссылка подтверждения не открывает вход и не работает у другого человека
+    // Ссылка подтверждения не открывает вход, не работает у другого человека и на другом устройстве
     await expect(login.consumeLoginLink(token, device, later(1000))).rejects.toThrow();
-    const ownerActor = await owner();
-    await expect(login.consumeStepUp(token, ownerActor, later(1000))).rejects.toThrow(/другому человеку/);
-    await login.consumeStepUp(token, golovkin, later(2000));
-    await expect(login.consumeStepUp(token, golovkin, later(3000))).rejects.toThrow(/уже использована/);
+    await expect(login.consumeStepUp(token, personalOwner, "d-owner", later(1000))).rejects.toThrow(/другому человеку/);
+    await expect(login.consumeStepUp(token, golovkin, "другое-устройство", later(1000))).rejects.toThrow(/с которого её запросили/);
+    await login.consumeStepUp(token, golovkin, session.id, later(2000));
+    await expect(login.consumeStepUp(token, golovkin, session.id, later(3000))).rejects.toThrow(/уже использована/);
+  });
+});
+
+describe("найдено проверкой", () => {
+  it("параллельные запросы на почту не обходят ограничения и не дают двух живых ссылок", async () => {
+    await admin.updatePerson(await owner(), "reva", { email: "reva@sravni.ru" });
+    const results = await Promise.all(Array.from({ length: 20 }, () => login.requestEmailLink("reva@sravni.ru", { ip: "3.3.3.3", baseUrl: base }, t0)));
+    expect(results.filter((r) => r.ok)).toHaveLength(login.EMAIL_REQUESTS_PER_IP);
+    expect(sent).toHaveLength(login.EMAIL_LINKS_PER_PERSON);
+    const live = await prisma.loginLink.count({ where: { kind: "EMAIL", usedAt: null, expiresAt: { gt: t0 } } });
+    expect(live).toBe(1);
+  });
+
+  it("сбой почтового сервера не выдаёт, кто в команде", async () => {
+    await admin.updatePerson(await owner(), "reva", { email: "reva@sravni.ru" });
+    setMailTransport(async () => {
+      throw new Error("SMTP недоступен");
+    });
+    expect(await login.requestEmailLink("reva@sravni.ru", { ip: "4.4.4.4", baseUrl: base }, t0)).toEqual({ ok: true });
+    expect(await login.requestEmailLink("nobody@sravni.ru", { ip: "4.4.4.4", baseUrl: base }, t0)).toEqual({ ok: true });
+  });
+
+  it("выключение общего логина гасит старые сессии: включили обратно, они не оживают", async () => {
+    const before = await prisma.setting.findUnique({ where: { key: "auth.epoch" } });
+    await login.saveTeamLogin(await owner(), "off");
+    const after = await prisma.setting.findUniqueOrThrow({ where: { key: "auth.epoch" } });
+    expect(after.value).toBe((typeof before?.value === "number" ? before.value : 1) + 1);
+    await login.saveTeamLogin(await owner(), "on");
+    expect((await prisma.setting.findUniqueOrThrow({ where: { key: "auth.epoch" } })).value).toBe(after.value);
+  });
+
+  it("по общему логину нельзя завершить чьи-то личные входы, выбрав его имя", async () => {
+    const link = await login.issueInvite(await owner(), "reva", t0);
+    const { session } = await login.consumeLoginLink(link.token, device, t0);
+    const impostor = { ...(await tasks.actorFor("reva")), via: "TEAM" as const };
+    await expect(login.revokeAllDevices(impostor, "reva", later(1000))).rejects.toThrow(/при личном входе/);
+    await expect(login.revokeDevice(impostor, session.id, later(1000))).rejects.toThrow(/при личном входе/);
+    expect(await login.loadDevice(session.id, later(2000))).not.toBeNull();
+  });
+
+  it("скользящий срок: заходит каждый день, вход не гаснет через 30 дней", async () => {
+    const link = await login.issueInvite(await owner(), "reva", t0);
+    const { session } = await login.consumeLoginLink(link.token, device, t0);
+    const day = 24 * 60 * 60 * 1000;
+    let last = t0;
+    for (let d = 1; d <= 40; d += 10) {
+      const now = later(d * day);
+      expect(await login.loadDevice(session.id, now), `день ${d}`).not.toBeNull();
+      await login.touchDevice(session.id, last, now);
+      last = now;
+    }
+    expect(await login.loadDevice(session.id, later(41 * day))).not.toBeNull();
+  });
+
+  it("смена почты гасит ссылки, ушедшие на старый адрес; новый вход в том же браузере завершает прежний", async () => {
+    await admin.updatePerson(await owner(), "reva", { email: "reva@sravni.ru" });
+    await login.requestEmailLink("reva@sravni.ru", { ip: "5.5.5.5", baseUrl: base }, new Date());
+    const old = tokenFrom(sent[0]!);
+    await admin.updatePerson(await owner(), "reva", { email: "taras@sravni.ru" });
+    expect((await login.peekLink(old)).status).toBe("expired");
+
+    const first = await login.consumeLoginLink((await login.issueInvite(await owner(), "reva", t0)).token, device, t0);
+    const second = await login.consumeLoginLink((await login.issueInvite(await owner(), "reva", later(1000))).token, device, later(2000), first.session.id);
+    expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: first.session.id } })).revokedBy).toBe("replaced");
+    expect(await login.loadDevice(second.session.id, later(3000))).not.toBeNull();
   });
 });
 

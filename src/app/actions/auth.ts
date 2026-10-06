@@ -46,7 +46,8 @@ function failureMessage(remainingBefore: number, now: Date, wrongWhat: string): 
 
 function safeNext(value: FormDataEntryValue | null): string {
   const next = typeof value === "string" ? value : "/";
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  // Обратная косая черта браузер читает как прямую: «/\\evil.com» уводит на чужой сайт
+  return next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/";
 }
 
 export async function login(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -182,7 +183,9 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
   const token = String(formData.get("token") ?? "");
   let target: string;
   try {
-    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() });
+    // Прежний личный вход в этом браузере завершается, чтобы не висел 30 дней
+    const previous = (await readSession())?.sid ?? null;
+    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";
@@ -213,7 +216,8 @@ export async function requestEmailLinkAction(_prev: EmailFormState, formData: Fo
 /** Режим управления по ссылке на почту вместо пароля */
 export async function requestStepUpAction(_prev: EmailFormState): Promise<EmailFormState> {
   try {
-    await requestStepUp(await currentActor(), await baseUrl());
+    const ctx = await requireContext();
+    await requestStepUp(await currentActor(), ctx.deviceId, await baseUrl());
     return { sent: true };
   } catch (error) {
     const message = ruleError(error);
@@ -228,7 +232,7 @@ export async function confirmStepUpAction(_prev: FormState, formData: FormData):
   const ctx = await requireContext();
   if (!ctx.managementRole) return { error: "Режим управления доступен только владельцу и администраторам" };
   try {
-    await consumeStepUp(String(formData.get("token") ?? ""), await currentActor());
+    await consumeStepUp(String(formData.get("token") ?? ""), await currentActor(), ctx.deviceId);
   } catch (error) {
     const message = ruleError(error);
     if (!message) {

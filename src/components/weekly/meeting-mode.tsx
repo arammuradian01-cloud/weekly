@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import type { PersonSlug, WeekView } from "@/domain/types";
 import { EntryItem } from "./entry-item";
-import { absentLine } from "./absence";
+import { AbsentBadge, absentLine, substituteText } from "./absence";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
@@ -110,9 +110,10 @@ export function MeetingMode({ view }: { view: WeekView }) {
           <>
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-[34px] font-semibold leading-tight text-ink sm:text-[44px]">{personOf(slide as PersonSlug).fullName}</h1>
-              <WeeklyBadge state={weekly?.state ?? "not-started"} />
+              {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
             </div>
             {weekly?.headline ? <p className="mt-3 max-w-[60ch] text-[24px] leading-snug text-ink">{weekly.headline}</p> : null}
+            {weekly?.absent && !weekly.headline ? <p className="mt-3 text-[19px] text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p> : null}
             <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries

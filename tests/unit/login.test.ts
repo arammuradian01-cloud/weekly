@@ -1,7 +1,7 @@
 // Личный вход (этап 9): имя устройства, отпечаток ссылки, сессия с устройством
 import { describe, expect, it } from "vitest";
 import { deviceLabel } from "@/lib/login/device-label";
-import { signSession, verifySession } from "@/lib/session";
+import { SESSION_REFRESH_SEC, refreshSessionToken, signSession, verifySession } from "@/lib/session";
 import { hashToken, linkUrl, newToken } from "@/lib/login/service";
 import { mailConfigured } from "@/lib/mail";
 
@@ -51,10 +51,29 @@ describe("сессия личного входа", () => {
 });
 
 describe("почта", () => {
-  it("настроена, только когда заданы и сервер, и отправитель", () => {
+  it("настроена, только когда заданы сервер, отправитель и адрес ресурса", () => {
+    const app = { APP_URL: "https://weekly.example.ru" };
     expect(mailConfigured({})).toBe(false);
-    expect(mailConfigured({ SMTP_URL: "smtps://u:p@smtp.example.ru:465" })).toBe(false);
-    expect(mailConfigured({ SMTP_URL: "smtps://u:p@smtp.example.ru:465", MAIL_FROM: "weekly@example.ru" })).toBe(true);
-    expect(mailConfigured({ MAIL_TRANSPORT: "log" })).toBe(true);
+    expect(mailConfigured({ ...app, SMTP_URL: "smtps://u:p@smtp.example.ru:465" })).toBe(false);
+    expect(mailConfigured({ ...app, SMTP_URL: "smtps://u:p@smtp.example.ru:465", MAIL_FROM: "weekly@example.ru" })).toBe(true);
+    // Без APP_URL адрес в письме взялся бы из заголовка запроса
+    expect(mailConfigured({ SMTP_URL: "smtps://u:p@smtp.example.ru:465", MAIL_FROM: "weekly@example.ru" })).toBe(false);
+    expect(mailConfigured({ ...app, MAIL_TRANSPORT: "log" })).toBe(true);
+  });
+});
+
+describe("скользящая сессия", () => {
+  it("свежую cookie не трогает, через сутки подписывает ту же сессию заново, чужую не продлевает", async () => {
+    const t = Date.UTC(2026, 9, 6, 9);
+    const token = await signSession({ epoch: 2, personId: "p1", sid: "d1", via: "EMAIL" }, secret, t);
+    expect(await refreshSessionToken(token, secret, t + 60_000)).toBeNull();
+    const fresh = await refreshSessionToken(token, secret, t + (SESSION_REFRESH_SEC + 60) * 1000);
+    expect(fresh).not.toBeNull();
+    // Через 30,5 дня старая cookie уже не действует, продлённая ещё действует
+    const later = t + 30.5 * 24 * 3600 * 1000;
+    expect(await verifySession(token, secret, later)).toBeNull();
+    expect(await verifySession(fresh!, secret, later)).toEqual({ epoch: 2, personId: "p1", sid: "d1", via: "EMAIL" });
+    expect(await refreshSessionToken(token, `${secret}-other`, t + (SESSION_REFRESH_SEC + 60) * 1000)).toBeNull();
+    expect(await refreshSessionToken(undefined, secret)).toBeNull();
   });
 });
