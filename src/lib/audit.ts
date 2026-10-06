@@ -74,6 +74,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "weekly.week.close": "Неделя закрыта",
   "weekly.week.open": "Неделя открыта",
   "weekly.import": "Weekly перенесён из таблицы",
+  "data.reload": "База перезалита из выгрузки Bord",
   "ceo.save": "Отчёт CEO сохранён",
   "settings.dict.create": "Значение справочника добавлено",
   "settings.dict.rename": "Значение справочника переименовано",

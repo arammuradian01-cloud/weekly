@@ -29,6 +29,7 @@
     "import:bord": "tsx scripts/import-bord.ts",
     "import:bord-weekly": "tsx scripts/import-bord-weekly.ts",
     "reconcile:bord": "tsx scripts/reconcile-bord.ts",
+    "reload:bord": "tsx scripts/reload-bord.ts",
     "test:db": "vitest run --config vitest.db.config.ts"
   },
   "dependencies": {

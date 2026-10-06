@@ -151,6 +151,25 @@ export type ImportOptions = { batch: string; /** Направление для �
 
 export type ImportReport = { created: number[]; skipped: number[]; nextNumber: number };
 
+/** Что помешает импорту: неизвестные люди и статусы, слишком длинные названия, пустое «что сделать» */
+function taskProblems(rows: TableRow[], byName: Map<string, unknown>): string[] {
+  const problems: string[] = [];
+  for (const r of rows) {
+    if (r.owner !== ALL_LEADERS && !byName.has(r.owner)) problems.push(`задача ${r.number}: ответственного «${r.owner}» нет в списке людей`);
+    if (!(r.status in STATUS_FROM_TABLE)) problems.push(`задача ${r.number}: статус «${r.status}» не из справочника`);
+    if (r.title.length > 120) problems.push(`задача ${r.number}: название длиннее 120 знаков`);
+    if (!r.outcome) problems.push(`задача ${r.number}: пустое «Что нужно сделать»`);
+  }
+  return problems;
+}
+
+/** Проверка выгрузки без записи в базу: сколько задач и что помешает импорту. Нужна перед перезаливкой базы */
+export async function checkBordTasks(db: PrismaClient, text: string): Promise<{ rows: number; problems: string[] }> {
+  const rows = readTasksTable(text);
+  const people = await db.person.findMany({ select: { fullName: true } });
+  return { rows: rows.length, problems: taskProblems(rows, new Map(people.map((p) => [p.fullName, p]))) };
+}
+
 /** Импорт: создаёт задачи, которых ещё нет по номеру. Существующие не трогает, поэтому запуск можно повторять */
 export async function importBordTasks(db: PrismaClient, text: string, opts: ImportOptions): Promise<ImportReport> {
   const rows = readTasksTable(text);
@@ -159,13 +178,7 @@ export async function importBordTasks(db: PrismaClient, text: string, opts: Impo
   const fallback = await db.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: opts.fallbackDirection ?? "department" } });
   if (!fallback) throw new Error("В справочнике нет направления «Департамент»: сначала запустите сид");
 
-  const problems: string[] = [];
-  for (const r of rows) {
-    if (r.owner !== ALL_LEADERS && !byName.has(r.owner)) problems.push(`задача ${r.number}: ответственного «${r.owner}» нет в списке людей`);
-    if (!(r.status in STATUS_FROM_TABLE)) problems.push(`задача ${r.number}: статус «${r.status}» не из справочника`);
-    if (r.title.length > 120) problems.push(`задача ${r.number}: название длиннее 120 знаков`);
-    if (!r.outcome) problems.push(`задача ${r.number}: пустое «Что нужно сделать»`);
-  }
+  const problems = taskProblems(rows, byName);
   if (problems.length) throw new Error(`Импорт остановлен, ничего не записано:\n- ${problems.join("\n- ")}`);
 
   const existing = new Set((await db.task.findMany({ select: { number: true } })).map((t) => t.number));
