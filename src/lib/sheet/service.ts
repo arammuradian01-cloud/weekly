@@ -25,7 +25,7 @@ export function parseSpreadsheetId(input: string): string | null {
   const fromUrl = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/.exec(raw)?.[1];
   const id = fromUrl ?? raw;
   if (!/^[a-zA-Z0-9_-]{25,100}$/.test(id)) fail("Не похоже на ссылку на Google-таблицу. Скопируйте адрес копии из браузера целиком");
-  if (id === PROD_SHEET_ID) fail("Это рабочая таблица Insurance&Invest Bord. Её подключаем только на этапе 7 и с согласия Арама. Сейчас нужна копия");
+  if (id === PROD_SHEET_ID) fail("Это рабочий Bord. Ресурс в него не пишет, его ссылка нужна в разделе «Задачи из Bord». Здесь нужна таблица для просмотра");
   return id;
 }
 
@@ -46,6 +46,7 @@ async function connected() {
 export async function setSpreadsheet(actor: Actor, input: string): Promise<{ id: string | null; access: "ok" | "no-key" | string }> {
   requireOwner(actor);
   const id = parseSpreadsheetId(String(input ?? ""));
+  if (id && id === (await getSetting<string | null>("bord.sourceId", null))) fail("Из этой таблицы ресурс забирает задачи и в неё не пишет. Здесь нужна отдельная таблица для просмотра");
   const before = await getSetting<string | null>("sheet.spreadsheetId", null);
   if (before !== id) {
     await prisma.$transaction(async (tx) => {

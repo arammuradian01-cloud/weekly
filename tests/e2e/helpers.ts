@@ -37,6 +37,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   // Этап 6: таблица не подключена, имитация Google работает
   await client.query(`UPDATE settings SET value = 'null'::jsonb WHERE key = 'sheet.spreadsheetId'`);
   await client.query("DELETE FROM settings WHERE key IN ('sheet.layout', 'sheet.synced', 'sheet.lock', 'sheet.imitationDown')");
+  // Забор из Bord выключен, прошлых заборов не было
+  await client.query("DELETE FROM settings WHERE key LIKE 'bord.%'");
   await client.query("DELETE FROM sheet_runs");
   await client.end();
   const env = { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL };

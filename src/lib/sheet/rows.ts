@@ -99,10 +99,12 @@ const linksText = (list: { title?: string; url?: string }[]) => list.map((l) => 
 
 /** Строки вкладки «Задачи». numbers: только эти задачи; null: все. Задачи в архиве в таблицу не попадают */
 export async function taskRows(numbers: number[] | null): Promise<Map<string, Cell[]>> {
-  const [all, people, dicts] = await Promise.all([
+  const [all, people, dicts, fromBord] = await Promise.all([
     listTasks({ archived: true }),
     prisma.person.findMany({ select: { slug: true, fullName: true } }),
     prisma.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] } } }),
+    // Задачи из Bord (первый импорт и забор): в колонке «Источник» у них пометка, задачи ресурса идут без неё
+    prisma.task.findMany({ where: { importBatch: { not: null } }, select: { number: true } }).then((rows) => new Set(rows.map((r) => r.number))),
   ]);
   const wanted = numbers ? new Set(numbers) : null;
   const tasks = all.filter((t) => !t.archived && (!wanted || wanted.has(t.number)));
@@ -137,7 +139,7 @@ export async function taskRows(numbers: number[] | null): Promise<Map<string, Ce
       serialDate(t.due),
       serialDate(t.originalDue),
       t.transfers.length,
-      label("TASK_SOURCE", t.source.kind),
+      fromBord.has(t.number) ? `${label("TASK_SOURCE", t.source.kind)} (Bord)` : label("TASK_SOURCE", t.source.kind),
       linksText(t.links),
       comment ? `${name(comment.author)}: ${comment.text}` : "",
       serialDate(t.createdAt),

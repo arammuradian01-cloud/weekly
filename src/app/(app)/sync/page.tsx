@@ -5,6 +5,10 @@ import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/page-header";
 import { SyncStatus, type SyncView } from "@/components/admin/sync-status";
 import { LAG_WARNING_MS, syncStatus, type SyncRun } from "@/lib/sheet/runner";
+import { PROD_SHEET_ID } from "@/lib/sheet/client";
+import { bordStatus } from "@/lib/bord/service";
+import { RESOURCE_FIRST_NUMBER } from "@/lib/bord/pull";
+import type { BordView } from "@/components/admin/bord-pull";
 
 export const metadata: Metadata = { title: "Синхронизация" };
 export const dynamic = "force-dynamic";
@@ -41,12 +45,33 @@ function resultOf(r: SyncRun): { text: string; tone: SyncView["runs"][number]["t
 export default async function SyncPage() {
   await requireManagement(OWNER_ROLES, "/sync");
   const now = new Date();
-  const [status, tasks, comments, entries] = await Promise.all([
+  const [status, bord, tasks, comments, entries] = await Promise.all([
     syncStatus(now),
+    bordStatus(now),
     prisma.task.count({ where: { archivedAt: null } }),
     prisma.taskComment.count({ where: { task: { archivedAt: null } } }),
     prisma.weeklyEntry.count(),
   ]);
+  const s = bord.state;
+  const failed = s.ok === false && s.lastAttemptAt;
+  const bordView: BordView = {
+    sourceId: bord.sourceId,
+    connected: bord.connected,
+    hasKey: bord.hasKey,
+    serviceEmail: bord.serviceEmail,
+    working: bord.sourceId === PROD_SHEET_ID,
+    lastOk: s.lastOkAt ? { ago: ago(s.lastOkAt, now), at: moscow(s.lastOkAt) } : null,
+    next: bord.nextAt ? (new Date(bord.nextAt).getTime() - now.getTime() < 60_000 ? "в ближайшую минуту" : moscow(bord.nextAt)) : null,
+    error: failed ? { at: moscow(s.lastAttemptAt!), message: s.error ?? "Ошибка" } : null,
+    report: s.report,
+    history: s.history.slice(0, 15).map((h) => ({
+      at: moscow(h.at),
+      how: h.how === "manual" ? "кнопкой" : "по расписанию",
+      ok: h.ok,
+      text: !h.ok ? (h.error ?? "Ошибка") : h.created || h.updated ? `новых ${h.created}, изменено ${h.updated}` : "изменений не было",
+    })),
+    firstNumber: RESOURCE_FIRST_NUMBER,
+  };
   const waitingMs = status.queue.oldestAt ? now.getTime() - new Date(status.queue.oldestAt).getTime() : null;
   const view: SyncView = {
     connected: status.mode !== null,
@@ -62,10 +87,11 @@ export default async function SyncPage() {
     error: status.lastError ? { at: moscow(status.lastError.startedAt), kind: KIND[status.lastError.kind], message: status.lastError.error ?? "Ошибка" } : null,
     runs: status.runs.map((r) => ({ id: r.id, at: moscow(r.startedAt), kind: KIND[r.kind], ...resultOf(r) })),
     counts: { tasks, comments, entries },
+    bord: bordView,
   };
   return (
     <>
-      <PageHeader title="Синхронизация" description="Зеркало задач и weekly в копию Google-таблицы Insurance&Invest Bord, в одну сторону: таблицу пишет только ресурс" />
+      <PageHeader title="Синхронизация" description="Задачи из рабочего Bord в ресурс и все задачи ресурса в таблицу для просмотра. В Bord ресурс не пишет" />
       <SyncStatus view={view} />
     </>
   );
