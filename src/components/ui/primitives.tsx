@@ -7,7 +7,7 @@ export function Avatar({ text, size = "md", tone = "navy", className }: { text: 
     <span
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
-        size === "sm" ? "h-7 w-7 text-[11px]" : "h-9 w-9 text-[13px]",
+        size === "sm" ? "h-7 w-7 text-micro" : "h-9 w-9 text-caption",
         tone === "navy" ? "bg-navy text-white" : "bg-surface text-ink ring-1 ring-line",
         className,
       )}
@@ -51,8 +51,8 @@ export function Segmented<V extends string>({
             aria-checked={active}
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-[14px] transition-colors",
-              active ? "bg-white font-semibold text-ink shadow-[0_1px_2px_rgba(0,42,58,0.12)]" : "text-muted hover:text-ink",
+              "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-small transition-colors",
+              active ? "bg-white font-semibold text-ink shadow-segment" : "text-muted hover:text-ink",
             )}
           >
             {o.label}
@@ -84,7 +84,7 @@ export function Chip({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-[14px] transition-colors",
+        "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-small transition-colors",
         active
           ? tone === "danger"
             ? "bg-danger-ink text-white"
@@ -99,7 +99,7 @@ export function Chip({
 }
 
 const control =
-  "w-full rounded-lg border border-line bg-white px-3.5 text-[15px] text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-surface disabled:text-muted";
+  "w-full rounded-lg border border-line bg-white px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-surface disabled:text-muted";
 
 export function TextArea({
   label,
@@ -116,13 +116,13 @@ export function TextArea({
           {label}
         </label>
         {counter ? (
-          <span className={cn("text-[13px] tabular-nums", counter.value > counter.max ? "text-danger-ink" : "text-muted")}>
+          <span className={cn("text-caption tabular-nums", counter.value > counter.max ? "text-danger-ink" : "text-muted")}>
             {counter.value} из {counter.max}
           </span>
         ) : null}
       </div>
       <textarea id={id} className={cn(control, "min-h-24 py-2.5 leading-relaxed")} {...props} />
-      {hint ? <p className="text-[13px] text-muted">{hint}</p> : null}
+      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -147,7 +147,7 @@ export function SelectField({
           </option>
         ))}
       </select>
-      {hint ? <p className="text-[13px] text-muted">{hint}</p> : null}
+      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -165,7 +165,7 @@ export function TextInput({
         {label}
       </label>
       <input id={id} className={cn(control, "h-11")} {...props} />
-      {hint ? <p className="text-[13px] text-muted">{hint}</p> : null}
+      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
     </div>
   );
 }
@@ -177,8 +177,8 @@ const CHEVRON =
 export function Meta({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-col gap-1", className)}>
-      <dt className="text-[13px] text-muted">{label}</dt>
-      <dd className="text-[15px] text-ink">{children}</dd>
+      <dt className="text-caption text-muted">{label}</dt>
+      <dd className="text-body text-ink">{children}</dd>
     </div>
   );
 }

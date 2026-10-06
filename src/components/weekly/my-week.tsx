@@ -52,17 +52,17 @@ export function MyWeek({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 id="my-weekly" className="text-[19px] font-semibold text-ink">
+              <h2 id="my-weekly" className="text-title font-semibold text-ink">
                 Мой weekly за неделю {weekNumber}
               </h2>
               {weekly.absent && !submitted ? <AbsentBadge /> : <WeeklyBadge state={state} />}
             </div>
             {weekly.absent && !submitted ? (
-              <p className="mt-1.5 text-[15px] text-muted">
+              <p className="mt-1.5 text-body text-muted">
                 На этой неделе вас нет, {substituteText(weekly.absent.substitute)}. Weekly не ждём, но сдать его можно, опозданием это не будет.
               </p>
             ) : (
-              <p className="mt-1.5 text-[15px] text-muted">
+              <p className="mt-1.5 text-body text-muted">
                 {submitted
                   ? `${weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан"}. Записей: ${entriesCount}. Правки до закрытия недели разрешены.`
                   : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entriesCount}.` : ""}`}
@@ -80,10 +80,10 @@ export function MyWeek({
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section aria-labelledby="my-tasks">
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 id="my-tasks" className="text-[19px] font-semibold text-ink">
+            <h2 id="my-tasks" className="text-title font-semibold text-ink">
               Просроченные и срочные <span className="font-normal text-muted">{urgent.length}</span>
             </h2>
-            <Link href="/tasks/mine" className="text-[15px] font-medium text-blue-700 hover:underline">
+            <Link href="/tasks/mine" className="text-body font-medium text-blue-700 hover:underline">
               Все мои задачи
             </Link>
           </div>
@@ -95,14 +95,14 @@ export function MyWeek({
                 const overdue = isOverdue(t, data.today);
                 return (
                   <li key={t.number} className={cn("px-4 py-3", overdue && "bg-danger-soft")}>
-                    <button type="button" onClick={() => open(t.number)} className="text-left text-[15px] font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
+                    <button type="button" onClick={() => open(t.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
                       <span className="mr-1.5 font-normal tabular-nums text-muted">{t.number}</span>
                       {t.title}
                     </button>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
                       <StatusBadge status={t.status} />
                       <StateDot state={t.state} />
-                      <span className={cn("text-[13px] tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(t.due)}</span>
+                      <span className={cn("text-caption tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                     </div>
                   </li>
@@ -113,7 +113,7 @@ export function MyWeek({
         </section>
 
         <section aria-labelledby="my-comments">
-          <h2 id="my-comments" className="mb-3 text-[19px] font-semibold text-ink">
+          <h2 id="my-comments" className="mb-3 text-title font-semibold text-ink">
             Новые комментарии <span className="font-normal text-muted">{comments.length}</span>
           </h2>
           {comments.length === 0 ? (
@@ -122,13 +122,13 @@ export function MyWeek({
             <ul className="flex flex-col gap-3">
               {comments.map(({ task, comment }) => (
                 <li key={comment.id} className="rounded-xl px-4 py-3 ring-1 ring-line">
-                  <p className="flex items-center gap-2 text-[13px] text-muted">
+                  <p className="flex items-center gap-2 text-caption text-muted">
                     <MessageSquare className="h-4 w-4" aria-hidden="true" />
                     <span className="font-semibold text-ink">{compactName(comment.author)}</span>
                     {formatShort(comment.at)}, {comment.time}
                   </p>
-                  <p className="mt-1 text-[15px] leading-relaxed text-ink">{comment.text}</p>
-                  <button type="button" onClick={() => open(task.number)} className="mt-1 text-left text-[14px] font-medium text-blue-700 hover:underline">
+                  <p className="mt-1 text-body leading-relaxed text-ink">{comment.text}</p>
+                  <button type="button" onClick={() => open(task.number)} className="mt-1 text-left text-small font-medium text-blue-700 hover:underline">
                     Задача {task.number}: {task.title}
                   </button>
                 </li>

@@ -78,7 +78,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
   return (
     <div className="flex flex-col gap-12">
       {view.imitation ? (
-        <p className="rounded-xl border border-dashed border-line px-5 py-3 text-[15px] text-ink">
+        <p className="rounded-xl border border-dashed border-line px-5 py-3 text-body text-ink">
           Режим имитации: вместо Google ресурс читает и пишет таблицы в памяти сервера. Так проверяют забор и выгрузку без ключа служебного аккаунта.
         </p>
       ) : null}
@@ -87,10 +87,10 @@ export function SyncStatus({ view }: { view: SyncView }) {
 
       <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
       <div>
-        <h2 id="sync-mirror" className="text-[19px] font-semibold text-ink">
+        <h2 id="sync-mirror" className="text-title font-semibold text-ink">
           Таблица для просмотра
         </h2>
-        <p className="mt-1 max-w-[760px] text-[15px] text-ink">
+        <p className="mt-1 max-w-[760px] text-body text-ink">
           Ресурс сам пишет в отдельную Google-таблицу все задачи, и из Bord, и заведённые в ресурсе, а ещё комментарии и weekly. В одну сторону: таблицу правит только ресурс.
         </p>
       </div>
@@ -98,14 +98,14 @@ export function SyncStatus({ view }: { view: SyncView }) {
       {view.connected ? <Tiles view={view} /> : null}
 
       {view.error ? (
-        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-[15px] text-ink">
+        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-medium text-danger-ink">
               {view.error.kind} не прошла {view.error.at}
             </p>
             <p className="mt-0.5 break-words">{view.error.message}</p>
-            <p className="mt-1 text-[14px] text-muted">Правки ждут в очереди и не теряются. Повтор через минуту, при новых ошибках реже, до раза в 5 минут.</p>
+            <p className="mt-1 text-small text-muted">Правки ждут в очереди и не теряются. Повтор через минуту, при новых ошибках реже, до раза в 5 минут.</p>
           </div>
         </div>
       ) : null}
@@ -139,7 +139,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
       <Connection view={view} />
 
       <section aria-labelledby="sync-tabs">
-        <h3 id="sync-tabs" className="mb-3 text-[17px] font-semibold text-ink">
+        <h3 id="sync-tabs" className="mb-3 text-title-sm font-semibold text-ink">
           Вкладки ресурса в таблице
         </h3>
         <ul className="grid gap-2 sm:grid-cols-2">
@@ -151,24 +151,24 @@ export function SyncStatus({ view }: { view: SyncView }) {
             ["Сводка", "формулы по лидерам"],
           ].map(([name, note]) => (
             <li key={name} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-lg px-4 py-3 ring-1 ring-line">
-              <span className="text-[15px] font-medium text-ink">{name}</span>
-              <span className="text-[14px] text-muted">{note}</span>
+              <span className="text-body font-medium text-ink">{name}</span>
+              <span className="text-small text-muted">{note}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-[14px] text-muted">
+        <p className="mt-3 text-small text-muted">
           Вкладки защищены: кроме служебного аккаунта их может править только владелец таблицы, и такую правку ночная сверка вернёт и запишет в журнал. Вкладки с такими же названиями, которые были в таблице до подключения, ресурс переименовывает в «… (архив до запуска)», остальные вкладки не трогает. Отчёт CEO в таблицу не выгружается.
         </p>
       </section>
 
       <section aria-labelledby="sync-log">
-        <h3 id="sync-log" className="mb-3 text-[17px] font-semibold text-ink">
+        <h3 id="sync-log" className="mb-3 text-title-sm font-semibold text-ink">
           История выгрузок
         </h3>
         {view.runs.length ? (
           <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
             {view.runs.map((r) => (
-              <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-[15px] sm:grid-cols-[150px_110px_1fr]">
+              <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-body sm:grid-cols-[150px_110px_1fr]">
                 <span className="tabular-nums text-muted">{r.at}</span>
                 <span className="text-ink">{r.kind}</span>
                 <span className={cn("col-span-2 inline-flex min-w-0 items-start gap-1.5 sm:col-span-1", r.tone === "error" ? "text-danger-ink" : r.tone === "warn" ? "text-warning-ink" : "text-ink")}>
@@ -181,7 +181,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
             ))}
           </ul>
         ) : (
-          <p className="rounded-xl px-5 py-4 text-[15px] text-muted ring-1 ring-line">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
+          <p className="rounded-xl px-5 py-4 text-body text-muted ring-1 ring-line">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
         )}
       </section>
       </section>
@@ -215,17 +215,17 @@ function Tiles({ view }: { view: SyncView }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <div className={cn("rounded-xl px-5 py-4", fresh ? "bg-green-soft" : view.lagging ? "bg-warning-soft" : "bg-surface")}>
-        <p className={cn("inline-flex items-center gap-2 text-[14px] font-medium", fresh ? "text-green-ink" : view.lagging ? "text-warning-ink" : "text-muted")}>
+        <p className={cn("inline-flex items-center gap-2 text-small font-medium", fresh ? "text-green-ink" : view.lagging ? "text-warning-ink" : "text-muted")}>
           {fresh ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : view.lagging ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : null}
           Последняя выгрузка
         </p>
-        <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">{view.lastPush ? view.lastPush.ago : "ещё не было"}</p>
-        <p className="text-[13px] text-muted">{view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд"}</p>
+        <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastPush ? view.lastPush.ago : "ещё не было"}</p>
+        <p className="text-caption text-muted">{view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд"}</p>
       </div>
       <div className={cn("rounded-xl px-5 py-4", view.lagging ? "bg-warning-soft" : "bg-surface")}>
-        <p className={cn("text-[14px] font-medium", view.lagging ? "text-warning-ink" : "text-muted")}>Очередь отправки</p>
-        <p className="mt-1 text-[28px] font-semibold tabular-nums text-ink">{view.queue.size}</p>
-        <p className="text-[13px] text-muted">
+        <p className={cn("text-small font-medium", view.lagging ? "text-warning-ink" : "text-muted")}>Очередь отправки</p>
+        <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.queue.size}</p>
+        <p className="text-caption text-muted">
           {view.queue.size === 0
             ? "Всё выгружено. Пакет уходит раз в 30 секунд"
             : view.queue.waitingMin
@@ -234,11 +234,11 @@ function Tiles({ view }: { view: SyncView }) {
         </p>
       </div>
       <div className="rounded-xl bg-surface px-5 py-4">
-        <p className="text-[14px] font-medium text-muted">Сверка с таблицей</p>
-        <p className={cn("mt-1 text-[22px] font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
+        <p className="text-small font-medium text-muted">Сверка с таблицей</p>
+        <p className={cn("mt-1 text-headline-sm font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
           {view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было"}
         </p>
-        <p className="mt-1 text-[13px] text-muted">
+        <p className="mt-1 text-caption text-muted">
           {view.reconcile ? `${view.reconcile.at}. ` : ""}Следующая: {view.nextReconcile}
         </p>
       </div>
@@ -270,12 +270,12 @@ function Connection({ view }: { view: SyncView }) {
 
   return (
     <section aria-labelledby="sync-connection" className="rounded-xl px-5 py-5 ring-1 ring-line">
-      <h3 id="sync-connection" className="text-[17px] font-semibold text-ink">
+      <h3 id="sync-connection" className="text-title-sm font-semibold text-ink">
         Подключение таблицы для просмотра
       </h3>
 
       {!view.connected ? (
-        <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-[15px] text-ink marker:text-muted">
+        <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-body text-ink marker:text-muted">
           <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Создать проект в Google Cloud, включить Google Sheets API, создать служебный аккаунт с ключом JSON (пошагово в инструкции к этапу 6)</li>
           <li className={cn(view.hasKey && "text-muted line-through decoration-line")}>Положить ключ в переменную GOOGLE_SERVICE_ACCOUNT_JSON в настройках приложения на Timeweb</li>
           <li>Создать Google-таблицу для просмотра и дать адресу служебного аккаунта доступ редактора. Рабочий Bord сюда не подходит: в него ресурс не пишет</li>
@@ -283,14 +283,14 @@ function Connection({ view }: { view: SyncView }) {
         </ol>
       ) : null}
 
-      <dl className="mt-4 grid gap-x-6 gap-y-3 text-[15px] sm:grid-cols-[200px_1fr]">
+      <dl className="mt-4 grid gap-x-6 gap-y-3 text-body sm:grid-cols-[200px_1fr]">
         <dt className="text-muted">Ключ служебного аккаунта</dt>
         <dd className={view.hasKey ? "text-ink" : "text-warning-ink"}>{view.hasKey ? "задан на сервере" : "не задан: выгрузка не начнётся"}</dd>
         <dt className="text-muted">Адрес служебного аккаунта</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-2">
           {view.serviceEmail ? (
             <>
-              <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-[14px] text-ink">{view.serviceEmail}</code>
+              <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code>
               <Button
                 variant="ghost"
                 size="sm"

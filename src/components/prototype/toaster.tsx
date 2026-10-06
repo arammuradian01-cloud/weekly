@@ -11,10 +11,10 @@ export function Toaster() {
       {toast ? (
         <div
           key={toast.id}
-          className="pointer-events-auto flex min-h-12 items-center gap-3 rounded-xl bg-navy py-2 pl-4 pr-2 text-[15px] text-white shadow-[0_16px_40px_-16px_rgba(0,42,58,0.6)] animate-[toast-in_180ms_ease-out]"
+          className="pointer-events-auto flex min-h-12 items-center gap-3 rounded-xl bg-navy py-2 pl-4 pr-2 text-body text-white shadow-toast animate-toast-in"
         >
           {toast.tone === "error" ? (
-            <CircleAlert className="h-5 w-5 shrink-0 text-[#ff8a8f]" aria-hidden="true" />
+            <CircleAlert className="h-5 w-5 shrink-0 text-danger-on-dark" aria-hidden="true" />
           ) : (
             <CheckCircle2 className="h-5 w-5 shrink-0 text-green" aria-hidden="true" />
           )}

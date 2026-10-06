@@ -49,9 +49,9 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
   return (
     <>
       <div className="overflow-hidden rounded-xl ring-1 ring-line">
-        <table className="hidden w-full text-left text-[15px] md:table">
+        <table className="hidden w-full text-left text-body md:table">
           <caption className="sr-only">Задачи и weekly по каждому</caption>
-          <thead className="bg-surface text-[13px] text-muted">
+          <thead className="bg-surface text-caption text-muted">
             <tr>
               <th scope="col" className="px-5 py-3 font-medium">Человек</th>
               <th scope="col" className="px-3 py-3 text-right font-medium">Всего</th>
@@ -72,8 +72,8 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                     <Link href={`/tasks/review?person=${r.person.slug}`} className="font-semibold text-ink hover:text-blue-700 hover:underline">
                       {r.person.fullName}
                     </Link>
-                    {r.person.slug === me.slug ? <span className="ml-2 text-[13px] text-muted">это вы</span> : null}
-                    <p className="text-[13px] text-muted">
+                    {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
+                    <p className="text-caption text-muted">
                       {ROLE_LABELS[r.person.role]}, {r.person.zone}
                     </p>
                   </td>
@@ -87,7 +87,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                     {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
                       <>
                         <AbsentBadge />
-                        <span className="mt-1 block text-[13px] text-muted">{substituteText(weekly.absent.substitute)}</span>
+                        <span className="mt-1 block text-caption text-muted">{substituteText(weekly.absent.substitute)}</span>
                       </>
                     ) : (
                       <WeeklyBadge state={weekly?.state ?? "not-started"} />
@@ -117,15 +117,15 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
             return (
               <li key={r.person.slug} className="px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <Link href={`/tasks/review?person=${r.person.slug}`} className="text-[16px] font-semibold text-ink">
+                  <Link href={`/tasks/review?person=${r.person.slug}`} className="text-lead font-semibold text-ink">
                     {r.person.fullName}
                   </Link>
                   {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
                 </div>
                 {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
-                  <p className="mt-1 text-[13px] text-muted">Нет на неделе, {substituteText(weekly.absent.substitute)}</p>
+                  <p className="mt-1 text-caption text-muted">Нет на неделе, {substituteText(weekly.absent.substitute)}</p>
                 ) : null}
-                <dl className="mt-2 grid grid-cols-3 gap-2 text-[13px]">
+                <dl className="mt-2 grid grid-cols-3 gap-2 text-caption">
                   {[
                     ["В работе", r.inWork, false],
                     ["Просрочено", r.overdue, true],
@@ -136,7 +136,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                   ].map(([label, n, alert]) => (
                     <div key={label as string}>
                       <dt className="text-muted">{label as string}</dt>
-                      <dd className="text-[16px]">{num(n as number, alert as boolean)}</dd>
+                      <dd className="text-lead">{num(n as number, alert as boolean)}</dd>
                     </div>
                   ))}
                 </dl>
@@ -145,7 +145,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
           })}
         </ul>
       </div>
-      <p className="mt-4 text-[14px] text-muted">
+      <p className="mt-4 text-small text-muted">
         Общих задач для всех лидеров в работе: {shared}. Имя открывает разбор задач человека.
       </p>
     </>

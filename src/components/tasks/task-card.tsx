@@ -81,7 +81,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
 
       {task.status === "proposed" && can.confirm ? (
         <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[14px] text-blue-700">Предложил {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет после вашего подтверждения.</p>
+          <p className="text-small text-blue-700">Предложил {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет после вашего подтверждения.</p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => actions.changeStatus(task, "cancelled")}>
               Отклонить
@@ -95,14 +95,14 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
       ) : null}
 
       {task.status === "proposed" && !can.confirm ? (
-        <p className="rounded-xl bg-blue-soft px-4 py-3 text-[14px] text-blue-700">
+        <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700">
           Задача предложена. Задачей она станет после подтверждения владельцем или администратором.
         </p>
       ) : null}
 
       {task.archived ? (
         <div className="flex flex-col gap-3 rounded-xl bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[14px] text-ink">Задача в архиве: её видит только владелец.</p>
+          <p className="text-small text-ink">Задача в архиве: её видит только владелец.</p>
           {can.archive ? (
             <Button size="sm" variant="secondary" onClick={() => void runTask(() => archiveTaskAction(task.number, false), `Задача ${task.number} возвращена из архива`)}>
               <ArchiveRestore className="h-4 w-4" aria-hidden="true" />
@@ -114,17 +114,17 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
 
       {task.state === "blocked" && task.blockedBy ? (
         <div className="rounded-xl border-l-4 border-danger bg-danger-soft px-4 py-3">
-          <p className="text-[13px] font-semibold text-danger-ink">Заблокирована</p>
-          <p className="mt-0.5 text-[15px] text-ink">{task.blockedBy}</p>
+          <p className="text-caption font-semibold text-danger-ink">Заблокирована</p>
+          <p className="mt-0.5 text-body text-ink">{task.blockedBy}</p>
         </div>
       ) : null}
 
       {task.resolution && (task.status === "done" || task.status === "failed" || task.status === "cancelled") ? (
         <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : "bg-surface")}>
-          <p className={cn("text-[13px] font-semibold", task.status === "done" ? "text-green-ink" : "text-muted")}>
+          <p className={cn("text-caption font-semibold", task.status === "done" ? "text-green-ink" : "text-muted")}>
             {task.status === "done" ? "Итог" : "Причина"}
           </p>
-          <p className="mt-0.5 text-[15px] text-ink">{task.resolution}</p>
+          <p className="mt-0.5 text-body text-ink">{task.resolution}</p>
         </div>
       ) : null}
 
@@ -158,8 +158,8 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
         ) : (
           <>
             <H id={`where-${task.number}`} className="text-sm font-medium text-ink">Где сейчас</H>
-            <p className="mt-1 whitespace-pre-line text-[15px] text-ink">{task.where || <span className="text-muted">Пока без комментария</span>}</p>
-            <p className="mt-1 text-[13px] text-muted">
+            <p className="mt-1 whitespace-pre-line text-body text-ink">{task.where || <span className="text-muted">Пока без комментария</span>}</p>
+            <p className="mt-1 text-caption text-muted">
               Обновлено {formatAgo(task.whereUpdatedAt, data.today)} {stale ? <StaleNote className="ml-1" /> : null}
             </p>
           </>
@@ -183,12 +183,12 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
             {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
           </span>
           {task.transfers.length ? (
-            <span className="mt-0.5 block text-[13px] text-muted">
+            <span className="mt-0.5 block text-caption text-muted">
               {task.transfers[0]?.from === null ? "Исходный срок не записан" : `Исходный срок ${formatLong(task.originalDue)}`}, переносов {task.transfers.length}
             </span>
           ) : null}
           {can.due && task.status !== "done" && task.status !== "cancelled" && task.status !== "failed" ? (
-            <button type="button" onClick={() => actions.transfer(task)} className="mt-1.5 inline-flex h-9 items-center gap-1.5 rounded-md text-[14px] font-medium text-blue-700 hover:underline">
+            <button type="button" onClick={() => actions.transfer(task)} className="mt-1.5 inline-flex h-9 items-center gap-1.5 rounded-md text-small font-medium text-blue-700 hover:underline">
               <CalendarClock className="h-4 w-4" aria-hidden="true" />
               Перенести срок
             </button>
@@ -197,7 +197,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
         <Meta label="Направление">{directionLabel(task.direction)}</Meta>
         <Meta label="Источник">
           {sourceLabel(task.source.kind)}
-          {task.source.note && task.source.note !== sourceLabel(task.source.kind) ? <span className="block text-[13px] text-muted">{task.source.note}</span> : null}
+          {task.source.note && task.source.note !== sourceLabel(task.source.kind) ? <span className="block text-caption text-muted">{task.source.note}</span> : null}
         </Meta>
         <Meta label="Ссылки на артефакты">
           <TaskLinks task={task} />
@@ -215,7 +215,7 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           </H>
           <ol className="flex flex-col gap-2">
             {task.transfers.map((t, i) => (
-              <li key={i} className="rounded-lg bg-surface px-3.5 py-2.5 text-[14px]">
+              <li key={i} className="rounded-lg bg-surface px-3.5 py-2.5 text-small">
                 <span className="font-medium tabular-nums text-ink">
                   {t.from ? `${formatShort(t.from)} на ${formatShort(t.to)}` : `На ${formatShort(t.to)}`}
                 </span>
@@ -239,16 +239,16 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
         />
         {tab === "comments" ? (
           <div className="mt-4 flex flex-col gap-4">
-            {task.comments.length === 0 ? <p className="text-[14px] text-muted">Комментариев пока нет.</p> : null}
+            {task.comments.length === 0 ? <p className="text-small text-muted">Комментариев пока нет.</p> : null}
             <ol className="flex flex-col gap-4">
               {task.comments.map((c) => (
                 <li key={c.id} className="flex gap-3">
                   <Avatar text={personInitials(c.author)} size="sm" tone={c.author === me.slug ? "navy" : "light"} />
                   <div className="min-w-0">
-                    <p className="text-[13px] text-muted">
+                    <p className="text-caption text-muted">
                       <span className="font-semibold text-ink">{compactName(c.author)}</span> {formatShort(c.at)}, {c.time}
                     </p>
-                    <p className="mt-0.5 text-[15px] leading-relaxed text-ink">{c.text}</p>
+                    <p className="mt-0.5 text-body leading-relaxed text-ink">{c.text}</p>
                   </div>
                 </li>
               ))}
@@ -275,12 +275,12 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           </div>
         ) : (
           <ol className="mt-4 flex flex-col gap-3 border-l-2 border-line pl-4" aria-busy={history === null}>
-            {historyError ? <li className="text-[14px] text-danger-ink">{historyError}</li> : null}
-            {history === null && !historyError ? <li className="text-[14px] text-muted">Загружаю историю…</li> : null}
-            {history?.length === 0 ? <li className="text-[14px] text-muted">Изменений пока нет.</li> : null}
+            {historyError ? <li className="text-small text-danger-ink">{historyError}</li> : null}
+            {history === null && !historyError ? <li className="text-small text-muted">Загружаю историю…</li> : null}
+            {history?.length === 0 ? <li className="text-small text-muted">Изменений пока нет.</li> : null}
             {(history ?? []).map((h) => (
-              <li key={h.id} className="text-[14px]">
-                <p className="text-[13px] text-muted">
+              <li key={h.id} className="text-small">
+                <p className="text-caption text-muted">
                   {formatShort(h.at)}
                   {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by as Parameters<typeof compactName>[0])}
                 </p>

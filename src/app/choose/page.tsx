@@ -23,8 +23,8 @@ export default async function ChoosePage() {
         <Wordmark />
       </header>
       <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 sm:py-12">
-        <h1 className="text-[26px] font-semibold text-ink sm:text-[30px]">Выберите себя</h1>
-        <p className="mt-1.5 max-w-2xl text-[15px] text-muted">
+        <h1 className="text-page font-semibold text-ink sm:text-page-lg">Выберите себя</h1>
+        <p className="mt-1.5 max-w-2xl text-body text-muted">
           Выбор запомнится на этом устройстве на 30 дней, сменить его можно в меню профиля. От этого выбора зависит, чьи weekly и задачи вы ведёте.
         </p>
 
@@ -44,8 +44,8 @@ export default async function ChoosePage() {
                     )}
                   >
                     <span className="min-w-0">
-                      <span className="block text-[17px] font-semibold text-ink">{p.fullName}</span>
-                      <span className="mt-0.5 block text-[14px] text-muted">{p.zone}</span>
+                      <span className="block text-title-sm font-semibold text-ink">{p.fullName}</span>
+                      <span className="mt-0.5 block text-small text-muted">{p.zone}</span>
                     </span>
                     {p.role !== "LEADER" ? <Badge tone={p.role === "OWNER" ? "navy" : "outline"}>{ROLE_LABELS[p.role]}</Badge> : null}
                   </button>

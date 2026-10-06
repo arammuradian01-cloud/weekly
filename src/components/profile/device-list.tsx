@@ -30,11 +30,11 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
             <div className="flex min-w-0 items-start gap-3">
               <MonitorSmartphone className="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 text-[15px] font-medium text-ink">
+                <p className="flex flex-wrap items-center gap-2 text-body font-medium text-ink">
                   {deviceLabel(d.userAgent)}
                   {d.id === current ? <Badge tone="blue">Это устройство</Badge> : null}
                 </p>
-                <p className="text-[13px] text-muted">
+                <p className="text-caption text-muted">
                   Вход {when(d.createdAt)}, {LOGIN_METHOD_LABELS[d.method]}. Последний раз {when(d.lastSeenAt)}
                 </p>
               </div>
@@ -59,10 +59,10 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
           <LogOut className="h-4 w-4" aria-hidden="true" />
           Выйти на всех устройствах
         </Button>
-        <p className="mt-2 text-[13px] text-muted">Если потеряли телефон или переслали ссылку не тому. Неиспользованные ссылки для входа тоже перестанут работать.</p>
+        <p className="mt-2 text-caption text-muted">Если потеряли телефон или переслали ссылку не тому. Неиспользованные ссылки для входа тоже перестанут работать.</p>
       </div>
       <Modal open={confirmAll} onOpenChange={setConfirmAll} title="Выйти на всех устройствах?">
-        <p className="text-[14px] text-muted">Вход завершится на всех устройствах, и на этом тоже. Снова войти можно по новой ссылке на почту или от владельца.</p>
+        <p className="text-small text-muted">Вход завершится на всех устройствах, и на этом тоже. Снова войти можно по новой ссылке на почту или от владельца.</p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirmAll(false)}>
             Остаться

@@ -50,10 +50,10 @@ export default async function MyWeekPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-[26px] font-semibold leading-tight text-ink sm:text-[30px]">
+        <h1 className="text-page font-semibold leading-tight text-ink sm:text-page-lg">
           {greeting(now)}, {person.shortName}
         </h1>
-        <p className="mt-1.5 text-[15px] text-muted">
+        <p className="mt-1.5 text-body text-muted">
           Отчётная неделя {week.week}, {formatWeekRange(week)}
           {currentWeek.week !== week.week ? `. Сейчас идёт неделя ${currentWeek.week}` : ""}
         </p>

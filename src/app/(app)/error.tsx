@@ -16,11 +16,11 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
 
   return (
     <div className="mx-auto max-w-[560px] py-10">
-      <h1 className="text-[26px] font-semibold leading-tight text-ink">Страница не открылась</h1>
-      <p className="mt-2 text-[15px] text-muted">
+      <h1 className="text-page font-semibold leading-tight text-ink">Страница не открылась</h1>
+      <p className="mt-2 text-body text-muted">
         На сервере что-то пошло не так. То, что вы уже сохранили, не пропало: черновик weekly и правки задач сохраняются сразу. Попробуйте открыть страницу ещё раз.
       </p>
-      {error.digest ? <p className="mt-2 text-[13px] text-muted">Код ошибки для разбора: {error.digest}</p> : null}
+      {error.digest ? <p className="mt-2 text-caption text-muted">Код ошибки для разбора: {error.digest}</p> : null}
       <div className="mt-6 flex flex-col gap-2 sm:flex-row">
         <Button onClick={reset}>
           <RotateCcw className="h-4 w-4" aria-hidden="true" />

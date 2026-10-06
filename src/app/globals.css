@@ -30,6 +30,55 @@
   --color-warning-soft: #fff4d2;
   --color-orange: #e8730c;
   --color-slate: #6b8290;
+
+  /* Этап 10: всё, что раньше было зашито в экраны, теперь здесь. Новый дизайн меняет значения только в этом блоке */
+  --color-orange-soft: #fdeedd;
+  --color-orange-ink: #9a4a05;
+  /* Рамки бледных плашек: предупреждение и просрочка */
+  --color-warning-line: #f0dfa6;
+  --color-danger-line: #f3c4c6;
+  /* Красный на тёмном фоне уведомления */
+  --color-danger-on-dark: #ff8a8f;
+  /* Точки состояний: «с опозданием» и «под риском», «не начинал» и низкий приоритет, «не задано» */
+  --color-amber: #f2b600;
+  --color-mist: #b4c2c9;
+  --color-steel: #90a4ae;
+
+  /* Размеры шрифта по ролям. Только размер: межстрочный интервал наследуется, как у прежних text-[Npx].
+     Имена и размеры повторены в src/lib/design-tokens.ts, совпадение проверяет тест */
+  --text-micro: 11px;
+  --text-tiny: 12px;
+  --text-caption: 13px;
+  --text-small: 14px;
+  --text-body: 15px;
+  --text-lead: 16px;
+  --text-title-sm: 17px;
+  --text-title: 19px;
+  --text-title-lg: 20px;
+  --text-headline-sm: 22px;
+  --text-headline: 24px;
+  --text-page: 26px;
+  --text-headline-lg: 28px;
+  --text-page-lg: 30px;
+  --text-display-sm: 34px;
+  --text-hero: 40px;
+  --text-display: 44px;
+
+  --leading-hero: 1.15;
+
+  /* Тени: меню, окно, переключатель, уведомление, перетаскиваемая карточка, боковая панель */
+  --shadow-menu: 0 12px 32px -12px rgba(0, 42, 58, 0.35);
+  --shadow-modal: 0 24px 60px -24px rgba(0, 42, 58, 0.5);
+  --shadow-segment: 0 1px 2px rgba(0, 42, 58, 0.12);
+  --shadow-toast: 0 16px 40px -16px rgba(0, 42, 58, 0.6);
+  --shadow-drag: 0 16px 40px -16px rgba(0, 42, 58, 0.5);
+  --shadow-drawer: -12px 0 40px -20px rgba(0, 42, 58, 0.45);
+
+  --container-page: 1240px;
+
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-slide-in: slide-in 200ms ease-out;
+  --animate-toast-in: toast-in 180ms ease-out;
 }
 
 @layer base {

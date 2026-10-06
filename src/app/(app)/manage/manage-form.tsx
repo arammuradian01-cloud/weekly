@@ -24,7 +24,7 @@ export function StepUpForm() {
   const [state, action, pending] = useActionState<EmailFormState>(requestStepUpAction, null);
   if (state?.sent) {
     return (
-      <p role="status" className="rounded-lg bg-green-soft px-3.5 py-3 text-[14px] text-green-ink">
+      <p role="status" className="rounded-lg bg-green-soft px-3.5 py-3 text-small text-green-ink">
         Письмо отправлено. Ссылка действует 15 минут.
       </p>
     );

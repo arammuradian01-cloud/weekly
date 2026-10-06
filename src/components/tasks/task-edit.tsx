@@ -108,12 +108,12 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
             <legend className="mb-2 text-sm font-medium text-ink">Соисполнители</legend>
             <div className="grid gap-1 sm:grid-cols-2">
               {coChoices.map((p) => (
-                <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-[15px] text-ink hover:bg-surface">
+                <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-body text-ink hover:bg-surface">
                   <input
                     type="checkbox"
                     checked={co.includes(p.slug)}
                     onChange={(e) => setCo((prev) => (e.target.checked ? [...prev, p.slug] : prev.filter((s) => s !== p.slug)))}
-                    className="h-4 w-4 accent-[#0073a8]"
+                    className="h-4 w-4 accent-blue-700"
                   />
                   {p.fullName}
                   {gone(p.slug) ? " (выключен)" : ""}
@@ -123,7 +123,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
           </fieldset>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink">
+          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
             {error}
           </p>
         ) : null}
@@ -200,7 +200,7 @@ export function TaskLinks({ task }: { task: Task }) {
             </div>
           </form>
         ) : (
-          <button type="button" onClick={() => setAdding(true)} className="inline-flex h-9 items-center gap-1.5 self-start rounded-md text-[14px] font-medium text-blue-700 hover:underline">
+          <button type="button" onClick={() => setAdding(true)} className="inline-flex h-9 items-center gap-1.5 self-start rounded-md text-small font-medium text-blue-700 hover:underline">
             <Plus className="h-4 w-4" aria-hidden="true" />
             Добавить ссылку
           </button>

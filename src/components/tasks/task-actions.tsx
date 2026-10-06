@@ -167,7 +167,7 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
               />
             )}
             {error ? (
-              <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-[14px] text-danger-ink">
+              <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
                 {error}
               </p>
             ) : null}

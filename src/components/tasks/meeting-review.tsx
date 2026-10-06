@@ -50,27 +50,27 @@ export function MeetingReview() {
                   onClick={() => setIndex(i)}
                   aria-current={i === index ? "step" : undefined}
                   className={cn(
-                    "inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-[14px] transition-colors",
+                    "inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-small transition-colors",
                     i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                   )}
                 >
                   {personOf(s).shortName}
                   {n ? (
-                    <span className={cn("rounded-full px-1.5 text-[12px] tabular-nums", i === index ? "bg-white/15" : "bg-danger-soft text-danger-ink")}>{n}</span>
+                    <span className={cn("rounded-full px-1.5 text-tiny tabular-nums", i === index ? "bg-white/15" : "bg-danger-soft text-danger-ink")}>{n}</span>
                   ) : null}
                 </button>
               </li>
             );
           })}
         </ol>
-        <p className="text-[14px] text-muted">Встреча {formatLong(data.today)}. Цифра у имени: просроченные и заблокированные.</p>
+        <p className="text-small text-muted">Встреча {formatLong(data.today)}. Цифра у имени: просроченные и заблокированные.</p>
       </div>
 
       <section aria-labelledby="review-person" className="rounded-xl ring-1 ring-line">
         <header className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 id="review-person" className="text-[22px] font-semibold text-ink">{person.fullName}</h2>
-            <p className="text-[14px] text-muted">{person.zone}</p>
+            <h2 id="review-person" className="text-headline-sm font-semibold text-ink">{person.fullName}</h2>
+            <p className="text-small text-muted">{person.zone}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             {manage ? (
@@ -107,26 +107,26 @@ function ReviewBlock({ title, empty, tasks, danger }: { title: string; empty: st
   const { open } = useOpenTask();
   return (
     <section className="px-5 py-4">
-      <h3 className="flex items-center gap-2 text-[16px] font-semibold text-ink">
+      <h3 className="flex items-center gap-2 text-lead font-semibold text-ink">
         {title}
-        <span className={cn("text-[14px] font-normal tabular-nums", danger && tasks.length ? "text-danger-ink" : "text-muted")}>{tasks.length}</span>
+        <span className={cn("text-small font-normal tabular-nums", danger && tasks.length ? "text-danger-ink" : "text-muted")}>{tasks.length}</span>
       </h3>
       {tasks.length === 0 ? (
-        <p className="mt-2 text-[14px] text-muted">{empty}</p>
+        <p className="mt-2 text-small text-muted">{empty}</p>
       ) : (
         <ul className="mt-2 flex flex-col divide-y divide-line">
           {tasks.map((t) => (
             <li key={t.number} className="py-2.5">
-              <button type="button" onClick={() => open(t.number)} className="text-left text-[15px] font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
+              <button type="button" onClick={() => open(t.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
                 <span className="mr-1.5 font-normal tabular-nums text-muted">{t.number}</span>
                 {t.title}
               </button>
-              <p className="mt-0.5 text-[13px] text-muted">{t.state === "blocked" && t.blockedBy ? t.blockedBy : t.resolution && t.closedAt ? t.resolution : t.where}</p>
+              <p className="mt-0.5 text-caption text-muted">{t.state === "blocked" && t.blockedBy ? t.blockedBy : t.resolution && t.closedAt ? t.resolution : t.where}</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-4">
                 {t.closedAt ? <StatusBadge status={t.status} /> : <StatusSelect task={t} />}
                 {!t.closedAt ? <StateSelect task={t} /> : null}
                 {!t.closedAt ? <PrioritySelect task={t} /> : null}
-                <span className="text-[13px] tabular-nums text-muted">
+                <span className="text-caption tabular-nums text-muted">
                   {t.closedAt ? `закрыта ${formatShort(t.closedAt)}` : `срок ${formatShort(t.due)}`}
                 </span>
                 {isOverdue(t, data.today) ? <OverdueNote days={overdueDays(t, data.today)} /> : null}

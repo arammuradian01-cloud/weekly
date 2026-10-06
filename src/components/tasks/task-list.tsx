@@ -116,7 +116,7 @@ export function TaskList() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Текст или номер задачи"
-              className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-[15px] text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+              className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
             />
           </div>
           <SelectField
@@ -135,7 +135,7 @@ export function TaskList() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[14px] text-muted">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-small text-muted">
         <p aria-live="polite">
           Показано {filtered.length} {active.length || q ? "по фильтрам" : archive ? "в архиве" : "открытых"}
           {active.length || q ? (
@@ -155,13 +155,13 @@ export function TaskList() {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
           {archive ? null : (
             <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">
-              <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} className="h-4 w-4 accent-[#0073a8]" />
+              <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} className="h-4 w-4 accent-blue-700" />
               Показать закрытые ({closedCount})
             </label>
           )}
           {manageRole === "OWNER" ? (
             <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">
-              <input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} className="h-4 w-4 accent-[#0073a8]" />
+              <input type="checkbox" checked={archive} onChange={(e) => setArchive(e.target.checked)} className="h-4 w-4 accent-blue-700" />
               Архив ({archivedCount})
             </label>
           ) : null}
@@ -169,7 +169,7 @@ export function TaskList() {
       </div>
 
       {archive ? (
-        <p className="mt-3 rounded-xl bg-surface px-5 py-3 text-[15px] text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
+        <p className="mt-3 rounded-xl bg-surface px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
         <EmptyState title={archive ? "В архиве пусто" : "Под эти фильтры задач нет"} className="mt-4">
@@ -198,7 +198,7 @@ export function TaskTable({
   return (
     <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-line">
       {/* Ноутбук: таблица */}
-      <table className="hidden w-full table-fixed text-left text-[14px] lg:table">
+      <table className="hidden w-full table-fixed text-left text-small lg:table">
         <caption className="sr-only">Задачи команды</caption>
         <colgroup>
           <col className="w-14" />
@@ -209,7 +209,7 @@ export function TaskTable({
           <col className="w-[148px]" />
           <col className="w-[156px]" />
         </colgroup>
-        <thead className="bg-surface text-[13px] text-muted">
+        <thead className="bg-surface text-caption text-muted">
           <tr>
             <th scope="col" className="px-4 py-2.5 font-medium">№</th>
             <th scope="col" className="px-2 py-2.5 font-medium">Задача и где сейчас</th>
@@ -224,7 +224,7 @@ export function TaskTable({
           <tbody key={g.key} className="divide-y divide-line border-t border-line">
             {g.title ? (
               <tr className="bg-white">
-                <th scope="colgroup" colSpan={showOwner ? 7 : 6} className="px-4 pb-2 pt-4 text-[15px] font-semibold text-ink">
+                <th scope="colgroup" colSpan={showOwner ? 7 : 6} className="px-4 pb-2 pt-4 text-body font-semibold text-ink">
                   {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
                 </th>
               </tr>
@@ -237,10 +237,10 @@ export function TaskTable({
                 <tr key={t.number} className={cn("align-top", overdue ? "bg-danger-soft" : "bg-white hover:bg-surface/60", closed && "text-muted")}>
                   <td className="px-4 py-3 tabular-nums text-muted">{t.number}</td>
                   <td className="px-2 py-3">
-                    <button type="button" onClick={() => open(t.number)} className={cn("text-left text-[15px] font-medium leading-snug hover:text-blue-700 hover:underline", closed ? "text-muted" : "text-ink")}>
+                    <button type="button" onClick={() => open(t.number)} className={cn("text-left text-body font-medium leading-snug hover:text-blue-700 hover:underline", closed ? "text-muted" : "text-ink")}>
                       {t.title}
                     </button>
-                    <p className="mt-0.5 line-clamp-1 text-[13px] text-muted">{t.where}</p>
+                    <p className="mt-0.5 line-clamp-1 text-caption text-muted">{t.where}</p>
                     {stale ? <StaleNote className="mt-0.5 block" /> : null}
                   </td>
                   {showOwner ? <td className="px-2 py-3 text-ink">{t.owner === "all" ? "Все лидеры" : compactName(t.owner)}</td> : null}
@@ -250,7 +250,7 @@ export function TaskTable({
                   <td className="px-3 py-3">
                     <span className={cn("tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-ink")}>{formatShort(t.due)}</span>
                     {overdue ? <OverdueNote days={overdueDays(t, data.today)} className="block" /> : null}
-                    {t.transfers.length ? <span className="block text-[12px] text-muted">переносов {t.transfers.length}</span> : null}
+                    {t.transfers.length ? <span className="block text-tiny text-muted">переносов {t.transfers.length}</span> : null}
                   </td>
                 </tr>
               );
@@ -264,7 +264,7 @@ export function TaskTable({
         {groups.map((g) => (
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
-              <h2 className="border-b border-line bg-surface px-4 py-2 text-[15px] font-semibold text-ink">
+              <h2 className="border-b border-line bg-surface px-4 py-2 text-body font-semibold text-ink">
                 {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
               </h2>
             ) : null}
@@ -275,15 +275,15 @@ export function TaskTable({
                   <li key={t.number} className={cn("px-4 py-3", overdue ? "bg-danger-soft" : "bg-white")}>
                     <button type="button" onClick={() => open(t.number)} className="block w-full text-left">
                       <span className="mr-1.5 tabular-nums text-muted">{t.number}</span>
-                      <span className="text-[15px] font-medium leading-snug text-ink">{t.title}</span>
+                      <span className="text-body font-medium leading-snug text-ink">{t.title}</span>
                     </button>
-                    <p className="mt-1 line-clamp-2 text-[13px] text-muted">{t.where}</p>
+                    <p className="mt-1 line-clamp-2 text-caption text-muted">{t.where}</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5">
                       <StatusSelect task={t} />
                       <PrioritySelect task={t} />
                       <StateSelect task={t} />
                     </div>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-3 text-[13px] text-muted">
+                    <p className="mt-1 flex flex-wrap items-center gap-x-3 text-caption text-muted">
                       {showOwner ? <span>{ownerName(t.owner, true)}</span> : null}
                       <span className={cn("tabular-nums", overdue && "font-semibold text-danger-ink")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}

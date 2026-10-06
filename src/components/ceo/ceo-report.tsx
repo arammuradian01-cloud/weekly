@@ -75,13 +75,13 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
       <div className="flex min-w-0 flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <WeekSwitcher view={view} basePath="/ceo-report" />
-          <p className="text-[14px] text-muted" aria-live="polite">
+          <p className="text-small text-muted" aria-live="polite">
             {dirty ? "Есть несохранённые правки" : saved.updatedAt ? `Сохранён ${moment(saved.updatedAt)}${saved.updatedBy ? `, ${saved.updatedBy}` : ""}` : ""}
           </p>
         </div>
 
         <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[15px] text-ink">
+          <p className="text-body text-ink">
             {flaggedCount ? `Записей с отметкой «В отчёт CEO»: ${flaggedCount}.` : "Отметок «В отчёт CEO» за эту неделю нет."} Отметки ставятся в{" "}
             <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
               ленте weekly
@@ -112,8 +112,8 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
         </div>
 
         <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
-          <h2 id="ceo-numbers" className="text-[17px] font-semibold text-ink">Цифры недели</h2>
-          <p className="mt-1 text-[15px] text-muted">Появятся после подключения недельного отчёта (этап 10). Руками факт никто не вводит.</p>
+          <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
+          <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта (этап 10). Руками факт никто не вводит.</p>
         </section>
 
         <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={6} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />
@@ -122,16 +122,16 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
       </div>
 
       <aside aria-labelledby="ceo-history">
-        <h2 id="ceo-history" className="mb-3 text-[17px] font-semibold text-ink">История отчётов</h2>
+        <h2 id="ceo-history" className="mb-3 text-title-sm font-semibold text-ink">История отчётов</h2>
         {history.length === 0 ? (
-          <p className="text-[14px] text-muted">Пока ни одного отчёта.</p>
+          <p className="text-small text-muted">Пока ни одного отчёта.</p>
         ) : (
           <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
             {history.map((h) => (
               <li key={h.key}>
                 <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-3 hover:bg-surface aria-[current=page]:bg-surface">
-                  <p className="text-[15px] font-medium text-ink">Неделя {h.number}</p>
-                  <p className="text-[13px] text-muted">
+                  <p className="text-body font-medium text-ink">Неделя {h.number}</p>
+                  <p className="text-caption text-muted">
                     {h.savedAt ? `Сохранён ${moment(h.savedAt)}${h.savedBy ? `, ${h.savedBy}` : ""}` : "Не сохранялся"}. Отметок: {h.flagged}, встреча {h.meeting}
                   </p>
                 </Link>
@@ -139,7 +139,7 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
             ))}
           </ul>
         )}
-        <p className="mt-3 text-[13px] text-muted">Отчёт видят только владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.</p>
+        <p className="mt-3 text-caption text-muted">Отчёт видят только владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.</p>
       </aside>
     </div>
   );

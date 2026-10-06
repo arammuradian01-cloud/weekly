@@ -8,9 +8,9 @@ import { substituteText } from "./absence";
 
 const DOT: Record<WeeklyStateCode, string> = {
   submitted: "bg-green",
-  late: "bg-[#f2b600]",
+  late: "bg-amber",
   draft: "bg-blue",
-  "not-started": "bg-[#b4c2c9]",
+  "not-started": "bg-mist",
 };
 
 const WORD: Record<WeeklyStateCode, string> = {
@@ -32,15 +32,15 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
   return (
     <section aria-label="Кто сдал weekly" className={cn("rounded-xl bg-surface px-4 py-3", className)}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-        <p className="shrink-0 text-[15px] text-ink">
+        <p className="shrink-0 text-body text-ink">
           <span className="font-semibold">Сдали {done} из {expected.length}</span>
         </p>
         <ul className="flex flex-wrap gap-x-4 gap-y-2">
           {states.map(({ person, state, absent }) => {
             const away = absent && state !== "submitted" && state !== "late";
             return (
-              <li key={person.slug} className="inline-flex items-center gap-2 text-[14px]">
-                <span className={cn("h-2.5 w-2.5 rounded-full", away ? "bg-transparent ring-2 ring-inset ring-[#b4c2c9]" : DOT[state])} aria-hidden="true" />
+              <li key={person.slug} className="inline-flex items-center gap-2 text-small">
+                <span className={cn("h-2.5 w-2.5 rounded-full", away ? "bg-transparent ring-2 ring-inset ring-mist" : DOT[state])} aria-hidden="true" />
                 <span className={away ? "text-muted" : "text-ink"}>{person.shortName}</span>
                 <span className="text-muted">{away ? `нет на неделе, ${substituteText(absent.substitute)}` : WORD[state]}</span>
               </li>

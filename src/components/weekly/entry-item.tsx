@@ -39,7 +39,7 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
   };
   return (
     <article className={cn("flex flex-col gap-1.5", entry.help && "rounded-lg bg-warning-soft/60 p-3 -mx-3")}>
-      <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
+      <div className="flex flex-wrap items-center gap-2 text-caption text-muted">
         <EntryTypeBadge type={entry.type} />
         <span>{blockLabel(entry.block)}</span>
         <span aria-hidden="true">/</span>
@@ -51,40 +51,40 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
           </>
         ) : null}
       </div>
-      <h3 className={cn("font-semibold leading-snug text-ink", large ? "text-[24px]" : "text-[16px]")}>{entry.what}</h3>
-      {entry.details ? <p className={cn("whitespace-pre-line leading-relaxed text-ink", large ? "text-[19px]" : "text-[15px]")}>{entry.details}</p> : null}
+      <h3 className={cn("font-semibold leading-snug text-ink", large ? "text-headline" : "text-lead")}>{entry.what}</h3>
+      {entry.details ? <p className={cn("whitespace-pre-line leading-relaxed text-ink", large ? "text-title" : "text-body")}>{entry.details}</p> : null}
       {entry.impact ? (
-        <p className={cn("leading-relaxed", large ? "text-[19px]" : "text-[15px]")}>
+        <p className={cn("leading-relaxed", large ? "text-title" : "text-body")}>
           <span className="text-muted">Влияние на бизнес: </span>
           {entry.impact}
         </p>
       ) : null}
       {entry.fact ? (
-        <p className={cn("leading-relaxed", large ? "text-[19px]" : "text-[15px]")}>
+        <p className={cn("leading-relaxed", large ? "text-title" : "text-body")}>
           <span className="text-muted">Цифра или факт: </span>
           {entry.fact}
         </p>
       ) : null}
       {entry.next ? (
-        <p className={cn("leading-relaxed", large ? "text-[19px]" : "text-[15px]")}>
+        <p className={cn("leading-relaxed", large ? "text-title" : "text-body")}>
           <span className="text-muted">Дальше: </span>
           {entry.next}
         </p>
       ) : null}
       {entry.help ? (
-        <p className={cn("inline-flex items-start gap-2 font-medium text-warning-ink", large ? "text-[19px]" : "text-[15px]")}>
+        <p className={cn("inline-flex items-start gap-2 font-medium text-warning-ink", large ? "text-title" : "text-body")}>
           <HandHelping className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
           {entry.help}
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         {entry.taskNumber ? (
-          <Link href={`/tasks?task=${entry.taskNumber}`} className="inline-flex min-h-8 items-center text-[14px] font-medium text-blue-700 hover:underline">
+          <Link href={`/tasks?task=${entry.taskNumber}`} className="inline-flex min-h-8 items-center text-small font-medium text-blue-700 hover:underline">
             Задача {entry.taskNumber}
           </Link>
         ) : null}
         {entry.links.map((l) => (
-          <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-[14px] text-blue-700 hover:underline">
+          <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="inline-flex min-h-8 items-center gap-1 text-small text-blue-700 hover:underline">
             {l.title}
             <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </a>
@@ -95,7 +95,7 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
             onClick={toggleCeo}
             aria-pressed={ceo}
             className={cn(
-              "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-[13px] font-medium transition-colors",
+              "inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-caption font-medium transition-colors",
               ceo ? "bg-navy text-white" : "text-muted ring-1 ring-line hover:text-ink",
             )}
           >

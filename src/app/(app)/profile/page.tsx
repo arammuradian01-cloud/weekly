@@ -14,8 +14,8 @@ export const metadata: Metadata = { title: "Профиль" };
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid gap-0.5 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-4">
-      <dt className="text-[14px] text-muted">{label}</dt>
-      <dd className="text-[15px] text-ink">{children}</dd>
+      <dt className="text-small text-muted">{label}</dt>
+      <dd className="text-body text-ink">{children}</dd>
     </div>
   );
 }
@@ -43,8 +43,8 @@ export default async function ProfilePage() {
 
       {observer ? null : (
         <section className="mt-10 border-t border-line pt-8">
-          <h2 className="text-[19px] font-semibold text-ink">Нет на неделе</h2>
-          <p className="mt-1 text-[14px] text-muted">
+          <h2 className="text-title font-semibold text-ink">Нет на неделе</h2>
+          <p className="mt-1 text-small text-muted">
             Отпуск, больничный, командировка. Weekly за эту неделю не ждём, в счёт «сдали N из M» вы не входите, на встрече видно, кто замещает.
           </p>
           <Absences absences={absences} weeks={weeks} people={colleagues.map((p) => ({ value: p.slug, label: p.fullName }))} />
@@ -52,9 +52,9 @@ export default async function ProfilePage() {
       )}
 
       <section className="mt-10 border-t border-line pt-8">
-        <h2 className="text-[19px] font-semibold text-ink">Где открыт ваш вход</h2>
+        <h2 className="text-title font-semibold text-ink">Где открыт ваш вход</h2>
         {ctx.via === "TEAM" ? (
-          <p className="mt-2 text-[15px] text-muted">
+          <p className="mt-2 text-body text-muted">
             Вы вошли по общему логину и выбрали себя из списка. Личный вход по ссылке выдаёт владелец ресурса: с ним журнал записывает именно вас, а здесь появится список
             ваших устройств.
           </p>

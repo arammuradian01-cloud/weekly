@@ -11,12 +11,12 @@ const tones: Record<BadgeTone, string> = {
   gray: "bg-surface text-muted",
   outline: "bg-white text-ink ring-1 ring-line",
   navy: "bg-navy text-white",
-  orange: "bg-[#fdeedd] text-[#9a4a05]",
+  orange: "bg-orange-soft text-orange-ink",
 };
 
 export function Badge({ tone = "gray", children, className }: { tone?: BadgeTone; children: React.ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-[13px] font-medium", tones[tone], className)}>
+    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2 text-caption font-medium", tones[tone], className)}>
       {children}
     </span>
   );

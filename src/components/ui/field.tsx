@@ -14,10 +14,10 @@ export function Field({
       </label>
       <input
         id={id}
-        className="h-11 rounded-lg border border-line bg-white px-3.5 text-[15px] text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="h-11 rounded-lg border border-line bg-white px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
         {...props}
       />
-      {hint ? <p className="text-[13px] text-muted">{hint}</p> : null}
+      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
     </div>
   );
 }

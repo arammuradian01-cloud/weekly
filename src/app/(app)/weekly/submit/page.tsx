@@ -23,8 +23,8 @@ export default async function SubmitWeeklyPage() {
   return (
     <>
       <header className="mb-8">
-        <h1 className="text-[26px] font-semibold leading-tight text-ink sm:text-[30px]">Weekly за неделю {mine.week.number}</h1>
-        <p className="mt-1.5 text-[15px] text-muted">
+        <h1 className="text-page font-semibold leading-tight text-ink sm:text-page-lg">Weekly за неделю {mine.week.number}</h1>
+        <p className="mt-1.5 text-body text-muted">
           {formatLong(mine.week.start)} - {formatLong(mine.week.end)}. Три шага на одном экране, обычно до 15 минут
         </p>
       </header>
