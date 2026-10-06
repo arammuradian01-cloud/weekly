@@ -201,3 +201,46 @@ describe("отчёт CEO и задачи из записей", () => {
     expect(view.entries.find((x) => x.id === e.id)?.taskNumber).toBe(t.task.number);
   });
 });
+
+describe("удаление записи с отменой (этап 7)", () => {
+  it("отмена возвращает запись с тем же id, порядком, ссылками и связью с задачей, «Обновлена» у задачи не меняется", async () => {
+    const reva = await actor.reva();
+    const first = await svc.saveEntry(reva, entry(W40, { what: "Первая запись" }));
+    const e = await svc.saveEntry(reva, entry(W40, { what: "Запись с задачей", fact: "+3%", links: [{ title: "Отчёт", url: "https://datalens.example/r" }] }));
+    const t = await tasks.createTask(reva, { title: "Задача из записи", outcome: e.what, owner: "reva", direction: "product", due: "2030-01-15", source: "weekly", weeklyEntryId: e.id });
+    const before = await prisma.weeklyEntry.findUniqueOrThrow({ where: { id: e.id } });
+    const taskBefore = await prisma.task.findUniqueOrThrow({ where: { id: (await prisma.task.findFirstOrThrow({ where: { number: t.task.number } })).id } });
+
+    const snapshot = await svc.deleteEntry(reva, e.id);
+    expect(await prisma.weeklyEntry.findUnique({ where: { id: e.id } })).toBeNull();
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: taskBefore.id } })).weeklyEntryId).toBeNull();
+    expect(snapshot.taskIds).toEqual([taskBefore.id]);
+
+    const back = await svc.restoreEntry(reva, snapshot);
+    expect(back.id).toBe(e.id);
+    expect(back.taskNumber).toBe(t.task.number);
+    expect(back.links).toEqual([{ title: "Отчёт", url: "https://datalens.example/r" }]);
+    const after = await prisma.weeklyEntry.findUniqueOrThrow({ where: { id: e.id } });
+    expect([after.sortOrder, after.fact, after.createdAt.toISOString()]).toEqual([before.sortOrder, "+3%", before.createdAt.toISOString()]);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: taskBefore.id } })).updatedAt.toISOString()).toBe(taskBefore.updatedAt.toISOString());
+    expect(await prisma.weeklyEntry.findUnique({ where: { id: first.id } })).not.toBeNull();
+
+    const logs = await prisma.auditLog.findMany({ where: { entityId: e.id, action: { in: ["weekly.entry.delete", "weekly.entry.restore"] } }, orderBy: { id: "asc" } });
+    expect(logs.map((l) => [l.action, l.before, l.after])).toEqual([
+      ["weekly.entry.delete", "Запись с задачей", null],
+      ["weekly.entry.restore", null, "Запись с задачей"],
+    ]);
+    await expectRule(svc.restoreEntry(reva, snapshot), /уже на месте/);
+  });
+
+  it("вернуть запись может тот, кто может её править: чужую нельзя, после закрытия недели только управление", async () => {
+    const reva = await actor.reva();
+    const e = await svc.saveEntry(reva, entry(W40, { what: "Удалю и верну" }));
+    const snapshot = await svc.deleteEntry(reva, e.id);
+    await expectRule(svc.restoreEntry(await actor.loginova(), snapshot), /Чужой weekly/);
+    await svc.setWeekClosed(await actor.admin(), W40, true);
+    await expectRule(svc.restoreEntry(reva, snapshot), /закрыта/);
+    expect((await svc.restoreEntry(await actor.admin(), snapshot)).author).toBe("reva");
+  });
+});
+

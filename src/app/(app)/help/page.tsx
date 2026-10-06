@@ -1,0 +1,108 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { requireContext } from "@/lib/auth";
+import { getRhythm } from "@/lib/admin/service";
+import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
+import { PageHeader } from "@/components/page-header";
+
+export const metadata: Metadata = { title: "Как работать" };
+
+// Дни недели в нужных падежах: «до понедельника 18:00», «во вторник»
+const UNTIL = ["понедельника", "вторника", "среды", "четверга", "пятницы", "субботы", "воскресенья"];
+const ON = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"];
+
+function Block({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-[17px] font-semibold text-ink">{title}</h2>
+      <div className="flex flex-col gap-2 text-[15px] leading-relaxed text-ink">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * Инструкция для команды на один экран (этап 7 ТЗ). Сроки и пороги берутся из настроек,
+ * поэтому после смены ритма недели инструкция не врёт
+ */
+export default async function HelpPage() {
+  await requireContext();
+  const rhythm = await getRhythm();
+  const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
+  const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
+
+  return (
+    <>
+      <PageHeader
+        title="Как работать в Weekly"
+        description="Weekly и задачи команды живут здесь. Вкладки ресурса в Google-таблице обновляются сами, править их руками не нужно."
+      />
+      <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
+        <Block title="Вход">
+          <p>Логин team и общий пароль. На следующем экране выберите себя: всё, что вы делаете, записывается на выбранного человека. Чужое имя не выбирайте.</p>
+          <p className="text-muted">Сменить профиль и выйти можно в меню профиля.</p>
+        </Block>
+
+        <Block title="Ритм недели">
+          <p>
+            Weekly за прошедшую неделю сдаётся до {until} по Москве, встреча команды {meeting}. После встречи неделю закрывают, и записи правят только владелец и
+            администраторы.
+          </p>
+          <p className="text-muted">После срока weekly всё равно можно сдать, он будет с отметкой «Сдан с опозданием».</p>
+        </Block>
+
+        <Block title="Сдать weekly">
+          <p>
+            На «Моей неделе» кнопка{" "}
+            <Link href="/weekly/submit" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+              «Сдать weekly»
+            </Link>
+            . Три шага на одном экране:
+          </p>
+          <ol className="flex list-decimal flex-col gap-1 pl-5">
+            <li>Обновить свои задачи: статус и «где сейчас».</li>
+            <li>
+              Главное за неделю одной фразой, до {WEEKLY_LIMITS.headline} знаков, и записи. В записи: что произошло (до {WEEKLY_LIMITS.what} знаков), влияние на
+              бизнес, цифра или факт, что дальше и нужна ли помощь.
+            </li>
+            <li>Проверить и нажать «Сдать».</li>
+          </ol>
+          <p className="text-muted">Черновик сохраняется сам. Удалённую запись можно вернуть кнопкой «Отменить» в течение 5 секунд.</p>
+        </Block>
+
+        <Block title="Задачи">
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            <li>У задачи есть ответственный, срок и «где сейчас». Обновляйте «где сейчас» хотя бы раз в {rhythm.staleDays} дней, иначе задача получит метку «давно не обновлялась».</li>
+            <li>Срок переносится только с причиной, число переносов видно всем.</li>
+            <li>Закрыть задачу: «Выполнена» с итогом, «Не выполнена» или «Отменена» с причиной.</li>
+            <li>Задачу себе ставит каждый. Коллеге лидер задачу предлагает, а подтверждают её владелец или администратор.</li>
+          </ul>
+          <p className="text-muted">Новая задача: клавиша N. Поиск задач: клавиша /.</p>
+        </Block>
+
+        <Block title="Встреча">
+          <p>
+            Ведущий открывает{" "}
+            <Link href="/weekly/meeting" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+              режим встречи
+            </Link>
+            : записи недели крупно, риски и просьбы о помощи отдельно. Задачи разбираются на странице{" "}
+            <Link href="/tasks/review" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+              «Разбор на встрече»
+            </Link>
+            .
+          </p>
+          <p className="text-muted">Заметки и разборы встреч остаются в Notion, сами задачи ведутся только здесь.</p>
+        </Block>
+
+        <Block title="Кто что видит и правит">
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            <li>Weekly и задачи всей команды видят все.</li>
+            <li>Свой weekly и свои задачи правит каждый, чужие только владелец и администраторы в режиме управления.</li>
+            <li>Журнал всех изменений, отчёт CEO и настройки видят владелец и администраторы.</li>
+          </ul>
+          <p className="text-muted">Ручные правки во вкладках ресурса в Google-таблице ночная сверка возвращает обратно, поэтому правьте только здесь.</p>
+        </Block>
+      </div>
+    </>
+  );
+}

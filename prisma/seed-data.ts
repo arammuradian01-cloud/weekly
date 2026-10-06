@@ -98,6 +98,8 @@ export const settings: Record<string, unknown> = {
   // Встреча команды во вторник
   "week.meeting": { weekday: 2 },
   "tasks.staleDays": 14,
+  // Плашка над страницами: test (тестовый стенд), pilot (пилот) или off. Переключает владелец в настройках
+  "stand.banner": "test",
   "tasks.nextNumber": 52,
   // ID копии таблицы Insurance&Invest Bord появится на этапе 6
   "sheet.spreadsheetId": null,

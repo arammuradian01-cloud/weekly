@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { importBordTasks } from "../src/lib/tasks/bord-import";
 import { importBordWeekly } from "../src/lib/weekly/bord-import";
 import { BORD_DEFAULT } from "../scripts/lib/bord-source";
+import { sessionSecretSource } from "../src/lib/database-url";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -60,13 +61,15 @@ async function main() {
     skipDuplicates: true,
   });
 
-  // Задачи из Insurance&Invest Bord загружаются один раз, в пустую базу. BORD_IMPORT=off отключает
-  if (process.env.BORD_IMPORT !== "off" && (await prisma.task.count()) === 0) {
+  // Задачи и weekly из Insurance&Invest Bord загружаются только по явной команде: BORD_IMPORT=on при запуске
+  // или npm run import:bord. Иначе пустая база после сбоя или пересоздания тихо заполнилась бы старой выгрузкой
+  const bordImport = process.env.BORD_IMPORT === "on";
+  if (bordImport && (await prisma.task.count()) === 0) {
     const report = await importBordTasks(prisma, readFileSync(BORD_DEFAULT.file, "utf8"), { batch: BORD_DEFAULT.batch });
     console.log(`Задачи из Insurance&Invest Bord загружены: ${report.created.length}, следующий номер ${report.nextNumber}`);
   }
-  // Weekly из вкладки Weekly CEO: тоже один раз, в пустую базу
-  if (process.env.BORD_IMPORT !== "off" && (await prisma.weeklyEntry.count()) === 0) {
+  // Weekly из вкладки Weekly CEO: тоже только по команде и только в пустую weekly
+  if (bordImport && (await prisma.weeklyEntry.count()) === 0) {
     const report = await importBordWeekly(prisma, readFileSync(BORD_DEFAULT.weeklyFile, "utf8"), { batch: BORD_DEFAULT.batch });
     console.log(`Weekly из Insurance&Invest Bord загружен: записей ${report.created}, недели ${report.weeks.join(", ")}`);
   }
@@ -79,6 +82,12 @@ async function main() {
     entries: await prisma.weeklyEntry.count(),
   };
   console.log(`Стартовые данные на месте: людей ${counts.people}, значений справочников ${counts.dictionaries}, настроек ${counts.settings}, задач ${counts.tasks}, записей weekly ${counts.entries}`);
+  if (!bordImport && counts.tasks === 0) {
+    console.log("Задач в базе нет. Загрузить выгрузку Insurance&Invest Bord: npm run import:bord, weekly: npm run import:bord-weekly");
+  }
+  if (process.env.NODE_ENV === "production" && sessionSecretSource() !== "env") {
+    console.warn("SESSION_SECRET не задан: ключ сессий выводится из пароля базы. Задайте SESSION_SECRET (не короче 32 символов) в переменных приложения до пилота");
+  }
 
   // Пока пароли не заданы, при каждом запуске выпускаем новый одноразовый код для страницы /setup
   const code = await issueSetupCode();

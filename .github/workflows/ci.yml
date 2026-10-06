@@ -37,7 +37,7 @@ jobs:
       - name: Правила задач и weekly на настоящей базе
         run: npm run test:db
       - name: Сверка импорта с выгрузкой таблицы (0 расхождений)
-        run: npx tsx prisma/seed.ts && npm run reconcile:bord
+        run: BORD_IMPORT=on npx tsx prisma/seed.ts && npm run reconcile:bord
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e

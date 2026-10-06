@@ -43,3 +43,32 @@ describe("режим управления", () => {
     expect(activeManagement({ epoch: 1, management: grant }, 3, now)).toBeNull();
   });
 });
+
+describe("ключ сессий и токен отмены удаления записи (этап 7)", () => {
+  it("видно, откуда взят ключ: свой SESSION_SECRET, из пароля базы или никакого", async () => {
+    const { sessionSecretSource } = await import("@/lib/database-url");
+    expect(sessionSecretSource({ SESSION_SECRET: secret })).toBe("env");
+    expect(sessionSecretSource({ DB_HOST: "h", DB_PASSWORD: "p@ss word" })).toBe("derived");
+    expect(sessionSecretSource({})).toBe("none");
+  });
+
+  it("токен отмены возвращает запись только автору и только в течение минуты, подделку не принимает", async () => {
+    process.env.SESSION_SECRET = secret;
+    const { issueEntryUndoToken, readEntryUndoToken, ENTRY_UNDO_TTL_MS } = await import("@/lib/weekly/undo");
+    const snapshot = {
+      id: "e1", weekId: "w1", authorId: "p1", directionId: "d", blockId: "b", typeId: "t", what: "Запись с кириллицей",
+      details: null, impact: null, fact: null, next: null, help: null, links: [], ceo: false, sortOrder: 2, importBatch: null,
+      createdAt: "2026-10-06T06:00:00.000Z", taskIds: ["t1"],
+    };
+    const now = Date.now();
+    const token = issueEntryUndoToken(snapshot, "p1", now);
+    expect(readEntryUndoToken(token, "p1", now + 1000)).toEqual(snapshot);
+    expect(readEntryUndoToken(token, "p2", now + 1000)).toBeNull();
+    expect(readEntryUndoToken(token, "p1", now + ENTRY_UNDO_TTL_MS + 1)).toBeNull();
+    const [body, mac] = token.split(".");
+    const forged = Buffer.from(JSON.stringify({ snapshot: { ...snapshot, authorId: "p9" }, by: "p1", exp: now + 60_000 })).toString("base64url");
+    expect(readEntryUndoToken(`${forged}.${mac}`, "p1", now)).toBeNull();
+    expect(readEntryUndoToken(`${body}`, "p1", now)).toBeNull();
+    expect(readEntryUndoToken("", "p1", now)).toBeNull();
+  });
+});

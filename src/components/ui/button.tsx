@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn";
 
-type Variant = "primary" | "secondary" | "ghost" | "onDark";
+type Variant = "primary" | "secondary" | "ghost" | "onDark" | "danger";
 type Size = "md" | "sm";
 
 const variants: Record<Variant, string> = {
@@ -9,6 +9,8 @@ const variants: Record<Variant, string> = {
   secondary: "bg-white text-navy border border-line hover:border-navy-600 disabled:text-muted",
   ghost: "text-navy hover:bg-surface disabled:text-muted",
   onDark: "text-white/85 hover:bg-white/10 hover:text-white",
+  // Опасные действия вроде удаления: белый на тёмно-красном, контраст 6,6:1
+  danger: "bg-danger-ink text-white hover:bg-danger-ink/90 disabled:bg-line disabled:text-muted",
 };
 
 const sizes: Record<Size, string> = {
