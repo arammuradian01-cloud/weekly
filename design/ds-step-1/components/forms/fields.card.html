@@ -1,0 +1,45 @@
+<!-- @dsCard group="Components" viewport="700x640" name="Поля: текст, пароль, многострочное" subtitle="Заливка #F5F5F5 с рамкой D40, на фокусе белый фон и рамка #0073A8; счётчик знаков; подсказка требований к паролю" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/forms/FormField.jsx', 'components/forms/Input.jsx', 'components/forms/Textarea.jsx', 'components/forms/PasswordInput.jsx'], function (C) {
+  var F = C.FormField, I = C.Input, T = C.Textarea, P = C.PasswordInput;
+  function Block() {
+    var pw = React.useState('reva2026');
+    var txt = React.useState('Согласовали бюджет 2027 с финансами, осталось утвердить у CEO');
+    return (
+      <div className="ds-surface ds-col" style={{ gap: 14 }}>
+        <F label="Логин" hint="Короткое имя, например reva, или рабочая почта"><I placeholder="reva" icon="user" /></F>
+        <F label="Поиск по задачам"><I placeholder="Номер или название" icon="search" focused value="бюджет" onChange={function () {}} /></F>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <F label="Недоступно" style={{ flex: 1 }}><I placeholder="Только при личном входе" disabled /></F>
+          <F label="Загрузка" style={{ flex: 1 }}><I value="Проверяем ссылку" loading onChange={function () {}} /></F>
+        </div>
+        <F label="Пароль" error="Неверный логин или пароль"><P value="qwerty" onChange={function () {}} error /></F>
+        <F label="Придумайте пароль"><P value={pw[0]} onChange={function (e) { pw[1](e.target.value); }} rules login="reva" name="Тарас Рева" autoComplete="new-password" /></F>
+        <F label="Что произошло" max={150} count={txt[0].length}><T value={txt[0]} onChange={function (e) { txt[1](e.target.value); }} rows={2} /></F>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <F label="Размер 36" style={{ flex: 1 }}><I size="sm" placeholder="Найти" icon="search" /></F>
+          <F label="Размер 52, телефон" style={{ flex: 1 }}><I size="lg" placeholder="Логин" /></F>
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

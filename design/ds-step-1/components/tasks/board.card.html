@@ -1,0 +1,49 @@
+<!-- @dsCard group="Components" viewport="700x560" name="Доска, «По статусам», «По людям», история статусов" subtitle="Колонки статусов, карточка с полоской состояния и состоянием «перетаскиваю»; строка на сотрудника с плашками по сроку; полоса истории статусов" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/tasks/Board.jsx', 'components/tasks/PeopleRow.jsx', 'components/tasks/StatusHistoryBar.jsx'], function (C) {
+  function Block() {
+    return (
+      <div className="ds-col">
+        <C.Board>
+          <C.BoardColumn title="Предложена" status="proposed" count={1}>
+            <C.BoardCard task={{ id: 140, title: 'Запустить A/B на витрине ОСАГО', owner: 'Тарас Рева', due: 'пт 23.10', state: 'none' }} />
+          </C.BoardColumn>
+          <C.BoardColumn title="В работе" status="progress" count={3}>
+            <C.BoardCard task={{ id: 124, title: 'Финальная версия бюджета 2027', owner: 'Арам Мурадян', due: 'пт 09.10', soon: true, state: 'risk', priority: 'critical' }} />
+            <C.BoardCard task={{ id: 127, title: 'Найм в КАСКО', owner: 'Евгений Ф.', due: 'пт 02.10', overdueDays: 5, state: 'blocked', blocked: true, priority: 'high' }} />
+            <C.BoardCard task={{ id: 131, title: 'Оценить рынок КАСКО', owner: 'Евгений Ф.', due: 'пт 16.10', state: 'ok', dragging: true }} />
+          </C.BoardColumn>
+          <C.BoardColumn title="Требует уточнений" status="clarify" count={1} over>
+            <C.BoardCard task={{ id: 131, title: 'Оценить рынок КАСКО', owner: 'Евгений Ф.', due: 'пт 16.10', state: 'ok', placeholder: true }} />
+          </C.BoardColumn>
+          <C.BoardColumn title="Закрыта за неделю" status="done" count={0} emptyText="За неделю ничего не закрыто" />
+        </C.Board>
+        <div className="ds-surface" style={{ padding: 0 }}>
+          <C.PeopleRow name="Никита Т." sub="Продуктовая аналитика, 5 задач" weekly="success" tasks={[{ id: 201, title: 'Дашборд конверсии ОСАГО', kind: 'overdue' }, { id: 202, title: 'Отчёт по оттоку', kind: 'soon' }, { id: 203, title: 'Модель LTV' }, { id: 204, title: 'Сверка выгрузок', kind: 'done' }, { id: 205, title: 'Разметка событий в витрине' }]} />
+          <C.PeopleRow name="Глеб" sub="CRM и Retention, 1 задача" weekly="warning" tasks={[{ id: 210, title: 'Сценарий возврата в КАСКО' }]} />
+          <C.PeopleRow name="Валерий Т." sub="Архитектура и ИТ-безопасность" weekly="neutral" tasks={[]} />
+        </div>
+        <div className="ds-surface"><p className="ds-label">Сколько была в каждом статусе</p><C.StatusHistoryBar segments={[{ status: 'proposed', days: 2 }, { status: 'progress', days: 14 }, { status: 'clarify', days: 5 }, { status: 'progress', days: 9 }]} /></div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

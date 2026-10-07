@@ -1,0 +1,43 @@
+<!-- @dsCard group="Components" viewport="700x560" name="Выбор: список, с поиском, человек, дата, @упоминание" subtitle="Меню с радиусом 12 и средней тенью; быстрые варианты даты; подсказка упоминания с аватаром и должностью" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/forms/FormField.jsx', 'components/forms/Select.jsx', 'components/forms/PersonPicker.jsx', 'components/forms/DatePicker.jsx', 'components/forms/MentionSuggest.jsx'], function (C) {
+  var F = C.FormField, S = C.Select, PP = C.PersonPicker, D = C.DatePicker, M = C.MentionSuggest, Mn = C.Mention;
+  var people = [{ id: 'aram', name: 'Арам Мурадян', role: 'Директор департамента' }, { id: 'vlad', name: 'Влад Головкин', role: 'Заместитель директора, ОСАГО' }, { id: 'taras', name: 'Тарас Рева', role: 'CPO, продукт и CJM' }, { id: 'sveta', name: 'Света', role: 'ДВС, ипотека, ВЗР, ИФЛ' }, { id: 'ef', name: 'Евгений Ф.', role: 'КАСКО' }];
+  var statuses = [{ value: 'progress', label: 'В работе' }, { value: 'clarify', label: 'Требует уточнений' }, { value: 'done', label: 'Выполнена' }, { value: 'partial', label: 'Частично' }, { value: 'cancelled', label: 'Отменена', disabled: true }];
+  function Block(p) {
+    return (
+      <div className="ds-surface ds-col" style={{ gap: 14, minHeight: 500 }}>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <F label="Статус" style={{ flex: 1 }}><S options={statuses} value="progress" /></F>
+          <F label="Ответственный" style={{ flex: 1 }}><PP people={people} value="taras" /></F>
+        </div>
+        <F label="Срок"><D value={new Date(2026, 9, 16)} marked={[new Date(2026, 9, 12), new Date(2026, 9, 13)]} /></F>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}><p className="ds-label">Список открыт, стрелками и Enter</p><S options={statuses} value="progress" open staticMenu /></div>
+          <div style={{ flex: 1 }}><p className="ds-label">Подсказка @упоминания</p>
+            <p style={{ margin: '0 0 8px', fontSize: 'var(--text-body)' }}>Обсудили с <Mn>Тарас Рева</Mn>, ждём ответ от @Св</p>
+            <M people={people} query="св" staticMenu /></div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

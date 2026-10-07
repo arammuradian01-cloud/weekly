@@ -1,0 +1,39 @@
+<!-- @dsCard group="Layout" viewport="1440x560" name="Оболочка: боковое меню (1440)" subtitle="AppShell variant=sidebar: тёмно-синее меню 248, верхняя панель с командой, неделей, поиском и «Новая задача»; плитки как на главной сайта" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/layout/AppShell.jsx', 'components/layout/PageHeader.jsx', 'components/layout/Tile.jsx', 'components/core/Button.jsx'], function (C) {
+  
+  function Demo(C) {
+    var T = C.Tile, Ts = C.Tiles, S = C.Section, PH = C.PageHeader, B = C.Button;
+    return (
+      <div>
+        <PH title="Моя неделя" subtitle="41-я неделя, 05.10-11.10. Weekly сдаётся до понедельника 12.10, 18:00" actions={<B variant="primary">Сдать weekly</B>} />
+        <Ts>
+          <T tone="primary" title="Мой weekly" sub="Черновик, осталось 2 дня" icon="file-text" value="2" unit="из 4 шагов" />
+          <T title="Мне" sub="Новых событий" icon="inbox" value="5" unit="сегодня 3" />
+          <T title="Просрочено" sub="Моих задач" icon="alert-circle" iconTone="danger" value="2" unit="из 14 открытых" />
+          <T title="Жду от коллег" sub="Просьбы без ответа" icon="hand" iconTone="info" value="1" />
+          <T tone="brand" wide title="Встреча во вторник 13.10, 11:00" sub="Пункт 3 из 9: риски и помощь. Ваш доклад после Светы" icon="presentation"><span style={{ fontSize: 12, opacity: 0.8 }}>Повестка собрана, 9 пунктов, 62 минуты</span></T>
+        </Ts>
+      </div>
+    );
+  }
+  return <div style={{ height: 560, overflow: 'hidden', borderRadius: 16, border: '1px solid var(--color-border)' }}><C.AppShell active="week" counts={{ inbox: 5, teams: 2 }} topBar={{ team: { teams: [{ id: 't1', name: 'Топ-команда', role: 'lead' }, { id: 't2', name: 'Управление развития продуктов', role: 'member' }], value: 't1' } }}>{Demo(C)}</C.AppShell></div>;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!-- @dsCard group="Components" viewport="700x560" name="Кнопки" subtitle="Главная зелёная, тёмная, вторичная, с обводкой, текстовая; 36, 44, 52; состояния" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/core/Button.jsx', 'components/core/IconButton.jsx'], function (C) {
+  var Button = C.Button, IconButton = C.IconButton;
+  var variants = ['primary', 'dark', 'secondary', 'outline', 'text', 'danger'];
+  var labels = { primary: 'Сдать weekly', dark: 'Новая задача', secondary: 'Принять', outline: 'Перенести срок', text: 'Отменить', danger: 'Удалить' };
+  function Row(p) {
+    return <div className="ds-row">{variants.map(function (v) { return <Button key={v} variant={v} {...p}>{labels[v]}</Button>; })}</div>;
+  }
+  function Block(p) {
+    return (
+      <div className="ds-col" style={{ gap: 10 }}>
+        <div><p className="ds-label">Обычное, 44</p><Row /></div>
+        <div><p className="ds-label">Нажатие</p><Row pressed /></div>
+        <div><p className="ds-label">Недоступно</p><Row disabled /></div>
+        <div><p className="ds-label">Загрузка</p><Row loading /></div>
+        <div><p className="ds-label">Размеры и иконки</p>
+          <div className="ds-row">
+            <Button variant="primary" size="lg" icon="send">Сдать weekly</Button>
+            <Button variant="dark" icon="plus" hotkey="N">Новая задача</Button>
+            <Button variant="outline" size="sm" icon="calendar">Пятница</Button>
+            <Button variant="secondary" size="sm" iconRight="chevron-down">Все команды</Button>
+            <IconButton icon="search" label="Поиск" />
+            <IconButton icon="more-horizontal" label="Ещё" size="sm" variant="outline" />
+            <IconButton icon="bell" label="Мне" selected />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="ds-split">
+      <div><Block /></div>
+      <div data-theme="dark"><Block /></div>
+    </div>
+  );
+});
+</script>
+</body>
+</html>

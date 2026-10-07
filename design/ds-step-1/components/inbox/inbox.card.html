@@ -1,0 +1,46 @@
+<!-- @dsCard group="Components" viewport="700x760" name="«Мне» и просьбы" subtitle="Строка события с иконкой типа и действиями «Разобрано», «Напомнить»; карточка просьбы для адресата и автора; блок «Жду от коллег»" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/inbox/EventRow.jsx', 'components/inbox/RequestCard.jsx', 'components/inbox/WaitingBlock.jsx'], function (C) {
+  var events = [
+    { id: 1, group: 'Сегодня', type: 'request', who: 'Тарас Рева', what: 'просит вас: посмотреть расчёт по КАСКО до пятницы', subject: '№131 Оценить рынок КАСКО', time: '10:12', unread: true },
+    { id: 2, group: 'Сегодня', type: 'mention', who: 'Тарас Рева', what: 'упомянул вас в комментарии к задаче', subject: '№124 Финальная версия бюджета 2027', time: '9:48', unread: true },
+    { id: 3, group: 'Сегодня', type: 'reaction', who: 'Света', what: 'отметила вашу запись: Вопрос', subject: 'Запись: запустили новый лендинг ипотеки', subjectIcon: 'file-text', time: '9:20' },
+    { id: 4, group: 'Вчера', type: 'updateRequest', who: 'Арам Мурадян', what: 'просит обновить задачу: где сейчас, состояние и срок', subject: '№127 Найм в КАСКО', time: '18:30' },
+    { id: 5, group: 'Вчера', type: 'meetingQuestion', who: 'Влад Головкин', what: 'поставил вопрос к встрече о вашей записи', subject: 'Нужен ли отдельный тариф для такси?', subjectIcon: 'presentation', time: '15:02', done: true }
+  ];
+  function Block() {
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <C.EventList events={events} />
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.RequestCard style={{ flex: 1 }} role="recipient" request={{ from: 'Тарас Рева', to: 'Евгений Ф.', text: 'Посмотреть расчёт по КАСКО до пятницы', due: 'пт 09.10', task: '№131 Оценить рынок КАСКО', status: 'waiting', created: 'сегодня, 10:12' }} />
+          <C.RequestCard style={{ flex: 1 }} role="author" request={{ from: 'Тарас Рева', to: 'Евгений Ф.', text: 'Прислать таблицу допущений', due: 'пн 05.10', status: 'overdue', created: '2 дня назад' }} />
+        </div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.RequestCard style={{ flex: 1 }} role="recipient" request={{ from: 'Света', to: 'Влад Головкин', text: 'Согласовать текст письма партнёрам', status: 'accepted', answer: { by: 'Влад Головкин', text: 'Принято', due: 'ср 14.10' } }} />
+          <C.WaitingBlock style={{ flex: 1 }} allHref="#" items={[{ id: 1, to: 'Евгений Ф.', text: 'Посмотреть расчёт по КАСКО', status: 'waiting', due: 'пт 09.10' }, { id: 2, to: 'Влад Головкин', text: 'Согласовать текст письма партнёрам', status: 'accepted', due: 'ср 14.10' }, { id: 3, to: 'Света', text: 'Данные по ВЗР за сентябрь', status: 'done' }]} />
+        </div>
+        <C.WaitingBlock items={[]} />
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

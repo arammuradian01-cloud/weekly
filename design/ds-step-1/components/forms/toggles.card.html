@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x420" name="Чекбокс, переключатель, сегментный переключатель" subtitle="Рамка 1,5 px цвета D40; отмеченное: заливка #00AFFF с тёмной галочкой; заблокированный переключатель с замком" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/forms/Checkbox.jsx', 'components/forms/Switch.jsx', 'components/forms/Segmented.jsx'], function (C) {
+  var Ch = C.Checkbox, R = C.Radio, Sw = C.Switch, Sg = C.Segmented;
+  function Block() {
+    var v = React.useState('people');
+    return (
+      <div className="ds-surface ds-col" style={{ gap: 14 }}>
+        <div className="ds-row" style={{ gap: 20 }}>
+          <Ch>Мои задачи</Ch><Ch defaultChecked>Просроченные</Ch><Ch indeterminate>Выбраны не все</Ch><Ch disabled>Недоступно</Ch><Ch disabled defaultChecked>Недоступно</Ch><Ch error>Ошибка</Ch>
+        </div>
+        <div className="ds-row" style={{ gap: 20 }}>
+          <R name="t" defaultChecked>Светлая</R><R name="t">Тёмная</R><R name="t">Как в системе</R><R name="t2" disabled>Недоступно</R>
+        </div>
+        <div className="ds-col" style={{ gap: 10, maxWidth: 360 }}>
+          <Sw defaultChecked labelRight sub="Смена статуса, срока и ответственного">Задачи</Sw>
+          <Sw labelRight sub="Комментарии и @упоминания">Упоминания и обсуждения</Sw>
+          <Sw defaultChecked labelRight locked sub="Меняется при личном входе">Напоминания о сдаче weekly</Sw>
+          <Sw disabled labelRight>Недоступно</Sw>
+        </div>
+        <div className="ds-row">
+          <Sg items={[{ value: 'people', label: 'По людям' }, { value: 'blocks', label: 'По блокам' }]} value={v[0]} onChange={v[1]} />
+          <Sg items={[{ value: 'table', label: 'Таблица', icon: 'table-2' }, { value: 'status', label: 'По статусам', icon: 'columns-3' }, { value: 'ppl', label: 'По людям', icon: 'users' }]} value="status" />
+          <Sg items={[{ value: 'task', label: 'Задача' }, { value: 'req', label: 'Просьба', count: 2 }, { value: 'x', label: 'Недоступно', disabled: true }]} value="task" />
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

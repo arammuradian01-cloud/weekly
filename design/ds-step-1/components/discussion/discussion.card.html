@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x760" name="Обсуждения: комментарии, реакции, вопрос к встрече" subtitle="Ветка с @упоминаниями и пометкой «изменено»; компактная строка реакций и полная панель с именами; предупреждение «Упоминание не дошло»" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/discussion/CommentThread.jsx', 'components/discussion/Reactions.jsx', 'components/discussion/MentionWarning.jsx', 'components/discussion/MeetingQuestion.jsx'], function (C) {
+  var comments = [
+    { id: 1, author: 'Тарас Рева', time: 'вчера, 16:40', parts: ['Посмотрел расчёт, ', { mention: 'Евгений Ф.' }, ' давай сверим допущения по частоте убытков до пятницы.'], reactions: { accepted: 2 }, canDelete: true },
+    { id: 2, author: 'Евгений Ф.', time: 'вчера, 17:05', text: 'Согласен, пришлю таблицу завтра до обеда.', edited: 'вчера, 17:12', mine: true, canEdit: true, reactions: { thanks: 1 }, myReaction: 'thanks' },
+    { id: 3, author: 'Влад Головкин', time: 'сегодня, 9:10', text: '', deleted: true }
+  ];
+  function Block(p) {
+    var d = React.useState('');
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div className="ds-surface"><C.CommentThread comments={comments} draft={d[0]} onDraft={function (e) { d[1](e.target.value); }} me="Евгений Ф."><C.MentionWarning names={['Никита Т.']} subject="эту задачу" /></C.CommentThread></div>
+        <div className="ds-surface ds-col">
+          <p className="ds-label">Компактная строка в ленте: своя реакция выделена</p>
+          <C.Reactions compact value={{ accepted: 3, question: 1, meeting: 1 }} mine="accepted" discussCount={4} />
+          <p className="ds-label">Со словами, крупно для режима встречи</p>
+          <C.Reactions showAll labels size="lg" value={{ accepted: 5, thanks: 2 }} mine="thanks" />
+          <p className="ds-label">Полная панель на странице записи</p>
+          <C.Reactions full value={{ accepted: ['Арам Мурадян', 'Влад Головкин', 'Света'], question: ['Тарас Рева'], meeting: [], thanks: ['Алсу', 'Павел'] }} mine="accepted" />
+        </div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}><C.MeetingQuestionForm /></div>
+          <div style={{ flex: 1 }} className="ds-col"><C.MeetingQuestion question={{ text: 'Нужен ли отдельный тариф для такси в КАСКО?', author: 'Тарас Рева', about: 'Евгений Ф.', time: 'вчера', canClose: true }} link="#" /><C.MeetingQuestion question={{ text: 'Переносим ли срок бюджета на ноябрь?', author: 'Света', done: true, doneBy: 'Арам Мурадян' }} /></div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

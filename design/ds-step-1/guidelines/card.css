@@ -1,0 +1,14 @@
+/* Раскладка карточек дизайн-системы, не часть продукта */
+body { padding: 16px; margin: 0; }
+.ds-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.ds-col { display: flex; flex-direction: column; gap: 12px; }
+.ds-grid { display: grid; gap: 12px; }
+.ds-label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); margin: 0 0 6px; }
+.ds-split { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius-card); overflow: hidden; border: 1px solid var(--color-border); }
+.ds-split > div { padding: 16px; background: var(--color-page); color: var(--color-text); }
+.ds-surface { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); padding: 16px; }
+.ds-swatch { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.ds-swatch__chip { height: 48px; border-radius: var(--radius-control); border: 1px solid var(--color-border); }
+.ds-swatch__name { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text); font-weight: 600; }
+.ds-swatch__val { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.ds-muted { color: var(--color-text-secondary); font-size: var(--text-caption); }

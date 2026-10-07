@@ -1,0 +1,3 @@
+/* Open Sans и Golos Text с Google Fonts. Aeroport Bold это шрифт сайта Сравни: файл запрашивается у бренд-команды,
+   после получения сюда добавляется @font-face для "Aeroport" с весом 700, остальное менять не нужно. */
+@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Golos+Text:wght@600;700&display=swap");

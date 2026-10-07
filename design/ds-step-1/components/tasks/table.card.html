@@ -1,0 +1,42 @@
+<!-- @dsCard group="Components" viewport="700x620" name="Таблица задач" subtitle="Строка 44 с названием и «где сейчас»; группировка, сортировка, выбор, просрочка, зелёное снаружи, закрыта, правка в строке, скелетон, панель массовых действий" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/tasks/TaskTable.jsx', 'components/tasks/BulkActionsBar.jsx'], function (C) {
+  var rows = [
+    { id: 124, title: 'Финальная версия бюджета 2027', now: 'Согласовали с финансами, ждём CEO', owner: 'Арам Мурадян', priority: 'critical', status: 'progress', state: 'risk', due: 'пт 09.10', overdueDays: 0, soon: true },
+    { id: 118, title: 'Заполнить цели Q4 в бордах лидера', now: 'Осталось КАСКО и партнёры', owner: 'Арам Мурадян', priority: 'high', status: 'clarify', state: 'ok', due: 'пн 05.10', overdueDays: 2 },
+    { id: 131, title: 'Оценить рынок КАСКО', now: 'Собрали данные по 5 компаниям, считаем доли', owner: 'Евгений Ф.', priority: 'medium', status: 'progress', state: 'ok', due: 'пт 16.10', outside: 'срок не менялся 21 день, записей нет' },
+    { id: 127, title: 'Найм в КАСКО', now: '', owner: 'Евгений Ф.', priority: 'high', status: 'progress', state: 'blocked', blocked: true, due: 'пт 02.10', overdueDays: 5 },
+    { id: 102, title: 'Еженедельно: прогноз месяца с объяснением отклонений, с разбивкой по линиям и каналам', now: 'Сдан прогноз на октябрь', owner: 'Влад Головкин', priority: 'medium', status: 'done', state: 'ok', due: 'пн 05.10', closed: true },
+    { id: 140, title: 'Запустить A/B на витрине ОСАГО', now: 'Предложена, ждёт ответа Тараса', owner: 'Тарас Рева', priority: 'none', status: 'proposed', state: 'none', due: 'пт 23.10' }
+  ];
+  function Block() {
+    var sel = React.useState([124, 118]);
+    return (
+      <div className="ds-col" style={{ position: 'relative' }}>
+        <C.TaskTable rows={rows} selectable selected={sel[0]} onSelect={sel[1]} onEdit={function () {}} onSort={function () {}} sort={{ by: 'due', dir: 'asc' }} groupBy="owner" />
+        <p className="ds-label" style={{ margin: 0 }}>Загрузка</p>
+        <C.TaskTable rows={[]} loading={3} />
+        <C.BulkActionsBar count={sel[0].length} onClear={function () { sel[1]([]); }} />
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16, marginTop: 8 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

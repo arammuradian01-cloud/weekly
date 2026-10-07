@@ -1,0 +1,17 @@
+<!-- @dsCard group="Форма" viewport="700x200" name="Фокус, движение, доступность" subtitle="Контур 2 px с отступом 2 px: #0073A8 в светлой, #00AFFF в тёмной; движение 300 мс cubic-bezier(.46,0,.03,.99) только в ответ на действие; при уменьшении движения анимаций нет" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="../guidelines/card.css">
+</head>
+<body>
+<div class="ds-split"><div>
+<div class="ds-row"><button class="sv-btn sv-btn--primary" style="outline:var(--focus-outline);outline-offset:var(--focus-offset)">Сдать weekly</button><span class="sv-input" style="outline:var(--focus-outline);outline-offset:var(--focus-offset);width:160px"><span class="sv-input__control" style="display:flex;align-items:center;color:var(--color-text-secondary)">Поле в фокусе</span></span><label class="sv-check"><input type="checkbox" checked><span class="sv-check__box" style="outline:var(--focus-outline);outline-offset:var(--focus-offset)"></span>Мои</label></div>
+<p class="ds-muted" style="margin:12px 0 0">--focus-outline: 2px solid #0073A8, 5,2:1 на белом, 4,8:1 на #F6F5F4</p>
+</div><div data-theme="dark">
+<div class="ds-row"><button class="sv-btn sv-btn--primary" style="outline:var(--focus-outline);outline-offset:var(--focus-offset)">Сдать weekly</button><span class="sv-input" style="outline:var(--focus-outline);outline-offset:var(--focus-offset);width:160px"><span class="sv-input__control" style="display:flex;align-items:center;color:var(--color-text-secondary)">Поле в фокусе</span></span><label class="sv-check"><input type="checkbox" checked><span class="sv-check__box" style="outline:var(--focus-outline);outline-offset:var(--focus-offset)"></span>Мои</label></div>
+<p class="ds-muted" style="margin:12px 0 0">--focus-outline: 2px solid #00AFFF, 6,9:1 на #171D23. --duration 300ms, --duration-color 200ms, --ease</p>
+</div></div></body>
+</html>

@@ -1,0 +1,55 @@
+/* Шрифты. Заголовки и крупные цифры: Aeroport Bold, при его отсутствии Golos Text Bold.
+   Текст, кнопки, поля, таблицы: Open Sans 400 и 600, цифры табличные. */
+:root {
+  --font-heading: "Aeroport", "Golos Text", "Open Sans", system-ui, sans-serif;
+  --font-body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-heading: 700;
+  --font-numeric: tabular-nums;
+
+  /* Шкала ноутбука: размер / межстрочный */
+  --text-page: 28px;            --leading-page: 32px;       /* заголовок страницы, Aeroport */
+  --text-section: 22px;         --leading-section: 26px;    /* заголовок раздела, Aeroport */
+  --text-card: 16px;            --leading-card: 20px;       /* заголовок карточки, Aeroport */
+  --text-lead: 16px;            --leading-lead: 20px;       /* кнопки 52 px и поля на телефоне, Open Sans 600 */
+  --text-body: 14px;            --leading-body: 20px;       /* основной текст, Open Sans 400 */
+  --text-small: 14px;           --leading-small: 20px;      /* выделенный текст и кнопки, Open Sans 600 */
+  --text-caption: 12px;         --leading-caption: 16px;    /* подписи и метаданные */
+  --text-table-head: 12px;      --leading-table-head: 16px; /* шапка таблицы, 600, вторичный цвет */
+  --text-number: 28px;          --leading-number: 32px;     /* крупные цифры и счётчики, Aeroport */
+
+  /* Имена этапа 10, которые остаются в коде как псевдонимы */
+  --text-tiny: var(--text-caption);
+  --text-headline-sm: var(--text-section);
+  --text-headline-lg: var(--text-page);
+}
+
+/* Телефон: ширина до 768 или явная отметка */
+@media (max-width: 767px) {
+  :root:not([data-scale]) {
+    --text-page: 25px;  --leading-page: 32px;
+    --text-section: 21px; --leading-section: 27px;
+    --text-small: 16px; --leading-small: 20px;
+    --text-number: 25px; --leading-number: 32px;
+  }
+}
+[data-scale="phone"] {
+  --text-page: 25px;  --leading-page: 32px;
+  --text-section: 21px; --leading-section: 27px;
+  --text-small: 16px; --leading-small: 20px;
+  --text-number: 25px; --leading-number: 32px;
+}
+
+/* Проектор 1920: режим встречи, читается с 4-5 метров */
+[data-scale="projector"] {
+  --text-page: 50px;  --leading-page: 52px;
+  --text-section: 38px; --leading-section: 44px;
+  --text-card: 28px;  --leading-card: 32px;
+  --text-lead: 24px;  --leading-lead: 32px;
+  --text-body: 24px;  --leading-body: 32px;
+  --text-small: 24px; --leading-small: 32px;
+  --text-caption: 18px; --leading-caption: 24px;
+  --text-table-head: 16px; --leading-table-head: 20px;
+  --text-number: 50px; --leading-number: 52px;
+}

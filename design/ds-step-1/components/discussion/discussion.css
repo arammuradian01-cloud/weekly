@@ -1,0 +1,46 @@
+/* Обсуждения: ветка комментариев, реакции, вопрос к встрече */
+.sv-thread { display: flex; flex-direction: column; gap: var(--space-3); }
+.sv-comment { display: grid; grid-template-columns: 32px 1fr; gap: 10px; }
+.sv-comment__head { display: flex; align-items: center; gap: 8px; min-height: 20px; }
+.sv-comment__author { font-weight: var(--font-weight-semibold); font-size: var(--text-body); }
+.sv-comment__meta { font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-comment__edited { font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-comment__menu { margin-left: auto; opacity: 0; transition: opacity var(--duration-color); }
+.sv-comment:hover .sv-comment__menu, .sv-comment:focus-within .sv-comment__menu { opacity: 1; }
+.sv-comment__text { margin: 4px 0 0; font-size: var(--text-body); line-height: var(--leading-body); color: var(--color-text); overflow-wrap: anywhere; }
+.sv-comment__foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+.sv-comment--deleted .sv-comment__text { color: var(--color-text-disabled); font-style: italic; }
+.sv-comment--mine .sv-comment__author::after { content: "вы"; margin-left: 6px; font-weight: 400; color: var(--color-text-secondary); font-size: var(--text-caption); }
+.sv-reply { display: grid; grid-template-columns: 32px 1fr; gap: 10px; align-items: flex-start; }
+.sv-reply__box { display: flex; flex-direction: column; gap: 8px; }
+.sv-reply__actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.sv-reply__hint { margin-right: auto; font-size: var(--text-caption); color: var(--color-text-secondary); }
+/* Предупреждение «Упоминание не дошло» */
+.sv-mention-warn { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: var(--radius-control); background: var(--color-warning-bg); color: var(--color-warning-text); font-size: var(--text-caption); line-height: var(--leading-caption); }
+.sv-mention-warn .sv-icon { flex: none; margin-top: 1px; }
+/* Реакции */
+.sv-reactions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sv-reaction { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; border: 1px solid var(--color-border); border-radius: var(--radius-tag); background: var(--color-surface); color: var(--color-text-secondary); font: inherit; font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); cursor: pointer; white-space: nowrap; transition: background-color var(--duration-color), border-color var(--duration-color), color var(--duration-color); }
+[data-theme="dark"] .sv-reaction { background: var(--color-field); }
+.sv-reaction:hover { background: var(--color-field); color: var(--color-text); border-color: var(--color-border-strong); }
+.sv-reaction.is-mine { background: var(--color-accent-soft); border-color: var(--color-accent-soft-border); color: var(--color-link); }
+.sv-reaction.is-mine:hover { background: var(--color-accent-soft-hover); }
+.sv-reaction:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.sv-reaction:disabled { color: var(--color-text-disabled); cursor: not-allowed; }
+.sv-reaction__count { font-variant-numeric: tabular-nums; }
+.sv-reaction--lg { height: 36px; padding: 0 12px 0 10px; font-size: var(--text-body); }
+.sv-reaction--discuss { color: var(--color-text-secondary); }
+.sv-reactions-full { display: flex; flex-direction: column; gap: 8px; }
+.sv-reactions-full__row { display: grid; grid-template-columns: 180px 1fr; gap: 12px; align-items: center; font-size: var(--text-body); }
+.sv-reactions-full__names { color: var(--color-text-secondary); font-size: var(--text-caption); line-height: var(--leading-caption); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* Вопрос к встрече */
+.sv-mq { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--radius-control-lg); background: var(--color-warning-bg); border: 1px solid transparent; }
+[data-theme="dark"] .sv-mq { border-color: var(--color-border); }
+.sv-mq__head { display: flex; align-items: center; gap: 8px; font-size: var(--text-caption); color: var(--color-warning-text); font-weight: var(--font-weight-semibold); }
+.sv-mq__text { font-size: var(--text-body); line-height: var(--leading-body); color: var(--color-text); margin: 0; }
+.sv-mq__meta { font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-mq__actions { display: flex; gap: 8px; align-items: center; }
+.sv-mq--done { background: var(--color-field); }
+.sv-mq--done .sv-mq__head { color: var(--color-text-secondary); }
+.sv-mq-form { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: var(--radius-control-lg); background: var(--color-page); border: 1px solid var(--color-border); }
+[data-theme="dark"] .sv-mq-form { background: var(--color-field); }
