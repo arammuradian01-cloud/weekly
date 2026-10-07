@@ -13,6 +13,7 @@ import { Toaster } from "@/components/prototype/toaster";
 import { GlobalHotkeys } from "@/components/prototype/new-task";
 import { RequestDialogHost } from "@/components/requests/request-dialog";
 import { HeaderSearch } from "@/components/prototype/header-search";
+import { CommandPalette } from "@/components/shell/command-palette";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
@@ -105,6 +106,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <HeaderSearch />
           </div>
           <div className="flex items-center gap-3">
+            <div className="lg:hidden">
+              <HeaderSearch compact />
+            </div>
             {managementUntil ? (
               <span className="hidden rounded-md bg-blue-soft px-2.5 py-1 text-caption font-medium text-blue-700 sm:inline">
                 Режим управления до {managementUntil}
@@ -135,6 +139,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <MobileNav leader={leader} />
       <Toaster />
       <GlobalHotkeys />
+      <CommandPalette management={profile.management} />
       <RequestDialogHost />
     </div>
     </InboxCountProvider>

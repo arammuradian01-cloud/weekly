@@ -157,11 +157,12 @@ export function TextInput({
   id,
   hint,
   className,
+  hideLabel,
   ...props
-}: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; hint?: string }) {
+}: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; hint?: string; /** Подпись только для экранного диктора: поле в строке, где подпись и так ясна */ hideLabel?: boolean }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-ink">
+      <label htmlFor={id} className={cn("text-sm font-medium text-ink", hideLabel && "sr-only")}>
         {label}
       </label>
       <input id={id} className={cn(control, "h-11")} {...props} />

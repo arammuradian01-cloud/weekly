@@ -18,6 +18,10 @@ export const taskInclude = {
   goal: { select: { id: true, title: true, code: true } },
   // Какие задачи эта ждёт (этап 21): номер, срок и закрыта ли. Названия карточка грузит отдельно, с проверкой доступа
   waitsFor: { select: { blocker: { select: { number: true, due: true, status: true, archivedAt: true } } } },
+  // Чек-лист и повтор (этап 25)
+  checklist: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], include: { doneBy: { select: { slug: true } } } },
+  repeatOf: { select: { number: true } },
+  repeatNext: { select: { number: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -32,6 +36,9 @@ export const taskListInclude = {
   links: taskInclude.links,
   goal: taskInclude.goal,
   waitsFor: taskInclude.waitsFor,
+  checklist: taskInclude.checklist,
+  repeatOf: taskInclude.repeatOf,
+  repeatNext: taskInclude.repeatNext,
   _count: { select: { comments: true } },
 } satisfies Prisma.TaskInclude;
 
@@ -88,6 +95,18 @@ export function toTaskDto(row: TaskRow): Task {
     resolution: row.resolution ?? undefined,
     archived: row.archivedAt !== null,
     team: row.teamId,
+    checklist: row.checklist.map((c) => ({ id: c.id, text: c.text, done: c.done, ...(c.doneBy ? { by: slug(c.doneBy.slug) } : {}) })),
+    ...(row.repeat || row.repeatOf
+      ? {
+          repeat: {
+            kind: row.repeat === "MONTHLY" ? "monthly" : "weekly",
+            mode: row.repeatMode === "SCHEDULE" ? "schedule" : "on-close",
+            active: !!row.repeat,
+            ...(row.repeatOf ? { of: row.repeatOf.number } : {}),
+            ...(row.repeatNext ? { next: row.repeatNext.number } : {}),
+          },
+        }
+      : {}),
     ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title } } : {}),
   };
 }

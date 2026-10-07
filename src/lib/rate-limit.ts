@@ -50,3 +50,19 @@ export function computeLockState(attempts: Attempt[], now: Date, max = MAX_FAILU
 export function historySince(now: Date): Date {
   return new Date(now.getTime() - FAILURE_WINDOW_MS - LOCK_MS);
 }
+
+// Простой счётчик запросов в памяти процесса (этап 25): для поиска из командной строки. Не замена блокировке
+// входа выше: та живёт в базе и переживает перезапуск
+const counters = new Map<string, { count: number; resetAt: number }>();
+
+/** true, если запрос в пределах лимита max за окно windowMs для ключа key */
+export function rateLimit(key: string, max: number, windowMs: number, now = Date.now()): boolean {
+  const c = counters.get(key);
+  if (!c || c.resetAt <= now) {
+    counters.set(key, { count: 1, resetAt: now + windowMs });
+    if (counters.size > 10_000) for (const [k, v] of counters) if (v.resetAt <= now) counters.delete(k);
+    return true;
+  }
+  c.count += 1;
+  return c.count <= max;
+}

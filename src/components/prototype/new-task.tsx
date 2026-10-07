@@ -12,6 +12,8 @@ import type { Owner } from "@/domain/types";
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { openCommandPalette } from "@/components/shell/command-palette";
+import { REPEAT_KINDS, type RepeatKindCode } from "@/lib/tasks/repeat";
 
 const OPEN_EVENT = "weekly:new-task";
 /** Задачу поставили по записи weekly: форма записи показывает её номер, человек остаётся на экране сдачи */
@@ -63,6 +65,8 @@ export function GlobalHotkeys() {
   const [source, setSource] = useState<SourceCode>(defaultSource());
   const [sourceNote, setSourceNote] = useState("");
   const [weeklyEntryId, setWeeklyEntryId] = useState<string | undefined>(undefined);
+  // Повтор (этап 25): «нет» или вид повтора, следующая создаётся при закрытии
+  const [repeat, setRepeat] = useState<"" | RepeatKindCode>("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,6 +81,7 @@ export function GlobalHotkeys() {
       setDirection(me.direction);
       setPriority("medium");
       setDue(addDays(data.today, 7));
+      setRepeat("");
       setTaskTeam(defaultTeam());
       setError(null);
       setOpen(true);
@@ -88,11 +93,9 @@ export function GlobalHotkeys() {
         openNewTask();
       }
       if (e.key === "/") {
-        const search = document.getElementById("global-search") as HTMLInputElement | null;
-        if (search) {
-          e.preventDefault();
-          search.focus();
-        }
+        // Поиск с этапа 25 живёт в командной строке
+        e.preventDefault();
+        openCommandPalette();
       }
     };
     window.addEventListener(OPEN_EVENT, onOpen);
@@ -129,6 +132,7 @@ export function GlobalHotkeys() {
       sourceNote: sourceNote.trim() || undefined,
       weeklyEntryId,
       team: taskTeam,
+      ...(repeat ? { repeat: { kind: repeat, mode: "on-close" as const } } : {}),
     });
     setBusy(false);
     if ("error" in result) return setError(result.error);
@@ -183,6 +187,7 @@ export function GlobalHotkeys() {
           <TextInput label="Срок" id="nt-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />
           <SelectField label="Источник" id="nt-src" value={source} onChange={(e) => setSource(e.target.value as SourceCode)} options={dictOptions("TASK_SOURCE", source)} />
           <TextInput label="Подробнее об источнике" id="nt-src-note" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="Например, встреча 6 октября" />
+          <SelectField label="Повтор" id="nt-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as "" | RepeatKindCode)} options={[{ value: "", label: "Не повторяется" }, ...REPEAT_KINDS.map((k) => ({ value: k.code, label: k.label }))]} hint={repeat ? "Следующая появится при закрытии этой, режим можно сменить в карточке" : undefined} />
         </div>
         {proposing ? (
           <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-small text-blue-700">
