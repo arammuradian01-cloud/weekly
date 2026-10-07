@@ -8,6 +8,8 @@ import type { Task } from "@/domain/types";
 export const QUIET_WARN_DAYS = 7;
 /** Столько дней без обновления: «В графике» не считается, пока «Где сейчас» не обновят */
 export const QUIET_DROP_DAYS = 14;
+/** Переносы считаются за последние четыре недели: давние переносы задачу не подсвечивают вечно */
+export const TRANSFER_WINDOW_DAYS = 28;
 
 type GreenTask = Pick<Task, "state" | "status" | "due" | "transfers" | "whereUpdatedAt" | "archived">;
 
@@ -27,15 +29,16 @@ function times(n: number): string {
 }
 
 /**
- * Открытая задача «В графике», которая просрочена, у которой срок переносили 2 раза и больше или «Где сейчас» не
- * обновляли 7 дней. null: всё в порядке или задача не «В графике»
+ * Открытая задача «В графике», которая просрочена, у которой срок за четыре недели переносили 2 раза и больше или
+ * «Где сейчас» не обновляли 7 дней. null: всё в порядке или задача не «В графике»
  */
 export function greenOutside(task: GreenTask, today: IsoDate): GreenOutside | null {
   if (task.archived || task.state !== "on-track" || (task.status !== "in-progress" && task.status !== "clarify")) return null;
   const reasons: string[] = [];
   const overdue = diffDays(task.due, today);
   if (overdue > 0) reasons.push(`просрочена на ${overdue} дн.`);
-  if (task.transfers.length >= 2) reasons.push(`срок переносили ${task.transfers.length} ${times(task.transfers.length)}`);
+  const moved = task.transfers.filter((t) => !t.at || diffDays(t.at, today) <= TRANSFER_WINDOW_DAYS).length;
+  if (moved >= 2) reasons.push(`срок переносили ${moved} ${times(moved)}`);
   const quietDays = Math.max(0, diffDays(task.whereUpdatedAt, today));
   if (quietDays >= QUIET_WARN_DAYS) reasons.push(`${quietDays} дн. без обновлений`);
   if (!reasons.length) return null;

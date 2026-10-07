@@ -31,6 +31,7 @@ export function ThanksField({ week, initial, canEdit }: { week: WeekKey; initial
       }
       saved.current = text;
       setState("saved");
+      if (r.value.warning) notify(r.value.warning, "error");
     } catch {
       setState("idle");
       notify("Нет связи с сервером: благодарность не сохранилась", "error");
@@ -39,9 +40,14 @@ export function ThanksField({ week, initial, canEdit }: { week: WeekKey; initial
 
   useEffect(() => {
     if (!canEdit || value === saved.current) return;
+    // Новый текст ещё не сохранён: прежнее «сохранена» убираем
+    setState("idle");
     const t = setTimeout(() => void save(), 2000);
     return () => clearTimeout(t);
   }, [value, canEdit, save]);
+
+  // Ушли со страницы, не дождавшись автосохранения: сохраняем сразу
+  useEffect(() => () => void save(), [save]);
 
   useEffect(() => {
     const flush = () => {
@@ -62,7 +68,7 @@ export function ThanksField({ week, initial, canEdit }: { week: WeekKey; initial
         rows={1}
         disabled={!canEdit}
         counter={{ value: value.length, max: THANKS_MAX }}
-        hint="Например: «Спасибо @Логинова за выгрузку по убыткам». Коллега увидит это в «Мне», строка попадёт в отчёт CEO"
+        hint="Например: «Спасибо @Логинова Светлана за выгрузку по убыткам». Коллега увидит это в «Мне», строка попадёт в отчёт CEO"
       />
       <span className="text-caption text-muted" aria-live="polite">
         {state === "saving" ? "Сохраняю" : state === "saved" ? "Благодарность сохранена" : ""}

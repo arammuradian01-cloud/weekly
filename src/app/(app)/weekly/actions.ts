@@ -71,7 +71,7 @@ export async function submitWeeklyAction(week: WeekKey): Promise<Result<PersonWe
 }
 
 /** «Спасибо @коллега за…» в weekly (этап 22) */
-export async function saveThanksAction(week: WeekKey, text: string): Promise<Result<{ thanks: string }>> {
+export async function saveThanksAction(week: WeekKey, text: string): Promise<Result<{ thanks: string; warning?: string }>> {
   return run((a) => svc.saveThanks(a, week, String(text ?? "")));
 }
 

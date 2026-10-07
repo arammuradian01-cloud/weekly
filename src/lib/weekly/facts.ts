@@ -98,8 +98,8 @@ export function requestFact(r: { number: number; text: string; author: string; c
     type: "event",
     block: "team",
     direction,
-    what: clipWhat(`Выполнили просьбу коллеги: ${r.text}`),
-    details: `Просьба ${r.number} от ${r.author}${r.answer ? `. ${r.answer}` : ""}`,
+    what: clipWhat(`Выполнили просьбу коллеги: ${r.text.charAt(0).toLowerCase()}${r.text.slice(1)}`),
+    details: `Просьба ${r.number}, автор ${r.author}${r.answer ? `. ${r.answer}` : ""}`,
   };
 }
 

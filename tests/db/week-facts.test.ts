@@ -76,9 +76,23 @@ describe("черновик weekly из фактов недели", () => {
       ["blocked", blocked.number],
       ["request", null],
     ]);
-    expect(list.find((f) => f.kind === "request")?.what).toBe("Выполнили просьбу коллеги: Выгрузка по убыткам");
+    expect(list.find((f) => f.kind === "request")?.what).toBe("Выполнили просьбу коллеги: выгрузка по убыткам");
     expect(list.find((f) => f.kind === "request")?.key).toBe(`request:${request.number}`);
     expect(await facts.weekFacts(await id("loginova"), key)).toEqual([]);
+  });
+
+  it("факт понедельника после недели не предлагается следующей неделе второй раз", async () => {
+    const owner = await actor.owner();
+    const reva = await actor.reva();
+    const t = (await tasks.createTask(owner, { title: "Закрыта в понедельник", outcome: "Результат", owner: "reva", direction: "kasko", due: addDays(moscowToday(), 10) })).task;
+    await tasks.changeStatus(reva, t.number, "done", "Готово");
+    // Понедельник после отчётной недели: входит в окно и этой недели, и следующей
+    await prisma.task.updateMany({ where: { number: t.number }, data: { closedAt: noon(addDays(key, 7)) } });
+    const next = shiftWeek(key, 1);
+    expect((await facts.weekFacts(await id("reva"), key)).map((f) => f.key)).toContain(`closed:${t.number}`);
+    expect((await facts.weekFacts(await id("reva"), next)).map((f) => f.key)).toContain(`closed:${t.number}`);
+    await facts.addFact(reva, key, `closed:${t.number}`);
+    expect((await facts.weekFacts(await id("reva"), next)).map((f) => f.key)).not.toContain(`closed:${t.number}`);
   });
 
   it("факт становится записью один раз; скрытый не предлагается; удалённая запись возвращает факт, отмена удаления нет", async () => {
@@ -94,6 +108,7 @@ describe("черновик weekly из фактов недели", () => {
     const blockedKey = keys.find((k) => k.startsWith("blocked:"))!;
     await facts.hideFact(reva, key, blockedKey);
     await facts.hideFact(reva, key, blockedKey);
+    await expectRule(facts.hideFact(reva, key, "closed:99999"), /не актуален/);
     keys = (await facts.weekFacts(await id("reva"), key)).map((f) => f.key);
     expect(keys).not.toContain(blockedKey);
     const snap = await svc.deleteEntry(reva, entry.id);
@@ -107,6 +122,10 @@ describe("черновик weekly из фактов недели", () => {
     const reva = await actor.reva();
     const results = await Promise.allSettled([facts.addFact(reva, key, `closed:${closed.number}`), facts.addFact(reva, key, `closed:${closed.number}`)]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    // Второй запрос получает правило, а не ошибку базы: замок пропускает его после первого
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(rejected.reason).toBeInstanceOf(tasks.TaskRuleError);
+    expect(String(rejected.reason.message)).toMatch(/уже в weekly/);
     expect(await prisma.weeklyEntry.count({ where: { factKey: `closed:${closed.number}` } })).toBe(1);
   });
 });
@@ -118,7 +137,7 @@ describe("благодарности", () => {
     await svc.saveThanks(reva, key, "Спасибо @Логинова Светлана за выгрузку по убыткам и разбор");
     const events = await prisma.inboxEvent.findMany({ where: { kind: "THANKS", recipientId: await id("loginova") } });
     expect(events).toHaveLength(1);
-    expect(events[0]!.text).toMatch(/^Спасибо в weekly за неделю \d+: «Спасибо @Логинова Светлана за выгрузку по убыткам»$/);
+    expect(events[0]!.text).toMatch(/^Благодарность в weekly за неделю \d+: «Спасибо @Логинова Светлана за выгрузку по убыткам»$/);
     const view = await svc.getWeekView(key);
     expect(view.reports.find((r) => r.author === "reva")?.thanks).toBe("Спасибо @Логинова Светлана за выгрузку по убыткам и разбор");
     await expectRule(svc.saveThanks(reva, key, "x".repeat(301)), /не длиннее 300/);
@@ -148,16 +167,37 @@ describe("снимок недели", () => {
     expect(open.total).toMatchObject({ done: 1, pending: 0 });
   });
 
-  it("закрытая неделя без снимка снимается при первом чтении, в снимке весь департамент", async () => {
+  it("закрытая неделя без снимка считается вживую и снимок при чтении не пишется; в снимке весь департамент", async () => {
     const W = weekKeyOf(moscowToday());
     const owner = await actor.owner();
     await tasks.createTask(owner, { title: "Задача Логиновой", outcome: "Результат", owner: "loginova", direction: "kasko", due: addDays(W, 6) });
     await svc.ensureWeek(prisma, W);
     await svc.setWeekClosed(owner, W, true);
-    // Первым читает один человек: снимок всё равно по всем, отчёт CEO потом видит и Логинову
-    await promises.weekPromises(W, [await id("reva")]);
+    const live = await promises.weekPromises(W, [await id("loginova")]);
+    expect(live.snapshotAt).toBeUndefined();
+    expect(await prisma.weekSnapshot.count()).toBe(0);
+    // Снимок делается по всем людям: отчёт CEO потом видит Логинову, даже если первым читал другой
+    await promises.takeWeekSnapshot(W);
     const all = await promises.weekPromises(W, [await id("reva"), await id("loginova")]);
+    expect(all.snapshotAt).toBeTruthy();
     expect(all.people.map((p) => p.slug)).toEqual(["loginova"]);
+  });
+
+  it("снимок старше закрытия не считается: неделю открыли и закрыли снова", async () => {
+    const W = weekKeyOf(moscowToday());
+    const owner = await actor.owner();
+    const t = (await tasks.createTask(owner, { title: "Задача", outcome: "Результат", owner: "reva", direction: "kasko", due: addDays(W, 6) })).task;
+    await svc.ensureWeek(prisma, W);
+    await svc.setWeekClosed(owner, W, true);
+    await promises.takeWeekSnapshot(W);
+    await svc.setWeekClosed(owner, W, false);
+    await tasks.changeStatus(await actor.reva(), t.number, "done", "Готово");
+    await new Promise((r) => setTimeout(r, 5));
+    await svc.setWeekClosed(owner, W, true);
+    // Старый снимок остался в базе (запись не удалили), но он сделан до нового закрытия: итоги живые
+    const view = await promises.weekPromises(W, [await id("reva")]);
+    expect(view.snapshotAt).toBeUndefined();
+    expect(view.total).toMatchObject({ done: 1 });
   });
 });
 

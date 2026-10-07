@@ -43,8 +43,9 @@ export default async function MyWeekPage() {
     getMyWeekly(person.id, weekKey),
     current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
     myRequests(await currentActor(), now),
-    // «Обещал и сделал» за законченные недели: отчётная ещё идёт (этап 22)
-    promiseHistory([person.id], shiftWeek(weekKey, -1)),
+    // «Обещал и сделал» за законченные недели: отчётная ещё идёт (этап 22). По общему логину профиль мог выбрать
+    // кто угодно, поэтому статистику показываем только при личном входе
+    subjectOf(ctx).limited ? Promise.resolve([]) : promiseHistory([person.id], shiftWeek(weekKey, -1)),
   ]);
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);

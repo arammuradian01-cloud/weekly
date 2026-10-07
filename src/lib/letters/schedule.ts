@@ -26,7 +26,7 @@ export const DEFAULT_PREFS: MailPrefs = { tasks: true, mentions: true, reactions
 
 export const PREF_LABELS: Record<MailPrefKey, { title: string; hint: string }> = {
   tasks: { title: "Задачи и просьбы", hint: "Вам поставили, передали или предложили задачу, прокомментировали её, просят обновить, изменилась задача, за которой вы следите. Просьбы коллег к вам и ответы на ваши просьбы" },
-  mentions: { title: "Упоминания и обсуждения", hint: "Вас упомянули, прокомментировали вашу запись weekly или обсуждение, в котором вы участвуете" },
+  mentions: { title: "Упоминания и обсуждения", hint: "Вас упомянули, в том числе в благодарности в weekly, прокомментировали вашу запись weekly или обсуждение, в котором вы участвуете" },
   reactions: { title: "Реакции", hint: "Отреагировали на вашу запись или комментарий: «Принято», «Вопрос», «Обсудить на встрече», «Спасибо»" },
   reminders: { title: "Напоминания о сдаче weekly", hint: "За 6 часов и за час до вашего срока, если weekly ещё не сдан. Не больше двух в неделю" },
   digest: { title: "Дайджест в день встречи", hint: "В 9:00: сколько ждёт вас в «Мне», вопросы к встрече, кто из ваших команд не сдал weekly" },
@@ -41,8 +41,8 @@ export function prefsOf(value: unknown): MailPrefs {
 
 /** К какой настройке относится событие «Мне» */
 export function prefOfKind(kind: InboxKind): MailPrefKey {
-  if (kind === "MENTION" || kind === "ENTRY_COMMENT") return "mentions";
-  if (kind === "REACTION" || kind === "THANKS") return "reactions";
+  if (kind === "MENTION" || kind === "ENTRY_COMMENT" || kind === "THANKS") return "mentions";
+  if (kind === "REACTION") return "reactions";
   return "tasks";
 }
 

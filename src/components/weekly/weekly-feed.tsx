@@ -329,10 +329,7 @@ function PeopleView({
                 <p className="mt-2 text-body text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
               ) : null}
               {weekly?.thanks ? (
-                <p className="mt-1.5 text-body text-ink">
-                  <span className="text-muted">Спасибо: </span>
-                  {weekly.thanks}
-                </p>
+                <p className="mt-1.5 text-body text-ink">{weekly.thanks}</p>
               ) : null}
             </header>
             {own.length ? (

@@ -48,17 +48,13 @@ export async function ensureWeek(db: Tx | typeof prisma, key: WeekKey) {
   const found = await db.week.findUnique({ where: { start: dbDate(key) } });
   if (found) return found;
   const { deadline, meeting } = await weekSettings();
-  return db.week.upsert({
-    where: { start: dbDate(key) },
-    update: {},
-    create: {
-      start: dbDate(key),
-      isoYear: weekYearOf(key),
-      isoNumber: weekNumberOf(key),
-      deadline: deadlineOf(key, deadline),
-      meetingDate: dbDate(meetingOf(key, meeting)),
-    },
-  });
+  // Два запроса создают неделю одновременно: вставка без конфликта по любому ключу, затем чтение. Внутри транзакции
+  // ошибку уникальности не перехватить, Postgres прервал бы всю транзакцию
+  const id = `w_${crypto.randomUUID()}`;
+  await db.$executeRaw`INSERT INTO weeks (id, start, "isoYear", "isoNumber", deadline, "meetingDate")
+    VALUES (${id}, ${dbDate(key)}, ${weekYearOf(key)}, ${weekNumberOf(key)}, ${deadlineOf(key, deadline)}, ${dbDate(meetingOf(key, meeting))})
+    ON CONFLICT DO NOTHING`;
+  return db.week.findUniqueOrThrow({ where: { start: dbDate(key) } });
 }
 
 type WeekRow = Awaited<ReturnType<typeof ensureWeek>>;
@@ -110,6 +106,7 @@ export function toEntryDto(e: EntryRow): WeeklyEntry {
     links: Array.isArray(e.links) ? (e.links as Link[]) : [],
     ceo: e.ceo,
     taskNumber: e.tasks[0]?.number,
+    ...(e.factKey ? { factKey: e.factKey } : {}),
     ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
     ...(e.comments.length ? { comments: e.comments.map(commentDto) } : {}),
     ...(e.reactions.length ? { reactions: e.reactions.map(reactionDto) } : {}),
@@ -385,10 +382,10 @@ export const THANKS_MAX = 300;
  * Благодарность в weekly: необязательная строка, попадает в ленту и блок отчёта CEO. Упомянутый коллега получает
  * событие один раз, повторное сохранение его не дублирует
  */
-export async function saveThanks(actor: Actor, key: WeekKey, text: string): Promise<{ thanks: string }> {
+export async function saveThanks(actor: Actor, key: WeekKey, text: string): Promise<{ thanks: string; warning?: string }> {
   const value = clean(text);
   if (value.length > THANKS_MAX) fail(`Благодарность: не длиннее ${THANKS_MAX} знаков`);
-  return prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx): Promise<{ thanks: string; warning?: string }> => {
     const { row, info, reporting } = await weekContext(tx, key, actor.personId);
     canEdit(info, reporting, actor, actor.slug);
     const existing = await reportOf(tx, row.id, actor.personId);
@@ -400,11 +397,17 @@ export async function saveThanks(actor: Actor, key: WeekKey, text: string): Prom
     });
     if (existing && existing.state !== "DRAFT") await audit(tx, actor, "weekly.update", "weekly", `${key}/${actor.slug}`, "Благодарность", existing.thanks, value || null);
     const fresh = (await mentionsIn(tx, [value], actor.personId)).filter((id) => !report.thanksMentions.includes(id));
-    if (fresh.length) {
-      await tx.weeklyReport.update({ where: { id: report.id }, data: { thanksMentions: { push: fresh } } });
-      await notify(tx, { kind: "THANKS", recipients: fresh, actor, subject: `thanks:${key}:${actor.slug}`, text: `Спасибо в weekly за неделю ${info.number}: «${quote(value)}»` });
+    if (!fresh.length) return { thanks: value };
+    // Событие получает только тот, кто видит weekly автора, как и при упоминании в записи
+    const reach = await entryReaders(tx, { authorId: actor.personId, ceo: false, promotedBy: [] }, fresh);
+    await tx.weeklyReport.update({ where: { id: report.id }, data: { thanksMentions: { push: fresh } } });
+    if (reach.length) {
+      await notify(tx, { kind: "THANKS", recipients: reach, actor, subject: `thanks:${key}:${actor.slug}`, text: `Благодарность в weekly за неделю ${info.number}: «${quote(value)}»` });
     }
-    return { thanks: value };
+    const lost = fresh.filter((id) => !reach.includes(id));
+    if (!lost.length) return { thanks: value };
+    const names = await namesOf(tx, lost);
+    return { thanks: value, warning: `Благодарность не дошла: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} ваш weekly` };
   });
 }
 

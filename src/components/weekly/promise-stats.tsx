@@ -19,14 +19,16 @@ export function PromiseStats({ stats }: { stats: PromiseHistory }) {
       ) : (
         <>
           <p className="mt-1 text-body text-ink">
-            За 8 недель сделано {share ?? 0}% обещаний. {summaryText(stats.total)}.
+            За 8 недель: {summaryText(stats.total).charAt(0).toLowerCase()}{summaryText(stats.total).slice(1)}, это {share ?? 0}%.
           </p>
-          <ol className="mt-4 flex h-24 items-end gap-2" aria-label="Доля сделанного по неделям">
+          <ol className="mt-4 flex h-24 items-end gap-1 sm:gap-2" aria-label="Доля сделанного по неделям">
             {stats.weeks.map((w) => {
               const s = promiseShare(w.summary);
               return (
                 <li key={w.key} className="flex flex-1 flex-col items-center gap-1">
-                  <span className="text-caption tabular-nums text-muted">{s === null ? "" : `${s}%`}</span>
+                  <span className="hidden text-caption tabular-nums text-muted sm:inline" aria-hidden="true">
+                    {s === null ? "" : `${s}%`}
+                  </span>
                   <span
                     className={s === null ? "w-full rounded-t bg-line" : "w-full rounded-t bg-green"}
                     style={{ height: `${s === null ? 2 : Math.max(4, Math.round((s / 100) * 56))}px` }}

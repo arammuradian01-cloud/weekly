@@ -49,8 +49,8 @@ describe("факты недели по задачам", () => {
       type: "event",
       block: "team",
       direction: "osago",
-      what: "Выполнили просьбу коллеги: Выгрузка по убыткам",
-      details: "Просьба 7 от Логинова Светлана",
+      what: "Выполнили просьбу коллеги: выгрузка по убыткам",
+      details: "Просьба 7, автор Логинова Светлана",
     });
     const long = clipWhat("слово ".repeat(40));
     expect(long.length).toBeLessThanOrEqual(150);

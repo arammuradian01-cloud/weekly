@@ -250,21 +250,45 @@ export async function dropWeekSnapshot(key: WeekKey): Promise<void> {
   await prisma.weekSnapshot.deleteMany({ where: { week: { start: dbDate(key) } } });
 }
 
+/** Снимок, который годится: сделан после закрытия недели. Более ранний остался от прошлого закрытия */
+function validSnapshot(week: { closedAt: Date | null; snapshot: { takenAt: Date; data: unknown } | null }) {
+  return week.closedAt && week.snapshot && week.snapshot.takenAt >= week.closedAt ? week.snapshot : null;
+}
+
+/** Из снимка всего департамента только нужные люди и итог по ним */
+function fromSnapshot(data: unknown, wanted: Set<string>): PromiseView {
+  const people = (data as SnapshotData).promises.people.filter((p) => wanted.has(p.slug));
+  return { people, total: people.reduce((acc, p) => addSummary(acc, p.summary), EMPTY_SUMMARY) };
+}
+
 /**
- * Итоги обещаний недели для отчёта CEO: у закрытой недели из снимка, у открытой живые. Закрытую неделю без снимка
- * (закрыли до этапа 22б) снимаем при первом чтении. snapshotAt: когда сделан снимок
+ * Итоги обещаний нескольких недель одним заходом: у закрытых недель из снимка, у открытых живые. Закрытая неделя без
+ * снимка (закрыта до этапа 22б) считается вживую, снимок при чтении не пишется. snapshotAt: когда сделан снимок
  */
+export async function weekPromisesMany(keys: WeekKey[], personIds: string[]): Promise<Map<WeekKey, PromiseView & { snapshotAt?: string }>> {
+  const out = new Map<WeekKey, PromiseView & { snapshotAt?: string }>();
+  const valid = keys.filter(isWeekKey);
+  if (!valid.length || !personIds.length) return out;
+  const [weeks, people] = await Promise.all([
+    prisma.week.findMany({ where: { start: { in: valid.map(dbDate) } }, select: { start: true, closedAt: true, snapshot: { select: { takenAt: true, data: true } } } }),
+    prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true } }),
+  ]);
+  const wanted = new Set(people.map((p) => p.slug));
+  const byKey = new Map(weeks.map((w) => [isoFromDbDate(w.start), w]));
+  const live: WeekKey[] = [];
+  for (const k of valid) {
+    const snap = byKey.has(k) ? validSnapshot(byKey.get(k)!) : null;
+    if (snap) out.set(k, { ...fromSnapshot(snap.data, wanted), snapshotAt: snap.takenAt.toISOString() });
+    else live.push(k);
+  }
+  const computed = await Promise.all(live.map((k) => promiseSummaries(k, personIds)));
+  live.forEach((k, i) => out.set(k, computed[i]!));
+  return out;
+}
+
+/** Итоги обещаний одной недели для отчёта CEO */
 export async function weekPromises(key: WeekKey, personIds: string[]): Promise<PromiseView & { snapshotAt?: string }> {
-  if (!isWeekKey(key)) return { people: [], total: EMPTY_SUMMARY };
-  const week = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { closedAt: true, snapshot: true } });
-  if (!week?.closedAt) return promiseSummaries(key, personIds);
-  if (!week.snapshot) await takeWeekSnapshot(key);
-  const snap = week.snapshot ?? (await prisma.weekSnapshot.findFirst({ where: { week: { start: dbDate(key) } } }));
-  if (!snap) return promiseSummaries(key, personIds);
-  // Из снимка всего департамента берём только нужных людей и пересчитываем итог по ним
-  const wanted = new Set((await prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true } })).map((p) => p.slug));
-  const people = (snap.data as unknown as SnapshotData).promises.people.filter((p) => wanted.has(p.slug));
-  return { people, total: people.reduce((acc, p) => addSummary(acc, p.summary), EMPTY_SUMMARY), snapshotAt: snap.takenAt.toISOString() };
+  return (await weekPromisesMany([key], personIds)).get(key) ?? { people: [], total: EMPTY_SUMMARY };
 }
 
 /** Сколько недель показывать в личной статистике и после скольких недель с обещаниями она включается */
@@ -288,11 +312,13 @@ export type PromiseHistory = {
 export async function promiseHistory(personIds: string[], key: WeekKey): Promise<PromiseHistory[]> {
   if (!isWeekKey(key) || !personIds.length) return [];
   const keys = Array.from({ length: STATS_WEEKS }, (_, i) => shiftWeek(key, i - STATS_WEEKS + 1));
-  const views = await Promise.all(keys.map((k) => weekPromises(k, personIds)));
-  const people = await prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true }, orderBy: { sortOrder: "asc" } });
+  const [views, people] = await Promise.all([
+    weekPromisesMany(keys, personIds),
+    prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true }, orderBy: { sortOrder: "asc" } }),
+  ]);
   return people.map((p) => {
     const slug = p.slug as PersonSlug;
-    const weeks = keys.map((k, i) => ({ key: k, number: weekNumberOf(k), summary: views[i]!.people.find((x) => x.slug === slug)?.summary ?? EMPTY_SUMMARY }));
+    const weeks = keys.map((k) => ({ key: k, number: weekNumberOf(k), summary: views.get(k)?.people.find((x) => x.slug === slug)?.summary ?? EMPTY_SUMMARY }));
     const active = weeks.filter((w) => w.summary.total > 0).length;
     return { slug, weeks, total: weeks.reduce((acc, w) => addSummary(acc, w.summary), EMPTY_SUMMARY), active, enabled: active >= STATS_MIN_WEEKS };
   });

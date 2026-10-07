@@ -645,9 +645,14 @@ export async function updateWhere(actor: Actor, number: number, text: string): P
   return mutate(actor, number, async (row, can) => {
     if (!can.where) fail("«Где сейчас» пишут ответственный и соисполнители");
     const value = required(text, LIMITS.where, "Напишите одну-две фразы о том, где задача сейчас", "Где сейчас");
-    if (value === row.whereNow) fail("Текст не изменился");
+    const today = moscowToday();
+    if (value === row.whereNow) {
+      // Тот же текст: подтверждение, что по задаче всё так же (этап 22, «В графике не подтверждено»)
+      if (isoFromDbDate(row.whereUpdatedAt) === today) fail("Текст не изменился");
+      return { data: { whereUpdatedAt: dbDate(today) }, changes: [{ field: "Где сейчас", before: null, after: "Подтверждено без изменений" }], undo: false };
+    }
     return {
-      data: { whereNow: value, whereUpdatedAt: dbDate(moscowToday()) },
+      data: { whereNow: value, whereUpdatedAt: dbDate(today) },
       changes: [{ field: "Где сейчас", before: row.whereNow || null, after: value }],
     };
   });

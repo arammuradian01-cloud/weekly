@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireManagement } from "@/lib/auth";
 import { ceoReportHistory, getCeoReport, getWeekView } from "@/lib/weekly/service";
 import { promiseHistory, weekPromises } from "@/lib/weekly/promise-service";
+import { shiftWeek } from "@/lib/weekly/weeks";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import { PageHeader } from "@/components/page-header";
 import { CeoReport } from "@/components/ceo/ceo-report";
@@ -21,7 +22,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
     getCeoReport(view.week.key),
     ceoReportHistory(),
     weekPromises(view.week.key, audience.personIds),
-    owner ? promiseHistory(audience.personIds, view.week.key) : Promise.resolve(undefined),
+    // То же окно, что у человека на «Моей неделе»: только законченные недели
+    owner ? promiseHistory(audience.personIds, view.week.key < view.reportingKey ? view.week.key : shiftWeek(view.reportingKey, -1)) : Promise.resolve(undefined),
   ]);
   return (
     <>
