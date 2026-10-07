@@ -30,6 +30,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_entries WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_reports WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
+  // Этап 20: комментарии к записям держат автора, их убираем до людей
+  await client.query("DELETE FROM entry_comments WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM people WHERE slug <> ALL($1)", [SEED_PEOPLE]);
   await client.query("UPDATE people SET active = (slug NOT IN ('analyst', 'ceo'))");
   await client.query(

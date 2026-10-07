@@ -1,5 +1,6 @@
 // Реакции (этап 20): «Принято», «Вопрос», «Обсудить на встрече», «Спасибо». Повторное нажатие снимает реакцию.
 // «Обсудить на встрече» требует вопрос: он попадает в повестку встречи, пока его не отметят «обсуждено».
+// Событие о реакции связано с ней в базе: сняли реакцию, и событие уходит из «Мне» вместе с ней.
 
 import type { Prisma } from "@/generated/prisma/client";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
@@ -46,18 +47,4 @@ export async function applyReaction(tx: Tx, actor: Actor, target: ReactionTarget
   }
   const row = await tx.reaction.create({ data: { kind, personId: actor.personId, ...target } });
   return { on: true, id: row.id, kind: code, question: null, was };
-}
-
-/**
- * Реакцию сняли: событие о ней у автора убираем, если он его ещё не видел. Так случайное нажатие не оставляет следа в «Мне»
- */
-export async function dropReactionEvent(
-  tx: Tx,
-  actor: Actor,
-  target: { entryId?: string; entryCommentId?: string | null; commentId?: string; taskId?: string },
-  since: Date,
-): Promise<void> {
-  await tx.inboxEvent.deleteMany({
-    where: { kind: "REACTION", actorId: actor.personId, seenAt: null, doneAt: null, createdAt: { gte: since }, ...target },
-  });
 }

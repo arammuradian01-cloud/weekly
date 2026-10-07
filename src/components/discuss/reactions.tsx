@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Check, CircleHelp, Heart, MessagesSquare, SmilePlus } from "lucide-react";
 import { compactName } from "@/domain/people";
@@ -66,6 +66,8 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
 
 /** Меню «Реакция»: поставить или убрать свою */
 function ReactionMenu({ reactions, me, disabled, onPick }: { reactions: ReactionView[]; me: PersonSlug; disabled?: boolean; onPick: (code: ReactionCode, mine: boolean) => void }) {
+  // После выбора «Обсудить на встрече» фокус уходит в поле вопроса, а не обратно на кнопку меню
+  const keepFocus = useRef(false);
   return (
     <Menu.Root>
       <Menu.Trigger
@@ -77,13 +79,25 @@ function ReactionMenu({ reactions, me, disabled, onPick }: { reactions: Reaction
         Реакция
       </Menu.Trigger>
       <Menu.Portal>
-        <Menu.Content align="start" sideOffset={4} className="z-50 min-w-52 rounded-lg border border-line bg-white p-1 shadow-menu">
+        <Menu.Content
+          align="start"
+          sideOffset={4}
+          className="z-50 min-w-52 rounded-lg border border-line bg-white p-1 shadow-menu"
+          onCloseAutoFocus={(e) => {
+            if (!keepFocus.current) return;
+            keepFocus.current = false;
+            e.preventDefault();
+          }}
+        >
           {REACTIONS.map(({ code, label, Icon }) => {
             const mine = reactions.some((r) => r.kind === code && r.by === me);
             return (
               <Menu.Item
                 key={code}
-                onSelect={() => onPick(code, mine)}
+                onSelect={() => {
+                  if (code === "discuss" && !mine) keepFocus.current = true;
+                  onPick(code, mine);
+                }}
                 className="flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-2.5 text-small text-ink outline-none data-[highlighted]:bg-surface"
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />

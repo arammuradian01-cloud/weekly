@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { findMentionSpans, findMentions, mentionQuery, mentionSuggestions, type MentionPerson } from "@/lib/discuss/mentions";
 import { DEFAULT_PREFS, digestDue, inWorkHours, prefOfKind, prefsOf, reminderDue } from "@/lib/letters/schedule";
-import { eventPhrase, eventsMail, plural } from "@/lib/letters/service";
-import { parseLive } from "@/lib/live-message";
+import { eventPhrase, eventsMail, isTransportDown, plural } from "@/lib/letters/service";
+import { parseLive, relevant } from "@/lib/live-message";
 
 const PEOPLE: MentionPerson[] = [
   { id: "reva", fullName: "Рева Тарас", shortName: "Тарас" },
@@ -135,5 +135,27 @@ describe("сообщения живых обновлений", () => {
     expect(parseLive('{"t":"inbox"}')).toBeNull();
     expect(parseLive("мусор")).toBeNull();
     expect(parseLive(undefined)).toBeNull();
+  });
+});
+
+describe("какие экраны обновлять", () => {
+  it("по виду изменения и не на экране сдачи", () => {
+    expect(relevant("tasks", "/tasks/board")).toBe(true);
+    expect(relevant("tasks", "/weekly")).toBe(false);
+    expect(relevant("weekly", "/weekly/entry/abc")).toBe(true);
+    expect(relevant("weekly", "/weekly/submit")).toBe(false);
+    expect(relevant("inbox", "/me")).toBe(true);
+    expect(relevant("inbox", "/tasks")).toBe(false);
+    expect(relevant("weekly", "/")).toBe(true);
+  });
+});
+
+describe("сбой почты", () => {
+  it("отклонённый адрес не повторяем, недоступный сервер повторяем", () => {
+    expect(isTransportDown(Object.assign(new Error("x"), { code: "EENVELOPE" }))).toBe(false);
+    expect(isTransportDown(Object.assign(new Error("x"), { code: "EMESSAGE", responseCode: 550 }))).toBe(false);
+    expect(isTransportDown(Object.assign(new Error("x"), { code: "ECONNECTION" }))).toBe(true);
+    expect(isTransportDown(Object.assign(new Error("x"), { code: "EAUTH", responseCode: 535 }))).toBe(true);
+    expect(isTransportDown(new Error("нет связи"))).toBe(true);
   });
 });

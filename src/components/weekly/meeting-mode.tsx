@@ -36,8 +36,18 @@ export function MeetingMode({ view, questions = [] }: { view: WeekView; question
   const hasCommon = entries.some((e) => !e.author);
   // Этап 20: вопросы «Обсудить на встрече» первым шагом, если они есть
   const slides: string[] = [...(questions.length ? ["questions"] : []), "risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
-  const [index, setIndex] = useState(0);
+  // Шаг хранится по имени, а не по номеру: вопрос, добавленный во время встречи, не сдвигает экран ведущего,
+  // а пропавший шаг (ушёл последний вопрос) открывает соседний
+  const [current, setCurrent] = useState<string>(slides[0]!);
+  const [lastIndex, setLastIndex] = useState(0);
+  const found = slides.indexOf(current);
+  const index = found >= 0 ? found : Math.min(lastIndex, slides.length - 1);
   const slide = slides[index]!;
+  const setIndex = (next: number | ((i: number) => number)) => {
+    const i = Math.max(0, Math.min(slides.length - 1, typeof next === "function" ? next(index) : next));
+    setCurrent(slides[i]!);
+    setLastIndex(i);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -48,7 +58,9 @@ export function MeetingMode({ view, questions = [] }: { view: WeekView; question
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [slides.length]);
+    // Обработчик знает текущий шаг: пересоздаётся при смене шага и состава шагов
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, slides.join("|")]);
 
   const risky = entries.filter((e) => e.type === "risk" || e.help).sort((a, b) => Number(!!b.help) - Number(!!a.help));
   const weekly = slide !== "risks" && slide !== "common" ? view.reports.find((w) => w.author === slide) : undefined;

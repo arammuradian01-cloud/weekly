@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { compactName, initials } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -14,8 +14,19 @@ import { CommentReactions } from "./reactions";
 /** Свой комментарий правят 15 минут (этап 20). Сервер проверяет то же самое */
 const EDIT_WINDOW_MS = 15 * 60_000;
 
-export function canEditComment(c: Comment, me: PersonSlug, now = Date.now()): boolean {
-  return c.author === me && !!c.moment && now - new Date(c.moment).getTime() <= EDIT_WINDOW_MS;
+export function canEditComment(c: Comment, me: PersonSlug, now: number | null): boolean {
+  return now !== null && c.author === me && !!c.moment && now - new Date(c.moment).getTime() <= EDIT_WINDOW_MS;
+}
+
+/** Текущее время после загрузки страницы, раз в полминуты: кнопка «Изменить» гаснет сама. На сервере null */
+function useNow(): number | null {
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
 }
 
 const action = "inline-flex min-h-7 items-center gap-1 rounded-md px-1.5 text-caption font-medium text-muted hover:bg-surface hover:text-ink";
@@ -43,12 +54,13 @@ export function CommentList({
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const now = useNow();
   if (!comments.length) return null;
   return (
     <ol className="flex flex-col gap-4">
       {comments.map((c) => {
         const mine = c.author === me;
-        const editable = !readOnly && canEditComment(c, me);
+        const editable = !readOnly && canEditComment(c, me, now);
         return (
           <li key={c.id} className="flex gap-3">
             <Avatar text={initials(c.author)} size="sm" tone={mine ? "navy" : "light"} />

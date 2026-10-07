@@ -21,6 +21,8 @@ export type InboxInput = {
   /** Запись weekly и комментарий к ней (этап 20) */
   entryId?: string | null;
   entryCommentId?: string | null;
+  /** Реакция, о которой событие: снятая реакция убирает событие */
+  reactionId?: string | null;
 };
 
 /** Событие адресатам: без самого автора, без повторов, только включённым людям */
@@ -40,6 +42,7 @@ export async function notify(tx: Tx, input: InboxInput, now = new Date()): Promi
       commentId: input.commentId ?? null,
       entryId: input.entryId ?? null,
       entryCommentId: input.entryCommentId ?? null,
+      reactionId: input.reactionId ?? null,
       text: input.text,
       createdAt: now,
     })),

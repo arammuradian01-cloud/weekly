@@ -18,7 +18,7 @@ import { ReactionBar } from "./reactions";
  * ничего нет или пока её не откроют; на странице записи открыта сразу
  */
 export function EntryDiscussion({ entry, large, open: openInitially }: { entry: WeeklyEntry; large?: boolean; open?: boolean }) {
-  const { me, manage, observer, notify } = usePrototype();
+  const { me, manage, observer, notify, leads } = usePrototype();
   const router = useRouter();
   const [comments, setComments] = useState<Comment[]>(entry.comments ?? []);
   const [reactions, setReactions] = useState<ReactionView[]>(entry.reactions ?? []);
@@ -72,8 +72,9 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
 
   const count = comments.length;
   const readOnly = observer;
-  // «Обсуждено» отмечает ведущий (режим управления), автор вопроса или автор записи. Руководителя проверит сервер
-  const canMark = (r: ReactionView) => manage || r.by === me.slug || entry.author === me.slug;
+  // «Обсуждено» отмечает ведущий (режим управления), автор вопроса или руководитель автора записи (проверит сервер).
+  // Автор записи вопрос о своей работе не снимает
+  const canMark = (r: ReactionView) => manage || r.by === me.slug || (leads.length > 0 && entry.author !== me.slug);
 
   return (
     <div className={cn("mt-2 flex flex-col gap-3 border-t border-line/70 pt-2.5", large && "gap-4")}>

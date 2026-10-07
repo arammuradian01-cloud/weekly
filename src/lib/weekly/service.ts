@@ -416,15 +416,16 @@ async function mentionEntry(tx: Tx, actor: Actor, saved: EntryRow): Promise<{ me
   const fresh = found.filter((id) => !saved.mentions.includes(id));
   if (!fresh.length) return { mentions: saved.mentions };
   const reach = await entryReaders(tx, { authorId: saved.authorId, ceo: saved.ceo, promotedBy: saved.promotions.map((p) => p.byId) }, fresh);
+  // Запоминаем всех упомянутых, и тех, до кого не дошло: автосохранение не повторяет ни событие, ни предупреждение
+  await tx.weeklyEntry.update({ where: { id: saved.id }, data: { mentions: [...saved.mentions, ...fresh] } });
   if (reach.length) {
-    await tx.weeklyEntry.update({ where: { id: saved.id }, data: { mentions: [...saved.mentions, ...reach] } });
     await tx.entryWatch.createMany({ data: reach.map((personId) => ({ entryId: saved.id, personId })), skipDuplicates: true });
     await notify(tx, { kind: "MENTION", recipients: reach, actor, subject: entrySubject(saved.id), entryId: saved.id, text: `Упоминание в записи weekly: «${quote(saved.what)}»` });
   }
   const lost = fresh.filter((id) => !reach.includes(id));
-  if (!lost.length) return { mentions: [...saved.mentions, ...reach] };
+  if (!lost.length) return { mentions: [...saved.mentions, ...fresh] };
   const names = await namesOf(tx, lost);
-  return { mentions: [...saved.mentions, ...reach], warning: `Упоминание не дошло: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} эту запись` };
+  return { mentions: [...saved.mentions, ...fresh], warning: `Упоминание не дошло: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} эту запись` };
 }
 
 /** Создать или поправить запись. Автор: тот, кто пишет; чужие записи правят владелец и администраторы */
@@ -588,7 +589,8 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
         sortOrder: snapshot.sortOrder,
         importBatch: snapshot.importBatch,
         createdAt: new Date(snapshot.createdAt),
-        mentions: snapshot.mentions ?? [],
+        // События об упоминаниях удалились вместе с записью: следующая правка упомянет людей заново
+        mentions: [],
       },
       include: entryInclude,
     });

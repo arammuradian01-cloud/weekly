@@ -15,6 +15,8 @@ type Listener = (message: LiveMessage) => void;
 const CHANNEL = "weekly_live";
 const IDLE_MS = 60_000;
 const RETRY_MS = 5_000;
+/** Проверка подключения: соединение, тихо оборванное сетью или балансировщиком, иначе не заметить */
+const PING_MS = 60_000;
 
 type Hub = {
   listeners: Set<Listener>;
@@ -22,18 +24,37 @@ type Hub = {
   connecting: Promise<void> | null;
   retry: ReturnType<typeof setTimeout> | null;
   idle: ReturnType<typeof setTimeout> | null;
+  ping: ReturnType<typeof setInterval> | null;
+  /** Подключение уже было: после переподключения вкладкам говорим обновиться, изменения за обрыв не потерялись */
+  wasConnected: boolean;
 };
 
 const g = globalThis as unknown as { __live?: Hub };
 
 function hub(): Hub {
-  g.__live ??= { listeners: new Set(), client: null, connecting: null, retry: null, idle: null };
+  g.__live ??= { listeners: new Set(), client: null, connecting: null, retry: null, idle: null, ping: null, wasConnected: false };
   return g.__live;
+}
+
+function broadcast(h: Hub, m: LiveMessage) {
+  for (const listener of h.listeners) {
+    try {
+      listener(m);
+    } catch {
+      // Закрытая вкладка: её снимет отписка
+    }
+  }
+}
+
+function stopPing(h: Hub) {
+  if (h.ping) clearInterval(h.ping);
+  h.ping = null;
 }
 
 function drop(h: Hub, client: Client) {
   if (h.client !== client) return;
   h.client = null;
+  stopPing(h);
   client.end().catch(() => undefined);
   if (h.listeners.size) scheduleRetry(h);
 }
@@ -52,18 +73,11 @@ function connect(h: Hub): Promise<void> {
   if (h.connecting) return h.connecting;
   const url = databaseUrlFromEnv();
   if (!url) return Promise.resolve();
-  const client = new Client(pgConnectionConfig(url));
+  const client = new Client({ ...pgConnectionConfig(url), keepAlive: true });
   client.on("notification", (msg) => {
     if (msg.channel !== CHANNEL) return;
     const m = parseLive(msg.payload);
-    if (!m) return;
-    for (const listener of h.listeners) {
-      try {
-        listener(m);
-      } catch {
-        // Закрытая вкладка: её снимет отписка
-      }
-    }
+    if (m) broadcast(h, m);
   });
   client.on("error", () => drop(h, client));
   client.on("end", () => drop(h, client));
@@ -72,6 +86,24 @@ function connect(h: Hub): Promise<void> {
     .then(() => client.query(`LISTEN ${CHANNEL}`))
     .then(() => {
       h.client = client;
+      stopPing(h);
+      h.ping = setInterval(() => {
+        // Ответа нет 10 секунд: соединение тихо оборвалось, переподключаемся
+        const timeout = setTimeout(() => drop(h, client), 10_000);
+        client
+          .query("SELECT 1")
+          .then(() => clearTimeout(timeout))
+          .catch(() => {
+            clearTimeout(timeout);
+            drop(h, client);
+          });
+      }, PING_MS);
+      h.ping.unref?.();
+      if (h.wasConnected) {
+        broadcast(h, { t: "tasks" });
+        broadcast(h, { t: "weekly" });
+      }
+      h.wasConnected = true;
     })
     .catch((error) => {
       console.error("Живые обновления: нет подключения к базе, повторим:", error instanceof Error ? error.message : error);
@@ -101,6 +133,8 @@ export function subscribeLive(listener: Listener): () => void {
       if (h.listeners.size || !h.client) return;
       const c = h.client;
       h.client = null;
+      stopPing(h);
+      h.wasConnected = false;
       c.end().catch(() => undefined);
     }, IDLE_MS);
     h.idle.unref?.();

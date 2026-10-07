@@ -37,9 +37,9 @@ export function MentionText({ text, className, as = "p" }: { text: string; class
     <Tag className={className ?? "whitespace-pre-line text-body leading-relaxed text-ink"}>
       {parts.map((p, i) =>
         typeof p === "string" ? (
-          <span key={i}>{p}</span>
+          <span key={`t${i}`}>{p}</span>
         ) : (
-          <span key={p.key} className="rounded bg-blue/10 px-0.5 font-medium text-blue-700">
+          <span key={`m${p.key}`} className="rounded bg-blue/10 px-0.5 font-medium text-blue-700">
             {p.text}
           </span>
         ),

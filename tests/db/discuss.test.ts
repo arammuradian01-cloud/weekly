@@ -8,7 +8,7 @@ import * as org from "@/lib/org/service";
 import * as weekly from "@/lib/weekly/service";
 import * as discuss from "@/lib/discuss/service";
 import * as letters from "@/lib/letters/service";
-import { listInbox, markSeen } from "@/lib/inbox/service";
+import { inboxCount, listInbox, markAllDone, markDone, markSeen } from "@/lib/inbox/service";
 import { TOP_TEAM } from "@/lib/org/scope";
 import { moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
@@ -149,9 +149,28 @@ describe("упоминания в комментариях к задачам", (
     const off = await svc.reactToComment(reva, t.number, c.id, "thanks");
     expect(off.task.comments[0]!.reactions).toBeUndefined();
     expect(await events(golovkin.personId, "REACTION")).toHaveLength(0);
+    // Две реакции: снятая убирает только своё событие
+    await svc.reactToComment(reva, t.number, c.id, "accepted");
+    await svc.reactToComment(reva, t.number, c.id, "thanks");
+    await svc.reactToComment(reva, t.number, c.id, "accepted");
+    expect((await events(golovkin.personId, "REACTION")).map((e) => e.text)).toEqual(["«Спасибо» к вашему комментарию"]);
+    await svc.reactToComment(reva, t.number, c.id, "thanks");
     await expectRule(svc.reactToComment(reva, t.number, c.id, "discuss"), /Сформулируйте вопрос/);
     await expectRule(svc.reactToComment(reva, t.number, c.id, "лайк"), /Такой реакции нет/);
     await expectRule(svc.reactToComment(await observer(), t.number, c.id, "accepted"), /Наблюдатель/);
+  });
+});
+
+describe("вопросы к встрече по задачам", () => {
+  it("вопрос к комментарию задачи виден в повестке команды, пока задача открыта", async () => {
+    const t = (await svc.createTask(await owner(), { title: "Сроки по ипотеке", outcome: "Сроки", owner: "loginova", direction: "red", due: future })).task;
+    const loginova = await svc.actorFor("loginova");
+    const c = (await svc.addComment(loginova, t.number, "Банк просит перенести запуск")).task.comments[0]!;
+    await svc.reactToComment(await svc.actorFor("reva"), t.number, c.id, "discuss", "Переносим ли запуск ипотеки?");
+    const asked = await discuss.meetingQuestions(await owner(), week, { current: [] }, [TOP_TEAM]);
+    expect(asked.map((q) => [q.question, q.task?.number])).toEqual([["Переносим ли запуск ипотеки?", t.number]]);
+    await svc.changeStatus(await owner(), t.number, "done", "Запустили в срок");
+    expect(await discuss.meetingQuestions(await owner(), week, { current: [] }, [TOP_TEAM])).toHaveLength(0);
   });
 });
 
@@ -183,6 +202,17 @@ describe("обсуждение записей weekly", () => {
     const view = await weekly.getWeekView(week);
     expect(view.entries.find((e) => e.id === entryId)!.comments!.map((c) => c.text)).toEqual(["Отлично! @Рева Тарас, посмотри, @Токов Никита тоже", "Согласен, запускаем"]);
     expect(await prisma.auditLog.count({ where: { action: "weekly.comment", entityId: entryId } })).toBe(2);
+    // Общий логин видит только топ-команду: событие о записи сектора в его «Мне» не показывается
+    const personal = await listInbox(reva.personId);
+    expect(personal.items.map((i) => i.entryId)).toContain(entryId);
+    const limited = await listInbox(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true });
+    expect(limited.items.map((i) => i.entryId)).not.toContain(entryId);
+    expect(await inboxCount(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true })).toBe(limited.items.length);
+    // «Разобрать всё» по общему логину не трогает скрытое, разобрать скрытый предмет по имени тоже нельзя
+    const team = { ...reva, via: "TEAM" as const };
+    await expectRule(markDone(team, `entry:${entryId}`), /уже разобрано/);
+    await markAllDone(team);
+    expect((await listInbox(reva.personId)).items.map((i) => i.entryId)).toContain(entryId);
   });
 
   it("чужую запись не обсуждают, наблюдатель только читает", async () => {
@@ -225,6 +255,8 @@ describe("обсуждение записей weekly", () => {
     expect(questions.map((q) => [q.question, q.entry?.what, q.discussed])).toEqual([["Успеем ли выпустить до конца месяца?", "Сделали новый экран оплаты", false]]);
     // Обсуждено отмечает ведущий, руководитель автора, автор записи или автор вопроса, не любой участник
     await expectRule(discuss.setDiscussed(petrov, questions[0]!.id, true), /обсуждено/);
+    // Автор записи вопрос о своей работе не снимает
+    await expectRule(discuss.setDiscussed(alisa, questions[0]!.id, true), /обсуждено/);
     expect(await discuss.setDiscussed(reva, questions[0]!.id, true)).toEqual({ discussed: true });
     expect((await discuss.meetingQuestions(antonov, week, { current: [entryId] }, []))[0]!.discussed).toBe(true);
     // Вопрос с прошлой недели виден в повестке, пока его не обсудили
@@ -248,6 +280,9 @@ describe("обсуждение записей weekly", () => {
     expect(await events(antonov.personId, "MENTION")).toHaveLength(1);
     const lost = await weekly.saveEntry(alisa, { ...entryInput(week, "Нужна помощь с дизайн-ревью", { details: "@Антонов Дмитрий и @Фатьянов Евгений" }), id: saved.id });
     expect(lost.warning).toMatch(/Фатьянов Евгений не видит эту запись/);
+    // Автосохранение того же текста предупреждение не повторяет
+    const again = await weekly.saveEntry(alisa, { ...entryInput(week, "Нужна помощь с дизайн-ревью", { details: "@Антонов Дмитрий и @Фатьянов Евгений!" }), id: saved.id });
+    expect(again.warning).toBeUndefined();
     expect(await prisma.entryWatch.count({ where: { entryId: saved.id, personId: antonov.personId } })).toBe(1);
     // В «Мне» строка записи со ссылкой
     const inbox = await listInbox(antonov.personId);
@@ -356,6 +391,34 @@ describe("письма", () => {
     expect(sent[0]!.text).toContain("Пока вас не было в ресурсе");
   });
 
+  it("серия событий за несколько минут уходит одним письмом; отклонённый адрес не повторяется", async () => {
+    await prisma.inboxEvent.deleteMany();
+    await event("golovkin", msk("2026-10-12T11:00:00"));
+    await event("golovkin", msk("2026-10-12T11:10:00"), { kind: "MENTION" });
+    expect((await letters.eventMailPass(msk("2026-10-12T11:16:00"))).sent).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain("(и ещё 1)");
+    expect(await prisma.inboxEvent.count({ where: { mailedAt: null } })).toBe(0);
+    // Увиденное событие не тянет за собой свежее: свежее ждёт свои 15 минут
+    sent = [];
+    await event("golovkin", msk("2026-10-12T11:30:00"), { seen: true });
+    await event("golovkin", msk("2026-10-12T11:40:00"));
+    expect((await letters.eventMailPass(msk("2026-10-12T11:46:00"))).sent).toBe(0);
+    expect((await letters.eventMailPass(msk("2026-10-12T11:56:00"))).sent).toBe(1);
+    // Адрес отклонён сервером: событие отмечено, в очередь не возвращается
+    sent = [];
+    await event("golovkin", msk("2026-10-12T12:00:00"));
+    setMailTransport(async () => {
+      throw Object.assign(new Error("Получатель отклонён"), { code: "EENVELOPE" });
+    });
+    expect(await letters.eventMailPass(msk("2026-10-12T12:20:00"))).toMatchObject({ sent: 0, failed: 1 });
+    expect(await prisma.inboxEvent.count({ where: { mailedAt: null } })).toBe(0);
+    setMailTransport(async (mail) => {
+      if (fail) throw new Error("SMTP недоступен");
+      sent.push(mail);
+    });
+  });
+
   it("настройки писем: выключенный тип не приходит, по общему логину их не поменять", async () => {
     await prisma.inboxEvent.deleteMany();
     const golovkin = { ...(await svc.actorFor("golovkin")), via: "EMAIL" as const };
@@ -415,6 +478,23 @@ describe("письма", () => {
     if (toAlisa) expect(toAlisa.text).toMatch(/Вопросов к встрече: 1[\s\S]*weekly\/meeting/);
     sent = [];
     expect((await letters.digestPass(msk("2026-10-13T09:10:00"))).sent).toBe(0);
+  });
+
+  it("дайджест приходит в день встречи своей команды, если он не совпадает с днём департамента", async () => {
+    await prisma.mailMark.deleteMany({ where: { kind: "digest" } });
+    const sector = await prisma.team.findFirstOrThrow({ where: { leader: { fullName: { startsWith: "Антонов" } } } });
+    await org.setTeamRhythm(await actor("Антонов"), sector.id, { deadline: null, meeting: { week: 1, weekday: 3, time: "10:00" }, specialists: true });
+    // Вторник: у департамента встреча, у сектора нет
+    await letters.digestPass(msk("2026-10-13T09:05:00"));
+    expect(sent.map((m) => m.to)).toContain("reva@example.ru");
+    expect(sent.map((m) => m.to)).not.toContain("antonov@example.ru");
+    sent = [];
+    // Среда: встреча сектора, Антонов видит, кто из сектора не сдал
+    await letters.digestPass(msk("2026-10-14T09:05:00"));
+    const toAntonov = sent.find((m) => m.to === "antonov@example.ru")!;
+    expect(toAntonov.text).toMatch(/Не сдали weekly в ваших командах: .*Чемоданова Алиса/);
+    expect(sent.map((m) => m.to)).not.toContain("reva@example.ru");
+    await org.setTeamRhythm(await actor("Антонов"), sector.id, { deadline: null, meeting: null, specialists: false });
   });
 
   it("проход писем идёт под арендой: пока её держит другой процесс, письма не уходят", async () => {

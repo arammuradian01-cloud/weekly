@@ -15,12 +15,13 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { mailConfigured, sendMail } from "@/lib/mail";
 import type { InboxKind } from "@/generated/prisma/enums";
-import { loadTeamNodes, TOP_TEAM } from "@/lib/org/scope";
-import { closedFor, expectedOf, leadersOf, personDeadline } from "@/lib/org/rhythm";
-import { currentReportingKey, ensureWeek } from "@/lib/weekly/service";
-import { isoFromDbDate } from "@/lib/tasks/dates";
-import { formatMoment } from "@/lib/week";
-import { toCalendar } from "@/domain/dates";
+import { loadTeamNodes, TOP_TEAM, type TeamNode } from "@/lib/org/scope";
+import { closedFor, expectedOf, leadersOf, personDeadline, teamMeeting } from "@/lib/org/rhythm";
+import { currentReportingKey, ensureWeek, weekSettings } from "@/lib/weekly/service";
+import { meetingOf, shiftWeek, weekKeyOf } from "@/lib/weekly/weeks";
+import { formatMoment, moscowDate } from "@/lib/week";
+import { fromCalendar, toCalendar, type IsoDate } from "@/domain/dates";
+import type { WeekKey } from "@/domain/types";
 import { readersOf, seesEntry } from "@/lib/discuss/access";
 import { inboxCount } from "@/lib/inbox/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
@@ -138,8 +139,20 @@ export async function eventMailPass(now = new Date()): Promise<PassResult> {
   if (!inWorkHours(now)) return { sent: 0, skipped: 0, failed: 0 };
   const cutoff = new Date(now.getTime() - EVENT_DELAY_MS);
   const claimed = await prisma.$transaction(async (tx) => {
+    // Увиденное, разобранное и слишком старое письма не ждёт: отмечаем сразу, чтобы очередь не росла
+    await tx.$executeRaw`
+      UPDATE "inbox_events" SET "mailedAt" = ${now}
+      WHERE "mailedAt" IS NULL AND "createdAt" <= ${cutoff} AND ("seenAt" IS NOT NULL OR "doneAt" IS NOT NULL OR "createdAt" < ${new Date(now.getTime() - EVENT_MAX_AGE_MS)})`;
+    // Кому пора писать: есть непрочитанное событие старше 15 минут. Увиденное, разобранное и отложенное не в счёт. Берём все его непрочитанные события сразу, и свежие тоже:
+    // серия событий за несколько минут уходит одним письмом, а не письмом в минуту
     const rows = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM "inbox_events" WHERE "mailedAt" IS NULL AND "createdAt" <= ${cutoff} ORDER BY "createdAt" LIMIT 2000 FOR UPDATE SKIP LOCKED`;
+      SELECT id FROM "inbox_events"
+      WHERE "mailedAt" IS NULL
+        AND "recipientId" IN (
+          SELECT DISTINCT "recipientId" FROM "inbox_events"
+          WHERE "mailedAt" IS NULL AND "createdAt" <= ${cutoff} AND "seenAt" IS NULL AND "doneAt" IS NULL AND ("snoozeUntil" IS NULL OR "snoozeUntil" <= ${now})
+        )
+      ORDER BY "createdAt" LIMIT 2000 FOR UPDATE SKIP LOCKED`;
     if (!rows.length) return [];
     const ids = rows.map((r) => r.id);
     await tx.inboxEvent.updateMany({ where: { id: { in: ids } }, data: { mailedAt: now } });
@@ -166,7 +179,9 @@ export async function eventMailPass(now = new Date()): Promise<PassResult> {
   for (const e of wanted) byPerson.set(e.recipientId, [...(byPerson.get(e.recipientId) ?? []), e]);
   let sent = 0;
   let failed = 0;
-  for (const events of byPerson.values()) {
+  const queue = [...byPerson.values()];
+  for (let i = 0; i < queue.length; i++) {
+    const events = queue[i]!;
     const person = events[0]!.recipient;
     const mail = eventsMail(
       person,
@@ -185,11 +200,30 @@ export async function eventMailPass(now = new Date()): Promise<PassResult> {
       sent += 1;
     } catch (error) {
       failed += 1;
-      console.error("Письмо о событиях не ушло, повторим позже:", error instanceof Error ? error.message : error);
-      await prisma.inboxEvent.updateMany({ where: { id: { in: events.map((e) => e.id) } }, data: { mailedAt: null } });
+      // Адрес отклонён: повторять бессмысленно. Сервер недоступен: возвращаем в очередь всё, что ещё не ушло, и ждём
+      if (!isTransportDown(error)) {
+        console.error("Письмо о событиях отклонено, повторять не будем:", error instanceof Error ? error.message : error);
+        continue;
+      }
+      console.error("Почтовый сервер недоступен, письма о событиях повторим позже:", error instanceof Error ? error.message : error);
+      const rest = queue.slice(i).flat();
+      await prisma.inboxEvent.updateMany({ where: { id: { in: rest.map((e) => e.id) } }, data: { mailedAt: null } });
+      break;
     }
   }
   return { sent, skipped: claimed.length - wanted.length, failed };
+}
+
+/**
+ * Ошибка почтового сервера, а не адреса: нет связи, таймаут, вход не прошёл. Тогда проход останавливается и всё
+ * повторяется через минуту. Отклонённый адрес (EENVELOPE, ответ 5xx на получателя) повторять бессмысленно
+ */
+export function isTransportDown(error: unknown): boolean {
+  const e = error as { code?: string; responseCode?: number } | null;
+  // Временный отказ получателя (4xx) повторяем, постоянный (5xx) нет
+  if (e?.code === "EENVELOPE") return typeof e.responseCode === "number" && e.responseCode >= 400 && e.responseCode < 500;
+  if (typeof e?.responseCode === "number" && e.responseCode >= 500 && e.responseCode < 600 && e.code !== "EAUTH") return false;
+  return true;
 }
 
 // ---------- Напоминания о сдаче ----------
@@ -256,6 +290,7 @@ export async function reminderPass(now = new Date()): Promise<PassResult> {
       failed += 1;
       console.error("Напоминание о сдаче не ушло, повторим позже:", error instanceof Error ? error.message : error);
       await releaseMark(p.id, week.start, kind);
+      if (isTransportDown(error)) break;
     }
   }
   return { sent, skipped, failed };
@@ -264,22 +299,53 @@ export async function reminderPass(now = new Date()): Promise<PassResult> {
 // ---------- Дайджест ----------
 
 /**
+ * День встречи человека за неделю: встреча команды, которая ждёт его weekly или которой он руководит,
+ * если у неё свой день, иначе встреча департамента. Несколько своих встреч: самая ранняя
+ */
+export function meetingDayOf(personId: string, key: WeekKey, nodes: TeamNode[], department: IsoDate, leaders = leadersOf(nodes)): IsoDate {
+  const own = nodes.filter((n) => n.active && n.id !== TOP_TEAM && n.rhythm.meeting && (n.leaderId === personId || expectedOf(n, leaders).includes(personId)));
+  if (!own.length) return department;
+  return own.map((n) => teamMeeting(key, n, department).date).sort()[0]!;
+}
+
+/**
  * Дайджест в день встречи в 9:00: сколько ждёт в «Мне», сколько вопросов к встрече в записях, которые человек видит,
  * и кто из его команд не сдал weekly. Руководителю приходит список своих команд, владельцу и администраторам
- * ещё и топ-команды. Пустой дайджест не отправляется
+ * ещё и топ-команды. День встречи у каждого свой: команда может встречаться не в день департамента.
+ * Пустой дайджест не отправляется
  */
 export async function digestPass(now = new Date()): Promise<PassResult> {
-  if (!mailConfigured()) return { sent: 0, skipped: 0, failed: 0 };
-  const key = await currentReportingKey(now);
-  const week = await ensureWeek(prisma, key);
-  if (!digestDue(now, toCalendar(isoFromDbDate(week.meetingDate)))) return { sent: 0, skipped: 0, failed: 0 };
-  const marked = new Set((await prisma.mailMark.findMany({ where: { week: week.start, kind: "digest" }, select: { personId: true } })).map((m) => m.personId));
-  const people = (await prisma.person.findMany({ where: { active: true, email: { not: null } }, orderBy: { sortOrder: "asc" } })).filter(
-    (p) => !marked.has(p.id) && prefsOf(p.mailPrefs).digest,
-  );
-  if (!people.length) return { sent: 0, skipped: 0, failed: 0 };
+  const zero = { sent: 0, skipped: 0, failed: 0 };
+  if (!mailConfigured() || !inWorkHours(now)) return zero;
+  const today = fromCalendar(moscowDate(now));
+  // Встреча по неделе бывает на той же неделе (свой слот команды) или на следующей (как у департамента)
+  const candidates = [shiftWeek(weekKeyOf(today), -1), weekKeyOf(today)];
+  const { meeting } = await weekSettings();
   const nodes = await loadTeamNodes(prisma);
   const leaders = leadersOf(nodes);
+  const people = (await prisma.person.findMany({ where: { active: true, email: { not: null } }, orderBy: { sortOrder: "asc" } })).filter((p) => prefsOf(p.mailPrefs).digest);
+  const byWeek = new Map<WeekKey, typeof people>();
+  for (const p of people) {
+    const key = candidates.find((k) => digestDue(now, toCalendar(meetingDayOf(p.id, k, nodes, meetingOf(k, meeting), leaders))));
+    if (key) byWeek.set(key, [...(byWeek.get(key) ?? []), p]);
+  }
+  const total = { ...zero };
+  for (const [key, list] of byWeek) {
+    const r = await digestForWeek(key, list, nodes, leaders, now);
+    total.sent += r.sent;
+    total.skipped += r.skipped;
+    total.failed += r.failed;
+  }
+  return total;
+}
+
+type DigestPerson = { id: string; email: string | null; shortName: string; role: string };
+
+async function digestForWeek(key: WeekKey, candidates: DigestPerson[], nodes: TeamNode[], leaders: Set<string>, now: Date): Promise<PassResult> {
+  const week = await ensureWeek(prisma, key);
+  const marked = new Set((await prisma.mailMark.findMany({ where: { week: week.start, kind: "digest" }, select: { personId: true } })).map((m) => m.personId));
+  const people = candidates.filter((p) => !marked.has(p.id));
+  if (!people.length) return { sent: 0, skipped: 0, failed: 0 };
   const [reports, absences, questions, everyone] = await Promise.all([
     prisma.weeklyReport.findMany({ where: { weekId: week.id, state: { in: ["SUBMITTED", "LATE"] } }, select: { authorId: true } }),
     prisma.absence.findMany({ where: { weekId: week.id }, select: { personId: true } }),
@@ -333,6 +399,7 @@ export async function digestPass(now = new Date()): Promise<PassResult> {
       failed += 1;
       console.error("Дайджест не ушёл, повторим позже:", error instanceof Error ? error.message : error);
       await releaseMark(p.id, week.start, "digest");
+      if (isTransportDown(error)) break;
     }
   }
   return { sent, skipped, failed };
@@ -342,7 +409,20 @@ export async function digestPass(now = new Date()): Promise<PassResult> {
 
 /** Один проход всех писем под арендой. null: проход делает другой процесс сервера */
 export async function mailTick(now = new Date()): Promise<{ events: PassResult; reminders: PassResult; digest: PassResult } | null> {
-  return leased(async () => ({ events: await eventMailPass(now), reminders: await reminderPass(now), digest: await digestPass(now) }));
+  // Проходы независимы: сбой одного не задерживает напоминания и дайджест с их узким окном
+  const safe = async (what: string, fn: () => Promise<PassResult>): Promise<PassResult> => {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error(`${what}: проход не прошёл, повторим через минуту:`, error instanceof Error ? error.message : error);
+      return { sent: 0, skipped: 0, failed: 1 };
+    }
+  };
+  return leased(async () => ({
+    reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
+    digest: await safe("Дайджест", () => digestPass(now)),
+    events: await safe("Письма о событиях", () => eventMailPass(now)),
+  }));
 }
 
 /** Запустить фоновый цикл писем один раз на процесс. Работает и без почты: события тогда просто отмечаются */

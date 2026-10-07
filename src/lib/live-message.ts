@@ -14,3 +14,15 @@ export function parseLive(payload: string | undefined): LiveMessage | null {
   }
   return null;
 }
+
+/**
+ * Какие экраны обновлять по виду изменения. Экран сдачи weekly не трогаем: человек пишет, чужие правки ему не нужны,
+ * а свежие данные экран и так берёт после каждого своего действия
+ */
+export function relevant(kind: "inbox" | "tasks" | "weekly", path: string): boolean {
+  if (path.startsWith("/weekly/submit")) return false;
+  const home = path === "/";
+  if (kind === "inbox") return home || path.startsWith("/me");
+  if (kind === "tasks") return home || ["/tasks", "/me", "/my-teams", "/goals", "/team"].some((p) => path.startsWith(p));
+  return home || ["/weekly", "/my-teams", "/structure"].some((p) => path.startsWith(p));
+}

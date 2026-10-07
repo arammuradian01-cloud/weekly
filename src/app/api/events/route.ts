@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 const HEARTBEAT_MS = 25_000;
 
 /**
- * Поток событий для открытых вкладок (этап 20): «inbox», когда в «Мне» человека что-то изменилось, и «change», когда
- * изменились задачи или weekly. Только вид изменения, без содержимого. Раз в 25 секунд пустая строка держит соединение
+ * Поток событий для открытых вкладок (этап 20): «inbox», когда в «Мне» человека что-то изменилось, «tasks» и «weekly»,
+ * когда изменились задачи или weekly. Только вид изменения, без содержимого. Раз в 25 секунд пустая строка держит соединение
  */
 export async function GET(request: Request) {
   const ctx = await requireContext();
@@ -27,17 +27,15 @@ export async function GET(request: Request) {
         }
       };
       // Сообщения одной транзакции приходят пачкой: склеиваем их в одно на полсекунды
-      let pending: { inbox: boolean; change: boolean } = { inbox: false, change: false };
+      let pending = { inbox: false, tasks: false, weekly: false };
       let flush: ReturnType<typeof setTimeout> | null = null;
       const unsubscribe = subscribeLive((m) => {
         if (m.t === "inbox" && m.p !== me) return;
-        if (m.t === "inbox") pending.inbox = true;
-        else pending.change = true;
+        pending[m.t] = true;
         flush ??= setTimeout(() => {
           flush = null;
-          if (pending.inbox) send("event: inbox\ndata: 1\n\n");
-          if (pending.change) send("event: change\ndata: 1\n\n");
-          pending = { inbox: false, change: false };
+          for (const kind of ["inbox", "tasks", "weekly"] as const) if (pending[kind]) send(`event: ${kind}\ndata: 1\n\n`);
+          pending = { inbox: false, tasks: false, weekly: false };
         }, 500);
       });
       const heartbeat = setInterval(() => send(": ok\n\n"), HEARTBEAT_MS);

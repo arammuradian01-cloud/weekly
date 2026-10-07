@@ -19,7 +19,15 @@ export function seesTask(scope: Scope, task: { teamId: string; ownerId: string |
  * Событие подписчикам задачи. Только тем, кто задачу всё ещё видит (его могли убрать из команды, задачу перенести),
  * кроме автора правки и тех, кто уже получил событие об этой правке. actor null: правка пришла из Bord
  */
-export async function notifyWatchers(tx: Tx, taskId: string, text: string, actor: { personId: string; fullName: string } | null, skip: (string | null)[] = []): Promise<number> {
+export async function notifyWatchers(
+  tx: Tx,
+  taskId: string,
+  text: string,
+  actor: { personId: string; fullName: string } | null,
+  skip: (string | null)[] = [],
+  /** Комментарий, о котором событие (этап 20): удалят или отменят комментарий, и событие уйдёт вместе с ним */
+  commentId: string | null = null,
+): Promise<number> {
   const watchers = await tx.taskWatch.findMany({ where: { taskId }, select: { personId: true, person: { select: { role: true, active: true } } } });
   const candidates = watchers.filter((w) => w.person.active && w.personId !== actor?.personId && !skip.includes(w.personId));
   if (!candidates.length) return 0;
@@ -42,6 +50,7 @@ export async function notifyWatchers(tx: Tx, taskId: string, text: string, actor
       actorName: actor?.fullName ?? "Bord",
       subject: taskSubject(task.number),
       taskId,
+      commentId,
       text,
     })),
   });

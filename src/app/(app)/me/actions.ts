@@ -24,7 +24,10 @@ export async function markAllDoneAction() {
   return r;
 }
 
-/** Человек видел события (этап 20): открыл «Мне» или сам предмет. Письмо по ним не уйдёт */
+/**
+ * Человек видел события (этап 20): открыл «Мне» или сам предмет. Письмо по ним не уйдёт.
+ * По общему логину профиль можно выбрать чужой: такой просмотр не считается, письмо человеку уйдёт
+ */
 export async function markSeenAction(subjects?: string[]) {
-  return runAction("Просмотрено", (a) => markSeen(a.personId, Array.isArray(subjects) ? subjects.map(String) : undefined));
+  return runAction("Просмотрено", async (a) => (a.via === "TEAM" ? 0 : markSeen(a.personId, Array.isArray(subjects) ? subjects.map(String) : undefined)));
 }

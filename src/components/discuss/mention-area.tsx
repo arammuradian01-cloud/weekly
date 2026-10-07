@@ -127,7 +127,7 @@ export function MentionArea({
                 setActive((a) => (a - 1 + options.length) % options.length);
                 return;
               }
-              if (e.key === "Enter" || e.key === "Tab") {
+              if (e.key === "Enter") {
                 e.preventDefault();
                 pick(active);
                 return;

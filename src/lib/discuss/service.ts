@@ -19,7 +19,8 @@ import { DISCUSS_LIMITS, REACTION_LABEL, commentDto, editable, mentionsIn, names
 import { entryReaders, seesEntry } from "./access";
 import { seesTask } from "@/lib/tasks/watch";
 import { getEntry } from "@/lib/weekly/service";
-import { applyReaction, dropReactionEvent } from "./reactions";
+import { applyReaction } from "./reactions";
+import { CLOSED_DB } from "@/lib/tasks/codes";
 
 type Tx = Prisma.TransactionClient;
 
@@ -171,7 +172,8 @@ export type ReactionResult = { reactions: ReactionView[]; on: boolean };
 
 /**
  * Реакция на запись или на комментарий к ней. Автор записи или комментария видит её в «Мне».
- * «Обсудить на встрече» требует вопрос
+ * «Обсудить на встрече» требует вопрос. Строка записи блокируется: два нажатия из разных вкладок не спорят.
+ * Сняли реакцию: событие о ней уходит вместе с ней (связь в базе)
  */
 export async function reactToEntry(actor: Actor, target: { entryId: string } | { entryCommentId: string }, kind: unknown, question?: string | null): Promise<ReactionResult> {
   canWrite(actor);
@@ -182,10 +184,13 @@ export async function reactToEntry(actor: Actor, target: { entryId: string } | {
     if ("entryCommentId" in target) {
       const comment = await tx.entryComment.findUnique({ where: { id: String(target.entryCommentId) } });
       if (!comment) return fail("Комментарий уже удалён");
+      await tx.$queryRaw`SELECT id FROM "weekly_entries" WHERE id = ${comment.entryId} FOR UPDATE`;
       ({ entry } = await visibleEntry(tx, actor, comment.entryId));
+      if (!(await tx.entryComment.findUnique({ where: { id: comment.id }, select: { id: true } }))) return fail("Комментарий уже удалён");
       authorId = comment.authorId;
       commentId = comment.id;
     } else {
+      await tx.$queryRaw`SELECT id FROM "weekly_entries" WHERE id = ${String(target.entryId)} FOR UPDATE`;
       ({ entry } = await visibleEntry(tx, actor, target.entryId));
       authorId = entry.authorId;
     }
@@ -211,13 +216,12 @@ export async function reactToEntry(actor: Actor, target: { entryId: string } | {
           subject: entrySubject(entry.id),
           entryId: entry.id,
           entryCommentId: commentId,
+          reactionId: change.id,
           text: change.question
             ? `${REACTION_LABEL[change.kind]}: «${quote(change.question)}»`
             : `«${REACTION_LABEL[change.kind]}» к ${commentId ? "вашему комментарию к записи" : "вашей записи"} «${quote(entry.what)}»`,
         });
       }
-    } else if (!change.on && change.was) {
-      await dropReactionEvent(tx, actor, { entryId: entry.id, entryCommentId: commentId }, change.was.createdAt);
     }
     const rows = await tx.reaction.findMany({ where: commentId ? { entryCommentId: commentId } : { entryId: entry.id }, include: reactionInclude, orderBy: { createdAt: "asc" } });
     return { reactions: rows.map(reactionDto), on: change.on };
@@ -225,8 +229,8 @@ export async function reactToEntry(actor: Actor, target: { entryId: string } | {
 }
 
 /**
- * «Обсуждено»: пункт уходит из повестки. Отмечает режим управления, руководитель автора записи или задачи,
- * сам автор вопроса или автор записи
+ * «Обсуждено»: пункт уходит из повестки. Отмечает ведущий встречи (режим управления), руководитель автора записи
+ * или ответственного по задаче и сам автор вопроса. Тот, о чьей работе вопрос, снять его не может
  */
 export async function setDiscussed(actor: Actor, reactionId: string, discussed: boolean, now = new Date()): Promise<{ discussed: boolean }> {
   canWrite(actor);
@@ -253,7 +257,7 @@ export async function setDiscussed(actor: Actor, reactionId: string, discussed: 
       if (!seesTask(scope, task, actor.personId)) fail("Вопроса уже нет");
       ownerOfSubject = task.ownerId;
     }
-    const allowed = !!actor.management || r.personId === actor.personId || ownerOfSubject === actor.personId || (!!ownerOfSubject && scope.leadPeople.includes(ownerOfSubject));
+    const allowed = !!actor.management || r.personId === actor.personId || (!!ownerOfSubject && ownerOfSubject !== actor.personId && scope.leadPeople.includes(ownerOfSubject));
     if (!allowed) fail("Отметить «обсуждено» может ведущий встречи, руководитель или автор вопроса");
     if ((r.discussedAt !== null) === discussed) return { discussed };
     await tx.reaction.update({ where: { id: r.id }, data: discussed ? { discussedAt: now, discussedById: actor.personId } : { discussedAt: null, discussedById: null } });
@@ -318,26 +322,45 @@ export async function meetingQuestions(actor: Actor, key: WeekKey, entryIds: { c
   const from = shiftWeek(key, -3);
   const scope = await loadScope(prisma, subjectOf(actor));
   const nodes = await loadTeamNodes(prisma);
-  const rows = await prisma.reaction.findMany({
-    where: {
-      kind: "DISCUSS",
-      OR: [
-        { entryId: { in: entryIds.current } },
-        { entryComment: { entryId: { in: entryIds.current } } },
-        { discussedAt: null, entry: { week: { start: { gte: dbDate(from), lt: dbDate(key) } } } },
-        { discussedAt: null, entryComment: { entry: { week: { start: { gte: dbDate(from), lt: dbDate(key) } } } } },
-        ...(teamIds.length ? [{ taskComment: { task: { teamId: { in: teamIds }, archivedAt: null } }, OR: [{ discussedAt: null }, { createdAt: { gte: dbDate(key) } }] }] : []),
-      ],
-    },
-    include: {
-      person: { select: { slug: true } },
-      entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } },
-      entryComment: { include: { entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } } } },
-      taskComment: { include: { task: { include: { coExecutors: true } } } },
-    },
-    orderBy: { createdAt: "asc" },
-    take: 200,
-  });
+  const include = {
+    person: { select: { slug: true } },
+    entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } },
+    entryComment: { include: { entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } } } },
+    taskComment: { include: { task: { include: { coExecutors: true } } } },
+  } satisfies Prisma.ReactionInclude;
+  const past = { gte: dbDate(from), lt: dbDate(key) };
+  // Записи и задачи отдельно: старые вопросы к задачам не вытесняют вопросы этой недели
+  const [entryRows, taskRows] = await Promise.all([
+    prisma.reaction.findMany({
+      where: {
+        kind: "DISCUSS",
+        OR: [
+          { entryId: { in: entryIds.current } },
+          { entryComment: { entryId: { in: entryIds.current } } },
+          { discussedAt: null, entry: { week: { start: past } } },
+          { discussedAt: null, entryComment: { entry: { week: { start: past } } } },
+        ],
+      },
+      include,
+      orderBy: { createdAt: "asc" },
+      take: 300,
+    }),
+    // Вопросы к задачам показанных команд: открытые задачи, вопрос за последние 8 недель, свежие первыми
+    teamIds.length
+      ? prisma.reaction.findMany({
+          where: {
+            kind: "DISCUSS",
+            createdAt: { gte: dbDate(shiftWeek(key, -8)) },
+            taskComment: { task: { teamId: { in: teamIds }, archivedAt: null, status: { notIn: CLOSED_DB } } },
+            OR: [{ discussedAt: null }, { createdAt: { gte: dbDate(key) } }],
+          },
+          include,
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        })
+      : Promise.resolve([]),
+  ]);
+  const rows = [...entryRows, ...taskRows.reverse()];
   const out: MeetingQuestion[] = [];
   for (const r of rows) {
     const entry = r.entry ?? r.entryComment?.entry ?? null;

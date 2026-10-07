@@ -437,7 +437,7 @@ model WeeklyEntry {
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
 
-  /// id упомянутых людей (этап 20): событие получает только тот, кого упомянули впервые
+  /// id уже упомянутых людей (этап 20), и тех, до кого упоминание не дошло: событие приходит только при первом упоминании
   mentions   String[]          @default([])
   tasks      Task[]
   promotions WeeklyPromotion[]
@@ -591,6 +591,9 @@ model InboxEvent {
   entry          WeeklyEntry?  @relation(fields: [entryId], references: [id], onDelete: Cascade)
   entryCommentId String?
   entryComment   EntryComment? @relation(fields: [entryCommentId], references: [id], onDelete: Cascade)
+  /// Реакция, о которой событие (этап 20): сняли реакцию, и событие о ней уходит вместе с ней
+  reactionId     String?
+  reaction       Reaction?     @relation(fields: [reactionId], references: [id], onDelete: Cascade)
   /// Коротко, что случилось: «передал вам задачу», «прокомментировал: ...»
   text        String
   createdAt   DateTime     @default(now()) @db.Timestamptz(3)
@@ -606,6 +609,9 @@ model InboxEvent {
   @@index([recipientId, doneAt])
   @@index([recipientId, subject])
   @@index([mailedAt, createdAt])
+  @@index([entryId])
+  @@index([entryCommentId])
+  @@index([reactionId])
   @@map("inbox_events")
 }
 
@@ -863,11 +869,14 @@ model Reaction {
   discussedById  String?
   discussedBy    Person?       @relation("ReactionDiscussedBy", fields: [discussedById], references: [id], onDelete: SetNull)
   createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  inboxEvents    InboxEvent[]
 
   @@unique([personId, kind, entryId])
   @@unique([personId, kind, entryCommentId])
   @@unique([personId, kind, taskCommentId])
   @@index([entryId])
+  @@index([entryCommentId])
+  @@index([taskCommentId])
   @@map("reactions")
 }
 
