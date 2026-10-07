@@ -5,6 +5,7 @@
 import { PRIORITIES, STATES, STATUSES, priorityOf, stateLabel } from "@/domain/dictionaries";
 import { permissions, type Viewer } from "@/lib/tasks/rules";
 import { usePrototype } from "@/domain/store";
+import { teamOf, teamPeople } from "@/domain/teams";
 import type { Task } from "@/domain/types";
 import { InlineSelect } from "@/components/ui/overlays";
 import { PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
@@ -12,7 +13,9 @@ import { useTaskActions } from "./task-actions";
 
 export function useViewer(): Viewer {
   const { me, manageRole, observer, leads } = usePrototype();
-  return { slug: me.slug, management: manageRole, observer, leads, employee: me.role === "EMPLOYEE" };
+  // Люди команд, которыми руководит (этап 16): по снимку команд, как и на сервере
+  const people = [...new Set(leads.flatMap((id) => (teamOf(id) ? teamPeople(teamOf(id)!) : [])))].filter((s) => s !== me.slug);
+  return { slug: me.slug, management: manageRole, observer, leads, employee: me.role === "EMPLOYEE", people };
 }
 
 export function useTaskPermissions(task: Task) {

@@ -41,6 +41,12 @@ const fail = (message: string): never => {
   throw new TaskRuleError(message);
 };
 
+/** Слаги людей по id: для прав, которые считаются по слагам */
+async function slugsOf(db: Db, ids: string[]): Promise<PersonSlug[]> {
+  if (!ids.length) return [];
+  return (await db.person.findMany({ where: { id: { in: ids } }, select: { slug: true } })).map((p) => p.slug as PersonSlug);
+}
+
 function viewerOf(actor: Actor, scope?: Scope): Viewer {
   return { slug: actor.slug, management: actor.management, observer: actor.role === "OBSERVER", leads: scope?.leads ?? [], employee: actor.role === "EMPLOYEE" };
 }
@@ -55,7 +61,8 @@ export function canSeeRow(scope: Scope, row: Pick<TaskRow, "teamId" | "ownerId" 
   if (scope.all || scope.visible.includes(row.teamId)) return true;
   if (row.ownerId === personId || row.createdById === personId) return true;
   if (row.coExecutors.some((c) => c.personId === personId)) return true;
-  return !!row.ownerId && scope.functional.includes(row.ownerId);
+  // Этап 16: руководитель видит задачи своих людей в любой команде, в том числе предложенные им из другой команды
+  return !!row.ownerId && (scope.functional.includes(row.ownerId) || scope.leadPeople.includes(row.ownerId));
 }
 
 function clean(text: string | null | undefined): string {
@@ -170,7 +177,7 @@ async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: Ta
     const scope = await scopeOfActor(tx, actor);
     const row = await lockRow(tx, number, { scope, personId: actor.personId });
     if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
-    const can = permissions(toTaskDto(row), viewerOf(actor, scope));
+    const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(tx, scope.leadPeople) });
     const before = snapshot(row);
     const p = await plan(row, can, tx);
     if (!p.changes.length) fail("Ничего не изменилось");
@@ -200,7 +207,18 @@ export async function listTasks(opts: { archived?: boolean; reader?: TaskReader;
     and.push(visibleTasksWhere(scope, opts.reader.personId));
     if (opts.team) {
       const me = opts.reader.personId;
-      and.push({ OR: [{ teamId: opts.team }, { ownerId: me }, { createdById: me }, { coExecutors: { some: { personId: me } } }] });
+      // И просьбы к людям команды из других команд (этап 16): предложенные им задачи
+      const team = await prisma.team.findUnique({ where: { id: opts.team }, include: { members: { select: { personId: true } } } });
+      const people = team ? [...(team.leaderId ? [team.leaderId] : []), ...team.members.map((m) => m.personId)] : [];
+      and.push({
+        OR: [
+          { teamId: opts.team },
+          { ownerId: me },
+          { createdById: me },
+          { coExecutors: { some: { personId: me } } },
+          ...(people.length && opts.team !== TOP_TEAM ? [{ status: "PROPOSED" as const, ownerId: { in: people } }] : []),
+        ],
+      });
     }
   } else if (opts.team) {
     and.push({ teamId: opts.team });
@@ -399,7 +417,13 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     if (current === "proposed" ? !can.confirm : !can.status) {
-      fail(current === "proposed" ? "Предложенную задачу подтверждает владелец или администратор" : "Статус меняет ответственный, владелец или администратор");
+      fail(
+        current === "proposed"
+          ? row.teamId === TOP_TEAM
+            ? "Предложенную задачу подтверждает владелец или администратор"
+            : "Предложенную задачу подтверждает адресат, его руководитель или руководитель команды"
+          : "Статус меняет ответственный, владелец или администратор",
+      );
     }
     if (next === current) fail("Статус уже такой");
     if (next === "proposed") fail("В «Предложена» задачу переносит только система");
@@ -415,6 +439,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       );
     }
     const closing = CLOSED_DB.includes(db);
+    await notifyWatchers(tx, row.id, number, actor, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
       await notify(tx, { kind: "TASK_CONFIRMED", recipients: [row.ownerId, row.createdById], actor, subject: taskSubject(number), taskId: row.id, text: "Задача подтверждена" });
@@ -475,6 +500,7 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
     // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
     await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
+    await notifyWatchers(tx, row.id, number, actor, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, [row.ownerId]);
     return {
       data: { due: dbDate(to) },
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
@@ -749,3 +775,56 @@ export async function actorFor(slug: string, management: ManagementRole | null =
 }
 
 export { personName };
+
+// ---------- Задачи команд (этап 16) ----------
+
+/** Событие подписчикам задачи: кроме автора правки и тех, кто уже получил событие об этой правке */
+async function notifyWatchers(tx: Tx, taskId: string, number: number, actor: Actor, text: string, skip: (string | null)[] = []) {
+  const watchers = await tx.taskWatch.findMany({ where: { taskId }, select: { personId: true } });
+  const recipients = watchers.map((w) => w.personId).filter((id) => !skip.includes(id));
+  if (recipients.length) await notify(tx, { kind: "TASK_WATCH", recipients, actor, subject: taskSubject(number), taskId, text });
+}
+
+/** Подписаться на задачу или отписаться: событие в «Мне», когда меняются статус или срок */
+export async function watchTask(actor: Actor, number: number, on: boolean): Promise<{ watching: boolean }> {
+  return prisma.$transaction(async (tx) => {
+    const scope = await scopeOfActor(tx, actor);
+    const row = await tx.task.findUnique({ where: { number }, include: taskInclude });
+    if (!row || !canSeeRow(scope, row, actor.personId)) return fail(`Задачи ${number} нет`);
+    if (on) await tx.taskWatch.createMany({ data: [{ taskId: row.id, personId: actor.personId }], skipDuplicates: true });
+    else await tx.taskWatch.deleteMany({ where: { taskId: row.id, personId: actor.personId } });
+    return { watching: on };
+  });
+}
+
+/** Следит ли человек за задачами: номера задач с подпиской */
+export async function watchedNumbers(personId: string): Promise<number[]> {
+  return (await prisma.taskWatch.findMany({ where: { personId }, select: { task: { select: { number: true } } } })).map((w) => w.task.number);
+}
+
+/** Сколько часов ждать, прежде чем снова просить обновить ту же задачу */
+const ASK_AGAIN_HOURS = 20;
+
+/**
+ * «Попросить обновить»: руководитель команды задачи, руководитель ответственного или режим управления просит
+ * ответственного обновить задачу. Ответственный получает событие в «Мне». Одна просьба на задачу в день
+ */
+export async function requestUpdate(actor: Actor, number: number, now = new Date()): Promise<{ asked: string }> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
+  return prisma.$transaction(async (tx) => {
+    const scope = await scopeOfActor(tx, actor);
+    const row = await lockRow(tx, number, { scope, personId: actor.personId });
+    if (!row.ownerId) fail("У задачи «Все лидеры» нет одного ответственного: попросите на встрече");
+    if (row.ownerId === actor.personId) fail("Это ваша задача: обновите её сами");
+    if (!["IN_PROGRESS", "CLARIFY"].includes(row.status)) fail("Обновить просят только задачу в работе");
+    const leads = actor.management || scope.leads.includes(row.teamId) || scope.leadPeople.includes(row.ownerId!);
+    if (!leads) fail("Попросить обновить может руководитель команды или ответственного");
+    const since = new Date(now.getTime() - ASK_AGAIN_HOURS * 60 * 60 * 1000);
+    const recent = await tx.inboxEvent.count({ where: { kind: "UPDATE_REQUEST", subject: taskSubject(number), recipientId: row.ownerId!, actorId: actor.personId, createdAt: { gt: since } } });
+    if (recent) fail("Вы уже просили обновить эту задачу сегодня");
+    await notify(tx, { kind: "UPDATE_REQUEST", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: "Просят обновить задачу: где сейчас, состояние и срок" }, now);
+    const owner = await tx.person.findUnique({ where: { id: row.ownerId! }, select: { fullName: true } });
+    await audit(tx, actor, number, [{ action: "task.ask", field: "Попросили обновить", after: owner?.fullName ?? null }]);
+    return { asked: owner?.fullName ?? "" };
+  });
+}

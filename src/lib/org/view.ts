@@ -5,9 +5,8 @@ import { prisma } from "@/lib/db";
 import type { Role, UnitKind } from "@/generated/prisma/enums";
 import { UNIT_KIND_LABELS } from "./service";
 import { TOP_TEAM, loadTeamNodes } from "./scope";
-import { expectedOf, leadersOf, teamDeadline, type TeamRhythm } from "./rhythm";
-import { currentReportingKey, weekSettings } from "@/lib/weekly/service";
-import { deadlineOf } from "@/lib/weekly/weeks";
+import type { TeamRhythm } from "./rhythm";
+import { weeklyLights } from "./panel";
 import { dbDate, moscowToday } from "@/lib/tasks/dates";
 
 export type UnitView = {
@@ -48,8 +47,7 @@ export type TeamView = {
 export type StructureView = { units: UnitView[]; teams: TeamView[]; unplaced: { slug: string; fullName: string; position: string | null; role: Role }[] };
 
 export async function structureView(viewer: { id: string; role: Role }, opts: { includeInactive?: boolean } = {}): Promise<StructureView> {
-  const reporting = await currentReportingKey();
-  const [units, people, vacancies, teams, open, overdue, nodes, week, settings] = await Promise.all([
+  const [units, people, vacancies, teams, open, overdue, nodes] = await Promise.all([
     prisma.orgUnit.findMany({ where: opts.includeInactive ? {} : { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { head: { select: { slug: true, fullName: true, position: true } } } }),
     prisma.person.findMany({
       where: opts.includeInactive ? {} : { active: true },
@@ -65,37 +63,10 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null }, _count: { _all: true } }),
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY"] }, archivedAt: null, due: { lt: dbDate(moscowToday()) } }, _count: { _all: true } }),
     loadTeamNodes(prisma),
-    prisma.week.findUnique({
-      where: { start: dbDate(reporting) },
-      include: { reports: { select: { authorId: true, state: true } }, absences: { select: { personId: true } }, teamCloses: { select: { teamId: true } } },
-    }),
-    weekSettings(),
   ]);
-  // Сдача weekly за отчётную неделю по командам (этап 15)
-  const leaders = leadersOf(nodes);
-  const now = Date.now();
-  const departmentDeadline = week?.deadline ?? deadlineOf(reporting, settings.deadline);
-  const stateOf = new Map((week?.reports ?? []).map((r) => [r.authorId, r.state]));
-  const absentIds = new Set((week?.absences ?? []).map((a) => a.personId));
-  const closedTeams = new Set((week?.teamCloses ?? []).map((c) => c.teamId));
-  const counted = new Set(people.filter((p) => p.active && p.role !== "OBSERVER").map((p) => p.id));
-  const weeklyOf = (id: string): TeamView["weekly"] => {
-    const node = nodes.find((n) => n.id === id)!;
-    const expected = expectedOf(node, leaders).filter((pid) => counted.has(pid));
-    const deadline = teamDeadline(reporting, node, departmentDeadline);
-    // Кого нет на неделе, в счёт не входит, если только всё равно не сдал: как в полосе сдачи ленты
-    const sent = (pid: string) => stateOf.get(pid) === "SUBMITTED" || stateOf.get(pid) === "LATE";
-    const inCount = expected.filter((pid) => !absentIds.has(pid) || sent(pid));
-    return {
-      expected: inCount.length,
-      submitted: inCount.filter((pid) => stateOf.get(pid) === "SUBMITTED").length,
-      late: inCount.filter((pid) => stateOf.get(pid) === "LATE").length,
-      absent: expected.filter((pid) => absentIds.has(pid) && !sent(pid)).length,
-      deadline: deadline.toISOString(),
-      passed: now > deadline.getTime(),
-      closed: !!week?.closedAt || closedTeams.has(id),
-    };
-  };
+  // Сдача weekly за отчётную неделю по командам (этап 15): тот же счёт, что в панели «Мои команды»
+  const lights = await weeklyLights(nodes);
+  const weeklyOf = (id: string): TeamView["weekly"] => lights.light(nodes.find((n) => n.id === id)!);
   const overdueByTeam = new Map(overdue.map((o) => [o.teamId, o._count._all]));
   const byId = new Map(units.map((u) => [u.id, u]));
   const children = new Map<string | null, typeof units>();

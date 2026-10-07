@@ -154,6 +154,7 @@ model Person {
   inbox             InboxEvent[]      @relation("InboxRecipient")
   promotions        WeeklyPromotion[]
   teamWeekCloses    TeamWeekClose[]
+  watches           TaskWatch[]
 
   @@map("people")
 }
@@ -279,6 +280,7 @@ model Task {
   comments    TaskComment[]
   links       TaskLink[]
   inboxEvents InboxEvent[]
+  watchers    TaskWatch[]
 
   @@index([status])
   @@index([ownerId])
@@ -533,6 +535,10 @@ enum InboxKind {
   TASK_COEXECUTOR
   TASK_COMMENT
   TASK_DUE
+  /// Руководитель просит обновить задачу: «где сейчас», состояние или срок (этап 16)
+  UPDATE_REQUEST
+  /// Подписка: у задачи, за которой человек следит, сменился статус или срок (этап 16)
+  TASK_WATCH
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -692,4 +698,17 @@ model TeamWeekClose {
   @@id([teamId, weekId])
   @@index([weekId])
   @@map("team_week_closes")
+}
+
+/// Подписка на задачу (этап 16): человек получает событие в «Мне», когда у задачи меняется статус или срок
+model TaskWatch {
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  personId  String
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([taskId, personId])
+  @@index([personId])
+  @@map("task_watches")
 }

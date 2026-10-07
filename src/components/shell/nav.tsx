@@ -13,16 +13,19 @@ import {
   RefreshCw,
   Settings2,
   Users,
+  LayoutDashboard,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useInboxCount } from "@/components/inbox/inbox-count";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean; desktopOnly?: boolean };
+export type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean; desktopOnly?: boolean; leaderOnly?: boolean; /** Подпись в нижнем меню телефона, если полная не влезает */ shortLabel?: string };
 
 export const MAIN_NAV: NavItem[] = [
   { href: "/", label: "Моя неделя", icon: CalendarCheck2 },
   { href: "/me", label: "Мне", icon: Inbox },
+  // Панель руководителя (этап 16): на телефоне встаёт на место «Команды»
+  { href: "/my-teams", label: "Мои команды", shortLabel: "Команды", icon: LayoutDashboard, leaderOnly: true },
   { href: "/weekly", label: "Weekly", icon: Newspaper },
   { href: "/tasks", label: "Задачи", icon: ListChecks },
   { href: "/team", label: "Команда", icon: Users },
@@ -46,7 +49,7 @@ function countLabel(n: number) {
   return n ? `, ждут ${n}` : "";
 }
 
-export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | null }) {
+export function SidebarNav({ management, leader = false }: { management: "OWNER" | "ADMIN" | null; leader?: boolean }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
   const managementItems = MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER");
@@ -81,7 +84,7 @@ export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | nul
 
   return (
     <nav aria-label="Разделы" className="flex flex-col gap-6">
-      <ul className="flex flex-col gap-1">{MAIN_NAV.map(link)}</ul>
+      <ul className="flex flex-col gap-1">{MAIN_NAV.filter((i) => !i.leaderOnly || leader).map(link)}</ul>
       {management ? (
         <div>
           <p className="mb-2 px-3 text-caption text-white/50">Управление</p>
@@ -92,7 +95,12 @@ export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | nul
   );
 }
 
-export function MobileNav() {
+/** Пункты нижнего меню телефона: их пять. У руководителя «Мои команды» вместо «Команды», «Команда» открывается из панели */
+export function mobileItems(leader: boolean): NavItem[] {
+  return MAIN_NAV.filter((i) => !i.desktopOnly && (leader ? i.href !== "/team" : !i.leaderOnly));
+}
+
+export function MobileNav({ leader = false }: { leader?: boolean }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
   return (
@@ -101,7 +109,7 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
     >
       <ul className="grid grid-cols-5">
-        {MAIN_NAV.filter((i) => !i.desktopOnly).map((item) => {
+        {mobileItems(leader).map((item) => {
           const active = isActive(pathname, item.href);
           const Icon = item.icon;
           return (
@@ -109,6 +117,7 @@ export function MobileNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
+                aria-label={item.shortLabel ? item.label : undefined}
                 className={cn(
                   "flex h-16 flex-col items-center justify-center gap-1 text-tiny",
                   active ? "font-semibold text-blue-700" : "text-muted",
@@ -122,7 +131,7 @@ export function MobileNav() {
                     </span>
                   ) : null}
                 </span>
-                {item.label}
+                {item.shortLabel ?? item.label}
                 {item.href === "/me" && inbox ? <span className="sr-only">{countLabel(inbox)}</span> : null}
               </Link>
             </li>

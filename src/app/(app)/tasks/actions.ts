@@ -13,6 +13,7 @@ import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { prisma } from "@/lib/db";
 import { loadScope } from "@/lib/org/scope";
 import { moveTask } from "@/lib/org/service";
+import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
 
@@ -148,4 +149,52 @@ export async function taskHistoryAction(number: number): Promise<{ ok: true; ite
   if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads }))
     return { ok: false, error: "История видна участникам задачи, руководителю команды, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };
+}
+
+// ---------- Задачи команд (этап 16) ----------
+
+export type TaskExtras = { watching: boolean; canAsk: boolean; spans: StatusSpan[] };
+
+/** Для карточки: подписка, можно ли попросить обновить, сколько дней задача была в каждом статусе */
+export async function taskExtrasAction(number: number): Promise<{ ok: true; extras: TaskExtras } | { ok: false; error: string }> {
+  try {
+    const a = await actor();
+    const n = checkNumber(number);
+    const task = await svc.getTask(n, readerOf(a));
+    if (!task) return { ok: false, error: `Задачи ${n} нет` };
+    const scope = await loadScope(prisma, { id: a.personId, role: a.role, limited: readerOf(a).limited });
+    const [watch, owner, spans] = await Promise.all([
+      prisma.taskWatch.findFirst({ where: { personId: a.personId, task: { number: n } } }),
+      task.owner !== "all" ? prisma.person.findUnique({ where: { slug: task.owner }, select: { id: true } }) : Promise.resolve(null),
+      taskStatusSpans(n),
+    ]);
+    const open = task.status === "in-progress" || task.status === "clarify";
+    const canAsk =
+      a.role !== "OBSERVER" && open && !!owner && owner.id !== a.personId && (!!a.management || scope.leads.includes(task.team) || scope.leadPeople.includes(owner.id));
+    return { ok: true, extras: { watching: !!watch, canAsk, spans } };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Карточка задачи: подписка и история статусов не загрузились", error);
+    return { ok: false, error: "Не загрузилось. Обновите страницу" };
+  }
+}
+
+async function simple<T>(fn: (a: svc.Actor) => Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, value: await fn(await actor()) };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Действие с задачей не прошло", error);
+    return { ok: false, error: "Не получилось сохранить. Обновите страницу и попробуйте ещё раз" };
+  }
+}
+
+export async function watchTaskAction(number: number, on: boolean) {
+  return simple((a) => svc.watchTask(a, checkNumber(number), !!on));
+}
+
+export async function requestUpdateAction(number: number) {
+  return simple((a) => svc.requestUpdate(a, checkNumber(number)));
 }
