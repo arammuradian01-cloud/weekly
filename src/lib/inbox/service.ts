@@ -63,9 +63,12 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
     task: { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null;
     entry: { authorId: string | null; ceo: boolean; promotions: { byId: string }[] } | null;
     request: { authorId: string; addresseeId: string } | null;
+    kind: InboxKind;
+    actorId: string | null;
   }) => {
-    // Просьбы по общему логину: только между людьми топ-команды (этап 21)
+    // Просьбы по общему логину: только между людьми топ-команды (этап 21). Благодарности так же: от людей топ-команды
     if (r.request) return top.has(r.request.authorId) && top.has(r.request.addresseeId);
+    if (r.kind === "THANKS") return !!r.actorId && top.has(r.actorId);
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;

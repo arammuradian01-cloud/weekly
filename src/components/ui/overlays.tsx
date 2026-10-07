@@ -91,6 +91,7 @@ export function InlineSelect<V extends string>({
   options,
   onChange,
   render,
+  renderValue,
   label,
   valueLabel,
   disabled,
@@ -100,20 +101,23 @@ export function InlineSelect<V extends string>({
   options: { value: V; label: string }[];
   onChange: (value: V) => void;
   render: (value: V) => React.ReactNode;
+  /** Текущее значение в строке, если оно показывается иначе, чем вариант в списке (например, «не подтверждено») */
+  renderValue?: (value: V) => React.ReactNode;
   label: string;
   /** Подпись текущего значения, если его нет среди вариантов (например, «Не задан») */
   valueLabel?: string;
   disabled?: boolean;
   align?: "start" | "end";
 }) {
-  if (disabled) return <span className="inline-flex min-h-9 items-center">{render(value)}</span>;
+  const current = renderValue ?? render;
+  if (disabled) return <span className="inline-flex min-h-9 items-center">{current(value)}</span>;
   return (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`${label}: ${options.find((o) => o.value === value)?.label ?? valueLabel ?? value}. Изменить`}
+        aria-label={`${label}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
         className="group -mx-1.5 inline-flex min-h-9 items-center gap-1 rounded-md px-1.5 hover:bg-surface data-[state=open]:bg-surface"
       >
-        {render(value)}
+        {current(value)}
         <ChevronDown className="h-3.5 w-3.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 group-data-[state=open]:opacity-100" aria-hidden="true" />
       </Menu.Trigger>
       <Menu.Portal>

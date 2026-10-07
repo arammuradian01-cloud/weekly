@@ -412,6 +412,7 @@ model Week {
   absences   Absence[]
   teamCloses TeamWeekClose[]
   promises   PromiseReview[]
+  snapshot   WeekSnapshot?
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -419,16 +420,22 @@ model Week {
 
 /// Weekly человека за неделю: главное одной фразой и состояние сдачи
 model WeeklyReport {
-  id          String      @id @default(cuid())
-  weekId      String
-  week        Week        @relation(fields: [weekId], references: [id], onDelete: Cascade)
-  authorId    String
-  author      Person      @relation(fields: [authorId], references: [id])
-  headline    String      @default("")
-  state       WeeklyState @default(DRAFT)
-  submittedAt DateTime?   @db.Timestamptz(3)
-  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime    @updatedAt @db.Timestamptz(3)
+  id             String      @id @default(cuid())
+  weekId         String
+  week           Week        @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId       String
+  author         Person      @relation(fields: [authorId], references: [id])
+  headline       String      @default("")
+  /// «Спасибо @коллега за…» (этап 22): необязательная строка, попадает в блок отчёта CEO
+  thanks         String?
+  /// Кто уже получил событие о благодарности: повторно не приходит
+  thanksMentions String[]    @default([])
+  /// Факты недели, которые человек скрыл: в черновике из фактов больше не предлагаются (этап 22)
+  hiddenFacts    String[]    @default([])
+  state          WeeklyState @default(DRAFT)
+  submittedAt    DateTime?   @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
 
   @@unique([weekId, authorId])
   @@map("weekly_reports")
@@ -461,6 +468,8 @@ model WeeklyEntry {
   links       Json           @default("[]")
   ceo         Boolean        @default(false)
   sortOrder   Int            @default(0)
+  /// Запись сделана из факта недели (этап 22): closed:52, moved:52:2026-10-20. Факт не предлагается второй раз
+  factKey     String?
   importBatch String?
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
@@ -479,6 +488,7 @@ model WeeklyEntry {
   promiseReview PromiseReview?    @relation("PromiseEntry")
   carriedFrom   PromiseReview?    @relation("PromiseCarried")
 
+  @@unique([weekId, authorId, factKey])
   @@index([weekId, authorId])
   @@map("weekly_entries")
 }
@@ -608,6 +618,8 @@ enum InboxKind {
   REQUEST_ANSWER
   /// Связь задач: вашу задачу ждут, задача, которую ждёт ваша, перенесена или закрыта (этап 21)
   TASK_DEPENDENCY
+  /// Благодарность в weekly коллеги (этап 22)
+  THANKS
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -1040,4 +1052,17 @@ model PromiseReview {
 
   @@index([weekId, authorId])
   @@map("promise_reviews")
+}
+
+/// Снимок недели (этап 22): итоги обещаний топ-команды на момент закрытия недели. Закрытая неделя не меняется,
+/// когда потом правят задачи. Неделю открыли снова: снимок удаляется, при закрытии делается заново
+model WeekSnapshot {
+  id      String   @id @default(cuid())
+  weekId  String   @unique
+  week    Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  takenAt DateTime @default(now()) @db.Timestamptz(3)
+  /// { promises: { people: [{ slug, summary }], total } }
+  data    Json
+
+  @@map("week_snapshots")
 }

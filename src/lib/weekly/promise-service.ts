@@ -9,7 +9,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { taskListInclude, toTaskDto } from "@/lib/tasks/dto";
 import { cleanDash, splitWhat } from "./rules";
-import { isWeekKey, shiftWeek, weekEndOf } from "./weeks";
+import { isWeekKey, shiftWeek, weekEndOf, weekNumberOf } from "./weeks";
 import { audit, canEdit, entryInclude, toEntryDto, weekContext } from "./service";
 import {
   EMPTY_SUMMARY,
@@ -219,5 +219,107 @@ export async function reopenWeekly(actor: Actor, key: WeekKey): Promise<void> {
     const changed = await tx.weeklyReport.updateMany({ where: { id: report.id, state: { not: "DRAFT" } }, data: { state: "DRAFT", submittedAt: null } });
     if (!changed.count) fail("Weekly уже в черновике");
     await audit(tx, actor, "weekly.reopen", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}`, report.state === "LATE" ? "Сдан с опозданием" : "Сдан", "Черновик");
+  });
+}
+
+// ---------- Снимок недели и личная статистика (этап 22б) ----------
+
+type PromiseView = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary };
+type SnapshotData = { promises: PromiseView };
+
+/**
+ * Снимок итогов обещаний на момент закрытия недели, по всем людям департамента: дальше правки задач его не меняют.
+ * Отчёт CEO и личная статистика берут из него своих людей
+ */
+export async function takeWeekSnapshot(key: WeekKey): Promise<void> {
+  const week = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true } });
+  if (!week) return;
+  const everyone = await prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, select: { id: true } });
+  const data: SnapshotData = { promises: await promiseSummaries(key, everyone.map((p) => p.id)) };
+  const json = data as unknown as Prisma.InputJsonValue;
+  try {
+    await prisma.weekSnapshot.upsert({ where: { weekId: week.id }, update: { data: json, takenAt: new Date() }, create: { weekId: week.id, data: json } });
+  } catch (error) {
+    // Два первых чтения закрытой недели одновременно: снимок уже сделал соседний запрос
+    if ((error as { code?: string }).code !== "P2002") throw error;
+  }
+}
+
+/** Неделю открыли снова: снимок больше не нужен, при следующем закрытии он сделается заново */
+export async function dropWeekSnapshot(key: WeekKey): Promise<void> {
+  await prisma.weekSnapshot.deleteMany({ where: { week: { start: dbDate(key) } } });
+}
+
+/** Снимок, который годится: сделан после закрытия недели. Более ранний остался от прошлого закрытия */
+function validSnapshot(week: { closedAt: Date | null; snapshot: { takenAt: Date; data: unknown } | null }) {
+  return week.closedAt && week.snapshot && week.snapshot.takenAt >= week.closedAt ? week.snapshot : null;
+}
+
+/** Из снимка всего департамента только нужные люди и итог по ним */
+function fromSnapshot(data: unknown, wanted: Set<string>): PromiseView {
+  const people = (data as SnapshotData).promises.people.filter((p) => wanted.has(p.slug));
+  return { people, total: people.reduce((acc, p) => addSummary(acc, p.summary), EMPTY_SUMMARY) };
+}
+
+/**
+ * Итоги обещаний нескольких недель одним заходом: у закрытых недель из снимка, у открытых живые. Закрытая неделя без
+ * снимка (закрыта до этапа 22б) считается вживую, снимок при чтении не пишется. snapshotAt: когда сделан снимок
+ */
+export async function weekPromisesMany(keys: WeekKey[], personIds: string[]): Promise<Map<WeekKey, PromiseView & { snapshotAt?: string }>> {
+  const out = new Map<WeekKey, PromiseView & { snapshotAt?: string }>();
+  const valid = keys.filter(isWeekKey);
+  if (!valid.length || !personIds.length) return out;
+  const [weeks, people] = await Promise.all([
+    prisma.week.findMany({ where: { start: { in: valid.map(dbDate) } }, select: { start: true, closedAt: true, snapshot: { select: { takenAt: true, data: true } } } }),
+    prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true } }),
+  ]);
+  const wanted = new Set(people.map((p) => p.slug));
+  const byKey = new Map(weeks.map((w) => [isoFromDbDate(w.start), w]));
+  const live: WeekKey[] = [];
+  for (const k of valid) {
+    const snap = byKey.has(k) ? validSnapshot(byKey.get(k)!) : null;
+    if (snap) out.set(k, { ...fromSnapshot(snap.data, wanted), snapshotAt: snap.takenAt.toISOString() });
+    else live.push(k);
+  }
+  const computed = await Promise.all(live.map((k) => promiseSummaries(k, personIds)));
+  live.forEach((k, i) => out.set(k, computed[i]!));
+  return out;
+}
+
+/** Итоги обещаний одной недели для отчёта CEO */
+export async function weekPromises(key: WeekKey, personIds: string[]): Promise<PromiseView & { snapshotAt?: string }> {
+  return (await weekPromisesMany([key], personIds)).get(key) ?? { people: [], total: EMPTY_SUMMARY };
+}
+
+/** Сколько недель показывать в личной статистике и после скольких недель с обещаниями она включается */
+export const STATS_WEEKS = 8;
+export const STATS_MIN_WEEKS = 6;
+
+export type PromiseHistory = {
+  slug: PersonSlug;
+  weeks: { key: WeekKey; number: number; summary: PromiseSummary }[];
+  /** Сумма за показанные недели */
+  total: PromiseSummary;
+  /** Недель с обещаниями: статистика включается с STATS_MIN_WEEKS */
+  active: number;
+  enabled: boolean;
+};
+
+/**
+ * Личная статистика «обещал и сделал» за последние 8 недель до key включительно. Видят её сам человек и директор:
+ * это диагностика, а не рейтинг. Закрытые недели берутся из снимков
+ */
+export async function promiseHistory(personIds: string[], key: WeekKey): Promise<PromiseHistory[]> {
+  if (!isWeekKey(key) || !personIds.length) return [];
+  const keys = Array.from({ length: STATS_WEEKS }, (_, i) => shiftWeek(key, i - STATS_WEEKS + 1));
+  const [views, people] = await Promise.all([
+    weekPromisesMany(keys, personIds),
+    prisma.person.findMany({ where: { id: { in: personIds } }, select: { slug: true }, orderBy: { sortOrder: "asc" } }),
+  ]);
+  return people.map((p) => {
+    const slug = p.slug as PersonSlug;
+    const weeks = keys.map((k) => ({ key: k, number: weekNumberOf(k), summary: views.get(k)?.people.find((x) => x.slug === slug)?.summary ?? EMPTY_SUMMARY }));
+    const active = weeks.filter((w) => w.summary.total > 0).length;
+    return { slug, weeks, total: weeks.reduce((acc, w) => addSummary(acc, w.summary), EMPTY_SUMMARY), active, enabled: active >= STATS_MIN_WEEKS };
   });
 }

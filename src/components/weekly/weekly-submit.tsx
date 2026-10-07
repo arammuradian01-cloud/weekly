@@ -24,6 +24,10 @@ import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
 import { PromiseStep } from "./promise-step";
+import { FactSuggestions } from "./fact-suggestions";
+import { ThanksField } from "./thanks-field";
+import { taskFacts, type WeekFact } from "@/lib/weekly/facts";
+import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
@@ -48,6 +52,8 @@ export function WeeklySubmit({
   promoted = [],
   expectedIn,
   promises: initialPromises = [],
+  facts: initialFacts = [],
+  skippedFacts = [],
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -62,6 +68,10 @@ export function WeeklySubmit({
   expectedIn?: { id: string; name: string }[];
   /** Планы прошлого weekly с итогами (этап 22) */
   promises?: EntryPromise[];
+  /** Факты недели для черновика (этап 22): закрытое, перенесённое, заблокированное, выполненные просьбы */
+  facts?: WeekFact[];
+  /** Ключи фактов, которые уже записи или скрыты, в этой и прошлой неделе */
+  skippedFacts?: string[];
 }) {
   const { data, me, notify, notifyUndo } = usePrototype();
   const router = useRouter();
@@ -118,6 +128,15 @@ export function WeeklySubmit({
 
   // Обещания недели (этап 22): планы прошлого weekly и мои задачи со сроком на этой неделе
   const [promises, setPromises] = useState<EntryPromise[]>(initialPromises);
+  // Факты по задачам считаются на экране по живому списку задач: закрыли задачу в шаге 2, в шаге 3 сразу есть строка.
+  // Выполненные просьбы приходят с сервера. Добавленные и скрытые факты хранятся ключами
+  const [skipped, setSkipped] = useState<Set<string>>(() => new Set(skippedFacts));
+  const requestFacts = initialFacts.filter((f) => f.kind === "request");
+  const facts = [...taskFacts(data.tasks, me.slug, { start: week.start, end: week.end }), ...requestFacts].filter((f) => !skipped.has(f.key));
+  const setFacts = (update: (prev: WeekFact[]) => WeekFact[]) => {
+    const kept = new Set(update(facts).map((f) => f.key));
+    setSkipped((prev) => new Set([...prev, ...facts.filter((f) => !kept.has(f.key)).map((f) => f.key)]));
+  };
   const range = { start: week.start, end: week.end };
   const owed = promiseTasks(data.tasks, me.slug, range);
   const owedNumbers = new Set(owed.map((t) => t.number));
@@ -128,7 +147,7 @@ export function WeeklySubmit({
       !t.archived &&
       !owedNumbers.has(t.number) &&
       isMine(t, me.slug, me.role) &&
-      (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today)),
+      (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today) || greenOutside(t, data.today) !== null),
   );
 
   const newEntry = (): WeeklyEntry => ({
@@ -178,6 +197,7 @@ export function WeeklySubmit({
       // Запись встаёт на прежнее место, а не в конец
       setEntries((prev) => (prev.some((e) => e.id === back.id) ? prev : [...prev.slice(0, index), back, ...prev.slice(index)]));
       if (carriedBy) setCarried(carriedBy, { id: back.id, what: back.what });
+      if (back.factKey) setSkipped((prev) => new Set([...prev, back.factKey!]));
       notify("Запись возвращена");
     } catch {
       notify("Нет связи с сервером: запись не вернулась", "error");
@@ -193,6 +213,14 @@ export function WeeklySubmit({
       if (!result.ok) return notify(result.error, "error");
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
       if (carriedBy) setCarried(carriedBy, undefined);
+      // Запись из факта удалили: факт снова предлагается
+      if (entry.factKey) {
+        setSkipped((prev) => {
+          const next = new Set(prev);
+          next.delete(entry.factKey!);
+          return next;
+        });
+      }
       const token = result.value.undo;
       notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0), carriedBy));
     } catch {
@@ -332,7 +360,12 @@ export function WeeklySubmit({
           <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
         </Step>
 
-        <Step id="step-tasks" n={2} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
+        <Step
+          id="step-tasks"
+          n={2}
+          title="Обновить задачи"
+          description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений, «В графике» без оснований"
+        >
           {tasks.length === 0 ? (
             <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
           ) : (
@@ -355,7 +388,11 @@ export function WeeklySubmit({
             readOnly={!canEdit}
             counter={{ value: headline.length, max: HEADLINE_MAX }}
           />
+          <div className="mt-4">
+            <ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={canEdit} />
+          </div>
           <div className="mt-6 flex flex-col gap-4">
+            {canEdit ? <FactSuggestions week={week.key} facts={facts} setFacts={setFacts} onAdded={upsert} /> : null}
             <h3 className="text-lead font-semibold text-ink">
               Записи <span className="font-normal text-muted">{entries.length}</span>
             </h3>
@@ -537,6 +574,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
   const { open } = useOpenTask();
   const [where, setWhere] = useState(task.where);
   const overdue = isOverdue(task, data.today);
+  const green = greenOutside(task, data.today);
   const changed = where.trim() !== task.where && where.trim().length > 0;
   return (
     <li className={cn("flex flex-col gap-2 px-4 py-3", overdue && "bg-danger-soft")}>
@@ -555,6 +593,11 @@ function TaskUpdateRow({ task }: { task: Task }) {
         <StatusSelect task={task} />
         <StateSelect task={task} />
       </div>
+      {green ? (
+        <p className="text-small text-orange-ink">
+          {greenOutsideText(green)}. {green.unconfirmed ? "«В графике» не считается, пока не обновите или не подтвердите «где сейчас»" : "Проверьте состояние и обновите «где сейчас»"}
+        </p>
+      ) : null}
       <form
         className="flex flex-col gap-2 sm:flex-row sm:items-center"
         onSubmit={(e) => {
@@ -577,6 +620,10 @@ function TaskUpdateRow({ task }: { task: Task }) {
           </Button>
         ) : task.whereUpdatedAt === data.today ? (
           <span className="text-caption text-green-ink">Обновлено сегодня</span>
+        ) : green && task.where ? (
+          <Button size="sm" type="button" variant="secondary" className="h-11 sm:h-10" onClick={() => void actions.updateWhere(task, task.where)}>
+            Подтвердить: всё так же
+          </Button>
         ) : null}
       </form>
     </li>

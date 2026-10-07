@@ -18,6 +18,8 @@ import { SubmissionStrip } from "./submission-strip";
 import { AbsentBadge, substituteText } from "./absence";
 import { submittedText } from "./weekly-feed";
 import type { PersonWeekly } from "@/domain/types";
+import type { PromiseHistory } from "@/lib/weekly/promise-service";
+import { PromiseStats } from "./promise-stats";
 
 /** Стартовый экран: мой weekly и срок, мои просроченные и срочные задачи, новые комментарии (раздел 7 ТЗ) */
 export function MyWeek({
@@ -29,6 +31,7 @@ export function MyWeek({
   entriesCount,
   team,
   requests,
+  promiseStats,
 }: {
   deadlineText: string;
   timeLeft: string;
@@ -40,6 +43,8 @@ export function MyWeek({
   team: PersonWeekly[] | null;
   /** Просьбы ко мне и «Жду от коллег» (этап 21) */
   requests: { incoming: RequestView[]; outgoing: RequestView[] };
+  /** «Обещал и сделал» за 8 недель (этап 22): видит только сам человек */
+  promiseStats?: PromiseHistory;
 }) {
   const { data, me } = usePrototype();
   const { open } = useOpenTask();
@@ -82,6 +87,12 @@ export function MyWeek({
       </section>
 
       {team ? <SubmissionStrip reports={team} className="mt-4" /> : null}
+
+      {promiseStats?.active ? (
+        <div className="mt-4">
+          <PromiseStats stats={promiseStats} />
+        </div>
+      ) : null}
 
       <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section aria-labelledby="my-tasks">

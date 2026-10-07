@@ -18,7 +18,7 @@ import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
 import { Button } from "@/components/ui/button";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
-import { OverdueNote, StaleNote } from "@/components/ui/task-badges";
+import { GreenOutsideNote, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from "./task-fields";
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
@@ -197,6 +197,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
             </p>
           </>
         )}
+        <GreenOutsideNote task={task} today={data.today} className="mt-1 block" />
       </section>
 
       <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">

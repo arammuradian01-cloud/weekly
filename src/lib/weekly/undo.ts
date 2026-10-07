@@ -25,6 +25,8 @@ export type EntrySnapshot = {
   ceo: boolean;
   sortOrder: number;
   importBatch: string | null;
+  /** Запись из факта недели (этап 22) */
+  factKey?: string | null;
   createdAt: string;
   /** Задачи, созданные из записи: при удалении связь обнуляется, при отмене возвращается */
   taskIds: string[];

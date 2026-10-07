@@ -135,6 +135,8 @@ export type WeekInfo = {
 export type WeeklyEntry = {
   id: string;
   week: WeekKey;
+  /** Запись сделана из факта недели (этап 22): факт не предлагается, пока запись есть */
+  factKey?: string;
   /** null: общая запись без автора («Все лидеры» в таблице), ждёт распределения */
   author: PersonSlug | null;
   direction: DirectionCode;
@@ -162,6 +164,8 @@ export type PersonWeekly = {
   week: WeekKey;
   author: PersonSlug;
   headline: string;
+  /** «Спасибо @коллега за…» (этап 22) */
+  thanks?: string;
   state: WeeklyStateCode;
   /** Когда сдан, момент в ISO */
   submittedAt?: string;

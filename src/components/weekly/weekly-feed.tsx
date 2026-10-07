@@ -328,6 +328,9 @@ function PeopleView({
               ) : reporting ? (
                 <p className="mt-2 text-body text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
               ) : null}
+              {weekly?.thanks ? (
+                <p className="mt-1.5 text-body text-ink">{weekly.thanks}</p>
+              ) : null}
             </header>
             {own.length ? (
               <ul className="flex flex-col divide-y divide-line">

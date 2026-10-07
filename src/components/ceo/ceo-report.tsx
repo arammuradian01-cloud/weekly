@@ -9,6 +9,7 @@ import { formatLong } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
 import { compactName } from "@/domain/people";
 import { promiseShare, summaryText, type PromiseSummary } from "@/lib/weekly/promises";
+import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
 import type { CeoReportView } from "@/lib/weekly/service";
 import { saveCeoReportAction } from "@/app/(app)/weekly/actions";
@@ -17,7 +18,15 @@ import { TextArea } from "@/components/ui/primitives";
 import { WeekSwitcher } from "@/components/weekly/weekly-feed";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
 
-type Promises = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary };
+type Promises = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary; snapshotAt?: string };
+
+/** «За 8 недель: 64%» или «статистика появится через 6 недель» */
+function statsLine(h: PromiseHistory | undefined): string | null {
+  if (!h) return null;
+  if (!h.enabled) return `за 8 недель: появится после 6 недель с обещаниями, сейчас ${h.active}`;
+  const share = promiseShare(h.total);
+  return share === null ? null : `за 8 недель: ${share}%`;
+}
 
 /** «Сделано 7 из 10 (70%). Снято 1» */
 function promiseLine(s: PromiseSummary): string {
@@ -37,7 +46,21 @@ function moment(iso: string): string {
 }
 
 /** Черновик отчёта CEO (раздел 3 ТЗ): видят только владелец и администраторы, в таблицу он не выгружается */
-export function CeoReport({ view, saved, history, promises }: { view: WeekView; saved: CeoReportView; history: History; promises?: Promises }) {
+export function CeoReport({
+  view,
+  saved,
+  history,
+  promises,
+  stats,
+}: {
+  view: WeekView;
+  saved: CeoReportView;
+  history: History;
+  promises?: Promises;
+  /** Личная статистика за 8 недель: только директору */
+  stats?: PromiseHistory[];
+}) {
+  const thanks = view.reports.filter((r) => r.thanks);
   const { notify } = usePrototype();
   const run = useRunWeekly();
   const week = view.week;
@@ -57,6 +80,7 @@ export function CeoReport({ view, saved, history, promises }: { view: WeekView; 
     "Появятся после подключения недельного отчёта.",
     "",
     ...(promises?.total.total ? ["Обещания недели", promiseLine(promises.total), ""] : []),
+    ...(thanks.length ? ["Благодарности", ...thanks.map((r) => `- ${compactName(r.author)}: ${r.thanks}`), ""] : []),
     "Главное за неделю",
     sections.main || "-",
     "",
@@ -135,13 +159,20 @@ export function CeoReport({ view, saved, history, promises }: { view: WeekView; 
             <>
               <p className="mt-1 text-body text-ink">{promiseLine(promises.total)}</p>
               <ul className="mt-3 flex flex-col gap-1">
-                {promises.people.map((p) => (
-                  <li key={p.slug} className="flex flex-col text-small sm:flex-row sm:gap-2">
-                    <span className="font-medium text-ink sm:w-40 sm:shrink-0">{compactName(p.slug)}</span>
-                    <span className="text-muted">{promiseLine(p.summary)}</span>
-                  </li>
-                ))}
+                {promises.people.map((p) => {
+                  const longer = statsLine(stats?.find((h) => h.slug === p.slug));
+                  return (
+                    <li key={p.slug} className="flex flex-col text-small sm:flex-row sm:gap-2">
+                      <span className="font-medium text-ink sm:w-40 sm:shrink-0">{compactName(p.slug)}</span>
+                      <span className="text-muted">
+                        {promiseLine(p.summary)}
+                        {longer ? `. ${longer.charAt(0).toUpperCase()}${longer.slice(1)}` : ""}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
+              {promises.snapshotAt ? <p className="mt-3 text-caption text-muted">Снимок на момент закрытия недели, {moment(promises.snapshotAt)}: правки задач после закрытия его не меняют.</p> : null}
               <p className="mt-3 text-caption text-muted">
                 Планы из прошлого weekly и задачи со сроком на этой неделе. Итог плана ставит лидер при сдаче weekly, итог задачи это её статус. Доля считается от обещаний с итогом, снятые не считаются.
               </p>
@@ -150,6 +181,20 @@ export function CeoReport({ view, saved, history, promises }: { view: WeekView; 
             <p className="mt-1 text-body text-muted">Обещаний на эту неделю не было: в прошлом weekly нет планов, задач со сроком на неделе нет.</p>
           )}
         </section>
+
+        {thanks.length ? (
+          <section aria-labelledby="ceo-thanks" className="rounded-xl px-5 py-4 ring-1 ring-line">
+            <h2 id="ceo-thanks" className="text-title-sm font-semibold text-ink">Благодарности</h2>
+            <ul className="mt-2 flex flex-col gap-1">
+              {thanks.map((r) => (
+                <li key={r.author} className="flex flex-col text-small sm:flex-row sm:gap-2">
+                  <span className="font-medium text-ink sm:w-40 sm:shrink-0">{compactName(r.author)}</span>
+                  <span className="text-ink">{r.thanks}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={6} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />
         <TextArea label="Риски" id="ceo-risks" value={sections.risks} onChange={(e) => set("risks", e.target.value)} rows={4} />

@@ -18,6 +18,8 @@ import { Suspense } from "react";
 import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
 import { MyWeek } from "@/components/weekly/my-week";
 import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
+import { promiseHistory } from "@/lib/weekly/promise-service";
+import { shiftWeek } from "@/lib/weekly/weeks";
 import { fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
@@ -37,10 +39,13 @@ export default async function MyWeekPage() {
   const week = reportingWeek(now, deadlineSetting);
   const weekKey = fromCalendar(week.start);
   const current = management ? await currentTeam(subjectOf(ctx)) : null;
-  const [mine, team, requests] = await Promise.all([
+  const [mine, team, requests, stats] = await Promise.all([
     getMyWeekly(person.id, weekKey),
     current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
     myRequests(await currentActor(), now),
+    // «Обещал и сделал» за законченные недели: отчётная ещё идёт (этап 22). По общему логину профиль мог выбрать
+    // кто угодно, поэтому статистику показываем только при личном входе
+    subjectOf(ctx).limited ? Promise.resolve([]) : promiseHistory([person.id], shiftWeek(weekKey, -1)),
   ]);
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
@@ -86,6 +91,7 @@ export default async function MyWeekPage() {
           entriesCount={mine.entries.length}
           team={team}
           requests={requests}
+          promiseStats={stats[0]}
         />
         <TaskDrawer />
       </Suspense>

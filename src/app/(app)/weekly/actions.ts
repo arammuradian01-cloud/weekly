@@ -6,7 +6,8 @@ import { unstable_rethrow } from "next/navigation";
 import { requestIp, requireContext } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
-import { carryPromise, reopenWeekly, reviewPromise } from "@/lib/weekly/promise-service";
+import { carryPromise, dropWeekSnapshot, reopenWeekly, reviewPromise, takeWeekSnapshot } from "@/lib/weekly/promise-service";
+import { addFact, hideFact } from "@/lib/weekly/facts-service";
 import type { EntryPromise } from "@/lib/weekly/promises";
 import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
@@ -44,7 +45,8 @@ export async function saveHeadlineAction(week: WeekKey, headline: string): Promi
 }
 
 export async function saveEntryAction(input: svc.EntryInput): Promise<Result<WeeklyEntry>> {
-  return run((a) => svc.saveEntry(a, input));
+  // Метку факта недели ставит только сервер (этап 22)
+  return run((a) => svc.saveEntry(a, { ...input, factKey: undefined }));
 }
 
 /** Удалить запись. В ответе токен отмены: он живёт минуту, кнопка «Отменить» на экране 5 секунд */
@@ -68,10 +70,28 @@ export async function submitWeeklyAction(week: WeekKey): Promise<Result<PersonWe
   return run((a) => svc.submitWeekly(a, week));
 }
 
+/** «Спасибо @коллега за…» в weekly (этап 22) */
+export async function saveThanksAction(week: WeekKey, text: string): Promise<Result<{ thanks: string; warning?: string }>> {
+  return run((a) => svc.saveThanks(a, week, String(text ?? "")));
+}
+
 /** Вернуть сданный weekly в черновик, пока неделя открыта (этап 22) */
 export async function reopenWeeklyAction(week: WeekKey): Promise<Result<null>> {
   return run(async (a) => {
     await reopenWeekly(a, week);
+    return null;
+  });
+}
+
+/** Факт недели записью weekly (этап 22) */
+export async function addFactAction(week: WeekKey, factKey: string): Promise<Result<WeeklyEntry>> {
+  return run((a) => addFact(a, week, String(factKey)));
+}
+
+/** Скрыть факт недели: больше не предлагается (этап 22) */
+export async function hideFactAction(week: WeekKey, factKey: string): Promise<Result<null>> {
+  return run(async (a) => {
+    await hideFact(a, week, String(factKey));
     return null;
   });
 }
@@ -95,7 +115,17 @@ export async function assignEntryAuthorAction(id: string, slug: PersonSlug): Pro
 }
 
 export async function setWeekClosedAction(week: WeekKey, closed: boolean): Promise<Result<WeekInfo>> {
-  return run((a) => svc.setWeekClosed(a, week, !!closed));
+  return run(async (a) => {
+    const info = await svc.setWeekClosed(a, week, !!closed);
+    // Снимок итогов обещаний (этап 22): не получился сейчас, сделается при первом открытии отчёта CEO
+    try {
+      if (closed) await takeWeekSnapshot(week);
+      else await dropWeekSnapshot(week);
+    } catch (error) {
+      console.error("Снимок недели не сохранился", error);
+    }
+    return info;
+  });
 }
 
 export async function saveCeoReportAction(week: WeekKey, sections: CeoSections): Promise<Result<svc.CeoReportView>> {
