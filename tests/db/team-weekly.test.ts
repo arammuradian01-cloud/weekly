@@ -69,7 +69,7 @@ describe("ритм команды", () => {
     await org.setTeamRhythm(antonov, sector.id, { deadline: { week: 0, weekday: 5, time: "16:00" }, meeting: { week: 1, weekday: 1, time: "10:00" }, specialists: true });
     const saved = await prisma.team.findUniqueOrThrow({ where: { id: sector.id } });
     expect([saved.deadlineWeek, saved.deadlineWeekday, saved.deadlineTime, saved.specialistsWeekly]).toEqual([0, 5, "16:00", true]);
-    const logs = await prisma.auditLog.findMany({ where: { action: "team.rhythm", entityId: sector.id } });
+    const logs = await prisma.auditLog.findMany({ where: { action: "team.rhythm", entityId: sector.id }, orderBy: { id: "asc" } });
     expect(logs.map((l) => l.field)).toEqual([`Срок weekly: ${sector.name}`, `Встреча команды: ${sector.name}`, `Weekly специалистов: ${sector.name}`]);
     await expectRule(org.setTeamRhythm(await actor("Токов"), sector.id, { deadline: null, meeting: null, specialists: false }), /руководитель/);
     await expectRule(org.setTeamRhythm(antonov, TOP_TEAM, { deadline: null, meeting: null, specialists: false }), /настройках недели/);
