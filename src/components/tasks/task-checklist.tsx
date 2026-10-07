@@ -30,13 +30,13 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
   const [text, setText] = useState("");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const closed = isClosed(task);
   // Отметка ставится сразу, ответ сервера её подтверждает или возвращает назад
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
   useEffect(() => setOptimistic({}), [task.updatedAt, task.checklist]);
   const items = (task.checklist ?? []).map((c) => (c.id in optimistic ? { ...c, done: optimistic[c.id]! } : c));
   const progress = checklistProgress({ checklist: items });
-  const closed = isClosed(task);
-  const canEdit = can.where && !observer && !task.archived;
+  const canEdit = can.where && !observer && !task.archived && !closed;
   const H = headingLevel;
   if (!items.length && !canEdit) return null;
 
@@ -100,7 +100,7 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
                 </span>
               )}
             </label>
-            {canEdit && !closed && editing?.id !== c.id ? (
+            {canEdit && editing?.id !== c.id ? (
               <div className="flex shrink-0 items-center opacity-0 focus-within:opacity-100 group-hover:opacity-100">
                 <button type="button" onClick={() => setEditing({ id: c.id, text: c.text })} className="inline-flex h-9 items-center rounded-md px-2 text-caption text-muted hover:bg-surface hover:text-ink">
                   Изменить
@@ -113,18 +113,16 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
           </li>
         ))}
       </ul>
-      {canEdit && !closed ? (
-        adding || !items.length ? (
+      {canEdit ? (
+        adding ? (
           <form onSubmit={add} className="mt-1 flex flex-wrap items-end gap-2">
-            <TextInput label="Новый пункт" hideLabel id={`cl-new-${task.number}`} value={text} onChange={(e) => setText(e.target.value)} placeholder="Что нужно сделать по шагам" maxLength={200} className="min-w-0 flex-1" autoFocus={adding} />
+            <TextInput label="Новый пункт" hideLabel id={`cl-new-${task.number}`} value={text} onChange={(e) => setText(e.target.value)} placeholder="Что нужно сделать по шагам" maxLength={200} className="min-w-0 flex-1" autoFocus />
             <Button size="sm" type="submit" disabled={!text.trim()}>
-              Добавить
+              Добавить пункт
             </Button>
-            {items.length ? (
-              <Button size="sm" type="button" variant="ghost" onClick={() => setAdding(false)}>
-                Готово
-              </Button>
-            ) : null}
+            <Button size="sm" type="button" variant="ghost" onClick={() => setAdding(false)}>
+              Готово
+            </Button>
           </form>
         ) : (
           <button type="button" onClick={() => setAdding(true)} className="mt-1 inline-flex h-9 items-center gap-1.5 rounded-md text-small font-medium text-blue-700 hover:underline">
@@ -146,7 +144,7 @@ export function TaskRepeat({ task }: { task: Task }) {
   const [mode, setMode] = useState<RepeatModeCode>(task.repeat?.mode ?? "on-close");
   const [off, setOff] = useState(false);
   const r = task.repeat;
-  const canEdit = (can.edit || can.due) && !observer && !task.archived && !isClosed(task);
+  const canEdit = (can.edit || can.due) && !observer && !task.archived;
   const openModal = () => {
     setKind(r?.kind ?? "weekly");
     setMode(r?.mode ?? "on-close");

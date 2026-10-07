@@ -18,16 +18,16 @@ import { FormError } from "@/components/ui/field";
 
 type Status = "active" | "cancelled" | "all";
 
-export function DecisionsJournal({ initial, teamIds }: { initial: DecisionView[]; teamIds?: string[] }) {
+export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { initial: DecisionView[]; teamIds?: string[]; /** Запрос из адреса: сервер уже отобрал по нему */ initialQuery?: string }) {
   const { notify, manage, leads } = usePrototype();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [status, setStatus] = useState<Status>("all");
   const [items, setItems] = useState(initial);
   const [cancelling, setCancelling] = useState<DecisionView | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   // Свежий список с сервера, если фильтры не тронуты; иначе перечитываем по фильтру
-  const filtered = query.trim() !== "" || status !== "all";
+  const filtered = query.trim() !== initialQuery || status !== "all";
   useEffect(() => {
     if (!filtered) setItems(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps

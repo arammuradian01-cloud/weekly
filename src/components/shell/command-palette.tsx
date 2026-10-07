@@ -19,8 +19,9 @@ import { openNewTask } from "@/components/prototype/new-task";
 
 const OPEN_EVENT = "weekly:command-palette";
 
-export function openCommandPalette(initial = "") {
-  window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: initial }));
+/** Открыть командную строку. initial: подставить текст; без него прежний запрос остаётся, как и при Cmd+K */
+export function openCommandPalette(initial?: string) {
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: initial ?? null }));
 }
 
 type Command = { id: string; label: string; hint?: string; icon: LucideIcon; run: () => void; keywords?: string };
@@ -71,7 +72,8 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       }
     };
     const onOpen = (e: Event) => {
-      setQ(String((e as CustomEvent).detail ?? ""));
+      const detail = (e as CustomEvent).detail as string | null;
+      if (detail !== null) setQ(detail);
       setOpen(true);
     };
     window.addEventListener("keydown", onKey);

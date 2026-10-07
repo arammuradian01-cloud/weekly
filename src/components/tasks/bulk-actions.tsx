@@ -53,7 +53,7 @@ export function useBulkSelection(visible: Task[]): Selection {
 type Kind = "status" | "owner" | "due" | "priority";
 
 export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Task[] }) {
-  const { data, applyTaskResult, notify, manage, teamPeople } = usePrototype();
+  const { data, applyTasks, notify, manage, leads, teamPeople } = usePrototype();
   const router = useRouter();
   const [kind, setKind] = useState<Kind | null>(null);
   const [status, setStatus] = useState<StatusCode>("in-progress");
@@ -98,11 +98,11 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
     try {
       const r = await bulkChangeAction(numbers, change);
       if (!r.ok) return setError(r.error);
-      for (const t of r.value.done) applyTaskResult({ ok: true, task: t, number: t.number }, "");
+      applyTasks(r.value.done);
       setKind(null);
       selection.clear();
       setReport({ done: r.value.done.length, failed: r.value.failed });
-      if (!r.value.failed.length) notify(`Изменено задач: ${r.value.done.length}`);
+      notify(r.value.failed.length ? `Изменено задач: ${r.value.done.length}, не прошло: ${r.value.failed.length}` : `Изменено задач: ${r.value.done.length}`, r.value.failed.length && !r.value.done.length ? "error" : undefined);
       router.refresh();
     } catch {
       setError("Нет связи с сервером");
@@ -120,7 +120,7 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
           <div className="mx-auto flex max-w-page flex-wrap items-center gap-2 rounded-xl bg-navy px-4 py-2.5 text-small text-white shadow-modal">
             <span className="mr-1 font-semibold">Выбрано: {count}</span>
             <Button size="sm" variant="secondary" onClick={() => openKind("status")}>Статус</Button>
-            {manage ? <Button size="sm" variant="secondary" onClick={() => openKind("owner")}>Ответственный</Button> : null}
+            {manage || leads.length ? <Button size="sm" variant="secondary" onClick={() => openKind("owner")}>Ответственный</Button> : null}
             <Button size="sm" variant="secondary" onClick={() => openKind("due")}>Срок</Button>
             <Button size="sm" variant="secondary" onClick={() => openKind("priority")}>Приоритет</Button>
             <button type="button" onClick={selection.clear} className="ml-auto inline-flex h-9 items-center gap-1 rounded-md px-2 text-white/80 hover:bg-white/10 hover:text-white">

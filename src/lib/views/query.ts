@@ -1,7 +1,7 @@
 // Строка фильтров вида без базы (этап 25): нужна и серверу, и экрану
 
 /** Параметры адреса, которые вид запоминает. Остальное (например, открытая задача) не сохраняется */
-const KEPT_KEYS = new Set(["q", "f", "owner", "group", "closed", "archive", "sort", "dir", "direction"]);
+const KEPT_KEYS = new Set(["q", "f", "owner", "group", "closed", "sort", "dir", "direction"]);
 
 /** Строка адреса в каноническом виде: только известные ключи, по алфавиту, без пустых значений */
 export function normalizeQuery(raw: string): string {

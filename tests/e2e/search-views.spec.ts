@@ -71,11 +71,12 @@ test("фильтры и сортировка живут в адресе, вид 
 test("чек-лист ведётся в карточке, повтор создаёт следующую задачу при закрытии", async ({ page }) => {
   await enter(page, "Рева Тарас");
   await page.goto("/tasks/28");
+  await page.getByRole("button", { name: "Добавить пункт" }).click();
   await page.getByLabel("Новый пункт").fill("Собрать цифры");
-  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  await page.getByRole("button", { name: "Добавить пункт" }).click();
   await expect(page.getByText("Пункт добавлен").first()).toBeVisible();
   await page.getByLabel("Новый пункт").fill("Согласовать с СК");
-  await page.getByRole("button", { name: "Добавить", exact: true }).click();
+  await page.getByRole("button", { name: "Добавить пункт" }).click();
   await page.getByRole("checkbox", { name: "Собрать цифры" }).check();
   await expect(page.getByRole("heading", { name: /Чек-лист 1 из 2/ })).toBeVisible();
 

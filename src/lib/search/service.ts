@@ -32,12 +32,20 @@ function clip(text: string, max = 160): string {
  */
 export async function search(subject: ScopeSubject, raw: string, where: "palette" | "page" = "palette"): Promise<SearchResult> {
   const query = String(raw ?? "").trim().slice(0, SEARCH_MAX);
-  if (query.length < SEARCH_MIN) return { query, hits: [], total: 0, truncated: false };
+  // Без букв и цифр искать нечего: одни знаки подстановки дали бы полный просмотр таблиц
+  if (query.length < SEARCH_MIN || !/[\p{L}\p{N}]/u.test(query)) return { query, hits: [], total: 0, truncated: false };
   const perKind = PER_KIND[where];
   const number = taskNumberOf(query);
   // Чистое число ищет задачу по номеру: слова и проценты с такими цифрами в записях были бы шумом
-  const ts = number ? "" : tsQueryOf(query);
-  const like = `%${query}%`;
+  let ts = number ? "" : tsQueryOf(query);
+  // Словарь выбрасывает стоп-слова («и», «как»): если от запроса ничего не осталось, ищем подстрокой по названиям.
+  // Подстрока только в этом случае: индекс по словам тогда не поможет, а условие «ИЛИ подстрока» мешало бы ему всегда
+  if (ts) {
+    const [{ n }] = await prisma.$queryRaw<{ n: number }[]>`SELECT numnode(to_tsquery('russian', ${ts})) AS n`;
+    if (!n) ts = "";
+  }
+  const like = `%${query.replace(/[\\%_]/g, "\\$&")}%`;
+  const useLike = !number && !ts;
   const [scope, nodes] = await Promise.all([loadScope(prisma, subject), loadTeamNodes(prisma)]);
   const taskWhere = visibleTasksWhere(scope, subject.id);
   const names = new Map((await prisma.person.findMany({ select: { id: true, slug: true, shortName: true, fullName: true } })).map((p) => [p.id, p]));
@@ -49,10 +57,12 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
           ts_headline('russian', "title" || '. ' || "outcome" || ' ' || "whereNow", to_tsquery('russian', ${ts}), ${HEADLINE_OPTS}) AS snippet,
           ts_rank(to_tsvector('russian', "title" || ' ' || "outcome" || ' ' || "whereNow"), to_tsquery('russian', ${ts})) AS rank
         FROM tasks
-        WHERE "archivedAt" IS NULL AND (to_tsvector('russian', "title" || ' ' || "outcome" || ' ' || "whereNow") @@ to_tsquery('russian', ${ts}) OR "title" ILIKE ${like})
+        WHERE "archivedAt" IS NULL AND to_tsvector('russian', "title" || ' ' || "outcome" || ' ' || "whereNow") @@ to_tsquery('russian', ${ts})
         ORDER BY rank DESC, "updatedAt" DESC
         LIMIT ${RAW_LIMIT}`
-    : [];
+    : useLike
+      ? await prisma.$queryRaw<RawTask[]>`SELECT id, "title" AS snippet, 0::float4 AS rank FROM tasks WHERE "archivedAt" IS NULL AND "title" ILIKE ${like} ORDER BY "updatedAt" DESC LIMIT ${RAW_LIMIT}`
+      : [];
   const taskIds = rawTasks.map((t) => t.id);
   const taskRows = await prisma.task.findMany({
     where: { AND: [taskWhere, { archivedAt: null }, { OR: [...(taskIds.length ? [{ id: { in: taskIds } }] : []), ...(number ? [{ number }] : [])] }] },
@@ -77,10 +87,11 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
           ts_rank(to_tsvector('russian', "what" || ' ' || coalesce("details", '') || ' ' || coalesce("impact", '') || ' ' || coalesce("fact", '') || ' ' || coalesce("next", '') || ' ' || coalesce("help", '')), to_tsquery('russian', ${ts})) AS rank
         FROM weekly_entries
         WHERE to_tsvector('russian', "what" || ' ' || coalesce("details", '') || ' ' || coalesce("impact", '') || ' ' || coalesce("fact", '') || ' ' || coalesce("next", '') || ' ' || coalesce("help", '')) @@ to_tsquery('russian', ${ts})
-           OR "what" ILIKE ${like}
         ORDER BY rank DESC, "updatedAt" DESC
         LIMIT ${RAW_LIMIT}`
-    : [];
+    : useLike
+      ? await prisma.$queryRaw<RawTask[]>`SELECT id, "what" AS snippet, 0::float4 AS rank FROM weekly_entries WHERE "what" ILIKE ${like} ORDER BY "updatedAt" DESC LIMIT ${RAW_LIMIT}`
+      : [];
   const entryRows = rawEntries.length
     ? await prisma.weeklyEntry.findMany({
         where: { id: { in: rawEntries.map((e) => e.id) } },
@@ -103,7 +114,7 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
         SELECT id, "taskId", ts_headline('russian', "text", to_tsquery('russian', ${ts}), ${HEADLINE_OPTS}) AS snippet,
           ts_rank(to_tsvector('russian', "text"), to_tsquery('russian', ${ts})) AS rank
         FROM task_comments
-        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts}) OR "text" ILIKE ${like}
+        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts})
         ORDER BY rank DESC, "at" DESC
         LIMIT ${RAW_LIMIT}`
     : [];
@@ -112,7 +123,7 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
         SELECT id, "entryId", ts_headline('russian', "text", to_tsquery('russian', ${ts}), ${HEADLINE_OPTS}) AS snippet,
           ts_rank(to_tsvector('russian', "text"), to_tsquery('russian', ${ts})) AS rank
         FROM entry_comments
-        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts}) OR "text" ILIKE ${like}
+        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts})
         ORDER BY rank DESC, "at" DESC
         LIMIT ${RAW_LIMIT}`
     : [];
@@ -157,10 +168,12 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
         SELECT id, ts_headline('russian', "text", to_tsquery('russian', ${ts}), ${HEADLINE_OPTS}) AS snippet,
           ts_rank(to_tsvector('russian', "text"), to_tsquery('russian', ${ts})) AS rank
         FROM decisions
-        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts}) OR "text" ILIKE ${like}
+        WHERE to_tsvector('russian', "text") @@ to_tsquery('russian', ${ts})
         ORDER BY rank DESC, "date" DESC
         LIMIT ${RAW_LIMIT}`
-    : [];
+    : useLike
+      ? await prisma.$queryRaw<RawTask[]>`SELECT id, "text" AS snippet, 0::float4 AS rank FROM decisions WHERE "text" ILIKE ${like} ORDER BY "date" DESC LIMIT ${RAW_LIMIT}`
+      : [];
   const decisionRows = rawDecisions.length
     ? await prisma.decision.findMany({
         where: { id: { in: rawDecisions.map((d) => d.id) }, ...(visibleTeams ? { teamId: { in: visibleTeams } } : {}) },

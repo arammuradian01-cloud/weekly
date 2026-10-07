@@ -34,8 +34,13 @@ export function addMonth(iso: IsoDate): IsoDate {
  * Задачу закрыли с опозданием на две недели: пропущенные недели не создаются, следующая ставится вперёд
  */
 export function nextRepeatDue(kind: RepeatKindCode, due: IsoDate, today: IsoDate): IsoDate {
-  let next = kind === "weekly" ? addDays(due, 7) : addMonth(due);
+  if (kind === "weekly") {
+    // Сколько недель вперёд, чтобы оказаться позже сегодняшнего дня
+    const behind = Math.max(0, diffDays(due, today));
+    return addDays(due, 7 * (Math.floor(behind / 7) + 1));
+  }
+  let next = addMonth(due);
   let guard = 0;
-  while (diffDays(next, today) >= 0 && guard++ < 400) next = kind === "weekly" ? addDays(next, 7) : addMonth(next);
+  while (diffDays(next, today) >= 0 && guard++ < 1200) next = addMonth(next);
   return next;
 }

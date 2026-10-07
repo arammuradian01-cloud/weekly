@@ -102,6 +102,12 @@ describe("общий поиск", () => {
 
     // Короткий запрос: пусто без обращения к базе
     expect((await search(await subject("muradyan"), "д")).hits).toEqual([]);
+    // Одни стоп-слова: словарю искать нечего, работает подстрока по названию
+    await mk("Что и как");
+    const stop = await search(await subject("muradyan"), "и как");
+    expect(stop.hits.some((h) => h.kind === "task" && h.title === "Что и как")).toBe(true);
+    // Знаки подстановки экранируются: «%%» ничего не находит
+    expect((await search(await subject("muradyan"), "%%")).hits).toEqual([]);
   });
 
   it("показывает только то, что человек видит: сотрудник не находит задачи и записи топ-команды, общий логин только топ-команду", async () => {
@@ -225,6 +231,7 @@ describe("чек-лист", () => {
     expect(r.task.checklist).toHaveLength(1);
     await tasks.changeStatus(reva, t.number, "done", "Готово");
     await expectRule(tasks.addChecklistItem(reva, t.number, "Ещё"), /закрытой/);
+    await expectRule(tasks.toggleChecklistItem(reva, t.number, first.id, false), /закрытой/);
     expect((await prisma.auditLog.count({ where: logWhere })) - logBefore).toBe(5);
     // Соисполнитель тоже ведёт чек-лист
     const t2 = await mk("Вторая с чек-листом", { coExecutors: ["loginova"] });
@@ -249,6 +256,8 @@ describe("повторяющиеся задачи", () => {
 
     const closed = await tasks.changeStatus(reva, t.number, "done", "Прогноз сдан");
     expect(closed.task.repeat?.next).toBeDefined();
+    // Отмена закрытия не убрала бы созданный повтор, поэтому кнопки «Отменить» у такого закрытия нет
+    expect(closed.undo).toBeUndefined();
     const next = (await tasks.getTask(closed.task.repeat!.next!))!;
     expect(next.title).toBe(t.title);
     expect(next.owner).toBe("reva");
@@ -258,10 +267,14 @@ describe("повторяющиеся задачи", () => {
     expect(next.source.note).toBe(`Повтор задачи ${t.number}`);
     expect(next.checklist).toEqual([{ id: expect.any(String), text: "Собрать цифры", done: false }]);
     expect(next.repeat).toMatchObject({ kind: "weekly", active: true, of: t.number });
-    // Ответственный узнал (здесь закрывал он сам, поэтому событие у соисполнителя)
-    const inbox = await prisma.inboxEvent.findMany({ where: { taskId: (await prisma.task.findUniqueOrThrow({ where: { number: next.number } })).id } });
-    expect(inbox.map((e) => e.kind)).toEqual(["TASK_ASSIGNED"]);
+    // Ответственный узнал, хотя закрывал сам, и соисполнитель тоже
+    const inbox = await prisma.inboxEvent.findMany({ where: { taskId: (await prisma.task.findUniqueOrThrow({ where: { number: next.number } })).id }, include: { recipient: { select: { slug: true } } } });
+    expect(inbox.map((e) => e.kind)).toEqual(["TASK_ASSIGNED", "TASK_ASSIGNED"]);
+    expect(inbox.map((e) => e.recipient.slug).sort()).toEqual(["loginova", "reva"]);
     expect(inbox[0]!.text).toContain(`Повтор задачи ${t.number}`);
+    // В журнале закрытия видно, какая задача создана
+    const closeLog = await prisma.auditLog.findFirst({ where: { entity: "task", entityId: String(t.number), field: "Статус", after: { string_contains: `Создан повтор: задача ${next.number}` } } });
+    expect(closeLog).not.toBeNull();
 
     // Открыли и закрыли снова: вторая следующая не создаётся
     await tasks.changeStatus(owner, t.number, "in-progress");
@@ -275,6 +288,31 @@ describe("повторяющиеся задачи", () => {
     await expectRule(tasks.setRepeat(await actor.loginova(), next.number, { kind: "monthly" }), /задаёт/);
     const monthly = await tasks.setRepeat(owner, next.number, { kind: "monthly", mode: "schedule" });
     expect(monthly.task.repeat).toMatchObject({ kind: "monthly", mode: "schedule", active: true });
+
+    // «Отменена» останавливает серию: повтора нет и у самой задачи, следующая не создаётся
+    const cancelled = await tasks.changeStatus(owner, next.number, "cancelled", "Больше не нужно");
+    expect(cancelled.task.repeat?.active).toBe(false);
+    expect(cancelled.task.repeat?.next).toBeUndefined();
+    expect(await prisma.task.count({ where: { repeatOfId: (await prisma.task.findUniqueOrThrow({ where: { number: next.number } })).id } })).toBe(0);
+    // Повтор можно выключить и у закрытой задачи
+    const t3 = await mk("Закрытая с повтором", { repeat: { kind: "weekly" } });
+    await tasks.changeStatus(owner, t3.number, "failed", "Не успели");
+    const t3next = (await tasks.getTask(t3.number))!.repeat!.next!;
+    expect(t3next).toBeDefined();
+    const t3off = await tasks.setRepeat(owner, t3next, null);
+    expect(t3off.task.repeat?.active).toBe(false);
+  });
+
+  it("предложенная задача с повтором серию не продолжает: отклонение и расписание ничего не создают", async () => {
+    const owner = await actor.owner();
+    const loginova = await actor.loginova();
+    // Логинова предлагает Реве задачу с повтором по расписанию и сроком сегодня
+    const proposed = (await tasks.createTask(loginova, { title: "Предложенная с повтором", outcome: "Результат", owner: "reva", direction: "kasko", due: moscowToday(), team: TOP_TEAM, repeat: { kind: "weekly", mode: "schedule" } })).task;
+    expect(proposed.status).toBe("proposed");
+    expect(await tasks.repeatPass()).toBe(0);
+    const declined = await tasks.changeStatus(owner, proposed.number, "cancelled", "Не берём");
+    expect(declined.task.repeat?.next).toBeUndefined();
+    expect(await prisma.task.count({ where: { repeatOfId: (await prisma.task.findUniqueOrThrow({ where: { number: proposed.number } })).id } })).toBe(0);
   });
 
   it("по расписанию следующая создаётся в день срока, пока эта открыта; проход идемпотентен", async () => {
@@ -293,8 +331,12 @@ describe("повторяющиеся задачи", () => {
     // Закрытие исходной после расписания второй не создаёт
     await tasks.changeStatus(owner, t.number, "done", "Готово");
     expect(await prisma.task.count({ where: { repeatOfId: (await prisma.task.findUniqueOrThrow({ where: { number: t.number } })).id } })).toBe(1);
-    // Журнал: «создана повтором» от ресурса по расписанию
+    // Журнал: «создана повтором» от ресурса по расписанию, без человека; ответственный узнал в «Мне»
     const log = await prisma.auditLog.findFirst({ where: { entity: "task", entityId: String(next), field: "Задача создана повтором" } });
-    expect(log?.actorName).toContain("Ресурс по расписанию");
+    expect(log?.actorName).toBe("Ресурс по расписанию");
+    expect(log?.actorId).toBeNull();
+    const inbox = await prisma.inboxEvent.findMany({ where: { taskId: (await prisma.task.findUniqueOrThrow({ where: { number: next } })).id } });
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]!.actorId).toBeNull();
   });
 });

@@ -29,20 +29,32 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const params = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const p = useMemo(() => parseListParams(new URLSearchParams(params.toString())), [params]);
-  // Текст поиска набирается без ожидания ответа адреса: в адрес уходит с задержкой
+  const fromUrl = useMemo(() => parseListParams(new URLSearchParams(params.toString())), [params]);
+  // Экран меняется сразу, адрес догоняет: пока router.replace в пути, действует местная копия параметров
+  const [local, setLocal] = useState<ListParams | null>(null);
+  useEffect(() => setLocal(null), [fromUrl]);
+  const p = local ?? fromUrl;
+  // Текст поиска набирается без ожидания ответа адреса: в адрес уходит с задержкой. Из адреса поле берётся только
+  // при внешней навигации (ссылка, вид), а не после своего же ввода, иначе пропадали бы пробелы и буквы
   const [q, setQ] = useState(p.q);
   const qTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => setQ(p.q), [p.q]);
+  const lastSent = useRef(p.q);
+  useEffect(() => {
+    if (fromUrl.q !== lastSent.current) {
+      lastSent.current = fromUrl.q;
+      setQ(fromUrl.q);
+    }
+  }, [fromUrl.q]);
 
   const setParams = useCallback(
     (patch: Partial<ListParams>) => {
       const next = { ...p, ...patch };
       // Архив виден только владельцу в режиме управления: в адрес не пишем у остальных
       if (manageRole !== "OWNER") next.archive = false;
+      setLocal(next);
       const query = listParamsToQuery(next);
       const task = params.get("task");
-      const full = [query, task ? `task=${task}` : ""].filter(Boolean).join("&");
+      const full = [query, task ? `task=${encodeURIComponent(task)}` : ""].filter(Boolean).join("&");
       router.replace(full ? `${pathname}?${full}` : pathname, { scroll: false });
     },
     [p, params, pathname, router, manageRole],
@@ -50,7 +62,10 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const onQ = (value: string) => {
     setQ(value);
     if (qTimer.current) clearTimeout(qTimer.current);
-    qTimer.current = setTimeout(() => setParams({ q: value }), 250);
+    qTimer.current = setTimeout(() => {
+      lastSent.current = value.trim();
+      setParams({ q: value });
+    }, 250);
   };
 
   const today = data.today;
@@ -85,6 +100,8 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
     setParams({ sort: null, dir: "asc" });
   };
   const reset = () => {
+    if (qTimer.current) clearTimeout(qTimer.current);
+    lastSent.current = "";
     setQ("");
     setParams({ ...DEFAULT_PARAMS, archive: p.archive });
   };
