@@ -23,6 +23,6 @@ export function relevant(kind: "inbox" | "tasks" | "weekly", path: string): bool
   if (path.startsWith("/weekly/submit")) return false;
   const home = path === "/";
   if (kind === "inbox") return home || path.startsWith("/me");
-  if (kind === "tasks") return home || ["/tasks", "/me", "/my-teams", "/goals", "/team"].some((p) => path.startsWith(p));
+  if (kind === "tasks") return home || ["/tasks", "/me", "/my-teams", "/goals", "/team", "/requests"].some((p) => path.startsWith(p));
   return home || ["/weekly", "/my-teams", "/structure"].some((p) => path.startsWith(p));
 }

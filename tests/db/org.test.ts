@@ -219,7 +219,7 @@ describe("права руководителя команды", () => {
     expect(assigned.status).toBe("in-progress");
     const proposed = await newTask(alisa, "Обновить гайд", antonov.slug, antonovTeam.id);
     expect(proposed.status).toBe("proposed");
-    await expectRule(svc.changeStatus(alisa, proposed.number, "in-progress"), /подтверждает/);
+    await expectRule(svc.changeStatus(alisa, proposed.number, "in-progress"), /принимает адресат/);
     // Руководитель команды выше тоже может подтвердить
     const confirmed = await svc.changeStatus(await actors.reva(), proposed.number, "in-progress");
     expect(confirmed.task.status).toBe("in-progress");

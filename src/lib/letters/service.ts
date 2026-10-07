@@ -36,7 +36,7 @@ function appUrl(): string {
 
 // ---------- Тексты ----------
 
-export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null };
+export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null };
 
 /** Одна строка письма о событии: кто и что, без содержимого. Без глаголов с родом: «Рева Тарас: упоминание в задаче 47» */
 export function eventPhrase(e: EventLine): string {
@@ -65,12 +65,17 @@ export function eventPhrase(e: EventLine): string {
       return `${who}комментарий к записи weekly`;
     case "REACTION":
       return e.entryId ? `${who}реакция на ${e.commentId ? "ваш комментарий к записи weekly" : "вашу запись weekly"}` : `${who}реакция на ваш комментарий в задаче${n}`;
+    case "REQUEST":
+      return `${who}просьба к вам`;
+    case "REQUEST_ANSWER":
+      return `${who}изменения по просьбе`;
     default:
       return `${who}новое событие`;
   }
 }
 
-function linkOf(e: { taskNumber: number | null; entryId: string | null }): string {
+function linkOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null }): string {
+  if (e.requestNumber) return `${appUrl()}/requests/${e.requestNumber}`;
   if (e.taskNumber) return `${appUrl()}/tasks/${e.taskNumber}`;
   if (e.entryId) return `${appUrl()}/weekly/entry/${e.entryId}`;
   return `${appUrl()}/me`;
@@ -158,7 +163,7 @@ export async function eventMailPass(now = new Date()): Promise<PassResult> {
     await tx.inboxEvent.updateMany({ where: { id: { in: ids } }, data: { mailedAt: now } });
     return tx.inboxEvent.findMany({
       where: { id: { in: ids } },
-      include: { task: { select: { number: true } }, recipient: { select: { id: true, email: true, active: true, mailPrefs: true, shortName: true } } },
+      include: { task: { select: { number: true } }, request: { select: { number: true } }, recipient: { select: { id: true, email: true, active: true, mailPrefs: true, shortName: true } } },
     });
   });
   if (!claimed.length) return { sent: 0, skipped: 0, failed: 0 };
@@ -191,6 +196,7 @@ export async function eventMailPass(now = new Date()): Promise<PassResult> {
         taskNumber: e.task?.number ?? null,
         entryId: e.entryId,
         commentId: e.commentId ?? e.entryCommentId,
+        requestNumber: e.request?.number ?? null,
         subject: e.subject,
         createdAt: e.createdAt,
       })),

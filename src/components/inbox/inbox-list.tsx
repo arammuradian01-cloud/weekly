@@ -102,7 +102,11 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
             {items.map((item) => (
               <li key={item.subject} className={cn("flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between", busy === item.subject && "opacity-60")}>
                 <div className="min-w-0">
-                  {item.taskNumber ? (
+                  {item.requestNumber ? (
+                    <Link href={`/requests/${item.requestNumber}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                      <span className="text-muted">Просьба {item.requestNumber}:</span> {item.requestText}
+                    </Link>
+                  ) : item.taskNumber ? (
                     <Link href={`/tasks/${item.taskNumber}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
                       <span className="tabular-nums text-muted">{item.taskNumber}</span> {item.taskTitle}
                     </Link>
@@ -114,7 +118,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                   <p className="mt-0.5 text-body text-ink">{item.text}</p>
                   <p className="mt-0.5 text-caption text-muted">
                     {item.actorName ?? "Система"}, {when(item.at, data.today)}
-                    {item.count > 1 ? `. Ещё событий по ${item.entryId ? "записи" : "задаче"}: ${item.count - 1}` : ""}
+                    {item.count > 1 ? `. Ещё событий по ${item.requestNumber ? "просьбе" : item.entryId ? "записи" : "задаче"}: ${item.count - 1}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
@@ -123,13 +127,13 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     className={itemAction}
                     disabled={busy !== null}
                     onClick={() => void act(item.subject, () => markDoneAction(item.subject), "Разобрано")}
-                    aria-label={`Разобрано: ${item.taskTitle ?? item.entryTitle ?? item.text}`}
+                    aria-label={`Разобрано: ${item.requestText ?? item.taskTitle ?? item.entryTitle ?? item.text}`}
                   >
                     <Check className="h-4 w-4" aria-hidden="true" />
                     Разобрано
                   </button>
                   <Menu.Root>
-                    <Menu.Trigger className={itemAction} disabled={busy !== null} aria-label={`Напомнить: ${item.taskTitle ?? item.entryTitle ?? item.text}`}>
+                    <Menu.Trigger className={itemAction} disabled={busy !== null} aria-label={`Напомнить: ${item.requestText ?? item.taskTitle ?? item.entryTitle ?? item.text}`}>
                       <AlarmClock className="h-4 w-4" aria-hidden="true" />
                       Напомнить
                     </Menu.Trigger>
@@ -158,7 +162,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
           </ul>
         ) : (
           <EmptyState title="Всё разобрано">
-            Здесь появится то, что ждёт вас: задачи, которые вам поставили или передали, комментарии к вашим задачам и записям weekly, упоминания, реакции, переносы сроков.
+            Здесь появится то, что ждёт вас: задачи, которые вам поставили или передали, ответы на ваши просьбы, комментарии к вашим задачам и записям weekly, упоминания, реакции, переносы сроков.
           </EmptyState>
         )}
         {snoozed ? <p className="mt-3 text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}

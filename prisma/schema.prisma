@@ -171,6 +171,8 @@ model Person {
   reactions         Reaction[]        @relation("ReactionPerson")
   discussed         Reaction[]        @relation("ReactionDiscussedBy")
   mailMarks         MailMark[]
+  requestsMade      HelpRequest[]     @relation("RequestAuthor")
+  requestsReceived  HelpRequest[]     @relation("RequestAddressee")
 
   @@map("people")
 }
@@ -307,6 +309,9 @@ model Task {
   links       TaskLink[]
   inboxEvents InboxEvent[]
   watchers    TaskWatch[]
+  /// Просьбы по задаче и просьбы, из которых задача сделана (этап 21)
+  requests     HelpRequest[] @relation("RequestTask")
+  fromRequests HelpRequest[] @relation("RequestResultTask")
 
   @@index([status])
   @@index([ownerId])
@@ -459,6 +464,8 @@ model WeeklyEntry {
   watches    EntryWatch[]
   reactions  Reaction[]
   inbox      InboxEvent[]
+  /// Просьба о помощи из записи (этап 21)
+  helpRequests HelpRequest[]
 
   @@index([weekId, authorId])
   @@map("weekly_entries")
@@ -583,6 +590,10 @@ enum InboxKind {
   ENTRY_COMMENT
   /// Реакция на запись или комментарий (этап 20)
   REACTION
+  /// Просьба коллеги к вам и напоминание о ней (этап 21)
+  REQUEST
+  /// Ответ на вашу просьбу: принята, отклонена, выполнена, стала задачей (этап 21)
+  REQUEST_ANSWER
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -608,6 +619,9 @@ model InboxEvent {
   /// Реакция, о которой событие (этап 20): сняли реакцию, и событие о ней уходит вместе с ней
   reactionId     String?
   reaction       Reaction?     @relation(fields: [reactionId], references: [id], onDelete: Cascade)
+  /// Просьба (этап 21): предмет request:<номер>
+  requestId      String?
+  request        HelpRequest?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
   /// Коротко, что случилось: «передал вам задачу», «прокомментировал: ...»
   text        String
   createdAt   DateTime     @default(now()) @db.Timestamptz(3)
@@ -626,6 +640,7 @@ model InboxEvent {
   @@index([entryId])
   @@index([entryCommentId])
   @@index([reactionId])
+  @@index([requestId])
   @@map("inbox_events")
 }
 
@@ -906,4 +921,59 @@ model MailMark {
 
   @@id([personId, week, kind])
   @@map("mail_marks")
+}
+
+/// Состояние просьбы (этап 21). Пока просьба открыта или принята, следующий шаг за адресатом
+enum RequestStatus {
+  /// Ждёт ответа адресата
+  OPEN
+  /// Адресат принял и назвал срок
+  ACCEPTED
+  DONE
+  /// Адресат отклонил с причиной
+  DECLINED
+  /// Автор отозвал
+  WITHDRAWN
+}
+
+/// Просьба коллеге (этап 21, модуль М4): от кого, кому, что нужно, к какому сроку, к какой задаче или записи
+model HelpRequest {
+  id           String        @id @default(cuid())
+  /// Номер для ссылок: /requests/12
+  number       Int           @unique @default(autoincrement())
+  authorId     String
+  author       Person        @relation("RequestAuthor", fields: [authorId], references: [id])
+  addresseeId  String
+  addressee    Person        @relation("RequestAddressee", fields: [addresseeId], references: [id])
+  /// Что нужно: одна-две фразы
+  text         String
+  /// К какому сроку просит автор
+  due          DateTime      @db.Date
+  /// Срок, который назвал адресат, принимая просьбу
+  acceptedDue  DateTime?     @db.Date
+  status       RequestStatus @default(OPEN)
+  /// Причина отказа или итог выполнения
+  answer       String?
+  taskId       String?
+  task         Task?         @relation("RequestTask", fields: [taskId], references: [id], onDelete: SetNull)
+  entryId      String?
+  entry        WeeklyEntry?  @relation(fields: [entryId], references: [id], onDelete: SetNull)
+  /// Задача адресата, сделанная из просьбы: когда её выполнят, просьба закроется сама
+  resultTaskId String?
+  resultTask   Task?         @relation("RequestResultTask", fields: [resultTaskId], references: [id], onDelete: SetNull)
+  /// Последнее напоминание автора: не чаще раза в сутки
+  remindedAt   DateTime?     @db.Timestamptz(3)
+  createdAt    DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @db.Timestamptz(3)
+  answeredAt   DateTime?     @db.Timestamptz(3)
+  closedAt     DateTime?     @db.Timestamptz(3)
+
+  inbox InboxEvent[]
+
+  @@index([addresseeId, status])
+  @@index([authorId, status])
+  @@index([taskId])
+  @@index([entryId])
+  @@index([resultTaskId])
+  @@map("help_requests")
 }

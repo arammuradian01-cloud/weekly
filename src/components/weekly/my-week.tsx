@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import type { RequestView } from "@/domain/requests";
+import { NoRequests, RequestList } from "@/components/requests/request-list";
+import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { MessageSquare } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
@@ -25,6 +28,7 @@ export function MyWeek({
   report,
   entriesCount,
   team,
+  requests,
 }: {
   deadlineText: string;
   timeLeft: string;
@@ -34,6 +38,8 @@ export function MyWeek({
   entriesCount: number;
   /** Кто сдал: только в режиме управления */
   team: PersonWeekly[] | null;
+  /** Просьбы ко мне и «Жду от коллег» (этап 21) */
+  requests: { incoming: RequestView[]; outgoing: RequestView[] };
 }) {
   const { data, me } = usePrototype();
   const { open } = useOpenTask();
@@ -136,6 +142,32 @@ export function MyWeek({
             </ul>
           )}
         </section>
+      </div>
+
+      <div className="mt-10 grid gap-8 xl:grid-cols-2">
+        <RequestList
+          id="my-incoming"
+          title="Просьбы ко мне"
+          mode="incoming"
+          items={requests.incoming.slice(0, 5)}
+          total={requests.incoming.length}
+          action={
+            requests.incoming.length > 5 ? (
+              <Link href="/me" className="text-body font-medium text-blue-700 hover:underline">
+                Все {requests.incoming.length}
+              </Link>
+            ) : undefined
+          }
+          empty={<NoRequests title="Просьб к вам нет">Просьбы коллег появятся здесь и в «Мне».</NoRequests>}
+        />
+        <RequestList
+          id="my-waiting"
+          title="Жду от коллег"
+          mode="outgoing"
+          items={requests.outgoing}
+          action={<AskColleagueButton size="sm" />}
+          empty={<NoRequests title="Вы ничего не ждёте">Попросите коллегу о помощи: адресат увидит просьбу в «Мне», а ответ и срок появятся здесь.</NoRequests>}
+        />
       </div>
     </>
   );

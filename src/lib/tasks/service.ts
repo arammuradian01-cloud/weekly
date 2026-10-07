@@ -14,6 +14,7 @@ import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { notifyWatchers } from "./watch";
+import { finishRequestsOfTask, reopenRequestsOfTask, syncRequestDue, type TaskOutcome } from "@/lib/requests/hooks";
 import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/common";
 import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
@@ -313,6 +314,11 @@ async function nextNumber(tx: Tx): Promise<number> {
 }
 
 export async function createTask(actor: Actor, input: NewTaskInput): Promise<TaskResult> {
+  return prisma.$transaction((tx) => createTaskIn(tx, actor, input));
+}
+
+/** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
@@ -320,85 +326,83 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
   if (input.due < moscowToday()) fail("Срок не может быть в прошлом");
   const sourceNote = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
 
-  return prisma.$transaction(async (tx) => {
-    const scope = await scopeOfActor(tx, actor);
-    const viewer = viewerOf(actor, scope);
-    const teamId = pickTeam(scope, actor, input.team);
-    const team = await tx.team.findUnique({ where: { id: teamId }, select: { active: true } });
-    if (!team?.active) fail("Команда выключена: задачу в неё не поставить");
-    if (input.owner === "all" && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
-    const people = await peopleBySlug(tx);
-    let ownerId: string | null = null;
-    if (input.owner !== "all") {
-      const p = people.get(input.owner);
-      if (!p) fail("Такого ответственного нет в команде");
-      ownerId = p!.id;
-    }
-    const direction = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: input.direction, active: true } });
-    if (!direction) fail("Выберите направление из списка");
-    const sourceCode = input.source ?? "other";
-    const source = await tx.dictionaryItem.findFirst({ where: { kind: "TASK_SOURCE", code: sourceCode, active: true } });
-    if (!source) fail("Выберите источник из списка");
-    const priority: TaskPriority = input.priority && input.priority !== "unset" ? (priorityDb(input.priority) ?? fail("Нет такого приоритета")) : "MEDIUM";
-    const co = [...new Set(input.coExecutors ?? [])].filter((s) => s !== input.owner);
-    const coIds = co.map((s) => people.get(s)?.id ?? fail("Такого соисполнителя нет в команде"));
-    const links = (input.links ?? []).map((l) => ({ title: optional(l.title, LIMITS.linkTitle, "Название ссылки") ?? new URL(checkUrl(l.url)).hostname, url: checkUrl(l.url) }));
+  const scope = await scopeOfActor(tx, actor);
+  const viewer = viewerOf(actor, scope);
+  const teamId = pickTeam(scope, actor, input.team);
+  const team = await tx.team.findUnique({ where: { id: teamId }, select: { active: true } });
+  if (!team?.active) fail("Команда выключена: задачу в неё не поставить");
+  if (input.owner === "all" && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
+  const people = await peopleBySlug(tx);
+  let ownerId: string | null = null;
+  if (input.owner !== "all") {
+    const p = people.get(input.owner);
+    if (!p) fail("Такого ответственного нет в команде");
+    ownerId = p!.id;
+  }
+  const direction = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: input.direction, active: true } });
+  if (!direction) fail("Выберите направление из списка");
+  const sourceCode = input.source ?? "other";
+  const source = await tx.dictionaryItem.findFirst({ where: { kind: "TASK_SOURCE", code: sourceCode, active: true } });
+  if (!source) fail("Выберите источник из списка");
+  const priority: TaskPriority = input.priority && input.priority !== "unset" ? (priorityDb(input.priority) ?? fail("Нет такого приоритета")) : "MEDIUM";
+  const co = [...new Set(input.coExecutors ?? [])].filter((s) => s !== input.owner);
+  const coIds = co.map((s) => people.get(s)?.id ?? fail("Такого соисполнителя нет в команде"));
+  const links = (input.links ?? []).map((l) => ({ title: optional(l.title, LIMITS.linkTitle, "Название ссылки") ?? new URL(checkUrl(l.url)).hostname, url: checkUrl(l.url) }));
 
-    if (input.weeklyEntryId) {
-      const entry = await tx.weeklyEntry.findUnique({ where: { id: input.weeklyEntryId }, select: { id: true } });
-      if (!entry) fail("Запись weekly, из которой делается задача, не найдена");
-    }
-    let status = newTaskStatus(input.owner, viewer, teamId);
-    // Руководитель команды ставит сразу «В работе» только людям своих команд. Остальным задачу можно только предложить
-    if (status === "in-progress" && !actor.management && ownerId && ownerId !== actor.personId && !scope.leadPeople.includes(ownerId)) status = "proposed";
-    const number = await nextNumber(tx);
-    const today = dbDate(moscowToday());
-    const row = await tx.task.create({
-      data: {
-        number,
-        title,
-        outcome,
-        ownerId,
-        ownerAll: input.owner === "all",
-        directionId: direction!.id,
-        priority,
-        status: statusDb(status)!,
-        state: "ON_TRACK",
-        whereUpdatedAt: today,
-        due: dbDate(input.due),
-        originalDue: dbDate(input.due),
-        sourceCode,
-        sourceNote,
-        sourceDate: sourceCode === "meeting" ? today : null,
-        createdById: actor.personId,
-        weeklyEntryId: input.weeklyEntryId ?? null,
-        teamId,
-        coExecutors: { create: coIds.map((personId) => ({ personId })) },
-        links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
-      },
-      include: taskInclude,
-    });
-    // «Мне»: ответственному поставили или предложили задачу, соисполнителей добавили
-    const subject = taskSubject(number);
-    await notify(tx, {
-      kind: status === "proposed" ? "TASK_PROPOSED" : "TASK_ASSIGNED",
-      recipients: [ownerId],
-      actor,
-      subject,
-      taskId: row.id,
-      text: status === "proposed" ? (teamId === TOP_TEAM ? "Вам предложена задача, её подтвердит владелец или администратор" : "Вам предложена задача, её подтвердит руководитель команды") : "Новая задача для вас",
-    });
-    await notify(tx, { kind: "TASK_COEXECUTOR", recipients: coIds, actor, subject, taskId: row.id, text: "Вы соисполнитель" });
-    const names = await nameMap(tx);
-    await audit(tx, actor, number, [
-      {
-        action: status === "proposed" ? "task.propose" : "task.create",
-        field: status === "proposed" ? "Задача предложена" : "Задача создана",
-        after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}`,
-      },
-    ]);
-    return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
+  if (input.weeklyEntryId) {
+    const entry = await tx.weeklyEntry.findUnique({ where: { id: input.weeklyEntryId }, select: { id: true } });
+    if (!entry) fail("Запись weekly, из которой делается задача, не найдена");
+  }
+  let status = newTaskStatus(input.owner, viewer, teamId);
+  // Руководитель команды ставит сразу «В работе» только людям своих команд. Остальным задачу можно только предложить
+  if (status === "in-progress" && !actor.management && ownerId && ownerId !== actor.personId && !scope.leadPeople.includes(ownerId)) status = "proposed";
+  const number = await nextNumber(tx);
+  const today = dbDate(moscowToday());
+  const row = await tx.task.create({
+    data: {
+      number,
+      title,
+      outcome,
+      ownerId,
+      ownerAll: input.owner === "all",
+      directionId: direction!.id,
+      priority,
+      status: statusDb(status)!,
+      state: "ON_TRACK",
+      whereUpdatedAt: today,
+      due: dbDate(input.due),
+      originalDue: dbDate(input.due),
+      sourceCode,
+      sourceNote,
+      sourceDate: sourceCode === "meeting" ? today : null,
+      createdById: actor.personId,
+      weeklyEntryId: input.weeklyEntryId ?? null,
+      teamId,
+      coExecutors: { create: coIds.map((personId) => ({ personId })) },
+      links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
+    },
+    include: taskInclude,
   });
+  // «Мне»: ответственному поставили или предложили задачу, соисполнителей добавили
+  const subject = taskSubject(number);
+  await notify(tx, {
+    kind: status === "proposed" ? "TASK_PROPOSED" : "TASK_ASSIGNED",
+    recipients: [ownerId],
+    actor,
+    subject,
+    taskId: row.id,
+    text: status === "proposed" ? "Вам предложена задача: примите её или отклоните с причиной" : "Новая задача для вас",
+  });
+  await notify(tx, { kind: "TASK_COEXECUTOR", recipients: coIds, actor, subject, taskId: row.id, text: "Вы соисполнитель" });
+  const names = await nameMap(tx);
+  await audit(tx, actor, number, [
+    {
+      action: status === "proposed" ? "task.propose" : "task.create",
+      field: status === "proposed" ? "Задача предложена" : "Задача создана",
+      after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}`,
+    },
+  ]);
+  return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
 }
 
 /**
@@ -422,13 +426,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     if (current === "proposed" ? !can.confirm : !can.status) {
-      fail(
-        current === "proposed"
-          ? row.teamId === TOP_TEAM
-            ? "Предложенную задачу подтверждает владелец или администратор"
-            : "Предложенную задачу подтверждает адресат, его руководитель или руководитель команды"
-          : "Статус меняет ответственный, владелец или администратор",
-      );
+      fail(current === "proposed" ? "Предложенную задачу принимает адресат, его руководитель или руководитель команды" : "Статус меняет ответственный, владелец или администратор");
     }
     if (next === current) fail("Статус уже такой");
     if (next === "proposed") fail("В «Предложена» задачу переносит только система");
@@ -444,6 +442,10 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       );
     }
     const closing = CLOSED_DB.includes(db);
+    // Задача из просьбы закрыта: просьба закрывается вместе с ней, автор просьбы узнаёт об этом. Закрытую задачу
+    // открыли снова: просьба снова принята (этап 21)
+    if (closing) await finishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    else if (CLOSED_DB.includes(row.status)) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
     await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
@@ -514,6 +516,8 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
     const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
+    // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
+    await syncRequestDue(tx, { id: row.id, number }, dbDate(to), actor);
     // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
     await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
     await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
@@ -892,6 +896,13 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
       },
       include: taskInclude,
     });
+    // Просьбы за задачей (этап 21): отмена вернула статус или срок, просьба идёт следом
+    const ref = { id: row.id, number: s.number };
+    const wasClosed = CLOSED_DB.includes(row.status);
+    const nowClosed = CLOSED_DB.includes(b.status as TaskStatus);
+    if (wasClosed && !nowClosed) await reopenRequestsOfTask(tx, ref, actor);
+    if (!wasClosed && nowClosed) await finishRequestsOfTask(tx, ref, b.status as TaskOutcome, b.resolution, actor);
+    if (isoFromDbDate(row.due) !== b.due) await syncRequestDue(tx, ref, dbDate(b.due), actor);
     await audit(tx, actor, s.number, changes.length ? changes : [{ action: "task.undo", field: "Последнее действие отменено" }]);
     return { task: toTaskDto(updated), number: s.number };
   });

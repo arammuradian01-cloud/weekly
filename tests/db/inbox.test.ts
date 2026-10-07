@@ -38,7 +38,7 @@ describe("кто получает события", () => {
 
   it("предложение коллеге: ему «Вам предложена задача», после подтверждения обоим «Задача подтверждена»", async () => {
     const { task } = await tasks.createTask(await actor.reva(), { title: "Логиновой", outcome: "Готово", owner: "loginova", direction: "red", due: future });
-    expect((await items("loginova")).map((i) => i.text)).toEqual(["Вам предложена задача, её подтвердит владелец или администратор"]);
+    expect((await items("loginova")).map((i) => i.text)).toEqual(["Вам предложена задача: примите её или отклоните с причиной"]);
     await tasks.changeStatus(await actor.admin(), task.number, "in-progress");
     expect((await items("loginova"))[0]).toMatchObject({ text: "Задача подтверждена", count: 2, actorName: "Головкин Владислав" });
     expect((await items("reva")).map((i) => i.text)).toEqual(["Задача подтверждена"]);

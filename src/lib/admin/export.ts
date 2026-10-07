@@ -14,6 +14,7 @@ import { weekNumberOf } from "@/lib/weekly/weeks";
 const MSK_OFFSET_MS = 3 * 60 * 60 * 1000;
 const WEEKLY_STATE = { DRAFT: "Черновик", SUBMITTED: "Сдан", LATE: "Сдан с опозданием" } as const;
 const SOURCE = { APP: "ресурс", SHEET: "таблица", SYSTEM: "система" } as const;
+const REQUEST_STATE = { OPEN: "Ждёт ответа", ACCEPTED: "Принята", DONE: "Выполнена", DECLINED: "Отклонена", WITHDRAWN: "Отозвана" } as const;
 
 /** Момент в московском времени: Excel не знает часовых поясов, поэтому сдвигаем на три часа */
 const msk = (d: Date | null | undefined) => (d ? new Date(d.getTime() + MSK_OFFSET_MS) : null);
@@ -36,7 +37,7 @@ function sheet(wb: ExcelJS.Workbook, name: string, cols: Col[], rows: unknown[][
 export type ExportSummary = { tasks: number; entries: number; audit: number };
 
 export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSummary }> {
-  const [tasks, people, dicts, weeks, reports, entries, ceo, audit, taskMeta] = await Promise.all([
+  const [tasks, people, dicts, weeks, reports, entries, ceo, audit, taskMeta, requests] = await Promise.all([
     listTasks({ archived: true }),
     prisma.person.findMany({ orderBy: [{ sortOrder: "asc" }], include: { defaultDirection: true } }),
     prisma.dictionaryItem.findMany({ orderBy: [{ kind: "asc" }, { sortOrder: "asc" }] }),
@@ -49,6 +50,11 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
     prisma.ceoReport.findMany({ include: { week: true, updatedBy: { select: { fullName: true } } }, orderBy: { week: { start: "asc" } } }),
     prisma.auditLog.findMany({ orderBy: [{ at: "asc" }, { id: "asc" }] }),
     prisma.task.findMany({ select: { number: true, weeklyEntry: { select: { what: true } } } }),
+    // Просьбы коллегам (этап 21)
+    prisma.helpRequest.findMany({
+      include: { author: { select: { fullName: true } }, addressee: { select: { fullName: true } }, task: { select: { number: true } }, resultTask: { select: { number: true } }, entry: { select: { what: true } } },
+      orderBy: { number: "asc" },
+    }),
   ]);
   const name = new Map(people.map((p) => [p.slug, p.fullName]));
   const nameById = new Map(people.map((p) => [p.id, p.fullName]));
@@ -227,6 +233,41 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
 
   sheet(
     wb,
+    "Просьбы",
+    [
+      { header: "№", width: 6 },
+      { header: "Кто просит", width: 22 },
+      { header: "Кого", width: 22 },
+      { header: "Что нужно", width: 60 },
+      { header: "Нужно к", width: 12, date: "day" },
+      { header: "Состояние", width: 14 },
+      { header: "Срок адресата", width: 12, date: "day" },
+      { header: "Ответ", width: 40 },
+      { header: "Задача", width: 8 },
+      { header: "Запись weekly", width: 40 },
+      { header: "Задача адресата", width: 10 },
+      { header: "Создана", width: 17, date: "time" },
+      { header: "Закрыта", width: 17, date: "time" },
+    ],
+    requests.map((r) => [
+      r.number,
+      r.author.fullName,
+      r.addressee.fullName,
+      r.text,
+      day(isoFromDbDate(r.due)),
+      REQUEST_STATE[r.status],
+      r.acceptedDue ? day(isoFromDbDate(r.acceptedDue)) : null,
+      r.answer ?? "",
+      r.task?.number ?? "",
+      r.entry?.what ?? "",
+      r.resultTask?.number ?? "",
+      msk(r.createdAt),
+      msk(r.closedAt),
+    ]),
+  );
+
+  sheet(
+    wb,
     "Люди",
     [
       { header: "Фамилия и имя", width: 26 },
@@ -285,6 +326,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
 function objectLabel(entity: string | null, id: string | null): string {
   if (!entity || !id) return "";
   if (entity === "task") return `Задача ${id}`;
+  if (entity === "request") return `Просьба ${id}`;
   if (entity === "week" || entity === "ceo-report") return `Неделя ${weekNumberOf(id)}`;
   if (entity === "weekly") {
     const [week, slug] = id.split("/");

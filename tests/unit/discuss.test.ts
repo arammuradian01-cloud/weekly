@@ -107,6 +107,13 @@ describe("тексты писем", () => {
     expect(eventPhrase({ kind: "MENTION", actorName: "Рева Тарас", taskNumber: 47, entryId: null, commentId: "c" })).toBe("Рева Тарас: упоминание в задаче 47");
     expect(eventPhrase({ kind: "REACTION", actorName: "Мурадян Арам", taskNumber: null, entryId: "e", commentId: null })).toBe("Мурадян Арам: реакция на вашу запись weekly");
     expect(eventPhrase({ kind: "TASK_WATCH", actorName: "Bord", taskNumber: 3, entryId: null, commentId: null })).toBe("Bord: изменения в задаче 3, за которой вы следите");
+    // Просьбы (этап 21): строка без текста просьбы, ссылка на страницу просьбы
+    expect(eventPhrase({ kind: "REQUEST", actorName: "Рева Тарас", taskNumber: null, entryId: null, commentId: null, requestNumber: 4 })).toBe("Рева Тарас: просьба к вам");
+    expect(eventPhrase({ kind: "REQUEST_ANSWER", actorName: "Логинова Светлана", taskNumber: null, entryId: null, commentId: null, requestNumber: 4 })).toBe("Логинова Светлана: изменения по просьбе");
+    const mail = eventsMail({ shortName: "Тарас" }, [{ kind: "REQUEST_ANSWER", actorName: "Логинова Светлана", taskNumber: null, entryId: null, commentId: null, requestNumber: 4, subject: "request:4", createdAt: new Date("2026-10-12T08:00:00Z") }]);
+    expect(mail.text).toContain("/requests/4");
+    expect(prefOfKind("REQUEST")).toBe("tasks");
+    expect(prefOfKind("REQUEST_ANSWER")).toBe("tasks");
   });
 
   it("склеивает события одного предмета и отмечает ночные как сводку", () => {

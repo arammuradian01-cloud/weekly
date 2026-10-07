@@ -13,7 +13,7 @@ import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskActio
 import { CommentList } from "@/components/discuss/comment-list";
 import { MentionArea } from "@/components/discuss/mention-area";
 import { markSeenAction } from "@/app/(app)/me/actions";
-import { TOP_TEAM, teamName } from "@/domain/teams";
+import { teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
@@ -22,6 +22,7 @@ import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from ".
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
 import { TaskExtrasBlock } from "./task-extras";
+import { TaskRequests } from "@/components/requests/task-requests";
 import { TaskGoal } from "./task-goal";
 
 function personInitials(slug: string) {
@@ -104,7 +105,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
 
       {task.status === "proposed" && can.confirm ? (
         <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-small text-blue-700">Предложил {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет после вашего подтверждения.</p>
+          <p className="text-small text-blue-700">Предложение от: {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет, когда вы её примете.</p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => actions.changeStatus(task, "cancelled")}>
               Отклонить
@@ -119,7 +120,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
 
       {task.status === "proposed" && !can.confirm ? (
         <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700">
-          Задача предложена. Задачей она станет после подтверждения {task.team === TOP_TEAM ? "владельцем или администратором" : "адресатом, его руководителем или руководителем команды"}.
+          Задача предложена. Задачей она станет, когда её примет адресат, его руководитель или руководитель команды.
         </p>
       ) : null}
 
@@ -238,6 +239,8 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       </dl>
 
       <TaskExtrasBlock task={task} headingLevel={H} />
+
+      <TaskRequests task={task} headingLevel={H} />
 
       {task.transfers.length ? (
         <section aria-labelledby={`transfers-${task.number}`}>
