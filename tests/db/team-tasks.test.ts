@@ -42,6 +42,7 @@ async function clean() {
   await prisma.weeklyEntry.deleteMany({ where: { author: { role: "EMPLOYEE" } } });
   await prisma.weeklyReport.deleteMany({ where: { author: { role: "EMPLOYEE" } } });
   await prisma.teamMember.deleteMany({ where: { teamId: { not: TOP_TEAM } } });
+  await prisma.goal.deleteMany();
   await prisma.team.deleteMany({ where: { id: { not: TOP_TEAM } } });
   await prisma.person.updateMany({ data: { unitId: null, managerId: null, functionalManagerId: null, position: null } });
   await prisma.person.deleteMany({ where: { role: "EMPLOYEE" } });

@@ -56,6 +56,7 @@ beforeAll(() => cleanStructure());
 async function cleanStructure() {
   await prisma.task.deleteMany();
   await prisma.teamMember.deleteMany({ where: { teamId: { not: TOP_TEAM } } });
+  await prisma.goal.deleteMany();
   await prisma.team.deleteMany({ where: { id: { not: TOP_TEAM } } });
   await prisma.person.updateMany({ data: { unitId: null, managerId: null, functionalManagerId: null, position: null } });
   await prisma.inboxEvent.deleteMany();

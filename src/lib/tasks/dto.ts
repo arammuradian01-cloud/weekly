@@ -14,6 +14,7 @@ export const taskInclude = {
   transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true } } } },
   comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } } } },
   links: { orderBy: { at: "asc" } },
+  goal: { select: { id: true, title: true, code: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -26,6 +27,7 @@ export const taskListInclude = {
   coExecutors: taskInclude.coExecutors,
   transfers: taskInclude.transfers,
   links: taskInclude.links,
+  goal: taskInclude.goal,
   _count: { select: { comments: true } },
 } satisfies Prisma.TaskInclude;
 
@@ -85,5 +87,6 @@ export function toTaskDto(row: TaskRow): Task {
     resolution: row.resolution ?? undefined,
     archived: row.archivedAt !== null,
     team: row.teamId,
+    ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title } } : {}),
   };
 }

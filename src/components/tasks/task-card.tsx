@@ -19,6 +19,7 @@ import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from ".
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
 import { TaskExtrasBlock } from "./task-extras";
+import { TaskGoal } from "./task-goal";
 
 function personInitials(slug: string) {
   const p = personOf(slug as Parameters<typeof personOf>[0]);
@@ -211,6 +212,9 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         </Meta>
         <Meta label="Команда">
           <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
+        </Meta>
+        <Meta label="Цель">
+          <TaskGoal task={task} canLink={!observer && !task.archived && (manage || leads.includes(task.team) || task.owner === me.slug || task.createdBy === me.slug)} />
         </Meta>
         <Meta label="Направление">{directionLabel(task.direction)}</Meta>
         <Meta label="Источник">
