@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, resetDatabase, sql } from "./helpers";
 
 // Этап 21б: «Заблокирована» со ссылкой на человека или задачу, «Есть риск» с фразой, связи задач и передача задачи.
 // Ноутбук 1440 и телефон 360
@@ -73,7 +73,13 @@ test("блокировка ждёт человека, затем задачу; �
 
 test("ответственный передаёт задачу коллеге с комментарием", async ({ page }) => {
   const [number] = await revaTasks();
+  // По общему логину кнопки нет: передают при личном входе
   await enter(page, "Рева Тарас");
+  await page.goto(`/tasks/${number}`);
+  await expect(page.getByRole("heading", { name: "Связи с задачами" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Передать" })).toHaveCount(0);
+  await page.context().clearCookies();
+  await enterByLink(page, "reva");
   await page.goto(`/tasks/${number}`);
   await page.getByRole("button", { name: "Передать" }).click();
   const dialog = page.getByRole("dialog", { name: `Передать задачу ${number}` });

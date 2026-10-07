@@ -179,14 +179,15 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
 
 /** «Передать» (этап 21): новый ответственный и комментарий, прежний остаётся соисполнителем */
 export function HandOverButton({ task }: { task: Task }) {
-  const { applyTaskResult, me, manage } = usePrototype();
+  const { applyTaskResult, me, manage, limited } = usePrototype();
   const can = useTaskPermissions(task);
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState<string>("");
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  if (!can.handover) return null;
+  // По общему логину передать нельзя (сервер откажет): кнопку не показываем
+  if (!can.handover || limited) return null;
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!to) return setError("Выберите, кому передать");
