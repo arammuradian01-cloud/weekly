@@ -509,6 +509,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       include: {
         ...entryInclude,
         tasks: { select: { id: true } },
+        helpRequests: { select: { id: true } },
         promotions: { select: { byId: true, note: true, createdAt: true } },
         comments: { include: { reactions: true } },
         reactions: true,
@@ -537,6 +538,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       importBatch: existing.importBatch,
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
+      requestIds: existing.helpRequests.map((r) => r.id),
       promotions: existing.promotions.map((p) => ({ byId: p.byId, note: p.note, createdAt: p.createdAt.toISOString() })),
       mentions: existing.mentions,
       // Обсуждение возвращается вместе с записью (этап 20)
@@ -597,6 +599,9 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
     // Связь с задачами возвращаем прямым запросом: так у задач не меняется «Обновлена», как и при удалении записи
     if (snapshot.taskIds.length) {
       await tx.$executeRaw`UPDATE tasks SET "weeklyEntryId" = ${snapshot.id} WHERE id = ANY(${snapshot.taskIds}::text[]) AND "weeklyEntryId" IS NULL`;
+    }
+    if (snapshot.requestIds?.length) {
+      await tx.$executeRaw`UPDATE help_requests SET "entryId" = ${snapshot.id} WHERE id = ANY(${snapshot.requestIds}::text[]) AND "entryId" IS NULL`;
     }
     // Отметки «наверх» возвращаются вместе с записью, кроме тех, чьих людей за это время удалили
     const promotions = snapshot.promotions ?? [];

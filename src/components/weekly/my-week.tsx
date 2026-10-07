@@ -150,6 +150,7 @@ export function MyWeek({
           title="Просьбы ко мне"
           mode="incoming"
           items={requests.incoming.slice(0, 5)}
+          total={requests.incoming.length}
           action={
             requests.incoming.length > 5 ? (
               <Link href="/me" className="text-body font-medium text-blue-700 hover:underline">

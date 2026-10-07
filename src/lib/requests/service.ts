@@ -75,14 +75,17 @@ function canOf(a: Access, row: Pick<Row, "authorId" | "addresseeId" | "status" |
   const me = a.actor.personId;
   const addressee = row.addresseeId === me;
   const author = row.authorId === me;
-  const manage = !!a.actor.management;
+  // Режим управления решает за адресата, но не за себя: своя просьба у владельца остаётся просьбой
+  const forAddressee = addressee || (!!a.actor.management && !author);
+  // Просьба стала задачей: срок и итог живут в задаче, просьба идёт за ней сама
+  const linked = !!row.resultTaskId;
   return {
-    accept: addressee || manage,
-    decline: addressee || manage,
-    done: addressee || manage,
+    accept: forAddressee && !linked,
+    decline: forAddressee && !linked,
+    done: forAddressee && !linked,
     // Задачу из просьбы ставит себе сам адресат: она живёт в его команде
     toTask: addressee && !row.resultTaskId,
-    withdraw: author || manage,
+    withdraw: author || !!a.actor.management,
     remind: author && (!row.remindedAt || now.getTime() - row.remindedAt.getTime() >= REMIND_GAP_MS),
   };
 }
@@ -145,8 +148,11 @@ async function audit(db: Db, actor: Actor, number: number, field: string, before
 }
 
 /** Строка просьбы под замком: два человека не ответят на неё одновременно. Чужую просьбу не подтверждаем даже номером */
+/** Номер просьбы в пределах целого базы: иначе запрос упадёт, а не ответит «нет такой» */
+const validNumber = (n: number) => Number.isInteger(n) && n >= 1 && n <= 2_147_483_647;
+
 async function lockRequest(tx: Tx, a: Access, number: number): Promise<Row> {
-  if (!Number.isInteger(number) || number < 1) fail("Нет такой просьбы");
+  if (!validNumber(number)) fail("Нет такой просьбы");
   await tx.$queryRaw`SELECT id FROM "help_requests" WHERE "number" = ${number} FOR UPDATE`;
   const row = await tx.helpRequest.findUnique({ where: { number }, include: requestInclude });
   if (!row || !seesRequest(a, row)) fail(`Просьбы ${number} нет`);
@@ -171,7 +177,7 @@ export type NewRequestInput = {
   entry?: string | null;
 };
 
-/** Новая просьба внутри чужой транзакции: так её создаёт и запись weekly с «Нужна помощь» */
+/** Новая просьба внутри транзакции: создание проверяет адресата, задачу и запись, пишет событие и журнал */
 export async function createRequestIn(tx: Tx, actor: Actor, input: NewRequestInput, now = new Date()): Promise<Row> {
   if (actor.role === "OBSERVER") fail("Наблюдатель просьб не создаёт");
   const text = required(input.text, REQUEST_TEXT_MAX, "Напишите, что нужно", "Просьба");
@@ -234,6 +240,7 @@ export async function acceptRequest(actor: Actor, number: number, due: IsoDate, 
   return step(actor, number, now, async (row, a, tx) => {
     const can = canOf(a, row, now);
     if (!ACTIVE.includes(row.status)) closedFail(row);
+    if (row.resultTaskId) fail(`Срок просьбы идёт за задачей ${row.resultTask?.number ?? ""}: перенесите срок задачи`.replace(" :", ":"));
     if (!can.accept) fail("Принять просьбу может адресат");
     const date = futureDate(due, now, "Назовите срок, к которому сделаете");
     if (row.status === "ACCEPTED" && row.acceptedDue && isoFromDbDate(row.acceptedDue) === date) fail("Срок уже такой");
@@ -249,6 +256,7 @@ export async function acceptRequest(actor: Actor, number: number, due: IsoDate, 
 export async function declineRequest(actor: Actor, number: number, reason: string, now = new Date()): Promise<RequestView> {
   return step(actor, number, now, async (row, a, tx) => {
     if (!ACTIVE.includes(row.status)) closedFail(row);
+    if (row.resultTaskId) fail(`Просьба стала задачей ${row.resultTask?.number ?? ""}: закройте задачу, и просьба закроется вместе с ней`.replace(" :", ":"));
     if (!canOf(a, row, now).decline) fail("Отклонить просьбу может адресат");
     const answer = required(reason, REQUEST_ANSWER_MAX, "Напишите причину: без неё отклонить нельзя", "Причина");
     await tx.helpRequest.update({ where: { id: row.id }, data: { status: "DECLINED", answer, answeredAt: row.answeredAt ?? now, closedAt: now } });
@@ -261,6 +269,7 @@ export async function declineRequest(actor: Actor, number: number, reason: strin
 export async function completeRequest(actor: Actor, number: number, note: string | null | undefined, now = new Date()): Promise<RequestView> {
   return step(actor, number, now, async (row, a, tx) => {
     if (!ACTIVE.includes(row.status)) closedFail(row);
+    if (row.resultTaskId) fail(`Просьба стала задачей ${row.resultTask?.number ?? ""}: закройте задачу, и просьба закроется вместе с ней`.replace(" :", ":"));
     if (!canOf(a, row, now).done) fail("Отметить просьбу выполненной может адресат");
     const answer = clean(note) || null;
     if (answer && answer.length > REQUEST_ANSWER_MAX) fail(`Итог: не длиннее ${REQUEST_ANSWER_MAX} знаков`);
@@ -276,7 +285,10 @@ export async function withdrawRequest(actor: Actor, number: number, now = new Da
     if (!ACTIVE.includes(row.status)) closedFail(row);
     if (!canOf(a, row, now).withdraw) fail("Отозвать просьбу может её автор");
     await tx.helpRequest.update({ where: { id: row.id }, data: { status: "WITHDRAWN", closedAt: now } });
-    await notify(tx, { kind: "REQUEST", recipients: [row.addresseeId, row.authorId], actor, subject: requestSubject(row.number), text: "Просьбу отозвали: делать не нужно", requestId: row.id }, now);
+    // Задача из просьбы остаётся у адресата: он решает сам, отменить её или довести
+    const open = row.resultTask && (await tx.task.findUnique({ where: { id: row.resultTask.id }, select: { status: true } }));
+    const tail = open && !CLOSED_DB.includes(open.status) ? `. Задачу ${row.resultTask!.number} можно отменить` : "";
+    await notify(tx, { kind: "REQUEST_ANSWER", recipients: [row.addresseeId, row.authorId], actor, subject: requestSubject(row.number), text: `Просьбу отозвали: делать не нужно${tail}`, requestId: row.id }, now);
     await audit(tx, actor, row.number, "Состояние", stateLabel(row), "Отозвана", "request.withdraw");
   });
 }
@@ -318,7 +330,6 @@ export async function requestToTask(actor: Actor, number: number, direction: str
       due,
       source: "other",
       sourceNote: `Просьба ${row.number}: ${row.author.fullName}`.slice(0, 200),
-      weeklyEntryId: row.entryId ?? undefined,
     });
     const taskRow = await tx.task.findUniqueOrThrow({ where: { number: task.number }, select: { id: true } });
     created = task.number;
@@ -337,7 +348,7 @@ export async function requestToTask(actor: Actor, number: number, direction: str
 
 /** Одна просьба для страницы. null: нет или человек её не видит */
 export async function getRequest(actor: Actor, number: number, now = new Date()): Promise<RequestView | null> {
-  if (!Number.isInteger(number) || number < 1) return null;
+  if (!validNumber(number)) return null;
   const row = await prisma.helpRequest.findUnique({ where: { number }, include: requestInclude });
   if (!row) return null;
   const a = await accessOf(prisma, actor);
@@ -384,11 +395,6 @@ export async function requestsForTask(actor: Actor, taskNumber: number, now = ne
   const a = await accessOf(prisma, actor);
   const rows = await prisma.helpRequest.findMany({ where: { OR: [{ taskId: task.id }, { resultTaskId: task.id }] }, include: requestInclude, orderBy: { number: "desc" }, take: 50 });
   return rows.filter((r) => seesRequest(a, r)).map((r) => toView(a, r, now));
-}
-
-/** Сколько просьб ждёт человека: для счётчика на «Моей неделе» */
-export async function incomingCount(personId: string): Promise<number> {
-  return prisma.helpRequest.count({ where: { addresseeId: personId, status: { in: ACTIVE } } });
 }
 
 export type StaleProposal = { number: number; title: string; owner: PersonSlug | null; createdBy: PersonSlug | null; days: number };

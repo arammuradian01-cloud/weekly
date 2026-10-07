@@ -52,8 +52,25 @@ export function RequestRow({ request, mode }: { request: RequestView; mode: "inc
   );
 }
 
-export function RequestList({ items, mode, title, id, empty, action }: { items: RequestView[]; mode: "incoming" | "outgoing"; title: string; id: string; empty: React.ReactNode; action?: React.ReactNode }) {
-  const open = items.filter((r) => r.status === "open" || r.status === "accepted").length;
+export function RequestList({
+  items,
+  mode,
+  title,
+  id,
+  empty,
+  action,
+  total,
+}: {
+  items: RequestView[];
+  mode: "incoming" | "outgoing";
+  title: string;
+  id: string;
+  empty: React.ReactNode;
+  action?: React.ReactNode;
+  /** Сколько открытых всего, если показана только часть */
+  total?: number;
+}) {
+  const open = total ?? items.filter((r) => r.status === "open" || r.status === "accepted").length;
   return (
     <section aria-labelledby={id}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">

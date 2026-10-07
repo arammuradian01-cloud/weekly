@@ -186,8 +186,7 @@ export function GlobalHotkeys() {
         </div>
         {proposing ? (
           <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-small text-blue-700">
-            Задача уйдёт со статусом «Предложена». Задачей она станет после подтверждения{" "}
-            {taskTeam === TOP_TEAM ? "владельцем или администратором" : "руководителем команды"}.
+            Задача уйдёт со статусом «Предложена». Адресат примет её или отклонит с причиной.
           </p>
         ) : null}
         {error ? (

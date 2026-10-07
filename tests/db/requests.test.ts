@@ -144,6 +144,68 @@ describe("задача из просьбы", () => {
   });
 });
 
+describe("просьба идёт за задачей (правки по проверке кода)", () => {
+  it("отмена «Выполнена» возвращает просьбу; отменённая задача отклоняет просьбу с причиной; открыли снова, и просьба снова принята", async () => {
+    const reva = await actors.reva();
+    const loginova = await actors.loginova();
+    const r = await req.createRequest(reva, { to: "loginova", text: "Сверить выгрузку", due: future });
+    const { task } = await req.requestToTask(loginova, r.number, "red");
+    const closed = await svc.changeStatus(loginova, task, "done", "Сверено");
+    expect((await req.getRequest(reva, r.number))!.status).toBe("done");
+    await svc.undoChange(loginova, closed.undo!);
+    expect((await req.getRequest(reva, r.number))!).toMatchObject({ status: "accepted", answer: null });
+    expect(await texts("reva")).toContain(`Задача ${task} снова в работе: просьба снова принята`);
+
+    await svc.changeStatus(loginova, task, "cancelled", "Данные не нужны");
+    expect((await req.getRequest(reva, r.number))!).toMatchObject({ status: "declined", answer: `Задача ${task} отменена: Данные не нужны` });
+    await svc.changeStatus(await actors.admin(), task, "in-progress");
+    expect((await req.getRequest(reva, r.number))!.status).toBe("accepted");
+  });
+
+  it("перенос срока задачи переносит срок просьбы; у просьбы-задачи срок и ответ меняются только через задачу", async () => {
+    const reva = await actors.reva();
+    const loginova = await actors.loginova();
+    const r = await req.createRequest(reva, { to: "loginova", text: "Собрать требования", due: future });
+    const { task, request } = await req.requestToTask(loginova, r.number, "red");
+    expect(request.can).toMatchObject({ accept: false, decline: false, done: false, toTask: false });
+    await expectRule(req.acceptRequest(loginova, r.number, addDays(today, 20)), /Срок просьбы идёт за задачей/);
+    await expectRule(req.completeRequest(loginova, r.number, null), /закройте задачу/);
+    await svc.transferDue(loginova, task, addDays(today, 15), "Ждём данные");
+    expect((await req.getRequest(reva, r.number))!.acceptedDue).toBe(addDays(today, 15));
+    expect(await texts("reva")).toContain(`Новый срок по просьбе: ${formatShort(addDays(today, 15))}, за сроком задачи ${task}`);
+  });
+
+  it("отозванную просьбу задача не переписывает; адресат узнаёт, что задачу можно отменить", async () => {
+    const reva = await actors.reva();
+    const loginova = await actors.loginova();
+    const r = await req.createRequest(reva, { to: "loginova", text: "Подготовить сравнение", due: future });
+    const { task } = await req.requestToTask(loginova, r.number, "red");
+    await req.withdrawRequest(reva, r.number);
+    expect(await texts("loginova")).toContain(`Просьбу отозвали: делать не нужно. Задачу ${task} можно отменить`);
+    await svc.changeStatus(loginova, task, "done", "Сделано");
+    expect((await req.getRequest(reva, r.number))!.status).toBe("withdrawn");
+  });
+
+  it("задача из просьбы не цепляется к записи автора; своя просьба у владельца не получает кнопок адресата", async () => {
+    const owner = await actors.owner();
+    const own = await req.createRequest(owner, { to: "reva", text: "Свой вопрос", due: future });
+    expect(own.can).toMatchObject({ accept: false, decline: false, done: false, withdraw: true });
+    const r = await req.createRequest(await actors.reva(), { to: "loginova", text: "Без записи", due: future });
+    const { task } = await req.requestToTask(await actors.loginova(), r.number, "red");
+    expect((await prisma.task.findUniqueOrThrow({ where: { number: task } })).weeklyEntryId).toBeNull();
+  });
+
+  it("просьбы в карточке задачи видят только участники просьбы; огромный номер просто не найден", async () => {
+    const reva = await actors.reva();
+    const source = await newTask(reva, "Общая задача топ-команды", "reva");
+    await req.createRequest(reva, { to: "loginova", text: "Личная просьба", due: future, task: source.number });
+    expect(await req.requestsForTask(reva, source.number)).toHaveLength(1);
+    expect(await req.requestsForTask(await actors.fatyanov(), source.number)).toHaveLength(0);
+    expect(await req.getRequest(reva, 99_999_999_999)).toBeNull();
+    await expectRule(req.acceptRequest(await actors.loginova(), 99_999_999_999, future), /Нет такой просьбы/);
+  });
+});
+
 describe("списки и встреча", () => {
   it("«Просьбы ко мне» и «Жду от коллег»: открытые, а закрытые автору ещё неделю", async () => {
     const reva = await actors.reva();
@@ -158,7 +220,6 @@ describe("списки и встреча", () => {
     expect(mine.incoming).toEqual([]);
     expect((await req.myRequests(await actors.loginova())).incoming.map((r) => r.number)).toEqual([a.number]);
     expect((await req.myRequests(reva, later(8 * 24))).outgoing.map((r) => r.number)).toEqual([a.number]);
-    expect(await req.incomingCount(await id("loginova"))).toBe(1);
   });
 
   it("на встречу попадают просьбы без ответа больше 2 рабочих дней, просроченные принятые и предложения без ответа 3 дня", async () => {

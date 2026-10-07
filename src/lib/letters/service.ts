@@ -68,7 +68,7 @@ export function eventPhrase(e: EventLine): string {
     case "REQUEST":
       return `${who}просьба к вам`;
     case "REQUEST_ANSWER":
-      return `${who}ответ по просьбе`;
+      return `${who}изменения по просьбе`;
     default:
       return `${who}новое событие`;
   }

@@ -115,4 +115,5 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "request.withdraw": "Просьба отозвана",
   "request.remind": "Напоминание о просьбе",
   "request.task": "Просьба стала задачей",
+  "request.reopen": "Просьба снова открыта",
 };

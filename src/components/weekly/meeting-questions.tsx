@@ -44,7 +44,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
     <>
       <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Вопросы к встрече</h1>
       <p className="mt-2 text-title text-muted">
-        Неделя {week}. {open ? `Не обсудили: ${open}` : "Все вопросы обсудили"}
+        Неделя {week}. {list.length === 0 ? "Вопросов к встрече нет" : open ? `Не обсудили: ${open}` : "Все вопросы обсудили"}
       </p>
       <ul className="mt-8 flex flex-col gap-4">
         {list.map((q) => (

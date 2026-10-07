@@ -14,7 +14,7 @@ import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { notifyWatchers } from "./watch";
-import { closeRequestsOfTask } from "@/lib/requests/hooks";
+import { finishRequestsOfTask, reopenRequestsOfTask, syncRequestDue, type TaskOutcome } from "@/lib/requests/hooks";
 import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/common";
 import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
@@ -442,8 +442,10 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       );
     }
     const closing = CLOSED_DB.includes(db);
-    // Задача из просьбы выполнена: просьба закрывается, автор просьбы узнаёт об этом (этап 21)
-    if (db === "DONE") await closeRequestsOfTask(tx, { id: row.id, number }, actor);
+    // Задача из просьбы закрыта: просьба закрывается вместе с ней, автор просьбы узнаёт об этом. Закрытую задачу
+    // открыли снова: просьба снова принята (этап 21)
+    if (closing) await finishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    else if (CLOSED_DB.includes(row.status)) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
     await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
@@ -514,6 +516,8 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
     const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
+    // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
+    await syncRequestDue(tx, { id: row.id, number }, dbDate(to), actor);
     // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
     await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
     await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
@@ -892,6 +896,13 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
       },
       include: taskInclude,
     });
+    // Просьбы за задачей (этап 21): отмена вернула статус или срок, просьба идёт следом
+    const ref = { id: row.id, number: s.number };
+    const wasClosed = CLOSED_DB.includes(row.status);
+    const nowClosed = CLOSED_DB.includes(b.status as TaskStatus);
+    if (wasClosed && !nowClosed) await reopenRequestsOfTask(tx, ref, actor);
+    if (!wasClosed && nowClosed) await finishRequestsOfTask(tx, ref, b.status as TaskOutcome, b.resolution, actor);
+    if (isoFromDbDate(row.due) !== b.due) await syncRequestDue(tx, ref, dbDate(b.due), actor);
     await audit(tx, actor, s.number, changes.length ? changes : [{ action: "task.undo", field: "Последнее действие отменено" }]);
     return { task: toTaskDto(updated), number: s.number };
   });
