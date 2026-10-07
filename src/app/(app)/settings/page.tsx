@@ -32,7 +32,7 @@ export default async function SettingsPage() {
     getTeamLogin(),
     owner ? upcomingAbsencesAll() : Promise.resolve({}),
     owner ? absenceWeeks(new Date(), { own: false }) : Promise.resolve([]),
-    owner ? passwordStats() : Promise.resolve(undefined),
+    owner ? passwordStats(ctx.person.id) : Promise.resolve(undefined),
   ]);
   const passwords = (Object.keys(PASSWORD_SETTING_KEYS) as PasswordKind[]).map((kind) => ({
     title: PASSWORD_TITLES[kind],

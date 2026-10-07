@@ -62,7 +62,7 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
         <p className="mt-2 text-caption text-muted">Если потеряли телефон или переслали ссылку не тому. Неиспользованные ссылки для входа тоже перестанут работать.</p>
       </div>
       <Modal open={confirmAll} onOpenChange={setConfirmAll} title="Выйти на всех устройствах?">
-        <p className="text-small text-muted">Вход завершится на всех устройствах, и на этом тоже. Снова войти можно по новой ссылке на почту или от владельца.</p>
+        <p className="text-small text-muted">Вход завершится на всех устройствах, и на этом тоже. Снова войти можно со своим логином и паролем. Если пароль мог узнать кто-то другой, сначала смените его в разделе «Пароль».</p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirmAll(false)}>
             Остаться

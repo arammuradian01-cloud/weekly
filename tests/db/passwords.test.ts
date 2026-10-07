@@ -163,8 +163,96 @@ describe("сброс, смена и ссылки всем", () => {
     const lg = links.find((l) => l.slug === "loginova")!;
     const r = await pw.setPasswordByLink(lg.token, "Зимний вечер у камина", "Зимний вечер у камина", device, later(2000));
     expect(r.person.slug).toBe("loginova");
-    const stats = await pw.passwordStats();
+    const stats = await pw.passwordStats((await owner()).personId);
     expect(stats.withPassword).toBe(2);
     await expectRule(pw.issueInvitesForAll({ ...(await tasks.actorFor("golovkin", "ADMIN")), via: "INVITE" }), /только владелец/);
+  });
+});
+
+describe("после проверки кода", () => {
+  it("пачка параллельных неверных попыток не обходит порог: к паролю доходят только 5", async () => {
+    await withPassword("reva");
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => pw.loginWithPassword("reva", `неверный пароль ${i}`, { ...device, ip: `10.0.3.${i}` }, later(1000))),
+    );
+    const generic = results.filter((r) => !r.ok && r.error === "Неверный логин или пароль");
+    const locked = results.filter((r) => !r.ok && /к этому логину/.test(r.error));
+    expect(generic).toHaveLength(5);
+    expect(locked).toHaveLength(15);
+    expect((await pw.loginWithPassword("reva", GOOD, device, later(2000))).ok).toBe(false);
+  });
+
+  it("незнакомый логин закрывается так же, как настоящий: по блокировке не узнать, кто есть в ресурсе", async () => {
+    for (let i = 0; i < 5; i++) await pw.loginWithPassword("nobody", `неверный ${i}`, { ...device, ip: `10.0.4.${i}` }, later(i * 1000));
+    const r = await pw.loginWithPassword("nobody", "ещё попытка", device, later(6000));
+    expect(!r.ok && r.error).toMatch(/к этому логину/);
+    // Короткое имя и почта одного человека считаются вместе
+    await withPassword("reva");
+    await prisma.person.update({ where: { slug: "reva" }, data: { email: "reva@sravni.ru" } });
+    for (let i = 0; i < 3; i++) await pw.loginWithPassword("reva", `неверный ${i}`, { ...device, ip: `10.0.5.${i}` }, later(10_000 + i));
+    for (let i = 0; i < 2; i++) await pw.loginWithPassword("REVA@sravni.ru", `неверный ${i}`, { ...device, ip: `10.0.6.${i}` }, later(11_000 + i));
+    const viaEmail = await pw.loginWithPassword("reva@sravni.ru", GOOD, device, later(12_000));
+    expect(!viaEmail.ok && viaEmail.error).toMatch(/к этому логину/);
+  });
+
+  it("удачный вход одного человека не списывает чужие неверные попытки с того же адреса", async () => {
+    await withPassword("reva");
+    for (let i = 0; i < 29; i++) await pw.loginWithPassword(`ghost${i}`, "неверно-неверно", device, later(i * 100));
+    expect((await pw.loginWithPassword("reva", GOOD, device, later(4000))).ok).toBe(true);
+    await pw.loginWithPassword("ghost-last", "неверно-неверно", device, later(4100));
+    const r = await pw.loginWithPassword("reva", GOOD, device, later(4200));
+    expect(!r.ok && r.error).toMatch(/с этого адреса/);
+  });
+
+  it("пароль длиннее 72 байт не принимается: bcrypt молча отрезал бы хвост", async () => {
+    const invite = await login.issueInvite(await owner(), "reva", t0);
+    const long = "Длинная фраза про отпуск у моря и горы вдали";
+    expect(Buffer.byteLength(long, "utf8")).toBeGreaterThan(72);
+    await expectRule(pw.setPasswordByLink(invite.token, long, long, device, t0), /слишком длинный/);
+    expect(pw.validatePersonalPassword("Short phrase about a long summer holiday!!", { slug: "reva", fullName: "Рева Тарас", email: null })).toBeNull();
+  });
+
+  it("две вкладки задают пароль по одной ссылке: одна входит, вторая узнаёт, что ссылка уже использована", async () => {
+    const invite = await login.issueInvite(await owner(), "reva", t0);
+    const results = await Promise.allSettled([
+      pw.setPasswordByLink(invite.token, GOOD, GOOD, device, later(1000)),
+      pw.setPasswordByLink(invite.token, "Осенний марафон 42", "Осенний марафон 42", device, later(1000)),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
+    expect(String(rejected.reason)).toMatch(/уже использована/);
+  });
+
+  it("после нового пароля прежние неиспользованные ссылки человека гаснут", async () => {
+    const mail = login.newToken();
+    await prisma.loginLink.create({
+      data: { tokenHash: login.hashToken(mail), kind: "EMAIL", personId: (await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).id, expiresAt: later(15 * 60_000), createdAt: t0 },
+    });
+    await withPassword("reva", GOOD, later(1000));
+    expect((await login.peekLink(mail, later(2000))).status).toBe("expired");
+  });
+
+  it("текущий пароль в профиле подбирается не быстрее входа: после 5 неверных форма закрыта", async () => {
+    const { session } = await withPassword("reva");
+    const reva = { ...(await tasks.actorFor("reva")), via: "INVITE" as const, ip: "10.0.7.1" };
+    for (let i = 0; i < 5; i++) await expectRule(pw.changePassword(reva, session.id, `неверный ${i}`, "Новый пароль для всех", "Новый пароль для всех", later(i * 1000)), /Текущий пароль неверный/);
+    await expectRule(pw.changePassword(reva, session.id, GOOD, "Новый пароль для всех", "Новый пароль для всех", later(6000)), /Слишком много неверных попыток/);
+    // Тот же счётчик закрывает и вход по логину
+    const r = await pw.loginWithPassword("reva", GOOD, device, later(7000));
+    expect(!r.ok && r.error).toMatch(/к этому логину/);
+  });
+
+  it("владелец не сбрасывает свой пароль из списка людей; счётчик ссылок не считает владельца", async () => {
+    const me = await owner();
+    await expectRule(pw.resetPassword(me, "muradyan"), /Свой пароль меняйте в профиле/);
+    const stats = await pw.passwordStats(me.personId);
+    expect(stats.invitable).toBe(stats.total - stats.withPassword - 1);
+    expect((await pw.issueInvitesForAll(me, later(1000))).length).toBe(stats.invitable);
+  });
+
+  it("ссылкой от владельца без пароля не войти: сначала пароль, ссылка при этом не тратится", async () => {
+    const invite = await login.issueInvite(await owner(), "reva", t0);
+    await expectRule(login.consumeLoginLink(invite.token, device, later(1000), null, ["EMAIL"]), /сначала задают пароль/);
+    expect((await login.peekLink(invite.token, later(2000))).status).toBe("ok");
   });
 });

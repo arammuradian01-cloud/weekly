@@ -186,9 +186,9 @@ export type DeviceInfo = { ip: string | null; userAgent: string | null };
  * Вход по ссылке: ссылка тратится и устройство появляется в одной транзакции, сбой не сжигает ссылку.
  * replaces: прежняя запись устройства в этом браузере, она завершается
  */
-export async function consumeLoginLink(token: string, device: DeviceInfo, now = new Date(), replaces: string | null = null) {
+export async function consumeLoginLink(token: string, device: DeviceInfo, now = new Date(), replaces: string | null = null, kinds: LinkKind[] = ["INVITE", "EMAIL"]) {
   const result = await prisma.$transaction(async (tx) => {
-    const link = await takeLinkTx(tx, token, ["INVITE", "EMAIL"], device.ip, now);
+    const link = await takeLinkTx(tx, token, kinds, device.ip, now);
     if (!link) return null;
     const method: LoginMethod = link.kind === "INVITE" ? "INVITE" : "EMAIL";
     if (replaces) await tx.deviceSession.updateMany({ where: { id: replaces, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
@@ -208,7 +208,12 @@ export async function consumeLoginLink(token: string, device: DeviceInfo, now = 
     });
     return { session, person: link.person, method };
   });
-  return result ?? linkProblem(token, now);
+  if (result) return result;
+  if (!kinds.includes("INVITE")) {
+    const peek = await peekLink(token, now);
+    if (peek.status === "ok" && peek.kind === "INVITE") fail("По ссылке от владельца сначала задают пароль: обновите страницу");
+  }
+  return linkProblem(token, now);
 }
 
 // Почта

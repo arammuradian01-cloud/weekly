@@ -199,7 +199,8 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
   try {
     // Прежний личный вход в этом браузере завершается, чтобы не висел 30 дней
     const previous = (await readSession())?.sid ?? null;
-    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
+    // Без пароля входят только по ссылке из письма: по ссылке от владельца человек сначала задаёт пароль
+    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous, ["EMAIL"]);
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";

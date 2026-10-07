@@ -7,8 +7,10 @@
 //   Пароль не проходит ни через владельца, ни через переписку. Забыл пароль: владелец выдаёт новую ссылку;
 // - владелец может сбросить пароль: старый перестаёт работать, все входы человека завершаются;
 // - подбор ограничен: 5 неверных попыток к одному логину закрывают его на 15 минут, с одного адреса не больше
-//   30 неверных попыток за 15 минут (офис ходит через один адрес, поэтому этот порог выше);
-// - ответ на неверный логин и на неверный пароль одинаковый: по нему не узнать, кто есть в ресурсе.
+//   30 неверных попыток за 15 минут (офис ходит через один адрес, поэтому этот порог выше). Попытка записывается
+//   под замком до сверки пароля, поэтому пачка параллельных запросов пороги не обходит;
+// - ответ на неверный логин и на неверный пароль одинаковый, блокировка тоже: незнакомый логин закрывается так же,
+//   как настоящий. По ответам не узнать, кто есть в ресурсе.
 // После входа на устройстве живёт та же запись DeviceSession на 30 дней, что и при входе по ссылке.
 
 import { prisma } from "@/lib/db";
@@ -16,7 +18,7 @@ import { hashPassword, verifyPassword } from "@/lib/passwords";
 import { computeLockState, historySince, LOCK_MS } from "@/lib/rate-limit";
 import { formatTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import type { Person } from "@/generated/prisma/client";
+import type { Person, Prisma } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, INVITE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
 
 const fail = (message: string): never => {
@@ -24,7 +26,8 @@ const fail = (message: string): never => {
 };
 
 export const PERSONAL_MIN_LENGTH = 10;
-export const PERSONAL_MAX_LENGTH = 128;
+/** bcrypt учитывает только первые 72 байта: это 72 латинских буквы или 36 русских. Длиннее не принимаем, чтобы хвост пароля не пропадал молча */
+export const PERSONAL_MAX_BYTES = 72;
 /** Неверных попыток к одному логину до блокировки */
 export const PERSON_MAX_FAILURES = 5;
 /** Неверных попыток с одного адреса до блокировки: офис ходит через один адрес */
@@ -40,7 +43,7 @@ export function loginOf(person: Pick<Person, "slug">): string {
 /** Проверка нового личного пароля. null: подходит */
 export function validatePersonalPassword(password: string, person: Pick<Person, "slug" | "fullName" | "email">): string | null {
   if (password.length < PERSONAL_MIN_LENGTH) return `Пароль должен быть не короче ${PERSONAL_MIN_LENGTH} символов`;
-  if (password.length > PERSONAL_MAX_LENGTH) return `Пароль должен быть не длиннее ${PERSONAL_MAX_LENGTH} символов`;
+  if (Buffer.byteLength(password, "utf8") > PERSONAL_MAX_BYTES) return "Пароль слишком длинный: не больше 72 латинских букв или 36 русских";
   if (password.trim() !== password) return "Пароль не должен начинаться или заканчиваться пробелом";
   if (/^\d+$/.test(password)) return "Пароль только из цифр слишком простой: добавьте буквы";
   if (/^(.)\1+$/.test(password)) return "Слишком простой пароль";
@@ -60,8 +63,61 @@ async function personByLogin(login: string) {
   return prisma.person.findFirst({ where: value.includes("@") ? { email: value } : { slug: value } });
 }
 
-async function attemptsSince(where: { ip?: string; personId?: string }, now: Date) {
-  return prisma.loginAttempt.findMany({ where: { kind: "PERSONAL", ...where, at: { gte: historySince(now) } }, select: { at: true, ok: true, blocked: true }, orderBy: { at: "asc" } });
+type Tx = Prisma.TransactionClient;
+
+/** Замок на время транзакции: параллельные попытки по одному ключу идут по очереди */
+async function lock(tx: Tx, key: string): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text`;
+}
+
+/**
+ * Ключ счётчика попыток. У известного человека один на короткое имя и почту, у незнакомого логина свой:
+ * незнакомый логин закрывается после 5 попыток так же, как настоящий
+ */
+function attemptKey(person: Pick<Person, "id"> | null, login: string): string {
+  return person ? `person:${person.id}` : `login:${login.trim().toLowerCase().slice(0, 120)}`;
+}
+
+async function attemptsTx(tx: Tx, where: { ip?: string; login?: string }, now: Date) {
+  return tx.loginAttempt.findMany({ where: { kind: "PERSONAL", ...where, at: { gte: historySince(now) } }, select: { at: true, ok: true, blocked: true }, orderBy: { at: "asc" } });
+}
+
+type Reserved = { ok: true; attemptId: bigint } | { ok: false; scope: "ip" | "login"; until: Date };
+
+/**
+ * Проверка блокировок и запись попытки до сверки пароля, под замками адреса и логина: параллельные запросы видят
+ * друг друга и не обходят пороги. Попытка пишется неверной, после верного пароля отмечается успешной (markOk).
+ * Счёт адреса обнуляет только время: удачный вход одного человека не списывает чужие неверные попытки с того же адреса
+ */
+async function reserveAttempt(ip: string, key: string, personId: string | null, now: Date): Promise<Reserved> {
+  return prisma.$transaction(async (tx) => {
+    await lock(tx, `password-ip:${ip}`);
+    await lock(tx, `password-login:${key}`);
+    const byIp = computeLockState(
+      (await attemptsTx(tx, { ip }, now)).filter((a) => !a.blocked && !a.ok),
+      now,
+      IP_MAX_FAILURES,
+    );
+    if (byIp.locked && byIp.lockedUntil) {
+      await tx.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, blocked: true, login: key, personId, at: now } });
+      return { ok: false, scope: "ip", until: byIp.lockedUntil };
+    }
+    const byLogin = computeLockState(
+      (await attemptsTx(tx, { login: key }, now)).filter((a) => !a.blocked),
+      now,
+      PERSON_MAX_FAILURES,
+    );
+    if (byLogin.locked && byLogin.lockedUntil) {
+      await tx.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, blocked: true, login: key, personId, at: now } });
+      return { ok: false, scope: "login", until: byLogin.lockedUntil };
+    }
+    const row = await tx.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, login: key, personId, at: now }, select: { id: true } });
+    return { ok: true, attemptId: row.id };
+  });
+}
+
+function markOk(db: Tx | typeof prisma, attemptId: bigint) {
+  return db.loginAttempt.update({ where: { id: attemptId }, data: { ok: true } });
 }
 
 export type PasswordLogin = { ok: true; sessionId: string; personId: string } | { ok: false; error: string };
@@ -72,35 +128,25 @@ export type PasswordLogin = { ok: true; sessionId: string; personId: string } | 
  */
 export async function loginWithPassword(login: string, password: string, device: DeviceInfo, now = new Date(), replaces: string | null = null): Promise<PasswordLogin> {
   const ip = device.ip ?? "unknown";
-  const byIp = computeLockState(
-    (await attemptsSince({ ip }, now)).filter((a) => !a.blocked),
-    now,
-    IP_MAX_FAILURES,
-  );
-  if (byIp.locked && byIp.lockedUntil) {
-    await prisma.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, blocked: true, at: now } });
-    return { ok: false, error: `Слишком много неверных попыток с этого адреса. Вход откроется в ${formatTime(byIp.lockedUntil)}` };
-  }
   const person = await personByLogin(login);
-  const usable = person?.active ? person : null;
-  if (usable) {
-    const byPerson = computeLockState(
-      (await attemptsSince({ personId: usable.id }, now)).filter((a) => !a.blocked),
-      now,
-      PERSON_MAX_FAILURES,
-    );
-    if (byPerson.locked && byPerson.lockedUntil) {
-      await prisma.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, blocked: true, personId: usable.id, at: now } });
-      return { ok: false, error: `Слишком много неверных попыток к этому логину. Вход откроется в ${formatTime(byPerson.lockedUntil)}` };
-    }
+  const reserved = await reserveAttempt(ip, attemptKey(person, login), person?.id ?? null, now);
+  if (!reserved.ok) {
+    return {
+      ok: false,
+      error:
+        reserved.scope === "ip"
+          ? `Слишком много неверных попыток с этого адреса. Вход откроется в ${formatTime(reserved.until)}`
+          : `Слишком много неверных попыток к этому логину. Вход откроется в ${formatTime(reserved.until)}`,
+    };
   }
+  const usable = person?.active ? person : null;
   const ok = await verifyPassword(password, usable?.passwordHash ?? null);
-  await prisma.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok, personId: person?.id ?? null, at: now } });
   if (!ok || !usable) {
     await prisma.auditLog.create({ data: { action: "auth.password.fail", entity: "person", entityId: person?.slug ?? null, ip, via: "PASSWORD", source: "APP" } });
     return { ok: false, error: "Неверный логин или пароль" };
   }
   const session = await prisma.$transaction(async (tx) => {
+    await markOk(tx, reserved.attemptId);
     if (replaces) await tx.deviceSession.updateMany({ where: { id: replaces, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
     const created = await tx.deviceSession.create({
       data: {
@@ -117,6 +163,11 @@ export async function loginWithPassword(login: string, password: string, device:
     return created;
   });
   return { ok: true, sessionId: session.id, personId: usable.id };
+}
+
+/** Неиспользованные ссылки входа человека гаснут: после нового пароля по старой ссылке не войти и пароль не заменить */
+function expireLinks(tx: Tx, personId: string, now: Date) {
+  return tx.loginLink.updateMany({ where: { personId, kind: { in: ["INVITE", "EMAIL"] }, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
 }
 
 export { LOCK_MS };
@@ -139,13 +190,16 @@ export async function setPasswordByLink(token: string, password: string, repeat:
       data: { usedAt: now, usedIp: device.ip },
     });
     if (taken.count !== 1) {
-      if (link!.usedAt) fail("Ссылка уже использована. Попросите новую у владельца ресурса");
-      if (link!.expiresAt <= now) fail("Срок ссылки истёк. Попросите новую у владельца ресурса");
+      // Причину смотрим заново: параллельная вкладка могла потратить ссылку после первого чтения
+      const fresh = await tx.loginLink.findUnique({ where: { id: link!.id }, include: { person: true } });
+      if (!fresh || fresh.usedAt) fail("Ссылка уже использована. Попросите новую у владельца ресурса");
+      if (fresh!.expiresAt <= now) fail("Срок ссылки истёк. Попросите новую у владельца ресурса");
       fail("Этот человек выключен в списке команды");
     }
-    const person = link!.person;
+    const person = await tx.person.findUniqueOrThrow({ where: { id: link!.personId } });
     const reset = !!person.passwordHash;
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: hash, passwordSetAt: now } });
+    await expireLinks(tx, person.id, now);
     if (reset) await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "password" } });
     if (replaces) await tx.deviceSession.updateMany({ where: { id: replaces, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
     const session = await tx.deviceSession.create({
@@ -177,13 +231,20 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
   if (actor.via === "TEAM" || !deviceId) fail("Пароль меняют при личном входе: по общему логину можно выбрать чужой профиль");
   if (next !== repeat) fail("Новые пароли не совпадают");
   const person = await prisma.person.findUniqueOrThrow({ where: { id: actor.personId } });
-  if (person.passwordHash && !(await verifyPassword(current, person.passwordHash))) fail("Текущий пароль неверный");
+  if (person.passwordHash) {
+    // Текущий пароль сверяется с тем же счётчиком, что и вход: из открытого чужого профиля его не подобрать
+    const reserved = await reserveAttempt(actor.ip ?? "unknown", attemptKey(person, person.slug), person.id, now);
+    if (!reserved.ok) fail(`Слишком много неверных попыток. Попробуйте снова в ${formatTime(reserved.until)}`);
+    if (!(await verifyPassword(current, person.passwordHash))) fail("Текущий пароль неверный");
+    if (reserved.ok) await markOk(prisma, reserved.attemptId);
+  }
   const problem = validatePersonalPassword(next, person);
   if (problem) fail(problem);
   const hash = await hashPassword(next);
   await prisma.$transaction(async (tx) => {
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: hash, passwordSetAt: now } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null, id: { not: deviceId! } }, data: { revokedAt: now, revokedBy: "password" } });
+    await expireLinks(tx, person.id, now);
     await tx.auditLog.create({
       data: { action: "auth.password.set", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: person.passwordHash ? "Пароль изменён" : "Пароль задан", ip: actor.ip ?? null, via: actor.via ?? null },
     });
@@ -199,6 +260,7 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
   ownerOnly(actor);
   const person = await prisma.person.findUnique({ where: { slug: String(slug) } });
   if (!person) return fail("Человек не найден");
+  if (person.id === actor.personId) fail("Свой пароль меняйте в профиле: сброс завершил бы и ваш вход");
   await prisma.$transaction(async (tx) => {
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: null, passwordSetAt: null } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "owner" } });
@@ -238,11 +300,15 @@ export async function issueInvitesForAll(actor: Actor, now = new Date()): Promis
   return out;
 }
 
-/** Сколько человек задали пароль: для настроек */
-export async function passwordStats(): Promise<{ withPassword: number; total: number }> {
-  const [withPassword, total] = await Promise.all([
-    prisma.person.count({ where: { active: true, role: { not: "OBSERVER" }, passwordHash: { not: null } } }),
-    prisma.person.count({ where: { active: true, role: { not: "OBSERVER" } } }),
+export type PasswordStats = { withPassword: number; total: number; invitable: number };
+
+/** Сколько человек задали пароль и скольким уйдут «Ссылки всем без пароля» (кроме самого владельца): для настроек */
+export async function passwordStats(ownerId: string): Promise<PasswordStats> {
+  const base = { active: true, role: { not: "OBSERVER" as const } };
+  const [withPassword, total, invitable] = await Promise.all([
+    prisma.person.count({ where: { ...base, passwordHash: { not: null } } }),
+    prisma.person.count({ where: base }),
+    prisma.person.count({ where: { ...base, passwordHash: null, id: { not: ownerId } } }),
   ]);
-  return { withPassword, total };
+  return { withPassword, total, invitable };
 }

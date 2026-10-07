@@ -96,7 +96,7 @@ export function SettingsView({
   /** Плашка над страницами: тестовый стенд, пилот или без плашки */
   banner: StandBanner;
   /** Вход (этап 9): работает ли общий логин, настроена ли почта, вошёл ли владелец лично */
-  login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number } };
+  login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number; invitable: number } };
   /** Отсутствия людей с отчётной недели и недели, которые можно отметить (этап 9) */
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
@@ -455,7 +455,7 @@ function PeopleSection({
                       Отсутствие
                     </Button>
                   ) : null}
-                  {p.passwordSetAt ? (
+                  {p.passwordSetAt && p.slug !== me ? (
                     <Button size="sm" variant="ghost" aria-label={`Сбросить пароль: ${p.fullName}`} onClick={() => setResetFor(p)}>
                       <KeyRound className="h-4 w-4" aria-hidden="true" />
                       Сбросить пароль
@@ -567,7 +567,7 @@ function PeopleSection({
       </Modal>
       <Modal open={revoke !== null} onOpenChange={(open) => !open && setRevoke(null)} title={`Завершить входы: ${revoke?.fullName ?? ""}?`}>
         <p className="text-small text-muted">
-          Личный вход закроется на всех устройствах человека, неиспользованные ссылки перестанут работать. Снова войти он сможет по новой ссылке.
+          Личный вход закроется на всех устройствах человека, неиспользованные ссылки перестанут работать. Пароль останется, и человек сможет снова войти с ним. Если пароль мог попасть к чужому, нажмите «Сбросить пароль».
         </p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setRevoke(null)}>
@@ -877,7 +877,7 @@ const TEAM_LOGIN_OPTIONS: { value: "on" | "off"; label: string }[] = [
 ];
 
 /** Переходный период: общий логин team работает, пока владелец его не выключит */
-function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number } } }) {
+function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number; invitable: number } } }) {
   const run = useRunAction();
   const { notify } = usePrototype();
   const [value, setValue] = useState(login.team);
@@ -916,7 +916,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
             size="sm"
             variant="secondary"
             className="mt-3"
-            disabled={login.passwords.withPassword >= login.passwords.total}
+            disabled={login.passwords.invitable === 0}
             onClick={async () => {
               const r = await run(() => issueInvitesForAllAction(), undefined, { refresh: false });
               if (r) setBulk(r);
