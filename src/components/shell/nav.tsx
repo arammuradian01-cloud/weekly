@@ -15,6 +15,7 @@ import {
   Users,
   LayoutDashboard,
   Target,
+  Gavel,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -31,6 +32,7 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/tasks", label: "Задачи", icon: ListChecks },
   // Сквозные цели (этап 17): на телефоне открываются из «Моих команд»
   { href: "/goals", label: "Цели", icon: Target, desktopOnly: true },
+  { href: "/decisions", label: "Решения", icon: Gavel, desktopOnly: true },
   { href: "/team", label: "Команда", icon: Users },
   // В нижнем меню телефона пять пунктов: «Структура» открывается со страницы «Команда»
   { href: "/structure", label: "Структура", icon: Network, desktopOnly: true },

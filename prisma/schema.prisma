@@ -176,6 +176,13 @@ model Person {
   requestsMade      HelpRequest[]     @relation("RequestAuthor")
   requestsReceived  HelpRequest[]     @relation("RequestAddressee")
   promiseReviews    PromiseReview[]   @relation("PromiseAuthor")
+  /// Встреча 2.0 (этап 23)
+  meetingsLed       Meeting[]         @relation("MeetingLeader")
+  agendaItems       AgendaItem[]      @relation("AgendaPerson")
+  agendaDiscussed   AgendaItem[]      @relation("AgendaDiscussedBy")
+  decisionsOwned    Decision[]        @relation("DecisionOwner")
+  decisionsMade     Decision[]        @relation("DecisionCreator")
+  decisionsClosed   Decision[]        @relation("DecisionCanceller")
 
   @@map("people")
 }
@@ -320,6 +327,9 @@ model Task {
   /// Связи задач (этап 21): какие задачи эта ждёт и какие ждут её
   waitsFor     TaskDependency[] @relation("DependencyTask")
   blocks       TaskDependency[] @relation("DependencyBlocker")
+  /// Встреча 2.0 (этап 23): пункты повестки по задаче и решения, к которым она привязана
+  agendaItems  AgendaItem[]
+  decisions    DecisionTask[]
 
   @@index([status])
   @@index([ownerId])
@@ -413,6 +423,7 @@ model Week {
   teamCloses TeamWeekClose[]
   promises   PromiseReview[]
   snapshot   WeekSnapshot?
+  meetings   Meeting[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -487,6 +498,8 @@ model WeeklyEntry {
   /// Итог обещания из этой записи (этап 22) и итог, из которого запись перенесена в план
   promiseReview PromiseReview?    @relation("PromiseEntry")
   carriedFrom   PromiseReview?    @relation("PromiseCarried")
+  /// Пункты повестки встречи по записи (этап 23)
+  agendaItems   AgendaItem[]
 
   @@unique([weekId, authorId, factKey])
   @@index([weekId, authorId])
@@ -620,6 +633,8 @@ enum InboxKind {
   TASK_DEPENDENCY
   /// Благодарность в weekly коллеги (этап 22)
   THANKS
+  /// Встреча (этап 23): протокол готов, вы владелец решения
+  MEETING
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -742,10 +757,13 @@ model Team {
   createdAt         DateTime @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime @updatedAt @db.Timestamptz(3)
 
-  members TeamMember[]
-  tasks   Task[]
-  closes  TeamWeekClose[]
-  goals   Goal[]
+  members   TeamMember[]
+  tasks     Task[]
+  closes    TeamWeekClose[]
+  goals     Goal[]
+  /// Встречи и решения команды (этап 23)
+  meetings  Meeting[]
+  decisions Decision[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -994,7 +1012,9 @@ model HelpRequest {
   answeredAt   DateTime?     @db.Timestamptz(3)
   closedAt     DateTime?     @db.Timestamptz(3)
 
-  inbox InboxEvent[]
+  inbox       InboxEvent[]
+  /// Пункты повестки встречи по просьбе (этап 23)
+  agendaItems AgendaItem[]
 
   @@index([addresseeId, status])
   @@index([authorId, status])
@@ -1065,4 +1085,147 @@ model WeekSnapshot {
   data    Json
 
   @@map("week_snapshots")
+}
+
+/// Встреча 2.0 (этап 23, модуль М7): встреча команды за неделю. Повестка собирается сама, ведущий ведёт живой режим,
+/// решения и поручения остаются в журнале, после закрытия участникам уходит протокол
+enum MeetingStatus {
+  PLANNED
+  LIVE
+  DONE
+}
+
+model Meeting {
+  id             String        @id @default(cuid())
+  weekId         String
+  week           Week          @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  teamId         String
+  team           Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  date           DateTime      @db.Date
+  status         MeetingStatus @default(PLANNED)
+  /// Ведущий: кто начал встречу, его экран ведёт остальных
+  leaderId       String?
+  leader         Person?       @relation("MeetingLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  /// Текущий пункт живого режима
+  currentItemId  String?
+  startedAt      DateTime?     @db.Timestamptz(3)
+  closedAt       DateTime?     @db.Timestamptz(3)
+  /// Когда повестка собиралась последний раз
+  agendaBuiltAt  DateTime?     @db.Timestamptz(3)
+  /// Протокол: текст и момент отправки участникам
+  protocol       String?
+  protocolSentAt DateTime?     @db.Timestamptz(3)
+  /// Ссылка на заметку встречи в Notion
+  notionUrl      String?
+  /// Таймер на человека, минут
+  timerMinutes   Int           @default(7)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(3)
+
+  items     AgendaItem[]
+  decisions Decision[]
+
+  @@unique([weekId, teamId])
+  @@index([teamId, date])
+  @@map("meetings")
+}
+
+/// Вид пункта повестки. Автоматические собираются из данных, MANUAL добавляет ведущий
+enum AgendaKind {
+  /// Поручения прошлой встречи: задачи, поставленные на ней, со статусом
+  FOLLOW_UP
+  /// Просьба без ответа или просроченная
+  REQUEST
+  /// Задача заблокирована или в риске
+  TASK_STATE
+  /// Критичная задача или просрочена больше 7 дней
+  TASK_ATTENTION
+  /// Запись или комментарий с отметкой «обсудить»
+  QUESTION
+  /// Предложенная задача без ответа
+  PROPOSAL
+  /// Лидер по очереди: его weekly
+  PERSON
+  /// Пункт, добавленный руками
+  MANUAL
+}
+
+model AgendaItem {
+  id            String       @id @default(cuid())
+  meetingId     String
+  meeting       Meeting      @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  kind          AgendaKind
+  /// Пункт формулируется вопросом
+  title         String
+  note          String?
+  sortOrder     Int          @default(0)
+  /// Ключ автоматического пункта: повторная сборка не создаёт его второй раз. У ручных пунктов null
+  autoKey       String?
+  /// Автоматический пункт убрали из повестки: при пересборке не возвращается
+  removedAt     DateTime?    @db.Timestamptz(3)
+  taskId        String?
+  task          Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  entryId       String?
+  entry         WeeklyEntry? @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  requestId     String?
+  request       HelpRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  personId      String?
+  person        Person?      @relation("AgendaPerson", fields: [personId], references: [id], onDelete: Cascade)
+  /// Реакция «обсудить на встрече», из которой пункт
+  reactionId    String?
+  discussedAt   DateTime?    @db.Timestamptz(3)
+  discussedById String?
+  discussedBy   Person?      @relation("AgendaDiscussedBy", fields: [discussedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+
+  decisions Decision[]
+
+  @@unique([meetingId, autoKey])
+  @@index([meetingId, sortOrder])
+  @@map("agenda_items")
+}
+
+enum DecisionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+/// Решение встречи: формулировка, владелец, дата, связанные задачи. «В силе» или «отменено». По решениям работает поиск
+model Decision {
+  id            String         @id @default(cuid())
+  meetingId     String?
+  meeting       Meeting?       @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  itemId        String?
+  item          AgendaItem?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  teamId        String
+  team          Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  text          String
+  ownerId       String?
+  owner         Person?        @relation("DecisionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  date          DateTime       @db.Date
+  status        DecisionStatus @default(ACTIVE)
+  cancelReason  String?
+  cancelledAt   DateTime?      @db.Timestamptz(3)
+  cancelledById String?
+  cancelledBy   Person?        @relation("DecisionCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  createdById   String?
+  createdBy     Person?        @relation("DecisionCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(3)
+
+  tasks DecisionTask[]
+
+  @@index([teamId, date])
+  @@map("decisions")
+}
+
+model DecisionTask {
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  taskId     String
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([decisionId, taskId])
+  @@map("decision_tasks")
 }
