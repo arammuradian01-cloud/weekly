@@ -1,0 +1,22 @@
+/* Базовые правила документа. Всё остальное задаётся токенами в компонентах. */
+html { background: var(--color-page); }
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  font-variant-numeric: var(--font-numeric);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color var(--duration-color), color var(--duration-color);
+}
+[data-theme] { color: var(--color-text); }
+a { color: var(--color-link); text-decoration: none; }
+a:hover { color: var(--color-link-hover); text-decoration: underline; }
+:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-weight-heading); margin: 0; }
+h1 { font-size: var(--text-page); line-height: var(--leading-page); }
+h2 { font-size: var(--text-section); line-height: var(--leading-section); }
+h3 { font-size: var(--text-card); line-height: var(--leading-card); }
+button, input, select, textarea { font: inherit; color: inherit; }

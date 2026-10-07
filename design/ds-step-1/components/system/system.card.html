@@ -1,0 +1,50 @@
+<!-- @dsCard group="Components" viewport="700x900" name="Системные: тосты, плашки, пустое состояние, скелетоны, Cmd+K" subtitle="Тосты стопкой с «Отменить» и «Повторить», плашки-предупреждения, пустое состояние с одним действием, скелетоны, «Показать ещё», командная строка" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/system/Toast.jsx', 'components/system/Alert.jsx', 'components/system/EmptyState.jsx', 'components/system/Skeleton.jsx', 'components/system/ShowMore.jsx', 'components/system/CommandPalette.jsx', 'components/core/Button.jsx'], function (C) {
+  var B = C.Button;
+  function Block() {
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.ToastStack staticStack toasts={[{ id: 1, tone: 'success', text: 'Weekly сдан' }, { id: 2, tone: 'success', text: 'Задача создана', action: { label: 'Открыть' } }, { id: 3, tone: 'error', text: 'Не сохранилось: нет сети. Черновик на устройстве', action: { label: 'Повторить' } }, { id: 4, tone: 'neutral', text: 'Запись удалена', action: { label: 'Отменить' }, progress: 60 }]} />
+          <div className="ds-col" style={{ flex: 1 }}>
+            <C.Alert tone="warning" title="Общий логин команды">Настройки писем меняются при личном входе. Попросите личную ссылку у владельца.</C.Alert>
+            <C.Alert tone="danger">Не сохранилось: нет сети. Черновик на устройстве, отправим, когда сеть появится.</C.Alert>
+            <C.Alert tone="info" actions={<B size="sm" variant="outline">Проверить доступ</B>}>Таблица для просмотра: задачи всех команд. Доступ только тем, кому можно видеть весь департамент.</C.Alert>
+            <C.Alert tone="success">Структура загружена: добавилось 86 человек, изменилось 6.</C.Alert>
+          </div>
+        </div>
+        <div className="ds-row" style={{ alignItems: 'stretch' }}>
+          <div className="ds-surface" style={{ flex: 1, padding: 0 }}><C.EmptyState icon="inbox" tone="success" title="Всё разобрано">Новые события появятся здесь сами, без перезагрузки.</C.EmptyState></div>
+          <div className="ds-surface" style={{ flex: 1, padding: 0 }}><C.EmptyState icon="hand" tone="info" title="Просьб нет" action={<B variant="secondary" icon="hand">Попросить коллегу</B>}>Попросите коллегу о помощи, и ответ придёт в «Мне».</C.EmptyState></div>
+        </div>
+        <div className="ds-surface" style={{ padding: 0 }}><C.EmptyState compact icon="search" title="По запросу «тариф такси» ничего нет" action={<B variant="text" size="sm">Сбросить фильтры</B>} /></div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div className="ds-surface" style={{ flex: 1, padding: 0 }}><C.SkeletonRow /><C.SkeletonRow w1="40%" w2="60%" /><C.SkeletonRow /></div>
+          <C.SkeletonCard style={{ flex: 1 }} />
+        </div>
+        <C.ShowMore shown={20} total={51} />
+        <C.CommandPalette query="бюд" activeKey="t124" groups={[{ name: 'Задачи', items: [{ key: 't124', label: '№124 Финальная версия бюджета 2027', sub: 'Арам Мурадян, в работе, срок пт 09.10', icon: 'check-square' }, { key: 't99', label: '№99 Бюджет маркетинга Q4', sub: 'Тарас Рева, выполнена', icon: 'check-square' }] }, { name: 'Записи', items: [{ key: 'e1', label: 'Согласовали бюджет 2027 с финансами', sub: 'Арам Мурадян, неделя 40', icon: 'file-text' }] }, { name: 'Люди', items: [{ key: 'p1', label: 'Александр Р.', sub: 'Финансовая координация и договорная работа', person: true }] }, C.CMDK_ACTIONS]} />
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

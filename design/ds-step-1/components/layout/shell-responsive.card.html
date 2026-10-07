@@ -1,0 +1,46 @@
+<!-- @dsCard group="Layout" viewport="2400x720" name="Адаптив оболочки: 1100, 820, 390" subtitle="Одна оболочка перестраивается по ширине контейнера: меню иконками 72 на узком ноутбуке, шапка на планшете, нижнее меню на телефоне" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/layout/AppShell.jsx', 'components/layout/PageHeader.jsx', 'components/layout/Tile.jsx', 'components/core/Button.jsx'], function (C) {
+  
+  function Demo(C) {
+    var T = C.Tile, Ts = C.Tiles, S = C.Section, PH = C.PageHeader, B = C.Button;
+    return (
+      <div>
+        <PH title="Моя неделя" subtitle="41-я неделя, 05.10-11.10. Weekly сдаётся до понедельника 12.10, 18:00" actions={<B variant="primary">Сдать weekly</B>} />
+        <Ts>
+          <T tone="primary" title="Мой weekly" sub="Черновик, осталось 2 дня" icon="file-text" value="2" unit="из 4 шагов" />
+          <T title="Мне" sub="Новых событий" icon="inbox" value="5" unit="сегодня 3" />
+          <T title="Просрочено" sub="Моих задач" icon="alert-circle" iconTone="danger" value="2" unit="из 14 открытых" />
+          <T title="Жду от коллег" sub="Просьбы без ответа" icon="hand" iconTone="info" value="1" />
+          <T tone="brand" wide title="Встреча во вторник 13.10, 11:00" sub="Пункт 3 из 9: риски и помощь. Ваш доклад после Светы" icon="presentation"><span style={{ fontSize: 12, opacity: 0.8 }}>Повестка собрана, 9 пунктов, 62 минуты</span></T>
+        </Ts>
+      </div>
+    );
+  }
+  function Frame(p) { return <div style={{ width: p.w, height: p.h || 640, flex: 'none', overflow: 'hidden', borderRadius: 16, border: '1px solid var(--color-border)', position: 'relative' }}><span className="ds-label" style={{ position: 'absolute', top: -22, left: 0 }}>{p.label}</span>{p.children}</div>; }
+  return (
+    <div className="ds-row" style={{ gap: 24, alignItems: 'flex-start', paddingTop: 24, flexWrap: 'nowrap', overflowX: 'auto' }}>
+      <Frame w={1100} label="1024-1259: меню иконками"><C.AppShell active="week" counts={{ inbox: 5 }} style={{ height: 640 }}>{Demo(C)}</C.AppShell></Frame>
+      <Frame w={820} label="768-1023: шапка, планшет"><C.AppShell active="week" counts={{ inbox: 5 }} style={{ height: 640 }}>{Demo(C)}</C.AppShell></Frame>
+      <Frame w={390} label="390: телефон, нижнее меню"><div data-theme="dark" style={{ height: '100%' }}><C.AppShell active="week" counts={{ inbox: 5 }} isManager style={{ height: 640 }}>{Demo(C)}</C.AppShell></div></Frame>
+    </div>
+  );
+});
+</script>
+</body>
+</html>

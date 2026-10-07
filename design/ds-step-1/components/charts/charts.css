@@ -1,0 +1,36 @@
+/* Графики аналитики: столбики и линия по неделям, мини-график, полоса прогресса цели */
+.sv-chart { display: flex; flex-direction: column; gap: 8px; }
+.sv-chart__title { font-size: var(--text-body); font-weight: var(--font-weight-semibold); margin: 0; }
+.sv-chart__insight { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); margin: 0; }
+.sv-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.sv-chart__axis { font-size: 11px; fill: var(--color-text-secondary); font-family: var(--font-body); }
+.sv-chart__grid { stroke: var(--color-chart-grid); stroke-width: 1; }
+.sv-chart__bar { fill: var(--color-chart-1); }
+.sv-chart__bar--muted { fill: var(--color-chart-3); }
+.sv-chart__bar--current { fill: var(--color-primary); }
+.sv-chart__line { fill: none; stroke: var(--color-chart-2); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.sv-chart__dot { fill: var(--color-surface); stroke: var(--color-chart-2); stroke-width: 2; }
+.sv-chart__value { font-size: 11px; fill: var(--color-text); font-family: var(--font-body); font-weight: 600; }
+.sv-chart__legend { display: flex; gap: 14px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-chart__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sv-chart__legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.sv-sparkline { display: inline-flex; align-items: center; gap: 8px; }
+.sv-sparkline svg { display: block; overflow: visible; }
+.sv-sparkline__line { fill: none; stroke: var(--color-chart-1); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.sv-sparkline__line--down { stroke: var(--color-danger-dot); }
+.sv-sparkline__line--up { stroke: var(--color-success-dot); }
+.sv-sparkline__value { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); font-variant-numeric: tabular-nums; }
+.sv-sparkline__delta { font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-sparkline__delta--up { color: var(--color-success-text); }
+.sv-sparkline__delta--down { color: var(--color-danger-text); }
+.sv-goal-progress { display: flex; flex-direction: column; gap: 6px; }
+.sv-goal-progress__head { display: flex; justify-content: space-between; gap: 12px; font-size: var(--text-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.sv-goal-progress__head b { color: var(--color-text); font-weight: var(--font-weight-semibold); }
+.sv-goal-progress__track { height: 8px; border-radius: 4px; background: var(--color-field); overflow: hidden; position: relative; }
+[data-theme="dark"] .sv-goal-progress__track { background: var(--color-border); }
+.sv-goal-progress__fill { height: 100%; border-radius: 4px; background: var(--color-accent); transition: width var(--duration) var(--ease); }
+.sv-goal-progress--ok .sv-goal-progress__fill { background: var(--color-success-dot); }
+.sv-goal-progress--risk .sv-goal-progress__fill { background: var(--color-warning-dot); }
+.sv-goal-progress--fail .sv-goal-progress__fill { background: var(--color-danger-dot); }
+.sv-goal-progress__plan { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--color-text-secondary); }
+.sv-goal-progress__foot { display: flex; justify-content: space-between; font-size: var(--text-caption); color: var(--color-text-secondary); }

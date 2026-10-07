@@ -1,0 +1,41 @@
+<!-- @dsCard group="Components" viewport="700x520" name="Графики аналитики" subtitle="Столбики и линия по неделям с одной фразой вывода, мини-график в карточке лидера, полоса прогресса цели" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/charts/BarLineChart.jsx', 'components/charts/Sparkline.jsx', 'components/charts/GoalProgress.jsx'], function (C) {
+  var weeks = [{ label: '34', bar: 75, line: 70 }, { label: '35', bar: 100, line: 80 }, { label: '36', bar: 88, line: 60 }, { label: '37', bar: 100, line: 75 }, { label: '38', bar: 63, line: 55 }, { label: '39', bar: 100, line: 85 }, { label: '40', bar: 100, line: 80 }, { label: '41', bar: 88, line: 78, current: true }];
+  function Block() {
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div className="ds-surface"><C.BarLineChart title="Сдача weekly и доля выполненных обещаний" data={weeks} max={100} barLabel="Сдали weekly, %" lineLabel="Выполнено обещаний, %" insight="Семь недель из восьми сдают 7-8 человек; провал на 38-й неделе совпал с отпусками." /></div>
+        <div className="ds-row" style={{ gap: 24 }}>
+          <div className="ds-surface" style={{ flex: 1 }}><p className="ds-label">Просрочка задач, шт.</p><C.Sparkline values={[12, 10, 11, 9, 7, 8, 6, 5]} showDelta lowerIsBetter label="Просрочка по неделям" /></div>
+          <div className="ds-surface" style={{ flex: 1 }}><p className="ds-label">Время ответа на просьбы, ч</p><C.Sparkline values={[20, 26, 24, 30, 28, 34, 31, 36]} showDelta lowerIsBetter label="Время ответа" /></div>
+          <div className="ds-surface" style={{ flex: 1 }}><p className="ds-label">Записей в неделю</p><C.Sparkline values={[30, 32, 31, 33, 33, 34, 34, 34]} label="Записи" /></div>
+        </div>
+        <div className="ds-surface ds-col" style={{ gap: 14 }}>
+          <C.GoalProgress label="Доля онлайн-продаж КАСКО" base={20} value={31} target={40} plan={33} unit="%" tone="ok" tasksDone={6} tasksTotal={9} updated="3 дня назад" />
+          <C.GoalProgress label="NPS поддержки" base={40} value={46} target={60} plan={52} tone="risk" tasksDone={2} tasksTotal={7} updated="вчера" />
+          <C.GoalProgress label="Срок вывода продукта, дней" base={0} value={12} target={90} plan={45} tone="fail" tasksDone={1} tasksTotal={8} />
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

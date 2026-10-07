@@ -1,0 +1,46 @@
+<!-- @dsCard group="Components" viewport="700x520" name="Метки: статус, приоритет, состояние, срок, теги" subtitle="Рядом с цветом всегда слово; статусы задачи, weekly и просьбы; просрочка; «зелёное снаружи»" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/core/StatusBadge.jsx', 'components/core/PriorityMark.jsx', 'components/core/StateDot.jsx', 'components/core/OverdueLabel.jsx', 'components/core/Tag.jsx', 'components/core/CounterBadge.jsx'], function (C) {
+  var S = C.StatusBadge, P = C.PriorityMark, D = C.StateDot, O = C.OverdueLabel, T = C.Tag, N = C.CounterBadge;
+  function Block() {
+    return (
+      <div className="ds-col" style={{ gap: 10 }}>
+        <div><p className="ds-label">Статус задачи</p><div className="ds-row" style={{ gap: 8 }}>
+          {Object.keys(C.TASK_STATUS).map(function (k) { return <S key={k} task={k} />; })}</div></div>
+        <div><p className="ds-label">Weekly</p><div className="ds-row" style={{ gap: 8 }}>
+          {Object.keys(C.WEEKLY_STATUS).map(function (k) { return <S key={k} weekly={k} suffix={k === 'vacation' ? ', замещает Влад' : null} />; })}</div></div>
+        <div><p className="ds-label">Просьба</p><div className="ds-row" style={{ gap: 8 }}>
+          {Object.keys(C.REQUEST_STATUS).map(function (k) { return <S key={k} request={k} />; })}</div></div>
+        <div><p className="ds-label">Приоритет</p><div className="ds-row">
+          {['critical', 'high', 'medium', 'low', 'none'].map(function (k) { return <P key={k} level={k} />; })}</div></div>
+        <div><p className="ds-label">Состояние</p><div className="ds-row">
+          {['ok', 'risk', 'blocked', 'none'].map(function (k) { return <D key={k} state={k} />; })}
+          <D state="ok" outside="срок не менялся 21 день, записей нет" /></div></div>
+        <div><p className="ds-label">Срок</p><div className="ds-row">
+          <O date="пт 16.10" /><O date="завтра" soon /><O days={3} /><O days={14} /></div></div>
+        <div><p className="ds-label">Теги и счётчики</p><div className="ds-row" style={{ gap: 8 }}>
+          <T>КАСКО</T><T kind="result" /><T kind="event" /><T kind="risk" /><T kind="plan" /><T kind="ceo" /><T kind="help" /><T kind="question" /><T kind="up" />
+          <T onRemove={function () {}}>Мои</T><N value={3} /><N value={120} tone="danger" /><N value={7} tone="neutral" /><N dot /></div></div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

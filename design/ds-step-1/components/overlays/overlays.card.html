@@ -1,0 +1,64 @@
+<!-- @dsCard group="Components" viewport="700x900" name="Панели и окна" subtitle="Боковая панель 600 с радиусом 24, окно, окно подтверждения, шторка снизу, меню, подсказка" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/overlays/Drawer.jsx', 'components/overlays/Modal.jsx', 'components/overlays/BottomSheet.jsx', 'components/overlays/Menu.jsx', 'components/overlays/Tooltip.jsx', 'components/core/Button.jsx', 'components/core/StatusBadge.jsx', 'components/core/StateDot.jsx', 'components/core/PriorityMark.jsx', 'components/core/IconButton.jsx', 'components/forms/Select.jsx', 'components/forms/Textarea.jsx', 'components/forms/FormField.jsx', 'components/forms/DatePicker.jsx'], function (C) {
+  var B = C.Button;
+  function Block(p) {
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div style={{ position: 'relative', height: 420, background: 'var(--color-page)', borderRadius: 16, overflow: 'hidden', border: '1px solid var(--color-border)' }}>
+          <C.Drawer title="Финальная версия бюджета 2027" crumbs={[{ label: 'Задачи' }, { label: 'Топ-команда' }, { label: '№124' }]} width={400} onClose={function () {}} onCopyLink={function () {}}
+            badges={[<C.StatusBadge key="s" task="progress" />, <C.StateDot key="d" state="risk" />, <C.PriorityMark key="p" level="critical" />]}
+            footer={[<B key="1" variant="outline" icon="bell">Подписаться</B>, <B key="2" variant="outline" icon="arrow-right-left">Передать</B>, <B key="3" variant="secondary" icon="hand">Попросить коллегу</B>]}>
+            <p className="ds-label">Где сейчас, обновлено вчера</p>
+            <p style={{ margin: '0 0 12px' }}>Согласовали с финансами, ждём CEO. Риск: CEO в командировке до четверга.</p>
+            <p className="ds-label">Что нужно сделать</p>
+            <p style={{ margin: 0 }}>Утвердить финальную версию бюджета у CEO и разослать лидерам.</p>
+          </C.Drawer>
+        </div>
+        <C.ConfirmDialog inline title="Удалить запись?" danger confirmLabel="Удалить" icon="trash-2">Запись и её обсуждение уйдут из ленты. Текст останется в журнале.</C.ConfirmDialog>
+        <C.Modal inline title="Новая задача" onClose={function () {}} footer={[<B key="1" variant="text">Отменить</B>, <B key="2" variant="dark">Создать задачу</B>]}>
+          <div className="ds-col" style={{ gap: 12 }}>
+            <C.FormField label="Название"><C.Textarea rows={1} placeholder="Что нужно сделать" /></C.FormField>
+            <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+              <C.FormField label="Повтор" style={{ flex: 1 }}><C.Select options={[{ value: 'no', label: 'Нет' }, { value: 'w', label: 'Еженедельно' }, { value: 'm', label: 'Ежемесячно' }]} value="no" /></C.FormField>
+              <C.FormField label="Срок" style={{ flex: 1 }}><C.DatePicker value={null} /></C.FormField>
+            </div>
+          </div>
+        </C.Modal>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div style={{ width: 300, background: 'var(--color-page)', borderRadius: 16, padding: '40px 0 0', border: '1px solid var(--color-border)' }}>
+            <C.BottomSheet inline title="Просьба от Тараса" onClose={function () {}}>
+              <p style={{ margin: 0, fontSize: 'var(--text-body)' }}>Посмотреть расчёт по КАСКО до пятницы</p>
+              <div className="sv-sheet__actions"><B variant="primary" size="lg" block icon="check">Принять и назвать срок</B><B variant="outline" size="lg" block>Отклонить с причиной</B></div>
+              <C.SheetRow icon="list-plus">Сделать задачей</C.SheetRow>
+              <C.SheetRow icon="link">Открыть задачу №131</C.SheetRow>
+            </C.BottomSheet>
+          </div>
+          <div className="ds-col" style={{ flex: 1 }}>
+            <C.Menu staticMenu items={[{ key: 'e', label: 'Изменить', icon: 'pencil', hotkey: 'E', sub: 'Ещё 12 минут' }, { key: 'l', label: 'Скопировать ссылку', icon: 'link' }, { sep: true }, { key: 'd', label: 'Удалить', icon: 'trash-2', danger: true }]} />
+            <div className="ds-row"><C.Tooltip staticTip text="Открыть командную строку" hotkey="⌘K" /><C.Tooltip text="Мне"><C.IconButton icon="bell" label="Мне" /></C.Tooltip></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

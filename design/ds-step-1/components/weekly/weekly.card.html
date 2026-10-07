@@ -1,0 +1,60 @@
+<!-- @dsCard group="Components" viewport="700x980" name="Weekly: шаги, дни, сдача, запись, обещание, подсказка" subtitle="Шаги сдачи, полоса дней с сроком и встречей, полоса «кто сдал», карточка записи с реакциями и «Наверх», строка обещания с итогом, подсказка из черновика, «Сохранено»" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/weekly/SubmitSteps.jsx', 'components/weekly/WeekDays.jsx', 'components/weekly/SubmissionBar.jsx', 'components/weekly/EntryCard.jsx', 'components/weekly/PromiseRow.jsx', 'components/weekly/DraftHint.jsx', 'components/weekly/SavedMark.jsx'], function (C) {
+  var team = [{ name: 'Арам Мурадян', status: 'submitted' }, { name: 'Влад Головкин', status: 'submitted' }, { name: 'Тарас Рева', status: 'late' }, { name: 'Света', status: 'draft' }, { name: 'Евгений Ф.', status: 'none' }, { name: 'Алсу', status: 'submitted' }, { name: 'Павел', status: 'vacation' }, { name: 'Евгений Ч.', status: 'submitted' }];
+  function Block() {
+    var o = React.useState({ 1: 'done', 2: 'partial', 3: null });
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div className="ds-surface" style={{ padding: 8, width: 220 }}><C.SubmitSteps current="entries" done={['promises', 'tasks']} /></div>
+          <div className="ds-col" style={{ flex: 1 }}>
+            <C.SubmitSteps row current="tasks" done={['promises']} />
+            <div className="ds-row"><C.SavedMark time="14:32" /><C.SavedMark state="saving" /><C.SavedMark state="offline" /><C.SavedMark state="error" onRetry={function () {}} /><C.Deadline left="5 дн. 3 ч" /><C.Deadline left="2 ч 10 мин" soon /><C.Deadline late="вчера" /></div>
+            <C.WeekDays days={[{ wd: 'пн', n: 5, past: true }, { wd: 'вт', n: 6, past: true }, { wd: 'ср', n: 7, today: true }, { wd: 'чт', n: 8 }, { wd: 'пт', n: 9 }, { wd: 'сб', n: 10, weekend: true }, { wd: 'вс', n: 11, weekend: true }]} />
+          </div>
+        </div>
+        <div className="ds-surface"><C.SubmissionBar people={team} deadline="пн 12.10, 18:00" /></div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.EntryCard style={{ flex: 1 }} manager canUp entry={{ type: 'result', direction: 'КАСКО', what: 'Запустили новый расчёт КАСКО для такси в двух регионах', details: 'Пилот на 2 недели, считаем конверсию и средний чек.', impact: 'Плюс 5% заявок в сегменте, цифра условная', next: 'Расширить на все регионы к ноябрю', help: { to: 'Тарас Рева', due: 'пт 16.10', what: 'приоритет витрины' }, thanks: { to: 'Никита Т.', for: 'данные по сегменту за ночь' }, links: [{ label: 'Дашборд пилота' }], author: 'Евгений Ф.', ceo: true }} reactions={{ accepted: 3, question: 1 }} myReaction="accepted" comments={2} />
+          <div className="ds-col" style={{ flex: 1 }}>
+            <C.EntryCard entry={{ type: 'risk', direction: 'Ипотека', what: 'Банк-партнёр сдвигает запуск интеграции на месяц', impact: 'План по ипотеке в Q4 под риском', next: 'Встреча с банком в четверг', author: 'Света', up: true, upBy: 'Влад', questionOpen: true }} reactions={{ meeting: 1 }} comments={0} />
+            <C.EntryCard collapsed entry={{ type: 'plan', what: 'Подготовить прогноз на ноябрь с разбивкой по каналам', up: true }} />
+            <C.EntryCard collapsed entry={{ type: 'event', what: 'Провели встречу с партнёрским каналом по ВЗР' }} />
+          </div>
+        </div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <div className="ds-surface" style={{ flex: 2, paddingTop: 4, paddingBottom: 4 }}>
+            {[{ id: 1, text: 'Согласовать бюджет 2027 с финансами', from: 'Неделя 40' }, { id: 2, text: 'Заполнить цели Q4 в бордах лидера', from: 'Неделя 40' }, { id: 3, text: 'Нанять аналитика в КАСКО', from: 'Неделя 39, перенесено' }].map(function (p) {
+              return <C.PromiseRow key={p.id} promise={Object.assign({}, p, { outcome: o[0][p.id] })} onOutcome={function (pr, k) { var n = Object.assign({}, o[0]); n[pr.id] = k; o[1](n); }} />;
+            })}
+            <C.PromiseRow readonly promise={{ text: 'Оценить рынок КАСКО', outcome: 'failed', note: 'Ждали данные от партнёра' }} />
+          </div>
+          <div className="ds-col" style={{ flex: 1 }}>
+            <C.DraftHint hint={{ source: 'Закрыта задача №102', text: 'Сдан прогноз на октябрь с объяснением отклонений', icon: 'check-square' }} />
+            <C.DraftHint hint={{ source: '3 реакции «Принято»', text: 'Запись о тарифе для такси приняли Арам, Влад и Света', icon: 'heart', added: true }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

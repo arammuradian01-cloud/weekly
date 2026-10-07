@@ -1,0 +1,48 @@
+<!-- @dsCard group="Components" viewport="700x900" name="Встреча: повестка, таймер, решение, ведущий" subtitle="Пункт повестки в подготовке и на проекторе, таймер в трёх состояниях, карточка решения, индикатор «следую за ведущим», полоса и подсказки клавиш" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/meeting/AgendaItem.jsx', 'components/meeting/MeetingTimer.jsx', 'components/meeting/DecisionCard.jsx', 'components/meeting/FollowingIndicator.jsx'], function (C) {
+  function Block() {
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <div className="ds-col" style={{ gap: 8 }}>
+          <C.AgendaItem item={{ n: 1, title: 'Нужен ли отдельный тариф для такси в КАСКО?', source: 'question', sourceLabel: 'Вопрос к записи Евгения Ф.', author: 'Тарас Рева', minutes: 5, done: true }} onRemove={function () {}} onDefer={function () {}} />
+          <C.AgendaItem item={{ n: 2, title: 'Найм в КАСКО: просрочка 5 дней, заблокирована', source: 'task', sourceLabel: '№127 Найм в КАСКО', author: 'Евгений Ф.', minutes: 7, current: true, status: 'progress' }} onRemove={function () {}} onDefer={function () {}} />
+          <C.AgendaItem item={{ n: 3, title: 'Просьба без ответа 4 дня: таблица допущений', source: 'request', sourceLabel: 'Просьба Тараса к Евгению Ф.', author: 'Тарас Рева', minutes: 3 }} onRemove={function () {}} onDefer={function () {}} />
+        </div>
+        <div className="ds-row"><C.MeetingTimer seconds={312} /><C.MeetingTimer seconds={48} /><C.MeetingTimer seconds={-35} /><C.MeetingTimer seconds={200} paused /></div>
+        <div className="ds-row"><C.FollowingIndicator /><C.FollowingIndicator away leaderStep={4} onReturn={function () {}} /></div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.DecisionCard style={{ flex: 1 }} decision={{ text: 'Запускаем тариф для такси в КАСКО в двух регионах до конца октября', owner: 'Евгений Ф.', date: 'вт 06.10', tasks: [{ id: 131, title: 'Оценить рынок КАСКО' }], protocol: true }} />
+          <C.DecisionCard style={{ flex: 1 }} decision={{ text: 'Переносим бюджет 2027 на ноябрь', owner: 'Арам Мурадян', date: 'вт 29.09', cancelled: true, cancelledBy: 'Арам Мурадян', cancelledAt: 'вт 06.10' }} />
+        </div>
+        <p className="ds-label" style={{ margin: 0 }}>Проектор 1920: полоса, пункт крупно, подсказки клавиш (масштаб data-scale="projector")</p>
+        <div data-scale="projector" style={{ border: '1px solid var(--color-border)', borderRadius: 16, overflow: 'hidden', background: 'var(--color-page)', zoom: 0.5 }}>
+          <C.MeetingBar step={2} total={9} seconds={312} />
+          <div style={{ padding: 32 }}>
+            <C.AgendaItemBig item={{ n: 2, total: 9, section: 'Риски и помощь', title: 'Найм в КАСКО: просрочка 5 дней, заблокирована', author: 'Евгений Ф.', context: [{ label: 'Где сейчас', value: 'Два кандидата на финальном этапе, ждём ответ HR по вилке' }, { label: 'Срок', value: 'пт 02.10, просрочена на 5 дн.' }, { label: 'Ответственный', value: 'Евгений Ф.' }, { label: 'Состояние', value: 'Заблокирована: нет согласованной вилки' }] }} onStatus={function () {}} onDue={function () {}} />
+          </div>
+          <C.MeetingKeys />
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>
