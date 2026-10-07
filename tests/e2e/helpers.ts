@@ -18,6 +18,7 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
   // Этап 14: команды, подразделения и сотрудники из структуры, которые завели тесты
   await client.query("DELETE FROM tasks WHERE \"teamId\" <> 'top'");
+  await client.query("DELETE FROM goals");
   await client.query("DELETE FROM teams WHERE id <> 'top'");
   await client.query('UPDATE people SET "unitId" = NULL, "managerId" = NULL, "functionalManagerId" = NULL, position = NULL');
   await client.query("DELETE FROM vacancies");

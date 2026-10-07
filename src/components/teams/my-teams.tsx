@@ -125,6 +125,7 @@ function TeamRow({ team: t }: { team: PanelTeam }) {
         <Count n={t.clarify} label="требует уточнений" alert />
         <Count n={t.stale} label="давно без обновлений" alert />
         {t.proposed ? <Count n={t.proposed} label="предложено" /> : null}
+        {t.goalsAtRisk ? <Count n={t.goalsAtRisk} label="целей в риске" alert /> : null}
       </p>
     </li>
   );

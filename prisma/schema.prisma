@@ -155,6 +155,8 @@ model Person {
   promotions        WeeklyPromotion[]
   teamWeekCloses    TeamWeekClose[]
   watches           TaskWatch[]
+  ownedGoals        Goal[]            @relation("GoalOwner")
+  createdGoals      Goal[]            @relation("GoalCreator")
 
   @@map("people")
 }
@@ -274,6 +276,9 @@ model Task {
   /// Команда задачи (этап 14). Всё, что было до команд, принадлежит топ-команде
   teamId         String         @default("top")
   team           Team           @relation(fields: [teamId], references: [id])
+  /// Цель, на которую работает задача (этап 17): цель своей команды или команды выше
+  goalId         String?
+  goal           Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
 
   coExecutors TaskCoExecutor[]
   transfers   TaskTransfer[]
@@ -285,6 +290,7 @@ model Task {
   @@index([status])
   @@index([ownerId])
   @@index([teamId])
+  @@index([goalId])
   @@map("tasks")
 }
 
@@ -644,6 +650,7 @@ model Team {
   members TeamMember[]
   tasks   Task[]
   closes  TeamWeekClose[]
+  goals   Goal[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -711,4 +718,56 @@ model TaskWatch {
   @@id([taskId, personId])
   @@index([personId])
   @@map("task_watches")
+}
+
+/// Итог цели за квартал (этап 17)
+enum GoalResult {
+  IN_PROGRESS
+  ACHIEVED
+  PARTIAL
+  MISSED
+  DROPPED
+}
+
+/// Цель квартала (этап 17): дерево от целей департамента (топ-команда) до целей команд и людей.
+/// Значения метрик живут в бордах и недельном отчёте: здесь метрика, база и целевое значение текстом и ссылка на борд
+model Goal {
+  id          String     @id @default(cuid())
+  /// Квартал: 2026-Q4
+  quarter     String
+  /// Номер цели из борда или таблицы («1», «D1», «S4»): по нему загрузка находит цель повторно
+  code        String?
+  title       String
+  description String?
+  metric      String?
+  base        String?
+  target      String?
+  /// Команда цели: уровень в дереве. Цели топ-команды это цели департамента
+  teamId      String
+  team        Team       @relation(fields: [teamId], references: [id])
+  /// Владелец цели: руководитель команды или человек, если цель личная
+  ownerId     String?
+  owner       Person?    @relation("GoalOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  parentId    String?
+  parent      Goal?      @relation("GoalTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Goal[]     @relation("GoalTree")
+  /// Владелец отметил «в риске» и написал почему
+  atRisk      Boolean    @default(false)
+  riskNote    String?
+  result      GoalResult @default(IN_PROGRESS)
+  /// Ссылка на строку в борде лидера
+  link        String?
+  /// Откуда цель: manual, import, bord:<вкладка>
+  source      String     @default("manual")
+  sortOrder   Int        @default(0)
+  createdById String?
+  createdBy   Person?    @relation("GoalCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(3)
+
+  tasks Task[]
+
+  @@index([quarter, teamId])
+  @@index([parentId])
+  @@map("goals")
 }

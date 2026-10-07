@@ -13,6 +13,7 @@ import type { PersonSlug } from "@/domain/types";
 import { ancestorsOf, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type ScopeSubject, type TeamNode } from "./scope";
 import { expectedOf, expectingTeams, leadersOf, teamDeadline } from "./rhythm";
 import { seesTask } from "@/lib/tasks/watch";
+import { quarterOf } from "@/lib/goals/parse";
 
 export type WeeklyLight = { expected: number; submitted: number; late: number; absent: number; deadline: string; passed: boolean; closed: boolean };
 
@@ -47,6 +48,8 @@ export type PanelTeam = {
   clarify: number;
   stale: number;
   proposed: number;
+  /** Цели квартала команды и команд ниже в риске (этап 17) */
+  goalsAtRisk: number;
   /** Сколько команд ещё ниже: в них можно спуститься */
   below: number;
 };
@@ -180,6 +183,14 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
     }),
     weeklyLights(nodes),
   ]);
+  // Цели квартала в риске (этап 17): отметил владелец или просрочено от трети открытых задач цели
+  const goals = await prisma.goal.findMany({
+    where: { quarter: quarterOf(today), teamId: { in: subtree }, result: "IN_PROGRESS" },
+    select: { teamId: true, atRisk: true, tasks: { where: { archivedAt: null, status: { in: ["IN_PROGRESS", "CLARIFY"] } }, select: { due: true } } },
+  });
+  const riskyGoalTeams = goals
+    .filter((g) => g.atRisk || (g.tasks.length > 0 && g.tasks.filter((t) => diffDays(isoFromDbDate(t.due), today) > 0).length / g.tasks.length >= 0.3))
+    .map((g) => g.teamId);
 
   // Задачи людей из чужих команд показываем только те, что человек видит и так (этап 14): участник, автор, руководитель людей
   const sees = (t: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[] }) => seesTask(scope, t, subject.id);
@@ -220,6 +231,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
       clarify: own.filter((x) => x.view.status === "clarify").length,
       stale: own.filter((x) => x.view.stale).length,
       proposed: own.filter((x) => x.view.status === "proposed").length,
+      goalsAtRisk: riskyGoalTeams.filter((t) => (level === "self" ? t === n.id : inTeam.includes(t))).length,
       below: nodes.filter((c) => c.active && c.parentId === n.id && visible.has(c.id)).length,
     };
   };
