@@ -50,6 +50,7 @@ export function InboxCountProvider({ initial, children }: { initial: number; chi
     source.addEventListener("inbox", () => void onInbox());
     source.addEventListener("tasks", () => relevant("tasks", window.location.pathname) && refresh());
     source.addEventListener("weekly", () => relevant("weekly", window.location.pathname) && refresh());
+    source.addEventListener("meeting", () => relevant("meeting", window.location.pathname) && refresh());
     // Поток оборвался и вернулся (перезапуск сервера, сеть): за это время могли быть изменения
     source.addEventListener("error", () => {
       broken = true;

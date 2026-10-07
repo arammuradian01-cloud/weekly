@@ -27,15 +27,15 @@ export async function GET(request: Request) {
         }
       };
       // Сообщения одной транзакции приходят пачкой: склеиваем их в одно на полсекунды
-      let pending = { inbox: false, tasks: false, weekly: false };
+      let pending = { inbox: false, tasks: false, weekly: false, meeting: false };
       let flush: ReturnType<typeof setTimeout> | null = null;
       const unsubscribe = subscribeLive((m) => {
         if (m.t === "inbox" && m.p !== me) return;
         pending[m.t] = true;
         flush ??= setTimeout(() => {
           flush = null;
-          for (const kind of ["inbox", "tasks", "weekly"] as const) if (pending[kind]) send(`event: ${kind}\ndata: 1\n\n`);
-          pending = { inbox: false, tasks: false, weekly: false };
+          for (const kind of ["inbox", "tasks", "weekly", "meeting"] as const) if (pending[kind]) send(`event: ${kind}\ndata: 1\n\n`);
+          pending = { inbox: false, tasks: false, weekly: false, meeting: false };
         }, 500);
       });
       const heartbeat = setInterval(() => send(": ok\n\n"), HEARTBEAT_MS);

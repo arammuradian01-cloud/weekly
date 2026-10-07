@@ -114,6 +114,18 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     <Link href={`/weekly/entry/${item.entryId}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
                       <span className="text-muted">Запись weekly:</span> {item.entryTitle}
                     </Link>
+                  ) : item.subject.startsWith("meeting:") ? (
+                    <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                      Встреча
+                    </Link>
+                  ) : item.subject.startsWith("decision:") ? (
+                    <Link href="/decisions" className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                      Решение встречи
+                    </Link>
+                  ) : item.subject.startsWith("thanks:") ? (
+                    <Link href={`/weekly?week=${item.subject.split(":")[1]}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                      Благодарность в weekly
+                    </Link>
                   ) : null}
                   <p className="mt-0.5 text-body text-ink">{item.text}</p>
                   <p className="mt-0.5 text-caption text-muted">

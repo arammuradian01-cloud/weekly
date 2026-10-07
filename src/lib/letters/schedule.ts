@@ -41,7 +41,7 @@ export function prefsOf(value: unknown): MailPrefs {
 
 /** К какой настройке относится событие «Мне» */
 export function prefOfKind(kind: InboxKind): MailPrefKey {
-  if (kind === "MENTION" || kind === "ENTRY_COMMENT" || kind === "THANKS") return "mentions";
+  if (kind === "MENTION" || kind === "ENTRY_COMMENT" || kind === "THANKS" || kind === "MEETING") return "mentions";
   if (kind === "REACTION") return "reactions";
   return "tasks";
 }

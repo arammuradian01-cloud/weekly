@@ -57,18 +57,21 @@ export function Modal({
   title,
   description,
   children,
+  wide,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   title: string;
   description?: string;
   children: React.ReactNode;
+  /** Широкое окно: списки с полями в несколько колонок (приём из Notion, этап 23) */
+  wide?: boolean;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-navy/30" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] max-w-[480px] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-xl bg-white p-5 shadow-modal outline-none sm:p-6">
+        <Dialog.Content className={cn("fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] -translate-x-1/2", wide ? "max-w-[760px]" : "max-w-[480px]", " -translate-y-1/2 overflow-y-auto overscroll-contain rounded-xl bg-white p-5 shadow-modal outline-none sm:p-6")}>
           <Dialog.Title className="text-title font-semibold text-ink">{title}</Dialog.Title>
           {description ? (
             <Dialog.Description className="mt-1 text-small text-muted">{description}</Dialog.Description>

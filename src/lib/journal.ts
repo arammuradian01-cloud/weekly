@@ -24,13 +24,14 @@ export type JournalFilter = {
 
 const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth."];
 const SETTINGS_PREFIXES = ["password", "setup", "settings", "export"];
-const KNOWN_PREFIXES = ["task.", "request.", "weekly.", "ceo.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
+const KNOWN_PREFIXES = ["task.", "request.", "weekly.", "ceo.", "meeting.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
 
 function kindOf(action: string): JournalKind {
   if (action === "task.comment") return "comment";
   // Просьбы коллегам (этап 21) живут рядом с задачами
   if (action.startsWith("task.") || action.startsWith("request.")) return "task";
-  if (action.startsWith("weekly.") || action.startsWith("ceo.")) return "weekly";
+  // Встречи и решения (этап 23) живут рядом с weekly
+  if (action.startsWith("weekly.") || action.startsWith("ceo.") || action.startsWith("meeting.")) return "weekly";
   if (LOGIN_PREFIXES.some((p) => action.startsWith(p))) return "login";
   if (SETTINGS_PREFIXES.some((p) => action.startsWith(p))) return "settings";
   if (action.startsWith("sync")) return "sync";
@@ -47,7 +48,7 @@ function kindWhere(kind: JournalKind): Prisma.AuditLogWhereInput {
     case "task":
       return { AND: [{ OR: starts(["task.", "request."]) }, { action: { not: "task.comment" } }] };
     case "weekly":
-      return { OR: starts(["weekly.", "ceo."]) };
+      return { OR: starts(["weekly.", "ceo.", "meeting."]) };
     case "login":
       return { OR: starts(LOGIN_PREFIXES) };
     case "settings":
@@ -111,6 +112,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return what ? `Запись weekly «${short(what)}»` : "Запись weekly";
     }
     if (entity === "ceo-report" && id) return `Отчёт CEO, неделя ${weekNumberOf(id)}`;
+    if (entity === "meeting") return "Встреча";
     if (entity === "dict" && id) {
       const [kind, code] = id.split("/");
       const item = dicts.find((d) => d.kind === kind && d.code === code);

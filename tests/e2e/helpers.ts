@@ -15,6 +15,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb, "passwordHash" = NULL, "passwordSetAt" = NULL`);
   // Этап 20: письма уходили по прошлым тестам
   await client.query("DELETE FROM mail_marks");
+  // События «Мне» без предмета (решения, протоколы, благодарности) не уходят вместе с задачами и записями
+  await client.query("DELETE FROM inbox_events");
   // Этап 21: просьбы держат авторов и адресатов, поэтому уходят до людей. Этап 22: итоги обещаний так же
   await client.query("DELETE FROM help_requests");
   await client.query("DELETE FROM promise_reviews");
@@ -51,6 +53,9 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);
   }
   if (weekly) {
+    // Этап 23: встречи и решения недели
+    await client.query("DELETE FROM decisions");
+    await client.query("DELETE FROM meetings");
     await client.query("DELETE FROM weekly_entries");
     await client.query("DELETE FROM weekly_reports");
     await client.query("DELETE FROM ceo_reports");

@@ -69,6 +69,8 @@ export function eventPhrase(e: EventLine): string {
       return `${who}просьба к вам`;
     case "THANKS":
       return `${who}благодарность в weekly`;
+    case "MEETING":
+      return `${who}встреча: протокол или решение`;
     case "TASK_DEPENDENCY":
       return `${who}изменения по связанной задаче${n}`;
     case "REQUEST_ANSWER":
@@ -428,11 +430,19 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       return { sent: 0, skipped: 0, failed: 1 };
     }
   };
-  return leased(async () => ({
-    reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
-    digest: await safe("Дайджест", () => digestPass(now)),
-    events: await safe("Письма о событиях", () => eventMailPass(now)),
-  }));
+  return leased(async () => {
+    // Повестки встреч собираются к сроку сдачи (этап 23): тот же минутный цикл под той же арендой
+    await safe("Повестки встреч", async () => {
+      const { agendaPass } = await import("@/lib/meeting/service");
+      const built = await agendaPass(now);
+      return { sent: built, skipped: 0, failed: 0 };
+    });
+    return {
+      reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
+      digest: await safe("Дайджест", () => digestPass(now)),
+      events: await safe("Письма о событиях", () => eventMailPass(now)),
+    };
+  });
 }
 
 /** Запустить фоновый цикл писем один раз на процесс. Работает и без почты: события тогда просто отмечаются */
