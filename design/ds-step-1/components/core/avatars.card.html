@@ -1,0 +1,37 @@
+<!-- @dsCard group="Components" viewport="700x200" name="Аватары" subtitle="Инициалы на спокойном круге, радиус 12; точка статуса weekly; группа внахлёст; вакансия" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/core/Avatar.jsx', 'components/core/AvatarGroup.jsx', 'components/core/Icon.jsx'], function (C) {
+  var A = C.Avatar, G = C.AvatarGroup, IC = C.IconCircle;
+  var team = ['Арам Мурадян', 'Влад Головкин', 'Тарас Рева', 'Света', 'Евгений Ф.', 'Алсу', 'Павел', 'Евгений Ч.'];
+  function Block() {
+    return (
+      <div className="ds-col">
+        <div className="ds-row">{team.map(function (n) { return <A key={n} name={n} />; })}<A name="Вакансия" vacancy /></div>
+        <div className="ds-row">
+          <A name="Арам Мурадян" size="xs" /><A name="Арам Мурадян" size="sm" /><A name="Арам Мурадян" /><A name="Арам Мурадян" size="lg" status="success" /><A name="Тарас Рева" size="xl" status="warning" />
+          <G names={team} max={4} />
+          <IC name="at-sign" /><IC name="message-square" tone="info" /><IC name="check" tone="success" /><IC name="alert-triangle" tone="warning" /><IC name="clock" tone="danger" /><IC name="inbox" tone="neutral" />
+        </div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

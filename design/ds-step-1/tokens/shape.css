@@ -1,0 +1,62 @@
+/* Форма, глубина, сетка, движение. Значения сайта sravni.ru, кроме отмеченных «своё». */
+:root {
+  /* Радиусы */
+  --radius-control: 8px;        /* кнопки и поля 36 и 44 */
+  --radius-control-lg: 12px;    /* кнопки и поля 52 и 60, аватары */
+  --radius-avatar: 12px;
+  --radius-card: 16px;
+  --radius-panel: 24px;         /* боковая панель, окна */
+  --radius-tag: 20px;           /* теги и бейджи */
+  --radius-pill: 32px;          /* фильтры-пилюли */
+  --radius-round: 999px;
+
+  /* Тени */
+  --shadow-small: 0 -2px 6px rgba(0, 0, 0, 0.02), 0 10px 14px rgba(20, 36, 56, 0.06);
+  --shadow-medium: 0 12px 16px rgba(0, 0, 0, 0.06);
+  --shadow-sticky: 0 12px 16px rgba(0, 0, 0, 0.12);
+  /* Имена этапа 10 */
+  --shadow-menu: var(--shadow-medium);
+  --shadow-modal: var(--shadow-medium);
+  --shadow-segment: var(--shadow-small);
+  --shadow-toast: var(--shadow-sticky);
+  --shadow-drag: var(--shadow-medium);
+  --shadow-drawer: var(--shadow-sticky);
+
+  /* Отступы, шаг 4 */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px;
+
+  /* Размеры элементов */
+  --control-sm: 36px; --control-md: 44px; --control-lg: 52px;
+  --row-dense: 44px;  --row-comfortable: 52px;
+  --touch-min: 44px;
+  --icon-size: 20px;  --icon-stroke: 1.5;
+
+  /* Сетка */
+  --sidebar-width: 248px;
+  --content-max: 1320px;
+  --content-pad: 30px;
+  --content-pad-phone: 16px;
+  --drawer-width: 600px;        /* 560-640 */
+  --max-w-page: var(--content-max);
+
+  /* Фокус: контур 2 px с отступом 2 px, своё значение */
+  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  --focus-outline: 2px solid var(--color-focus);
+  --focus-offset: 2px;
+
+  /* Движение */
+  --duration: 300ms;
+  --duration-color: 200ms;
+  --ease: cubic-bezier(0.46, 0, 0.03, 0.99);
+}
+
+[data-theme="dark"] {
+  --shadow-small: 0 -2px 6px rgba(0, 0, 0, 0.10), 0 10px 14px rgba(0, 0, 0, 0.30);
+  --shadow-medium: 0 12px 16px rgba(0, 0, 0, 0.35);
+  --shadow-sticky: 0 12px 16px rgba(0, 0, 0, 0.50);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration: 0ms; --duration-color: 0ms; }
+}

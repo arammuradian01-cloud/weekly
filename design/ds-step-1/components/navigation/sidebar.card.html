@@ -1,0 +1,36 @@
+<!-- @dsCard group="Components" viewport="700x760" name="Оболочка: боковое меню, верхняя панель" subtitle="Два варианта меню: тёмно-синее и светлое; счётчик «Мне», «Мои команды» у руководителей, группа «Управление», профиль внизу" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/navigation/Sidebar.jsx', 'components/navigation/TopBar.jsx'], function (C) {
+  var S = C.Sidebar, T = C.TopBar;
+  var teams = [{ id: 'top', name: 'Топ-команда', role: 'lead', sub: '9 человек' }, { id: 'prod', name: 'Управление развития продуктов', role: 'member', sub: 'Тарас Рева' }];
+  return (
+    <div className="ds-col">
+      <div className="ds-surface" style={{ padding: 0, overflow: 'hidden' }}>
+        <T team={{ teams: teams, value: 'top' }} week={{}} />
+      </div>
+      <div className="ds-row" style={{ alignItems: 'stretch' }}>
+        <div style={{ height: 640, display: 'flex', borderRadius: 16, overflow: 'hidden' }}><S active="inbox" counts={{ inbox: 4, teams: 2 }} /></div>
+        <div style={{ height: 640, display: 'flex', borderRadius: 16, overflow: 'hidden', border: '1px solid var(--color-border)' }}><S variant="light" active="tasks" counts={{ inbox: 4 }} isAdmin={false} userName="Тарас Рева" userRole="Руководитель управления" /></div>
+        <div data-theme="dark" style={{ height: 640, display: 'flex', borderRadius: 16, overflow: 'hidden', background: 'var(--color-page)' }}><S active="week" counts={{ inbox: 12 }} dark /></div>
+      </div>
+    </div>
+  );
+});
+</script>
+</body>
+</html>

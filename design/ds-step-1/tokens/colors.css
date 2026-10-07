@@ -1,0 +1,137 @@
+/* Сравни: внутренние продукты. Цвета. Светлая тема на :root, тёмная на [data-theme="dark"].
+   Значения с пометкой «сайт» сняты из CSS sravni.ru 06.10.2026, «своё» добавлены ради контраста. */
+:root {
+  color-scheme: light;
+  /* Поверхности */
+  --color-page: #F6F5F4;            /* сайт D06 */
+  --color-surface: #FFFFFF;         /* сайт L100 */
+  --color-field: #F5F5F5;           /* сайт D10 */
+  --color-field-focus: #FFFFFF;
+  --color-overlay: rgba(0, 42, 58, 0.40);
+  /* Текст */
+  --color-text: #171D23;            /* сайт D100, 15,6:1 */
+  --color-text-secondary: #636F7D;  /* сайт D60, 4,7:1 */
+  --color-text-disabled: #99A1AB;   /* сайт D30 */
+  --color-text-inverse: #FFFFFF;
+  /* Рамки и иконки */
+  --color-icon: #7E8894;            /* сайт D40, 3,6:1: иконки в полях, рамки полей, чекбоксов, переключателей */
+  --color-border: #DADDE2;          /* сайт D15: разделители, рамки карточек */
+  --color-border-strong: #B3BAC3;   /* сайт D20: кнопки с обводкой */
+  --color-field-border: var(--color-icon);
+  /* Бренд и акцент */
+  --color-brand-dark: #002A3A;      /* сайт B300: боковое меню, тёмная кнопка, текст на зелёном */
+  --color-brand-dark-hover: #0B3C4F;
+  --color-brand-dark-active: #06303F;
+  --color-accent: #00AFFF;          /* сайт B100: выбранное, активная вкладка, заливка чекбокса. Не для текста на белом */
+  --color-on-accent: #002A3A;
+  --color-accent-soft: #F0FAFF;     /* сайт B06 */
+  --color-accent-soft-border: #B6E6FC; /* сайт B30 */
+  --color-accent-soft-hover: #E2F5FF;  /* своё */
+  --color-link: #0073A8;            /* своё, 5,2:1 */
+  --color-link-hover: #005C87;      /* своё */
+  --color-focus: #0073A8;           /* своё, контур фокуса 2 px */
+  /* Главная кнопка */
+  --color-primary: #0DD149;         /* сайт G100 */
+  --color-primary-hover: #0CBC42;   /* своё, 5,95:1 */
+  --color-primary-active: #0BB43F;  /* своё, 5,47:1 */
+  --color-on-primary: #002A3A;      /* своё, 7,35:1 */
+  /* Статусы: текст оттенка 300 на подложке 06 */
+  --color-success-text: #11693F;    /* сайт G300 */
+  --color-success-bg: #EEFCF2;      /* сайт G06 */
+  --color-success-dot: #0DD149;     /* сайт G100 */
+  --color-warning-text: #725122;    /* сайт O300 */
+  --color-warning-bg: #FFF9F0;      /* сайт O06 */
+  --color-warning-dot: #FF9500;     /* сайт O100 */
+  --color-danger-text: #C11D1D;     /* сайт R100 */
+  --color-danger-bg: #FDF2F2;       /* сайт R06 */
+  --color-danger-dot: #C11D1D;
+  --color-danger-hover: #A81717;    /* своё */
+  --color-info-text: #5047D7;       /* сайт V100 */
+  --color-info-bg: #F3F2FC;         /* сайт V06 */
+  --color-info-dot: #5047D7;
+  --color-neutral-text: var(--color-text-secondary);
+  --color-neutral-bg: var(--color-field);
+  --color-neutral-dot: #99A1AB;
+  --color-row-overdue: var(--color-danger-bg);
+  --color-row-selected: var(--color-accent-soft);
+  --color-row-hover: #FAFAF9;       /* своё */
+  /* Боковое меню на брендовом тёмном */
+  --color-sidebar-bg: var(--color-brand-dark);
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-muted: rgba(255, 255, 255, 0.72);
+  --color-sidebar-item-hover: rgba(255, 255, 255, 0.08);
+  --color-sidebar-item-active: rgba(255, 255, 255, 0.14);
+  --color-sidebar-border: rgba(255, 255, 255, 0.12);
+  /* Аватары: инициалы на спокойном круге, 8 оттенков */
+  --color-avatar-1-bg: #DDEFFA; --color-avatar-1-text: #0B4A6B;
+  --color-avatar-2-bg: #E3F6E8; --color-avatar-2-text: #11693F;
+  --color-avatar-3-bg: #FBEBD6; --color-avatar-3-text: #725122;
+  --color-avatar-4-bg: #ECEAFB; --color-avatar-4-text: #3B35A6;
+  --color-avatar-5-bg: #F9E3EA; --color-avatar-5-text: #8A2240;
+  --color-avatar-6-bg: #E2F3F2; --color-avatar-6-text: #0F5E58;
+  --color-avatar-7-bg: #EDEBE6; --color-avatar-7-text: #4F4A40;
+  --color-avatar-8-bg: #E5EAF0; --color-avatar-8-text: #2F3F52;
+  /* Графики */
+  --color-chart-1: #0073A8;
+  --color-chart-2: #0DD149;
+  --color-chart-3: #B3BAC3;
+  --color-chart-grid: var(--color-border);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-page: #080A0C;            /* сайт body D06 */
+  --color-surface: #171D23;         /* сайт */
+  --color-field: #2B2E33;           /* сайт D10 */
+  --color-field-focus: #2B2E33;
+  --color-overlay: rgba(0, 0, 0, 0.60);
+  --color-text: #FFFFFF;
+  --color-text-secondary: #9198A1;  /* сайт D60, 5,8:1 */
+  --color-text-disabled: #636F7D;   /* своё */
+  --color-text-inverse: #171D23;
+  --color-icon: #78808C;            /* сайт D40, 4,3:1 */
+  --color-border: #4E5764;          /* сайт D15 */
+  --color-border-strong: #78808C;
+  --color-field-border: #78808C;
+  --color-brand-dark: #002A3A;
+  --color-brand-dark-hover: #0B3C4F;
+  --color-brand-dark-active: #06303F;
+  --color-accent: #00AFFF;          /* 6,9:1 на поверхности */
+  --color-on-accent: #171D23;
+  --color-accent-soft: #0F2A3A;     /* своё */
+  --color-accent-soft-border: #1E5F80; /* своё */
+  --color-accent-soft-hover: #133447;  /* своё */
+  --color-link: #00AFFF;
+  --color-link-hover: #5CC8FF;      /* своё */
+  --color-focus: #00AFFF;
+  --color-primary: #0DD149;
+  --color-primary-hover: #0CBC42;
+  --color-primary-active: #0BB43F;
+  --color-on-primary: #002A3A;
+  --color-success-text: #9EEDB6;    /* сайт G300 тёмной темы, 8,6:1 */
+  --color-success-bg: #1D3E28;
+  --color-success-dot: #0DD149;
+  --color-warning-text: #F5DAB5;    /* 7,5:1 */
+  --color-warning-bg: #503F26;
+  --color-warning-dot: #FF9500;
+  --color-danger-text: #F1B2B2;     /* 6,3:1 */
+  --color-danger-bg: #533232;
+  --color-danger-dot: #F28B8B;      /* своё */
+  --color-danger-hover: #F6C7C7;
+  --color-info-text: #CECBFF;       /* 7,8:1 */
+  --color-info-bg: #363352;
+  --color-info-dot: #CECBFF;
+  --color-neutral-dot: #78808C;
+  --color-row-hover: #1D242B;       /* своё */
+  --color-sidebar-bg: #0E1419;      /* своё: тёмно-синий в тёмной теме сливается с фоном, берём ступень выше поверхности */
+  --color-avatar-1-bg: #10384D; --color-avatar-1-text: #BDE6FA;
+  --color-avatar-2-bg: #1D3E28; --color-avatar-2-text: #9EEDB6;
+  --color-avatar-3-bg: #503F26; --color-avatar-3-text: #F5DAB5;
+  --color-avatar-4-bg: #363352; --color-avatar-4-text: #CECBFF;
+  --color-avatar-5-bg: #4E2A36; --color-avatar-5-text: #F6C6D3;
+  --color-avatar-6-bg: #1E3E3C; --color-avatar-6-text: #B5E7E3;
+  --color-avatar-7-bg: #3A3833; --color-avatar-7-text: #E3DED3;
+  --color-avatar-8-bg: #2C3744; --color-avatar-8-text: #D1DBE6;
+  --color-chart-1: #00AFFF;
+  --color-chart-3: #4E5764;
+}

@@ -1,0 +1,61 @@
+<!-- @dsCard group="Components" viewport="700x980" name="Департамент: дерево, светофор, команды, люди, «Требует внимания»" subtitle="Узел дерева со светофором из трёх точек и функциональной связью пунктиром, строка команды, строка человека, блок «Требует внимания», сводка подразделения" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/department/TreeNode.jsx', 'components/department/TrafficLights.jsx', 'components/department/TeamRow.jsx', 'components/department/PersonRow.jsx', 'components/department/AttentionBlock.jsx', 'components/department/UnitSummary.jsx', 'components/navigation/StructurePath.jsx'], function (C) {
+  function Block() {
+    var open = React.useState({ dep: true, prod: true, biz: false });
+    function tg(k) { var n = Object.assign({}, open[0]); n[k] = !n[k]; open[1](n); }
+    return (
+      <div className="ds-col" style={{ gap: 16 }}>
+        <C.TrafficLights labels weekly="ok" overdue="warn" goals="off" />
+        <div className="sv-tree">
+          <C.TreeNode node={{ title: 'Страхование и инвестиции', level: 'департамент', lead: 'Арам Мурадян', people: 85, vacancies: 23, lights: { weekly: 'ok', overdue: 'warn', goals: 'ok' } }} open={open[0].dep} onClick={function () { tg('dep'); }} showVacancies>
+            <C.TreeNode node={{ title: 'Управление развития продуктов', level: 'управление', lead: 'Тарас Рева', people: 38, lights: { weekly: 'ok', overdue: 'bad', goals: 'warn' } }} open={open[0].prod} selected onClick={function () { tg('prod'); }}>
+              <C.TreeNode node={{ title: 'Продуктовое развитие автострахования', level: 'отдел', lead: 'Дмитрий А.', people: 9, lights: { weekly: 'ok', overdue: 'ok', goals: 'ok' } }} hasChildren />
+              <C.TreeNode node={{ title: 'Клиентская поддержка', level: 'отдел', lead: 'Татьяна Б.', people: 12, lights: { weekly: 'warn', overdue: 'bad', goals: 'off' } }} hasChildren />
+              <C.TreeNode node={{ title: 'Продуктовая аналитика', level: 'отдел', lead: 'Никита Т.', people: 5, lights: { weekly: 'ok', overdue: 'warn', goals: 'ok' } }} />
+              <C.TreeNode node={{ title: 'CRM и Retention', level: 'отдел', lead: 'Глеб', people: 4, lights: { weekly: 'ok', overdue: 'ok', goals: 'warn' } }} />
+              <C.TreeNode node={{ title: 'Архитектура и ИТ-безопасность', level: 'отдел', lead: 'Валерий Т.', people: 3, func: true, lights: { weekly: 'off', overdue: 'ok', goals: 'off' } }} />
+              <C.TreeNode node={{ title: 'Маркетинг', level: 'отдел', people: 5, lights: { weekly: 'bad', overdue: 'warn', goals: 'off' } }} />
+            </C.TreeNode>
+            <C.TreeNode node={{ title: 'Управление бизнес развития', level: 'управление', lead: 'Влад Головкин', people: 47, lights: { weekly: 'ok', overdue: 'ok', goals: 'ok' } }} hasChildren open={open[0].biz} onClick={function () { tg('biz'); }}>
+              <C.TreeNode node={{ title: 'Телемаркетинг', level: 'отдел', vacancy: true, people: 20 }} hasChildren />
+            </C.TreeNode>
+          </C.TreeNode>
+        </div>
+        <C.StructurePath items={[{ label: 'Департамент' }, { label: 'Управление развития продуктов' }, { label: 'Продуктовая аналитика' }]} />
+        <C.TeamList>
+          <C.TeamRow team={{ name: 'Управление развития продуктов', lead: 'Тарас Рева', mine: true, weeklyDone: 5, weeklyTotal: 6, inWork: 42, overdue: 6, clarify: 3, stale: 4, lights: { weekly: 'warn', overdue: 'bad', goals: 'warn' } }} />
+          <C.TeamRow team={{ name: 'Продуктовая аналитика', lead: 'Никита Т.', weeklyDone: 4, weeklyTotal: 4, inWork: 11, overdue: 2, clarify: 0, stale: 1, lights: { weekly: 'ok', overdue: 'warn', goals: 'ok' } }} />
+          <C.TeamRow team={{ name: 'Клиентская поддержка', lead: 'Татьяна Б.', weeklyDone: 2, weeklyTotal: 5, inWork: 9, overdue: 4, clarify: 2, stale: 3, lights: { weekly: 'warn', overdue: 'bad', goals: 'off' } }} />
+        </C.TeamList>
+        <div className="ds-surface" style={{ padding: 0 }}>
+          <C.PersonRow person={{ name: 'Никита Т.', role: 'Руководитель отдела продуктовой аналитики', weekly: 'submitted', open: 5, overdue: 1, moved: 2, requests: 1 }} />
+          <C.PersonRow person={{ name: 'Алиса К.', role: 'Аналитик', weekly: 'none', open: 3, overdue: 2, moved: 4, requests: 0 }} />
+          <C.PersonRow person={{ name: 'Марат С.', role: 'Старший аналитик', weekly: 'vacation', substitute: 'Алиса К.', vacationUntil: '19.10', open: 2, overdue: 0, moved: 0, requests: 0 }} />
+          <C.PersonRow person={{ vacancy: true, role: 'Аналитик данных' }} />
+        </div>
+        <C.AttentionBlock items={[{ id: 201, title: 'Дашборд конверсии ОСАГО', owner: 'Алиса К.', why: 'overdue', whyText: 'просрочена на 6 дн.' }, { id: 127, title: 'Найм в КАСКО', owner: 'Евгений Ф.', why: 'blocked', whyText: 'заблокирована: нет вилки' }, { id: 188, title: 'Сценарий возврата в КАСКО', owner: 'Глеб', why: 'stale', whyText: 'не обновлялась 18 дн.', asked: 'вчера' }]} />
+        <div className="ds-surface"><C.UnitSummary cells={[{ label: 'человек', value: 38 }, { label: 'вакансий', value: 7 }, { label: 'задач в работе', value: 42 }, { label: 'просрочено', value: 6, tone: 'bad' }, { label: 'целей в риске', value: 2, tone: 'warn' }]} /></div>
+      </div>
+    );
+  }
+  return <div className="ds-col"><Block /><div data-theme="dark" style={{ background: 'var(--color-page)', padding: 16, borderRadius: 16 }}><Block /></div></div>;
+});
+</script>
+</body>
+</html>

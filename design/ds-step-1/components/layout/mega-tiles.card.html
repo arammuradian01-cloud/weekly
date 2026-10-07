@@ -1,0 +1,42 @@
+<!-- @dsCard group="Layout" viewport="820x420" name="Меню раздела как на сайте и плитки" subtitle="MegaMenu: иконки Lucide на тонированных кругах в две колонки, подпись в одну строку, снизу простые ссылки; Tile в четырёх тонах" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/layout/MegaMenu.jsx', 'components/layout/Tile.jsx'], function (C) {
+  var items = [
+    { key: 'ceo', label: 'Отчёт CEO', sub: 'Черновик письма за неделю', icon: 'mail', active: true },
+    { key: 'analytics', label: 'Аналитика', sub: 'Сдача, обещания, просрочка', icon: 'bar-chart-3' },
+    { key: 'journal', label: 'Журнал', sub: 'Кто, что, когда', icon: 'scroll-text', count: 12 },
+    { key: 'settings', label: 'Настройки', sub: 'Справочники, люди, сроки', icon: 'settings' },
+    { key: 'sync', label: 'Синхронизация', sub: 'Таблица и выгрузки', icon: 'refresh-cw', tone: 'warning' },
+    { key: 'structure', label: 'Структура', sub: 'Дерево департамента', icon: 'network' }
+  ];
+  function Block() {
+    return <div className="ds-col" style={{ gap: 16 }}>
+      <C.MegaMenu staticMenu title="Управление" items={items} links={[{ label: 'Профиль' }, { label: 'Как работать' }, { label: 'Выйти' }]} />
+      <C.Tiles>
+        <C.Tile title="Задачи команды" sub="Открытых" icon="check-square" value="38" unit="просрочено 4" />
+        <C.Tile tone="accent" title="Цели Q4" sub="В риске 1 из 6" icon="target" value="6" />
+        <C.Tile tone="brand" title="Структура" sub="85 человек, 23 вакансии" icon="network" arrow />
+        <C.Tile tone="primary" title="Сдать weekly" sub="До понедельника 18:00" icon="file-text" arrow />
+      </C.Tiles>
+    </div>;
+  }
+  return <div className="ds-split"><div><Block /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

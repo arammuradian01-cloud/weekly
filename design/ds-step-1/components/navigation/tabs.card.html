@@ -1,0 +1,46 @@
+<!-- @dsCard group="Components" viewport="700x600" name="Вкладки, фильтры-пилюли, неделя, путь, переключатель команд, нижнее меню" subtitle="Текстовые вкладки с голубым подчёркиванием, пилюли со счётчиками, путь по структуре, нижнее меню телефона" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/navigation/Tabs.jsx', 'components/navigation/FilterPill.jsx', 'components/navigation/WeekSwitcher.jsx', 'components/navigation/Breadcrumbs.jsx', 'components/navigation/StructurePath.jsx', 'components/navigation/TeamSwitcher.jsx', 'components/navigation/BottomNav.jsx'], function (C) {
+  var teams = [{ id: 'top', name: 'Топ-команда', role: 'lead', sub: '9 человек' }, { id: 'prod', name: 'Управление развития продуктов', role: 'member', sub: 'Тарас Рева' }, { id: 'an', name: 'Продуктовая аналитика', role: 'member', sub: 'Никита Т.' }];
+  function Block(p) {
+    var tv = React.useState('list');
+    var fv = React.useState(['mine']);
+    return (
+      <div className="ds-col" style={{ gap: 14 }}>
+        <C.Tabs items={[{ value: 'list', label: 'Список', count: 51 }, { value: 'board', label: 'Доска' }, { value: 'mine', label: 'Мои задачи', count: 8 }, { value: 'x', label: 'Недоступно', disabled: true }]} value={tv[0]} onChange={tv[1]} />
+        <C.FilterPills multi value={fv[0]} onChange={fv[1]} items={[{ value: 'mine', label: 'Мои', count: 8 }, { value: 'overdue', label: 'Просроченные', count: 3, tone: 'danger' }, { value: 'crit', label: 'Критичные', count: 2 }, { value: 'week', label: 'Срок на этой неделе', count: 6 }, { value: 'blocked', label: 'Заблокированные' }, { value: 'stale', label: 'Давно не обновлялись', count: 4 }, { value: 'prop', label: 'Предложенные', disabled: true }]} />
+        <div className="ds-row">
+          <C.WeekSwitcher />
+          <C.WeekSwitcher number={40} dates="28.09-04.10" isCurrent={false} closed />
+        </div>
+        <div className="ds-row" style={{ alignItems: 'flex-start' }}>
+          <C.TeamSwitcher teams={teams} value="prod" showAll />
+          <C.TeamSwitcher teams={teams} value="an" compact />
+        </div>
+        <C.Breadcrumbs items={[{ label: 'Задачи' }, { label: 'КАСКО' }, { label: '№124' }]} />
+        <C.StructurePath items={[{ label: 'Департамент' }, { label: 'Управление развития продуктов' }, { label: 'Продуктовая аналитика' }]} />
+        {p.menu ? <div style={{ maxWidth: 390 }}><C.TeamSwitcher teams={teams} value="prod" showAll open staticMenu /></div> : null}
+        <div style={{ width: 390, border: '1px solid var(--color-border)', borderRadius: 12, overflow: 'hidden' }}><C.BottomNav active="inbox" counts={{ inbox: 4 }} manager /></div>
+      </div>
+    );
+  }
+  return <div className="ds-split"><div><Block menu /></div><div data-theme="dark"><Block /></div></div>;
+});
+</script>
+</body>
+</html>

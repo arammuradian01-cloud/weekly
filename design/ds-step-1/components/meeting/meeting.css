@@ -1,0 +1,54 @@
+/* Встреча */
+.sv-agenda-item { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: flex-start; padding: 12px var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control-lg); }
+.sv-agenda-item.is-current { border-color: var(--color-accent); box-shadow: inset 3px 0 0 var(--color-accent); }
+.sv-agenda-item.is-done { opacity: 0.6; }
+.sv-agenda-item.is-dragging { box-shadow: var(--shadow-sticky); }
+.sv-agenda-item__grip { color: var(--color-icon); cursor: grab; display: flex; align-items: center; height: 20px; }
+.sv-agenda-item__n { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.sv-agenda-item__title { margin: 0; font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.sv-agenda-item__meta { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-agenda-item__meta a { color: var(--color-link); }
+.sv-agenda-item__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.sv-agenda-item__time { font-size: var(--text-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv-agenda-item__actions { display: flex; gap: 2px; }
+/* Пункт повестки на проекторе */
+.sv-agenda-big { display: flex; flex-direction: column; gap: var(--space-4); }
+.sv-agenda-big__kicker { display: flex; align-items: center; gap: 12px; font-size: var(--text-body); color: var(--color-text-secondary); }
+.sv-agenda-big__title { margin: 0; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-section); line-height: var(--leading-section); overflow-wrap: anywhere; }
+.sv-agenda-big__ctx { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.sv-agenda-big__cell { padding: var(--space-3) var(--space-4); border-radius: var(--radius-control-lg); background: var(--color-surface); border: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 4px; }
+.sv-agenda-big__cell small { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-agenda-big__cell span { font-size: var(--text-body); line-height: var(--leading-body); }
+.sv-agenda-big__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* Таймер */
+.sv-timer { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px 0 12px; border-radius: var(--radius-control); background: var(--color-field); color: var(--color-text); font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); font-variant-numeric: tabular-nums; }
+.sv-timer__label { font-family: var(--font-body); font-weight: 400; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-timer--warning { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.sv-timer--warning .sv-timer__label { color: var(--color-warning-text); }
+.sv-timer--danger { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.sv-timer--danger .sv-timer__label { color: var(--color-danger-text); }
+.sv-timer--paused { color: var(--color-text-secondary); }
+.sv-timer--lg { height: 56px; padding: 0 20px 0 16px; font-size: var(--text-page); border-radius: var(--radius-control-lg); }
+.sv-timer__bar { display: inline-block; width: 80px; height: 4px; border-radius: 2px; background: var(--color-border); overflow: hidden; }
+.sv-timer__fill { display: block; height: 100%; background: currentColor; }
+/* Карточка решения */
+.sv-decision { display: flex; flex-direction: column; gap: 8px; padding: var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); border-left: 1px solid var(--color-border); }
+.sv-decision__head { display: flex; align-items: center; gap: 8px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-decision__head .sv-icon { color: var(--color-success-text); }
+.sv-decision__text { margin: 0; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); overflow-wrap: anywhere; }
+.sv-decision__meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--text-caption); color: var(--color-text-secondary); align-items: center; }
+.sv-decision__meta a { color: var(--color-link); }
+.sv-decision.is-cancelled .sv-decision__text { color: var(--color-text-secondary); text-decoration: line-through; text-decoration-color: var(--color-border-strong); }
+.sv-decision.is-cancelled .sv-decision__head .sv-icon { color: var(--color-icon); }
+/* Индикатор «следую за ведущим» */
+.sv-follow { display: inline-flex; align-items: center; gap: 10px; height: 40px; padding: 0 6px 0 12px; border-radius: var(--radius-control); background: var(--color-accent-soft); border: 1px solid var(--color-accent-soft-border); color: var(--color-link); font-size: var(--text-body); font-weight: var(--font-weight-semibold); }
+.sv-follow__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-soft-border); }
+.sv-follow--away { background: var(--color-warning-bg); border-color: transparent; color: var(--color-warning-text); }
+.sv-follow--away .sv-follow__dot { background: var(--color-warning-dot); box-shadow: none; }
+/* Полоса сверху на проекторе */
+.sv-meeting-bar { display: flex; align-items: center; gap: var(--space-4); height: 64px; padding: 0 var(--space-6); background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
+.sv-meeting-bar__title { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sv-meeting-bar__step { font-size: var(--text-body); color: var(--color-text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sv-meeting-bar__spacer { flex: 1; }
+.sv-meeting-keys { display: flex; gap: var(--space-5); padding: 10px var(--space-6); font-size: var(--text-caption); color: var(--color-text-secondary); align-items: center; }
+.sv-meeting-keys span { display: inline-flex; align-items: center; gap: 6px; }
