@@ -183,6 +183,9 @@ model Person {
   decisionsOwned    Decision[]        @relation("DecisionOwner")
   decisionsMade     Decision[]        @relation("DecisionCreator")
   decisionsClosed   Decision[]        @relation("DecisionCanceller")
+  /// Поиск, виды и чек-листы (этап 25)
+  checklistDone     TaskChecklistItem[]
+  savedViews        SavedView[]
 
   @@map("people")
 }
@@ -330,12 +333,69 @@ model Task {
   /// Встреча 2.0 (этап 23): пункты повестки по задаче и решения, к которым она привязана
   agendaItems  AgendaItem[]
   decisions    DecisionTask[]
+  /// Повтор задачи (этап 25): еженедельно или ежемесячно. Следующая создаётся при закрытии или по расписанию в день срока
+  repeat       RepeatKind?
+  repeatMode   RepeatMode       @default(ON_CLOSE)
+  /// Из какой задачи сделан этот повтор. Уникальность: у задачи один следующий повтор
+  repeatOfId   String?          @unique
+  repeatOf     Task?            @relation("TaskRepeat", fields: [repeatOfId], references: [id], onDelete: SetNull)
+  repeatNext   Task?            @relation("TaskRepeat")
+  /// Чек-лист внутри задачи (этап 25)
+  checklist    TaskChecklistItem[]
 
   @@index([status])
   @@index([ownerId])
   @@index([teamId])
   @@index([goalId])
   @@map("tasks")
+}
+
+/// Повтор задачи (этап 25): еженедельно или ежемесячно
+enum RepeatKind {
+  WEEKLY
+  MONTHLY
+}
+
+/// Когда создаётся следующая задача повтора: при закрытии этой или по расписанию в день её срока
+enum RepeatMode {
+  ON_CLOSE
+  SCHEDULE
+}
+
+/// Пункт чек-листа внутри задачи (этап 25). Отмечает ответственный, соисполнитель или режим управления
+model TaskChecklistItem {
+  id        String    @id @default(cuid())
+  taskId    String
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// До 200 знаков
+  text      String
+  done      Boolean   @default(false)
+  doneById  String?
+  doneBy    Person?   @relation(fields: [doneById], references: [id])
+  doneAt    DateTime? @db.Timestamptz(3)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([taskId, sortOrder])
+  @@map("task_checklist_items")
+}
+
+/// Сохранённый вид списка (этап 25): фильтры и сортировка из адреса страницы под своим именем, у каждого человека свои
+model SavedView {
+  id        String   @id @default(cuid())
+  personId  String
+  person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Раздел, где вид живёт: /tasks
+  path      String
+  /// До 60 знаков
+  name      String
+  /// Строка адреса без «?»: f=mine,overdue&sort=due
+  query     String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([personId, path, name])
+  @@map("saved_views")
 }
 
 model TaskCoExecutor {

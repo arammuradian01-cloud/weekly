@@ -50,6 +50,8 @@ type Store = {
   applyTaskResult: (result: TaskActionResult, toastText: string) => boolean;
   /** Выполнить действие с задачей на сервере и применить ответ */
   runTask: (action: () => Promise<TaskActionResult>, toastText: string) => Promise<boolean>;
+  /** Несколько задач с сервера разом, без тоста: массовые действия (этап 25) */
+  applyTasks: (tasks: Task[]) => void;
   addComment: (number: number, text: string) => Promise<boolean>;
   /** Номер новой задачи или текст ошибки */
   createTask: (input: NewTaskInput) => Promise<{ number: number } | { error: string }>;
@@ -149,6 +151,22 @@ export function PrototypeProvider({
     [router, showToast],
   );
 
+  const applyTasks = useCallback(
+    (list: Task[]) => {
+      if (!list.length) return;
+      const now = Date.now();
+      for (const t of list) recent.current.set(t.number, { at: now, task: t });
+      setTasks((prev) => {
+        const byNumber = new Map(list.map((t) => [t.number, t]));
+        const next = prev.map((t) => byNumber.get(t.number) ?? t);
+        for (const t of list) if (!prev.some((x) => x.number === t.number)) next.push(t);
+        return next;
+      });
+      router.refresh();
+    },
+    [router],
+  );
+
   const teamPeople = useMemo(() => peopleOf(team.people), [team.people, registry.version]);
   const data = useMemo<AppData>(
     () => ({
@@ -177,6 +195,7 @@ export function PrototypeProvider({
       team,
       teamPeople,
       applyTaskResult,
+      applyTasks,
       runTask: async (action, toastText) => {
         try {
           return applyTaskResult(await action(), toastText);
@@ -224,7 +243,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, limited, leads, team, teamPeople, toast, showToast, applyTaskResult]);
+  }, [data, me, manageRole, observer, limited, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

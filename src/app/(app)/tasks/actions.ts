@@ -249,3 +249,41 @@ export async function watchTaskAction(number: number, on: boolean) {
 export async function requestUpdateAction(number: number) {
   return simple((a) => svc.requestUpdate(a, checkNumber(number)));
 }
+
+/** Массовое действие (этап 25): одно изменение у нескольких задач, по каждой свои права и правила */
+export type BulkActionResult = { ok: true; value: svc.BulkResult } | { ok: false; error: string };
+
+export async function bulkChangeAction(numbers: number[], change: svc.BulkChange): Promise<BulkActionResult> {
+  try {
+    if (!Array.isArray(numbers)) throw new svc.TaskRuleError("Выберите задачи");
+    const value = await svc.bulkChange(await actor(), numbers.map(checkNumber), change);
+    return { ok: true, value };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Массовое действие не прошло", error);
+    return { ok: false, error: "Не получилось сохранить. Обновите страницу и попробуйте ещё раз" };
+  }
+}
+
+/** Повтор задачи (этап 25): включить, поменять или выключить */
+export async function setRepeatAction(number: number, input: svc.RepeatInput | null) {
+  return run((a) => svc.setRepeat(a, checkNumber(number), input ? { kind: input.kind, mode: input.mode } : null));
+}
+
+/** Чек-лист внутри задачи (этап 25) */
+export async function addChecklistItemAction(number: number, text: string) {
+  return run((a) => svc.addChecklistItem(a, checkNumber(number), String(text ?? "")));
+}
+
+export async function toggleChecklistItemAction(number: number, itemId: string, done: boolean) {
+  return run((a) => svc.toggleChecklistItem(a, checkNumber(number), String(itemId ?? ""), done === true));
+}
+
+export async function removeChecklistItemAction(number: number, itemId: string) {
+  return run((a) => svc.removeChecklistItem(a, checkNumber(number), String(itemId ?? "")));
+}
+
+export async function editChecklistItemAction(number: number, itemId: string, text: string) {
+  return run((a) => svc.editChecklistItem(a, checkNumber(number), String(itemId ?? ""), String(text ?? "")));
+}

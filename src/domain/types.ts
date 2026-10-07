@@ -1,6 +1,7 @@
 // Модель данных экранов. Повторяет раздел 8 ТЗ; задачи и weekly приходят в этом виде из базы (этапы 3 и 4).
 
 import type { IsoDate } from "./dates";
+import type { RepeatKindCode, RepeatModeCode } from "@/lib/tasks/repeat";
 import type {
   BlockCode,
   DirectionCode,
@@ -112,7 +113,16 @@ export type Task = {
    */
   partial?: boolean;
   commentCount?: number;
+  /** Чек-лист внутри задачи (этап 25) */
+  checklist?: ChecklistItem[];
+  /**
+   * Повтор (этап 25). active: у этой задачи повтор включён. of: из какой задачи она сделана повтором,
+   * next: какая задача уже создана следом
+   */
+  repeat?: { kind: RepeatKindCode; mode: RepeatModeCode; active: boolean; of?: number; next?: number };
 };
+
+export type ChecklistItem = { id: string; text: string; done: boolean; by?: PersonSlug };
 
 /** Неделя определяется своим понедельником: «2026-09-28». Номер ISO для подписи считается из даты */
 export type WeekKey = IsoDate;

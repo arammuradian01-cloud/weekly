@@ -437,6 +437,11 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const built = await agendaPass(now);
       return { sent: built, skipped: 0, failed: 0 };
     });
+    // Повторяющиеся задачи по расписанию (этап 25): следующая в день срока
+    await safe("Повторы задач", async () => {
+      const { repeatPass } = await import("@/lib/tasks/service");
+      return { sent: await repeatPass(now), skipped: 0, failed: 0 };
+    });
     return {
       reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
       digest: await safe("Дайджест", () => digestPass(now)),

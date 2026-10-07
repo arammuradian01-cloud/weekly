@@ -23,6 +23,7 @@ import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from ".
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
 import { TaskExtrasBlock } from "./task-extras";
+import { TaskChecklist, TaskRepeat } from "./task-checklist";
 import { TaskRequests } from "@/components/requests/task-requests";
 import { TaskWaits } from "./task-waits";
 import { TaskGoal } from "./task-goal";
@@ -242,11 +243,16 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         <Meta label="Ссылки на артефакты">
           <TaskLinks task={task} />
         </Meta>
+        <Meta label="Повтор">
+          <TaskRepeat task={task} />
+        </Meta>
         <Meta label="Поставлена">
           {formatLong(task.createdAt)}, {task.createdBy ? compactName(task.createdBy) : "на встрече"}
         </Meta>
         <Meta label="Обновлена">{formatAgo(task.updatedAt, data.today)}</Meta>
       </dl>
+
+      <TaskChecklist task={task} headingLevel={H} />
 
       <TaskExtrasBlock task={task} headingLevel={H} />
 

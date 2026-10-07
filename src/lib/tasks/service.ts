@@ -12,7 +12,7 @@ import { CLOSED_DB, priorityCode, priorityDb, stateCode, stateDb, statusCode, st
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } from "./dates";
 import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "./dto";
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
-import { notify, quote, taskSubject } from "@/lib/inbox/notify";
+import { SYSTEM_ACTOR_ID, notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { notifyWatchers } from "./watch";
 import { notifyDependents } from "./dependents";
 import { finishRequestsOfTask, refinishRequestsOfTask, reopenRequestsOfTask, syncRequestDue, type TaskOutcome } from "@/lib/requests/hooks";
@@ -20,6 +20,8 @@ import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/com
 import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
 import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
+import { nextRepeatDue, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "./repeat";
+import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -160,7 +162,7 @@ async function audit(db: Db, actor: Actor, number: number, changes: Change[]): P
   await db.auditLog.createMany({
     data: changes.map((c) => ({
       action: c.action ?? "task.update",
-      actorId: actor.personId,
+      actorId: actor.personId === SYSTEM_ACTOR_ID ? null : actor.personId,
       actorName: actor.fullName,
       source: "APP" as const,
       entity: "task",
@@ -302,7 +304,18 @@ export type NewTaskInput = {
   weeklyEntryId?: string;
   /** Команда задачи (этап 14). Не задана: топ-команда, если человек в ней, иначе первая его команда */
   team?: string;
+  /** Повтор (этап 25): еженедельно или ежемесячно, следующая при закрытии или по расписанию */
+  repeat?: RepeatInput | null;
 };
+
+export type RepeatInput = { kind: RepeatKindCode; mode?: RepeatModeCode };
+
+function repeatDb(input: RepeatInput | null | undefined): { repeat: RepeatKind | null; repeatMode: RepeatMode } {
+  if (!input) return { repeat: null, repeatMode: "ON_CLOSE" };
+  const repeat: RepeatKind = input.kind === "weekly" ? "WEEKLY" : input.kind === "monthly" ? "MONTHLY" : fail("Повтор бывает еженедельным или ежемесячным");
+  const repeatMode: RepeatMode = !input.mode || input.mode === "on-close" ? "ON_CLOSE" : input.mode === "schedule" ? "SCHEDULE" : fail("Следующая задача создаётся при закрытии или по расписанию");
+  return { repeat, repeatMode };
+}
 
 /** Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе */
 async function nextNumber(tx: Tx): Promise<number> {
@@ -383,6 +396,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
+      ...repeatDb(input.repeat),
       coExecutors: { create: coIds.map((personId) => ({ personId })) },
       links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
     },
@@ -404,7 +418,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
     {
       action: status === "proposed" ? "task.propose" : "task.create",
       field: status === "proposed" ? "Задача предложена" : "Задача создана",
-      after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}`,
+      after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}${row.repeat ? `. Повтор: ${repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close").toLowerCase()}` : ""}`,
     },
   ]);
   return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
@@ -455,6 +469,11 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
     else if (wasClosed) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
     // Задачу ждали другие: их ответственные узнают, что её закрыли (этап 21)
     if (closing && !wasClosed) await notifyDependents(tx, { id: row.id }, actor, (dep) => `Задача ${number}, которую ждёт ваша задача ${dep.number}: ${statusOf(next).label.toLowerCase()}`);
+    // Повтор при закрытии (этап 25): следующая задача серии, если её ещё нет. Предложенную и отклонённую задачу
+    // серия не продолжает: «Отменена» останавливает повтор у самой задачи
+    let spawned: Task | null = null;
+    const stopSeries = !!row.repeat && next === "cancelled";
+    if (closing && !wasClosed && !stopSeries && current !== "proposed" && row.repeat && row.repeatMode === "ON_CLOSE" && !row.repeatNext) spawned = await spawnRepeatIn(tx, row, actor);
     await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
@@ -472,8 +491,13 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       });
     }
     return {
-      data: { status: db, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null },
-      changes: [{ field: "Статус", before: statusOf(current).label, after: resolution ? `${statusOf(next).label}. ${resolution}` : statusOf(next).label }],
+      data: { status: db, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null, ...(stopSeries ? { repeat: null } : {}) },
+      changes: [
+        { field: "Статус", before: statusOf(current).label, after: `${resolution ? `${statusOf(next).label}. ${resolution}` : statusOf(next).label}${spawned ? `. Создан повтор: задача ${spawned.number}` : ""}` },
+        ...(stopSeries ? [{ field: "Повтор", before: repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close"), after: "Без повтора: задача отменена" }] : []),
+      ],
+      // Созданный повтор отменой закрытия не исчезает, поэтому и само закрытие не отменяется кнопкой
+      ...(spawned ? { undo: false as const } : {}),
     };
   });
 }
@@ -1162,5 +1186,196 @@ export async function requestUpdate(actor: Actor, number: number, now = new Date
     const owner = await tx.person.findUnique({ where: { id: row.ownerId! }, select: { fullName: true } });
     await audit(tx, actor, number, [{ action: "task.ask", field: "Попросили обновить", after: owner?.fullName ?? null }]);
     return { asked: owner?.fullName ?? "" };
+  });
+}
+
+// ---------- Массовые действия (этап 25, модуль М10) ----------
+
+export type BulkChange =
+  | { kind: "status"; next: StatusCode; note?: string }
+  | { kind: "owner"; owner: Owner }
+  | { kind: "due"; to: IsoDate; reason: string }
+  | { kind: "priority"; next: PriorityCode };
+
+export type BulkResult = { done: Task[]; failed: { number: number; error: string }[] };
+
+export const BULK_MAX = 100;
+
+/**
+ * Одно изменение сразу у нескольких задач. Каждая задача проходит те же правила и права, что и поодиночке,
+ * в своей транзакции: одна задача без права или с нарушением правила не останавливает остальные, а попадает
+ * в список неудач с причиной. Журнал получает запись по каждой задаче, отмены на 5 секунд у массового действия нет
+ */
+export async function bulkChange(actor: Actor, numbers: number[], change: BulkChange): Promise<BulkResult> {
+  const unique = [...new Set(numbers)];
+  if (!unique.length) fail("Выберите задачи");
+  if (unique.length > BULK_MAX) fail(`За раз не больше ${BULK_MAX} задач`);
+  if (actor.role === "OBSERVER") fail("Наблюдатель только читает");
+  const result: BulkResult = { done: [], failed: [] };
+  for (const number of unique) {
+    try {
+      const r =
+        change.kind === "status"
+          ? await changeStatus(actor, number, change.next, change.note)
+          : change.kind === "owner"
+            ? await assignOwner(actor, number, change.owner)
+            : change.kind === "due"
+              ? await transferDue(actor, number, change.to, change.reason)
+              : await changePriority(actor, number, change.next);
+      result.done.push(r.task);
+    } catch (error) {
+      result.failed.push({ number, error: error instanceof TaskRuleError ? error.message : "Не получилось сохранить" });
+    }
+  }
+  return result;
+}
+
+// ---------- Повторяющиеся задачи (этап 25, модуль М10) ----------
+
+/** Включить, поменять или выключить повтор у задачи: ответственный, тот, кто поставил, руководитель команды, управление */
+export async function setRepeat(actor: Actor, number: number, input: RepeatInput | null): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can) => {
+    if (!can.edit && !can.due) fail("Повтор задаёт ответственный, тот, кто поставил задачу, руководитель команды, владелец или администратор");
+    const next = repeatDb(input);
+    if (next.repeat === row.repeat && next.repeatMode === row.repeatMode) fail("Повтор уже такой");
+    const label = (r: RepeatKind | null, m: RepeatMode) => (r ? repeatLabel(r === "MONTHLY" ? "monthly" : "weekly", m === "SCHEDULE" ? "schedule" : "on-close") : "Без повтора");
+    return { data: next, changes: [{ field: "Повтор", before: label(row.repeat, row.repeatMode), after: label(next.repeat, next.repeatMode) }] };
+  });
+}
+
+/**
+ * Ресурс по расписанию как автор: в журнале без человека, в «Мне» событие приходит и ответственному, и соисполнителям.
+ * personId не совпадает ни с одним человеком, поэтому никто не исключается из получателей
+ */
+const SCHEDULER: Actor = { personId: SYSTEM_ACTOR_ID, slug: "" as PersonSlug, fullName: "Ресурс по расписанию", role: "ADMIN", management: "ADMIN", ip: null, via: null };
+
+/**
+ * Следующая задача серии: та же задача с новым сроком, статус «В работе», чек-лист без отметок. Права не проверяются:
+ * серию завёл тот, кто имел право, а создаёт следующую ресурс. Ответственный и соисполнители узнают в «Мне»
+ */
+async function spawnRepeatIn(tx: Tx, row: TaskRow, actor: Actor, today: IsoDate = moscowToday()): Promise<Task> {
+  if (!row.repeat) fail("У задачи нет повтора");
+  const kind: RepeatKindCode = row.repeat === "MONTHLY" ? "monthly" : "weekly";
+  const due = nextRepeatDue(kind, isoFromDbDate(row.due), today);
+  const number = await nextNumber(tx);
+  const todayDb = dbDate(today);
+  const created = await tx.task.create({
+    data: {
+      number,
+      title: row.title,
+      outcome: row.outcome,
+      ownerId: row.ownerId,
+      ownerAll: row.ownerAll,
+      directionId: row.directionId,
+      priority: row.priority,
+      status: "IN_PROGRESS",
+      state: "ON_TRACK",
+      whereUpdatedAt: todayDb,
+      due: dbDate(due),
+      originalDue: dbDate(due),
+      sourceCode: "other",
+      sourceNote: `Повтор задачи ${row.number}`,
+      createdById: row.createdById,
+      teamId: row.teamId,
+      goalId: row.goalId,
+      repeat: row.repeat,
+      repeatMode: row.repeatMode,
+      repeatOfId: row.id,
+      coExecutors: { create: row.coExecutors.map((c) => ({ personId: c.personId })) },
+      checklist: { create: row.checklist.map((c, i) => ({ text: c.text, sortOrder: i })) },
+    },
+    include: taskInclude,
+  });
+  // Событие приходит и тому, кто сам закрыл задачу: иначе ответственный не узнал бы о новом сроке
+  await notify(tx, {
+    kind: "TASK_ASSIGNED",
+    recipients: [row.ownerId, ...row.coExecutors.map((c) => c.personId)],
+    actor: { ...actor, personId: SYSTEM_ACTOR_ID },
+    subject: taskSubject(number),
+    taskId: created.id,
+    text: `Повтор задачи ${row.number}, срок ${formatLong(due)}`,
+  });
+  const names = await nameMap(tx);
+  await audit(tx, actor, number, [{ action: "task.create", field: "Задача создана повтором", after: `${row.title}. Повтор задачи ${row.number}. Ответственный: ${ownerLabel(created, names)}, срок ${formatLong(due)}` }]);
+  return toTaskDto(created);
+}
+
+/**
+ * Повторы по расписанию: в день срока открытой задачи с режимом «по расписанию» создаётся следующая, если её ещё нет.
+ * Идёт в минутном цикле сервера. Строка блокируется, чтобы два прохода не создали две следующие
+ */
+export async function repeatPass(now = new Date()): Promise<number> {
+  const today = moscowToday(now);
+  const due = await prisma.task.findMany({
+    where: { repeat: { not: null }, repeatMode: "SCHEDULE", archivedAt: null, status: { in: ["IN_PROGRESS", "CLARIFY"] }, due: { lte: dbDate(today) }, repeatNext: null },
+    select: { id: true, number: true },
+    take: 200,
+  });
+  let created = 0;
+  for (const t of due) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM tasks WHERE id = ${t.id} FOR UPDATE`;
+        const row = await tx.task.findUnique({ where: { id: t.id }, include: taskInclude });
+        if (!row || !row.repeat || row.repeatMode !== "SCHEDULE" || row.repeatNext || row.archivedAt || !["IN_PROGRESS", "CLARIFY"].includes(row.status)) return;
+        await spawnRepeatIn(tx, row, SCHEDULER, today);
+        created++;
+      });
+    } catch (error) {
+      console.error(`Повтор задачи ${t.number} не создался`, error instanceof Error ? error.message : error);
+    }
+  }
+  return created;
+}
+
+// ---------- Чек-лист (этап 25, модуль М10) ----------
+
+export const CHECKLIST_LIMITS = { text: 200, items: 50 };
+
+/** Чек-лист ведут те, кто ведёт «Где сейчас»: ответственный, соисполнители, руководитель команды, режим управления. У закрытой задачи он не меняется */
+function canChecklist(can: TaskPermissions, row: TaskRow): void {
+  if (!can.where) fail("Чек-лист ведут ответственный, соисполнители, руководитель команды, владелец или администратор");
+  if (CLOSED_DB.includes(row.status)) fail("У закрытой задачи чек-лист не меняется");
+}
+
+export async function addChecklistItem(actor: Actor, number: number, text: string): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    canChecklist(can, row);
+    const v = required(text, CHECKLIST_LIMITS.text, "Напишите пункт", "Пункт чек-листа");
+    if (row.checklist.length >= CHECKLIST_LIMITS.items) fail(`В чек-листе не больше ${CHECKLIST_LIMITS.items} пунктов`);
+    await tx.taskChecklistItem.create({ data: { taskId: row.id, text: v, sortOrder: row.checklist.length } });
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Чек-лист", after: `Добавлен пункт: ${v}` }], undo: false };
+  });
+}
+
+export async function toggleChecklistItem(actor: Actor, number: number, itemId: string, done: boolean): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    canChecklist(can, row);
+    const item = row.checklist.find((c) => c.id === itemId) ?? fail("Такого пункта нет");
+    if (item.done === done) fail(done ? "Пункт уже отмечен" : "Пункт и так не отмечен");
+    await tx.taskChecklistItem.update({ where: { id: item.id }, data: { done, doneById: done ? actor.personId : null, doneAt: done ? new Date() : null } });
+    const total = row.checklist.length;
+    const doneCount = row.checklist.filter((c) => c.id !== item.id && c.done).length + (done ? 1 : 0);
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Чек-лист", before: item.text, after: `${done ? "Отмечено" : "Снята отметка"}, ${doneCount} из ${total}` }], undo: false };
+  });
+}
+
+export async function removeChecklistItem(actor: Actor, number: number, itemId: string): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    canChecklist(can, row);
+    const item = row.checklist.find((c) => c.id === itemId) ?? fail("Такого пункта нет");
+    await tx.taskChecklistItem.delete({ where: { id: item.id } });
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Чек-лист", before: item.text, after: "Пункт убран" }], undo: false };
+  });
+}
+
+export async function editChecklistItem(actor: Actor, number: number, itemId: string, text: string): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    canChecklist(can, row);
+    const item = row.checklist.find((c) => c.id === itemId) ?? fail("Такого пункта нет");
+    const v = required(text, CHECKLIST_LIMITS.text, "Напишите пункт", "Пункт чек-листа");
+    if (v === item.text) fail("Ничего не изменилось");
+    await tx.taskChecklistItem.update({ where: { id: item.id }, data: { text: v } });
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Чек-лист", before: item.text, after: v }], undo: false };
   });
 }

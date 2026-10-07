@@ -28,6 +28,9 @@ export type InboxInput = {
 };
 
 /** Событие адресатам: без самого автора, без повторов, только включённым людям */
+/** Автор «ресурс по расписанию» (этап 25): ни с кем не совпадает, в базе пишется как пустой автор */
+export const SYSTEM_ACTOR_ID = "scheduler";
+
 export async function notify(tx: Tx, input: InboxInput, now = new Date()): Promise<number> {
   const ids = [...new Set(input.recipients.filter((id): id is string => !!id && id !== input.actor.personId))];
   if (!ids.length) return 0;
@@ -37,7 +40,7 @@ export async function notify(tx: Tx, input: InboxInput, now = new Date()): Promi
     data: active.map((p) => ({
       recipientId: p.id,
       kind: input.kind,
-      actorId: input.actor.personId,
+      actorId: input.actor.personId === SYSTEM_ACTOR_ID ? null : input.actor.personId,
       actorName: input.actor.fullName,
       subject: input.subject,
       taskId: input.taskId ?? null,
