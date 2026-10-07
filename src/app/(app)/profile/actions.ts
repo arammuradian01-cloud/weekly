@@ -4,7 +4,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { clearSession, readSession } from "@/lib/auth";
+import { clearSession, readSession, requireContext } from "@/lib/auth";
+import { changePassword } from "@/lib/login/password";
 import { runAction } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
@@ -50,4 +51,10 @@ export async function saveMailPrefsAction(prefs: Record<string, boolean>) {
   const result = await runAction("Настройки писем", (a) => saveMailPrefs(a, prefs));
   if (result.ok) revalidatePath("/profile");
   return result;
+}
+
+/** Смена своего пароля (этап 20а): при личном входе, с текущим паролем, если он уже есть */
+export async function changePasswordAction(current: string, next: string, repeat: string) {
+  const ctx = await requireContext();
+  return runAction("Смена пароля", (a) => changePassword(a, ctx.deviceId, String(current ?? ""), String(next ?? ""), String(repeat ?? "")));
 }

@@ -189,8 +189,8 @@ describe("наверх", () => {
   it("с общего логина наверх не поднимают и не убирают", async () => {
     const antonov = await actor("Антонов");
     const e = (await prisma.weeklyEntry.findFirstOrThrow({ where: { author: { fullName: { startsWith: "Чемоданова" } } } })).id;
-    await expectRule(weekly.promoteEntry({ ...antonov, via: "TEAM" }, e), /личной ссылке/);
-    await expectRule(weekly.unpromoteEntry({ ...antonov, via: "TEAM" }, e), /личной ссылке/);
+    await expectRule(weekly.promoteEntry({ ...antonov, via: "TEAM" }, e), /войдя лично/);
+    await expectRule(weekly.unpromoteEntry({ ...antonov, via: "TEAM" }, e), /войдя лично/);
   });
 
   it("специалист, от кого weekly не ждут, в ленте команды сдаёт по желанию", async () => {

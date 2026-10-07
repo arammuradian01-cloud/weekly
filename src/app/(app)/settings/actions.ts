@@ -8,6 +8,7 @@ import { runAction, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/admin/service";
 import { baseUrl } from "@/lib/auth";
 import { issueInvite, linkUrl, revokeAllDevices, saveTeamLogin, type TeamLogin } from "@/lib/login/service";
+import { issueInvitesForAll, resetPassword } from "@/lib/login/password";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
 import type { WeekKey } from "@/domain/types";
 
@@ -70,6 +71,20 @@ export async function issueInviteAction(slug: string) {
   return runAction("Ссылка для входа", async (a) => {
     const invite = await issueInvite(a, String(slug));
     return { url: linkUrl(base, invite.token), expiresAt: invite.expiresAt.toISOString(), fullName: invite.fullName };
+  });
+}
+
+/** Сбросить личный пароль (этап 20а): старый не работает, входы человека завершаются */
+export async function resetPasswordAction(slug: string) {
+  return done(await runAction("Сброс пароля", (a) => resetPassword(a, String(slug))));
+}
+
+/** Ссылки всем, кто ещё не задал пароль (этап 20а): показываются один раз */
+export async function issueInvitesForAllAction() {
+  const base = await baseUrl();
+  return runAction("Ссылки всем без пароля", async (a) => {
+    const list = await issueInvitesForAll(a);
+    return list.map((x) => ({ fullName: x.fullName, login: x.login, url: linkUrl(base, x.token), expiresAt: x.expiresAt.toISOString() }));
   });
 }
 

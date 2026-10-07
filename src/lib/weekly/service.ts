@@ -729,7 +729,7 @@ const PROMOTION_NOTE = 150;
  */
 export async function promoteEntry(actor: Actor, id: string, note?: string | null): Promise<WeeklyEntry> {
   if (actor.role === "OBSERVER") fail("Наблюдатель weekly не пишет");
-  if (actor.via === "TEAM" && !actor.management) fail("Поднимать записи наверх руководитель может, войдя по личной ссылке");
+  if (actor.via === "TEAM" && !actor.management) fail("Поднимать записи наверх руководитель может, войдя лично, со своим логином и паролем");
   const value = optional(note, PROMOTION_NOTE, "Фраза от себя");
   return prisma.$transaction(async (tx) => {
     const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: { week: true, promotions: true } });
@@ -765,7 +765,7 @@ export async function promoteEntry(actor: Actor, id: string, note?: string | nul
 /** Снять запись из своего weekly. Владелец и администраторы в режиме управления снимают за любого */
 export async function unpromoteEntry(actor: Actor, id: string, by?: PersonSlug): Promise<WeeklyEntry> {
   if (actor.role === "OBSERVER") fail("Наблюдатель weekly не пишет");
-  if (actor.via === "TEAM" && !actor.management) fail("Убирать поднятые записи руководитель может, войдя по личной ссылке");
+  if (actor.via === "TEAM" && !actor.management) fail("Убирать поднятые записи руководитель может, войдя лично, со своим логином и паролем");
   return prisma.$transaction(async (tx) => {
     const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: { week: true, promotions: { include: { by: true } } } });
     if (!entry) return fail("Запись уже удалена");

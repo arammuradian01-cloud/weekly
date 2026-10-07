@@ -52,7 +52,7 @@ describe("ссылка от владельца", () => {
     expect(first.fullName).toBe("Рева Тарас");
     // Новая ссылка гасит прежнюю
     expect((await login.peekLink(first.token, later(2000))).status).toBe("expired");
-    expect(await login.peekLink(second.token, later(2000))).toEqual({ status: "ok", kind: "INVITE", fullName: "Рева Тарас" });
+    expect(await login.peekLink(second.token, later(2000))).toEqual({ status: "ok", kind: "INVITE", fullName: "Рева Тарас", login: "reva", hasPassword: false });
 
     // Открытие ничего не тратит, вход тратит
     const { session, person, method } = await login.consumeLoginLink(second.token, device, later(3000));
@@ -138,7 +138,7 @@ describe("устройства", () => {
 describe("общий логин team", () => {
   it("выключает только владелец и только после своего личного входа", async () => {
     const teamOwner = { ...(await tasks.actorFor("muradyan", "OWNER")), via: "TEAM" as const };
-    await expect(login.saveTeamLogin(teamOwner, "off")).rejects.toThrow(/Сначала войдите сами по личной ссылке/);
+    await expect(login.saveTeamLogin(teamOwner, "off")).rejects.toThrow(/Сначала войдите сами лично/);
     await expect(login.saveTeamLogin({ ...(await tasks.actorFor("golovkin", "ADMIN")), via: "INVITE" }, "off")).rejects.toThrow(/только владелец/);
     expect(await login.saveTeamLogin(await owner(), "off")).toBe("off");
     expect(await login.getTeamLogin()).toBe("off");

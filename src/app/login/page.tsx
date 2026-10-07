@@ -50,15 +50,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <h2 className="text-page font-semibold text-ink">Вход</h2>
           <p className="mb-6 mt-1.5 text-body text-muted">
             {teamLogin === "on"
-              ? "Общий логин и пароль команды. После входа выберите себя из списка."
-              : mail
-                ? "По личной ссылке: введите рабочую почту, ссылка придёт письмом."
-                : "По личной ссылке: её выдаёт владелец ресурса."}
+              ? "Ваш личный логин и пароль. Пока идёт переходный период, работает и общий логин team: после входа по нему выберите себя из списка."
+              : "Ваш личный логин и пароль. Нет пароля или забыли его: попросите личную ссылку у владельца ресурса."}
           </p>
           <p className="-mt-3 mb-6 text-small text-muted sm:hidden">Weekly сдаём до 18:00 понедельника, во вторник встреча.</p>
           {ended ? (
             <p role="status" className="mb-5 rounded-lg bg-blue-soft px-3.5 py-2.5 text-sm text-blue-700">
-              Вход на этом устройстве завершён. Войдите снова по личной ссылке.
+              Вход на этом устройстве завершён. Войдите снова со своим логином и паролем.
             </p>
           ) : null}
           {setup === "done" ? (
@@ -74,22 +72,18 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               </Link>
             </p>
           ) : null}
-          {teamLogin === "on" ? <LoginForm /> : null}
-          {teamLogin === "on" ? (
-            <div className="mt-8 border-t border-line pt-6">
-              <h3 className="text-title-sm font-semibold text-ink">Личный вход</h3>
-              {mail ? (
-                <>
-                  <p className="mb-4 mt-1 text-small text-muted">Ссылка на рабочую почту, без пароля. Вход запомнится на этом устройстве на 30 дней.</p>
-                  <EmailLinkForm />
-                </>
-              ) : (
-                <p className="mt-1 text-small text-muted">Личную ссылку для входа выдаёт владелец ресурса. Вход по ней запомнится на этом устройстве на 30 дней.</p>
-              )}
-            </div>
-          ) : mail ? (
-            <EmailLinkForm primary />
-          ) : null}
+          <LoginForm />
+          <div className="mt-8 border-t border-line pt-6">
+            <h3 className="text-title-sm font-semibold text-ink">Нет пароля</h3>
+            {mail ? (
+              <>
+                <p className="mb-4 mt-1 text-small text-muted">Ссылка на рабочую почту: по ней можно войти и задать новый пароль.</p>
+                <EmailLinkForm />
+              </>
+            ) : (
+              <p className="mt-1 text-small text-muted">Личную ссылку выдаёт владелец ресурса. По ней вы сами придумаете пароль, логин увидите там же.</p>
+            )}
+          </div>
         </div>
       </section>
     </div>

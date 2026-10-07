@@ -171,6 +171,8 @@ export type PersonView = {
   /** Сколько действующих личных входов и когда заходил последний раз */
   devices: number;
   lastSeenAt: string | null;
+  /** Когда человек задал личный пароль (этап 20а). null: пароля нет */
+  passwordSetAt: string | null;
 };
 
 export async function listPeople(): Promise<PersonView[]> {
@@ -191,6 +193,7 @@ export async function listPeople(): Promise<PersonView[]> {
     email: p.email,
     devices: devices.get(p.id)?.devices ?? 0,
     lastSeenAt: devices.get(p.id)?.lastSeenAt ?? null,
+    passwordSetAt: p.passwordSetAt?.toISOString() ?? null,
   }));
 }
 

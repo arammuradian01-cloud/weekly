@@ -472,7 +472,7 @@ async function requireTeamEditor(tx: Tx, actor: Actor, teamId: string) {
   const team = await teamOrFail(tx, teamId);
   if (canManagePeople(actor)) return { team, owner: true };
   if (actor.role === "OBSERVER") fail("Наблюдатель команды не меняет");
-  if (teamLogin(actor)) fail("Состав команды руководитель меняет, войдя по личной ссылке");
+  if (teamLogin(actor)) fail("Состав команды руководитель меняет, войдя лично, со своим логином и паролем");
   if (team.id !== TOP_TEAM && team.leaderId === actor.personId) return { team, owner: false };
   return fail("Состав команды меняют её руководитель и владелец в режиме управления");
 }
@@ -722,7 +722,7 @@ export async function setTeamRhythm(actor: Actor, teamId: string, input: RhythmI
     if (!team.active) fail("Команда выключена");
     if (!canManagePeople(actor)) {
       if (actor.role === "OBSERVER") fail("Наблюдатель команды не меняет");
-      if (teamLogin(actor)) fail("Ритм команды руководитель задаёт, войдя по личной ссылке");
+      if (teamLogin(actor)) fail("Ритм команды руководитель задаёт, войдя лично, со своим логином и паролем");
       const scope = await loadScope(tx, { id: actor.personId, role: actor.role });
       if (!scope.leads.includes(teamId)) fail("Ритм команды задают её руководитель, руководитель выше и владелец");
     }

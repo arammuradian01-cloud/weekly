@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, Copy, Download, EyeOff, FileUp, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { CalendarOff, Copy, Download, EyeOff, FileUp, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
@@ -13,7 +13,9 @@ import {
   addDictItemAction,
   createPersonAction,
   issueInviteAction,
+  issueInvitesForAllAction,
   previewReloadAction,
+  resetPasswordAction,
   revokePersonDevicesAction,
   renameDictItemAction,
   runReloadAction,
@@ -94,7 +96,7 @@ export function SettingsView({
   /** Плашка над страницами: тестовый стенд, пилот или без плашки */
   banner: StandBanner;
   /** Вход (этап 9): работает ли общий логин, настроена ли почта, вошёл ли владелец лично */
-  login: { team: "on" | "off"; mail: boolean; personal: boolean };
+  login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number; invitable: number } };
   /** Отсутствия людей с отчётной недели и недели, которые можно отметить (этап 9) */
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
@@ -376,6 +378,7 @@ function PeopleSection({
   const [draft, setDraft] = useState<PersonForm>({ fullName: "", shortName: "", zone: "", role: "LEADER", direction: dictOptions("DIRECTION")[0]?.value ?? "", email: "" });
   const [invite, setInvite] = useState<{ url: string; expiresAt: string; fullName: string } | null>(null);
   const [revoke, setRevoke] = useState<PersonView | null>(null);
+  const [resetFor, setResetFor] = useState<PersonView | null>(null);
   const [away, setAway] = useState<PersonView | null>(null);
   const team = people.filter((p) => p.active && p.role !== "OBSERVER");
 
@@ -410,8 +413,8 @@ function PeopleSection({
                 </div>
               </form>
             ) : (
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0 lg:min-w-64 lg:flex-1">
                   <p className={cn("text-body font-medium", p.active ? "text-ink" : "text-muted")}>
                     {p.fullName}
                     {p.active ? "" : " (выключен)"}
@@ -426,12 +429,12 @@ function PeopleSection({
                   ) : null}
                   {p.active ? (
                     <p className="text-caption text-muted">
-                      {p.email ?? "Почта не указана"}.{" "}
+                      Логин {p.slug}. {p.passwordSetAt ? `Пароль задан ${shortWhen(p.passwordSetAt)}` : "Пароля нет"}. {p.email ?? "Почта не указана"}.{" "}
                       {p.devices ? `Личных входов: ${p.devices}, последний раз ${shortWhen(p.lastSeenAt)}` : "Личного входа нет"}
                     </p>
                   ) : null}
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                <div className="flex flex-wrap items-center gap-1 lg:max-w-[60%] lg:justify-end">
                   {p.active ? (
                     <Button
                       size="sm"
@@ -450,6 +453,12 @@ function PeopleSection({
                     <Button size="sm" variant="ghost" aria-label={`Отсутствие: ${p.fullName}`} onClick={() => setAway(p)}>
                       <CalendarOff className="h-4 w-4" aria-hidden="true" />
                       Отсутствие
+                    </Button>
+                  ) : null}
+                  {p.passwordSetAt && p.slug !== me ? (
+                    <Button size="sm" variant="ghost" aria-label={`Сбросить пароль: ${p.fullName}`} onClick={() => setResetFor(p)}>
+                      <KeyRound className="h-4 w-4" aria-hidden="true" />
+                      Сбросить пароль
                     </Button>
                   ) : null}
                   {p.devices ? (
@@ -535,9 +544,30 @@ function PeopleSection({
           />
         ) : null}
       </Modal>
+      <Modal open={resetFor !== null} onOpenChange={(open) => !open && setResetFor(null)} title={`Сбросить пароль: ${resetFor?.fullName ?? ""}?`}>
+        <p className="text-small text-muted">
+          Старый пароль перестанет работать, входы на всех устройствах человека завершатся. Новый пароль он задаст сам по новой ссылке: выдайте её кнопкой «Ссылка для
+          входа».
+        </p>
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setResetFor(null)}>
+            Не сбрасывать
+          </Button>
+          <Button
+            variant="danger"
+            onClick={async () => {
+              const person = resetFor;
+              setResetFor(null);
+              if (person) await run(() => resetPasswordAction(person.slug), `Пароль сброшен: ${person.fullName}`);
+            }}
+          >
+            Сбросить пароль
+          </Button>
+        </div>
+      </Modal>
       <Modal open={revoke !== null} onOpenChange={(open) => !open && setRevoke(null)} title={`Завершить входы: ${revoke?.fullName ?? ""}?`}>
         <p className="text-small text-muted">
-          Личный вход закроется на всех устройствах человека, неиспользованные ссылки перестанут работать. Снова войти он сможет по новой ссылке.
+          Личный вход закроется на всех устройствах человека, неиспользованные ссылки перестанут работать. Пароль останется, и человек сможет снова войти с ним. Если пароль мог попасть к чужому, нажмите «Сбросить пароль».
         </p>
         <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setRevoke(null)}>
@@ -568,8 +598,8 @@ function InviteModal({ invite, onClose }: { invite: { url: string; expiresAt: st
   return (
     <Modal open={invite !== null} onOpenChange={(open) => !open && onClose()} title={`Ссылка для входа: ${invite?.fullName ?? ""}`}>
       <p className="text-small text-muted">
-        Действует до {invite ? shortWhen(invite.expiresAt) : ""} и открывает вход один раз. Отправьте её лично, не в общий чат. Прежняя неиспользованная ссылка этого человека
-        больше не работает.
+        По ссылке человек сам придумает пароль и сразу войдёт, дальше входит с логином и паролем. Ссылка действует до {invite ? shortWhen(invite.expiresAt) : ""} и открывается
+        один раз. Отправьте её лично, не в общий чат. Прежняя неиспользованная ссылка этого человека больше не работает.
       </p>
       <label htmlFor="invite-url" className="mt-4 block text-sm font-medium text-ink">
         Ссылка
@@ -778,16 +808,80 @@ function ReloadSection() {
   );
 }
 
+type BulkLink = { fullName: string; login: string; url: string; expiresAt: string };
+
+/** Ссылки всем без пароля: показываются один раз, после закрытия окна их не достать */
+function BulkInviteModal({ links, onClose }: { links: BulkLink[] | null; onClose: () => void }) {
+  const { notify } = usePrototype();
+  const text = (links ?? []).map((l) => `${l.fullName}, логин ${l.login}: ${l.url}`).join("\n");
+  return (
+    <Modal open={links !== null} onOpenChange={(open) => !open && onClose()} title={`Ссылки для входа: ${links?.length ?? 0}`}>
+      <p className="text-small text-muted">
+        Отправьте каждому его ссылку лично, не в общий чат. По ссылке человек сам придумает пароль. Ссылки действуют до {links?.[0] ? shortWhen(links[0].expiresAt) : ""} и
+        открываются один раз. После закрытия окна их не показать снова: только выдать новые.
+      </p>
+      {links?.length ? (
+        <ul className="mt-4 flex max-h-80 flex-col divide-y divide-line overflow-auto rounded-lg ring-1 ring-line">
+          {links.map((l) => (
+            <li key={l.url} className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+              <span className="min-w-0 text-small text-ink">
+                {l.fullName} <span className="text-muted">логин {l.login}</span>
+              </span>
+              <button
+                type="button"
+                className="shrink-0 text-left text-caption font-semibold text-blue-700 hover:underline"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(l.url);
+                    notify(`Ссылка скопирована: ${l.fullName}`);
+                  } catch {
+                    notify("Не получилось скопировать", "error");
+                  }
+                }}
+              >
+                Скопировать ссылку
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 text-body text-ink">Пароль уже задали все.</p>
+      )}
+      <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button variant="secondary" onClick={onClose}>
+          Готово
+        </Button>
+        {links?.length ? (
+          <Button
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(text);
+                notify("Список скопирован");
+              } catch {
+                notify("Не получилось скопировать", "error");
+              }
+            }}
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" />
+            Скопировать всё
+          </Button>
+        ) : null}
+      </div>
+    </Modal>
+  );
+}
+
 const TEAM_LOGIN_OPTIONS: { value: "on" | "off"; label: string }[] = [
   { value: "on", label: "Общий и личный" },
   { value: "off", label: "Только личный" },
 ];
 
 /** Переходный период: общий логин team работает, пока владелец его не выключит */
-function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; personal: boolean } }) {
+function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number; invitable: number } } }) {
   const run = useRunAction();
   const { notify } = usePrototype();
   const [value, setValue] = useState(login.team);
+  const [bulk, setBulk] = useState<BulkLink[] | null>(null);
   return (
     <Section title="Вход" description="Личный вход записывает в журнал настоящего автора. Общий логин team работает переходную неделю, потом владелец его выключает">
       <Segmented
@@ -803,13 +897,37 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
         }}
       />
       {!login.personal && value === "on" ? (
-        <p className="mt-3 text-small text-muted">Чтобы выключить общий логин, сначала войдите сами по личной ссылке: выдайте её себе в списке людей.</p>
+        <p className="mt-3 text-small text-muted">Чтобы выключить общий логин, сначала войдите сами лично: выдайте себе ссылку в списке людей и задайте пароль.</p>
       ) : null}
       {value === "off" ? (
         <p className="mt-3 text-small text-muted">
-          Если вы сами потеряете вход, новую ссылку печатает команда npm run login-link в консоли приложения Timeweb, например npm run login-link -- muradyan.
+          Если вы сами потеряете пароль, новую ссылку печатает команда npm run login-link в консоли приложения Timeweb, например npm run login-link -- muradyan.
         </p>
       ) : null}
+      {login.passwords ? (
+        <div className="mt-5 rounded-xl bg-surface p-4">
+          <p className="text-body text-ink">
+            Личный пароль задали: <span className="font-semibold tabular-nums">{login.passwords.withPassword}</span> из {login.passwords.total}
+          </p>
+          <p className="mt-1 text-small text-muted">
+            Каждый задаёт пароль сам по личной ссылке. Ссылки всем, у кого пароля ещё нет, выдаются одной кнопкой: отправьте каждому его ссылку лично. Ссылка действует 3 дня.
+          </p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="mt-3"
+            disabled={login.passwords.invitable === 0}
+            onClick={async () => {
+              const r = await run(() => issueInvitesForAllAction(), undefined, { refresh: false });
+              if (r) setBulk(r);
+            }}
+          >
+            <Link2 className="h-4 w-4" aria-hidden="true" />
+            Ссылки всем без пароля
+          </Button>
+        </div>
+      ) : null}
+      <BulkInviteModal links={bulk} onClose={() => setBulk(null)} />
       <div className="mt-4 flex flex-wrap items-center gap-3 text-body">
         <span className="w-72 text-ink">Письма со ссылкой для входа</span>
         <Badge tone={login.mail ? "green" : "yellow"}>{login.mail ? "Почта настроена" : "Почта не настроена"}</Badge>

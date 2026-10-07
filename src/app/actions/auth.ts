@@ -22,6 +22,7 @@ import {
 } from "@/lib/auth";
 import { currentActor } from "@/lib/action-runner";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
+import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { TaskRuleError } from "@/lib/tasks/service";
 import type { AttemptKind } from "@/generated/prisma/enums";
 
@@ -52,7 +53,12 @@ function safeNext(value: FormDataEntryValue | null): string {
 }
 
 export async function login(_prev: FormState, formData: FormData): Promise<FormState> {
-  if ((await getTeamLogin()) === "off") return { error: "Общий логин выключен. Войдите по личной ссылке" };
+  const loginValue = String(formData.get("login") ?? "").trim().toLowerCase();
+  const password = String(formData.get("password") ?? "");
+  const expectedLogin = (await getSetting<string>("auth.team.login", "team")).toLowerCase();
+  // Этап 20а: всё, что не общий логин, это личный логин человека
+  if (loginValue !== expectedLogin) return personalLogin(loginValue, password);
+  if ((await getTeamLogin()) === "off") return { error: "Общий логин выключен. Войдите со своим логином и паролем" };
   const ip = await requestIp();
   const now = new Date();
   const lock = await lockStateFor(ip, "TEAM", now);
@@ -62,9 +68,6 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     return { error: `Слишком много неверных попыток. Вход откроется в ${formatTime(lock.lockedUntil)}` };
   }
 
-  const loginValue = String(formData.get("login") ?? "").trim().toLowerCase();
-  const password = String(formData.get("password") ?? "");
-  const expectedLogin = (await getSetting<string>("auth.team.login", "team")).toLowerCase();
   const hash = await getSetting<string | null>(PASSWORD_SETTING_KEYS.team, null);
 
   if (!hash) {
@@ -72,8 +75,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     return { error: "Пароль входа ещё не задан. Владелец задаёт его на странице первичной настройки или командой npm run password -- team" };
   }
 
-  const passwordOk = await verifyPassword(password, hash);
-  const ok = passwordOk && loginValue === expectedLogin;
+  const ok = await verifyPassword(password, hash);
   await prisma.loginAttempt.create({ data: { ip, kind: "TEAM", ok } });
 
   if (!ok) {
@@ -85,6 +87,17 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
   await writeSession({ epoch, via: "TEAM" });
   await writeAudit({ action: "login.success", ip, via: "TEAM" });
   redirect("/choose");
+}
+
+/** Личный логин и пароль (этап 20а): запись устройства на 30 дней, как при входе по ссылке */
+async function personalLogin(loginValue: string, password: string): Promise<FormState> {
+  if (!loginValue || !password) return { error: "Введите логин и пароль" };
+  const previous = (await readSession())?.sid ?? null;
+  const result = await loginWithPassword(loginValue, password, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
+  if (!result.ok) return { error: result.error };
+  const { epoch } = await getEpochs();
+  await writeSession({ epoch, personId: result.personId, sid: result.sessionId, via: "PASSWORD" });
+  redirect("/");
 }
 
 export async function chooseProfile(formData: FormData): Promise<void> {
@@ -186,7 +199,8 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
   try {
     // Прежний личный вход в этом браузере завершается, чтобы не висел 30 дней
     const previous = (await readSession())?.sid ?? null;
-    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
+    // Без пароля входят только по ссылке из письма: по ссылке от владельца человек сначала задаёт пароль
+    const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous, ["EMAIL"]);
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";
@@ -202,6 +216,32 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
 }
 
 export type EmailFormState = { error?: string; sent?: boolean } | null;
+
+/** Экран личной ссылки (этап 20а): человек придумывает пароль и сразу входит */
+export async function setPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const token = String(formData.get("token") ?? "");
+  try {
+    const previous = (await readSession())?.sid ?? null;
+    const { session, person } = await setPasswordByLink(
+      token,
+      String(formData.get("password") ?? ""),
+      String(formData.get("repeat") ?? ""),
+      { ip: await requestIp(), userAgent: await requestUserAgent() },
+      new Date(),
+      previous,
+    );
+    const { epoch } = await getEpochs();
+    await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
+  } catch (error) {
+    const message = ruleError(error);
+    if (!message) {
+      console.error("Пароль по ссылке: не прошло", error);
+      return { error: "Не получилось сохранить пароль. Обновите страницу и попробуйте ещё раз" };
+    }
+    return { error: message };
+  }
+  redirect("/");
+}
 
 /** «Прислать ссылку на почту» на экране входа */
 export async function requestEmailLinkAction(_prev: EmailFormState, formData: FormData): Promise<EmailFormState> {

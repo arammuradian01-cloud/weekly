@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Wordmark } from "@/components/brand/wordmark";
 import { peekLink } from "@/lib/login/service";
-import { LinkLoginForm } from "./link-form";
+import { LinkLoginForm, SetPasswordForm } from "./link-form";
 
-export const metadata: Metadata = { title: "Вход по ссылке" };
+export const metadata: Metadata = { title: "Личный вход" };
 export const dynamic = "force-dynamic";
 
 const PROBLEMS = {
@@ -32,12 +32,16 @@ export default async function LinkPage({ searchParams }: { searchParams: Promise
         <div className="w-full max-w-md rounded-xl bg-white px-6 py-7 ring-1 ring-line sm:px-8">
           {ok ? (
             <>
-              <h1 className="text-headline font-semibold text-ink">Вход в Weekly</h1>
+              <h1 className="text-headline font-semibold text-ink">{link.hasPassword ? "Новый пароль" : "Ваш вход в Weekly"}</h1>
               <p className="mt-2 text-body text-muted">
-                Вы входите как <span className="font-semibold text-ink">{link.fullName}</span>. Вход запомнится на этом устройстве на 30 дней, завершить его можно в
-                профиле.
+                Вы входите как <span className="font-semibold text-ink">{link.fullName}</span>.{" "}
+                {link.hasPassword
+                  ? "Придумайте новый пароль: старый перестанет работать, входы на других устройствах завершатся."
+                  : "Придумайте пароль: дальше входите на экране входа со своим логином и паролем. Вход запомнится на этом устройстве на 30 дней."}
               </p>
-              <LinkLoginForm token={t} fullName={link.fullName ?? ""} />
+              <SetPasswordForm token={t} login={link.login ?? ""} reset={!!link.hasPassword} />
+              {/* Ссылка из письма открывает вход и без пароля, ссылка от владельца нужна, чтобы задать пароль */}
+              {link.kind === "EMAIL" ? <LinkLoginForm token={t} fullName={link.fullName ?? ""} secondary /> : null}
               <p className="mt-4 text-caption text-muted">Это не вы? Закройте страницу и сообщите владельцу ресурса.</p>
             </>
           ) : (

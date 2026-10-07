@@ -17,8 +17,8 @@ export type ManagementGrant = {
   epoch: number;
 };
 
-/** Как вошли: общий логин team с выбором профиля или личная ссылка (на почту или приглашение владельца) */
-export type SessionVia = "TEAM" | "EMAIL" | "INVITE";
+/** Как вошли: общий логин team с выбором профиля, личная ссылка (на почту или приглашение владельца) или личный пароль */
+export type SessionVia = "TEAM" | "EMAIL" | "INVITE" | "PASSWORD";
 
 export type SessionData = {
   /** Номер поколения общего пароля: после смены пароля выходят все, кто вошёл по общему логину */
@@ -61,7 +61,7 @@ export async function verifySession(
     const data: SessionData = { epoch: payload.epoch };
     if (typeof payload.personId === "string") data.personId = payload.personId;
     if (typeof payload.sid === "string" && payload.sid) data.sid = payload.sid;
-    if (payload.via === "TEAM" || payload.via === "EMAIL" || payload.via === "INVITE") data.via = payload.via;
+    if (payload.via === "TEAM" || payload.via === "EMAIL" || payload.via === "INVITE" || payload.via === "PASSWORD") data.via = payload.via;
     const m = payload.management as Partial<ManagementGrant> | undefined;
     if (
       m &&

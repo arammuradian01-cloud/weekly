@@ -12,6 +12,7 @@ import { prisma } from "@/lib/db";
 import { mailConfigured } from "@/lib/mail";
 import { mailPrefsFor } from "@/lib/letters/service";
 import { MailPrefsForm } from "@/components/profile/mail-prefs";
+import { PasswordForm } from "@/components/profile/password-form";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -47,6 +48,7 @@ export default async function ProfilePage() {
         <Row label="Имя">{ctx.person.fullName}</Row>
         <Row label="Роль">{ROLE_LABELS[ctx.person.role]}</Row>
         <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
+        <Row label="Логин">{ctx.person.slug}</Row>
         <Row label="Почта">{ctx.person.email ?? "не указана"}</Row>
         <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
       </dl>
@@ -60,6 +62,24 @@ export default async function ProfilePage() {
           <Absences absences={absences} weeks={weeks} people={colleagues.map((p) => ({ value: p.slug, label: p.fullName }))} />
         </section>
       )}
+
+      <section className="mt-10 border-t border-line pt-8">
+        <h2 className="text-title font-semibold text-ink">Пароль</h2>
+        {ctx.via === "TEAM" ? (
+          <p className="mt-2 text-body text-muted">
+            Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {ctx.person.slug}.
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-small text-muted">
+              {ctx.person.passwordHash
+                ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут.`
+                : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${ctx.person.slug} без ссылки.`}
+            </p>
+            <PasswordForm login={ctx.person.slug} hasPassword={!!ctx.person.passwordHash} />
+          </>
+        )}
+      </section>
 
       <section className="mt-10 border-t border-line pt-8">
         <h2 className="text-title font-semibold text-ink">Письма</h2>

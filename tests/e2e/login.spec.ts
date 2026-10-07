@@ -1,6 +1,6 @@
 // Личные входы (этап 9): ссылка от владельца, ссылка на почту, устройства в профиле, выключение общего логина
 import { expect, test, type Browser, type Page } from "@playwright/test";
-import { enter, enterManagement, lastMailTo, linkFrom, resetDatabase, sql } from "./helpers";
+import { TEST_PASSWORD, enter, enterManagement, lastMailTo, linkFrom, resetDatabase, setPasswordByLink, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 
@@ -40,9 +40,14 @@ test("владелец выдаёт ссылку, человек входит п
   const reva = await freshPage(browser, page);
   await reva.goto(url);
   await expect(reva.getByText(/Вы входите как/)).toContainText("Рева Тарас");
+  await expect(reva.getByText("Ваш логин: reva")).toBeVisible();
   await shot(reva, "login-link");
-  await reva.getByRole("button", { name: "Войти как Рева Тарас" }).click();
-  await expect(reva).toHaveURL(/\/$/);
+  // Пароль придумывает сам человек: слабый не принимается, ссылка при этом не тратится
+  await reva.getByLabel("Придумайте пароль").fill("12345678901");
+  await reva.getByLabel("Повторите пароль").fill("12345678901");
+  await reva.getByRole("button", { name: "Задать пароль и войти" }).click();
+  await expect(reva.getByText(/только из цифр/)).toBeVisible();
+  await setPasswordByLink(reva, url);
 
   // Профиль из списка не выбирается: «Сменить профиль» нет, есть «Профиль и входы»
   await reva.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
@@ -54,7 +59,21 @@ test("владелец выдаёт ссылку, человек входит п
   await reva.goto("/choose");
   await expect(reva).toHaveURL(/\/$/);
   await reva.goto("/profile");
+  await expect(reva.getByRole("heading", { name: "Пароль" })).toBeVisible();
   await shot(reva, "profile");
+
+  // Выход и вход с логином и паролем
+  await reva.context().clearCookies();
+  await reva.goto("/login");
+  await reva.getByLabel("Логин").fill("reva");
+  await reva.getByLabel("Пароль").fill("не тот пароль");
+  await reva.getByRole("button", { name: "Войти" }).click();
+  await expect(reva.getByText("Неверный логин или пароль")).toBeVisible();
+  await reva.getByLabel("Пароль").fill(TEST_PASSWORD);
+  await reva.getByRole("button", { name: "Войти" }).click();
+  await expect(reva).toHaveURL(/\/$/);
+  await reva.goto("/profile");
+  await expect(reva.getByText("личный логин и пароль").first()).toBeVisible();
 
   // Ссылка второй раз не работает
   const other = await freshPage(browser, page);
@@ -65,9 +84,9 @@ test("владелец выдаёт ссылку, человек входит п
 
   // Владелец видит личный вход в списке людей, журнал пишет способ входа
   await page.goto("/settings");
-  await expect(page.getByText(/Личных входов: 1/)).toBeVisible();
+  await expect(page.getByText(/Логин reva\. Пароль задан/)).toBeVisible();
   await page.goto("/journal?kind=login");
-  await expect(page.getByText(/Вход по личной ссылке: Рева/).filter({ visible: true }).first()).toBeVisible();
+  await expect(page.getByText(/Личный вход: Рева/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText(/личный вход/).filter({ visible: true }).first()).toBeVisible();
 
   // «Выйти на всех устройствах»: снова только по новой ссылке
@@ -91,7 +110,7 @@ test("ссылка на почту: человек с адресом в спис
 
   const guest = await freshPage(browser, page);
   await guest.goto("/login");
-  await expect(guest.getByRole("heading", { name: "Личный вход" })).toBeVisible();
+  await expect(guest.getByRole("heading", { name: "Нет пароля" })).toBeVisible();
   await shot(guest, "login-both");
   await guest.getByLabel("Рабочая почта").fill("fatyanov@sravni.ru");
   await guest.getByRole("button", { name: "Прислать ссылку для входа" }).click();
@@ -124,23 +143,23 @@ test("владелец выключает общий логин только п�
   await enterManagement(page, "owner");
   await page.goto("/settings");
   await page.getByRole("radiogroup", { name: "Способ входа" }).getByRole("radio", { name: "Только личный" }).click();
-  await expect(page.getByText(/Сначала войдите сами по личной ссылке/).first()).toBeVisible();
+  await expect(page.getByText(/Сначала войдите сами лично/).first()).toBeVisible();
 
   // Ссылка самому себе, вход по ней, режим управления заново
   const url = await issueInvite(page, "Мурадян Арам");
-  await page.goto(url);
-  await page.getByRole("button", { name: "Войти как Мурадян Арам" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await setPasswordByLink(page, url);
   await enterManagement(page, "owner");
   await page.goto("/settings");
   await page.getByRole("radiogroup", { name: "Способ входа" }).getByRole("radio", { name: "Только личный" }).click();
   await expect(page.getByText("Общий логин выключен")).toBeVisible();
 
-  // Вход по общему логину больше не работает: старая сессия лидера уходит на экран входа, формы пароля нет
+  // Вход по общему логину больше не работает: старая сессия лидера уходит на экран входа, остаётся личный вход
   await leader.goto("/");
   await expect(leader).toHaveURL(/\/login/);
-  await expect(leader.getByLabel("Пароль")).toHaveCount(0);
-  await expect(leader.getByLabel("Рабочая почта")).toBeVisible();
+  await leader.getByLabel("Логин").fill("team");
+  await leader.getByLabel("Пароль").fill("любой пароль");
+  await leader.getByRole("button", { name: "Войти" }).click();
+  await expect(leader.getByText(/Общий логин выключен/)).toBeVisible();
   await shot(leader, "login-personal-only");
   await leader.context().close();
 

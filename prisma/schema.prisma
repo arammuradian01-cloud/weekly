@@ -58,6 +58,8 @@ enum AttemptKind {
   MANAGEMENT
   /// Запрос ссылки для входа на почту
   LINK
+  /// Личный логин и пароль (этап 20а)
+  PERSONAL
 }
 
 /// Как человек вошёл (этап 9): общий логин team, ссылка на почту или ссылка-приглашение от владельца
@@ -65,6 +67,8 @@ enum LoginMethod {
   TEAM
   EMAIL
   INVITE
+  /// Личный логин и пароль (этап 20а)
+  PASSWORD
 }
 
 /// Одноразовая ссылка: вход по почте, приглашение от владельца, подтверждение режима управления
@@ -116,6 +120,9 @@ model Person {
   defaultDirection    DictionaryItem? @relation(fields: [defaultDirectionId], references: [id])
   /// Почта для личного входа по ссылке (этап 9), в нижнем регистре
   email               String?         @unique
+  /// Личный пароль (этап 20а): bcrypt. Задаёт сам человек по ссылке от владельца, владелец только сбрасывает
+  passwordHash        String?
+  passwordSetAt       DateTime?       @db.Timestamptz(3)
   active              Boolean         @default(true)
   sortOrder           Int             @default(0)
   /// Должность по структуре (этап 14). Кадровые поля не храним
@@ -222,14 +229,21 @@ model AuditLog {
 
 /// Попытки входа для блокировки подбора пароля.
 model LoginAttempt {
-  id      BigInt      @id @default(autoincrement())
-  at      DateTime    @default(now()) @db.Timestamptz(3)
-  ip      String
-  kind    AttemptKind
-  ok      Boolean
-  blocked Boolean     @default(false)
+  id       BigInt      @id @default(autoincrement())
+  at       DateTime    @default(now()) @db.Timestamptz(3)
+  ip       String
+  kind     AttemptKind
+  ok       Boolean
+  blocked  Boolean     @default(false)
+  /// Чей личный логин пробовали (этап 20а): подбор пароля к одному человеку с разных адресов тоже ограничен
+  personId String?
+  /// Ключ счётчика личного логина: person:<id> у известного человека (короткое имя и почта считаются вместе),
+  /// login:<введённое> у неизвестного. Блокировка одинакова для всех логинов, по ней не узнать, кто есть в ресурсе
+  login    String?
 
   @@index([ip, kind, at])
+  @@index([personId, at])
+  @@index([login, at])
   @@map("login_attempts")
 }
 
