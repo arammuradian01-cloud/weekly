@@ -9,6 +9,8 @@ import type { Role } from "@/generated/prisma/enums";
 import { TOP_TEAM, loadTeamNodes, scopeOf, teamPeopleIds, type Scope, type ScopeSubject, type TeamNode } from "./scope";
 
 import { ALL_TEAMS } from "@/domain/teams";
+import type { WeekAudience } from "@/lib/weekly/service";
+import { expectedOf, leadersOf } from "./rhythm";
 
 export const TEAM_COOKIE = "team";
 export { ALL_TEAMS };
@@ -114,28 +116,33 @@ export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
   return { id, name, options, scope, nodes, people };
 }
 
-/** Чей weekly показывать для выбранной команды. Общие записи без автора бывают только у топ-команды */
-export function audienceOf(current: CurrentTeam): { personIds: string[]; shared: boolean } {
+/**
+ * Чей weekly показывать для выбранной команды (этапы 14-15). В полосе сдачи те, от кого команда ждёт weekly,
+ * в ленте записи всех участников и то, что они подняли наверх из своих команд. Weekly руководителя команды
+ * принадлежит команде выше: в ленте его собственной команды его нет. Общие записи без автора только у топ-команды
+ */
+export function audienceOf(current: CurrentTeam): WeekAudience {
   const shared = current.id === TOP_TEAM || (current.id === ALL_TEAMS && current.options.some((o) => o.id === TOP_TEAM));
-  // Weekly руководителя команды принадлежит команде выше: его видят он сам и те, кто выше, но не его подчинённые
-  const byId = new Map(current.nodes.map((n) => [n.id, n]));
-  const showLeader = (id: string) => id === TOP_TEAM || current.scope.all || current.scope.leads.includes(id);
   const ids = current.id === ALL_TEAMS ? current.options.map((o) => o.id) : current.id ? [current.id] : [];
   if (!ids.length) return { personIds: current.people, shared };
-  const people = new Set<string>();
+  const byId = new Map(current.nodes.map((n) => [n.id, n]));
+  const leaders = leadersOf(current.nodes);
+  const expected = new Set<string>();
+  const authors = new Set<string>();
   for (const id of ids) {
     const n = byId.get(id);
     if (!n) continue;
-    for (const m of n.members) people.add(m);
-    if (n.leaderId && showLeader(id)) people.add(n.leaderId);
+    for (const m of expectedOf(n, leaders)) expected.add(m);
+    for (const m of n.members) authors.add(m);
+    if (n.id === TOP_TEAM && n.leaderId) authors.add(n.leaderId);
   }
-  return { personIds: [...people], shared };
+  return { personIds: [...expected], authorIds: [...authors], shared, teamIds: ids };
 }
 
-/** Weekly топ-команды: для отчёта CEO он собирается из неё, как и раньше */
-export async function topAudience(): Promise<{ personIds: string[]; shared: boolean; ceo: boolean }> {
+/** Weekly топ-команды: отчёт CEO собирается из него, как и раньше, плюс отмеченные записи любой команды */
+export async function topAudience(): Promise<WeekAudience> {
   const top = await prisma.team.findUnique({ where: { id: TOP_TEAM }, include: { members: { select: { personId: true } } } });
-  // Плюс записи сотрудников любых команд, которые владелец или администратор отметили «В отчёт CEO»
-  if (!top) return { personIds: [], shared: true, ceo: true };
-  return { personIds: [...new Set([...(top.leaderId ? [top.leaderId] : []), ...top.members.map((m) => m.personId)])], shared: true, ceo: true };
+  if (!top) return { personIds: [], shared: true, ceo: true, teamIds: [TOP_TEAM] };
+  const people = [...new Set([...(top.leaderId ? [top.leaderId] : []), ...top.members.map((m) => m.personId)])];
+  return { personIds: people, authorIds: people, shared: true, ceo: true, teamIds: [TOP_TEAM] };
 }

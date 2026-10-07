@@ -10,7 +10,7 @@ import {
   isoWeekOf,
   moscowDate,
   reportingWeek,
-  weeklyDeadline,
+  isoWeekday,
   type DeadlineSetting,
 } from "@/lib/week";
 import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
@@ -33,7 +33,11 @@ export default async function MyWeekPage() {
   const deadlineSetting = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const now = new Date();
   const week = reportingWeek(now, deadlineSetting);
-  const deadline = weeklyDeadline(week, deadlineSetting);
+  const weekKey = fromCalendar(week.start);
+  const current = management ? await currentTeam(subjectOf(ctx)) : null;
+  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null)]);
+  // Свой срок человека (этап 15): команда может сдавать раньше департамента
+  const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
   const msLeft = deadline.getTime() - now.getTime();
 
@@ -45,9 +49,7 @@ export default async function MyWeekPage() {
     return { key: weekday, weekday, date: date.day, state: isToday ? "today" : isPast ? "past" : "future" };
   });
   const deadlineDay = moscowDate(deadline);
-  const weekKey = fromCalendar(week.start);
-  const current = management ? await currentTeam(subjectOf(ctx)) : null;
-  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null)]);
+  const deadlineTime = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit" }).format(deadline);
   const currentWeek = isoWeekOf(today);
 
   return (
@@ -63,7 +65,7 @@ export default async function MyWeekPage() {
         <div className="-mx-2 mt-6 max-w-2xl">
           <WeekStrip
             days={days}
-            deadline={{ weekday: WEEKDAYS_SHORT[deadlineSetting.weekday - 1]!, date: deadlineDay.day, time: deadlineSetting.time }}
+            deadline={{ weekday: WEEKDAYS_SHORT[isoWeekday(deadlineDay) - 1]!, date: deadlineDay.day, time: deadlineTime }}
           />
         </div>
       </header>

@@ -4,7 +4,11 @@
 import { prisma } from "@/lib/db";
 import type { Role, UnitKind } from "@/generated/prisma/enums";
 import { UNIT_KIND_LABELS } from "./service";
-import { TOP_TEAM } from "./scope";
+import { TOP_TEAM, loadTeamNodes } from "./scope";
+import { expectedOf, leadersOf, teamDeadline, type TeamRhythm } from "./rhythm";
+import { currentReportingKey, weekSettings } from "@/lib/weekly/service";
+import { deadlineOf } from "@/lib/weekly/weeks";
+import { dbDate, moscowToday } from "@/lib/tasks/dates";
 
 export type UnitView = {
   id: string;
@@ -33,12 +37,19 @@ export type TeamView = {
   active: boolean;
   members: { slug: string; fullName: string; position: string | null }[];
   openTasks: number;
+  /** Открытые задачи со сроком в прошлом */
+  overdue: number;
+  /** Ритм weekly команды (этап 15) */
+  rhythm: TeamRhythm;
+  /** Сдача weekly за отчётную неделю: от кого ждём, кто сдал, кто с опозданием, кого нет на неделе */
+  weekly: { expected: number; submitted: number; late: number; absent: number; deadline: string; passed: boolean; closed: boolean };
 };
 
 export type StructureView = { units: UnitView[]; teams: TeamView[]; unplaced: { slug: string; fullName: string; position: string | null; role: Role }[] };
 
 export async function structureView(viewer: { id: string; role: Role }, opts: { includeInactive?: boolean } = {}): Promise<StructureView> {
-  const [units, people, vacancies, teams, open] = await Promise.all([
+  const reporting = await currentReportingKey();
+  const [units, people, vacancies, teams, open, overdue, nodes, week, settings] = await Promise.all([
     prisma.orgUnit.findMany({ where: opts.includeInactive ? {} : { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { head: { select: { slug: true, fullName: true, position: true } } } }),
     prisma.person.findMany({
       where: opts.includeInactive ? {} : { active: true },
@@ -52,7 +63,37 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
       include: { leader: { select: { slug: true, fullName: true } }, members: { include: { person: { select: { slug: true, fullName: true, position: true, active: true, sortOrder: true } } } } },
     }),
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null }, _count: { _all: true } }),
+    prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY"] }, archivedAt: null, due: { lt: dbDate(moscowToday()) } }, _count: { _all: true } }),
+    loadTeamNodes(prisma),
+    prisma.week.findUnique({
+      where: { start: dbDate(reporting) },
+      include: { reports: { select: { authorId: true, state: true } }, absences: { select: { personId: true } }, teamCloses: { select: { teamId: true } } },
+    }),
+    weekSettings(),
   ]);
+  // Сдача weekly за отчётную неделю по командам (этап 15)
+  const leaders = leadersOf(nodes);
+  const now = Date.now();
+  const departmentDeadline = week?.deadline ?? deadlineOf(reporting, settings.deadline);
+  const stateOf = new Map((week?.reports ?? []).map((r) => [r.authorId, r.state]));
+  const absentIds = new Set((week?.absences ?? []).map((a) => a.personId));
+  const closedTeams = new Set((week?.teamCloses ?? []).map((c) => c.teamId));
+  const counted = new Set(people.filter((p) => p.active && p.role !== "OBSERVER").map((p) => p.id));
+  const weeklyOf = (id: string): TeamView["weekly"] => {
+    const node = nodes.find((n) => n.id === id)!;
+    const expected = expectedOf(node, leaders).filter((pid) => counted.has(pid));
+    const deadline = teamDeadline(reporting, node, departmentDeadline);
+    return {
+      expected: expected.filter((pid) => !absentIds.has(pid)).length,
+      submitted: expected.filter((pid) => stateOf.get(pid) === "SUBMITTED").length,
+      late: expected.filter((pid) => stateOf.get(pid) === "LATE").length,
+      absent: expected.filter((pid) => absentIds.has(pid)).length,
+      deadline: deadline.toISOString(),
+      passed: now > deadline.getTime(),
+      closed: !!week?.closedAt || closedTeams.has(id),
+    };
+  };
+  const overdueByTeam = new Map(overdue.map((o) => [o.teamId, o._count._all]));
   const byId = new Map(units.map((u) => [u.id, u]));
   const children = new Map<string | null, typeof units>();
   for (const u of units) {
@@ -117,6 +158,9 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
           .sort((a, b) => a.sortOrder - b.sortOrder || a.fullName.localeCompare(b.fullName, "ru"))
           .map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position })),
         openTasks: openByTeam.get(t.id) ?? 0,
+        overdue: overdueByTeam.get(t.id) ?? 0,
+        rhythm: nodes.find((n) => n.id === t.id)!.rhythm,
+        weekly: weeklyOf(t.id),
       }))
       .sort((a, b) => Number(b.id === TOP_TEAM) - Number(a.id === TOP_TEAM)),
     unplaced: people.filter((p) => !p.unitId && p.active).map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, role: p.role })),

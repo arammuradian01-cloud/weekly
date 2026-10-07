@@ -124,6 +124,8 @@ export type WeeklyEntry = {
   ceo: boolean;
   /** Номер задачи, созданной кнопкой «Сделать задачей» */
   taskNumber?: number;
+  /** Кто поднял запись наверх, в свой weekly в команде выше, и его фраза (этап 15) */
+  promoted?: { by: PersonSlug; note?: string }[];
 };
 
 export type PersonWeekly = {
@@ -135,6 +137,8 @@ export type PersonWeekly = {
   submittedAt?: string;
   /** Нет на этой неделе (этап 9): weekly не ждём, в счёт «сдали N из M» человек не входит */
   absent?: { substitute: PersonSlug | null };
+  /** Свой срок, если он раньше срока недели: команда сдаёт раньше департамента (этап 15). Момент в ISO */
+  deadline?: string;
 };
 
 /** Всё про одну неделю для ленты, режима встречи и отчёта CEO */
@@ -149,6 +153,9 @@ export type WeekView = {
   fallback: boolean;
   reports: PersonWeekly[];
   entries: WeeklyEntry[];
+  /** Чьи записи свои для этой ленты (этап 15). Остальные записи пришли наверх и показываются у того, кто их поднял.
+   *  Нет поля: все записи свои */
+  authors?: PersonSlug[];
 };
 
 export type JournalEvent = {

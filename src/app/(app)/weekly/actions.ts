@@ -88,3 +88,17 @@ export async function weekViewAction(week: WeekKey | null): Promise<WeekView> {
   const team = await currentTeam(subjectOf(ctx));
   return svc.getWeekView(week, new Date(), audienceOf(team));
 }
+
+// ---------- Weekly команд (этап 15) ----------
+
+export async function promoteEntryAction(id: string, note?: string | null): Promise<Result<WeeklyEntry>> {
+  return run((a) => svc.promoteEntry(a, String(id), note == null ? null : String(note)));
+}
+
+export async function unpromoteEntryAction(id: string, by?: PersonSlug): Promise<Result<WeeklyEntry>> {
+  return run((a) => svc.unpromoteEntry(a, String(id), by));
+}
+
+export async function setTeamWeekClosedAction(team: string, week: WeekKey, closed: boolean): Promise<Result<{ closed: boolean }>> {
+  return run((a) => svc.setTeamWeekClosed(a, String(team), week, closed));
+}

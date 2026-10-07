@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { execSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Этап 14: структура департамента и команды. Владелец загружает структуру, руководитель сектора видит свою команду
 // и не видит задач топ-команды, переключатель команд меняет список задач. Ноутбук 1440 и телефон 360
@@ -27,17 +26,6 @@ async function shot(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-s-${name}.png`, fullPage: true });
-}
-
-/** Вход по личной ссылке из консоли сервера: у сотрудников нет общего логина */
-async function enterByLink(page: Page, slug: string) {
-  const out = execSync(`npx tsx scripts/login-link.ts ${slug}`, {
-    env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, APP_URL: "http://localhost:3100" },
-  }).toString();
-  const link = out.split("\n").find((l) => l.startsWith("http"))!;
-  await page.goto(link);
-  await page.getByRole("button", { name: /Войти как/ }).click();
-  await expect(page).toHaveURL(/\/$/);
 }
 
 async function loadStructure(page: Page) {

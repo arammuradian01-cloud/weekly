@@ -11,6 +11,10 @@ import { slugify, uniqueSlug } from "@/lib/translit";
 import { normName } from "@/lib/bord/names";
 import { TOP_TEAM, ancestorsOf, loadScope, loadTeamNodes, subtreeOf } from "./scope";
 import { kindOfDepth, pathKey, plannedKey, planStructure, readStructureTable, type ExistingPerson, type StructurePlan } from "./import";
+import { WEEKDAY_NAMES, isSlot, slotMoment, slotOf, slotText, type Slot } from "./rhythm";
+import { getSetting } from "@/lib/settings";
+import type { DeadlineSetting } from "@/lib/week";
+import { deadlineOf, reportingKey } from "@/lib/weekly/weeks";
 
 type Tx = Prisma.TransactionClient;
 
@@ -689,4 +693,68 @@ export async function memberCandidates(actor: Actor): Promise<{ slug: string; fu
   const led = new Set(nodes.filter((n) => n.leaderId === actor.personId && n.id !== TOP_TEAM).flatMap((n) => subtreeOf(nodes, n.id)));
   const inLed = new Set(nodes.filter((n) => led.has(n.id)).flatMap((n) => [...n.members, ...(n.leaderId ? [n.leaderId] : [])]));
   return people.filter((p) => p.id !== actor.personId && (underMe(p.id) || inLed.has(p.id))).map(({ slug, fullName, position }) => ({ slug, fullName, position }));
+}
+
+// ---------- Ритм weekly команды (этап 15) ----------
+
+export type RhythmInput = { deadline: Slot | null; meeting: Slot | null; specialists: boolean };
+
+const describeSlot = (slot: Slot | null, fallback: string) => (slot ? slotText(slot) : fallback);
+
+/**
+ * Срок сдачи, встреча и кто сдаёт weekly в команде. Задаёт руководитель команды или руководитель выше, владелец
+ * в режиме управления любой команде. Срок команды не позже срока департамента, встреча не раньше срока команды
+ */
+export async function setTeamRhythm(actor: Actor, teamId: string, input: RhythmInput): Promise<void> {
+  if (teamId === TOP_TEAM) fail("Срок и встреча топ-команды это срок и встреча департамента: они в настройках недели");
+  if (input.deadline !== null && !isSlot(input.deadline)) fail("Выберите неделю, день и время сдачи");
+  if (input.meeting !== null && !isSlot(input.meeting)) fail("Выберите неделю, день и время встречи");
+  await prisma.$transaction(async (tx) => {
+    const team = await teamOrFail(tx, teamId);
+    if (!team.active) fail("Команда выключена");
+    if (!canManagePeople(actor)) {
+      if (actor.role === "OBSERVER") fail("Наблюдатель команды не меняет");
+      if (teamLogin(actor)) fail("Ритм команды руководитель задаёт, войдя по личной ссылке");
+      const scope = await loadScope(tx, { id: actor.personId, role: actor.role });
+      if (!scope.leads.includes(teamId)) fail("Ритм команды задают её руководитель, руководитель выше и владелец");
+    }
+    // Проверяем на отчётной неделе: сроки считаются одинаково для любой недели
+    const setting = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
+    const key = reportingKey(new Date(), setting);
+    const department = deadlineOf(key, setting);
+    if (input.deadline && slotMoment(key, input.deadline).getTime() > department.getTime()) {
+      fail(`Срок команды не позже срока департамента (${WEEKDAY_NAMES[setting.weekday - 1]} следующей недели, ${setting.time}): руководитель должен успеть собрать weekly команды`);
+    }
+    const ownDeadline = input.deadline ? slotMoment(key, input.deadline) : department;
+    if (input.meeting && slotMoment(key, input.meeting).getTime() < ownDeadline.getTime()) fail("Встреча команды не раньше срока сдачи: на встрече разбирают сданные weekly");
+
+    const before: RhythmInput = {
+      deadline: slotOf(team.deadlineWeek, team.deadlineWeekday, team.deadlineTime),
+      meeting: slotOf(team.meetingWeek, team.meetingWeekday, team.meetingTime),
+      specialists: team.specialistsWeekly,
+    };
+    const same = (a: Slot | null, b: Slot | null) => JSON.stringify(a) === JSON.stringify(b);
+    if (same(before.deadline, input.deadline) && same(before.meeting, input.meeting) && before.specialists === input.specialists) fail("Ничего не изменилось");
+    await tx.team.update({
+      where: { id: teamId },
+      data: {
+        deadlineWeek: input.deadline?.week ?? null,
+        deadlineWeekday: input.deadline?.weekday ?? null,
+        deadlineTime: input.deadline?.time ?? null,
+        meetingWeek: input.meeting?.week ?? null,
+        meetingWeekday: input.meeting?.weekday ?? null,
+        meetingTime: input.meeting?.time ?? null,
+        specialistsWeekly: input.specialists,
+      },
+    });
+    if (!same(before.deadline, input.deadline)) {
+      await audit(tx, actor, "team.rhythm", "team", teamId, `Срок weekly: ${team.name}`, describeSlot(before.deadline, "как у департамента"), describeSlot(input.deadline, "как у департамента"));
+    }
+    if (!same(before.meeting, input.meeting)) {
+      await audit(tx, actor, "team.rhythm", "team", teamId, `Встреча команды: ${team.name}`, describeSlot(before.meeting, "как у департамента"), describeSlot(input.meeting, "как у департамента"));
+    }
+    if (before.specialists !== input.specialists) {
+      await audit(tx, actor, "team.rhythm", "team", teamId, `Weekly специалистов: ${team.name}`, before.specialists ? "сдают" : "не сдают", input.specialists ? "сдают" : "не сдают");
+    }
+  });
 }

@@ -52,3 +52,7 @@ export async function updateUnitAction(id: string, input: org.UnitInput): Promis
 export async function createUnitAction(input: { name: string; kind: UnitKind; parent?: string | null }): Promise<Result<{ id: string }>> {
   return done(await runAction("Новое подразделение", (a) => org.createUnit(a, input)));
 }
+
+export async function setTeamRhythmAction(team: string, input: org.RhythmInput): Promise<Result<void>> {
+  return done(await runAction("Ритм команды", (a) => org.setTeamRhythm(a, String(team), input)));
+}

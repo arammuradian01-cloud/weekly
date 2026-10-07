@@ -105,3 +105,14 @@ export function lastMailTo(to: string): { to: string; subject: string; text: str
 export function linkFrom(text: string): string {
   return text.split("\n").find((line) => line.startsWith("http"))!;
 }
+
+/** Вход по личной ссылке из консоли сервера (этап 14): у сотрудников нет общего логина */
+export async function enterByLink(page: Page, slug: string) {
+  const out = execSync(`npx tsx scripts/login-link.ts ${slug}`, {
+    env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, APP_URL: "http://localhost:3100" },
+  }).toString();
+  const link = out.split("\n").find((l) => l.startsWith("http"))!;
+  await page.goto(link);
+  await page.getByRole("button", { name: /Войти как/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+}

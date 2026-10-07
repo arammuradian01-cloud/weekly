@@ -6,6 +6,9 @@ import { currentActor } from "@/lib/action-runner";
 import { PageHeader } from "@/components/page-header";
 import { StructureScreen } from "@/components/structure/structure-screen";
 import { TOP_TEAM } from "@/domain/teams";
+import { loadScope } from "@/lib/org/scope";
+import { subjectOf } from "@/lib/org/current";
+import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Структура" };
 
@@ -16,10 +19,12 @@ export default async function StructurePage() {
   const view = await structureView({ id: ctx.person.id, role: ctx.person.role }, { includeInactive: owner });
   const leadsTeam = view.teams.some((t) => t.id !== TOP_TEAM && t.leader?.slug === ctx.person.slug);
   const candidates = owner || leadsTeam ? await memberCandidates(await currentActor()) : [];
+  // Ритм weekly задают руководители своих команд и команд ниже (этап 15)
+  const scope = await loadScope(prisma, subjectOf(ctx));
   return (
     <>
       <PageHeader title="Структура" description="Подразделения департамента и команды руководителей: кто с кем работает каждую неделю" />
-      <StructureScreen view={view} owner={owner} me={ctx.person.slug} candidates={candidates} />
+      <StructureScreen view={view} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} />
     </>
   );
 }

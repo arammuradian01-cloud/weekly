@@ -103,6 +103,7 @@ describe("загрузка структуры", () => {
   });
 
   it("загрузка: подразделения, сотрудники, руководители и команды руководителей подразделений с участниками", async () => {
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? 0n;
     const r = await org.applyStructure(await actors.owner(), STRUCTURE);
     expect(r.added).toBe(6);
     expect(r.vacancies).toBe(1);
@@ -132,7 +133,7 @@ describe("загрузка структуры", () => {
     const top = await prisma.team.findUniqueOrThrow({ where: { id: TOP_TEAM }, include: { members: { include: { person: true } } } });
     expect(top.members.some((m) => m.person.slug === "reva")).toBe(true);
     expect(top.members.some((m) => m.person.fullName.startsWith("Антонов"))).toBe(false);
-    expect(await prisma.auditLog.count({ where: { action: "structure.import" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: "structure.import", id: { gt: mark } } })).toBe(1);
   });
 
   it("повторная загрузка того же файла ничего не дублирует и ручной состав команды не трогает", async () => {
