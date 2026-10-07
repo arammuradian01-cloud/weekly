@@ -25,6 +25,9 @@ const text = (v: unknown) => (v === null || v === undefined ? "" : typeof v === 
 
 type Col = { header: string; width: number; date?: "day" | "time" };
 
+/** Итоги обещаний (этап 22) */
+const PROMISE_LABEL: Record<string, string> = { DONE: "Сделано", PARTIAL: "Частично", NOT_DONE: "Не сделано", DROPPED: "Снято" };
+
 function sheet(wb: ExcelJS.Workbook, name: string, cols: Col[], rows: unknown[][]) {
   const ws = wb.addWorksheet(name, { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = cols.map((c) => ({ header: c.header, width: c.width, style: c.date ? { numFmt: c.date === "day" ? "dd.mm.yyyy" : "dd.mm.yyyy hh:mm" } : { alignment: { wrapText: false } } }));
@@ -44,7 +47,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
     prisma.week.findMany({ orderBy: { start: "asc" }, include: { closedBy: { select: { fullName: true } } } }),
     prisma.weeklyReport.findMany({ include: { week: true, author: true }, orderBy: [{ week: { start: "asc" } }] }),
     prisma.weeklyEntry.findMany({
-      include: { week: true, author: true, direction: true, block: true, type: true, tasks: { select: { number: true } } },
+      include: { week: true, author: true, direction: true, block: true, type: true, tasks: { select: { number: true } }, promiseReview: true, carriedFrom: { select: { id: true } } },
       orderBy: [{ week: { start: "asc" } }, { sortOrder: "asc" }],
     }),
     prisma.ceoReport.findMany({ include: { week: true, updatedBy: { select: { fullName: true } } }, orderBy: { week: { start: "asc" } } }),
@@ -173,6 +176,8 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       { header: "Ссылки", width: 40 },
       { header: "В отчёт CEO", width: 10 },
       { header: "Задача", width: 8 },
+      { header: "Итог обещания", width: 40 },
+      { header: "Перенесено из прошлой недели", width: 12 },
     ],
     entries.map((e) => [
       e.week.isoNumber,
@@ -190,6 +195,8 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       (Array.isArray(e.links) ? (e.links as { title?: string; url?: string }[]) : []).map((l) => (l.title ? `${l.title}: ${l.url}` : l.url)).join("\n"),
       yes(e.ceo),
       e.tasks[0]?.number ?? "",
+      e.promiseReview ? `${PROMISE_LABEL[e.promiseReview.result]}${e.promiseReview.note ? `. ${e.promiseReview.note}` : ""}` : "",
+      yes(!!e.carriedFrom),
     ]),
   );
 

@@ -17,6 +17,7 @@ const TONE: Record<StatusCode, string> = {
   "in-progress": "bg-blue",
   clarify: "bg-amber",
   done: "bg-green",
+  partial: "bg-orange",
   failed: "bg-danger",
   cancelled: "bg-line",
 };

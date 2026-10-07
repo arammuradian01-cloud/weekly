@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/field";
 import { PersonSelect } from "@/components/requests/request-parts";
 import { cn } from "@/lib/cn";
+import { isClosed } from "@/lib/tasks/rules";
 import { useTaskPermissions } from "./task-fields";
 import { teamOf, teamPeople } from "@/domain/teams";
 
@@ -31,7 +32,7 @@ function teamPeopleOf(id: string): PersonSlug[] | undefined {
 type Links = { waitsFor: TaskLinkView[]; blocks: TaskLinkView[]; canEdit: boolean };
 
 function LinkRow({ t, onRemove, kind }: { t: TaskLinkView; onRemove?: () => void; kind: "waits" | "blocks" }) {
-  const closed = t.status === "done" || t.status === "failed" || t.status === "cancelled";
+  const closed = isClosed(t);
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
       <div className="min-w-0">

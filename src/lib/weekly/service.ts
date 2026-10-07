@@ -1,4 +1,4 @@
-// Weekly на сервере (раздел 3 ТЗ): недели, сдача в три шага, черновик на сервере, лента, отчёт CEO.
+// Weekly на сервере (раздел 3 ТЗ): недели, сдача в четыре шага, черновик на сервере, лента, отчёт CEO.
 // Права проверяются здесь же: экран только прячет то, что нельзя.
 
 import { prisma } from "@/lib/db";
@@ -78,7 +78,7 @@ function weekInfo(row: WeekRow, reporting: WeekKey): WeekInfo {
   };
 }
 
-const entryInclude = {
+export const entryInclude = {
   week: { select: { start: true } },
   author: { select: { slug: true } },
   direction: { select: { code: true, label: true } },
@@ -91,9 +91,9 @@ const entryInclude = {
   reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } },
 } satisfies Prisma.WeeklyEntryInclude;
 
-type EntryRow = Prisma.WeeklyEntryGetPayload<{ include: typeof entryInclude }>;
+export type EntryRow = Prisma.WeeklyEntryGetPayload<{ include: typeof entryInclude }>;
 
-function toEntryDto(e: EntryRow): WeeklyEntry {
+export function toEntryDto(e: EntryRow): WeeklyEntry {
   return {
     id: e.id,
     week: isoFromDbDate(e.week.start),
@@ -116,7 +116,7 @@ function toEntryDto(e: EntryRow): WeeklyEntry {
   };
 }
 
-const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft", SUBMITTED: "submitted", LATE: "late" };
+export const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft", SUBMITTED: "submitted", LATE: "late" };
 
 // ---------- Чтение ----------
 
@@ -322,7 +322,7 @@ function checkLinks(links: unknown): Link[] {
   });
 }
 
-async function audit(db: Tx, actor: Actor, action: string, entity: string, entityId: string, field: string, before?: string | null, after?: string | null) {
+export async function audit(db: Tx, actor: Actor, action: string, entity: string, entityId: string, field: string, before?: string | null, after?: string | null) {
   await db.auditLog.create({
     data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
   });
@@ -332,7 +332,7 @@ async function audit(db: Tx, actor: Actor, action: string, entity: string, entit
  * Неделя для правки weekly. author: чей weekly правят. Неделя закрыта для него, если её закрыл администратор
  * или все команды, которые ждут его weekly (этап 15). Общие записи без автора закрываются только с неделей департамента
  */
-async function weekContext(tx: Tx, key: WeekKey, authorId?: string | null) {
+export async function weekContext(tx: Tx, key: WeekKey, authorId?: string | null) {
   const reporting = await currentReportingKey();
   const row = await ensureWeek(tx, key);
   const info = weekInfo(row, reporting);
@@ -343,7 +343,7 @@ async function weekContext(tx: Tx, key: WeekKey, authorId?: string | null) {
   return { row, info, reporting };
 }
 
-function canEdit(info: WeekInfo, reporting: WeekKey, actor: Actor, author: PersonSlug | null): void {
+export function canEdit(info: WeekInfo, reporting: WeekKey, actor: Actor, author: PersonSlug | null): void {
   if (canEditWeekly(info, reporting, viewerOf(actor), author)) return;
   if (actor.role === "OBSERVER") fail("Наблюдатель weekly не пишет");
   if (info.closed) fail(`Неделя ${info.number} закрыта: записи правят только владелец и администраторы`);
@@ -514,6 +514,8 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
         comments: { include: { reactions: true } },
         reactions: true,
         watches: { select: { personId: true } },
+        promiseReview: { select: { id: true } },
+        carriedFrom: { select: { id: true } },
       },
     });
     if (!existing) return fail("Запись уже удалена");
@@ -553,6 +555,8 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
         createdAt: r.createdAt.toISOString(),
       })),
       watchers: existing.watches.map((w) => w.personId),
+      promiseReviewId: existing.promiseReview?.id ?? null,
+      carriedFromReviewId: existing.carriedFrom?.id ?? null,
     };
     await tx.weeklyEntry.delete({ where: { id } });
     await audit(tx, actor, "weekly.entry.delete", "weekly-entry", id, "Запись weekly удалена", existing.what, null);
@@ -602,6 +606,13 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
     }
     if (snapshot.requestIds?.length) {
       await tx.$executeRaw`UPDATE help_requests SET "entryId" = ${snapshot.id} WHERE id = ANY(${snapshot.requestIds}::text[]) AND "entryId" IS NULL`;
+    }
+    // Итог обещания возвращается к записи, перенесённый план к своему итогу (этап 22), если их за это время не заняли
+    if (snapshot.promiseReviewId) {
+      await tx.$executeRaw`UPDATE promise_reviews SET "entryId" = ${snapshot.id} WHERE id = ${snapshot.promiseReviewId} AND "entryId" IS NULL`;
+    }
+    if (snapshot.carriedFromReviewId) {
+      await tx.$executeRaw`UPDATE promise_reviews SET "carriedId" = ${snapshot.id} WHERE id = ${snapshot.carriedFromReviewId} AND "carriedId" IS NULL AND result IN ('PARTIAL', 'NOT_DONE')`;
     }
     // Отметки «наверх» возвращаются вместе с записью, кроме тех, чьих людей за это время удалили
     const promotions = snapshot.promotions ?? [];

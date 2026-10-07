@@ -442,8 +442,8 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       resolution = required(
         note,
         LIMITS.note,
-        need === "result" ? "Нужен короткий итог или ссылка на результат" : "Без причины так закрыть задачу нельзя",
-        need === "result" ? "Итог" : "Причина",
+        need === "result" ? "Нужен короткий итог или ссылка на результат" : need === "partial" ? "Напишите, что сделано и что нет" : "Без причины так закрыть задачу нельзя",
+        need === "reason" ? "Причина" : "Итог",
       );
     }
     const closing = CLOSED_DB.includes(db);

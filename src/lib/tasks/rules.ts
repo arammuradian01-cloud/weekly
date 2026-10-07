@@ -2,7 +2,7 @@
 
 import { TOP_TEAM } from "@/domain/teams";
 import { addDays, diffDays, weekOf, fromCalendar, type IsoDate } from "@/domain/dates";
-import { OPEN_STATUSES, priorityOf, type StatusCode } from "@/domain/dictionaries";
+import { CLOSED_STATUSES, OPEN_STATUSES, priorityOf, type StatusCode } from "@/domain/dictionaries";
 import type { PersonSlug, Role, Task } from "@/domain/types";
 
 /** Просрочена: срок прошёл, а статус «В работе» или «Требует уточнений» */
@@ -46,8 +46,8 @@ export function isOpen(task: Task): boolean {
   return OPEN_STATUSES.includes(task.status) || task.status === "proposed";
 }
 
-export function isClosed(task: Task): boolean {
-  return task.status === "done" || task.status === "failed" || task.status === "cancelled";
+export function isClosed(task: Pick<Task, "status">): boolean {
+  return CLOSED_STATUSES.includes(task.status);
 }
 
 /** Срок на этой неделе, с понедельника по воскресенье */
@@ -156,7 +156,7 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
     comment: true,
     archive: v.management === "OWNER",
     confirm: manage || addressee,
-    handover: !proposed && !["done", "failed", "cancelled"].includes(task.status) && (manage || directOwner),
+    handover: !proposed && !CLOSED_STATUSES.includes(task.status) && (manage || directOwner),
   };
 }
 
@@ -192,14 +192,15 @@ export function defaultOrder(tasks: Task[], today: IsoDate): Task[] {
 }
 
 /** Для каких переходов нужен текст: причина или итог */
-export function statusNeedsNote(next: StatusCode): "result" | "reason" | null {
+export function statusNeedsNote(next: StatusCode): "result" | "partial" | "reason" | null {
   if (next === "done") return "result";
+  if (next === "partial") return "partial";
   if (next === "failed" || next === "cancelled") return "reason";
   return null;
 }
 
 /** Задачи, которые эта ждёт и которые не успеют к её сроку (этап 21): открыты, а их срок позже */
 export function lateWaits(task: Pick<Task, "waitsFor" | "due" | "status">): number[] {
-  if (task.status === "done" || task.status === "failed" || task.status === "cancelled") return [];
+  if (isClosed(task)) return [];
   return (task.waitsFor ?? []).filter((w) => !w.closed && w.due > task.due).map((w) => w.number);
 }

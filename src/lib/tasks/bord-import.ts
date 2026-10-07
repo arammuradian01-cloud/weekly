@@ -5,7 +5,8 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
-import { isOverdue, overdueDays } from "./rules";
+import { isClosed, isOverdue, overdueDays } from "./rules";
+import { CLOSED_DB } from "./codes";
 import { dbDate, isoFromDbDate, isoFromRuDate } from "./dates";
 import { taskInclude, toTaskDto } from "./dto";
 
@@ -20,6 +21,7 @@ export const STATUS_FROM_TABLE: Record<string, TaskStatus> = {
   "В работе": "IN_PROGRESS",
   "Требует уточнений": "CLARIFY",
   "Выполнена": "DONE",
+  "Выполнена частично": "PARTIAL",
   "Не выполнена": "FAILED",
   "Отменена": "CANCELLED",
   // Статус «Перенесена» заменён счётчиком переносов: «В работе» и один перенос (решение 04.10.2026)
@@ -33,6 +35,7 @@ export const STATUS_TO_TABLE: Record<TaskStatus, string> = {
   IN_PROGRESS: "В работе",
   CLARIFY: "Требует уточнений",
   DONE: "Выполнена",
+  PARTIAL: "Выполнена частично",
   FAILED: "Не выполнена",
   CANCELLED: "Отменена",
 };
@@ -196,7 +199,7 @@ export async function importBordTasks(db: PrismaClient, text: string, opts: Impo
       const person = r.owner === ALL_LEADERS ? null : byName.get(r.owner)!;
       const status = STATUS_FROM_TABLE[r.status]!;
       const moved = r.status === "Перенесена";
-      const closed = status === "DONE" || status === "FAILED" || status === "CANCELLED";
+      const closed = CLOSED_DB.includes(status);
       const at = (iso: IsoDate) => moscowDateTime({ year: +iso.slice(0, 4), month: +iso.slice(5, 7), day: +iso.slice(8, 10) });
       const whereUpdated = whereUpdatedFrom(r.comment, r.meeting);
       const data: Prisma.TaskUncheckedCreateInput = {
@@ -256,7 +259,7 @@ export type ReconcileReport = { checked: number; diffs: Diff[]; notInTable: numb
 
 /** «Статус просроченности» так, как его считает таблица, но по правилам ресурса */
 export function overdueText(task: Parameters<typeof isOverdue>[0], asOf: IsoDate): string {
-  if (task.status === "done" || task.status === "failed" || task.status === "cancelled") return "Закрыта";
+  if (isClosed(task)) return "Закрыта";
   if (isOverdue(task, asOf)) return `Просрочена на ${overdueDays(task, asOf)} дн.`;
   return "В сроке";
 }

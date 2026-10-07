@@ -39,21 +39,25 @@ async function journal(tx: Tx, actor: Who, rows: { number: number; before: strin
   });
 }
 
-export type TaskOutcome = "DONE" | "FAILED" | "CANCELLED";
+export type TaskOutcome = "DONE" | "PARTIAL" | "FAILED" | "CANCELLED";
 
 /**
- * Задачу закрыли: открытые и принятые просьбы, из которых она сделана, закрываются вместе с ней. Выполнена:
- * просьба выполнена. Не выполнена или отменена: просьба отклонена с той же причиной. Автору событие
+ * Задачу закрыли: открытые и принятые просьбы, из которых она сделана, закрываются вместе с ней. Выполнена, в том
+ * числе частично: просьба выполнена. Не выполнена или отменена: просьба отклонена с той же причиной. Автору событие
  */
 export async function finishRequestsOfTask(tx: Tx, task: { id: string; number: number }, outcome: TaskOutcome, resolution: string | null, actor: Who, now = new Date()): Promise<number> {
   await lockOf(tx, task.id);
   const rows = await tx.helpRequest.findMany({ where: { resultTaskId: task.id, status: { in: ["OPEN", "ACCEPTED"] } }, select: { id: true, number: true, authorId: true, status: true } });
   if (!rows.length) return 0;
-  const done = outcome === "DONE";
-  const answer = done ? `${answerPrefix(task.number)}выполнена` : `${answerPrefix(task.number)}${outcome === "FAILED" ? "не выполнена" : "отменена"}${resolution ? `: ${resolution}` : ""}`.slice(0, 500);
+  const done = outcome === "DONE" || outcome === "PARTIAL";
+  const answer = (
+    outcome === "DONE"
+      ? `${answerPrefix(task.number)}выполнена`
+      : `${answerPrefix(task.number)}${outcome === "PARTIAL" ? "выполнена частично" : outcome === "FAILED" ? "не выполнена" : "отменена"}${resolution ? `: ${resolution}` : ""}`
+  ).slice(0, 500);
   await tx.helpRequest.updateMany({ where: { id: { in: rows.map((r) => r.id) }, status: { in: ["OPEN", "ACCEPTED"] } }, data: { status: done ? "DONE" : "DECLINED", answer, closedAt: now } });
   for (const r of rows) {
-    const text = done ? `Просьба выполнена: задача ${task.number} закрыта` : `Просьба не выполнена: ${answer}`;
+    const text = outcome === "DONE" ? `Просьба выполнена: задача ${task.number} закрыта` : done ? `Просьба выполнена частично: ${answer}` : `Просьба не выполнена: ${answer}`;
     await notify(tx, { kind: "REQUEST_ANSWER", recipients: [r.authorId], actor, subject: requestSubject(r.number), text, requestId: r.id }, now);
   }
   await journal(tx, actor, rows.map((r) => ({ number: r.number, before: r.status === "OPEN" ? "Ждёт ответа" : "Принята" })), done ? "request.done" : "request.decline", "Состояние", `${done ? "Выполнена" : "Отклонена"}. ${answer}`);

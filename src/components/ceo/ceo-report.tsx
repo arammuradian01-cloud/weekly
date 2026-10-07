@@ -6,7 +6,9 @@ import { ClipboardCopy, RefreshCw, Save } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong } from "@/domain/dates";
-import type { WeekView } from "@/domain/types";
+import type { PersonSlug, WeekView } from "@/domain/types";
+import { compactName } from "@/domain/people";
+import { promiseShare, summaryText, type PromiseSummary } from "@/lib/weekly/promises";
 import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
 import type { CeoReportView } from "@/lib/weekly/service";
 import { saveCeoReportAction } from "@/app/(app)/weekly/actions";
@@ -14,6 +16,15 @@ import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/primitives";
 import { WeekSwitcher } from "@/components/weekly/weekly-feed";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
+
+type Promises = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary };
+
+/** «Сделано 7 из 10 (70%). Снято 1» */
+function promiseLine(s: PromiseSummary): string {
+  const share = promiseShare(s);
+  const text = summaryText(s);
+  return share === null ? text : text.replace(/^(Сделано \d+ из \d+)/, `$1 (${share}%)`);
+}
 
 type History = { key: string; number: number; flagged: number; meeting: string; savedBy?: string; savedAt?: string }[];
 
@@ -26,7 +37,7 @@ function moment(iso: string): string {
 }
 
 /** Черновик отчёта CEO (раздел 3 ТЗ): видят только владелец и администраторы, в таблицу он не выгружается */
-export function CeoReport({ view, saved, history }: { view: WeekView; saved: CeoReportView; history: History }) {
+export function CeoReport({ view, saved, history, promises }: { view: WeekView; saved: CeoReportView; history: History; promises?: Promises }) {
   const { notify } = usePrototype();
   const run = useRunWeekly();
   const week = view.week;
@@ -45,6 +56,7 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
     "Цифры недели",
     "Появятся после подключения недельного отчёта.",
     "",
+    ...(promises?.total.total ? ["Обещания недели", promiseLine(promises.total), ""] : []),
     "Главное за неделю",
     sections.main || "-",
     "",
@@ -115,6 +127,28 @@ export function CeoReport({ view, saved, history }: { view: WeekView; saved: Ceo
         <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
           <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
           <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта (этап 10). Руками факт никто не вводит.</p>
+        </section>
+
+        <section aria-labelledby="ceo-promises" className="rounded-xl px-5 py-4 ring-1 ring-line">
+          <h2 id="ceo-promises" className="text-title-sm font-semibold text-ink">Обещания недели</h2>
+          {promises?.total.total ? (
+            <>
+              <p className="mt-1 text-body text-ink">{promiseLine(promises.total)}</p>
+              <ul className="mt-3 flex flex-col gap-1">
+                {promises.people.map((p) => (
+                  <li key={p.slug} className="flex flex-col text-small sm:flex-row sm:gap-2">
+                    <span className="font-medium text-ink sm:w-40 sm:shrink-0">{compactName(p.slug)}</span>
+                    <span className="text-muted">{promiseLine(p.summary)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-caption text-muted">
+                Планы из прошлого weekly и задачи со сроком на этой неделе. Итог плана ставит лидер при сдаче weekly, итог задачи это её статус. Доля считается от обещаний с итогом, снятые не считаются.
+              </p>
+            </>
+          ) : (
+            <p className="mt-1 text-body text-muted">Обещаний на эту неделю не было: в прошлом weekly нет планов, задач со сроком на неделе нет.</p>
+          )}
         </section>
 
         <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={6} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />

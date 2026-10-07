@@ -50,6 +50,7 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);
   }
   if (weekly) {
+    await client.query("DELETE FROM promise_reviews");
     await client.query("DELETE FROM weekly_entries");
     await client.query("DELETE FROM weekly_reports");
     await client.query("DELETE FROM ceo_reports");

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ListPlus } from "lucide-react";
+import { ListPlus, Plus, X } from "lucide-react";
 import { dictOptions, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
-import type { WeeklyEntry } from "@/domain/types";
+import type { Link, WeeklyEntry } from "@/domain/types";
 import { saveEntryAction, type Result } from "@/app/(app)/weekly/actions";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,23 @@ import { MentionArea } from "@/components/discuss/mention-area";
 import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
+}
+
 /** Запись ещё не на сервере: такой id выдаёт экран до первого сохранения */
 export const isLocalId = (id: string) => id.startsWith("new-");
 
-function toInput(e: WeeklyEntry, needHelp: boolean, link: string) {
+/** Больше ссылок в записи не нужно: сервер оставит первые десять */
+const LINKS_MAX = 10;
+
+type LinkDraft = { title: string; url: string };
+
+function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[]) {
   return {
     id: isLocalId(e.id) ? undefined : e.id,
     week: e.week,
@@ -29,7 +42,8 @@ function toInput(e: WeeklyEntry, needHelp: boolean, link: string) {
     fact: e.fact,
     next: e.next,
     help: needHelp ? e.help : undefined,
-    links: link.trim() ? [{ title: e.links[0]?.url === link.trim() ? e.links[0]!.title : "", url: link.trim() }] : [],
+    // Пустые строки не отправляем. Без названия сервер подпишет ссылку адресом сайта
+    links: links.filter((l) => l.url.trim()).map((l) => ({ title: l.title.trim(), url: l.url.trim() })) as Link[],
   };
 }
 
@@ -53,15 +67,18 @@ export function EntryForm({
   const { notify } = usePrototype();
   const [e, setE] = useState<WeeklyEntry>(initial);
   const [needHelp, setNeedHelp] = useState(!!initial.help);
-  const [link, setLink] = useState(initial.links[0]?.url ?? "");
+  // Название по умолчанию это адрес сайта: такое название в поле не показываем, чтобы не мешало
+  const [links, setLinks] = useState<LinkDraft[]>(() =>
+    initial.links.length ? initial.links.map((l) => ({ url: l.url, title: hostOf(l.url) === l.title ? "" : l.title })) : [{ title: "", url: "" }],
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [autoState, setAutoState] = useState<"idle" | "saving" | "saved">("idle");
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
-  const latest = useRef({ e, needHelp, link });
-  latest.current = { e, needHelp, link };
+  const latest = useRef({ e, needHelp, links });
+  latest.current = { e, needHelp, links };
 
   // Задачу по записи поставили в диалоге: номер появляется здесь же, без перехода в список задач
   useEffect(() => {
@@ -76,6 +93,15 @@ export function EntryForm({
     return () => window.removeEventListener(TASK_FROM_ENTRY_EVENT, onTask);
   }, [onAutosaved]);
 
+  const setLink = (i: number, patch: Partial<LinkDraft>) => {
+    dirty.current = true;
+    setLinks((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  };
+  const removeLink = (i: number) => {
+    dirty.current = true;
+    setLinks((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [{ title: "", url: "" }]));
+  };
+
   const set = <K extends keyof WeeklyEntry>(key: K, value: WeeklyEntry[K]) => {
     dirty.current = true;
     setE((prev) => ({ ...prev, [key]: value }));
@@ -84,7 +110,7 @@ export function EntryForm({
   /** Сохранить на сервере, что есть сейчас. id новой записи запоминаем, чтобы следующее сохранение её правило */
   const persist = async (): Promise<Result<WeeklyEntry>> => {
     if (inFlight.current) await inFlight.current.catch(() => undefined);
-    const { e: cur, needHelp: nh, link: ln } = latest.current;
+    const { e: cur, needHelp: nh, links: ln } = latest.current;
     const call = saveEntryAction(toInput(cur, nh, ln));
     inFlight.current = call;
     const result = await call;
@@ -118,7 +144,7 @@ export function EntryForm({
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e, needHelp, link]);
+  }, [e, needHelp, links]);
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -214,17 +240,43 @@ export function EntryForm({
           </div>
         ) : null}
       </div>
-      <TextInput
-        label="Ссылка на артефакт"
-        id={`${initial.id}-link`}
-        type="url"
-        value={link}
-        onChange={(ev) => {
-          dirty.current = true;
-          setLink(ev.target.value);
-        }}
-        placeholder="https://"
-      />
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-1.5 text-sm font-medium text-ink">Ссылки на артефакты</legend>
+        {links.map((l, i) => (
+          <div key={i} className="grid gap-2 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_auto] sm:items-end">
+            <TextInput
+              label={i === 0 ? "Ссылка на артефакт" : `Ссылка ${i + 1}`}
+              id={`${initial.id}-link${i ? `-${i}` : ""}`}
+              type="url"
+              value={l.url}
+              onChange={(ev) => setLink(i, { url: ev.target.value })}
+              placeholder="https://"
+            />
+            <TextInput label="Название, если нужно" id={`${initial.id}-link-title-${i}`} value={l.title} onChange={(ev) => setLink(i, { title: ev.target.value })} maxLength={WEEKLY_LIMITS.linkTitle} />
+            {links.length > 1 || l.url ? (
+              <Button type="button" variant="ghost" size="sm" className="h-11 self-end" onClick={() => removeLink(i)} aria-label={`Убрать ссылку ${i + 1}`}>
+                <X className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
+        ))}
+        {links.length < LINKS_MAX ? (
+          <div>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                dirty.current = true;
+                setLinks((prev) => [...prev, { title: "", url: "" }]);
+              }}
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Ещё ссылка
+            </Button>
+          </div>
+        ) : null}
+      </fieldset>
       {error ? (
         <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
           {error}
