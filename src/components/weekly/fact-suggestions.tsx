@@ -49,7 +49,7 @@ export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: Week
   };
 
   return (
-    <section aria-labelledby="facts-title" className="flex flex-col gap-3 rounded-xl bg-surface p-4 sm:p-5">
+    <section aria-labelledby="facts-title" className="flex flex-col gap-3 rounded-xl bg-field p-4 sm:p-5">
       <div>
         <h3 id="facts-title" className="text-lead font-semibold text-ink">
           Из фактов недели <span className="font-normal text-muted">{facts.length}</span>
@@ -58,7 +58,7 @@ export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: Week
       </div>
       <ul className="flex flex-col gap-2">
         {facts.map((f) => (
-          <li key={f.key} className="flex flex-col gap-2 rounded-lg bg-white px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
+          <li key={f.key} className="flex flex-col gap-2 rounded-lg bg-surface px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <p className="flex flex-wrap items-center gap-2">
                 <Badge tone={f.kind === "closed" ? "green" : f.kind === "request" ? "blue" : "orange"}>{FACT_LABELS[f.kind]}</Badge>

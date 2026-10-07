@@ -18,8 +18,16 @@
   --color-border: #DADDE2;          /* сайт D15: разделители, рамки карточек */
   --color-border-strong: #B3BAC3;   /* сайт D20: кнопки с обводкой */
   --color-field-border: var(--color-icon);
-  /* Бренд и акцент */
-  --color-brand-dark: #002A3A;      /* сайт B300: боковое меню, тёмная кнопка, текст на зелёном */
+  /* Бренд и акцент. Основные цвета брендбука (стр. 11): #0DD149, #00AFFF, #002A3A, #FFFFFF; чёрного в палитре нет */
+  --color-brand-green: #0DD149;     /* брендбук, основной зелёный */
+  --color-brand-blue: #00AFFF;      /* брендбук, основной голубой */
+  --color-brand-beige: #F6F5F4;     /* брендбук, светлый бежевый, фон страницы */
+  --color-brand-beige-deep: #E6E1DC; /* брендбук, бежевый: подложки, пустые состояния, разделение зон */
+  --color-brand-green-bright: #00FF00; /* брендбук, доп. оттенок знака: только иллюстрации и графика, не UI */
+  --color-brand-green-deep: #00C800;   /* брендбук, доп. оттенок знака */
+  --color-brand-cyan: #19E1F0;         /* брендбук, доп. оттенок знака */
+  --color-brand-cyan-deep: #18CEF2;    /* брендбук, доп. оттенок знака */
+  --color-brand-dark: #002A3A;      /* сайт B300, брендбук «глубокий синий вместо чёрного»: боковое меню, тёмная кнопка, текст на зелёном */
   --color-brand-dark-hover: #0B3C4F;
   --color-brand-dark-active: #06303F;
   --color-accent: #00AFFF;          /* сайт B100: выбранное, активная вкладка, заливка чекбокса. Не для текста на белом */
@@ -123,6 +131,8 @@
   --color-info-dot: #CECBFF;
   --color-neutral-dot: #78808C;
   --color-row-hover: #1D242B;       /* своё */
+  --color-brand-beige: #171D23;
+  --color-brand-beige-deep: #2B2E33;
   --color-sidebar-bg: #0E1419;      /* своё: тёмно-синий в тёмной теме сливается с фоном, берём ступень выше поверхности */
   --color-avatar-1-bg: #10384D; --color-avatar-1-text: #BDE6FA;
   --color-avatar-2-bg: #1D3E28; --color-avatar-2-text: #9EEDB6;

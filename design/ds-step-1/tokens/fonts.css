@@ -1,3 +1,7 @@
-/* Open Sans и Golos Text с Google Fonts. Aeroport Bold это шрифт сайта Сравни: файл запрашивается у бренд-команды,
-   после получения сюда добавляется @font-face для "Aeroport" с весом 700, остальное менять не нужно. */
+/* Open Sans и Golos Text с Google Fonts. Aeroport (brownfox, лицензия у бренд-команды) это фирменная гарнитура Сравни.
+   После получения файлов раскомментировать @font-face ниже, положив файлы в assets/fonts/. Остальное менять не нужно.
+@font-face { font-family: "Aeroport"; font-weight: 400; src: url("../assets/fonts/Aeroport-Regular.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Aeroport"; font-weight: 500; src: url("../assets/fonts/Aeroport-Medium.woff2") format("woff2"); font-display: swap; }
+@font-face { font-family: "Aeroport"; font-weight: 700; src: url("../assets/fonts/Aeroport-Bold.woff2") format("woff2"); font-display: swap; }
+*/
 @import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&family=Golos+Text:wght@600;700&display=swap");

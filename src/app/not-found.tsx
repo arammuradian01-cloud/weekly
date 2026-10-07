@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: "Страница не найдена
 /** Чужой или устаревший адрес: говорим, что случилось, и ведём на стартовую страницу */
 export default function NotFound() {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-surface px-4 py-10">
-      <div className="w-full max-w-[440px] rounded-xl bg-white p-6 ring-1 ring-line sm:p-8">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-field px-4 py-10">
+      <div className="w-full max-w-[440px] rounded-xl bg-surface p-6 ring-1 ring-line sm:p-8">
         <Wordmark tone="light" />
         <h1 className="mt-6 text-headline font-semibold leading-tight text-ink">Такой страницы нет</h1>
         <p className="mt-2 text-body text-muted">

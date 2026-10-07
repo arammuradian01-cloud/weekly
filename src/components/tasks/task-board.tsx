@@ -61,7 +61,7 @@ function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string
       <div
         ref={setNodeRef}
         className={cn(
-          "select-none rounded-lg border bg-white p-3 transition-shadow",
+          "select-none rounded-lg border bg-surface p-3 transition-shadow",
           overdue ? "border-l-4 border-danger-line border-l-danger bg-danger-soft" : "border-line",
           canMove && "cursor-grab active:cursor-grabbing",
           isDragging && "opacity-40",
@@ -89,7 +89,7 @@ function Column({ status, tasks, children }: { status: StatusCode; tasks: Task[]
     <section
       ref={setNodeRef}
       aria-label={`${STATUSES.find((s) => s.code === status)!.label}: ${tasks.length}`}
-      className={cn("flex w-[280px] shrink-0 snap-start flex-col rounded-xl bg-surface p-2 transition-colors xl:w-auto xl:min-w-[240px] xl:flex-1", isOver && "bg-blue-soft ring-2 ring-blue")}
+      className={cn("flex w-[280px] shrink-0 snap-start flex-col rounded-xl bg-field p-2 transition-colors xl:w-auto xl:min-w-[240px] xl:flex-1", isOver && "bg-blue-soft ring-2 ring-blue")}
     >
       <header className="flex items-center justify-between px-1.5 pb-2 pt-1">
         <StatusBadge status={status} />
@@ -158,7 +158,7 @@ export function TaskBoard() {
         </div>
         <DragOverlay>
           {active ? (
-            <div className="w-[264px] rotate-2 rounded-lg border border-line bg-white p-3 shadow-drag">
+            <div className="w-[264px] rotate-2 rounded-lg border border-line bg-surface p-3 shadow-drag">
               <CardBody task={active} today={data.today} />
             </div>
           ) : null}

@@ -13,6 +13,11 @@
 - `guidelines/zapiska.md`: принятые решения и открытые вопросы. `readme.md`, `SKILL.md`: правила использования.
 - `index.html`: обзор всей системы.
 
+## Источники стиля
+- Брендбук «Руководство по фирменному стилю» (Digital guide 2021): основные цвета, Aeroport, логоблок, радиусы кнопок. Текстовая выжимка: `guidelines/brandbook-text.txt`, разбор: `guidelines/brandbook.card.html` и раздел в `guidelines/zapiska.md`.
+- CSS sravni.ru (06.10.2026): статусные цвета, тёмная тема, тени, движение.
+- Скриншоты стенда Weekly (07.10.2026): структура экранов, компоненты «Тестовый стенд», TeamTable, DeadlineRow.
+
 ## Как переносить в код
 1. Скопировать `tokens/` и подключить переменные; класс темы: атрибут `data-theme="dark"` на `html`.
 2. Иконки: Lucide, размер 20, обводка 1,5 (`components/core/Icon.jsx`).

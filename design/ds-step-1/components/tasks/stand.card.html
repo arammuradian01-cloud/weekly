@@ -1,0 +1,49 @@
+<!-- @dsCard group="Tasks" viewport="1700x760" name="Со стенда: «Мне» и «Команда»" subtitle="Полоса «Тестовый стенд», раздел «Сроки» строками с пилюлей просрочки, таблица команды с итогом; воспроизводят экраны стенда 04 и 29 в новых токенах" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../guidelines/card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/system/StandBanner.jsx', 'components/tasks/DeadlineRow.jsx', 'components/tasks/TeamTable.jsx', 'components/layout/PageHeader.jsx', 'components/core/Button.jsx', 'components/system/EmptyState.jsx'], function (C) {
+  var rows = [
+    { id: 1, name: 'Мурадян Арам', role: 'Владелец, Департамент целиком', total: 9, inWork: 8, overdue: 4, stale: 1 },
+    { id: 2, name: 'Головкин Владислав', role: 'Администратор, Департамент, ОСАГО', total: 1, inWork: 1 },
+    { id: 3, name: 'Рева Тарас', you: true, role: 'Лидер, Продукт и CJM по всем линиям', total: 10, inWork: 10, overdue: 8, stale: 3, weekly: 'draft' },
+    { id: 4, name: 'Логинова Светлана', role: 'Лидер, RED: ДВС, ипотека, ВЗР, ИФЛ', total: 2, inWork: 2, overdue: 1, weekly: 'done' },
+    { id: 5, name: 'Фатьянов Евгений', role: 'Лидер, КАСКО', total: 6, inWork: 6, overdue: 2, stale: 3 }
+  ];
+  var deadlines = [
+    { num: 5, title: 'Поделиться ссылкой на дашборд DataLens SEO', overdueDays: 14 },
+    { num: 2, title: 'Заполнить предложения по целям Q4 в бордах лидера', overdueDays: 12 },
+    { num: 7, title: 'Результаты АВ-теста согласия на рекламу в ОСАГО', overdueDays: 8 },
+    { num: 3, title: 'Финальная версия бюджета 2027', overdueDays: 2 },
+    { num: 29, title: 'Ю-Money: сплит платежа между двумя СК и кэшбэк', due: 'срок 9 окт' }
+  ];
+  function Block() {
+    return <div className="ds-col" style={{ gap: 24 }}>
+      <C.StandBanner>Bord остаётся главным: ресурс забирает из него задачи и ничего в него не пишет. Задачи, weekly и настройки сохраняются в базе ресурса.</C.StandBanner>
+      <C.PageHeader title="Команда: Топ-команда" subtitle="Задачи и weekly каждого за отчётную неделю" actions={<C.Button variant="secondary" icon="network">Структура и команды</C.Button>} />
+      <C.TeamTable rows={rows} week={41} />
+      <C.Section title="Сроки" count={<span style={{ color: 'var(--color-text-secondary)', fontWeight: 400 }}>{deadlines.length}</span>}><C.DeadlineList rows={deadlines} /></C.Section>
+    </div>;
+  }
+  return <div className="ds-row" style={{ gap: 24, alignItems: 'flex-start', flexWrap: 'nowrap' }}>
+    <div style={{ flex: 1, minWidth: 0 }}><Block /></div>
+    <div style={{ flex: 1, minWidth: 0 }} data-theme="dark"><Block /></div>
+    <div className="sv-shell-root" style={{ width: 390, flex: 'none', border: '1px solid var(--color-border)', borderRadius: 16, overflow: 'hidden' }}><div style={{ padding: 16 }}><Block /></div></div>
+  </div>;
+});
+</script>
+</body>
+</html>

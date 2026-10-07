@@ -1,10 +1,14 @@
-/* Шрифты. Заголовки и крупные цифры: Aeroport Bold, при его отсутствии Golos Text Bold.
-   Текст, кнопки, поля, таблицы: Open Sans 400 и 600, цифры табличные. */
+/* Шрифты. Брендбук (стр. 14): фирменная гарнитура Aeroport в трёх начертаниях, Regular, Medium, Bold.
+   Заголовки и крупные цифры: Aeroport Bold, при его отсутствии Golos Text Bold.
+   Текст, кнопки, поля, таблицы: Open Sans 400 и 600 (рабочий шрифт сайта), цифры табличные.
+   Когда бренд-команда даст файлы Aeroport Regular и Medium, --font-body можно переключить на Aeroport: роли не меняются.
+   Интерлиньяж везде кратен 4 px (брендбук, стр. 82). */
 :root {
   --font-heading: "Aeroport", "Golos Text", "Open Sans", system-ui, sans-serif;
   --font-body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-weight-regular: 400;
   --font-weight-semibold: 600;
+  --font-weight-medium: 500;    /* Aeroport Medium, для кнопок после подключения файла */
   --font-weight-heading: 700;
   --font-numeric: tabular-nums;
 

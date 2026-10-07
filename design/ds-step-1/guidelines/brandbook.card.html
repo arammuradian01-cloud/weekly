@@ -1,0 +1,71 @@
+<!-- @dsCard group="Основы" viewport="1100x640" name="Брендбук → система" subtitle="Что взято из «Руководства по фирменному стилю» (Digital guide 2021) и как применено в интерфейсе: основные цвета, Aeroport, логоблок и охранная зона, радиусы кнопок, один зелёный акцент" -->
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="../styles.css">
+<link rel="stylesheet" href="card.css">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../ds-card.js"></script>
+
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+dsMount(['components/core/Logo.jsx', 'components/core/Button.jsx'], function (C) {
+  var sw = function (hex, name, note) { return <div className="ds-col" style={{ gap: 6, minWidth: 128 }}><div style={{ height: 56, borderRadius: 12, background: hex, border: '1px solid var(--color-border)' }} /><div style={{ fontWeight: 600, fontSize: 14 }}>{name}</div><div className="ds-label">{hex}</div><div style={{ fontSize: 12, color: 'var(--color-text-secondary)', lineHeight: '16px' }}>{note}</div></div>; };
+  return (
+    <div className="ds-col" style={{ gap: 28 }}>
+      <div className="ds-col" style={{ gap: 12 }}>
+        <div className="ds-label">Основные цвета, стр. 11. Белый преобладает, зелёный и голубой акценты, чёрного нет: вместо него глубокий синий</div>
+        <div className="ds-row" style={{ gap: 16, flexWrap: 'wrap' }}>
+          {sw('#0DD149', 'Зелёный', 'Одна главная кнопка на экране, точка «Сдан», знак')}
+          {sw('#00AFFF', 'Голубой', 'Выбранное, активная вкладка, заливка чекбокса. Не для текста на белом')}
+          {sw('#002A3A', 'Глубокий синий', 'Боковое меню, тёмная кнопка, текст на зелёном')}
+          {sw('#FFFFFF', 'Белый', 'Поверхности карточек и таблиц')}
+          {sw('#F6F5F4', 'Светлый бежевый', 'Фон страницы, стр. 12')}
+          {sw('#E6E1DC', 'Бежевый', 'Подложки и пустые состояния, стр. 12')}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Доп. оттенки знака #00FF00, #00C800, #19E1F0, #18CEF2 (стр. 12) оставлены иллюстрациям и графике, в интерфейсе не используются. Статусные оранжевый, красный и фиолетовый взяты с сайта: в брендбуке их нет.</div>
+      </div>
+      <div className="ds-row" style={{ gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="ds-col" style={{ gap: 12, flex: 1, minWidth: 280 }}>
+          <div className="ds-label">Логоблок, стр. 3-10. Только файлы из брендбука, охранная зона X/2 от ширины знака, на тёмном: цветной знак и белый логотип</div>
+          <div className="ds-row" style={{ gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ padding: '14px 22px', background: '#FFFFFF', border: '1px solid var(--color-border)', borderRadius: 12 }}><C.Logo height={28} /></div>
+            <div style={{ padding: '14px 22px', background: '#002A3A', borderRadius: 12 }}><C.Logo height={28} variant="white" /></div>
+            <div style={{ padding: '14px 22px', background: '#0DD149', borderRadius: 12 }}><C.Logo height={28} variant="mono" /></div>
+            <div style={{ padding: 14, background: '#FFFFFF', border: '1px solid var(--color-border)', borderRadius: 12 }}><C.Logo height={28} sign /></div>
+          </div>
+        </div>
+        <div className="ds-col" style={{ gap: 12, flex: 1, minWidth: 280 }}>
+          <div className="ds-label">Кнопка, стр. 79. Радиус от высоты: H36 R12, H52 R16, H120 R30; поля ∆ слева и справа; одно-два слова</div>
+          <div className="ds-row" style={{ gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <C.Button variant="primary" size="sm">Подобрать</C.Button>
+            <C.Button variant="primary">Подобрать</C.Button>
+            <C.Button variant="primary" size="lg">Подобрать ипотеку</C.Button>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Стр. 83: акцентным зелёным может быть кнопка или типографика, не вместе. В системе: одна зелёная кнопка на экране, зелёного текста нет.</div>
+        </div>
+      </div>
+      <div className="ds-row" style={{ gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="ds-col" style={{ gap: 8, flex: 1, minWidth: 280 }}>
+          <div className="ds-label">Шрифт, стр. 14. Aeroport Regular, Medium, Bold (brownfox)</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 28, lineHeight: '32px' }}>Заголовок страницы 28/32</div>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: 22, lineHeight: '26px' }}>Заголовок раздела 22/26</div>
+          <div style={{ fontSize: 14, lineHeight: '20px' }}>Текст 14/20, Open Sans до получения файлов Aeroport Regular и Medium. Интерлиньяж кратен 4 px (стр. 82).</div>
+        </div>
+        <div className="ds-col" style={{ gap: 8, flex: 1, minWidth: 280 }}>
+          <div className="ds-label">Графика, стр. 17-22 и 104-108. Твист и переворот плоскости</div>
+          <div style={{ fontSize: 14, lineHeight: '20px' }}>В интерфейсе переносится пластика, а не 3D: мягкие скругления (16 карточки, 24 панели), двусторонность в переходах (переворот карточки при смене статуса, появление панели), движение 300 мс с кривой сайта. Суперграфика и иллюстрации только на пустых состояниях и экране входа, из файлов бренд-команды.</div>
+        </div>
+      </div>
+    </div>
+  );
+});
+</script>
+</body>
+</html>

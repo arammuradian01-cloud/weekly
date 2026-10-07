@@ -12,7 +12,7 @@ export function TaskPage({ number, initial = null }: { number: number; initial?:
   const task = data.tasks.find((t) => t.number === number) ?? initial ?? undefined;
   return (
     <div className="mx-auto max-w-[760px]">
-      <Link href="/tasks" className="-ml-2 mb-4 inline-flex h-10 items-center gap-1 rounded-lg px-2 text-body text-blue-700 hover:bg-surface">
+      <Link href="/tasks" className="-ml-2 mb-4 inline-flex h-10 items-center gap-1 rounded-lg px-2 text-body text-blue-700 hover:bg-field">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
         Все задачи
       </Link>

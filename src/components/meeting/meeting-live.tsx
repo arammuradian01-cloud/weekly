@@ -107,11 +107,11 @@ function Header({ view, team, meeting, projector, children }: { view: WeekView; 
         </Button>
         <Link
           href={`/weekly/meeting?week=${view.week.key}${projector ? "" : "&screen=projector"}`}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy ring-1 ring-line hover:bg-surface"
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-ink ring-1 ring-line hover:bg-field"
         >
           {projector ? "Для ноутбука" : "Для проектора"}
         </Link>
-        <Link href={`/weekly?week=${view.week.key}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy hover:bg-surface">
+        <Link href={`/weekly?week=${view.week.key}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-ink hover:bg-field">
           <X className="h-4 w-4" aria-hidden="true" />
           Выйти
         </Link>
@@ -178,7 +178,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
   const discussedCount = meeting.items.filter((i) => i.discussed).length;
 
   return (
-    <div className={cn("flex min-h-[70vh] flex-col gap-6", projector && "meeting-projector")}>
+    <div className={cn("flex min-h-[70vh] flex-col gap-6", projector && "meeting-projector")} data-scale={projector ? "projector" : undefined}>
       {numbers}
       <Header view={view} team={team} meeting={meeting} projector={projector}>
         {canLead && meeting.status !== "done" ? (
@@ -214,7 +214,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       </Header>
 
       {meeting.status === "live" && !leading ? (
-        <p className="flex flex-wrap items-center gap-3 rounded-xl bg-surface px-4 py-2 text-small text-ink">
+        <p className="flex flex-wrap items-center gap-3 rounded-xl bg-field px-4 py-2 text-small text-ink">
           {following ? `Экран идёт за ведущим${meeting.leader ? `: ${compactName(meeting.leader)}` : ""}` : "Вы смотрите свой пункт"}
           <Button size="sm" variant="ghost" onClick={() => setFollowing((f) => !f)}>
             {following ? "Смотреть самому" : "Снова за ведущим"}
@@ -260,7 +260,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       )}
 
       {meeting.status !== "done" ? (
-        <div className="sticky bottom-20 mt-auto flex items-center justify-between gap-3 border-t border-line bg-white/95 py-3 lg:bottom-0">
+        <div className="sticky bottom-20 mt-auto flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0">
           <Button variant="secondary" onClick={() => step(-1)} disabled={index === 0}>
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             Назад
@@ -315,7 +315,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
                   aria-current={i.id === current ? "step" : undefined}
                   className={cn(
                     "flex min-h-10 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left text-small",
-                    i.id === current ? "bg-navy font-semibold text-white" : "text-ink hover:bg-surface",
+                    i.id === current ? "bg-navy font-semibold text-white" : "text-ink hover:bg-field",
                     i.discussed && i.id !== current && "text-muted line-through decoration-line",
                   )}
                 >
@@ -328,7 +328,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
                     onClick={() => void run(() => removeAgendaItemAction(meeting.id, i.id))}
                     disabled={busy}
                     aria-label={`Убрать пункт: ${i.title}`}
-                    className="mt-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface hover:text-danger-ink focus-visible:opacity-100 group-hover:opacity-100"
+                    className="mt-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-field hover:text-danger-ink focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -342,7 +342,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
         type="button"
         onClick={() => onSelect(DECISIONS)}
         aria-current={current === DECISIONS ? "step" : undefined}
-        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-navy text-white" : "text-ink hover:bg-surface")}
+        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-navy text-white" : "text-ink hover:bg-field")}
       >
         Решения {meeting.decisions.length ? <span className="font-normal opacity-70">{meeting.decisions.length}</span> : null}
       </button>
@@ -659,14 +659,14 @@ function Protocol({ meeting }: { meeting: MeetingView }) {
             Скопировать
           </Button>
           {meeting.notionUrl ? (
-            <a href={meeting.notionUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy ring-1 ring-line hover:bg-surface">
+            <a href={meeting.notionUrl} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-ink ring-1 ring-line hover:bg-field">
               <Link2 className="h-4 w-4" aria-hidden="true" />
               Заметка в Notion
             </a>
           ) : null}
         </div>
       </div>
-      <pre className="whitespace-pre-wrap rounded-xl bg-surface p-5 font-sans text-body leading-relaxed text-ink">{meeting.protocol}</pre>
+      <pre className="whitespace-pre-wrap rounded-xl bg-field p-5 font-sans text-body leading-relaxed text-ink">{meeting.protocol}</pre>
       <DecisionList decisions={meeting.decisions} />
     </section>
   );

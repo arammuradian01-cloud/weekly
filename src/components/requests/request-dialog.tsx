@@ -90,11 +90,11 @@ export function RequestDialogHost() {
     <Modal open={open} onOpenChange={setOpen} title="Попросить коллегу" description="Адресат увидит просьбу в «Мне», примет её со сроком или ответит отказом. Следить за ответом можно в блоке «Жду от коллег».">
       <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
         {task ? (
-          <p className="rounded-lg bg-surface px-3.5 py-2.5 text-small text-ink">
+          <p className="rounded-lg bg-field px-3.5 py-2.5 text-small text-ink">
             К задаче <span className="tabular-nums text-muted">{task.number}</span> {task.title}
           </p>
         ) : null}
-        {entry ? <p className="rounded-lg bg-surface px-3.5 py-2.5 text-small text-ink">К записи weekly: {entry.what}</p> : null}
+        {entry ? <p className="rounded-lg bg-field px-3.5 py-2.5 text-small text-ink">К записи weekly: {entry.what}</p> : null}
         <PersonSelect id="rq-to" label="Кого просите" value={to} onChange={setTo} exclude={me.slug} />
         <TextArea
           label="Что нужно"

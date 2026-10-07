@@ -1,0 +1,275 @@
+/* Токены дизайн-системы «Сравни: внутренние продукты», шаг 1 (08.10.2026). Скопированы из design/ds-step-1/tokens без правок,
+   кроме шрифтов: они подключаются пакетами @fontsource, а не с Google Fonts. Светлая тема на :root, тёмная на [data-theme="dark"],
+   телефон и проектор через data-scale. Tailwind берёт эти переменные в src/app/globals.css (@theme inline) */
+
+/* Сравни: внутренние продукты. Цвета. Светлая тема на :root, тёмная на [data-theme="dark"].
+   Значения с пометкой «сайт» сняты из CSS sravni.ru 06.10.2026, «своё» добавлены ради контраста. */
+:root {
+  color-scheme: light;
+  /* Поверхности */
+  --color-page: #F6F5F4;            /* сайт D06 */
+  --color-surface: #FFFFFF;         /* сайт L100 */
+  --color-field: #F5F5F5;           /* сайт D10 */
+  --color-field-focus: #FFFFFF;
+  --color-overlay: rgba(0, 42, 58, 0.40);
+  /* Текст */
+  --color-text: #171D23;            /* сайт D100, 15,6:1 */
+  --color-text-secondary: #636F7D;  /* сайт D60, 4,7:1 */
+  --color-text-disabled: #99A1AB;   /* сайт D30 */
+  --color-text-inverse: #FFFFFF;
+  /* Рамки и иконки */
+  --color-icon: #7E8894;            /* сайт D40, 3,6:1: иконки в полях, рамки полей, чекбоксов, переключателей */
+  --color-border: #DADDE2;          /* сайт D15: разделители, рамки карточек */
+  --color-border-strong: #B3BAC3;   /* сайт D20: кнопки с обводкой */
+  --color-field-border: var(--color-icon);
+  /* Бренд и акцент. Основные цвета брендбука (стр. 11): #0DD149, #00AFFF, #002A3A, #FFFFFF; чёрного в палитре нет */
+  --color-brand-green: #0DD149;     /* брендбук, основной зелёный */
+  --color-brand-blue: #00AFFF;      /* брендбук, основной голубой */
+  --color-brand-beige: #F6F5F4;     /* брендбук, светлый бежевый, фон страницы */
+  --color-brand-beige-deep: #E6E1DC; /* брендбук, бежевый: подложки, пустые состояния, разделение зон */
+  --color-brand-green-bright: #00FF00; /* брендбук, доп. оттенок знака: только иллюстрации и графика, не UI */
+  --color-brand-green-deep: #00C800;   /* брендбук, доп. оттенок знака */
+  --color-brand-cyan: #19E1F0;         /* брендбук, доп. оттенок знака */
+  --color-brand-cyan-deep: #18CEF2;    /* брендбук, доп. оттенок знака */
+  --color-brand-dark: #002A3A;      /* сайт B300, брендбук «глубокий синий вместо чёрного»: боковое меню, тёмная кнопка, текст на зелёном */
+  --color-brand-dark-hover: #0B3C4F;
+  --color-brand-dark-active: #06303F;
+  --color-accent: #00AFFF;          /* сайт B100: выбранное, активная вкладка, заливка чекбокса. Не для текста на белом */
+  --color-on-accent: #002A3A;
+  --color-accent-soft: #F0FAFF;     /* сайт B06 */
+  --color-accent-soft-border: #B6E6FC; /* сайт B30 */
+  --color-accent-soft-hover: #E2F5FF;  /* своё */
+  --color-link: #0073A8;            /* своё, 5,2:1 */
+  --color-link-hover: #005C87;      /* своё */
+  --color-focus: #0073A8;           /* своё, контур фокуса 2 px */
+  /* Главная кнопка */
+  --color-primary: #0DD149;         /* сайт G100 */
+  --color-primary-hover: #0CBC42;   /* своё, 5,95:1 */
+  --color-primary-active: #0BB43F;  /* своё, 5,47:1 */
+  --color-on-primary: #002A3A;      /* своё, 7,35:1 */
+  /* Статусы: текст оттенка 300 на подложке 06 */
+  --color-success-text: #11693F;    /* сайт G300 */
+  --color-success-bg: #EEFCF2;      /* сайт G06 */
+  --color-success-dot: #0DD149;     /* сайт G100 */
+  --color-warning-text: #725122;    /* сайт O300 */
+  --color-warning-bg: #FFF9F0;      /* сайт O06 */
+  --color-warning-dot: #FF9500;     /* сайт O100 */
+  --color-danger-text: #C11D1D;     /* сайт R100 */
+  --color-danger-bg: #FDF2F2;       /* сайт R06 */
+  --color-danger-dot: #C11D1D;
+  --color-danger-hover: #A81717;    /* своё */
+  --color-info-text: #5047D7;       /* сайт V100 */
+  --color-info-bg: #F3F2FC;         /* сайт V06 */
+  --color-info-dot: #5047D7;
+  --color-neutral-text: var(--color-text-secondary);
+  --color-neutral-bg: var(--color-field);
+  --color-neutral-dot: #99A1AB;
+  --color-row-overdue: var(--color-danger-bg);
+  --color-row-selected: var(--color-accent-soft);
+  --color-row-hover: #FAFAF9;       /* своё */
+  /* Боковое меню на брендовом тёмном */
+  --color-sidebar-bg: var(--color-brand-dark);
+  --color-sidebar-text: #FFFFFF;
+  --color-sidebar-text-muted: rgba(255, 255, 255, 0.72);
+  --color-sidebar-item-hover: rgba(255, 255, 255, 0.08);
+  --color-sidebar-item-active: rgba(255, 255, 255, 0.14);
+  --color-sidebar-border: rgba(255, 255, 255, 0.12);
+  /* Аватары: инициалы на спокойном круге, 8 оттенков */
+  --color-avatar-1-bg: #DDEFFA; --color-avatar-1-text: #0B4A6B;
+  --color-avatar-2-bg: #E3F6E8; --color-avatar-2-text: #11693F;
+  --color-avatar-3-bg: #FBEBD6; --color-avatar-3-text: #725122;
+  --color-avatar-4-bg: #ECEAFB; --color-avatar-4-text: #3B35A6;
+  --color-avatar-5-bg: #F9E3EA; --color-avatar-5-text: #8A2240;
+  --color-avatar-6-bg: #E2F3F2; --color-avatar-6-text: #0F5E58;
+  --color-avatar-7-bg: #EDEBE6; --color-avatar-7-text: #4F4A40;
+  --color-avatar-8-bg: #E5EAF0; --color-avatar-8-text: #2F3F52;
+  /* Графики */
+  --color-chart-1: #0073A8;
+  --color-chart-2: #0DD149;
+  --color-chart-3: #B3BAC3;
+  --color-chart-grid: var(--color-border);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-page: #080A0C;            /* сайт body D06 */
+  --color-surface: #171D23;         /* сайт */
+  --color-field: #2B2E33;           /* сайт D10 */
+  --color-field-focus: #2B2E33;
+  --color-overlay: rgba(0, 0, 0, 0.60);
+  --color-text: #FFFFFF;
+  --color-text-secondary: #9198A1;  /* сайт D60, 5,8:1 */
+  --color-text-disabled: #636F7D;   /* своё */
+  --color-text-inverse: #171D23;
+  --color-icon: #78808C;            /* сайт D40, 4,3:1 */
+  --color-border: #4E5764;          /* сайт D15 */
+  --color-border-strong: #78808C;
+  --color-field-border: #78808C;
+  --color-brand-dark: #002A3A;
+  --color-brand-dark-hover: #0B3C4F;
+  --color-brand-dark-active: #06303F;
+  --color-accent: #00AFFF;          /* 6,9:1 на поверхности */
+  --color-on-accent: #171D23;
+  --color-accent-soft: #0F2A3A;     /* своё */
+  --color-accent-soft-border: #1E5F80; /* своё */
+  --color-accent-soft-hover: #133447;  /* своё */
+  --color-link: #00AFFF;
+  --color-link-hover: #5CC8FF;      /* своё */
+  --color-focus: #00AFFF;
+  --color-primary: #0DD149;
+  --color-primary-hover: #0CBC42;
+  --color-primary-active: #0BB43F;
+  --color-on-primary: #002A3A;
+  --color-success-text: #9EEDB6;    /* сайт G300 тёмной темы, 8,6:1 */
+  --color-success-bg: #1D3E28;
+  --color-success-dot: #0DD149;
+  --color-warning-text: #F5DAB5;    /* 7,5:1 */
+  --color-warning-bg: #503F26;
+  --color-warning-dot: #FF9500;
+  --color-danger-text: #F1B2B2;     /* 6,3:1 */
+  --color-danger-bg: #533232;
+  --color-danger-dot: #F28B8B;      /* своё */
+  --color-danger-hover: #F6C7C7;
+  --color-info-text: #CECBFF;       /* 7,8:1 */
+  --color-info-bg: #363352;
+  --color-info-dot: #CECBFF;
+  --color-neutral-dot: #78808C;
+  --color-row-hover: #1D242B;       /* своё */
+  --color-brand-beige: #171D23;
+  --color-brand-beige-deep: #2B2E33;
+  --color-sidebar-bg: #0E1419;      /* своё: тёмно-синий в тёмной теме сливается с фоном, берём ступень выше поверхности */
+  --color-avatar-1-bg: #10384D; --color-avatar-1-text: #BDE6FA;
+  --color-avatar-2-bg: #1D3E28; --color-avatar-2-text: #9EEDB6;
+  --color-avatar-3-bg: #503F26; --color-avatar-3-text: #F5DAB5;
+  --color-avatar-4-bg: #363352; --color-avatar-4-text: #CECBFF;
+  --color-avatar-5-bg: #4E2A36; --color-avatar-5-text: #F6C6D3;
+  --color-avatar-6-bg: #1E3E3C; --color-avatar-6-text: #B5E7E3;
+  --color-avatar-7-bg: #3A3833; --color-avatar-7-text: #E3DED3;
+  --color-avatar-8-bg: #2C3744; --color-avatar-8-text: #D1DBE6;
+  --color-chart-1: #00AFFF;
+  --color-chart-3: #4E5764;
+}
+
+/* Шрифты. Брендбук (стр. 14): фирменная гарнитура Aeroport в трёх начертаниях, Regular, Medium, Bold.
+   Заголовки и крупные цифры: Aeroport Bold, при его отсутствии Golos Text Bold.
+   Текст, кнопки, поля, таблицы: Open Sans 400 и 600 (рабочий шрифт сайта), цифры табличные.
+   Когда бренд-команда даст файлы Aeroport Regular и Medium, --font-body можно переключить на Aeroport: роли не меняются.
+   Интерлиньяж везде кратен 4 px (брендбук, стр. 82). */
+:root {
+  --font-heading: "Aeroport", "Golos Text Variable", "Golos Text", "Open Sans", system-ui, sans-serif;
+  --font-body: "Open Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-medium: 500;    /* Aeroport Medium, для кнопок после подключения файла */
+  --font-weight-heading: 700;
+  --font-numeric: tabular-nums;
+
+  /* Шкала ноутбука: размер / межстрочный */
+  --text-page: 28px;            --leading-page: 32px;       /* заголовок страницы, Aeroport */
+  --text-section: 22px;         --leading-section: 26px;    /* заголовок раздела, Aeroport */
+  --text-card: 16px;            --leading-card: 20px;       /* заголовок карточки, Aeroport */
+  --text-lead: 16px;            --leading-lead: 20px;       /* кнопки 52 px и поля на телефоне, Open Sans 600 */
+  --text-body: 14px;            --leading-body: 20px;       /* основной текст, Open Sans 400 */
+  --text-small: 14px;           --leading-small: 20px;      /* выделенный текст и кнопки, Open Sans 600 */
+  --text-caption: 12px;         --leading-caption: 16px;    /* подписи и метаданные */
+  --text-table-head: 12px;      --leading-table-head: 16px; /* шапка таблицы, 600, вторичный цвет */
+  --text-number: 28px;          --leading-number: 32px;     /* крупные цифры и счётчики, Aeroport */
+
+  /* Имена этапа 10, которые остаются в коде как псевдонимы */
+  --text-tiny: var(--text-caption);
+  --text-headline-sm: var(--text-section);
+  --text-headline-lg: var(--text-page);
+}
+
+/* Телефон: ширина до 768 или явная отметка */
+@media (max-width: 767px) {
+  :root:not([data-scale]) {
+    --text-page: 25px;  --leading-page: 32px;
+    --text-section: 21px; --leading-section: 27px;
+    --text-small: 16px; --leading-small: 20px;
+    --text-number: 25px; --leading-number: 32px;
+  }
+}
+[data-scale="phone"] {
+  --text-page: 25px;  --leading-page: 32px;
+  --text-section: 21px; --leading-section: 27px;
+  --text-small: 16px; --leading-small: 20px;
+  --text-number: 25px; --leading-number: 32px;
+}
+
+/* Проектор 1920: режим встречи, читается с 4-5 метров */
+[data-scale="projector"] {
+  --text-page: 50px;  --leading-page: 52px;
+  --text-section: 38px; --leading-section: 44px;
+  --text-card: 28px;  --leading-card: 32px;
+  --text-lead: 24px;  --leading-lead: 32px;
+  --text-body: 24px;  --leading-body: 32px;
+  --text-small: 24px; --leading-small: 32px;
+  --text-caption: 18px; --leading-caption: 24px;
+  --text-table-head: 16px; --leading-table-head: 20px;
+  --text-number: 50px; --leading-number: 52px;
+}
+
+/* Форма, глубина, сетка, движение. Значения сайта sravni.ru и брендбука (Digital guide 2021, стр. 79-82), кроме отмеченных «своё». Шаг базовой линии 4 px. */
+:root {
+  /* Радиусы */
+  --radius-control: 12px;       /* кнопки и поля 36 и 44: брендбук, кнопка H36 R12 */
+  --radius-control-lg: 16px;    /* кнопки и поля 52 и 60: брендбук, кнопка H52 R16 */
+  --radius-avatar: 12px;
+  --radius-button-xl: 30px;     /* брендбук, кнопка H120 R30 (проектор, баннеры) */
+  --radius-card: 16px;
+  --radius-panel: 24px;         /* боковая панель, окна */
+  --radius-tag: 20px;           /* теги и бейджи */
+  --radius-pill: 32px;          /* фильтры-пилюли */
+  --radius-round: 999px;
+
+  /* Тени */
+  --shadow-small: 0 -2px 6px rgba(0, 0, 0, 0.02), 0 10px 14px rgba(20, 36, 56, 0.06);
+  --shadow-medium: 0 12px 16px rgba(0, 0, 0, 0.06);
+  --shadow-sticky: 0 12px 16px rgba(0, 0, 0, 0.12);
+  /* Имена этапа 10 */
+  --shadow-menu: var(--shadow-medium);
+  --shadow-modal: var(--shadow-medium);
+  --shadow-segment: var(--shadow-small);
+  --shadow-toast: var(--shadow-sticky);
+  --shadow-drag: var(--shadow-medium);
+  --shadow-drawer: var(--shadow-sticky);
+
+  /* Отступы, шаг 4 */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px; --space-5: 20px;
+  --space-6: 24px; --space-8: 32px; --space-10: 40px;
+
+  /* Размеры элементов */
+  --control-sm: 36px; --control-md: 44px; --control-lg: 52px;
+  --row-dense: 44px;  --row-comfortable: 52px;
+  --touch-min: 44px;
+  --icon-size: 20px;  --icon-stroke: 1.5;
+
+  /* Сетка */
+  --sidebar-width: 248px;
+  --content-max: 1320px;
+  --content-pad: 30px;
+  --content-pad-phone: 16px;
+  --drawer-width: 600px;        /* 560-640 */
+  --max-w-page: var(--content-max);
+
+  /* Фокус: контур 2 px с отступом 2 px, своё значение */
+  --focus-ring: 0 0 0 2px var(--color-surface), 0 0 0 4px var(--color-focus);
+  --focus-outline: 2px solid var(--color-focus);
+  --focus-offset: 2px;
+
+  /* Движение */
+  --duration: 300ms;
+  --duration-color: 200ms;
+  --ease: cubic-bezier(0.46, 0, 0.03, 0.99);
+}
+
+[data-theme="dark"] {
+  --shadow-small: 0 -2px 6px rgba(0, 0, 0, 0.10), 0 10px 14px rgba(0, 0, 0, 0.30);
+  --shadow-medium: 0 12px 16px rgba(0, 0, 0, 0.35);
+  --shadow-sticky: 0 12px 16px rgba(0, 0, 0, 0.50);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration: 0ms; --duration-color: 0ms; }
+}

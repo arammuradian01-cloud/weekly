@@ -64,12 +64,12 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
         <label className="relative block sm:w-96">
           <span className="sr-only">Поиск по решениям</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по словам" className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-body text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по словам" className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
         </label>
         <Segmented<Status> label="Состояние" value={status} onChange={setStatus} options={[{ value: "all", label: "Все" }, { value: "active", label: "В силе" }, { value: "cancelled", label: "Отменённые" }]} />
       </div>
       {items.length === 0 ? (
-        <p className="rounded-xl bg-surface px-5 py-6 text-body text-muted">{query ? "Ничего не нашлось." : "Решений пока нет. Они появляются на встрече кнопкой «Записать решение»."}</p>
+        <p className="rounded-xl bg-field px-5 py-6 text-body text-muted">{query ? "Ничего не нашлось." : "Решений пока нет. Они появляются на встрече кнопкой «Записать решение»."}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
           {items.map((d) => (

@@ -128,7 +128,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       ) : null}
 
       {task.archived ? (
-        <div className="flex flex-col gap-3 rounded-xl bg-surface p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl bg-field p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-small text-ink">Задача в архиве: её видит только владелец.</p>
           {can.archive ? (
             <Button size="sm" variant="secondary" onClick={() => void runTask(() => archiveTaskAction(task.number, false), `Задача ${task.number} возвращена из архива`)}>
@@ -154,7 +154,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       ) : null}
 
       {task.resolution && isClosed(task) ? (
-        <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : task.status === "partial" ? "bg-orange-soft" : "bg-surface")}>
+        <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : task.status === "partial" ? "bg-orange-soft" : "bg-field")}>
           <p className={cn("text-caption font-semibold", task.status === "done" ? "text-green-ink" : task.status === "partial" ? "text-orange-ink" : "text-muted")}>
             {task.status === "done" ? "Итог" : task.status === "partial" ? "Что сделано и что нет" : "Причина"}
           </p>
@@ -267,7 +267,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
           </H>
           <ol className="flex flex-col gap-2">
             {task.transfers.map((t, i) => (
-              <li key={i} className="rounded-lg bg-surface px-3.5 py-2.5 text-small">
+              <li key={i} className="rounded-lg bg-field px-3.5 py-2.5 text-small">
                 <span className="font-medium tabular-nums text-ink">
                   {t.from ? `${formatShort(t.from)} на ${formatShort(t.to)}` : `На ${formatShort(t.to)}`}
                 </span>
@@ -363,7 +363,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
           Скопировать ссылку
         </Button>
         {!standalone ? (
-          <Link href={`/tasks/${task.number}`} className="inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold text-navy hover:bg-surface">
+          <Link href={`/tasks/${task.number}`} className="inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold text-ink hover:bg-field">
             <HistoryIcon className="h-4 w-4" aria-hidden="true" />
             Открыть отдельной страницей
           </Link>
@@ -408,7 +408,7 @@ function TaskTeam({
         id={`move-${task.number}`}
         value=""
         onChange={(e) => e.target.value && onMove(e.target.value)}
-        className="h-9 max-w-[260px] rounded-md border border-line bg-white px-2 text-small text-blue-700 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="h-9 max-w-[260px] rounded-md border border-line bg-surface px-2 text-small text-blue-700 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
       >
         <option value="">Перенести в команду…</option>
         {targets.map((o) => (

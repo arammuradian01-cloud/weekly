@@ -15,7 +15,7 @@ export function EmptyState({
   return (
     <div className={cn("flex flex-col items-start gap-4 rounded-xl border border-dashed border-line px-6 py-8 sm:flex-row sm:items-center sm:gap-6", className)}>
       <div className="flex shrink-0 items-end gap-1" aria-hidden="true">
-        <span className="block h-7 w-4 -skew-x-12 rounded-sm bg-surface" />
+        <span className="block h-7 w-4 -skew-x-12 rounded-sm bg-field" />
         <span className="block h-10 w-4 -skew-x-12 rounded-sm bg-blue-soft" />
         <span className="block h-13 w-4 -skew-x-12 rounded-sm bg-green-soft" />
       </div>

@@ -32,7 +32,7 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
   const expected = states.filter((s) => !s.optional && (!s.absent || s.state === "submitted" || s.state === "late"));
   const done = expected.filter((s) => s.state === "submitted" || s.state === "late").length;
   return (
-    <section aria-label="Кто сдал weekly" className={cn("rounded-xl bg-surface px-4 py-3", className)}>
+    <section aria-label="Кто сдал weekly" className={cn("rounded-xl bg-field px-4 py-3", className)}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
         <p className="shrink-0 text-body text-ink">
           <span className="font-semibold">Сдали {done} из {expected.length}</span>

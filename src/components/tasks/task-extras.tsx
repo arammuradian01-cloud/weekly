@@ -68,7 +68,7 @@ export function TaskExtrasBlock({ task, headingLevel = "h3" }: { task: Task; hea
           <H id={`spans-${task.number}`} className="text-sm font-medium text-ink">
             Сколько была в каждом статусе
           </H>
-          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface" aria-hidden="true">
+          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-field" aria-hidden="true">
             {extras.spans.map((s) => (
               <span key={s.status} className={cn("h-full", TONE[s.status])} style={{ width: `${Math.max(3, (s.days / total) * 100)}%` }} />
             ))}

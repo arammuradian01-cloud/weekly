@@ -1,80 +1,159 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
-/* Цвета Сравни задаются здесь и только здесь (раздел 7 ТЗ) */
-@theme {
-  --font-sans: "Golos Text Variable", "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+/* Вариант dark: по атрибуту темы на html, а не по настройке системы: «как в системе» ставит тот же атрибут скриптом */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-  --color-navy: #002a3a;
-  --color-navy-900: #001f2b;
-  --color-navy-700: #0d3d50;
-  --color-navy-600: #1d5065;
-  --color-green: #0dd149;
-  --color-green-600: #0bbb41;
-  --color-green-soft: #e3f9e9;
-  --color-blue: #00afff;
-  --color-blue-700: #0073a8;
-  --color-blue-soft: #e0f5ff;
+/*
+  Новый дизайн одним заходом (этап 18). Значения живут в src/styles/tokens.css (дизайн-система «Сравни: внутренние продукты»,
+  шаг 1), здесь Tailwind получает их через переменные: утилиты ссылаются на var(), поэтому тёмная тема и масштаб
+  проектора переключаются атрибутами data-theme и data-scale без пересборки классов.
+  Старые имена этапа 10 (ink, muted, line, navy, blue, green, danger-soft и другие) остаются псевдонимами новых ролей:
+  экранам менять классы не пришлось.
+*/
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-heading);
 
-  --color-ink: #002a3a;
-  --color-muted: #5a6e77;
-  --color-line: #dce4e8;
-  --color-surface: #f3f6f8;
+  /* Поверхности и текст. Фон страницы назван canvas: имя page занято ролью шрифта text-page */
+  --color-canvas: var(--color-page);
+  --color-surface: var(--color-surface);
+  --color-field: var(--color-field);
+  --color-overlay: var(--color-overlay);
+  --color-ink: var(--color-text);
+  --color-text: var(--color-text);
+  --color-muted: var(--color-text-secondary);
+  --color-text-secondary: var(--color-text-secondary);
+  --color-disabled: var(--color-text-disabled);
+  --color-icon: var(--color-icon);
+  --color-line: var(--color-border);
+  --color-border: var(--color-border);
+  --color-border-strong: var(--color-border-strong);
+  --color-row-hover: var(--color-row-hover);
 
-  --color-danger: #d93c41;
-  --color-danger-soft: #fdecec;
-  /* Текст на бледно-красном фоне: контраст не ниже 4,5 */
-  --color-danger-ink: #b0262c;
-  --color-warning-ink: #7a5400;
-  --color-green-ink: #08732a;
-  --color-warning: #c98a00;
-  --color-warning-soft: #fff4d2;
-  --color-orange: #e8730c;
-  --color-slate: #6b8290;
+  /* Бренд */
+  --color-navy: var(--color-brand-dark);
+  --color-navy-900: var(--color-brand-dark-active);
+  --color-navy-700: var(--color-brand-dark-hover);
+  --color-navy-600: var(--color-brand-dark-hover);
+  --color-brand-dark: var(--color-brand-dark);
+  --color-green: var(--color-primary);
+  --color-green-600: var(--color-primary-hover);
+  --color-green-700: var(--color-primary-active);
+  --color-green-soft: var(--color-success-bg);
+  --color-green-ink: var(--color-success-text);
+  --color-on-primary: var(--color-on-primary);
+  --color-blue: var(--color-accent);
+  --color-blue-700: var(--color-link);
+  --color-blue-800: var(--color-link-hover);
+  --color-blue-soft: var(--color-accent-soft);
+  --color-blue-line: var(--color-accent-soft-border);
+  --color-on-accent: var(--color-on-accent);
+  --color-focus: var(--color-focus);
 
-  /* Этап 10: всё, что раньше было зашито в экраны, теперь здесь. Новый дизайн меняет значения только в этом блоке */
-  --color-orange-soft: #fdeedd;
-  --color-orange-ink: #9a4a05;
-  /* Рамки бледных плашек: предупреждение и просрочка */
-  --color-warning-line: #f0dfa6;
-  --color-danger-line: #f3c4c6;
-  /* Красный на тёмном фоне уведомления */
-  --color-danger-on-dark: #ff8a8f;
-  /* Точки состояний: «с опозданием» и «под риском», «не начинал» и низкий приоритет, «не задано» */
-  --color-amber: #f2b600;
-  --color-mist: #b4c2c9;
-  --color-steel: #90a4ae;
+  /* Статусы */
+  --color-danger: var(--color-danger-dot);
+  --color-danger-soft: var(--color-danger-bg);
+  --color-danger-ink: var(--color-danger-text);
+  --color-danger-line: var(--color-danger-bg);
+  --color-danger-on-dark: var(--color-danger-dot);
+  --color-warning: var(--color-warning-dot);
+  --color-warning-soft: var(--color-warning-bg);
+  --color-warning-ink: var(--color-warning-text);
+  --color-warning-line: var(--color-warning-bg);
+  --color-orange: var(--color-warning-dot);
+  --color-orange-soft: var(--color-warning-bg);
+  --color-orange-ink: var(--color-warning-text);
+  --color-amber: var(--color-warning-dot);
+  --color-info: var(--color-info-dot);
+  --color-info-soft: var(--color-info-bg);
+  --color-info-ink: var(--color-info-text);
+  --color-mist: var(--color-border);
+  --color-steel: var(--color-icon);
+  --color-slate: var(--color-text-secondary);
 
-  /* Размеры шрифта по ролям. Только размер: межстрочный интервал наследуется, как у прежних text-[Npx].
-     Имена и размеры повторены в src/lib/design-tokens.ts, совпадение проверяет тест */
-  --text-micro: 11px;
-  --text-tiny: 12px;
-  --text-caption: 13px;
-  --text-small: 14px;
-  --text-body: 15px;
-  --text-lead: 16px;
-  --text-title-sm: 17px;
-  --text-title: 19px;
-  --text-title-lg: 20px;
-  --text-headline-sm: 22px;
-  --text-headline: 24px;
-  --text-page: 26px;
-  --text-headline-lg: 28px;
-  --text-page-lg: 30px;
-  --text-display-sm: 34px;
-  --text-hero: 40px;
-  --text-display: 44px;
+  /* Боковое меню */
+  --color-sidebar: var(--color-sidebar-bg);
+  --color-sidebar-text: var(--color-sidebar-text);
+  --color-sidebar-muted: var(--color-sidebar-text-muted);
+  --color-sidebar-hover: var(--color-sidebar-item-hover);
+  --color-sidebar-active: var(--color-sidebar-item-active);
+  --color-sidebar-line: var(--color-sidebar-border);
 
-  --leading-hero: 1.15;
+  /* Роли шрифта: размер и межстрочный из токенов, старые имена этапа 10 сводятся по таблице guidelines/tokens-table.md */
+  --text-micro: var(--text-caption);
+  --text-micro--line-height: var(--leading-caption);
+  --text-tiny: var(--text-caption);
+  --text-tiny--line-height: var(--leading-caption);
+  --text-caption: var(--text-caption);
+  --text-caption--line-height: var(--leading-caption);
+  --text-table-head: var(--text-table-head);
+  --text-table-head--line-height: var(--leading-table-head);
+  --text-small: var(--text-small);
+  --text-small--line-height: var(--leading-small);
+  --text-body: var(--text-body);
+  --text-body--line-height: var(--leading-body);
+  --text-lead: var(--text-lead);
+  --text-lead--line-height: var(--leading-lead);
+  --text-card: var(--text-card);
+  --text-card--line-height: var(--leading-card);
+  --text-title-sm: var(--text-card);
+  --text-title-sm--line-height: var(--leading-card);
+  --text-title: var(--text-section);
+  --text-title--line-height: var(--leading-section);
+  --text-title-lg: var(--text-section);
+  --text-title-lg--line-height: var(--leading-section);
+  --text-section: var(--text-section);
+  --text-section--line-height: var(--leading-section);
+  --text-headline-sm: var(--text-section);
+  --text-headline-sm--line-height: var(--leading-section);
+  --text-headline: var(--text-page);
+  --text-headline--line-height: var(--leading-page);
+  --text-page: var(--text-page);
+  --text-page--line-height: var(--leading-page);
+  --text-headline-lg: var(--text-page);
+  --text-headline-lg--line-height: var(--leading-page);
+  --text-page-lg: var(--text-page);
+  --text-page-lg--line-height: var(--leading-page);
+  --text-display-sm: var(--text-page);
+  --text-display-sm--line-height: var(--leading-page);
+  --text-number: var(--text-number);
+  --text-number--line-height: var(--leading-number);
+  --text-hero: var(--text-number);
+  --text-hero--line-height: var(--leading-number);
+  --text-display: var(--text-number);
+  --text-display--line-height: var(--leading-number);
 
-  /* Тени: меню, окно, переключатель, уведомление, перетаскиваемая карточка, боковая панель */
-  --shadow-menu: 0 12px 32px -12px rgba(0, 42, 58, 0.35);
-  --shadow-modal: 0 24px 60px -24px rgba(0, 42, 58, 0.5);
-  --shadow-segment: 0 1px 2px rgba(0, 42, 58, 0.12);
-  --shadow-toast: 0 16px 40px -16px rgba(0, 42, 58, 0.6);
-  --shadow-drag: 0 16px 40px -16px rgba(0, 42, 58, 0.5);
-  --shadow-drawer: -12px 0 40px -20px rgba(0, 42, 58, 0.45);
+  /* Радиусы: кнопки и поля 12, карточки 16, панели 24 (брендбук, стр. 79) */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: var(--radius-control);
+  --radius-xl: var(--radius-card);
+  --radius-2xl: var(--radius-panel);
+  --radius-3xl: var(--radius-button-xl);
+  --radius-control: var(--radius-control);
+  --radius-control-lg: var(--radius-control-lg);
+  --radius-card: var(--radius-card);
+  --radius-panel: var(--radius-panel);
+  --radius-tag: var(--radius-tag);
+  --radius-pill: var(--radius-pill);
 
-  --container-page: 1240px;
+  /* Тени */
+  --shadow-small: var(--shadow-small);
+  --shadow-medium: var(--shadow-medium);
+  --shadow-sticky: var(--shadow-sticky);
+  --shadow-menu: var(--shadow-medium);
+  --shadow-modal: var(--shadow-medium);
+  --shadow-segment: var(--shadow-small);
+  --shadow-toast: var(--shadow-sticky);
+  --shadow-drag: var(--shadow-medium);
+  --shadow-drawer: var(--shadow-sticky);
+
+  --container-page: var(--content-max);
+  --width-sidebar: var(--sidebar-width);
+  --width-drawer: var(--drawer-width);
+
+  --ease-sv: var(--ease);
 
   --animate-fade-in: fade-in 150ms ease-out;
   --animate-slide-in: slide-in 200ms ease-out;
@@ -84,14 +163,33 @@
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
+    background: var(--color-page);
   }
   body {
-    @apply bg-white text-ink antialiased;
-    font-feature-settings: "tnum" 0;
+    background: var(--color-page);
+    color: var(--color-text);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color var(--duration-color), color var(--duration-color);
+  }
+  /* Заголовки фирменным шрифтом: Aeroport, пока его нет Golos Text Bold (дизайн-система, решение 3) */
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    font-weight: var(--font-weight-heading);
   }
   :focus-visible {
-    outline: 3px solid var(--color-blue);
-    outline-offset: 2px;
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-offset);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--color-text-disabled);
+  }
+  /* Нативные элементы форм в тёмной теме рисуются тёмными */
+  [data-theme="dark"] input, [data-theme="dark"] select, [data-theme="dark"] textarea {
+    color-scheme: dark;
   }
 }
 
@@ -119,7 +217,9 @@
   }
 }
 
-/* Встреча 2.0 (этап 23): вид для проектора крупнее. Полноценная шкала появится с новым дизайном на этапе 18 */
+/* Встреча 2.0: вид для проектора. Шкала проектора задана токенами на [data-scale="projector"] (src/styles/tokens.css),
+   здесь только плотность: отступы и строки растут вместе с текстом */
 .meeting-projector {
-  zoom: 1.35;
+  --control-md: 56px;
+  --row-dense: 60px;
 }

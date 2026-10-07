@@ -30,7 +30,7 @@ export function SearchForm({ initial }: { initial: string }) {
           onChange={(e) => setQ(e.target.value)}
           placeholder="Слова или номер задачи"
           autoFocus={!initial}
-          className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+          className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
         />
       </div>
       <Button type="submit">Найти</Button>

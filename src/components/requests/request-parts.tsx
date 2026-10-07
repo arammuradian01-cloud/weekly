@@ -47,7 +47,7 @@ export function DueField({ id, label, value, onChange, today }: { id: string; la
             aria-pressed={value === date}
             className={cn(
               "inline-flex h-9 items-center rounded-full px-3 text-small font-medium ring-1",
-              value === date ? "bg-blue-soft text-blue-700 ring-blue/40" : "bg-white text-ink ring-line hover:bg-surface",
+              value === date ? "bg-blue-soft text-blue-700 ring-blue/40" : "bg-surface text-ink ring-line hover:bg-field",
             )}
           >
             {text}

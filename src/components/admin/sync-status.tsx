@@ -221,7 +221,7 @@ function Tiles({ view }: { view: SyncView }) {
   const fresh = view.lastPush && !view.lagging && !view.error;
   return (
     <div className="grid gap-4 sm:grid-cols-3">
-      <div className={cn("rounded-xl px-5 py-4", fresh ? "bg-green-soft" : view.lagging ? "bg-warning-soft" : "bg-surface")}>
+      <div className={cn("rounded-xl px-5 py-4", fresh ? "bg-green-soft" : view.lagging ? "bg-warning-soft" : "bg-field")}>
         <p className={cn("inline-flex items-center gap-2 text-small font-medium", fresh ? "text-green-ink" : view.lagging ? "text-warning-ink" : "text-muted")}>
           {fresh ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : view.lagging ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : null}
           Последняя выгрузка
@@ -229,7 +229,7 @@ function Tiles({ view }: { view: SyncView }) {
         <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastPush ? view.lastPush.ago : "ещё не было"}</p>
         <p className="text-caption text-muted">{view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд"}</p>
       </div>
-      <div className={cn("rounded-xl px-5 py-4", view.lagging ? "bg-warning-soft" : "bg-surface")}>
+      <div className={cn("rounded-xl px-5 py-4", view.lagging ? "bg-warning-soft" : "bg-field")}>
         <p className={cn("text-small font-medium", view.lagging ? "text-warning-ink" : "text-muted")}>Очередь отправки</p>
         <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.queue.size}</p>
         <p className="text-caption text-muted">
@@ -240,7 +240,7 @@ function Tiles({ view }: { view: SyncView }) {
               : "Уйдёт в ближайшие 30 секунд"}
         </p>
       </div>
-      <div className="rounded-xl bg-surface px-5 py-4">
+      <div className="rounded-xl bg-field px-5 py-4">
         <p className="text-small font-medium text-muted">Сверка с таблицей</p>
         <p className={cn("mt-1 text-headline-sm font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
           {view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было"}
@@ -297,7 +297,7 @@ function Connection({ view }: { view: SyncView }) {
         <dd className="flex min-w-0 flex-wrap items-center gap-2">
           {view.serviceEmail ? (
             <>
-              <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code>
+              <code className="min-w-0 break-all rounded bg-field px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code>
               <Button
                 variant="ghost"
                 size="sm"

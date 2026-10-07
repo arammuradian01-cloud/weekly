@@ -88,7 +88,7 @@ export function ForecastForm({ initial }: { initial: MyForecast }) {
         Раз в неделю: по каждой линии и метрике прогноз до конца месяца, бюджет из LRF и причина, если прогноз от бюджета отличается. Строки с прошлой недели уже подставлены, поправьте цифры.
       </p>
       <form onSubmit={submit} className="mt-4 flex flex-col gap-3">
-        {rows.length === 0 ? <p className="rounded-lg bg-surface px-4 py-3 text-body text-muted">Строк пока нет. Добавьте линию: направление, метрику и месяц.</p> : null}
+        {rows.length === 0 ? <p className="rounded-lg bg-field px-4 py-3 text-body text-muted">Строк пока нет. Добавьте линию: направление, метрику и месяц.</p> : null}
         <ul className="flex flex-col gap-3">
           {rows.map((r, i) => {
             const forecast = num(r.forecast);
@@ -107,7 +107,7 @@ export function ForecastForm({ initial }: { initial: MyForecast }) {
                   <SelectField label="Что поехало" id={`fc-reason-${i}`} value={r.reason} onChange={(e) => update(r.uid, { reason: e.target.value as ForecastReasonCode | "" })} options={[{ value: "", label: reasonNeeded(forecast ?? 0, budget) ? "Выберите причину" : "В бюджете" }, ...FORECAST_REASONS.map((x) => ({ value: x.code, label: x.label }))]} disabled={readOnly} />
                   {!readOnly ? (
                     <div className="flex items-end">
-                      <button type="button" onClick={() => setRows((prev) => prev.filter((x) => x.uid !== r.uid))} className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink" aria-label={`Убрать строку ${i + 1}`}>
+                      <button type="button" onClick={() => setRows((prev) => prev.filter((x) => x.uid !== r.uid))} className="inline-flex h-11 w-11 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink" aria-label={`Убрать строку ${i + 1}`}>
                         <X className="h-4 w-4" aria-hidden="true" />
                       </button>
                     </div>

@@ -48,7 +48,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
       </p>
       <ul className="mt-8 flex flex-col gap-4">
         {list.map((q) => (
-          <li key={q.id} className={cn("flex flex-col gap-3 rounded-xl px-5 py-4 ring-1 sm:flex-row sm:items-start sm:justify-between", q.discussed ? "bg-surface ring-line" : "bg-white ring-warning/40")}>
+          <li key={q.id} className={cn("flex flex-col gap-3 rounded-xl px-5 py-4 ring-1 sm:flex-row sm:items-start sm:justify-between", q.discussed ? "bg-field ring-line" : "bg-surface ring-warning/40")}>
             <div className="min-w-0">
               <p className={cn("flex items-start gap-2 text-title font-semibold leading-snug", q.discussed ? "text-muted" : "text-ink")}>
                 <MessagesSquare className="mt-1 h-5 w-5 shrink-0" aria-hidden="true" />
@@ -93,7 +93,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
           <p className="mt-1 text-body text-muted">Просьбы без ответа больше 2 рабочих дней, принятые с прошедшим сроком и предложенные задачи без ответа 3 дня. Уходят отсюда, когда на них ответят.</p>
           <ul className="mt-5 flex flex-col gap-3">
             {stuck.requests.map((r) => (
-              <li key={`r${r.number}`} className="rounded-xl bg-white px-5 py-4 ring-1 ring-line">
+              <li key={`r${r.number}`} className="rounded-xl bg-surface px-5 py-4 ring-1 ring-line">
                 <Link href={`/requests/${r.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
                   Просьба {r.number}: {r.text}
                 </Link>
@@ -104,7 +104,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
               </li>
             ))}
             {stuck.proposals.map((p) => (
-              <li key={`p${p.number}`} className="rounded-xl bg-white px-5 py-4 ring-1 ring-line">
+              <li key={`p${p.number}`} className="rounded-xl bg-surface px-5 py-4 ring-1 ring-line">
                 <Link href={`/tasks/${p.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
                   Предложена задача {p.number}: {p.title}
                 </Link>

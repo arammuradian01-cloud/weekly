@@ -138,7 +138,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               value={q}
               onChange={(e) => onQ(e.target.value)}
               placeholder="Текст или номер задачи"
-              className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+              className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
             />
           </div>
           <SelectField label="Ответственный" id="filter-owner" value={p.owner ?? ""} onChange={(e) => setParams({ owner: e.target.value || null })} className="sm:w-52" options={ownerOptions} />
@@ -186,7 +186,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       </div>
 
       {archive ? (
-        <p className="mt-3 rounded-xl bg-surface px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
+        <p className="mt-3 rounded-xl bg-field px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
         <EmptyState title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"} className="mt-4">
@@ -264,7 +264,7 @@ export function TaskTable({
           <col className="w-[148px]" />
           <col className="w-[156px]" />
         </colgroup>
-        <thead className="bg-surface text-caption text-muted">
+        <thead className="bg-field text-caption text-muted">
           <tr>
             {selection ? (
               <th scope="col" className="px-3 py-2.5">
@@ -286,7 +286,7 @@ export function TaskTable({
           return (
             <tbody key={g.key} className="divide-y divide-line border-t border-line">
               {g.title ? (
-                <tr className="bg-white">
+                <tr className="bg-surface">
                   {selection ? (
                     <td className="px-3 pb-2 pt-4 align-middle">
                       <input type="checkbox" checked={allOn} onChange={(e) => selection.toggleMany(numbers, e.target.checked)} aria-label={`Выбрать все: ${g.title}`} className="h-4 w-4 accent-blue-700" />
@@ -304,7 +304,7 @@ export function TaskTable({
                 const picked = selection?.selected.has(t.number) ?? false;
                 const progress = checklistProgress(t);
                 return (
-                  <tr key={t.number} className={cn("align-top", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-white hover:bg-surface/60", closed && "text-muted")}>
+                  <tr key={t.number} className={cn("align-top", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-surface hover:bg-field/60", closed && "text-muted")}>
                     {selection ? (
                       <td className="px-3 py-3">
                         <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="h-4 w-4 accent-blue-700" />
@@ -346,7 +346,7 @@ export function TaskTable({
         {groups.map((g) => (
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
-              <h2 className="border-b border-line bg-surface px-4 py-2 text-body font-semibold text-ink">
+              <h2 className="border-b border-line bg-field px-4 py-2 text-body font-semibold text-ink">
                 {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
               </h2>
             ) : null}
@@ -356,7 +356,7 @@ export function TaskTable({
                 const picked = selection?.selected.has(t.number) ?? false;
                 const progress = checklistProgress(t);
                 return (
-                  <li key={t.number} className={cn("flex gap-3 px-4 py-3", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-white")}>
+                  <li key={t.number} className={cn("flex gap-3 px-4 py-3", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-surface")}>
                     {selection ? <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="mt-1.5 h-4 w-4 shrink-0 accent-blue-700" /> : null}
                     <div className="min-w-0 flex-1">
                       <button type="button" onClick={() => open(t.number)} className="block w-full text-left">

@@ -134,12 +134,12 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
             <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
           </div>
-          <div className="rounded-xl bg-surface px-5 py-4">
+          <div className="rounded-xl bg-field px-5 py-4">
             <p className="text-small font-medium text-muted">В отчёте</p>
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.rows}</p>
             <p className="text-caption text-muted">строк с цифрами, недель {view.weeks}</p>
           </div>
-          <div className="rounded-xl bg-surface px-5 py-4">
+          <div className="rounded-xl bg-field px-5 py-4">
             <p className="text-small font-medium text-muted">Последняя неделя в отчёте</p>
             <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">{view.latestWeek ? `с ${view.latestWeek}` : "нет"}</p>
             <p className="mt-1 text-caption text-muted">Следующее чтение: {view.next ?? "выключено"}</p>
@@ -174,7 +174,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
           {metrics.length ? (
             <ol className="mt-4 flex flex-col gap-2" aria-label="Выбранные цифры">
               {metrics.map((m, i) => (
-                <li key={m.key} className="flex flex-col gap-2 rounded-lg bg-surface p-3 sm:flex-row sm:items-end">
+                <li key={m.key} className="flex flex-col gap-2 rounded-lg bg-field p-3 sm:flex-row sm:items-end">
                   <TextInput label={`Подпись ${i + 1}`} hideLabel id={`metric-label-${i}`} value={m.label} onChange={(e) => update(m.key, { label: e.target.value })} maxLength={80} className="min-w-0 flex-1" />
                   <SelectField label="Единица" id={`metric-unit-${i}`} value={m.unit} onChange={(e) => update(m.key, { unit: e.target.value as Metric["unit"] })} options={UNIT_OPTIONS} className="sm:w-40" />
                   <div className="flex items-center gap-1">
@@ -203,14 +203,14 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
                 Найти строку отчёта
               </label>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="h-11 w-full rounded-lg border border-line bg-white pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
+              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
             </div>
             {found ? (
               <ul className="mt-3 max-h-[360px] divide-y divide-line overflow-y-auto rounded-lg ring-1 ring-line" aria-label="Строки отчёта">
                 {found.map((row) => {
                   const on = metrics.some((m) => m.key === row.key);
                   return (
-                    <li key={row.key} className="flex items-center gap-3 bg-white px-3 py-2">
+                    <li key={row.key} className="flex items-center gap-3 bg-surface px-3 py-2">
                       <input type="checkbox" id={`row-${row.key}`} checked={on} onChange={() => toggle(row)} className="h-4 w-4 accent-blue-700" />
                       <label htmlFor={`row-${row.key}`} className="min-w-0 flex-1 cursor-pointer text-small text-ink">
                         <span className="block truncate">{row.label}</span>
@@ -236,7 +236,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
         ) : null}
         <dl className="mt-4 grid gap-x-6 gap-y-3 text-body sm:grid-cols-[200px_1fr]">
           <dt className="text-muted">Адрес служебного аккаунта</dt>
-          <dd className="min-w-0">{view.serviceEmail ? <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code> : <span className="text-warning-ink">появится, когда на сервере задан ключ</span>}</dd>
+          <dd className="min-w-0">{view.serviceEmail ? <code className="min-w-0 break-all rounded bg-field px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code> : <span className="text-warning-ink">появится, когда на сервере задан ключ</span>}</dd>
           <dt className="text-muted">Отчёт</dt>
           <dd className="min-w-0">
             {view.sourceId ? (

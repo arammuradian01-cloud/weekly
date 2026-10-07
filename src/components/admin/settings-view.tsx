@@ -282,7 +282,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
                     }}
                     aria-label={`Переименовать «${item.label}»`}
                     title="Переименовать"
-                    className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-small font-medium text-blue-700 hover:bg-surface sm:h-9"
+                    className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-small font-medium text-blue-700 hover:bg-field sm:h-9"
                   >
                     <Pencil className="h-4 w-4" aria-hidden="true" />
                     <span className="hidden sm:inline">Изменить</span>
@@ -292,7 +292,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
                     onClick={() => void run(() => setDictItemActiveAction(kind, item.code, !item.active), item.active ? `«${item.label}» скрыто` : `«${item.label}» снова в списке`)}
                     aria-label={item.active ? `Скрыть «${item.label}»` : `Вернуть «${item.label}»`}
                     title={item.active ? "Скрыть" : "Вернуть"}
-                    className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-small font-medium text-blue-700 hover:bg-surface sm:h-9"
+                    className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-small font-medium text-blue-700 hover:bg-field sm:h-9"
                   >
                     {item.active ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <RotateCcw className="h-4 w-4" aria-hidden="true" />}
                     <span className="hidden sm:inline">{item.active ? "Скрыть" : "Вернуть"}</span>
@@ -508,7 +508,7 @@ function PeopleSection({
       </ul>
       {adding ? (
         <form
-          className="mt-3 flex flex-col gap-3 rounded-xl bg-surface p-4"
+          className="mt-3 flex flex-col gap-3 rounded-xl bg-field p-4"
           onSubmit={async (e) => {
             e.preventDefault();
             const r = await run(() => createPersonAction(draft), `${draft.fullName.trim()} добавлен`);
@@ -609,7 +609,7 @@ function InviteModal({ invite, onClose }: { invite: { url: string; expiresAt: st
         readOnly
         value={invite?.url ?? ""}
         onFocus={(e) => e.currentTarget.select()}
-        className="mt-1.5 h-11 w-full rounded-lg border border-line bg-surface px-3 text-small text-ink"
+        className="mt-1.5 h-11 w-full rounded-lg border border-line bg-field px-3 text-small text-ink"
       />
       <p className="mt-2 text-caption text-muted">После закрытия окна ссылку не показать снова: только выдать новую.</p>
       <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -690,7 +690,7 @@ function CsvField({ id, label, file, onFile }: { id: string; label: string; file
       >
         <span className="text-sm font-medium text-ink">{label}</span>
         <span className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-surface px-4 text-small font-medium text-ink hover:bg-line">
+          <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-field px-4 text-small font-medium text-ink hover:bg-line">
             <FileUp className="h-4 w-4" aria-hidden="true" />
             Выбрать файл
           </span>
@@ -905,7 +905,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
         </p>
       ) : null}
       {login.passwords ? (
-        <div className="mt-5 rounded-xl bg-surface p-4">
+        <div className="mt-5 rounded-xl bg-field p-4">
           <p className="text-body text-ink">
             Личный пароль задали: <span className="font-semibold tabular-nums">{login.passwords.withPassword}</span> из {login.passwords.total}
           </p>

@@ -71,7 +71,7 @@ export function SidebarNav({ management, leader = false }: { management: "OWNER"
           aria-current={active ? "page" : undefined}
           className={cn(
             "relative flex h-11 items-center gap-3 rounded-lg px-3 text-body transition-colors",
-            active ? "bg-white/10 font-semibold text-white" : "text-white/75 hover:bg-white/6 hover:text-white",
+            active ? "bg-sidebar-active font-semibold text-sidebar-text" : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text",
           )}
         >
           {active ? <span className="absolute inset-y-2 left-0 w-1 rounded-full bg-blue" aria-hidden="true" /> : null}
@@ -79,7 +79,7 @@ export function SidebarNav({ management, leader = false }: { management: "OWNER"
           {item.label}
           {item.href === "/me" && inbox ? (
             <>
-              <span className="ml-auto min-w-6 rounded-full bg-blue px-1.5 text-center text-caption font-semibold leading-6 text-navy" aria-hidden="true">
+              <span className="ml-auto min-w-6 rounded-full bg-blue px-1.5 text-center text-caption font-semibold leading-6 text-on-accent" aria-hidden="true">
                 {inbox}
               </span>
               <span className="sr-only">{countLabel(inbox)}</span>
@@ -95,7 +95,7 @@ export function SidebarNav({ management, leader = false }: { management: "OWNER"
       <ul className="flex flex-col gap-1">{MAIN_NAV.filter((i) => !i.leaderOnly || leader).map(link)}</ul>
       {management ? (
         <div>
-          <p className="mb-2 px-3 text-caption text-white/50">Управление</p>
+          <p className="mb-2 px-3 text-caption text-sidebar-muted">Управление</p>
           <ul className="flex flex-col gap-1">{managementItems.map(link)}</ul>
         </div>
       ) : null}
@@ -114,7 +114,7 @@ export function MobileNav({ leader = false }: { leader?: boolean }) {
   return (
     <nav
       aria-label="Разделы"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
     >
       <ul className="grid grid-cols-5">
         {mobileItems(leader).map((item) => {
@@ -134,7 +134,7 @@ export function MobileNav({ leader = false }: { leader?: boolean }) {
                 <span className="relative">
                   <Icon className="h-6 w-6" strokeWidth={active ? 2.2 : 1.8} aria-hidden="true" />
                   {item.href === "/me" && inbox ? (
-                    <span className="absolute -right-2.5 -top-1.5 min-w-5 rounded-full bg-blue px-1 text-center text-micro font-semibold leading-5 text-navy" aria-hidden="true">
+                    <span className="absolute -right-2.5 -top-1.5 min-w-5 rounded-full bg-blue px-1 text-center text-micro font-semibold leading-5 text-ink" aria-hidden="true">
                       {inbox}
                     </span>
                   ) : null}

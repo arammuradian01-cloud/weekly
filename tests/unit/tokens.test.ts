@@ -3,10 +3,11 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ANIMATIONS, CONTAINERS, LEADINGS, SHADOWS, TEXT_SIZES } from "@/lib/design-tokens";
+import { ANIMATIONS, CONTAINERS, LEADINGS, RADII, SHADOWS, TEXT_ROLES, TEXT_SIZES } from "@/lib/design-tokens";
 import { cn } from "@/lib/cn";
 
 const css = readFileSync("src/app/globals.css", "utf8");
+const tokens = readFileSync("src/styles/tokens.css", "utf8");
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -28,13 +29,19 @@ const FORBIDDEN: [RegExp, string][] = [
 const HEX_ALLOWED = new Set(["src/components/ui-sample/ui-sample.tsx", "src/app/layout.tsx"]);
 
 describe("токены оформления", () => {
-  it("каждый размер шрифта из списка задан в globals.css тем же значением", () => {
+  it("каждая роль шрифта из списка ведёт к роли дизайн-системы с тем же размером и своим межстрочным", () => {
     for (const [name, px] of Object.entries(TEXT_SIZES)) {
-      expect(css, `--text-${name}`).toMatch(new RegExp(`--text-${name}: ${px}px;`));
-      // Своего межстрочного интервала у токена нет: иначе поменялся бы вид прежних text-[Npx]
-      expect(css).not.toMatch(new RegExp(`--text-${name}--line-height`));
+      // Имя Tailwind ссылается на роль токенов, и у роли в tokens.css стоит именно этот размер для ноутбука
+      const m = new RegExp(`--text-${name}: var\\(--text-([a-z-]+)\\);`).exec(css);
+      expect(m, `--text-${name}`).not.toBeNull();
+      const role = m![1]!;
+      expect(tokens, `роль ${role}`).toMatch(new RegExp(`--text-${role}: ${px}px;`));
+      expect(css, `межстрочный ${name}`).toMatch(new RegExp(`--text-${name}--line-height: var\\(--leading-${role}\\);`));
+      expect(TEXT_ROLES[role], `роль ${role} в списке`).toBeDefined();
+      expect(tokens).toMatch(new RegExp(`--leading-${role}: ${TEXT_ROLES[role]!.leading}px;`));
     }
     for (const name of SHADOWS) expect(css).toMatch(new RegExp(`--shadow-${name}: `));
+    for (const name of RADII) expect(css).toMatch(new RegExp(`--radius-${name}: `));
     for (const name of LEADINGS) expect(css).toMatch(new RegExp(`--leading-${name}: `));
     for (const name of CONTAINERS) expect(css).toMatch(new RegExp(`--container-${name}: `));
     for (const name of ANIMATIONS) expect(css).toMatch(new RegExp(`--animate-${name}: `));
@@ -58,7 +65,7 @@ describe("токены оформления", () => {
     expect(cn("text-caption", "text-body")).toBe("text-body");
     expect(cn("shadow-menu", "shadow-modal")).toBe("shadow-modal");
     expect(cn("max-w-page", "max-w-md")).toBe("max-w-md");
-    // Как и с прежними text-[Npx], межстрочный интервал пишется после размера: склейка считает, что размер его сбрасывает
-    expect(cn("text-headline font-semibold leading-hero sm:text-hero")).toBe("text-headline font-semibold leading-hero sm:text-hero");
+    expect(cn("text-headline font-semibold sm:text-hero")).toBe("text-headline font-semibold sm:text-hero");
+    expect(cn("rounded-lg", "rounded-control")).toBe("rounded-control");
   });
 });

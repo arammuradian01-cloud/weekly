@@ -12,7 +12,7 @@ export default async function SetupPage() {
   const enabled = await setupEnabled();
 
   return (
-    <div className="min-h-dvh bg-surface">
+    <div className="min-h-dvh bg-field">
       <header className="flex h-16 items-center bg-navy px-6 sm:px-10">
         <Wordmark />
       </header>

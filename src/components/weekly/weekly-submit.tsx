@@ -327,7 +327,7 @@ export function WeeklySubmit({
                 { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "" },
               ].map((s, i) => (
                 <li key={s.href}>
-                  <a href={s.href} className="flex h-10 items-center gap-3 rounded-lg px-2 text-body text-ink hover:bg-surface">
+                  <a href={s.href} className="flex h-10 items-center gap-3 rounded-lg px-2 text-body text-ink hover:bg-field">
                     <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-navy text-tiny font-semibold text-white">{i + 1}</span>
                     <span className="flex-1">{s.label}</span>
                     <span className="text-caption tabular-nums text-muted">{s.note}</span>
@@ -341,13 +341,13 @@ export function WeeklySubmit({
 
       <div className="flex min-w-0 flex-col gap-10">
         {!canEdit ? (
-          <p className="inline-flex items-start gap-2 rounded-xl bg-surface px-5 py-4 text-body text-ink">
+          <p className="inline-flex items-start gap-2 rounded-xl bg-field px-5 py-4 text-body text-ink">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
           </p>
         ) : null}
         {expectedIn && expectedIn.length === 0 && !submitted ? (
-          <p className="rounded-xl bg-surface px-5 py-4 text-body text-ink">
+          <p className="rounded-xl bg-field px-5 py-4 text-body text-ink">
             Weekly от вас сейчас не ждут: в вашей команде его сдают руководители. Достаточно обновлять задачи, а если за неделю было важное, его можно записать и сдать.
           </p>
         ) : null}
@@ -478,7 +478,7 @@ export function WeeklySubmit({
                 </span>
               </p>
               <div className="flex shrink-0 flex-wrap gap-2">
-                <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-navy hover:bg-white/60">
+                <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-ink hover:bg-field">
                   Открыть ленту недели
                 </Link>
                 {canEdit ? (
@@ -612,7 +612,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
           id={`w-${task.number}`}
           value={where}
           onChange={(e) => setWhere(e.target.value)}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-white px-3 text-small text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
+          className="h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-small text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
         />
         {changed ? (
           <Button size="sm" type="submit" className="h-11 sm:h-10">

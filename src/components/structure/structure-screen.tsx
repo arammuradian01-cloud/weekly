@@ -101,7 +101,7 @@ export function StructureScreen({ view, owner, me, candidates, leads = [] }: { v
           <p className="mt-1 text-small text-muted">Эти люди есть в ресурсе, но не стоят ни в одном подразделении. Их можно оставить так или поставить в подразделение.</p>
           <ul className="mt-3 flex flex-wrap gap-2">
             {view.unplaced.map((p) => (
-              <li key={p.slug} className="rounded-md bg-surface px-2.5 py-1 text-small text-ink">
+              <li key={p.slug} className="rounded-md bg-field px-2.5 py-1 text-small text-ink">
                 {p.fullName}
               </li>
             ))}
@@ -156,7 +156,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                   onClick={() => toggle(u.id)}
                   aria-expanded={open}
                   aria-label={`${open ? "Свернуть" : "Развернуть"}: ${u.name}`}
-                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink"
+                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink"
                 >
                   {open ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
                 </button>
@@ -379,7 +379,7 @@ function TeamTree({
                   onClick={() => setOpenId(open ? null : t.id)}
                   aria-expanded={open}
                   aria-label={`${open ? "Свернуть" : "Показать участников"}: ${t.name}`}
-                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink"
+                  className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink"
                 >
                   {open ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
                 </button>

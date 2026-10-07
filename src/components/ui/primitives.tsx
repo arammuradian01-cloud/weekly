@@ -8,7 +8,7 @@ export function Avatar({ text, size = "md", tone = "navy", className }: { text: 
       className={cn(
         "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
         size === "sm" ? "h-7 w-7 text-micro" : "h-9 w-9 text-caption",
-        tone === "navy" ? "bg-navy text-white" : "bg-surface text-ink ring-1 ring-line",
+        tone === "navy" ? "bg-navy text-white" : "bg-field text-ink ring-1 ring-line",
         className,
       )}
       aria-hidden="true"
@@ -20,7 +20,7 @@ export function Avatar({ text, size = "md", tone = "navy", className }: { text: 
 
 /** Скелетон на время загрузки: серый блок с мягкой пульсацией (отключается при reduced motion) */
 export function Skeleton({ className }: { className?: string }) {
-  return <span className={cn("block animate-pulse rounded-md bg-surface", className)} aria-hidden="true" />;
+  return <span className={cn("block animate-pulse rounded-md bg-field", className)} aria-hidden="true" />;
 }
 
 export type SegmentOption<V extends string> = { value: V; label: string; count?: number };
@@ -40,7 +40,7 @@ export function Segmented<V extends string>({
   className?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className={cn("inline-flex rounded-lg bg-surface p-1", className)}>
+    <div role="radiogroup" aria-label={label} className={cn("inline-flex max-w-full flex-wrap rounded-lg bg-field p-1", className)}>
       {options.map((o) => {
         const active = o.value === value;
         return (
@@ -52,7 +52,7 @@ export function Segmented<V extends string>({
             onClick={() => onChange(o.value)}
             className={cn(
               "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-small transition-colors",
-              active ? "bg-white font-semibold text-ink shadow-segment" : "text-muted hover:text-ink",
+              active ? "bg-surface font-semibold text-ink shadow-segment" : "text-muted hover:text-ink",
             )}
           >
             {o.label}
@@ -89,7 +89,7 @@ export function Chip({
           ? tone === "danger"
             ? "bg-danger-ink text-white"
             : "bg-navy text-white"
-          : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
+          : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
       )}
     >
       {children}
@@ -99,7 +99,7 @@ export function Chip({
 }
 
 const control =
-  "w-full rounded-lg border border-line bg-white px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-surface disabled:text-muted";
+  "w-full rounded-lg border border-line bg-surface px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-field disabled:text-muted";
 
 export function TextArea({
   label,

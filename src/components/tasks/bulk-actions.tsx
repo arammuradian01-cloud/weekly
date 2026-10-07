@@ -133,7 +133,7 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
 
       <Modal open={kind !== null} onOpenChange={(o) => !o && setKind(null)} title={kind === "status" ? `Статус у ${count} задач` : kind === "owner" ? `Ответственный у ${count} задач` : kind === "due" ? `Срок у ${count} задач` : `Приоритет у ${count} задач`} description="Изменение пройдёт по каждой задаче с её правами и правилами. Задачи, где нельзя, останутся как были, вы увидите список">
         <div className="flex flex-col gap-4">
-          <p className="max-h-24 overflow-y-auto rounded-lg bg-surface px-3 py-2 text-caption text-muted">{picked.map((t) => `${t.number} ${t.title}`).join("; ")}</p>
+          <p className="max-h-24 overflow-y-auto rounded-lg bg-field px-3 py-2 text-caption text-muted">{picked.map((t) => `${t.number} ${t.title}`).join("; ")}</p>
           {kind === "status" ? (
             <>
               <SelectField label="Новый статус" id="bulk-status" value={status} onChange={(e) => setStatus(e.target.value as StatusCode)} options={statuses.map((s) => ({ value: s.code, label: s.label }))} />
@@ -163,7 +163,7 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
       <Modal open={!!report && report.failed.length > 0} onOpenChange={(o) => !o && setReport(null)} title="Часть задач не изменилась" description={report ? `Изменено: ${report.done}. Не прошло: ${report.failed.length}. Причина у каждой ниже` : undefined}>
         <ul className="flex max-h-[50vh] flex-col gap-2 overflow-y-auto text-small">
           {report?.failed.map((f) => (
-            <li key={f.number} className="rounded-lg bg-surface px-3 py-2">
+            <li key={f.number} className="rounded-lg bg-field px-3 py-2">
               <span className="font-medium tabular-nums text-ink">Задача {f.number}:</span> <span className="text-ink">{f.error}</span>
             </li>
           ))}
