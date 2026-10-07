@@ -8,7 +8,7 @@
 // Итог плана ставит лидер, итог задачи это её статус: у каждого факта одно место.
 
 import type { BadgeTone } from "@/components/ui/badge";
-import type { IsoDate } from "@/domain/dates";
+import { addDays, formatShort, type IsoDate } from "@/domain/dates";
 import type { PersonSlug, Task } from "@/domain/types";
 
 export type PromiseResultCode = "done" | "partial" | "not-done" | "dropped";
@@ -62,7 +62,13 @@ export function entryPromiseText(e: { type: string; what: string; next?: string 
 }
 
 type WeekRange = { start: IsoDate; end: IsoDate };
-type PromiseTask = Pick<Task, "status" | "due" | "resolution" | "transfers" | "owner" | "archived">;
+type PromiseTask = Pick<Task, "status" | "due" | "resolution" | "transfers" | "owner" | "archived" | "closedAt">;
+
+/**
+ * Сколько дней после воскресенья закрытие ещё считается сделанным на неделе: в понедельник лидеры сдают weekly и
+ * обновляют задачи, сделанное в пятницу часто отмечают только тогда
+ */
+export const PROMISE_GRACE_DAYS = 1;
 
 const inWeek = (d: IsoDate | null | undefined, w: WeekRange) => !!d && d >= w.start && d <= w.end;
 
@@ -81,35 +87,43 @@ export function promiseTasks<T extends PromiseTask>(tasks: T[], author: PersonSl
 }
 
 /**
- * Итог задачи-обещания по её статусу. moved: срок перенесли за неделю, это «не сделано» с причиной переноса.
- * open: задача открыта и срок на неделе, итога ещё нет
+ * Итог задачи-обещания по её статусу. Закрытие считается итогом недели, если задачу закрыли до понедельника после неё.
+ * moved: срок перенесли за неделю, это «не сделано» с причиной переноса. late: закрыли позже, тоже «не сделано».
+ * overdue: неделя прошла, а задача открыта и её срок на неделе. open: неделя ещё идёт, итога пока нет
  */
-export type TaskPromiseOutcome = { result: PromiseResultCode | "moved" | "open"; note?: string };
+export type TaskPromiseOutcome = { result: PromiseResultCode | "moved" | "late" | "overdue" | "open"; note?: string };
 
-export function taskPromiseOutcome(task: PromiseTask, week: WeekRange): TaskPromiseOutcome {
-  const note = task.resolution || undefined;
-  if (task.status === "done") return { result: "done", note };
-  if (task.status === "partial") return { result: "partial", note };
-  if (task.status === "failed") return { result: "not-done", note };
-  if (task.status === "cancelled") return { result: "dropped", note };
-  if (task.due > week.end) {
-    const moved = [...task.transfers].reverse().find((t) => inWeek(t.from, week));
-    return { result: "moved", note: moved?.reason };
+export function taskPromiseOutcome(task: PromiseTask, week: WeekRange, today: IsoDate): TaskPromiseOutcome {
+  const grace = addDays(week.end, PROMISE_GRACE_DAYS);
+  const movedOut = task.due > week.end;
+  const reason = () => [...task.transfers].reverse().find((t) => inWeek(t.from, week))?.reason;
+  const closed = task.status === "done" || task.status === "partial" || task.status === "failed" || task.status === "cancelled";
+  if (closed && (!task.closedAt || task.closedAt <= grace)) {
+    const note = task.resolution || undefined;
+    if (task.status === "done") return { result: "done", note };
+    if (task.status === "partial") return { result: "partial", note };
+    if (task.status === "failed") return { result: "not-done", note };
+    return { result: "dropped", note };
   }
+  if (movedOut) return { result: "moved", note: reason() };
+  if (closed) return { result: "late", note: `Закрыта ${formatShort(task.closedAt!)}, позже недели` };
+  if (today > grace) return { result: "overdue", note: "Неделя прошла, задача не закрыта" };
   return { result: "open" };
 }
+
+export type PromiseOutcomeCode = PromiseResultCode | TaskPromiseOutcome["result"];
 
 export type PromiseSummary = { done: number; partial: number; notDone: number; dropped: number; pending: number; total: number };
 
 export const EMPTY_SUMMARY: PromiseSummary = { done: 0, partial: 0, notDone: 0, dropped: 0, pending: 0, total: 0 };
 
-/** Сводка итогов. Перенесённая задача считается невыполненной, обещание без итога отдельно */
-export function summarize(results: (PromiseResultCode | "moved" | "open" | undefined)[]): PromiseSummary {
+/** Сводка итогов. Перенесённая, закрытая позже и просроченная задача считаются невыполненными */
+export function summarize(results: (PromiseOutcomeCode | undefined)[]): PromiseSummary {
   const s = { ...EMPTY_SUMMARY, total: results.length };
   for (const r of results) {
     if (r === "done") s.done++;
     else if (r === "partial") s.partial++;
-    else if (r === "not-done" || r === "moved") s.notDone++;
+    else if (r === "not-done" || r === "moved" || r === "late" || r === "overdue") s.notDone++;
     else if (r === "dropped") s.dropped++;
     else s.pending++;
   }
@@ -120,22 +134,24 @@ export function addSummary(a: PromiseSummary, b: PromiseSummary): PromiseSummary
   return { done: a.done + b.done, partial: a.partial + b.partial, notDone: a.notDone + b.notDone, dropped: a.dropped + b.dropped, pending: a.pending + b.pending, total: a.total + b.total };
 }
 
-/** Доля выполненных обещаний: сделано из тех, у кого есть итог. Снятые и обещания без итога не считаются. null: считать не из чего */
+/**
+ * Доля выполненных обещаний: сделано из всех, кроме снятых. Обещание без итога в доле считается невыполненным:
+ * не ставить итог не выгоднее, чем честно написать «не сделано». null: считать не из чего
+ */
 export function promiseShare(s: PromiseSummary): number | null {
-  const base = s.done + s.partial + s.notDone;
+  const base = s.total - s.dropped;
   return base ? Math.round((s.done / base) * 100) : null;
 }
 
-/** «Сделано 3 из 4, частично 1. Снято 1. Без итога 2» */
+/** «Сделано 3 из 6: частично 1, не сделано 1, без итога 1. Снято 1» */
 export function summaryText(s: PromiseSummary): string {
   if (!s.total) return "Обещаний не было";
-  const base = s.done + s.partial + s.notDone;
+  const base = s.total - s.dropped;
   const parts: string[] = [];
   if (base) {
-    const tail = [s.partial ? `частично ${s.partial}` : "", s.notDone ? `не сделано ${s.notDone}` : ""].filter(Boolean).join(", ");
+    const tail = [s.partial ? `частично ${s.partial}` : "", s.notDone ? `не сделано ${s.notDone}` : "", s.pending ? `без итога ${s.pending}` : ""].filter(Boolean).join(", ");
     parts.push(`Сделано ${s.done} из ${base}${tail ? `: ${tail}` : ""}`);
   }
   if (s.dropped) parts.push(`Снято ${s.dropped}`);
-  if (s.pending) parts.push(`Без итога ${s.pending}`);
   return parts.join(". ");
 }

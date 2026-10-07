@@ -254,7 +254,7 @@ export function EntryForm({
             />
             <TextInput label="Название, если нужно" id={`${initial.id}-link-title-${i}`} value={l.title} onChange={(ev) => setLink(i, { title: ev.target.value })} maxLength={WEEKLY_LIMITS.linkTitle} />
             {links.length > 1 || l.url ? (
-              <Button type="button" variant="ghost" size="sm" className="h-11 self-end" onClick={() => removeLink(i)} aria-label={`Убрать ссылку ${i + 1}`}>
+              <Button type="button" variant="ghost" size="sm" className="h-11 self-end justify-self-end" onClick={() => removeLink(i)} aria-label={`Убрать ссылку ${i + 1}`}>
                 <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             ) : null}

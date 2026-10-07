@@ -121,7 +121,7 @@ export function WeeklySubmit({
   const range = { start: week.start, end: week.end };
   const owed = promiseTasks(data.tasks, me.slug, range);
   const owedNumbers = new Set(owed.map((t) => t.number));
-  const promiseSummary = summarize([...promises.map((p) => p.review?.result), ...owed.map((t) => taskPromiseOutcome(t, range).result)]);
+  const promiseSummary = summarize([...promises.map((p) => p.review?.result), ...owed.map((t) => taskPromiseOutcome(t, range, data.today).result)]);
 
   const tasks = data.tasks.filter(
     (t) =>
@@ -166,13 +166,18 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
-  const restore = async (token: string, index: number) => {
+  /** Перенесённый план удалили или вернули: шаг обещаний показывает это без перезагрузки (этап 22) */
+  const setCarried = (promiseEntryId: string, carried: { id: string; what: string } | undefined) =>
+    setPromises((prev) => prev.map((p) => (p.entryId === promiseEntryId && p.review ? { ...p, review: { ...p.review, carried } } : p)));
+
+  const restore = async (token: string, index: number, carriedBy?: string) => {
     try {
       const result = await restoreEntryAction(token);
       if (!result.ok) return notify(result.error, "error");
       const back = result.value;
       // Запись встаёт на прежнее место, а не в конец
       setEntries((prev) => (prev.some((e) => e.id === back.id) ? prev : [...prev.slice(0, index), back, ...prev.slice(index)]));
+      if (carriedBy) setCarried(carriedBy, { id: back.id, what: back.what });
       notify("Запись возвращена");
     } catch {
       notify("Нет связи с сервером: запись не вернулась", "error");
@@ -183,11 +188,13 @@ export function WeeklySubmit({
     if (isLocalId(entry.id)) return;
     try {
       const index = entries.findIndex((e) => e.id === entry.id);
+      const carriedBy = promises.find((p) => p.review?.carried?.id === entry.id)?.entryId;
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      if (carriedBy) setCarried(carriedBy, undefined);
       const token = result.value.undo;
-      notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0)));
+      notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0), carriedBy));
     } catch {
       notify("Нет связи с сервером: запись не удалилась", "error");
     }
@@ -210,7 +217,9 @@ export function WeeklySubmit({
   };
 
   const [reopening, setReopening] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
   const reopen = async () => {
+    setConfirmReopen(false);
     setReopening(true);
     try {
       const result = await reopenWeeklyAction(week.key);
@@ -256,6 +265,20 @@ export function WeeklySubmit({
           </Button>
         </div>
       </Modal>
+      <Modal
+        open={confirmReopen}
+        onOpenChange={setConfirmReopen}
+        title="Вернуть weekly в черновик?"
+        description="Команда увидит, что weekly не сдан. Когда допишете, сдайте его снова."
+      >
+        {late ? <p className="text-small font-medium text-danger-ink">Срок сдачи уже прошёл: повторная сдача будет с отметкой «Сдан с опозданием».</p> : null}
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setConfirmReopen(false)}>
+            Оставить сданным
+          </Button>
+          <Button onClick={() => void reopen()}>Вернуть в черновик</Button>
+        </div>
+      </Modal>
       <aside className="mb-6 lg:mb-0">
         <div className="lg:sticky lg:top-24">
           <WeeklyBadge state={weekly.state} />
@@ -270,7 +293,7 @@ export function WeeklySubmit({
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
             <ol className="flex flex-col gap-1">
               {[
-                { href: "#step-promises", label: "Что обещал", note: `${promises.length + owed.length}` },
+                { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}` },
                 { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}` },
                 { href: "#step-entries", label: "Главное и записи", note: `${entries.length}` },
                 { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "" },
@@ -303,8 +326,8 @@ export function WeeklySubmit({
         <Step
           id="step-promises"
           n={1}
-          title="Что обещал на прошлой неделе"
-          description="Итог по каждому плану и одна фраза. Невыполненное можно перенести в план этой недели"
+          title="Что вы обещали на прошлой неделе"
+          description="Итог по каждому плану и одна фраза. Невыполненное можно перенести в план: через неделю оно снова будет здесь"
         >
           <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
         </Step>
@@ -422,7 +445,7 @@ export function WeeklySubmit({
                   Открыть ленту недели
                 </Link>
                 {canEdit ? (
-                  <Button variant="ghost" onClick={() => void reopen()} disabled={reopening}>
+                  <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening}>
                     <Undo2 className="h-4 w-4" aria-hidden="true" />
                     {reopening ? "Возвращаю…" : "Вернуть в черновик"}
                   </Button>
@@ -459,15 +482,22 @@ export function WeeklySubmit({
                 </div>
               </dl>
               <div className="flex flex-col gap-3 border-t border-line p-5 sm:flex-row sm:items-center sm:justify-between">
-                {problems.length ? (
-                  <ul className="text-small text-danger-ink">
-                    {problems.map((p) => (
-                      <li key={p}>{p}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
-                )}
+                <div className="flex flex-col gap-1">
+                  {problems.length ? (
+                    <ul className="text-small text-danger-ink">
+                      {problems.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
+                  )}
+                  {promiseSummary.pending ? (
+                    <p className="text-small text-ink">
+                      Без итога обещаний: {promiseSummary.pending}. В доле выполненных обещаний они считаются невыполненными, сдать weekly можно и так.
+                    </p>
+                  ) : null}
+                </div>
                 <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} className="sm:min-w-44">
                   {submitting ? "Сдаю…" : "Сдать weekly"}
                 </Button>

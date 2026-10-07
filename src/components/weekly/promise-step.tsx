@@ -1,8 +1,8 @@
 "use client";
 
-// Шаг «Что обещал на прошлой неделе» в сдаче weekly (этап 22, модуль М6). Планы прошлого weekly: итог и одна фраза,
-// невыполненное одной кнопкой в план этой недели. Задачи со сроком на неделе: итог это статус задачи, здесь же её
-// закрывают или переносят срок.
+// Шаг «Что вы обещали на прошлой неделе» в сдаче weekly (этап 22, модуль М6). Планы прошлого weekly: итог и одна
+// фраза, невыполненное одной кнопкой в план этого weekly, через неделю оно снова придёт сюда. Задачи со сроком на неделе:
+// итог это статус задачи, здесь же её закрывают или переносят срок.
 
 import { useState } from "react";
 import { ArrowDownToLine, Pencil } from "lucide-react";
@@ -47,7 +47,7 @@ export function PromiseStep({
   setPromises: (update: (prev: EntryPromise[]) => EntryPromise[]) => void;
   tasks: Task[];
   canEdit: boolean;
-  /** Обещание перенесено: новая запись плана появляется в шаге «Главное за неделю» */
+  /** Обещание перенесено: новая запись плана появляется в шаге «Главное за неделю» этого weekly */
   onCarried: (entry: WeeklyEntry) => void;
 }) {
   const range = { start: week.start, end: week.end };
@@ -143,7 +143,7 @@ function PromiseRow({
       if (!r.ok) return notify(r.error, "error");
       onChange(r.value.promise);
       onCarried(r.value.entry);
-      notify("Перенесено в план этой недели");
+      notify("Перенесено в план");
     } catch {
       notify("Нет связи с сервером: не перенеслось", "error");
     } finally {
@@ -209,9 +209,9 @@ function PromiseRow({
           {canEdit ? (
             <div className="flex shrink-0 flex-wrap gap-1">
               {canCarry(review.result) && !review.carried ? (
-                <Button size="sm" variant="secondary" onClick={() => void carry()} disabled={busy}>
+                <Button size="sm" variant="secondary" onClick={() => void carry()} disabled={busy} aria-label={`Перенести в план: ${promise.what.slice(0, 80)}`}>
                   <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
-                  Перенести в план этой недели
+                  Перенести в план
                 </Button>
               ) : null}
               <Button size="sm" variant="ghost" onClick={() => setEditing(true)} aria-label={`Изменить итог: ${promise.what.slice(0, 80)}`}>
@@ -224,7 +224,7 @@ function PromiseRow({
       ) : (
         <p className="text-small text-muted">Итог не поставлен</p>
       )}
-      {review?.carried ? <p className="text-caption text-muted">В плане этой недели: «{review.carried.what}»</p> : null}
+      {review?.carried ? <p className="text-caption text-muted">Перенесено в план этого weekly: «{review.carried.what}»</p> : null}
     </li>
   );
 }
@@ -232,27 +232,32 @@ function PromiseRow({
 function outcomeText(o: TaskPromiseOutcome, task: Task, today: string): string {
   if (o.result === "moved") return `Срок перенесён на ${formatShort(task.due)}${o.note ? `: ${o.note}` : ""}`;
   if (o.result === "open") return task.due < today ? "Срок прошёл: закройте задачу или перенесите срок" : "Срок на этой неделе, итога пока нет";
+  if (o.result === "overdue") return "Неделя прошла, задача не закрыта: закройте её или перенесите срок";
   return o.note ?? "";
 }
+
+/** Итог задачи считается «не сделано»: перенесли, закрыли позже недели или неделя прошла, а задача открыта */
+const NOT_DONE_TASK = new Set<TaskPromiseOutcome["result"]>(["moved", "late", "overdue"]);
 
 function PromiseTaskRow({ task, range }: { task: Task; range: Range }) {
   const { open } = useOpenTask();
   const { data } = usePrototype();
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
-  const o = taskPromiseOutcome(task, range);
-  const closed = o.result !== "open" && o.result !== "moved";
+  const o = taskPromiseOutcome(task, range, data.today);
+  const settled = o.result === "done" || o.result === "partial" || o.result === "not-done" || o.result === "dropped";
+  const closed = settled || o.result === "late";
   return (
-    <li className={cn("flex flex-col gap-2 px-4 py-3", o.result === "open" && "bg-surface")}>
+    <li className={cn("flex flex-col gap-2 px-4 py-3", (o.result === "open" || o.result === "overdue") && "bg-surface")}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
           <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
           {task.title}
         </button>
-        <span className={cn("shrink-0 text-caption tabular-nums", o.result === "open" && task.due < data.today ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
+        <span className={cn("shrink-0 text-caption tabular-nums", (o.result === "open" || o.result === "overdue") && task.due < data.today ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
       </div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        {closed ? <ResultBadge result={o.result as PromiseResultCode} /> : o.result === "moved" ? <Badge tone="red">Не сделано</Badge> : null}
+        {settled ? <ResultBadge result={o.result as PromiseResultCode} /> : NOT_DONE_TASK.has(o.result) ? <Badge tone="red">Не сделано</Badge> : null}
         {closed ? <StatusBadge status={task.status} /> : <StatusSelect task={task} />}
         {!closed && can.due ? (
           <Button size="sm" variant="ghost" onClick={() => actions.transfer(task)}>

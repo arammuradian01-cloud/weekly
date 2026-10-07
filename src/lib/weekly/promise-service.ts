@@ -6,8 +6,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { PromiseResult } from "@/generated/prisma/enums";
 import type { PersonSlug, WeekKey, WeeklyEntry } from "@/domain/types";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
-import { taskInclude, toTaskDto } from "@/lib/tasks/dto";
+import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
+import { taskListInclude, toTaskDto } from "@/lib/tasks/dto";
 import { cleanDash, splitWhat } from "./rules";
 import { isWeekKey, shiftWeek, weekEndOf } from "./weeks";
 import { audit, canEdit, entryInclude, toEntryDto, weekContext } from "./service";
@@ -50,9 +50,10 @@ type PromiseRow = Prisma.WeeklyEntryGetPayload<{ include: typeof promiseInclude 
 const candidate: Prisma.WeeklyEntryWhereInput = { OR: [{ type: { code: "plan" } }, { next: { not: null } }] };
 
 function toPromise(e: PromiseRow): EntryPromise | null {
-  const p = entryPromiseText({ type: e.type.code, what: e.what, next: e.next, hasTask: e.tasks.length > 0 });
-  if (!p) return null;
   const r = e.promiseReview;
+  // Итог уже поставлен, а запись потом поменяли (сделали по ней задачу, сменили тип): обещание остаётся с текстом итога
+  const p = entryPromiseText({ type: e.type.code, what: e.what, next: e.next, hasTask: e.tasks.length > 0 }) ?? (r ? { kind: e.type.code === "plan" ? ("plan" as const) : ("next" as const), what: r.what } : null);
+  if (!p) return null;
   return {
     entryId: e.id,
     kind: p.kind,
@@ -83,8 +84,12 @@ export async function entryPromises(personId: string, key: WeekKey): Promise<Ent
   return rows.map(toPromise).filter((p): p is EntryPromise => p !== null);
 }
 
-/** Запись как обещание: она должна быть обещанием и неделя итога (следующая за её неделей) должна быть открыта автору */
+/**
+ * Запись как обещание: она должна быть обещанием и неделя итога (следующая за её неделей) должна быть открыта автору.
+ * Замок по записи: итог и перенос одного обещания не идут одновременно, двойное нажатие не создаст два плана
+ */
 async function promiseContext(tx: Tx, actor: Actor, entryId: string) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`promise:${String(entryId)}`}))::text`;
   const entry = await tx.weeklyEntry.findUnique({ where: { id: String(entryId) }, include: promiseInclude });
   if (!entry) return fail("Запись уже удалена");
   if (!entry.authorId) return fail("У общей записи нет автора: итог по ней не ставят");
@@ -100,7 +105,7 @@ async function promiseContext(tx: Tx, actor: Actor, entryId: string) {
 /** Итог обещания: сделано, частично, не сделано или снято. Кроме «сделано» нужна фраза */
 export async function reviewPromise(actor: Actor, entryId: string, result: string, note?: string | null): Promise<EntryPromise> {
   const code = result as PromiseResultCode;
-  if (!(code in RESULT_DB)) fail("Выберите итог: сделано, частично, не сделано или снято");
+  if (!Object.hasOwn(RESULT_DB, code)) fail("Выберите итог: сделано, частично, не сделано или снято");
   const text = cleanDash(String(note ?? "")).trim();
   if (text.length > PROMISE_NOTE_MAX) fail(`Фраза итога: не длиннее ${PROMISE_NOTE_MAX} знаков`);
   if (promiseNeedsNote(code) && !text) fail(code === "dropped" ? "Напишите одной фразой, почему сняли" : code === "partial" ? "Напишите одной фразой, что сделано и что осталось" : "Напишите одной фразой, что помешало");
@@ -133,8 +138,6 @@ export async function reviewPromise(actor: Actor, entryId: string, result: strin
 /** Невыполненное обещание в план этой недели: новая запись типа «План» с тем же продуктом и блоком */
 export async function carryPromise(actor: Actor, entryId: string): Promise<{ promise: EntryPromise; entry: WeeklyEntry }> {
   return prisma.$transaction(async (tx) => {
-    // Замок на итог: двойное нажатие не создаст два плана
-    await tx.$queryRaw`SELECT id FROM promise_reviews WHERE "entryId" = ${String(entryId)} FOR UPDATE`;
     const { entry, promise, week, info } = await promiseContext(tx, actor, entryId);
     const review = entry.promiseReview;
     if (!review) return fail("Сначала поставьте итог обещания");
@@ -183,13 +186,14 @@ export async function promiseSummaries(key: WeekKey, personIds: string[]): Promi
         status: { not: "PROPOSED" },
         OR: [{ due: { gte: dbDate(week.start), lte: dbDate(week.end) } }, { transfers: { some: { fromDue: { gte: dbDate(week.start), lte: dbDate(week.end) } } } }],
       },
-      include: taskInclude,
+      include: taskListInclude,
     }),
   ]);
   const entries = prev
     ? await prisma.weeklyEntry.findMany({ where: { AND: [{ weekId: prev.id, authorId: { in: personIds } }, candidate] }, include: promiseInclude })
     : [];
-  const tasks = taskRows.map(toTaskDto);
+  const tasks = taskRows.map((row) => toTaskDto({ ...row, comments: [] }));
+  const today = moscowToday();
   const rows = people.map((p) => {
     const slug = p.slug as PersonSlug;
     const fromEntries = entries
@@ -197,7 +201,7 @@ export async function promiseSummaries(key: WeekKey, personIds: string[]): Promi
       .map(toPromise)
       .filter((x): x is EntryPromise => x !== null)
       .map((x) => x.review?.result);
-    const fromTasks = promiseTasks(tasks, slug, week).map((t) => taskPromiseOutcome(t, week).result);
+    const fromTasks = promiseTasks(tasks, slug, week).map((t) => taskPromiseOutcome(t, week, today).result);
     return { slug, summary: summarize([...fromEntries, ...fromTasks]) };
   });
   return { people: rows.filter((r) => r.summary.total > 0), total: rows.reduce((acc, r) => addSummary(acc, r.summary), EMPTY_SUMMARY) };
@@ -207,6 +211,8 @@ export async function promiseSummaries(key: WeekKey, personIds: string[]): Promi
 export async function reopenWeekly(actor: Actor, key: WeekKey): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const { row, info, reporting } = await weekContext(tx, key, actor.personId);
+    // Даже управлению: закрытая неделя уже разобрана на встрече, её weekly остаётся сданным
+    if (info.closed) fail(`Неделя ${info.number} закрыта: weekly остаётся сданным`);
     canEdit(info, reporting, actor, actor.slug);
     const report = await tx.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } } });
     if (!report || report.state === "DRAFT") return fail("Weekly ещё не сдан");

@@ -46,7 +46,7 @@ test.beforeEach(async () => {
 test("лидер подводит итог прошлых планов, переносит невыполненное в план и возвращает сданный weekly в черновик", async ({ page }) => {
   await enter(page, "Рева Тарас");
   await page.goto("/weekly/submit");
-  await expect(page.getByRole("heading", { name: /Что обещал на прошлой неделе/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Что вы обещали на прошлой неделе/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Планы прошлой недели/ })).toBeVisible();
 
   // План сделан: итог без фразы
@@ -63,17 +63,25 @@ test("лидер подводит итог прошлых планов, пере
   await page.locator("#promise-e2e-next-note").fill("Ждём данные от DWH");
   await next.getByRole("button", { name: "Сохранить итог" }).click();
   await expect(next.getByText("Ждём данные от DWH")).toBeVisible();
-  await next.getByRole("button", { name: "Перенести в план этой недели" }).click();
-  await expect(page.getByText("Перенесено в план этой недели").first()).toBeVisible();
-  await expect(next.getByText("В плане этой недели: «Разобрать итоги AB-теста»")).toBeVisible();
+  await next.getByRole("button", { name: "Перенести в план: Разобрать итоги AB-теста" }).click();
+  await expect(page.getByText("Перенесено в план", { exact: true }).first()).toBeVisible();
+  await expect(next.getByText("Перенесено в план этого weekly: «Разобрать итоги AB-теста»")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Разобрать итоги AB-теста" })).toBeVisible();
   await shot(page, "promises");
 
   // После перезагрузки итоги на месте, перенести второй раз нельзя
   await page.reload();
   await expect(page.locator("li").filter({ hasText: "Запустить скоринг на КАСКО" }).getByText("Сделано", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Перенести в план этой недели" })).toHaveCount(0);
-  await expect(page.getByText(/^Сделано 1 из 2: не сделано 1/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Перенести в план/ })).toHaveCount(0);
+  // Открытые задачи Ревы со сроком на неделе входят в долю как «без итога»
+  await expect(page.getByText(/^Сделано 1 из \d+: не сделано 1/)).toBeVisible();
+
+  // Удалили перенесённый план: перенести снова можно сразу, без перезагрузки
+  await page.getByRole("button", { name: "Удалить запись «Разобрать итоги AB-теста»" }).click();
+  await page.getByRole("dialog", { name: "Удалить запись?" }).getByRole("button", { name: "Удалить" }).click();
+  await expect(page.getByRole("button", { name: "Перенести в план: Разобрать итоги AB-теста" })).toBeVisible();
+  await page.getByRole("button", { name: "Перенести в план: Разобрать итоги AB-теста" }).click();
+  await expect(page.getByText("Перенесено в план этого weekly: «Разобрать итоги AB-теста»")).toBeVisible();
 
   // Сдать и вернуть в черновик
   await page.getByLabel("Главное одной фразой").fill("Скоринг запущен, AB-тест разбираем на этой неделе");
@@ -81,6 +89,8 @@ test("лидер подводит итог прошлых планов, пере
   await page.getByRole("button", { name: "Сдать weekly" }).click();
   await expect(page.getByText(/Weekly сдан|Сдан с опозданием/).first()).toBeVisible();
   await page.getByRole("button", { name: "Вернуть в черновик" }).click();
+  const confirm = page.getByRole("dialog", { name: "Вернуть weekly в черновик?" });
+  await confirm.getByRole("button", { name: "Вернуть в черновик" }).click();
   await expect(page.getByText("Weekly снова черновик: сдайте его, когда допишете")).toBeVisible();
   await expect(page.getByRole("button", { name: "Сдать weekly" })).toBeEnabled();
 });

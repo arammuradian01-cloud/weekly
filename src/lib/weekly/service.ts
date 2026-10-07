@@ -716,6 +716,8 @@ export async function assignEntryAuthor(actor: Actor, id: string, slug: PersonSl
     const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: entryInclude });
     if (!entry) fail("Запись уже удалена");
     const saved = await tx.weeklyEntry.update({ where: { id }, data: { authorId: person!.id }, include: entryInclude });
+    // Итоги обещаний по записи и итог, из которого запись перенесена, переходят к новому автору (этап 22)
+    await tx.promiseReview.updateMany({ where: { OR: [{ entryId: id }, { carriedId: id }] }, data: { authorId: person!.id } });
     const previous = entry!.authorId ? (await tx.person.findUnique({ where: { id: entry!.authorId } }))?.fullName : null;
     await audit(tx, actor, "weekly.entry.author", "weekly-entry", id, "Автор записи", previous ?? "Все лидеры", person!.fullName);
     return toEntryDto(saved);

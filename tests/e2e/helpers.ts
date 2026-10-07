@@ -15,8 +15,9 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb, "passwordHash" = NULL, "passwordSetAt" = NULL`);
   // Этап 20: письма уходили по прошлым тестам
   await client.query("DELETE FROM mail_marks");
-  // Этап 21: просьбы держат авторов и адресатов, поэтому уходят до людей
+  // Этап 21: просьбы держат авторов и адресатов, поэтому уходят до людей. Этап 22: итоги обещаний так же
   await client.query("DELETE FROM help_requests");
+  await client.query("DELETE FROM promise_reviews");
   await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
   // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
@@ -50,7 +51,6 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
     await client.query(`UPDATE settings SET value = '52'::jsonb WHERE key = 'tasks.nextNumber'`);
   }
   if (weekly) {
-    await client.query("DELETE FROM promise_reviews");
     await client.query("DELETE FROM weekly_entries");
     await client.query("DELETE FROM weekly_reports");
     await client.query("DELETE FROM ceo_reports");

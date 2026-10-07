@@ -61,6 +61,23 @@ describe("статус «Выполнена частично»", () => {
     await expect(prisma.$executeRaw`UPDATE tasks SET status = 'PARTIAL', resolution = NULL WHERE number = ${t.number}`).rejects.toThrow(/tasks_closed_note/);
   });
 
+  it("итог закрытой задачи из просьбы поменяли: просьба получает новый итог и не возвращается в работу", async () => {
+    const r = await req.createRequest(await actor.loginova(), { to: "reva", text: "Выгрузка по убыткам", due: addDays(moscowToday(), 4) });
+    await req.acceptRequest(await actor.reva(), r.number, addDays(moscowToday(), 4));
+    const made = await req.requestToTask(await actor.reva(), r.number, "kasko");
+    await tasks.changeStatus(await actor.reva(), made.task, "done", "Выгрузка готова");
+    await tasks.changeStatus(await actor.reva(), made.task, "partial", "Выгрузка за два квартала из четырёх");
+    let after = await req.getRequest(await actor.loginova(), r.number);
+    expect(after).toMatchObject({ status: "done" });
+    expect(after?.answer).toContain("выполнена частично");
+    await tasks.changeStatus(await actor.reva(), made.task, "failed", "Данных нет");
+    after = await req.getRequest(await actor.loginova(), r.number);
+    expect(after?.status).toBe("declined");
+    expect(after?.answer).toContain("не выполнена: Данных нет");
+    const events = await prisma.inboxEvent.findMany({ where: { recipientId: await id("loginova"), kind: "REQUEST_ANSWER" }, orderBy: { createdAt: "asc" } });
+    expect(events.map((e) => e.text).some((t) => t.includes("снова в работе"))).toBe(false);
+  });
+
   it("просьба, из которой сделана задача, выполнена частично", async () => {
     const r = await req.createRequest(await actor.loginova(), { to: "reva", text: "Выгрузка по убыткам", due: addDays(moscowToday(), 4) });
     await req.acceptRequest(await actor.reva(), r.number, addDays(moscowToday(), 4));
@@ -159,6 +176,22 @@ describe("шаг «Что обещал на прошлой неделе»", () =
     expect(await prisma.weeklyEntry.count({ where: { week: { start: new Date(`${key}T00:00:00Z`) } } })).toBe(1);
   });
 
+  it("итог остаётся виден, если по записи потом сделали задачу", async () => {
+    const e = await plan("Запустить новый скоринг", { next: "Сделать задачу" });
+    await promises.reviewPromise(await actor.reva(), e.id, "partial", "Половина готова");
+    await tasks.createTask(await actor.reva(), { title: "Задача из плана", outcome: "Сделано", owner: "reva", direction: "osago", due: addDays(moscowToday(), 3), weeklyEntryId: e.id });
+    expect((await promises.entryPromises(await id("reva"), key)).map((p) => [p.what, p.review?.result])).toEqual([["Запустить новый скоринг", "partial"]]);
+  });
+
+  it("сданный weekly в закрытой неделе не возвращается в черновик и у управления", async () => {
+    const owner = await actor.owner();
+    await svc.saveHeadline(owner, key, "Главное");
+    await svc.saveEntry(owner, { week: key, direction: "osago", block: "product", type: "event", what: "Событие" });
+    await svc.submitWeekly(owner, key);
+    await svc.setWeekClosed(owner, key, true);
+    await expectRule(promises.reopenWeekly(owner, key), /закрыта/);
+  });
+
   it("удаление записи-обещания и отмена: итог возвращается к записи", async () => {
     const e = await plan("Запустить новый скоринг");
     await promises.reviewPromise(await actor.reva(), e.id, "done");
@@ -201,7 +234,8 @@ describe("сводка обещаний для отчёта CEO", () => {
     const sum = await promises.promiseSummaries(W, [revaId, await id("loginova")]);
     expect(sum.people.map((p) => p.slug)).toEqual(["reva"]);
     expect(sum.total).toEqual({ done: 2, partial: 1, notDone: 1, dropped: 1, pending: 2, total: 7 });
-    expect(promiseShare(sum.total)).toBe(50);
+    // Без итога в доле считается невыполненным, снятое не считается: 2 из 6
+    expect(promiseShare(sum.total)).toBe(33);
   });
 });
 
