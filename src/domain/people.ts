@@ -13,15 +13,31 @@ export const PEOPLE: Person[] = [
   { slug: "cheychenets", fullName: "Чейченец Евгений", shortName: "Евгений Ч.", role: "LEADER", zone: "Депозиты и инвестиции", direction: "deposits" },
 ];
 
-export type PersonEntry = Person & { active: boolean };
+export type PersonEntry = Person & { active: boolean; position?: string | null };
 
 const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
 
-/** Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте */
+/** Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте: в нём все включённые люди, кроме наблюдателей */
 export function applyPeople(list: PersonEntry[]) {
   if (!list.length) return;
   ALL_PEOPLE.splice(0, ALL_PEOPLE.length, ...list);
-  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, ...p }) => p));
+  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, position: _position, ...p }) => p));
+}
+
+/** Включённые люди из списка слагов в порядке из настроек: люди выбранной команды (этап 14) */
+export function peopleOf(slugs: PersonSlug[]): Person[] {
+  const set = new Set(slugs);
+  return PEOPLE.filter((p) => set.has(p.slug));
+}
+
+/** Должность по структуре (этап 14): null, если структура не загружена */
+export function positionOf(slug: PersonSlug): string | null {
+  return ALL_PEOPLE.find((p) => p.slug === slug)?.position ?? null;
+}
+
+/** Все люди департамента, включённые и нет: для выбора людей вне выбранной команды */
+export function allPeople(): PersonEntry[] {
+  return ALL_PEOPLE;
 }
 
 export function personOf(slug: PersonSlug): Person {

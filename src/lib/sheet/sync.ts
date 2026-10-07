@@ -13,7 +13,8 @@ export { PROD_SHEET_ID };
  * 3: строки данных обычным шрифтом сверху ячейки, ссылка не переносится (живая таблица 06.10 показала жирные строки и даты числами)
  * 4: ширина колонок «Сводки» */
 // 5: в колонке «Источник» пометка «(Bord)» у задач из Bord. Новая версия разметки один раз переписывает все строки
-export const LAYOUT_VERSION = 5;
+// 6: колонка «Команда» после «Ответственного» (этап 14)
+export const LAYOUT_VERSION = 6;
 export const SUMMARY_MARKER = "Сводка ресурса";
 export const ARCHIVE_SUFFIX = " (архив до запуска)";
 const PROTECTION = "Вкладка ресурса weekly: правки только через ресурс";
@@ -270,7 +271,15 @@ async function ensureRows(client: SheetsClient, sheet: SheetInfo, rows: number) 
  * Формулы на SUMPRODUCT с одним аргументом: им не важно, запятая или точка с запятой разделяют аргументы в языке таблицы
  */
 async function writeSummary(client: SheetsClient, sheet: SheetInfo) {
-  const people = await prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] });
+  // Сводка по людям топ-команды и по всем, у кого есть открытые задачи: 85 строк нулей никому не нужны (этап 14)
+  const people = await prisma.person.findMany({
+    where: {
+      active: true,
+      role: { not: "OBSERVER" },
+      OR: [{ teams: { some: { teamId: "top" } } }, { leads: { some: { id: "top" } } }, { ownedTasks: { some: { archivedAt: null, status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] } } } }],
+    },
+    orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
+  });
   const T = q(TASKS_TAB.title);
   const col = (h: string) => {
     const c = colLetter(TASKS_TAB.columns.findIndex((x) => x.header === h) + 1);

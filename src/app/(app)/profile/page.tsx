@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { colleaguesOf } from "@/lib/org/people";
 import { requireContext } from "@/lib/auth";
 import { ROLE_LABELS } from "@/lib/roles";
 import { listDevices } from "@/lib/login/service";
@@ -28,7 +29,11 @@ export default async function ProfilePage() {
     ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
     observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
     absenceWeeks(),
-    prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" }, id: { not: ctx.person.id } }, orderBy: { sortOrder: "asc" }, select: { slug: true, fullName: true } }),
+    prisma.person.findMany({
+      where: { active: true, role: { not: "OBSERVER" }, id: { not: ctx.person.id }, ...colleaguesOf(ctx.person.id) },
+      orderBy: { sortOrder: "asc" },
+      select: { slug: true, fullName: true },
+    }),
   ]);
   return (
     <div className="max-w-3xl">

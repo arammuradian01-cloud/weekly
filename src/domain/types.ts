@@ -15,7 +15,7 @@ import type {
 /** Короткое имя человека из базы: «reva», «golovkin». Новых людей добавляет владелец в настройках */
 export type PersonSlug = string;
 
-export type Role = "OWNER" | "ADMIN" | "LEADER" | "OBSERVER";
+export type Role = "OWNER" | "ADMIN" | "LEADER" | "OBSERVER" | "EMPLOYEE";
 
 export type Person = {
   slug: PersonSlug;
@@ -77,6 +77,14 @@ export type Task = {
   /** Итог для «Выполнена» или причина для «Не выполнена» и «Отменена» */
   resolution?: string;
   archived?: boolean;
+  /** Команда задачи (этап 14): id из базы, у топ-команды «top» */
+  team: string;
+  /**
+   * Задача пришла в списке без текста комментариев (этап 14, большие команды): карточка дозагружает её целиком.
+   * commentCount: сколько комментариев на самом деле
+   */
+  partial?: boolean;
+  commentCount?: number;
 };
 
 /** Неделя определяется своим понедельником: «2026-09-28». Номер ISO для подписи считается из даты */

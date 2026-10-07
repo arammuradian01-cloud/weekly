@@ -9,6 +9,7 @@ import {
   History,
   ListChecks,
   Newspaper,
+  Network,
   RefreshCw,
   Settings2,
   Users,
@@ -17,7 +18,7 @@ import {
 import { cn } from "@/lib/cn";
 import { useInboxCount } from "@/components/inbox/inbox-count";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean };
+export type NavItem = { href: string; label: string; icon: LucideIcon; ownerOnly?: boolean; desktopOnly?: boolean };
 
 export const MAIN_NAV: NavItem[] = [
   { href: "/", label: "Моя неделя", icon: CalendarCheck2 },
@@ -25,6 +26,8 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/weekly", label: "Weekly", icon: Newspaper },
   { href: "/tasks", label: "Задачи", icon: ListChecks },
   { href: "/team", label: "Команда", icon: Users },
+  // В нижнем меню телефона пять пунктов: «Структура» открывается со страницы «Команда»
+  { href: "/structure", label: "Структура", icon: Network, desktopOnly: true },
 ];
 
 export const MANAGEMENT_NAV: NavItem[] = [
@@ -98,7 +101,7 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
     >
       <ul className="grid grid-cols-5">
-        {MAIN_NAV.map((item) => {
+        {MAIN_NAV.filter((i) => !i.desktopOnly).map((item) => {
           const active = isActive(pathname, item.href);
           const Icon = item.icon;
           return (

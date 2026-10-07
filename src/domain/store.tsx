@@ -6,16 +6,29 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { personOf } from "./people";
+import { peopleOf, personOf } from "./people";
 import type { Person, PersonSlug, Task } from "./types";
 import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import type { NewTaskInput } from "@/lib/tasks/service";
 import { applyRegistry, type RegistrySnapshot } from "./registry";
+import { ALL_TEAMS } from "./teams";
 
 type Toast = { id: number; text: string; undoToken?: string; onUndo?: () => void; tone?: "error" };
 
-export type AppData = { today: IsoDate; tasks: Task[] };
+/**
+ * tasks: задачи выбранной команды и свои задачи в любой команде (этап 14). teamTasks: только задачи выбранной команды,
+ * по ним строятся список, доска, сводка команды и разбор на встрече
+ */
+export type AppData = { today: IsoDate; tasks: Task[]; team: string | null; teamTasks: Task[] };
+
+/** Выбранная команда для переключателя в шапке */
+export type CurrentTeamView = {
+  id: string | null;
+  name: string;
+  people: PersonSlug[];
+  options: { id: string; name: string; depth: number; relation: "member" | "leader" | "below" | "all" }[];
+};
 
 type Store = {
   data: AppData;
@@ -25,6 +38,11 @@ type Store = {
   manageRole: "OWNER" | "ADMIN" | null;
   /** Наблюдатель только читает */
   observer: boolean;
+  /** Команды, которыми человек руководит, с командами ниже (этап 14) */
+  leads: string[];
+  team: CurrentTeamView;
+  /** Люди выбранной команды (руководитель и участники, включённые, без наблюдателей): ответственные, сводки, разбор */
+  teamPeople: Person[];
   /** Ответ сервера по задаче: обновить её на экране, показать тост с отменой или ошибку. true, если сохранилось */
   applyTaskResult: (result: TaskActionResult, toastText: string) => boolean;
   /** Выполнить действие с задачей на сервере и применить ответ */
@@ -49,6 +67,8 @@ export function PrototypeProvider({
   observer = false,
   initialTasks,
   registry,
+  team,
+  leads = [],
   children,
 }: {
   today: string;
@@ -59,6 +79,8 @@ export function PrototypeProvider({
   observer?: boolean;
   /** Задачи из базы на момент отрисовки страницы */
   initialTasks: Task[];
+  team: CurrentTeamView;
+  leads?: string[];
   children: React.ReactNode;
 }) {
   applyRegistry(registry);
@@ -115,7 +137,17 @@ export function PrototypeProvider({
     [router, showToast],
   );
 
-  const data = useMemo<AppData>(() => ({ today, tasks }), [today, tasks]);
+  const teamPeople = useMemo(() => peopleOf(team.people), [team.people, registry.version]);
+  const data = useMemo<AppData>(
+    () => ({
+      today,
+      tasks,
+      team: team.id,
+      // «Все мои команды»: все задачи, что пришли; без команды: только свои
+      teamTasks: team.id === ALL_TEAMS || team.id === null ? tasks : tasks.filter((t) => t.team === team.id),
+    }),
+    [today, tasks, team.id],
+  );
 
   const store = useMemo<Store>(() => {
     return {
@@ -124,6 +156,9 @@ export function PrototypeProvider({
       manage: manageRole !== null,
       manageRole,
       observer,
+      leads,
+      team,
+      teamPeople,
       applyTaskResult,
       runTask: async (action, toastText) => {
         try {
@@ -172,7 +207,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, toast, showToast, applyTaskResult]);
+  }, [data, me, manageRole, observer, leads, team, teamPeople, toast, showToast, applyTaskResult]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

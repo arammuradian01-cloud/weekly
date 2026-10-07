@@ -2,6 +2,7 @@
 // Права по матрице раздела 2: справочники и ритм недели правят владелец и администраторы в режиме управления,
 // людей и роли меняет только владелец. Каждая правка пишется в журнал с тем, что было и что стало.
 
+import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { slugify, uniqueSlug } from "@/lib/translit";
@@ -204,7 +205,7 @@ async function checkEmail(tx: Tx, value: string | null | undefined, slug?: strin
   return email;
 }
 
-const ROLES: Role[] = ["OWNER", "ADMIN", "LEADER", "OBSERVER"];
+const ROLES: Role[] = ["OWNER", "ADMIN", "LEADER", "OBSERVER", "EMPLOYEE"];
 
 function checkRole(role: string): Role {
   if (!ROLES.includes(role as Role)) fail("Выберите роль из списка");
@@ -238,7 +239,9 @@ export async function createPerson(actor: Actor, input: PersonInput) {
     // «all» и «system» заняты: так ресурс помечает «Все лидеры» и события системы
     const slug = uniqueSlug(slugify(last ?? fullName, 24), [...all.map((p) => p.slug), "all", "system"]);
     const sortOrder = Math.max(0, ...all.map((p) => p.sortOrder)) + 10;
-    await tx.person.create({ data: { slug, fullName, shortName, role, zone, email, defaultDirectionId: direction.id, sortOrder, active: true } });
+    const created = await tx.person.create({ data: { slug, fullName, shortName, role, zone, email, defaultDirectionId: direction.id, sortOrder, active: true } });
+    // Лидеры, администраторы, владелец и наблюдатель из «Людей и ролей» работают в топ-команде. Сотрудника добавляют в команду в «Структуре»
+    if (role !== "EMPLOYEE") await tx.teamMember.createMany({ data: [{ teamId: TOP_TEAM, personId: created.id }], skipDuplicates: true });
     await audit(tx, actor, "settings.person.create", "person", slug, "Человек добавлен", null, `${fullName}, ${ROLE_LABELS[role].toLowerCase()}, ${zone}`);
     return { slug };
   });

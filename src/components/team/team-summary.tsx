@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, personOf } from "@/domain/people";
+import { personOf, positionOf } from "@/domain/people";
+import { TOP_TEAM } from "@/domain/teams";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
 import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { AbsentBadge, substituteText } from "@/components/weekly/absence";
@@ -22,11 +23,11 @@ type Row = {
 
 /** Сводка по каждому, как сводка по лидерам над таблицей задач сейчас (раздел 4 ТЗ) */
 export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; weekNumber: number }) {
-  const { data, me } = usePrototype();
+  const { data, me, teamPeople } = usePrototype();
   // Выключенные с открытыми задачами остаются в сводке, пока их задачи не передали другим
-  const gone = [...new Set(data.tasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
-  const rows: Row[] = [...PEOPLE, ...gone].map((p) => {
-    const own = data.tasks.filter((t: Task) => t.owner === p.slug && !t.archived);
+  const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !teamPeople.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
+  const rows: Row[] = [...teamPeople, ...gone].map((p) => {
+    const own = data.teamTasks.filter((t: Task) => t.owner === p.slug && !t.archived);
     const open = own.filter((t) => t.status === "in-progress" || t.status === "clarify");
     return {
       person: p,
@@ -38,7 +39,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
       stale: own.filter((t) => isStale(t, data.today)).length,
     };
   });
-  const shared = data.tasks.filter((t) => t.owner === "all" && (t.status === "in-progress" || t.status === "clarify")).length;
+  const shared = data.teamTasks.filter((t) => t.owner === "all" && (t.status === "in-progress" || t.status === "clarify")).length;
   const totals = rows.reduce(
     (acc, r) => ({ total: acc.total + r.total, inWork: acc.inWork + r.inWork, overdue: acc.overdue + r.overdue, risk: acc.risk + r.risk, closedWeek: acc.closedWeek + r.closedWeek, stale: acc.stale + r.stale }),
     { total: 0, inWork: 0, overdue: 0, risk: 0, closedWeek: 0, stale: 0 },
@@ -74,7 +75,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                     </Link>
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <p className="text-caption text-muted">
-                      {ROLE_LABELS[r.person.role]}, {r.person.zone}
+                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}
                     </p>
                   </td>
                   <td className="px-3 py-3 text-right">{num(r.total)}</td>
@@ -90,7 +91,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                         <span className="mt-1 block text-caption text-muted">{substituteText(weekly.absent.substitute)}</span>
                       </>
                     ) : (
-                      <WeeklyBadge state={weekly?.state ?? "not-started"} />
+                      <WeeklyOrAbove weekly={weekly} />
                     )}
                   </td>
                 </tr>
@@ -120,7 +121,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                   <Link href={`/tasks/review?person=${r.person.slug}`} className="text-lead font-semibold text-ink">
                     {r.person.fullName}
                   </Link>
-                  {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
+                  {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyOrAbove weekly={weekly} />}
                 </div>
                 {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
                   <p className="mt-1 text-caption text-muted">Нет на неделе, {substituteText(weekly.absent.substitute)}</p>
@@ -146,8 +147,14 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
         </ul>
       </div>
       <p className="mt-4 text-small text-muted">
-        Общих задач для всех лидеров в работе: {shared}. Имя открывает разбор задач человека.
+        {data.team === TOP_TEAM ? `Общих задач для всех лидеров в работе: ${shared}. ` : ""}Имя открывает разбор задач человека.
       </p>
     </>
   );
+}
+
+/** Weekly руководителя команды сдаётся в команду выше: его подчинённым он не показывается (этап 14) */
+function WeeklyOrAbove({ weekly }: { weekly: PersonWeekly | undefined }) {
+  if (!weekly) return <span className="text-small text-muted">сдаёт в команду выше</span>;
+  return <WeeklyBadge state={weekly.state} />;
 }

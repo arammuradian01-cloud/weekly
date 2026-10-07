@@ -4,13 +4,15 @@ import { ceoReportHistory, getCeoReport, getWeekView } from "@/lib/weekly/servic
 import { isWeekKey } from "@/lib/weekly/weeks";
 import { PageHeader } from "@/components/page-header";
 import { CeoReport } from "@/components/ceo/ceo-report";
+import { topAudience } from "@/lib/org/current";
 
 export const metadata: Metadata = { title: "Отчёт CEO" };
 
 export default async function CeoReportPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   await requireManagement(["OWNER", "ADMIN"], "/ceo-report");
   const { week } = await searchParams;
-  const view = await getWeekView(isWeekKey(week) ? week : null);
+  // Отчёт CEO собирается из weekly топ-команды, какая бы команда ни была выбрана
+  const view = await getWeekView(isWeekKey(week) ? week : null, new Date(), await topAudience());
   const [saved, history] = await Promise.all([getCeoReport(view.week.key), ceoReportHistory()]);
   return (
     <>

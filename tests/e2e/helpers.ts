@@ -16,6 +16,14 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
   // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
+  // Этап 14: команды, подразделения и сотрудники из структуры, которые завели тесты
+  await client.query("DELETE FROM tasks WHERE \"teamId\" <> 'top'");
+  await client.query("DELETE FROM teams WHERE id <> 'top'");
+  await client.query('UPDATE people SET "unitId" = NULL, "managerId" = NULL, "functionalManagerId" = NULL, position = NULL');
+  await client.query("DELETE FROM vacancies");
+  await client.query("DELETE FROM org_units WHERE kind <> 'DEPARTMENT'");
+  await client.query("DELETE FROM org_units");
+  await client.query("INSERT INTO team_members (\"teamId\", \"personId\") SELECT 'top', id FROM people WHERE slug = ANY($1) AND slug <> 'muradyan' ON CONFLICT DO NOTHING", [SEED_PEOPLE]);
   await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_entries WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_reports WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);

@@ -5,10 +5,11 @@ import { ChevronLeft } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { EmptyState } from "@/components/empty-state";
 import { TaskCard } from "./task-card";
+import type { Task } from "@/domain/types";
 
-export function TaskPage({ number }: { number: number }) {
+export function TaskPage({ number, initial = null }: { number: number; initial?: Task | null }) {
   const { data } = usePrototype();
-  const task = data.tasks.find((t) => t.number === number);
+  const task = data.tasks.find((t) => t.number === number) ?? initial ?? undefined;
   return (
     <div className="mx-auto max-w-[760px]">
       <Link href="/tasks" className="-ml-2 mb-4 inline-flex h-10 items-center gap-1 rounded-lg px-2 text-body text-blue-700 hover:bg-surface">

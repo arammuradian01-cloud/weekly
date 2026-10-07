@@ -10,6 +10,9 @@ import type { EditInput, NewTaskInput } from "@/lib/tasks/service";
 import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries";
 import type { IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
+import { prisma } from "@/lib/db";
+import { loadScope } from "@/lib/org/scope";
+import { moveTask } from "@/lib/org/service";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
 
@@ -22,7 +25,13 @@ async function actor(): Promise<svc.Actor> {
     role: ctx.person.role,
     management: ctx.management?.role ?? null,
     ip: await requestIp(),
+    via: ctx.via,
   };
+}
+
+/** Кто читает задачи: общий логин без режима управления видит только топ-команду (этап 14) */
+function readerOf(a: svc.Actor): svc.TaskReader {
+  return { personId: a.personId, role: a.role, limited: a.via === "TEAM" && !a.management };
 }
 
 function checkNumber(number: unknown): number {
@@ -106,12 +115,37 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
   }
 }
 
+/** Задача целиком: карточка дозагружает её, если в списке она пришла без комментариев (этап 14) */
+export async function getTaskAction(number: number): Promise<TaskActionResult> {
+  const a = await actor();
+  const task = await svc.getTask(checkNumber(number), readerOf(a));
+  if (!task || (task.archived && a.management !== "OWNER")) return { ok: false, error: `Задачи ${number} нет` };
+  return { ok: true, task, number };
+}
+
+/** Перенести задачу в другую команду (этап 14): режим управления или руководитель обеих команд */
+export async function moveTaskAction(number: number, team: string): Promise<TaskActionResult> {
+  try {
+    const a = await actor();
+    await moveTask(a, checkNumber(number), String(team ?? ""));
+    const task = await svc.getTask(number, readerOf(a));
+    return { ok: true, task, number };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Перенос задачи в другую команду не прошёл", error);
+    return { ok: false, error: "Не получилось перенести. Обновите страницу и попробуйте ещё раз" };
+  }
+}
+
 /** История задачи (матрица раздела 2): лидер видит историю своих задач, владелец и администраторы всю */
 export async function taskHistoryAction(number: number): Promise<{ ok: true; items: HistoryItem[] } | { ok: false; error: string }> {
   const a = await actor();
-  const task = await svc.getTask(checkNumber(number));
+  const task = await svc.getTask(checkNumber(number), readerOf(a));
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
   if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
-  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER" })) return { ok: false, error: "История видна участникам задачи, владельцу и администраторам" };
+  const scope = await loadScope(prisma, { id: a.personId, role: a.role, limited: readerOf(a).limited });
+  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads }))
+    return { ok: false, error: "История видна участникам задачи, руководителю команды, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };
 }

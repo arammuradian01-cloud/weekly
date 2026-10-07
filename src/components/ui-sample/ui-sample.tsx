@@ -114,6 +114,7 @@ function Block({ id, title, description, children }: { id: string; title: string
 function sampleTasks(today: string, me: Task["owner"]): Task[] {
   const base: Omit<Task, "number" | "title" | "outcome" | "status" | "state" | "priority" | "due" | "where"> = {
     owner: me,
+    team: "top",
     coExecutors: [],
     direction: "department",
     whereUpdatedAt: today,

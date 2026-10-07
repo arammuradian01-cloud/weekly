@@ -7,6 +7,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   ADMIN: "Администратор",
   LEADER: "Лидер",
   OBSERVER: "Наблюдатель",
+  EMPLOYEE: "Сотрудник",
 };
 
 /** Режим управления доступен только профилям владельца и администраторов */

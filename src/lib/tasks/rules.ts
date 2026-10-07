@@ -17,9 +17,9 @@ export function overdueDays(task: Task, today: IsoDate): number {
  * История изменений задачи (журнал в карточке): участникам задачи и режиму управления.
  * Матрица раздела 2: лидер видит историю своих задач, весь журнал только у владельца и администраторов
  */
-export function canSeeTaskHistory(task: Pick<Task, "owner" | "coExecutors" | "createdBy">, v: Viewer): boolean {
+export function canSeeTaskHistory(task: Pick<Task, "owner" | "coExecutors" | "createdBy" | "team">, v: Viewer): boolean {
   if (v.observer) return false;
-  if (v.management) return true;
+  if (v.management || leadsTeam(v, task.team)) return true;
   return task.owner === v.slug || task.owner === "all" || task.coExecutors.includes(v.slug) || task.createdBy === v.slug;
 }
 
@@ -83,7 +83,16 @@ export type Viewer = {
   management?: ManagementRole | null;
   /** Наблюдатель только читает */
   observer?: boolean;
+  /** Команды, которыми человек руководит, вместе с командами ниже (этап 14). Топ-команды здесь нет */
+  leads?: string[];
+  /** Сотрудник вне топ-команды: задачи «Все лидеры» к нему не относятся */
+  employee?: boolean;
 };
+
+/** Руководитель команды задачи или команды выше неё: ведёт задачу как режим управления, кроме архива */
+export function leadsTeam(v: Viewer, team: string | undefined): boolean {
+  return !!team && !!v.leads?.includes(team);
+}
 
 export type TaskPermissions = {
   status: boolean;
@@ -114,10 +123,11 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   if (v.observer) {
     return { status: false, state: false, where: false, due: false, priority: false, edit: false, owner: false, coExecutors: false, links: false, comment: false, archive: false, confirm: false };
   }
-  const manage = !!v.management;
+  // Режим управления или руководитель команды задачи (этап 14)
+  const manage = !!v.management || leadsTeam(v, task.team);
   const me = v.slug;
-  // «Все лидеры»: общую задачу ведёт любой из команды
-  const owner = task.owner === me || task.owner === "all";
+  // «Все лидеры»: общую задачу ведёт любой лидер топ-команды, сотрудника это не касается
+  const owner = task.owner === me || (task.owner === "all" && !v.employee);
   const directOwner = task.owner === me;
   const co = task.coExecutors.includes(me);
   const creator = task.createdBy === me;
@@ -139,9 +149,12 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   };
 }
 
-/** Кому можно поставить задачу: себе может каждый, другому только режим управления, лидер лишь предлагает */
-export function newTaskStatus(owner: Task["owner"], viewer: Viewer): "in-progress" | "proposed" {
-  if (viewer.management) return "in-progress";
+/**
+ * Кому можно поставить задачу: себе может каждый, другому режим управления и руководитель команды задачи,
+ * остальные лишь предлагают
+ */
+export function newTaskStatus(owner: Task["owner"], viewer: Viewer, team?: string): "in-progress" | "proposed" {
+  if (viewer.management || leadsTeam(viewer, team)) return "in-progress";
   return owner === viewer.slug ? "in-progress" : "proposed";
 }
 

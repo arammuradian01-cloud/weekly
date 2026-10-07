@@ -115,7 +115,7 @@ export function TaskBoard() {
   );
 
   const tasks = defaultOrder(
-    data.tasks.filter((t) => !t.archived && (!onlyMine || t.owner === me.slug || t.coExecutors.includes(me.slug))),
+    data.teamTasks.filter((t) => !t.archived && (!onlyMine || t.owner === me.slug || t.coExecutors.includes(me.slug))),
     data.today,
   );
   // «Не выполнена» и «Отменена» нужны редко: по умолчанию четыре колонки помещаются на ноутбуке без прокрутки

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
+import { usePrototype } from "@/domain/store";
+import { teamOf } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
@@ -21,7 +23,11 @@ export function MeetingMode({ view }: { view: WeekView }) {
   const entries = view.entries;
   // Лидеры по очереди, владелец последним. Общие записи без автора отдельным шагом после рисков
   const gone = [...new Set(entries.map((e) => e.author).filter((s): s is string => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
-  const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => Number(a.role === "OWNER") - Number(b.role === "OWNER"));
+  // Руководитель выбранной команды (в топ-команде владелец) рассказывает последним
+  const { team } = usePrototype();
+  const lead = teamOf(team.id)?.leader;
+  const last = (p: { slug: string; role: string }) => Number(p.slug === lead || p.role === "OWNER");
+  const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => last(a) - last(b));
   const hasCommon = entries.some((e) => !e.author);
   const slides: string[] = ["risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   const [index, setIndex] = useState(0);

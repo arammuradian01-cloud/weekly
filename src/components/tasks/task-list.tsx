@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, compactName, ownerName } from "@/domain/people";
+import { compactName, ownerName } from "@/domain/people";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { defaultOrder, isClosed, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/domain/rules";
@@ -36,7 +36,7 @@ function matches(task: Task, q: string): boolean {
 }
 
 export function TaskList() {
-  const { data, me, manageRole } = usePrototype();
+  const { data, me, manageRole, teamPeople } = usePrototype();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [active, setActive] = useState<QuickFilter[]>([]);
@@ -44,7 +44,7 @@ export function TaskList() {
   const [showClosed, setShowClosed] = useState(false);
   // Архив видит только владелец в режиме управления: отсюда он возвращает задачи (раздел 6 ТЗ)
   const [archive, setArchive] = useState(false);
-  const archivedCount = data.tasks.filter((t) => t.archived).length;
+  const archivedCount = data.teamTasks.filter((t) => t.archived).length;
   const today = data.today;
 
   const predicates: Record<QuickFilter, (t: Task) => boolean> = {
@@ -56,7 +56,7 @@ export function TaskList() {
     stale: (t) => isStale(t, today),
   };
 
-  const base = data.tasks.filter((t) => (archive ? t.archived : !t.archived));
+  const base = data.teamTasks.filter((t) => (archive ? t.archived : !t.archived));
   const counts = Object.fromEntries(QUICK.map((f) => [f.key, base.filter(predicates[f.key]).length])) as Record<QuickFilter, number>;
 
   const filtered = useMemo(
@@ -66,7 +66,7 @@ export function TaskList() {
         today,
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.tasks, q, active, showClosed, archive, today, me.slug],
+    [data.teamTasks, q, active, showClosed, archive, today, me.slug],
   );
   const closedCount = base.filter((t) => isClosed(t) && matches(t, q) && active.every((f) => predicates[f](t))).length;
 
@@ -76,7 +76,7 @@ export function TaskList() {
     // Порядок справочника, а в конце те, кого уже выключили или скрыли: их задачи не пропадают из списка
     const known =
       groupBy === "owner"
-        ? [...PEOPLE.map((p) => p.slug as string), "all"]
+        ? [...teamPeople.map((p) => p.slug as string), "all"]
         : groupBy === "direction"
           ? DIRECTIONS.map((d) => d.code as string)
           : [...PRIORITIES.map((p) => p.code as string), "unset"];
@@ -90,7 +90,7 @@ export function TaskList() {
     return order
       .map((k) => ({ key: k, title: titleOf(k), tasks: filtered.filter((t) => keyOf(t) === k) }))
       .filter((g) => g.tasks.length > 0);
-  }, [filtered, groupBy]);
+  }, [filtered, groupBy, teamPeople]);
 
   const toggle = (f: QuickFilter) => setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
 
@@ -172,8 +172,12 @@ export function TaskList() {
         <p className="mt-3 rounded-xl bg-surface px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
-        <EmptyState title={archive ? "В архиве пусто" : "Под эти фильтры задач нет"} className="mt-4">
-          {archive ? "Сюда попадают задачи, которые владелец отправил в архив." : "Снимите часть фильтров или поищите по номеру задачи."}
+        <EmptyState title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"} className="mt-4">
+          {archive
+            ? "Сюда попадают задачи, которые владелец отправил в архив."
+            : base.length === 0
+              ? "Поставьте первую задачу кнопкой «Новая задача». Задачи других команд открываются переключателем команды в шапке."
+              : "Снимите часть фильтров или поищите по номеру задачи."}
         </EmptyState>
       ) : (
         <TaskTable groups={groups} />
