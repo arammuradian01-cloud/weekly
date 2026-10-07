@@ -19,10 +19,6 @@ export async function removeAgendaItemAction(meetingId: string, itemId: string):
   return runAction("Пункт повестки", (a) => svc.removeAgendaItem(a, String(meetingId), String(itemId)));
 }
 
-export async function moveAgendaItemAction(meetingId: string, itemId: string, beforeId: string | null): Promise<Result<MeetingView>> {
-  return runAction("Порядок повестки", (a) => svc.moveAgendaItem(a, String(meetingId), String(itemId), beforeId == null ? null : String(beforeId)));
-}
-
 export async function startMeetingAction(meetingId: string): Promise<Result<MeetingView>> {
   return runAction("Начало встречи", (a) => svc.startMeeting(a, String(meetingId)));
 }

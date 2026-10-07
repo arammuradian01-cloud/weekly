@@ -20,7 +20,7 @@ import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/pri
 import { FormError } from "@/components/ui/field";
 import { PersonSelect, DueField } from "@/components/requests/request-parts";
 
-type Row = NotionCandidate & { on: boolean; owner: string; due: string; direction: string };
+type Row = NotionCandidate & { on: boolean; owner: string; dueDate: string; direction: string };
 
 /** Кто имелся в виду: имя или фамилия из текста к человеку команды */
 function guessOwner(who: string | undefined, fallback: string): string {
@@ -38,21 +38,22 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const defaultDue = addDays(meeting.date, 7);
+  // Срок по умолчанию: через неделю после встречи, но не в прошлом, если разбор принимают позже
+  const defaultDue = addDays(meeting.date, 7) > data.today ? addDays(meeting.date, 7) : addDays(data.today, 7);
   const defaultDirection = (dictOptions("DIRECTION")[0]?.value ?? "department") as DirectionCode;
 
   const parse = () => {
     const found = parseNotion(text);
     if (!found.length) return setError("В тексте не нашлось строк, похожих на задачи или решения. Вставьте список из разбора встречи");
     setError(null);
-    setRows(found.map((c) => ({ ...c, on: true, owner: guessOwner(c.who, me.slug), due: defaultDue, direction: me.direction ?? defaultDirection })));
+    setRows(found.map((c) => ({ ...c, on: true, owner: guessOwner(c.who, me.slug), dueDate: defaultDue, direction: me.direction ?? defaultDirection })));
   };
   const update = (key: string, patch: Partial<Row>) => setRows((prev) => prev?.map((r) => (r.key === key ? { ...r, ...patch } : r)) ?? prev);
 
   const confirm = async () => {
     const chosen = (rows ?? []).filter((r) => r.on);
     if (!chosen.length) return setError("Отметьте, что принять");
-    const items: IntakeItem[] = chosen.map((r) => (r.kind === "task" ? { kind: "task", title: r.text.slice(0, 120), owner: r.owner, due: r.due, direction: r.direction } : { kind: "decision", text: r.text, owner: r.owner || null }));
+    const items: IntakeItem[] = chosen.map((r) => (r.kind === "task" ? { kind: "task", title: r.text.slice(0, 120), owner: r.owner, due: r.dueDate, direction: r.direction } : { kind: "decision", text: r.text, owner: r.owner || null }));
     setBusy(true);
     try {
       const res = await intakeAction(meeting.id, items, url.trim() || null);
@@ -105,7 +106,7 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
                       <PersonSelect id={`${r.key}-owner`} label={r.kind === "task" ? "Ответственный" : "Владелец, если есть"} value={r.owner} onChange={(v) => update(r.key, { owner: v })} exclude={"" as PersonSlug} />
                       {r.kind === "task" ? (
                         <>
-                          <DueField id={`${r.key}-due`} label="Срок" value={r.due} onChange={(v) => update(r.key, { due: v })} today={data.today} />
+                          <DueField id={`${r.key}-due`} label="Срок" value={r.dueDate} onChange={(v) => update(r.key, { dueDate: v })} today={data.today} />
                           <SelectField label="Направление" id={`${r.key}-dir`} value={r.direction} onChange={(e) => update(r.key, { direction: e.target.value })} options={dictOptions("DIRECTION", r.direction)} />
                         </>
                       ) : null}

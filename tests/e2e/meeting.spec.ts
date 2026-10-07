@@ -45,14 +45,14 @@ test("владелец собирает повестку, ведёт встре�
   const nav = page.getByRole("navigation", { name: "Повестка" });
   await expect(nav.getByText(/Повестка: \d+ пунктов/)).toBeVisible();
   const [{ title }] = await sql(`SELECT title FROM tasks WHERE number = 28`);
-  await expect(nav.getByRole("button", { name: new RegExp(`Задача 28 заблокирована: ${title.slice(0, 20)}`) })).toBeVisible();
+  await expect(nav.getByRole("button", { name: new RegExp(`^Задача 28 заблокирована: ${title.slice(0, 20)}`) })).toBeVisible();
 
   // Ведущий начинает и переходит к пункту про задачу 28
   await page.getByRole("button", { name: "Начать встречу" }).click();
   await expect(page.getByText("Встреча началась").first()).toBeVisible();
   await expect(page.getByText(/Вы ведёте/)).toBeVisible();
   await openAgenda(page);
-  await nav.getByRole("button", { name: new RegExp(`Задача 28 заблокирована`) }).click();
+  await nav.getByRole("button", { name: /^Задача 28 заблокирована/ }).click();
   await expect(page.getByRole("heading", { name: /Задача 28 заблокирована/ })).toBeVisible();
   await expect(page.getByText("Ждём доступ от СК")).toBeVisible();
 
@@ -76,9 +76,11 @@ test("владелец собирает повестку, ведёт встре�
   await shot(page, "live");
 
   // Ведущий листает дальше: экран участника переходит сам
-  await page.getByRole("button", { name: "Дальше" }).click();
+  await page.getByRole("button", { name: "Дальше", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Задача 28 заблокирована/ })).toHaveCount(0);
+  const nextTitle = (await page.locator("section h2").first().textContent())!.trim();
   await expect(reva.getByRole("heading", { name: /Задача 28 заблокирована/ })).toHaveCount(0, { timeout: 15000 });
-  await expect(reva.getByText("Доступ от СК запрашивает Тарас до пятницы")).toHaveCount(0);
+  await expect(reva.locator("section h2").first()).toHaveText(nextTitle);
   await reva.goto("/me");
   await expect(reva.getByText(/Вы владелец решения встречи/).first()).toBeVisible();
   await reva.context().close();
@@ -116,7 +118,7 @@ test("лидер без режима управления видит повес�
   await enter(page, "Рева Тарас");
   await page.goto(`/weekly/meeting?week=${key}`);
   await openAgenda(page);
-  await expect(page.getByRole("navigation", { name: "Повестка" }).getByRole("button", { name: /Запускаем ли КАСКО для такси/ })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Повестка" }).getByRole("button", { name: /^Запускаем ли КАСКО для такси/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Начать встречу" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Из Notion" })).toHaveCount(0);
 
@@ -133,7 +135,7 @@ test("лидер без режима управления видит повес�
   await dialog.getByRole("button", { name: /Принять выбранное: 2/ }).click();
   await expect(page.getByText("Принято: задач 1, решений 1").first()).toBeVisible();
   await openAgenda(page);
-  await expect(page.getByRole("navigation", { name: "Повестка" }).getByRole("button", { name: /Решения/ })).toContainText("1");
+  await expect(page.getByRole("navigation", { name: "Повестка" }).getByRole("button", { name: /^Решения/ })).toContainText("1");
   const [{ count }] = await sql(`SELECT count(*)::int AS count FROM tasks WHERE title = 'прислать выгрузку по убыткам до пятницы' AND "sourceCode" = 'meeting'`);
   expect(count).toBe(1);
   await shot(page, "notion");

@@ -115,7 +115,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                       <span className="text-muted">Запись weekly:</span> {item.entryTitle}
                     </Link>
                   ) : item.subject.startsWith("meeting:") ? (
-                    <Link href={`/weekly/meeting?week=${item.subject.slice("meeting:".length)}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
                       Встреча
                     </Link>
                   ) : item.subject.startsWith("decision:") ? (

@@ -3,7 +3,7 @@
 // Журнал решений (этап 23): поиск с русскими словоформами, фильтр по состоянию, отмена с причиной.
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
@@ -26,16 +26,24 @@ export function DecisionsJournal({ initial, teamIds }: { initial: DecisionView[]
   const [cancelling, setCancelling] = useState<DecisionView | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => setItems(initial), [initial]);
-
+  // Свежий список с сервера, если фильтры не тронуты; иначе перечитываем по фильтру
+  const filtered = query.trim() !== "" || status !== "all";
   useEffect(() => {
+    if (!filtered) setItems(initial);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial]);
+  const seq = useRef(0);
+  useEffect(() => {
+    if (!filtered) return;
+    const my = ++seq.current;
     const t = setTimeout(async () => {
       const r = await searchDecisionsAction(query, status, teamIds);
-      if (r.ok) setItems(r.value);
+      // Ответ на устаревший запрос не перекрывает свежий
+      if (r.ok && my === seq.current) setItems(r.value);
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, status]);
+  }, [query, status, initial]);
 
   const canCancel = manage || leads.length > 0;
   const cancel = async () => {

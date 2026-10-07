@@ -66,10 +66,13 @@ describe("повестка", () => {
   it("собирается из поручений прошлой встречи, блокеров и риска, критичных и просроченных, зависших просьб, вопросов и лидеров; владелец последним", async () => {
     const owner = await actor.owner();
     const reva = await actor.reva();
-    // Поручение прошлой встречи: источник «встреча», дата прошлой встречи топ-команды
+    // Поручение прошлой встречи: источник «встреча», поставлена между прошлой встречей и этой (здесь на следующий день
+    // после прошлой, как после разбора в Notion)
     const prevMeeting = addDays(shiftWeek(key, -1), 8);
     const follow = await mk("Поручение с прошлой встречи", { source: "meeting" });
-    await prisma.task.update({ where: { number: follow.number }, data: { sourceDate: new Date(`${prevMeeting}T00:00:00Z`) } });
+    await prisma.task.update({ where: { number: follow.number }, data: { sourceDate: new Date(`${addDays(prevMeeting, 1)}T00:00:00Z`) } });
+    const tooOld = await mk("Поручение позапрошлой встречи", { source: "meeting" });
+    await prisma.task.update({ where: { number: tooOld.number }, data: { sourceDate: new Date(`${addDays(prevMeeting, -7)}T00:00:00Z`) } });
     const blocked = await mk("Заблокированная");
     const other = await mk("Та, которую ждут");
     await tasks.changeState(reva, blocked.number, "blocked", null, { waitTask: other.number });
@@ -131,9 +134,13 @@ describe("повестка", () => {
 
   it("повестки собираются сами после срока сдачи по всем командам", async () => {
     const week = await weekly.ensureWeek(prisma, key);
-    expect(await m.agendaPass(new Date(week.deadline.getTime() - 60_000))).toBe(0);
+    // До срока этой недели собирается прошлая неделя (её срок давно прошёл), эта ещё нет
+    const before = await m.agendaPass(new Date(week.deadline.getTime() - 60_000));
+    expect(before).toBeGreaterThanOrEqual(2);
+    expect(await prisma.meeting.count({ where: { weekId: week.id } })).toBe(0);
     const built = await m.agendaPass(new Date(week.deadline.getTime() + 60_000));
     expect(built).toBeGreaterThanOrEqual(2);
+    expect(await prisma.meeting.count({ where: { weekId: week.id } })).toBe(built);
     expect(await m.agendaPass(new Date(week.deadline.getTime() + 120_000))).toBe(0);
   });
 });
@@ -146,7 +153,9 @@ describe("живой режим и решения", () => {
     expect(view.status).toBe("live");
     expect(view.leader).toBe("muradyan");
     expect(view.currentItemId).toBe(view.items[0]!.id);
-    await expectRule(m.startMeeting(owner, view.id), /уже ведёт/);
+    await expectRule(m.startMeeting(owner, view.id), /уже идёт/);
+    // Другой руководитель перехватывает ведение одним переходом
+    view = await m.goToItem(owner, view.id, view.items[0]!.id);
     const second = view.items[1]!;
     view = await m.goToItem(owner, view.id, second.id);
     expect(view.currentItemId).toBe(second.id);
@@ -207,6 +216,7 @@ describe("живой режим и решения", () => {
     });
     const before = await mk("Задача до встречи");
     let view = await m.buildAgenda(owner, TOP_TEAM, key);
+    await expectRule(m.closeMeeting(owner, view.id), /не начиналась/);
     view = await m.startMeeting(owner, view.id);
     await new Promise((r) => setTimeout(r, 5));
     const created = await mk("Поставлена на встрече", { source: "meeting" });
@@ -247,6 +257,8 @@ describe("живой режим и решения", () => {
     expect(t).toMatchObject({ sourceCode: "meeting", teamId: TOP_TEAM });
     expect(res.meeting.notionUrl).toBe("https://www.notion.so/razbor");
     await expectRule(m.intake(owner, view.id, []), /Отметьте/);
+    await expectRule(m.intake(owner, view.id, [{ kind: "decision", text: "x" }], "https://evil.example/x"), /Notion/);
+    await expectRule(m.intake(owner, view.id, [{ kind: "decision", text: "x", owner: "nobody" }]), /владельца/);
     await expectRule(m.setNotionUrl(owner, view.id, "https://evil.example/x"), /Notion/);
     view = await m.setNotionUrl(owner, view.id, null);
     expect(view.notionUrl).toBeUndefined();

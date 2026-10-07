@@ -24,8 +24,8 @@ export type AgendaBlock = "follow-up" | "attention" | "people" | "manual";
 export const AGENDA_BLOCKS: { code: AgendaBlock; label: string }[] = [
   { code: "follow-up", label: "Поручения прошлой встречи" },
   { code: "attention", label: "Риски и помощь" },
-  { code: "people", label: "Лидеры по очереди" },
   { code: "manual", label: "Добавлено ведущим" },
+  { code: "people", label: "Лидеры по очереди" },
 ];
 
 export function blockOf(kind: AgendaKindCode): AgendaBlock {

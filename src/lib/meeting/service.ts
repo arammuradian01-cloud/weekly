@@ -226,13 +226,16 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<D
   const prev = await prisma.meeting.findFirst({ where: { teamId: team.id, week: { start: dbDate(prevKey) } }, select: { date: true, startedAt: true, closedAt: true } });
   const { meeting } = await weekSettings();
   const prevDate = prev ? isoFromDbDate(prev.date) : teamMeeting(prevKey, team, meetingOf(prevKey, meeting)).date;
+  const thisDate = teamMeeting(key, team, meetingOf(key, meeting)).date;
+  // Поручения: задачи с источником «встреча», поставленные с прошлой встречи до этой (и на следующий день после разбора
+  // в Notion), и задачи, созданные за время прошлой встречи в живом режиме
   const followUps = await prisma.task.findMany({
     where: {
       teamId: team.id,
       archivedAt: null,
       OR: [
-        { sourceCode: "meeting", sourceDate: dbDate(prevDate) },
-        ...(prev?.startedAt ? [{ createdAt: { gte: prev.startedAt, lte: prev.closedAt ?? new Date() } }] : []),
+        { sourceCode: "meeting", sourceDate: { gte: dbDate(prevDate), lt: dbDate(thisDate) } },
+        ...(prev?.startedAt && prev.closedAt ? [{ createdAt: { gte: prev.startedAt, lte: prev.closedAt } }] : []),
       ],
     },
     select: { id: true, number: true, title: true, status: true },
@@ -245,14 +248,17 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<D
 
   // Зависшие просьбы и предложения (этап 21)
   const stuck = await stuckForMeeting(a.actor, [team.id]);
+  const slugs = new Map((await prisma.person.findMany({ where: { id: { in: people } }, select: { id: true, slug: true } })).map((p) => [p.slug, p.id]));
   for (const r of stuck.requests) {
+    // Только просьбы людей этой команды: повестку видит вся команда
+    if (!slugs.has(r.author) && !slugs.has(r.addressee)) continue;
     const row = await prisma.helpRequest.findUnique({ where: { number: r.number }, select: { id: true } });
     if (!row) continue;
     drafts.push({ kind: "REQUEST", autoKey: `request:${row.id}`, requestId: row.id, title: r.status === "open" ? `Просьба ${r.number} без ответа: ${r.text}. Кто и когда ответит?` : `Просьба ${r.number} просрочена: ${r.text}. Что дальше?` });
   }
   for (const p of stuck.proposals) {
-    const row = await prisma.task.findUnique({ where: { number: p.number }, select: { id: true } });
-    if (!row) continue;
+    const row = await prisma.task.findUnique({ where: { number: p.number }, select: { id: true, teamId: true } });
+    if (!row || (row.teamId !== team.id && !(p.owner && slugs.has(p.owner)))) continue;
     drafts.push({ kind: "PROPOSAL", autoKey: `proposal:${row.id}`, taskId: row.id, title: `Предложение ${p.number} без ответа ${p.days} дн.: ${p.title}. Берём или отклоняем?` });
   }
 
@@ -276,6 +282,8 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<D
   const questions = await meetingQuestions(a.actor, key, { current: entryIds }, [team.id]);
   for (const q of questions) {
     if (q.discussed) continue;
+    // Вопрос к записи человека другой команды сюда не попадает
+    if (q.entry && (!q.entry.author || !slugs.has(q.entry.author))) continue;
     const reaction = await prisma.reaction.findUnique({ where: { id: q.id }, select: { entryId: true, entryComment: { select: { entryId: true } }, taskComment: { select: { taskId: true } } } });
     const entryId = reaction?.entryId ?? reaction?.entryComment?.entryId ?? undefined;
     const taskId = reaction?.taskComment?.taskId ?? undefined;
@@ -340,7 +348,9 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
     for (const i of m.items) {
       if (!i.autoKey || seen.has(i.autoKey) || i.discussedAt || i.removedAt) continue;
       const decisions = await tx.decision.count({ where: { itemId: i.id } });
-      if (!decisions) await tx.agendaItem.delete({ where: { id: i.id } });
+      if (decisions) continue;
+      if (m.currentItemId === i.id) await tx.meeting.update({ where: { id: m.id }, data: { currentItemId: await nextItemId(tx, m.id, i.id) } });
+      await tx.agendaItem.delete({ where: { id: i.id } });
     }
     await audit(tx, actor, "meeting.agenda", m.id, `Повестка встречи, неделя ${week.isoNumber}, ${a.node.name}`, null, `Пунктов: ${drafts.length}`);
     return tx.meeting.findUniqueOrThrow({ where: { id: m.id }, include: meetingInclude });
@@ -352,33 +362,45 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
 export async function agendaPass(now = new Date()): Promise<number> {
   const { currentReportingKey } = await import("@/lib/weekly/service");
   const key = await currentReportingKey(now);
-  const week = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true, deadline: true } });
-  if (!week || now < week.deadline) return 0;
   const nodes = await loadTeamNodes(prisma);
-  const have = new Set((await prisma.meeting.findMany({ where: { weekId: week.id }, select: { teamId: true } })).map((m) => m.teamId));
   let built = 0;
-  for (const node of nodes) {
-    if (!node.active || have.has(node.id)) continue;
-    const leaderId = node.leaderId ?? (node.id === TOP_TEAM ? (await prisma.person.findFirst({ where: { role: "OWNER", active: true }, select: { id: true } }))?.id : null);
-    if (!leaderId) continue;
-    const person = await prisma.person.findUnique({ where: { id: leaderId } });
-    if (!person) continue;
-    const actor: Actor = { personId: person.id, slug: person.slug as PersonSlug, fullName: person.fullName, role: person.role, management: "ADMIN", ip: null, via: null };
-    try {
-      await buildAgenda(actor, node.id, key, now);
-      built++;
-    } catch (error) {
-      console.error(`Повестка ${node.name} не собралась`, error);
+  // Отчётная неделя и прошлая: если в сутки после срока сервер молчал, повестка всё равно соберётся
+  for (const k of [shiftWeek(key, -1), key]) {
+    const week = await ensureWeek(prisma, k);
+    if (now < week.deadline) continue;
+    const have = new Set((await prisma.meeting.findMany({ where: { weekId: week.id }, select: { teamId: true } })).map((m) => m.teamId));
+    for (const node of nodes) {
+      if (!node.active || have.has(node.id)) continue;
+      const leaderId = node.leaderId ?? (node.id === TOP_TEAM ? (await prisma.person.findFirst({ where: { role: "OWNER", active: true }, select: { id: true } }))?.id : null);
+      if (!leaderId) continue;
+      const person = await prisma.person.findUnique({ where: { id: leaderId } });
+      if (!person) continue;
+      // От имени руководителя команды, но в журнале видно, что собрал ресурс по расписанию
+      const actor: Actor = { personId: person.id, slug: person.slug as PersonSlug, fullName: `Ресурс по расписанию (${person.fullName})`, role: person.role, management: "ADMIN", ip: null, via: null };
+      try {
+        await buildAgenda(actor, node.id, k, now);
+        built++;
+      } catch (error) {
+        console.error(`Повестка ${node.name} не собралась`, error);
+      }
     }
   }
   return built;
 }
 
+/** Замок строки встречи до чтения: проверки идут по свежему состоянию, а не по снимку до замка */
 async function lockMeeting(tx: Tx, a: Access, meetingId: string) {
+  await tx.$queryRaw`SELECT id FROM meetings WHERE id = ${String(meetingId)} FOR UPDATE`;
   const row = await tx.meeting.findUnique({ where: { id: String(meetingId) }, include: meetingInclude });
   if (!row || row.teamId !== a.node.id) return fail("Такой встречи нет");
-  await tx.$queryRaw`SELECT id FROM meetings WHERE id = ${row.id} FOR UPDATE`;
   return row;
+}
+
+/** Следующий пункт после данного, для живого режима: убрали текущий, экран идёт дальше, а не к решениям */
+async function nextItemId(tx: Tx, meetingId: string, afterId: string): Promise<string | null> {
+  const items = await tx.agendaItem.findMany({ where: { meetingId, removedAt: null }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true } });
+  const i = items.findIndex((x) => x.id === afterId);
+  return items[i + 1]?.id ?? items[i - 1]?.id ?? null;
 }
 
 async function meetingAccess(db: Db, actor: Actor, meetingId: string): Promise<Access> {
@@ -421,26 +443,8 @@ export async function removeAgendaItem(actor: Actor, meetingId: string, itemId: 
     if (item.decisions.length) fail("В пункте записаны решения: его не убирают");
     if (item.autoKey) await tx.agendaItem.update({ where: { id: item.id }, data: { removedAt: new Date() } });
     else await tx.agendaItem.delete({ where: { id: item.id } });
-    if (m.currentItemId === item.id) await tx.meeting.update({ where: { id: m.id }, data: { currentItemId: null } });
+    if (m.currentItemId === item.id) await tx.meeting.update({ where: { id: m.id }, data: { currentItemId: await nextItemId(tx, m.id, item.id) } });
     await audit(tx, actor, "meeting.item.remove", m.id, "Пункт повестки", item.title, null);
-    return tx.meeting.findUniqueOrThrow({ where: { id: m.id }, include: meetingInclude });
-  });
-  return toView(prisma, a, row);
-}
-
-/** Переставить пункт: before: id пункта, перед которым встать; null: в конец */
-export async function moveAgendaItem(actor: Actor, meetingId: string, itemId: string, beforeId: string | null): Promise<MeetingView> {
-  const a = await meetingAccess(prisma, actor, meetingId);
-  requireLead(a, "Переставить пункт");
-  const row = await prisma.$transaction(async (tx) => {
-    const m = await lockMeeting(tx, a, meetingId);
-    if (m.status === "DONE") fail("Встреча закрыта");
-    const ids = m.items.map((i) => i.id);
-    if (!ids.includes(String(itemId))) return fail("Этого пункта уже нет");
-    const rest = ids.filter((id) => id !== itemId);
-    const at = beforeId ? rest.indexOf(String(beforeId)) : -1;
-    const next = at < 0 ? [...rest, String(itemId)] : [...rest.slice(0, at), String(itemId), ...rest.slice(at)];
-    for (let i = 0; i < next.length; i++) await tx.agendaItem.update({ where: { id: next[i]! }, data: { sortOrder: (i + 1) * 10 } });
     return tx.meeting.findUniqueOrThrow({ where: { id: m.id }, include: meetingInclude });
   });
   return toView(prisma, a, row);
@@ -454,7 +458,7 @@ export async function startMeeting(actor: Actor, meetingId: string, now = new Da
   const row = await prisma.$transaction(async (tx) => {
     const m = await lockMeeting(tx, a, meetingId);
     if (m.status === "DONE") fail("Встреча уже закрыта");
-    if (m.status === "LIVE") fail(`Встречу уже ведёт ${m.leader?.slug ? "коллега" : "кто-то"}: присоединяйтесь`);
+    if (m.status === "LIVE") fail("Встреча уже идёт: присоединяйтесь или нажмите «Вести самому»");
     const first = m.items[0]?.id ?? null;
     await tx.meeting.update({ where: { id: m.id }, data: { status: "LIVE", leaderId: actor.personId, startedAt: now, currentItemId: first } });
     await audit(tx, actor, "meeting.start", m.id, `Встреча, неделя ${m.week.isoNumber}, ${m.team.name}`, "Запланирована", "Идёт");
@@ -502,18 +506,23 @@ export async function setTimer(actor: Actor, meetingId: string, minutes: number)
   return toView(prisma, a, row);
 }
 
+/** Ссылка на заметку встречи: только https и домен Notion */
+function notionUrlOf(url: string | null | undefined): string | null {
+  const raw = String(url ?? "").trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || !/(^|\.)notion\.(so|site)$/.test(u.hostname)) throw new Error();
+  } catch {
+    fail("Ссылка должна вести на страницу Notion");
+  }
+  return raw.slice(0, 500);
+}
+
 export async function setNotionUrl(actor: Actor, meetingId: string, url: string | null): Promise<MeetingView> {
   const a = await meetingAccess(prisma, actor, meetingId);
   requireLead(a, "Ссылка на Notion");
-  const raw = String(url ?? "").trim();
-  if (raw) {
-    try {
-      const u = new URL(raw);
-      if (u.protocol !== "https:" || !/(^|\.)notion\.(so|site)$/.test(u.hostname)) throw new Error();
-    } catch {
-      fail("Ссылка должна вести на страницу Notion");
-    }
-  }
+  const raw = notionUrlOf(url) ?? "";
   const row = await prisma.meeting.update({ where: { id: String(meetingId) }, data: { notionUrl: raw || null }, include: meetingInclude });
   return toView(prisma, a, row);
 }
@@ -614,14 +623,15 @@ async function buildProtocol(db: Db, m: MeetingRow, now: Date): Promise<string> 
   for (const t of created) lines.push(`- ${t.number}. ${t.title}: ${t.ownerAll ? "все лидеры" : t.ownerId ? (names.get(t.ownerId) ?? "") : "без ответственного"}, срок ${formatShort(isoFromDbDate(t.due))}. ${base}/tasks/${t.number}`);
   lines.push("");
   const createdNumbers = new Set(created.map((t) => t.number));
-  const changes = await db.auditLog.findMany({
-    where: { entity: "task", at: { gte: from, lte: now }, action: { in: ["task.update", "task.handover"] }, field: { in: ["Статус", "Срок", "Состояние", "Ответственный", "Приоритет"] } },
-    select: { entityId: true, field: true, after: true, actorName: true },
-    orderBy: { at: "asc" },
-    take: 200,
-  });
-  const teamNumbers = new Set((await db.task.findMany({ where: { teamId: m.teamId }, select: { number: true } })).map((t) => String(t.number)));
-  const relevant = changes.filter((c) => c.entityId && teamNumbers.has(c.entityId) && !createdNumbers.has(Number(c.entityId)));
+  const teamNumbers = (await db.task.findMany({ where: { teamId: m.teamId }, select: { number: true } })).map((t) => String(t.number)).filter((n) => !createdNumbers.has(Number(n)));
+  const relevant = teamNumbers.length
+    ? await db.auditLog.findMany({
+        where: { entity: "task", entityId: { in: teamNumbers }, at: { gte: from, lte: now }, action: { in: ["task.update", "task.handover"] }, field: { in: ["Статус", "Срок", "Состояние", "Ответственный", "Приоритет"] } },
+        select: { entityId: true, field: true, after: true },
+        orderBy: { at: "asc" },
+        take: 200,
+      })
+    : [];
   lines.push("Изменения по задачам");
   if (!relevant.length) lines.push("Изменений нет");
   for (const c of relevant) lines.push(`- Задача ${c.entityId}: ${(c.field ?? "").toLowerCase()}: ${c.after ?? ""}`);
@@ -639,11 +649,12 @@ export async function closeMeeting(actor: Actor, meetingId: string, now = new Da
   const { row, protocol, recipients } = await prisma.$transaction(async (tx) => {
     const m = await lockMeeting(tx, a, meetingId);
     if (m.status === "DONE") fail("Встреча уже закрыта");
+    if (m.status !== "LIVE") fail("Встреча ещё не начиналась: сначала «Начать встречу»");
     const protocol = await buildProtocol(tx, m, now);
     await tx.meeting.update({ where: { id: m.id }, data: { status: "DONE", closedAt: now, currentItemId: null, protocol } });
     await audit(tx, actor, "meeting.close", m.id, `Встреча, неделя ${m.week.isoNumber}, ${m.team.name}`, "Идёт", "Закрыта");
     const people = await tx.person.findMany({ where: { id: { in: participantsOf(a.nodes, a.node) }, active: true }, select: { id: true, email: true } });
-    await notify(tx, { kind: "MEETING", recipients: people.map((p) => p.id), actor, subject: `meeting:${isoFromDbDate(m.week.start)}`, text: `Протокол встречи ${m.team.name} за неделю ${m.week.isoNumber} готов` });
+    await notify(tx, { kind: "MEETING", recipients: people.map((p) => p.id), actor, subject: `meeting:${isoFromDbDate(m.week.start)}:${m.teamId}`, text: `Протокол встречи ${m.team.name} за неделю ${m.week.isoNumber} готов` });
     return { row: await tx.meeting.findUniqueOrThrow({ where: { id: m.id }, include: meetingInclude }), protocol, recipients: people.filter((p) => p.email).map((p) => p.email!) };
   });
   if (recipients.length && mailConfigured()) {
@@ -709,14 +720,13 @@ export async function intake(actor: Actor, meetingId: string, items: IntakeItem[
         const text = String(it.text ?? "").replace(/[—–→⟶⇒]/g, "-").trim();
         if (!text) fail("Решение без текста");
         const owner = it.owner ? await tx.person.findFirst({ where: { slug: String(it.owner), active: true }, select: { id: true } }) : null;
+        if (it.owner && !owner) fail("Выберите владельца решения из списка");
         await tx.decision.create({ data: { meetingId: m.id, teamId: m.teamId, text: text.slice(0, MEETING_LIMITS.decision), ownerId: owner?.id ?? null, date: m.date, createdById: actor.personId } });
         decisions++;
       }
     }
-    if (notionUrl !== undefined) {
-      const raw = String(notionUrl ?? "").trim();
-      if (raw) await tx.meeting.update({ where: { id: m.id }, data: { notionUrl: raw.slice(0, 500) } });
-    }
+    const link = notionUrlOf(notionUrl);
+    if (link) await tx.meeting.update({ where: { id: m.id }, data: { notionUrl: link } });
     await audit(tx, actor, "meeting.intake", m.id, "Приём из Notion", null, `Задач: ${numbers.length}, решений: ${decisions}`);
   });
   const view = await getMeeting(actor, a.node.id, (await prisma.meeting.findUniqueOrThrow({ where: { id: String(meetingId) }, include: { week: { select: { start: true } } } })).week.start.toISOString().slice(0, 10) as WeekKey);

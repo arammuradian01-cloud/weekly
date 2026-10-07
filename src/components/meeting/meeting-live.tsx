@@ -164,13 +164,14 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team }: { 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog']")) return;
+      if (busy) return;
       if (e.key === "ArrowRight" || e.key === "PageDown") step(1);
       if (e.key === "ArrowLeft" || e.key === "PageUp") step(-1);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, steps.join("|"), leading]);
+  }, [index, steps.join("|"), leading, busy]);
 
   const [adding, setAdding] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
@@ -217,6 +218,11 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team }: { 
           <Button size="sm" variant="ghost" onClick={() => setFollowing((f) => !f)}>
             {following ? "Смотреть самому" : "Снова за ведущим"}
           </Button>
+          {canLead ? (
+            <Button size="sm" variant="ghost" onClick={() => void run(() => goToItemAction(meeting.id, current === DECISIONS ? DECISIONS : current), "Теперь ведёте вы")} disabled={busy}>
+              Вести самому
+            </Button>
+          ) : null}
         </p>
       ) : null}
 
@@ -240,7 +246,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team }: { 
               </div>
             </>
           ) : null}
-          <section aria-live="polite" className="min-w-0">
+          <section className="min-w-0">
             {current === DECISIONS ? (
               <DecisionsStep meeting={meeting} canLead={canLead} busy={busy} run={run} projector={projector} />
             ) : item ? (
@@ -321,7 +327,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
                     onClick={() => void run(() => removeAgendaItemAction(meeting.id, i.id))}
                     disabled={busy}
                     aria-label={`Убрать пункт: ${i.title}`}
-                    className="mt-2 hidden h-6 w-6 shrink-0 items-center justify-center rounded text-muted hover:bg-surface hover:text-danger-ink group-hover:inline-flex"
+                    className="mt-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-surface hover:text-danger-ink focus-visible:opacity-100 group-hover:opacity-100"
                   >
                     <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </button>
@@ -365,7 +371,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
         {item.kind === "person" && item.person ? (
           <PersonStep view={view} slug={item.person} projector={projector} />
         ) : (
-          <h1 className={cn(h1, "mt-1 max-w-[40ch]")}>{item.title}</h1>
+          <h2 className={cn(h1, "mt-1 max-w-[40ch]")}>{item.title}</h2>
         )}
         {item.note ? <p className={cn("mt-2 max-w-[70ch] text-ink", projector ? "text-headline" : "text-body")}>{item.note}</p> : null}
       </div>
@@ -438,7 +444,7 @@ function PersonStep({ view, slug, projector }: { view: WeekView; slug: PersonSlu
   return (
     <>
       <div className="mt-1 flex flex-wrap items-center gap-3">
-        <h1 className={cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm")}>{personOf(slug).fullName}</h1>
+        <h2 className={cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm")}>{personOf(slug).fullName}</h2>
         <WeeklyBadge state={weekly?.state ?? "not-started"} />
       </div>
       {weekly?.headline ? <p className={cn("mt-3 max-w-[60ch] leading-snug text-ink", projector ? "text-display-sm" : "text-headline")}>{weekly.headline}</p> : null}
@@ -556,7 +562,7 @@ function DecisionsStep({ meeting, canLead, busy, run, projector }: { meeting: Me
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className={cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm")}>Решения встречи</h1>
+        <h2 className={cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm")}>Решения встречи</h2>
         <p className="mt-2 text-title text-muted">
           {meeting.decisions.length ? `Записано: ${meeting.decisions.length}. Проверяем формулировки и владельцев` : "Пока ни одного решения. Запишите, что решили, или закройте встречу без решений"}
         </p>
