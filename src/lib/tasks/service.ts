@@ -10,7 +10,7 @@ import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { newTaskStatus, permissions, statusNeedsNote, type ManagementRole, type TaskPermissions, type Viewer } from "./rules";
 import { CLOSED_DB, priorityCode, priorityDb, stateCode, stateDb, statusCode, statusDb } from "./codes";
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } from "./dates";
-import { ownerOf, taskInclude, toTaskDto, type TaskRow } from "./dto";
+import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "./dto";
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
@@ -203,8 +203,22 @@ export async function listTasks(opts: { archived?: boolean; reader?: TaskReader;
   } else if (opts.team) {
     and.push({ teamId: opts.team });
   }
-  const rows = await prisma.task.findMany({ where: { AND: and }, include: taskInclude, orderBy: { number: "asc" } });
-  return rows.map(toTaskDto);
+  // Текст комментариев нужен только по своим задачам («Моя неделя»): у остальных приходит их число,
+  // карточка дозагружает задачу целиком при открытии. Так список из сотен задач остаётся лёгким
+  const rows = await prisma.task.findMany({ where: { AND: and }, include: taskListInclude, orderBy: { number: "asc" } });
+  const me = opts.reader?.personId;
+  const own = rows.filter((r) => !me || r.ownerId === me || r.createdById === me || r.coExecutors.some((c) => c.personId === me) || r._count.comments <= 3);
+  const comments = own.length
+    ? await prisma.taskComment.findMany({ where: { taskId: { in: own.map((r) => r.id) } }, orderBy: { at: "asc" }, include: { author: { select: { slug: true } } } })
+    : [];
+  const byTask = new Map<string, typeof comments>();
+  for (const c of comments) byTask.set(c.taskId, [...(byTask.get(c.taskId) ?? []), c]);
+  const withComments = new Set(own.map((r) => r.id));
+  return rows.map((r) => {
+    const { _count, ...rest } = r;
+    const dto = toTaskDto({ ...rest, comments: byTask.get(r.id) ?? [] });
+    return withComments.has(r.id) ? dto : { ...dto, partial: true, commentCount: _count.comments };
+  });
 }
 
 /** Одна задача. reader: null, если человек её не видит */

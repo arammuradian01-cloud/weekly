@@ -18,6 +18,19 @@ export const taskInclude = {
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
 
+/** Для списков: без комментариев, только их число. Комментарии своих задач подгружаются отдельным запросом */
+export const taskListInclude = {
+  owner: taskInclude.owner,
+  createdBy: taskInclude.createdBy,
+  direction: taskInclude.direction,
+  coExecutors: taskInclude.coExecutors,
+  transfers: taskInclude.transfers,
+  links: taskInclude.links,
+  _count: { select: { comments: true } },
+} satisfies Prisma.TaskInclude;
+
+export type TaskListRow = Prisma.TaskGetPayload<{ include: typeof taskListInclude }>;
+
 const slug = (s: string) => s as PersonSlug;
 
 export function ownerOf(row: Pick<TaskRow, "ownerAll" | "owner">): Owner {

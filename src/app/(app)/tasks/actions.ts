@@ -110,6 +110,14 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
   }
 }
 
+/** Задача целиком: карточка дозагружает её, если в списке она пришла без комментариев (этап 14) */
+export async function getTaskAction(number: number): Promise<TaskActionResult> {
+  const a = await actor();
+  const task = await svc.getTask(checkNumber(number), { personId: a.personId, role: a.role });
+  if (!task || (task.archived && a.management !== "OWNER")) return { ok: false, error: `Задачи ${number} нет` };
+  return { ok: true, task, number };
+}
+
 /** Перенести задачу в другую команду (этап 14): режим управления или руководитель обеих команд */
 export async function moveTaskAction(number: number, team: string): Promise<TaskActionResult> {
   try {

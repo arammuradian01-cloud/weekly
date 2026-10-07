@@ -109,7 +109,7 @@ ALTER TABLE "people" ADD CONSTRAINT "people_functionalManagerId_fkey" FOREIGN KE
 ALTER TABLE "tasks" ADD CONSTRAINT "tasks_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "teams"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "org_units" ADD CONSTRAINT "org_units_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "org_units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "org_units" ADD CONSTRAINT "org_units_parentId_fkey" FOREIGN KEY ("parentId") REFERENCES "org_units"("id") ON DELETE NO ACTION ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "org_units" ADD CONSTRAINT "org_units_headId_fkey" FOREIGN KEY ("headId") REFERENCES "people"("id") ON DELETE SET NULL ON UPDATE CASCADE;

@@ -272,6 +272,14 @@ describe("выгрузка изменений", () => {
     expect(owners).not.toContain("Рева Тарас");
     expect(fake.tab("Сводка").grid.map((r) => r[0])).toContain("Рева Тарас Иванович");
   });
+
+  it("колонка «Команда» после «Ответственного»: у задач до команд «Топ-команда» (этап 14)", async () => {
+    const fake = new FakeSheets();
+    await pushChanges(fake, opts);
+    expect(col("Команда")).toBe(col("Ответственный") + 1);
+    const teams = new Set([...rowsOf(fake, "Задачи").values()].map((r) => r[col("Команда")]));
+    expect([...teams]).toEqual(["Топ-команда"]);
+  });
 });
 
 describe("сверка", () => {

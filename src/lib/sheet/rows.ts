@@ -22,6 +22,8 @@ export const TASKS_TAB: TabSpec = {
     { header: "Задача", width: 320 },
     { header: "Что нужно сделать", width: 320 },
     { header: "Ответственный", width: 160 },
+    // Этап 14: команда задачи, у задач до команд «Топ-команда»
+    { header: "Команда", width: 180 },
     { header: "Соисполнители", width: 180 },
     { header: "Направление", width: 140 },
     { header: "Приоритет", width: 100 },
@@ -99,12 +101,13 @@ const linksText = (list: { title?: string; url?: string }[]) => list.map((l) => 
 
 /** Строки вкладки «Задачи». numbers: только эти задачи; null: все. Задачи в архиве в таблицу не попадают */
 export async function taskRows(numbers: number[] | null): Promise<Map<string, Cell[]>> {
-  const [all, people, dicts, fromBord] = await Promise.all([
+  const [all, people, dicts, fromBord, teams] = await Promise.all([
     listTasks({ archived: true }),
     prisma.person.findMany({ select: { slug: true, fullName: true } }),
     prisma.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] } } }),
     // Задачи из Bord (первый импорт и забор): в колонке «Источник» у них пометка, задачи ресурса идут без неё
     prisma.task.findMany({ where: { importBatch: { not: null } }, select: { number: true } }).then((rows) => new Set(rows.map((r) => r.number))),
+    prisma.team.findMany({ select: { id: true, name: true } }).then((rows) => new Map(rows.map((r) => [r.id, r.name]))),
   ]);
   const wanted = numbers ? new Set(numbers) : null;
   const tasks = all.filter((t) => !t.archived && (!wanted || wanted.has(t.number)));
@@ -128,6 +131,7 @@ export async function taskRows(numbers: number[] | null): Promise<Map<string, Ce
       t.title,
       t.outcome,
       name(t.owner),
+      teams.get(t.team) ?? "",
       t.coExecutors.map(name).join(", "),
       label("DIRECTION", t.direction),
       priorityOf(t.priority).label,

@@ -9,7 +9,7 @@ import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { HistoryItem, Task } from "@/domain/types";
-import { archiveTaskAction, moveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { archiveTaskAction, getTaskAction, moveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { TOP_TEAM, teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
@@ -25,8 +25,21 @@ function personInitials(slug: string) {
   return `${first!.charAt(0)}${last!.charAt(0)}`;
 }
 
-export function TaskCard({ task, standalone }: { task: Task; standalone?: boolean }) {
+export function TaskCard({ task: listed, standalone }: { task: Task; standalone?: boolean }) {
   const { data, me, addComment, runTask, notify, team, leads, manage, observer } = usePrototype();
+  // В списке задача могла прийти без текста комментариев: дозагружаем её целиком (этап 14)
+  const [loaded, setLoaded] = useState<Task | null>(null);
+  useEffect(() => {
+    if (!listed.partial) return setLoaded(null);
+    let alive = true;
+    getTaskAction(listed.number)
+      .then((r) => alive && r.ok && r.task && setLoaded(r.task))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [listed.partial, listed.number, listed.updatedAt]);
+  const task = listed.partial && loaded && loaded.number === listed.number ? { ...listed, comments: loaded.comments, partial: false } : listed;
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   const [where, setWhere] = useState(task.where);
@@ -237,13 +250,13 @@ export function TaskCard({ task, standalone }: { task: Task; standalone?: boolea
           value={tab}
           onChange={setTab}
           options={[
-            { value: "comments", label: "Комментарии", count: task.comments.length },
+            { value: "comments", label: "Комментарии", count: task.partial ? task.commentCount : task.comments.length },
             { value: "history", label: "История", count: history?.length },
           ]}
         />
         {tab === "comments" ? (
           <div className="mt-4 flex flex-col gap-4">
-            {task.comments.length === 0 ? <p className="text-small text-muted">Комментариев пока нет.</p> : null}
+            {task.partial ? <p className="text-small text-muted">Загружаю комментарии…</p> : task.comments.length === 0 ? <p className="text-small text-muted">Комментариев пока нет.</p> : null}
             <ol className="flex flex-col gap-4">
               {task.comments.map((c) => (
                 <li key={c.id} className="flex gap-3">

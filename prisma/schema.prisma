@@ -565,7 +565,7 @@ model OrgUnit {
   name      String
   kind      UnitKind
   parentId  String?
-  parent    OrgUnit?  @relation("UnitTree", fields: [parentId], references: [id], onDelete: Restrict)
+  parent    OrgUnit?  @relation("UnitTree", fields: [parentId], references: [id], onDelete: NoAction)
   children  OrgUnit[] @relation("UnitTree")
   /// Руководитель подразделения. null: не выделен, пояснение в headNote
   headId    String?
