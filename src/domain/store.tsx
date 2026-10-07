@@ -6,6 +6,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { mergeRecent } from "./merge-tasks";
 import { peopleOf, personOf } from "./people";
 import type { Person, PersonSlug, Task } from "./types";
 import type { IsoDate } from "./dates";
@@ -95,8 +96,12 @@ export function PrototypeProvider({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seq = useRef(0);
 
-  // Сервер прислал свежие задачи (после router.refresh или перехода): берём их
-  useEffect(() => setTasks(initialTasks), [initialTasks]);
+  // Свои правки последних секунд: ответ сервера, запрошенный до правки, может прийти позже неё
+  const recent = useRef(new Map<number, { at: number; task: Task | null }>());
+
+  // Сервер прислал свежие задачи (после router.refresh или перехода): берём их, но своя правка последних секунд
+  // не уступает более старой версии задачи. Так запоздавшее обновление не откатывает только что сохранённое
+  useEffect(() => setTasks(mergeRecent(initialTasks, recent.current, Date.now())), [initialTasks]);
 
   // Чужие правки подтягиваются, когда вкладка снова на виду, и раз в минуту, пока открыта
   useEffect(() => {
@@ -129,6 +134,7 @@ export function PrototypeProvider({
         showToast(result.error, { tone: "error" });
         return false;
       }
+      recent.current.set(result.number, { at: Date.now(), task: result.task });
       setTasks((prev) => {
         if (result.task === null) return prev.filter((t) => t.number !== result.number);
         const exists = prev.some((t) => t.number === result.number);

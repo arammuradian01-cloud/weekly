@@ -96,6 +96,8 @@ export type Task = {
   createdBy: PersonSlug | null;
   createdAt: IsoDate;
   updatedAt: IsoDate;
+  /** Версия строки: момент последней правки. По ней свежая правка на экране не уступает запоздавшему ответу сервера */
+  rev?: string;
   closedAt?: IsoDate;
   /** Итог для «Выполнена» или причина для «Не выполнена» и «Отменена» */
   resolution?: string;
