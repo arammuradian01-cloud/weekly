@@ -113,7 +113,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
             <legend className="mb-2 text-sm font-medium text-ink">Соисполнители</legend>
             <div className="grid gap-1 sm:grid-cols-2">
               {coChoices.map((p) => (
-                <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-body text-ink hover:bg-surface">
+                <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-body text-ink hover:bg-field">
                   <input
                     type="checkbox"
                     checked={co.includes(p.slug)}
@@ -177,7 +177,7 @@ export function TaskLinks({ task }: { task: Task }) {
                 <button
                   type="button"
                   onClick={() => void runTask(() => removeLinkAction(task.number, l.id!), "Ссылка убрана")}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink"
                   aria-label={`Убрать ссылку ${l.title}`}
                 >
                   <X className="h-4 w-4" aria-hidden="true" />

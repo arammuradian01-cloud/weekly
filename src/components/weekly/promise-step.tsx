@@ -248,7 +248,7 @@ function PromiseTaskRow({ task, range }: { task: Task; range: Range }) {
   const settled = o.result === "done" || o.result === "partial" || o.result === "not-done" || o.result === "dropped";
   const closed = settled || o.result === "late";
   return (
-    <li className={cn("flex flex-col gap-2 px-4 py-3", (o.result === "open" || o.result === "overdue") && "bg-surface")}>
+    <li className={cn("flex flex-col gap-2 px-4 py-3", (o.result === "open" || o.result === "overdue") && "bg-field")}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
         <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
           <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>

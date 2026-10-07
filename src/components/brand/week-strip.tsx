@@ -43,12 +43,12 @@ export function WeekStrip({
             "flex min-w-0 flex-1 -skew-x-12 flex-col justify-between rounded-md px-1 py-2 sm:px-1.5",
             size === "lg" ? "max-w-14" : "max-w-12",
             d.state === "today"
-              ? "bg-blue text-navy"
+              ? "bg-blue text-ink"
               : dark
                 ? "bg-white/8 text-white/80"
                 : d.state === "past"
-                  ? "bg-surface text-muted"
-                  : "bg-white text-ink ring-1 ring-line",
+                  ? "bg-field text-muted"
+                  : "bg-surface text-ink ring-1 ring-line",
           )}
         >
           <span className="skew-x-12 text-tiny font-medium leading-none">{d.weekday}</span>
@@ -62,7 +62,7 @@ export function WeekStrip({
           <div className={cn("mx-0.5 w-px shrink-0 sm:mx-1", dark ? "bg-white/20" : "bg-line")} />
           <div
             className={cn(
-              "flex shrink-0 -skew-x-12 flex-col justify-between rounded-md bg-green px-2 py-2 text-navy",
+              "flex shrink-0 -skew-x-12 flex-col justify-between rounded-md bg-green px-2 py-2 text-ink",
               size === "lg" ? "w-[4.5rem] sm:w-28" : "w-[4.5rem] sm:w-24",
             )}
           >
@@ -78,7 +78,7 @@ export function WeekStrip({
             <div
               className={cn(
                 "hidden shrink-0 -skew-x-12 flex-col justify-end rounded-md px-2 py-2 ring-1 sm:flex",
-                dark ? "text-white ring-white/30" : "text-ink ring-navy/25",
+                dark ? "text-white ring-white/30" : "text-ink ring-accent/40",
                 size === "lg" ? "w-24" : "w-20",
               )}
             >

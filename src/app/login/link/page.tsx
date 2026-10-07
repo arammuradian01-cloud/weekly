@@ -24,12 +24,12 @@ export default async function LinkPage({ searchParams }: { searchParams: Promise
   const ok = link.status === "ok" && link.kind !== "STEP_UP";
 
   return (
-    <div className="flex min-h-dvh flex-col bg-surface">
+    <div className="flex min-h-dvh flex-col bg-field">
       <header className="flex h-16 items-center bg-navy px-6 sm:px-10">
         <Wordmark />
       </header>
       <main className="flex flex-1 items-start justify-center px-4 py-10 sm:items-center">
-        <div className="w-full max-w-md rounded-xl bg-white px-6 py-7 ring-1 ring-line sm:px-8">
+        <div className="w-full max-w-md rounded-xl bg-surface px-6 py-7 ring-1 ring-line sm:px-8">
           {ok ? (
             <>
               <h1 className="text-headline font-semibold text-ink">{link.hasPassword ? "Новый пароль" : "Ваш вход в Weekly"}</h1>

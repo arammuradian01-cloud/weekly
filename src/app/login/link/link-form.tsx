@@ -31,7 +31,7 @@ export function SetPasswordForm({ token, login, reset }: { token: string; login:
       <input type="hidden" name="token" value={token} />
       {/* Логин для менеджера паролей: браузер сохранит пару логин и пароль */}
       <input type="text" name="username" autoComplete="username" value={login} readOnly hidden />
-      <p className="rounded-lg bg-surface px-3.5 py-2.5 text-body text-ink">
+      <p className="rounded-lg bg-field px-3.5 py-2.5 text-body text-ink">
         Ваш логин: <span className="font-semibold">{login}</span>
       </p>
       <Field

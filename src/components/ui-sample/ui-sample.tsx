@@ -38,7 +38,7 @@ const SWATCH: Record<string, string> = {
   green: "bg-green",
   blue: "bg-blue",
   "blue-700": "bg-blue-700",
-  surface: "bg-surface ring-1 ring-line",
+  surface: "bg-field ring-1 ring-line",
   line: "bg-line",
   muted: "bg-muted",
   danger: "bg-danger",
@@ -67,6 +67,10 @@ const TEXT_ROLES: Record<TextSize, string> = {
   "display-sm": "Режим встречи на телефоне",
   hero: "Главная фраза экрана входа",
   display: "Режим встречи на экране переговорной",
+  card: "Заголовок карточки (роль дизайн-системы)",
+  section: "Заголовок раздела (роль дизайн-системы)",
+  "table-head": "Шапка таблицы (роль дизайн-системы)",
+  number: "Крупные цифры и счётчики (роль дизайн-системы)",
 };
 
 const TEXT_CLASS: Record<TextSize, string> = {
@@ -87,9 +91,16 @@ const TEXT_CLASS: Record<TextSize, string> = {
   "display-sm": "text-display-sm",
   hero: "text-hero",
   display: "text-display",
+  card: "text-card",
+  section: "text-section",
+  "table-head": "text-table-head",
+  number: "text-number",
 };
 
 const SHADOW_CLASS: Record<(typeof SHADOWS)[number], [string, string]> = {
+  small: ["shadow-small", "Подсказки, календарь"],
+  medium: ["shadow-medium", "Меню, окна, карточки при наведении"],
+  sticky: ["shadow-sticky", "Залипающие панели"],
   menu: ["shadow-menu", "Выпадающее меню"],
   modal: ["shadow-modal", "Окно"],
   segment: ["shadow-segment", "Выбранный пункт переключателя"],
@@ -188,7 +199,7 @@ function UiSampleBody() {
             ["brand", "Фирменный знак"],
           ].map(([id, label]) => (
             <li key={id}>
-              <a href={`#${id}`} className="block rounded-md px-2 py-1.5 text-muted hover:bg-surface hover:text-ink">
+              <a href={`#${id}`} className="block rounded-md px-2 py-1.5 text-muted hover:bg-field hover:text-ink">
                 {label}
               </a>
             </li>
@@ -236,7 +247,7 @@ function UiSampleBody() {
         <Block id="shadows" title="Тени" description="Тени тоже токены: shadow-menu, shadow-modal и другие. Меняются в одном месте.">
           <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {SHADOWS.map((name) => (
-              <li key={name} className={`rounded-xl bg-white px-4 py-5 ${SHADOW_CLASS[name][0]}`}>
+              <li key={name} className={`rounded-xl bg-surface px-4 py-5 ${SHADOW_CLASS[name][0]}`}>
                 <p className="text-body font-semibold text-ink">{SHADOW_CLASS[name][1]}</p>
                 <p className="text-caption text-muted">{SHADOW_CLASS[name][0]}</p>
               </li>

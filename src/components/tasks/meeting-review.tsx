@@ -26,7 +26,7 @@ export function MeetingReview() {
   const order = [...teamPeople.filter((p) => p.slug !== leader && p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
   const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
-  if (!order.length) return <p className="rounded-xl bg-surface px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников в разделе «Структура».</p>;
+  if (!order.length) return <p className="rounded-xl bg-field px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников в разделе «Структура».</p>;
   // После переключения команды очередь короче: остаёмся в её пределах
   const current = Math.min(index, order.length - 1);
   const slug = order[current]!;
@@ -57,7 +57,7 @@ export function MeetingReview() {
                   aria-current={i === current ? "step" : undefined}
                   className={cn(
                     "inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-small transition-colors",
-                    i === current ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
+                    i === current ? "bg-navy font-semibold text-white" : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
                   )}
                 >
                   {personOf(s).shortName}

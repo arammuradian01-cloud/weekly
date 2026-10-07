@@ -28,8 +28,8 @@ export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekVi
   const router = useRouter();
   const go = (key: string) => router.push(`${basePath}?week=${key}`, { scroll: false });
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg bg-surface p-1" role="group" aria-label="Выбор недели">
-      <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white" aria-label="Предыдущая неделя">
+    <div className="inline-flex items-center gap-1 rounded-lg bg-field p-1" role="group" aria-label="Выбор недели">
+      <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface" aria-label="Предыдущая неделя">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" />
       </button>
       <span className="min-w-36 px-2 text-center text-small font-semibold text-ink" aria-live="polite">
@@ -40,7 +40,7 @@ export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekVi
         type="button"
         onClick={() => view.next && go(view.next)}
         disabled={!view.next}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-white disabled:text-line disabled:hover:bg-transparent"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface disabled:text-line disabled:hover:bg-transparent"
         aria-label="Следующая неделя"
       >
         <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -185,7 +185,7 @@ export function WeeklyFeed({
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
-            className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-surface lg:hidden"
+            className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field lg:hidden"
           >
             Фильтры{filtersOn ? " включены" : ""}
           </button>
@@ -350,7 +350,7 @@ function PeopleView({
               <p className={cn("px-5 py-4 text-body text-muted")}>Записей нет</p>
             )}
             {fromTeam.length ? (
-              <div className="border-t border-line bg-surface/60">
+              <div className="border-t border-line bg-field/60">
                 <h3 className="px-5 pt-3 text-small font-semibold text-ink">
                   Из команды <span className="font-normal text-muted">{fromTeam.length}</span>
                 </h3>

@@ -20,7 +20,7 @@ export default async function ChoosePage() {
   });
 
   return (
-    <div className="min-h-dvh bg-surface">
+    <div className="min-h-dvh bg-field">
       <header className="flex h-16 items-center bg-navy px-6 sm:px-10">
         <Wordmark />
       </header>
@@ -41,7 +41,7 @@ export default async function ChoosePage() {
                     name="personId"
                     value={p.id}
                     className={cn(
-                      "flex min-h-[76px] w-full items-center justify-between gap-4 rounded-xl bg-white px-5 py-4 text-left ring-1 transition-shadow hover:ring-2 hover:ring-blue",
+                      "flex min-h-[76px] w-full items-center justify-between gap-4 rounded-xl bg-surface px-5 py-4 text-left ring-1 transition-shadow hover:ring-2 hover:ring-blue",
                       current ? "ring-2 ring-blue" : "ring-line",
                     )}
                   >

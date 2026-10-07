@@ -53,7 +53,7 @@ export function PromoteControl({ entry, promoteFrom, closed }: { entry: WeeklyEn
         <span className="inline-flex min-h-8 items-center gap-1.5 rounded-md bg-green-soft px-2 text-caption font-medium text-ink">
           <Check className="h-3.5 w-3.5" aria-hidden="true" />В вашем weekly
         </span>
-        <button type="button" onClick={remove} disabled={busy} className="min-h-8 rounded-md px-2 text-caption font-medium text-blue-700 hover:bg-surface">
+        <button type="button" onClick={remove} disabled={busy} className="min-h-8 rounded-md px-2 text-caption font-medium text-blue-700 hover:bg-field">
           Убрать
         </button>
       </div>
@@ -72,7 +72,7 @@ export function PromoteControl({ entry, promoteFrom, closed }: { entry: WeeklyEn
     );
   }
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-surface p-3 sm:flex-row sm:items-end">
+    <div className="flex flex-col gap-2 rounded-lg bg-field p-3 sm:flex-row sm:items-end">
       <TextInput
         label="От себя одной фразой, если нужно"
         id={`promote-${entry.id}`}

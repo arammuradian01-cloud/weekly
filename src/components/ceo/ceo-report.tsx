@@ -129,7 +129,7 @@ export function CeoReport({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl bg-field px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-body text-ink">
             {flaggedCount ? `Записей с отметкой «В отчёт CEO»: ${flaggedCount}.` : "Отметок «В отчёт CEO» за эту неделю нет."} Отметки ставятся в{" "}
             <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
@@ -226,7 +226,7 @@ export function CeoReport({
           <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
             {history.map((h) => (
               <li key={h.key}>
-                <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-3 hover:bg-surface aria-[current=page]:bg-surface">
+                <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-3 hover:bg-field aria-[current=page]:bg-field">
                   <p className="text-body font-medium text-ink">Неделя {h.number}</p>
                   <p className="text-caption text-muted">
                     {h.savedAt ? `Сохранён ${moment(h.savedAt)}${h.savedBy ? `, ${h.savedBy}` : ""}` : "Не сохранялся"}. Отметок: {h.flagged}, встреча {h.meeting}

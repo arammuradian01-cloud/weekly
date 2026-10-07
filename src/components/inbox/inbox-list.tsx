@@ -64,7 +64,7 @@ function Deadlines() {
   );
 }
 
-const itemAction = "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-small font-semibold text-navy hover:bg-surface disabled:text-muted";
+const itemAction = "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-small font-semibold text-ink hover:bg-field disabled:text-muted";
 
 /** События «Мне»: одна строка на задачу, свежие сверху */
 export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: number }) {
@@ -150,7 +150,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                       Напомнить
                     </Menu.Trigger>
                     <Menu.Portal>
-                      <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-lg border border-line bg-white p-1 shadow-menu">
+                      <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-lg border border-line bg-surface p-1 shadow-menu">
                         {(
                           [
                             ["tomorrow", "Завтра в 9:00"],
@@ -160,7 +160,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                           <Menu.Item
                             key={choice}
                             onSelect={() => void act(item.subject, () => snoozeAction(item.subject, choice), `Напомним: ${label.toLowerCase()}`)}
-                            className="flex h-10 cursor-pointer select-none items-center rounded-md px-2.5 text-small text-ink outline-none data-[highlighted]:bg-surface"
+                            className="flex h-10 cursor-pointer select-none items-center rounded-md px-2.5 text-small text-ink outline-none data-[highlighted]:bg-field"
                           >
                             {label}
                           </Menu.Item>

@@ -29,7 +29,7 @@ function useNow(): number | null {
   return now;
 }
 
-const action = "inline-flex min-h-7 items-center gap-1 rounded-md px-1.5 text-caption font-medium text-muted hover:bg-surface hover:text-ink";
+const action = "inline-flex min-h-7 items-center gap-1 rounded-md px-1.5 text-caption font-medium text-muted hover:bg-field hover:text-ink";
 
 /** Комментарии: автор, время, пометка «изменено», упоминания, правка своего в первые 15 минут, удаление, реакции */
 export function CommentList({

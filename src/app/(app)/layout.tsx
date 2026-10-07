@@ -80,8 +80,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
     <TaskActionsProvider>
     <InboxCountProvider initial={inbox}>
-    <div className="min-h-dvh lg:grid lg:grid-cols-[248px_1fr]">
-      <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-navy px-3 py-5 lg:flex">
+    <div className="min-h-dvh lg:grid lg:grid-cols-[var(--sidebar-width)_1fr]">
+      <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-sidebar px-3 py-5 lg:flex">
         <div className="flex flex-col gap-8">
           <div className="px-2">
             <Wordmark />
@@ -92,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </aside>
 
       <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-white/95 px-4 backdrop-blur sm:px-6 lg:h-16 lg:px-10">
+        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur sm:px-6 lg:h-16 lg:px-10">
           <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
             <Wordmark tone="light" compact />
             <TeamSwitcher compact />
@@ -133,7 +133,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         ) : null}
         <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} />
-        <main className="mx-auto w-full max-w-page flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-16 lg:pt-8">{children}</main>
+        <main className="mx-auto w-full max-w-page flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-[30px] lg:pb-16 lg:pt-8">{children}</main>
       </div>
 
       <MobileNav leader={leader} />

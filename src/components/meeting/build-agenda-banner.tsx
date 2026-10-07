@@ -29,7 +29,7 @@ export function BuildAgendaBanner({ team, week, canLead }: { team: { id: string;
     }
   };
   return (
-    <div className="mb-6 flex flex-col gap-3 rounded-xl bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mb-6 flex flex-col gap-3 rounded-xl bg-field px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-body text-ink">
         Повестка встречи {team.name} ещё не собрана. Она соберётся сама к сроку сдачи weekly: поручения прошлой встречи, зависшие просьбы, риски, вопросы, лидеры по очереди.
         {canLead ? "" : " Собрать раньше может руководитель команды."}

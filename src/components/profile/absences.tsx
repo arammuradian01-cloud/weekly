@@ -75,7 +75,7 @@ export function Absences({
 
       {free.length ? (
         <form
-          className={cn("flex flex-col gap-3 rounded-xl bg-surface p-4", !slug && "sm:flex-row sm:items-end")}
+          className={cn("flex flex-col gap-3 rounded-xl bg-field p-4", !slug && "sm:flex-row sm:items-end")}
           onSubmit={async (e) => {
             e.preventDefault();
             if (!week) return;

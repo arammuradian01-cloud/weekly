@@ -111,12 +111,12 @@ export function BordPull({ view }: { view: BordView }) {
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
             <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
           </div>
-          <div className="rounded-xl bg-surface px-5 py-4">
+          <div className="rounded-xl bg-field px-5 py-4">
             <p className="text-small font-medium text-muted">Задач в Bord</p>
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{r.rows}</p>
             <p className="text-caption text-muted">строк с номером во вкладке «Задачи»</p>
           </div>
-          <div className="rounded-xl bg-surface px-5 py-4">
+          <div className="rounded-xl bg-field px-5 py-4">
             <p className="text-small font-medium text-muted">Последний раз перенесено</p>
             <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">
               {r.created.length || r.updated.length ? `новых ${r.created.length}, изменено ${r.updated.length}` : "изменений не было"}
@@ -126,7 +126,7 @@ export function BordPull({ view }: { view: BordView }) {
         </div>
       ) : null}
 
-      {view.connected && !r && !view.error ? <p className="rounded-xl bg-surface px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}
+      {view.connected && !r && !view.error ? <p className="rounded-xl bg-field px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}
 
       {view.error ? (
         <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
@@ -163,7 +163,7 @@ export function BordPull({ view }: { view: BordView }) {
           <dd className="flex min-w-0 flex-wrap items-center gap-2">
             {view.serviceEmail ? (
               <>
-                <code className="min-w-0 break-all rounded bg-surface px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code>
+                <code className="min-w-0 break-all rounded bg-field px-1.5 py-0.5 text-small text-ink">{view.serviceEmail}</code>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -295,7 +295,7 @@ function ReportDetails({ report: r, firstNumber }: { report: NonNullable<BordVie
   return (
     <ul className="flex flex-col gap-2">
       {items.map((it) => (
-        <li key={it.key} className={cn("rounded-xl px-5 py-3.5 text-body", it.tone === "warn" ? "bg-warning-soft" : "bg-surface")}>
+        <li key={it.key} className={cn("rounded-xl px-5 py-3.5 text-body", it.tone === "warn" ? "bg-warning-soft" : "bg-field")}>
           <p className={cn("font-medium", it.tone === "warn" ? "text-warning-ink" : "text-ink")}>{it.title}</p>
           <p className="mt-0.5 whitespace-pre-line break-words text-ink">{it.body}</p>
         </li>

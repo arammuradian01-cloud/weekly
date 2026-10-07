@@ -34,7 +34,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <section className="relative flex flex-col justify-between gap-6 overflow-hidden bg-navy px-5 py-6 text-white sm:gap-10 sm:px-10 sm:py-8 lg:px-14 lg:py-12">
         <Wordmark />
         <div className="flex flex-col gap-5 sm:gap-8">
-          <h1 className="max-w-md text-headline font-semibold leading-hero sm:text-hero">
+          <h1 className="max-w-md text-headline font-semibold sm:text-hero">
             Итоги недели и задачи команды в одном месте
           </h1>
           <WeekStrip days={days} deadline={{ weekday: "Пн", time: "18:00" }} meeting={{ label: "Вт встреча" }} tone="dark" size="lg" className="max-w-xl" />

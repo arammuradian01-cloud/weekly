@@ -79,7 +79,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
                 aria-current={i === index ? "step" : undefined}
                 className={cn(
                   "inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-body",
-                  i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
+                  i === index ? "bg-navy font-semibold text-white" : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
                 )}
               >
                 {s === "questions" ? `Вопросы: ${questions.filter((q) => !q.discussed).length + stuck.requests.length + stuck.proposals.length}` : s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
@@ -96,7 +96,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
             <Maximize2 className="h-4 w-4" aria-hidden="true" />
             На весь экран
           </Button>
-          <Link href={`/weekly?week=${view.week.key}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-navy hover:bg-surface">
+          <Link href={`/weekly?week=${view.week.key}`} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold text-ink hover:bg-field">
             <X className="h-4 w-4" aria-hidden="true" />
             Выйти
           </Link>
@@ -175,7 +175,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
         )}
       </section>
 
-      <div className="sticky bottom-20 mt-10 flex items-center justify-between gap-3 border-t border-line bg-white/95 py-3 lg:bottom-0">
+      <div className="sticky bottom-20 mt-10 flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0">
         <Button variant="secondary" onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={index === 0}>
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Назад

@@ -106,7 +106,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
         <div className={cn("mt-4 overflow-hidden rounded-xl ring-1 ring-line transition-opacity", pending && "opacity-60")}>
           <table className="hidden w-full text-left text-small md:table">
             <caption className="sr-only">Журнал изменений</caption>
-            <thead className="bg-surface text-caption text-muted">
+            <thead className="bg-field text-caption text-muted">
               <tr>
                 <th scope="col" className="px-4 py-2.5 font-medium">Когда</th>
                 <th scope="col" className="px-3 py-2.5 font-medium">Кто</th>

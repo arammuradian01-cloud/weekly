@@ -65,7 +65,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
       }
     >
       <div className="flex flex-col gap-5">
-        <div className="rounded-lg bg-surface px-4 py-3 text-small text-ink">
+        <div className="rounded-lg bg-field px-4 py-3 text-small text-ink">
           <p className="font-semibold">Какие колонки читаются</p>
           <p className="mt-1 text-muted">
             ФИО, Должность, Управление, Отдел, Сектор, Направление, Руководитель, Функциональный руководитель, Почта, Руководит (да, если человек руководит своим подразделением), Статус (вакансия).

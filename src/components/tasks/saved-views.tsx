@@ -59,7 +59,7 @@ export function SavedViews({ views, path, current, canSave }: { views: SavedView
       {views.map((v) => {
         const isActive = activeView?.id === v.id;
         return (
-          <span key={v.id} className={cn("inline-flex h-9 items-center rounded-full border text-small", isActive ? "border-blue bg-blue-soft text-blue-700" : "border-line bg-white text-ink hover:border-steel")}>
+          <span key={v.id} className={cn("inline-flex h-9 items-center rounded-full border text-small", isActive ? "border-blue bg-blue-soft text-blue-700" : "border-line bg-surface text-ink hover:border-steel")}>
             <Link href={v.query ? `${path}?${v.query}` : path} aria-current={isActive ? "page" : undefined} className="inline-flex h-full items-center pl-3.5 pr-2 font-medium">
               {v.name}
             </Link>

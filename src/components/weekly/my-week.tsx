@@ -59,7 +59,7 @@ export function MyWeek({
 
   return (
     <>
-      <section aria-labelledby="my-weekly" className="rounded-xl bg-surface p-5 sm:p-6">
+      <section aria-labelledby="my-weekly" className="rounded-xl bg-field p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">

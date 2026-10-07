@@ -8,7 +8,7 @@ import { useMentionPeople } from "./mention-text";
 const same = (a: string, b: string) => a.toLowerCase().replace(/ё/g, "е") === b.toLowerCase().replace(/ё/g, "е");
 
 const control =
-  "w-full rounded-lg border border-line bg-white px-3.5 py-2.5 text-body leading-relaxed text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-surface disabled:text-muted";
+  "w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-body leading-relaxed text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-field disabled:text-muted";
 
 /**
  * Поле с подсказкой упоминаний (этап 20): набираете «@» и начало имени, выбираете человека стрелками и Enter
@@ -149,7 +149,7 @@ export function MentionArea({
             id={listId}
             role="listbox"
             aria-label="Кого упомянуть"
-            className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-lg border border-line bg-white p-1 shadow-menu"
+            className="absolute left-0 right-0 top-full z-40 mt-1 max-h-64 overflow-auto rounded-lg border border-line bg-surface p-1 shadow-menu"
           >
             {options.map((p, i) => (
               <li
@@ -162,7 +162,7 @@ export function MentionArea({
                   pick(i);
                 }}
                 onMouseEnter={() => setActive(i)}
-                className={cn("flex min-h-10 cursor-pointer items-center rounded-md px-2.5 text-small text-ink", i === active && "bg-surface")}
+                className={cn("flex min-h-10 cursor-pointer items-center rounded-md px-2.5 text-small text-ink", i === active && "bg-field")}
               >
                 {p.fullName}
               </li>

@@ -37,7 +37,7 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
           });
         }}
         className={cn(
-          "h-10 w-full min-w-0 truncate rounded-lg border border-line bg-white pr-8 font-medium text-ink hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:opacity-60",
+          "h-10 w-full min-w-0 truncate rounded-lg border border-line bg-surface pr-8 font-medium text-ink hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:opacity-60",
           compact ? "pl-3 text-small" : "pl-9 text-body",
         )}
       >

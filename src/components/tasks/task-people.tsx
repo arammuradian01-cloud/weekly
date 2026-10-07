@@ -36,7 +36,7 @@ export function TaskPeople() {
                 открытых {mine.length}
                 {late ? <span className="text-danger-ink">, просрочено {late}</span> : null}
               </p>
-              <div className="mt-1.5 h-1.5 w-full max-w-40 rounded-full bg-surface" aria-hidden="true">
+              <div className="mt-1.5 h-1.5 w-full max-w-40 rounded-full bg-field" aria-hidden="true">
                 <div className={cn("h-full rounded-full", late ? "bg-danger" : "bg-blue")} style={{ width: `${(mine.length / max) * 100}%` }} />
               </div>
             </div>
@@ -67,8 +67,8 @@ function Chip({ task: t, today, onOpen }: { task: Task; today: string; onOpen: (
       onClick={onOpen}
       title={t.title}
       className={cn(
-        "flex max-w-64 flex-col items-start rounded-lg px-3 py-2 text-left ring-1 transition-colors hover:ring-navy-600/40",
-        overdue ? "bg-danger-soft ring-danger/30" : t.status === "proposed" ? "bg-white ring-line" : t.status === "clarify" ? "bg-warning-soft ring-warning-line" : "bg-white ring-line",
+        "flex max-w-64 flex-col items-start rounded-lg px-3 py-2 text-left ring-1 transition-colors hover:ring-border-strong",
+        overdue ? "bg-danger-soft ring-danger/30" : t.status === "proposed" ? "bg-surface ring-line" : t.status === "clarify" ? "bg-warning-soft ring-warning-line" : "bg-surface ring-line",
       )}
     >
       <span className="line-clamp-2 text-small font-medium text-ink">

@@ -42,7 +42,7 @@ const RESULT_TONE: Record<GoalResult, string> = {
   ACHIEVED: "bg-green-soft text-green-ink",
   PARTIAL: "bg-warning-soft text-warning-ink",
   MISSED: "bg-danger-soft text-danger-ink",
-  DROPPED: "bg-surface text-muted",
+  DROPPED: "bg-field text-muted",
 };
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
@@ -154,7 +154,7 @@ function Progress({ done, total }: { done: number; total: number }) {
   const pct = total ? Math.round((done / total) * 100) : 0;
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-28 overflow-hidden rounded-full bg-surface" aria-hidden="true">
+      <div className="h-1.5 w-28 overflow-hidden rounded-full bg-field" aria-hidden="true">
         <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
       </div>
       <span className="text-caption tabular-nums text-muted">{total ? `задач закрыто ${done} из ${total}` : "задач пока нет"}</span>
@@ -182,7 +182,7 @@ function GoalItem({
   const [open, setOpen] = useState(depth === 0);
   const kids = g.childIds.map((id) => byId.get(id)).filter((x): x is GoalNode => !!x);
   return (
-    <li id={`goal-${g.id}`} className={cn("rounded-xl border border-line bg-white", depth > 0 && "border-l-4 border-l-blue-soft")}>
+    <li id={`goal-${g.id}`} className={cn("rounded-xl border border-line bg-surface", depth > 0 && "border-l-4 border-l-blue-soft")}>
       <div className="flex flex-col gap-2 px-4 py-3">
         <div className="flex items-start gap-2">
           <button
@@ -190,7 +190,7 @@ function GoalItem({
             onClick={() => setOpen(!open)}
             aria-expanded={open}
             aria-label={`${open ? "Свернуть" : "Развернуть"}: ${g.title}`}
-            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink"
+            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink"
           >
             {open ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
           </button>

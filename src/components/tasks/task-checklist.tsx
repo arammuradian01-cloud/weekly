@@ -65,7 +65,7 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
       ) : null}
       <ul className="flex flex-col">
         {items.map((c) => (
-          <li key={c.id} className="group flex items-start gap-2 rounded-md py-1 hover:bg-surface/70">
+          <li key={c.id} className="group flex items-start gap-2 rounded-md py-1 hover:bg-field/70">
             <label className={cn("flex min-h-9 flex-1 cursor-pointer items-start gap-2.5 px-1 text-body", c.done ? "text-muted" : "text-ink", !canEdit && "cursor-default")}>
               <input
                 type="checkbox"
@@ -102,10 +102,10 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
             </label>
             {canEdit && editing?.id !== c.id ? (
               <div className="flex shrink-0 items-center opacity-0 focus-within:opacity-100 group-hover:opacity-100">
-                <button type="button" onClick={() => setEditing({ id: c.id, text: c.text })} className="inline-flex h-9 items-center rounded-md px-2 text-caption text-muted hover:bg-surface hover:text-ink">
+                <button type="button" onClick={() => setEditing({ id: c.id, text: c.text })} className="inline-flex h-9 items-center rounded-md px-2 text-caption text-muted hover:bg-field hover:text-ink">
                   Изменить
                 </button>
-                <button type="button" onClick={() => void runTask(() => removeChecklistItemAction(task.number, c.id), "Пункт убран")} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-surface hover:text-ink" aria-label={`Убрать пункт ${c.text}`}>
+                <button type="button" onClick={() => void runTask(() => removeChecklistItemAction(task.number, c.id), "Пункт убран")} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink" aria-label={`Убрать пункт ${c.text}`}>
                   <X className="h-4 w-4" aria-hidden="true" />
                 </button>
               </div>

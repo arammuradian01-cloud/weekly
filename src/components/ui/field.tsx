@@ -14,7 +14,7 @@ export function Field({
       </label>
       <input
         id={id}
-        className="h-11 rounded-lg border border-line bg-white px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-navy-600/40 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="h-11 rounded-lg border border-line bg-surface px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
         {...props}
       />
       {hint ? <p className="text-caption text-muted">{hint}</p> : null}

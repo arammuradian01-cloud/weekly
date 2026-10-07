@@ -53,7 +53,7 @@ export function WeekNumbersBlock({ numbers, compact = false, manage = false, hea
       ) : (
         <dl className={cn("mt-3 grid gap-x-6 gap-y-3", compact ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4")}>
           {numbers.figures.map((f) => (
-            <div key={f.key} className="flex items-start justify-between gap-3 rounded-lg bg-surface px-3.5 py-2.5">
+            <div key={f.key} className="flex items-start justify-between gap-3 rounded-lg bg-field px-3.5 py-2.5">
               <div className="min-w-0">
                 <dt className="truncate text-caption text-muted" title={f.label}>
                   {f.label}

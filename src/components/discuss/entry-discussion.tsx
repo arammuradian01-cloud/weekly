@@ -99,7 +99,7 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
           type="button"
           aria-expanded={open}
           onClick={() => setOpen(!open)}
-          className="inline-flex min-h-8 items-center gap-1.5 rounded-md text-small font-medium text-navy hover:underline"
+          className="inline-flex min-h-8 items-center gap-1.5 rounded-md text-small font-medium text-ink hover:underline"
         >
           <MessageSquare className="h-4 w-4" aria-hidden="true" />
           {count ? `Обсуждение: ${count}` : "Обсудить"}

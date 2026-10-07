@@ -52,7 +52,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
       <div className="overflow-hidden rounded-xl ring-1 ring-line">
         <table className="hidden w-full text-left text-body md:table">
           <caption className="sr-only">Задачи и weekly по каждому</caption>
-          <thead className="bg-surface text-caption text-muted">
+          <thead className="bg-field text-caption text-muted">
             <tr>
               <th scope="col" className="px-5 py-3 font-medium">Человек</th>
               <th scope="col" className="px-3 py-3 text-right font-medium">Всего</th>
@@ -68,7 +68,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
             {rows.map((r) => {
               const weekly = reports.find((w) => w.author === r.person.slug);
               return (
-                <tr key={r.person.slug} className="hover:bg-surface/60">
+                <tr key={r.person.slug} className="hover:bg-field/60">
                   <td className="px-5 py-3">
                     <Link href={`/tasks/review?person=${r.person.slug}`} className="font-semibold text-ink hover:text-blue-700 hover:underline">
                       {r.person.fullName}
@@ -98,7 +98,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
               );
             })}
           </tbody>
-          <tfoot className="border-t-2 border-line bg-surface font-semibold">
+          <tfoot className="border-t-2 border-line bg-field font-semibold">
             <tr>
               <th scope="row" className="px-5 py-3 text-left">Вся команда</th>
               <td className="px-3 py-3 text-right tabular-nums">{totals.total}</td>

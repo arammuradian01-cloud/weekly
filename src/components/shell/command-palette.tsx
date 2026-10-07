@@ -214,7 +214,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
         <Dialog.Overlay className="fixed inset-0 z-40 bg-navy/30" />
         <Dialog.Content
           aria-label="Командная строка"
-          className="fixed inset-0 z-50 flex flex-col bg-white outline-none sm:inset-auto sm:left-1/2 sm:top-[12vh] sm:max-h-[72vh] sm:w-[calc(100%-32px)] sm:max-w-[640px] sm:-translate-x-1/2 sm:rounded-xl sm:shadow-modal"
+          className="fixed inset-0 z-50 flex flex-col bg-surface outline-none sm:inset-auto sm:left-1/2 sm:top-[12vh] sm:max-h-[72vh] sm:w-[calc(100%-32px)] sm:max-w-[640px] sm:-translate-x-1/2 sm:rounded-xl sm:shadow-modal"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <Dialog.Title className="sr-only">Командная строка: поиск и действия</Dialog.Title>
@@ -239,7 +239,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
             />
             <div className="pointer-events-none absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-1.5 text-tiny text-muted">
               {busy ? <span aria-live="polite">Ищу…</span> : null}
-              <kbd className="hidden rounded border border-line bg-surface px-1.5 leading-5 sm:inline" aria-hidden="true">Esc</kbd>
+              <kbd className="hidden rounded border border-line bg-field px-1.5 leading-5 sm:inline" aria-hidden="true">Esc</kbd>
             </div>
           </div>
           <ul ref={listRef} id="command-list" role="listbox" aria-label="Результаты" className="flex-1 overflow-y-auto overscroll-contain p-2 pb-[max(8px,env(safe-area-inset-bottom))]">
@@ -256,7 +256,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
                       data-index={index}
                       onMouseEnter={() => setCursor(index)}
                       onClick={() => activate(item)}
-                      className={cn("flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5", index === cursor ? "bg-blue-soft" : "hover:bg-surface")}
+                      className={cn("flex cursor-pointer items-start gap-3 rounded-lg px-3 py-2.5", index === cursor ? "bg-blue-soft" : "hover:bg-field")}
                     >
                       <ItemRow item={item} />
                       {index === cursor ? <CornerDownLeft className="mt-1 h-4 w-4 shrink-0 text-muted" aria-hidden="true" /> : null}
@@ -270,8 +270,8 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
             {!query ? <li className="px-3 py-3 text-caption text-muted">Поиск идёт по словоформам: «доступ» найдёт и «доступа». Номер задачи открывает её сразу.</li> : null}
           </ul>
           <p className="hidden items-center gap-3 border-t border-line px-4 py-2 text-tiny text-muted sm:flex">
-            <span><kbd className="rounded border border-line bg-surface px-1">↑↓</kbd> выбрать</span>
-            <span><kbd className="rounded border border-line bg-surface px-1">Enter</kbd> открыть</span>
+            <span><kbd className="rounded border border-line bg-field px-1">↑↓</kbd> выбрать</span>
+            <span><kbd className="rounded border border-line bg-field px-1">Enter</kbd> открыть</span>
             <span className="ml-auto">{pathname === "/search" ? "" : "⌘K или Ctrl+K"}</span>
           </p>
         </Dialog.Content>
@@ -290,7 +290,7 @@ function ItemRow({ item }: { item: Item }) {
       <>
         <Icon className="mt-0.5 h-4.5 w-4.5 shrink-0 text-muted" aria-hidden="true" />
         <span className="min-w-0 flex-1 text-body text-ink">{c.label}</span>
-        {c.hint ? <kbd className="rounded border border-line bg-surface px-1.5 text-tiny text-muted" aria-hidden="true">{c.hint}</kbd> : null}
+        {c.hint ? <kbd className="rounded border border-line bg-field px-1.5 text-tiny text-muted" aria-hidden="true">{c.hint}</kbd> : null}
       </>
     );
   }
