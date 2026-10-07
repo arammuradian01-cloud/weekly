@@ -5,12 +5,12 @@
 
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
-import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
 import { canManagePeople } from "@/lib/admin/service";
 import { slugify, uniqueSlug } from "@/lib/translit";
 import { normName } from "@/lib/bord/names";
-import { TOP_TEAM, ancestorsOf, loadTeamNodes, subtreeOf } from "./scope";
-import { kindOfDepth, pathKey, planStructure, readStructureTable, type ExistingPerson, type StructurePlan } from "./import";
+import { TOP_TEAM, ancestorsOf, loadScope, loadTeamNodes, subtreeOf } from "./scope";
+import { kindOfDepth, pathKey, plannedKey, planStructure, readStructureTable, type ExistingPerson, type StructurePlan } from "./import";
 
 type Tx = Prisma.TransactionClient;
 
@@ -101,7 +101,9 @@ async function existingPeople(tx: Tx, paths: Map<string, string[]>): Promise<Exi
     position: p.position,
     unitPath: p.unitId ? pathKey(paths.get(p.unitId) ?? []) : null,
     manager: p.manager?.fullName ?? null,
+    managerId: p.managerId,
     functional: p.functionalManager?.fullName ?? null,
+    functionalId: p.functionalManagerId,
     email: p.email,
     active: p.active,
   }));
@@ -114,7 +116,7 @@ async function planFor(tx: Tx, fileText: string): Promise<StructurePlan> {
   const paths = unitPaths(units);
   const { rows, problems } = readStructureTable(fileText);
   if (!rows.length && !problems.length) fail("В файле нет строк с людьми");
-  const existing = [...new Set(units.filter((u) => u.kind !== "DEPARTMENT").map((u) => pathKey(paths.get(u.id) ?? [])))];
+  const existing = units.filter((u) => u.kind !== "DEPARTMENT").map((u) => paths.get(u.id) ?? []);
   return planStructure(rows, problems, existing, await existingPeople(tx, paths));
 }
 
@@ -143,18 +145,25 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       const byPath = new Map<string, string>();
       for (const u of units) if (u.kind !== "DEPARTMENT" && u.active) byPath.set(pathKey(paths.get(u.id) ?? []), u.id);
       let unitsCreated = 0;
+      // Подразделения из файла вместе со всеми подразделениями выше: остальные после загрузки выключаются
+      const used = new Set<string>([root.id]);
       const unitOf = async (path: string[]): Promise<string> => {
         if (!path.length) return root.id;
         const key = pathKey(path);
-        const known = byPath.get(key);
-        if (known) return known;
-        const parentId = await unitOf(path.slice(0, -1));
-        const sortOrder = (await tx.orgUnit.count({ where: { parentId } })) * 10 + 10;
-        const created = await tx.orgUnit.create({ data: { name: path.at(-1)!, kind: kindOfDepth(path.length - 1, path.at(-1)), parentId, sortOrder } });
-        byPath.set(key, created.id);
-        unitsCreated += 1;
-        await audit(tx, actor, "structure.unit.create", "unit", created.id, "Подразделение добавлено", null, path.join(" / "));
-        return created.id;
+        let id = byPath.get(key);
+        if (!id) {
+          const parentId = await unitOf(path.slice(0, -1));
+          const sortOrder = (await tx.orgUnit.count({ where: { parentId } })) * 10 + 10;
+          const created = await tx.orgUnit.create({ data: { name: path.at(-1)!, kind: kindOfDepth(path.length - 1, path.at(-1)), parentId, sortOrder } });
+          byPath.set(key, created.id);
+          unitsCreated += 1;
+          await audit(tx, actor, "structure.unit.create", "unit", created.id, "Подразделение добавлено", null, path.join(" / "));
+          id = created.id;
+        } else {
+          await unitOf(path.slice(0, -1));
+        }
+        used.add(id);
+        return id;
       };
 
       // Люди: новые заводятся сотрудниками, у известных обновляются должность, подразделение и почта
@@ -163,9 +172,9 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       const all = await tx.person.findMany({ select: { id: true, slug: true, sortOrder: true, email: true, fullName: true } });
       const taken = new Set([...all.map((p) => p.slug), "all", "system"]);
       let sortOrder = Math.max(0, ...all.map((p) => p.sortOrder));
-      const idByName = new Map<string, string>();
-      for (const p of all) idByName.set(normName(p.fullName), p.id);
-      const planned = [] as { id: string; head: boolean; unitId: string; managerName: string; functionalName: string; fullName: string }[];
+      /** «file:строка» новых людей в их id после создания */
+      const idOfKey = new Map<string, string>();
+      const planned = [] as { id: string; head: boolean; unitId: string; managerKey: string | null; functionalKey: string | null; fullName: string }[];
       let added = 0;
       for (const p of plan.planned) {
         const unitId = await unitOf(p.path);
@@ -187,29 +196,25 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
           const slug = all.find((x) => x.id === id)?.slug ?? id;
           await audit(tx, actor, "structure.person.update", "person", slug, "Структура: изменения", null, p.changes.join("; "));
         }
-        idByName.set(normName(p.fullName), id);
-        planned.push({ id, head: p.head, unitId, managerName: p.managerName, functionalName: p.functionalName, fullName: p.fullName });
+        idOfKey.set(plannedKey(p), id);
+        planned.push({ id, head: p.head, unitId, managerKey: p.managerKey, functionalKey: p.functionalKey, fullName: p.fullName });
       }
+      const resolve = (key: string | null) => (key ? (idOfKey.get(key) ?? key) : null);
 
-      // Руководители подразделений
-      for (const p of planned.filter((x) => x.head)) {
-        const unit = await tx.orgUnit.findUniqueOrThrow({ where: { id: p.unitId } });
-        if (unit.headId !== p.id) {
-          await tx.orgUnit.update({ where: { id: unit.id }, data: { headId: p.id, headNote: null } });
-          await audit(tx, actor, "structure.unit.head", "unit", unit.id, `Руководитель: ${unit.name}`, null, p.fullName);
-        }
+      // Руководители подразделений по колонке «Руководит». У подразделений из файла без такой строки руководитель снимается
+      const headOfUnit = new Map(planned.filter((x) => x.head).map((x) => [x.unitId, x]));
+      for (const unitId of used) {
+        if (unitId === root.id) continue;
+        const unit = await tx.orgUnit.findUniqueOrThrow({ where: { id: unitId }, include: { head: true } });
+        const head = headOfUnit.get(unitId);
+        if ((head?.id ?? null) === unit.headId) continue;
+        await tx.orgUnit.update({ where: { id: unit.id }, data: { headId: head?.id ?? null, ...(head ? { headNote: null } : {}) } });
+        await audit(tx, actor, "structure.unit.head", "unit", unit.id, `Руководитель: ${unit.name}`, unit.head?.fullName ?? "не выделен", head?.fullName ?? "не выделен");
       }
 
       // Административные и функциональные руководители. Пусто: руководитель своего подразделения или подразделения выше
       const unitRows = await tx.orgUnit.findMany();
       const unitById = new Map(unitRows.map((u) => [u.id, u]));
-      const findId = (name: string) => {
-        const key = normName(name);
-        if (idByName.has(key)) return idByName.get(key)!;
-        const two = key.split(" ").slice(0, 2).join(" ");
-        for (const [k, v] of idByName) if (k.split(" ").slice(0, 2).join(" ") === two) return v;
-        return null;
-      };
       const headAbove = (unitId: string, self: string): string | null => {
         let cur = unitById.get(unitId);
         const seen = new Set<string>();
@@ -221,19 +226,30 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
         return null;
       };
       for (const p of planned) {
-        const managerId = p.managerName ? findId(p.managerName) : headAbove(p.unitId, p.id);
-        const functionalId = p.functionalName ? findId(p.functionalName) : null;
-        const current = await tx.person.findUniqueOrThrow({ where: { id: p.id }, select: { managerId: true, functionalManagerId: true, slug: true } });
+        const managerId = p.managerKey ? resolve(p.managerKey) : headAbove(p.unitId, p.id);
+        const functionalId = resolve(p.functionalKey);
+        const current = await tx.person.findUniqueOrThrow({ where: { id: p.id }, select: { managerId: true, functionalManagerId: true } });
         const data: Prisma.PersonUncheckedUpdateInput = {};
         if (managerId !== current.managerId && managerId !== p.id) data.managerId = managerId;
         if (functionalId !== current.functionalManagerId && functionalId !== p.id) data.functionalManagerId = functionalId;
         if (Object.keys(data).length) await tx.person.update({ where: { id: p.id }, data });
       }
+      // Руководитель, назначенный по подразделению, мог замкнуть петлю: тогда загрузка откатывается целиком
+      const chain = await tx.person.findMany({ where: { active: true }, select: { id: true, fullName: true, managerId: true } });
+      const managerOf = new Map(chain.map((x) => [x.id, x.managerId]));
+      for (const x of chain) {
+        const seen = new Set<string>([x.id]);
+        let cur = x.managerId;
+        while (cur) {
+          if (seen.has(cur)) fail(`Структуру не загрузить, база не тронута: петля подчинения у ${x.fullName}. Проверьте колонки «Руководитель» и «Руководит»`);
+          seen.add(cur);
+          cur = managerOf.get(cur) ?? null;
+        }
+      }
 
       // Подразделения, которых нет в файле, выключаются. Люди и команды в них остаются
-      const keep = new Set([...byPath.values()]);
       for (const u of unitRows) {
-        if (u.kind === "DEPARTMENT" || !u.active || keep.has(u.id)) continue;
+        if (u.kind === "DEPARTMENT" || !u.active || used.has(u.id)) continue;
         await tx.orgUnit.update({ where: { id: u.id }, data: { active: false } });
         await audit(tx, actor, "structure.unit.off", "unit", u.id, "Подразделение выключено: его нет в загруженной структуре", u.name, null);
       }
@@ -251,50 +267,102 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
 }
 
 /**
- * Команды руководителей: у каждого, у кого есть прямые подчинённые, своя команда (кроме владельца: его команда
- * топ-команда). Название: подразделение, которым он руководит, иначе его подразделение и имя. Участники новой
- * команды: прямые подчинённые. В существующую команду добавляются только новые прямые подчинённые, ручной состав
- * не трогается. Команда уровнем выше: команда руководителя руководителя, иначе топ-команда
+ * Команды руководителей по структуре. У каждого, у кого есть прямые подчинённые, своя команда:
+ * - руководитель подразделения: команда подразделения. Сменился руководитель подразделения: у той же команды
+ *   меняется руководитель, новая команда не появляется, прежний руководитель теряет права на её задачи;
+ * - остальные руководители (например, ведущий разработчик в отделе): команда по имени и должности;
+ * - владелец: его команда топ-команда, а прямые подчинённые не из топ-команды попадают в команду «Прямые подчинённые».
+ * Участники по структуре (auto) пересчитываются: новые прямые подчинённые добавляются, ушедшие убираются.
+ * Участники, добавленные руками, не трогаются. Команда, которую владелец выключил, заново не создаётся.
+ * Команда выше пересчитывается, если владелец не ставил её руками
  */
 export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: number; members: number }> {
-  const top = await tx.team.findUnique({ where: { id: TOP_TEAM } });
-  const managers = await tx.person.findMany({
-    where: { active: true, reports: { some: { active: true } } },
-    include: { headOf: { where: { active: true, kind: { not: "DEPARTMENT" } }, orderBy: { sortOrder: "asc" } }, unit: true },
+  const top = await tx.team.findUnique({ where: { id: TOP_TEAM }, include: { members: { select: { personId: true } } } });
+  const topIds = new Set([...(top?.leaderId ? [top.leaderId] : []), ...(top?.members.map((m) => m.personId) ?? [])]);
+  const people = await tx.person.findMany({
+    where: { active: true },
+    select: { id: true, fullName: true, position: true, managerId: true, role: true, headOf: { where: { active: true, kind: { not: "DEPARTMENT" } }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } } },
     orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
   });
+  const reportsOf = new Map<string, string[]>();
+  for (const p of people) {
+    if (!p.managerId || p.role === "OBSERVER") continue;
+    reportsOf.set(p.managerId, [...(reportsOf.get(p.managerId) ?? []), p.id]);
+  }
+  const ownerId = top?.leaderId ?? null;
+  /** Кого держать в команде руководителя по структуре. У владельца: прямые подчинённые не из топ-команды */
+  const desiredFor = (leaderId: string) => (reportsOf.get(leaderId) ?? []).filter((id) => id !== leaderId && (leaderId !== ownerId || !topIds.has(id)));
+
+  const teams = await tx.team.findMany({ where: { kind: "UNIT" }, orderBy: [{ createdAt: "asc" }] });
+  const activeUnits = new Set((await tx.orgUnit.findMany({ where: { active: true }, select: { id: true } })).map((u) => u.id));
   let createdTeams = 0;
   let addedMembers = 0;
-  const existing = await tx.team.findMany({ where: { active: true } });
-  const teamOfLeader = new Map<string, string>();
-  for (const t of existing) if (t.leaderId && t.id !== TOP_TEAM && !teamOfLeader.has(t.leaderId)) teamOfLeader.set(t.leaderId, t.id);
-  for (const m of managers) {
-    if (m.id === top?.leaderId) continue;
-    const headed = m.headOf[0] ?? null;
-    let team = teamOfLeader.has(m.id) ? existing.find((t) => t.id === teamOfLeader.get(m.id)) : undefined;
+  for (const m of people) {
+    if (m.role === "OBSERVER") continue;
+    const headed = m.id === ownerId ? null : (m.headOf[0] ?? null);
+    // Без прямых подчинённых команду не заводим. Но у руководителя подразделения с уже заведённой командой
+    // её переименование и смена руководителя всё равно отрабатывают
+    if (!desiredFor(m.id).length && !(headed && teams.some((t) => t.unitId === headed.id || t.leaderId === m.id))) continue;
+    let team =
+      (headed && teams.find((t) => t.unitId === headed.id)) ||
+      // Подразделение переименовали или перенесли: его прежняя команда переходит на новое подразделение
+      (headed && teams.find((t) => t.leaderId === m.id && t.unitId && !activeUnits.has(t.unitId))) ||
+      teams.find((t) => t.leaderId === m.id && !t.unitId) ||
+      (headed ? undefined : teams.find((t) => t.leaderId === m.id));
+    if (team && !team.active) continue;
+    if (team && headed && team.unitId !== headed.id) {
+      await tx.team.update({ where: { id: team.id }, data: { unitId: headed.id, name: headed.name.slice(0, 120) } });
+      await audit(tx, actor, "team.update", "team", team.id, "Команда перешла на подразделение", team.name, headed.name);
+      team.unitId = headed.id;
+      team.name = headed.name;
+    }
+    if (team && team.leaderId !== m.id) {
+      const before = team.leaderId ? people.find((p) => p.id === team!.leaderId)?.fullName ?? "другой человек" : "не назначен";
+      await tx.team.update({ where: { id: team.id }, data: { leaderId: m.id } });
+      await tx.teamMember.deleteMany({ where: { teamId: team.id, personId: m.id } });
+      await audit(tx, actor, "team.update", "team", team.id, `Руководитель по структуре: ${team.name}`, before, m.fullName);
+      team.leaderId = m.id;
+    }
     if (!team) {
-      // Не руководит подразделением (например, ведущий разработчик в отделе): команда по имени и должности
-      const name = (headed?.name ?? (m.position ? `${m.fullName}, ${m.position}` : `Команда: ${m.fullName}`)).slice(0, 120);
-      team = await tx.team.create({ data: { name, kind: "UNIT", leaderId: m.id, unitId: headed?.id ?? m.unitId, sortOrder: (existing.length + createdTeams + 1) * 10 } });
-      existing.push(team);
-      teamOfLeader.set(m.id, team.id);
+      const name = (m.id === ownerId ? `Прямые подчинённые: ${m.fullName}` : (headed?.name ?? (m.position ? `${m.fullName}, ${m.position}` : `Команда: ${m.fullName}`))).slice(0, 120);
+      team = await tx.team.create({ data: { name, kind: "UNIT", leaderId: m.id, unitId: headed?.id ?? null, sortOrder: (teams.length + createdTeams + 1) * 10, parentId: m.id === ownerId ? TOP_TEAM : null } });
+      teams.push(team);
       createdTeams += 1;
       await audit(tx, actor, "team.create", "team", team.id, "Команда создана по структуре", null, `${name}, руководитель ${m.fullName}`);
     }
-    const reports = await tx.person.findMany({ where: { managerId: m.id, active: true }, select: { id: true } });
-    const current = new Set((await tx.teamMember.findMany({ where: { teamId: team.id }, select: { personId: true } })).map((x) => x.personId));
-    const fresh = reports.filter((r) => !current.has(r.id) && r.id !== m.id);
+  }
+
+  // Участники по структуре во всех командах руководителей
+  for (const t of teams) {
+    if (!t.active || !t.leaderId) continue;
+    const desired = new Set(desiredFor(t.leaderId));
+    const current = await tx.teamMember.findMany({ where: { teamId: t.id } });
+    const have = new Set(current.map((x) => x.personId));
+    const fresh = [...desired].filter((id) => !have.has(id));
     if (fresh.length) {
-      await tx.teamMember.createMany({ data: fresh.map((r) => ({ teamId: team!.id, personId: r.id, addedById: actor.personId })), skipDuplicates: true });
+      await tx.teamMember.createMany({ data: fresh.map((personId) => ({ teamId: t.id, personId, addedById: actor.personId, auto: true })), skipDuplicates: true });
       addedMembers += fresh.length;
     }
+    const gone = current.filter((x) => x.auto && !desired.has(x.personId)).map((x) => x.personId);
+    if (gone.length) await tx.teamMember.deleteMany({ where: { teamId: t.id, personId: { in: gone } } });
   }
-  // Команда уровнем выше: команда руководителя руководителя. Только если её ещё не задали руками
-  const teams = await tx.team.findMany({ where: { active: true, kind: "UNIT", parentId: null }, include: { leader: { select: { managerId: true } } } });
+
+  // Команда выше: команда руководителя руководителя, иначе топ-команда. Поставленную руками не трогаем
+  const nodes = await loadTeamNodes(tx);
+  const teamOfLeader = new Map<string, string>();
+  for (const t of teams) if (t.active && t.leaderId && !teamOfLeader.has(t.leaderId) && t.unitId) teamOfLeader.set(t.leaderId, t.id);
+  for (const t of teams) if (t.active && t.leaderId && !teamOfLeader.has(t.leaderId)) teamOfLeader.set(t.leaderId, t.id);
   for (const t of teams) {
-    const managerId = t.leader?.managerId ?? null;
-    const parentId = (managerId && teamOfLeader.get(managerId)) || TOP_TEAM;
-    if (parentId !== t.id) await tx.team.update({ where: { id: t.id }, data: { parentId } });
+    if (!t.active || t.parentManual || !t.leaderId) continue;
+    const managerId = people.find((p) => p.id === t.leaderId)?.managerId ?? null;
+    let parentId = (managerId && managerId !== ownerId && teamOfLeader.get(managerId)) || TOP_TEAM;
+    // Петля в дереве команд невозможна, но на всякий случай: команда не встаёт ниже самой себя
+    if (subtreeOf(nodes, t.id).includes(parentId)) parentId = TOP_TEAM;
+    if (parentId !== t.parentId && parentId !== t.id) {
+      await tx.team.update({ where: { id: t.id }, data: { parentId } });
+      const n = nodes.find((x) => x.id === t.id);
+      if (n) n.parentId = parentId;
+    }
   }
   return { teams: createdTeams, members: addedMembers };
 }
@@ -356,6 +424,8 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
         if (subtreeOf(nodes, id).includes(parentId)) fail("Команда не может стоять ниже своей же команды");
         const parent = await teamOrFail(tx, parentId);
         data.parentId = parentId;
+        // Поставлено руками: загрузка структуры эту связь больше не пересчитывает
+        data.parentManual = true;
         const before = team.parentId ? nodes.find((n) => n.id === team.parentId)?.name : "нет";
         await audit(tx, actor, "team.update", "team", id, `Команда выше: ${team.name}`, before ?? "нет", parent.name);
       }
@@ -391,9 +461,14 @@ async function canLeaderAdd(tx: Tx, leaderId: string, personId: string): Promise
   return nodes.some((n) => led.includes(n.id) && (n.members.includes(personId) || n.leaderId === personId));
 }
 
+/** Общий логин team без режима управления: им пользуется вся топ-команда, поэтому командами через него не управляют */
+const teamLogin = (actor: Actor) => actor.via === "TEAM" && !actor.management;
+
 async function requireTeamEditor(tx: Tx, actor: Actor, teamId: string) {
   const team = await teamOrFail(tx, teamId);
   if (canManagePeople(actor)) return { team, owner: true };
+  if (actor.role === "OBSERVER") fail("Наблюдатель команды не меняет");
+  if (teamLogin(actor)) fail("Состав команды руководитель меняет, войдя по личной ссылке");
   if (team.id !== TOP_TEAM && team.leaderId === actor.personId) return { team, owner: false };
   return fail("Состав команды меняют её руководитель и владелец в режиме управления");
 }
@@ -427,15 +502,20 @@ export async function removeTeamMember(actor: Actor, teamId: string, slug: strin
 /** Перенести задачу в другую команду: владелец, администратор в режиме управления или руководитель обеих команд */
 export async function moveTask(actor: Actor, number: number, teamId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const task = (await tx.task.findUnique({ where: { number } })) ?? fail(`Задачи ${number} нет`);
+    await tx.$queryRaw`SELECT id FROM "tasks" WHERE "number" = ${number} FOR UPDATE`;
+    const task = await tx.task.findUnique({ where: { number }, include: { coExecutors: { select: { personId: true } } } });
+    const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: teamLogin(actor) });
+    // Сначала права: чужой задаче и чужой команде ответ один и тот же, номер и команда не подтверждаются
+    if (!task || !canSeeRow(scope, task, actor.personId)) return fail(`Задачи ${number} нет`);
+    const leads = new Set(scope.leads);
+    const allowed = actor.role !== "OBSERVER" && (actor.management !== null || (leads.has(task.teamId) && leads.has(teamId)));
+    if (!allowed) fail("Задачу между командами переносит руководитель обеих команд или режим управления");
+    if (task.archivedAt) fail(`Задача ${number} в архиве`);
     const target = await teamOrFail(tx, teamId);
     if (!target.active) fail("Команда выключена");
     if (task.teamId === teamId) fail("Задача уже в этой команде");
     if (task.ownerAll && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды: сначала назначьте ответственного");
     const nodes = await loadTeamNodes(tx);
-    const leads = new Set(nodes.filter((n) => n.leaderId === actor.personId && n.id !== TOP_TEAM).flatMap((n) => subtreeOf(nodes, n.id)));
-    const allowed = actor.management !== null || (leads.has(task.teamId) && leads.has(teamId));
-    if (!allowed) fail("Задачу между командами переносит руководитель обеих команд или режим управления");
     const from = nodes.find((n) => n.id === task.teamId)?.name ?? task.teamId;
     await tx.task.update({ where: { id: task.id }, data: { teamId } });
     await tx.auditLog.create({
@@ -593,6 +673,7 @@ export async function memberCandidates(actor: Actor): Promise<{ slug: string; fu
     select: { id: true, slug: true, fullName: true, position: true, managerId: true },
   });
   if (canManagePeople(actor)) return people.map(({ slug, fullName, position }) => ({ slug, fullName, position }));
+  if (actor.role === "OBSERVER" || teamLogin(actor)) return [];
   const byId = new Map(people.map((p) => [p.id, p]));
   const underMe = (id: string) => {
     const seen = new Set<string>();

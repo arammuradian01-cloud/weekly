@@ -16,7 +16,7 @@ export default async function TaskNumberPage({ params }: { params: Promise<{ num
   const { number } = await params;
   const n = Number(number);
   const ctx = await requireContext();
-  const task = Number.isInteger(n) && n > 0 ? await getTask(n, { personId: ctx.person.id, role: ctx.person.role }) : null;
+  const task = Number.isInteger(n) && n > 0 ? await getTask(n, { personId: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management }) : null;
   const visible = task && (!task.archived || ctx.management?.role === "OWNER") ? task : null;
   return <TaskPage number={n} initial={visible} />;
 }

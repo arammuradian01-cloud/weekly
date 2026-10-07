@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, allPeople } from "@/domain/people";
+import { allPeople } from "@/domain/people";
 import { ALL_TEAMS, TOP_TEAM, teamOf, teamPeople } from "@/domain/teams";
 import { addDays } from "@/domain/dates";
 import { dictOptions, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
@@ -46,7 +46,7 @@ function isTyping(target: EventTarget | null): boolean {
 const defaultSource = (): SourceCode => (SOURCES.some((s) => s.code === "meeting") ? "meeting" : (SOURCES[0]?.code ?? "meeting"));
 
 export function GlobalHotkeys() {
-  const { data, me, manage, observer, createTask, team, leads } = usePrototype();
+  const { data, me, manage, observer, createTask, team, leads, teamPeople: selectedPeople } = usePrototype();
   // Куда можно поставить задачу: свои команды, команды, которыми руковожу, а в режиме управления любая видимая
   const teamChoices = team.options.filter((o) => manage || o.relation === "member" || o.relation === "leader" || o.relation === "below");
   const defaultTeam = (): string =>
@@ -144,7 +144,7 @@ export function GlobalHotkeys() {
   const target = teamOf(taskTeam);
   const pool = target
     ? allPeople().filter((p) => p.active && p.role !== "OBSERVER" && (teamPeople(target).includes(p.slug) || p.slug === me.slug))
-    : PEOPLE;
+    : selectedPeople;
   const ownerOptions = [
     ...pool.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName })),
     ...(manage && taskTeam === TOP_TEAM ? [{ value: "all", label: "Все лидеры" }] : []),

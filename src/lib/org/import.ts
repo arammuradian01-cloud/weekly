@@ -155,7 +155,9 @@ export type ExistingPerson = NamedPerson & {
   position: string | null;
   unitPath: string | null;
   manager: string | null;
+  managerId: string | null;
   functional: string | null;
+  functionalId: string | null;
   email: string | null;
   active: boolean;
 };
@@ -171,10 +173,19 @@ export type PlannedPerson = {
   head: boolean;
   managerName: string;
   functionalName: string;
+  /**
+   * Руководители, найденные по имени: id человека ресурса или «file:строка» для нового человека из этого же файла.
+   * null: колонка пустая, руководителем станет руководитель подразделения
+   */
+  managerKey: string | null;
+  functionalKey: string | null;
   email: string;
   /** Что поменяется у человека ресурса: «должность: было, стало» */
   changes: string[];
 };
+
+/** Ключ человека в плане: id человека ресурса или «file:строка» нового */
+export const plannedKey = (p: Pick<PlannedPerson, "id" | "line">) => p.id ?? `file:${p.line}`;
 
 export type StructurePlan = {
   units: { add: string[]; keep: number; remove: string[] };
@@ -186,7 +197,7 @@ export type StructurePlan = {
 };
 
 /** Человек по ФИО из файла: точное ФИО, фамилия и имя без отчества, или фамилия плюс короткое имя */
-export function matchPerson(index: NameIndex, people: ExistingPerson[], name: string): { person?: ExistingPerson; ambiguous?: boolean } {
+export function matchPerson<T extends NamedPerson>(index: NameIndex, people: T[], name: string): { person?: T; ambiguous?: boolean } {
   const hit = index.find(name);
   if (hit.person) return { person: people.find((p) => p.id === hit.person!.id) };
   const w = normName(name).split(" ");
@@ -200,16 +211,17 @@ export function matchPerson(index: NameIndex, people: ExistingPerson[], name: st
   return hit.ambiguous || sameSurname.length > 1 ? { ambiguous: true } : {};
 }
 
-export function planStructure(rows: ImportRow[], problems: ImportProblem[], existingUnits: string[], people: ExistingPerson[]): StructurePlan {
+/** existingUnits: пути включённых подразделений ресурса, как их показывать («Управление / Отдел») */
+export function planStructure(rows: ImportRow[], problems: ImportProblem[], existingUnits: string[][], people: ExistingPerson[]): StructurePlan {
   const index = new NameIndex(people);
   const plannedUnits = new Map<string, string[]>();
   for (const r of rows) for (let d = 1; d <= r.path.length; d++) plannedUnits.set(pathKey(r.path.slice(0, d)), r.path.slice(0, d));
-  const existing = new Set(existingUnits);
+  const existing = new Set(existingUnits.map((p) => pathKey(p)));
   const out: StructurePlan = {
     units: {
       add: [...plannedUnits.entries()].filter(([k]) => !existing.has(k)).map(([, p]) => p.join(" / ")),
       keep: [...plannedUnits.keys()].filter((k) => existing.has(k)).length,
-      remove: existingUnits.filter((k) => !plannedUnits.has(k)),
+      remove: [...new Map(existingUnits.map((p) => [pathKey(p), p])).entries()].filter(([k]) => !plannedUnits.has(k)).map(([, p]) => p.join(" / ")),
     },
     people: { add: [], change: [], same: 0, missing: [] },
     vacancies: rows.filter((r) => r.vacancy).map((r) => ({ path: r.path, position: r.position })),
@@ -217,9 +229,6 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
     planned: [],
   };
   const seen = new Map<string, number>();
-  // Руководителя пишут и с отчеством, и без: сравниваем фамилию и имя
-  const fileKeys = new Set(rows.filter((r) => !r.vacancy).map((r) => nameKey2(r.name)));
-  const knownName = (name: string) => fileKeys.has(nameKey2(name)) || !!matchPerson(index, people, name).person;
 
   for (const r of rows) {
     if (r.vacancy) continue;
@@ -234,9 +243,6 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
       continue;
     }
     seen.set(key, r.line);
-    for (const [label, value] of [["Руководитель", r.manager], ["Функциональный руководитель", r.functional]] as const) {
-      if (value && !knownName(value)) out.problems.push({ line: r.line, text: `${label} «${value}» не найден ни в файле, ни среди людей ресурса` });
-    }
     const { fullName, shortName } = hit.person ? { fullName: hit.person.fullName, shortName: hit.person.shortName } : personNameFromBord(r.name);
     const planned: PlannedPerson = {
       line: r.line,
@@ -248,6 +254,8 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
       head: r.head,
       managerName: r.manager,
       functionalName: r.functional,
+      managerKey: null,
+      functionalKey: null,
       email: r.email,
       changes: [],
     };
@@ -256,8 +264,6 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
       const unit = r.path.length ? r.path.join(" / ") : "департамент";
       if ((p.position ?? "") !== r.position) planned.changes.push(`должность: ${p.position || "нет"}, станет ${r.position || "нет"}`);
       if (pathKey(r.path) !== (p.unitPath ?? "")) planned.changes.push(`подразделение: станет ${unit}`);
-      if (r.manager && nameKey2(p.manager ?? "") !== nameKey2(r.manager)) planned.changes.push(`руководитель: станет ${r.manager}`);
-      if (r.functional && nameKey2(p.functional ?? "") !== nameKey2(r.functional)) planned.changes.push(`функциональный руководитель: станет ${r.functional}`);
       if (r.email && r.email !== (p.email ?? "")) planned.changes.push(`почта: станет ${r.email}`);
       if (!p.active) planned.changes.push("снова включён");
       if (planned.changes.length) out.people.change.push(planned);
@@ -266,6 +272,57 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
       out.people.add.push(planned);
     }
     out.planned.push(planned);
+  }
+  // Руководители: ищем одним и тем же способом среди людей ресурса и новых людей из файла. То же самое найдёт загрузка
+  const everyone: NamedPerson[] = [
+    ...people.map((p) => ({ id: p.id, fullName: p.fullName, shortName: p.shortName })),
+    ...out.planned.filter((p) => !p.id).map((p) => ({ id: plannedKey(p), fullName: p.fullName, shortName: p.shortName })),
+  ];
+  const all = new NameIndex(everyone);
+  const byKey = new Map(out.planned.map((p) => [plannedKey(p), p]));
+  const nameOfKey = (k: string) => everyone.find((p) => p.id === k)?.fullName ?? k;
+  for (const p of out.planned) {
+    for (const [label, value, field] of [
+      ["Руководитель", p.managerName, "managerKey"],
+      ["Функциональный руководитель", p.functionalName, "functionalKey"],
+    ] as const) {
+      if (!value) continue;
+      const hit = matchPerson(all, everyone, value);
+      if (hit.ambiguous) out.problems.push({ line: p.line, text: `${label} «${value}» подходит нескольким людям: напишите полное ФИО` });
+      else if (!hit.person) out.problems.push({ line: p.line, text: `${label} «${value}» не найден ни в файле, ни среди людей ресурса` });
+      else if (hit.person.id === plannedKey(p)) out.problems.push({ line: p.line, text: `${label} не может быть самим человеком` });
+      else p[field] = hit.person.id;
+    }
+    if (p.id) {
+      const was = people.find((x) => x.id === p.id)!;
+      if (p.managerKey && p.managerKey !== was.managerId) p.changes.push(`руководитель: станет ${nameOfKey(p.managerKey)}`);
+      if (p.functionalKey && p.functionalKey !== was.functionalId) p.changes.push(`функциональный руководитель: станет ${nameOfKey(p.functionalKey)}`);
+      if (p.changes.length && !out.people.change.includes(p)) {
+        out.people.change.push(p);
+        out.people.same -= 1;
+      }
+    }
+  }
+  // Петли подчинения: А подчиняется Б, Б подчиняется А. Руководителей людей вне файла берём из ресурса
+  const managerOf = (k: string): string | null => {
+    const planned = byKey.get(k);
+    if (planned) return planned.managerKey;
+    return people.find((x) => x.id === k)?.managerId ?? null;
+  };
+  const reported = new Set<string>();
+  for (const p of out.planned) {
+    const seenChain = new Set<string>([plannedKey(p)]);
+    let cur = p.managerKey;
+    while (cur) {
+      if (seenChain.has(cur)) {
+        const loop = [...seenChain].map(nameOfKey).join(", ");
+        if (!reported.has(loop)) out.problems.push({ line: p.line, text: `Петля подчинения: ${loop}` });
+        reported.add(loop);
+        break;
+      }
+      seenChain.add(cur);
+      cur = managerOf(cur);
+    }
   }
   const matched = new Set(out.planned.map((p) => p.id).filter(Boolean));
   out.people.missing = people.filter((p) => p.active && p.unitPath !== null && !matched.has(p.id)).map((p) => ({ slug: p.slug, fullName: p.fullName }));

@@ -29,6 +29,11 @@ async function actor(): Promise<svc.Actor> {
   };
 }
 
+/** Кто читает задачи: общий логин без режима управления видит только топ-команду (этап 14) */
+function readerOf(a: svc.Actor): svc.TaskReader {
+  return { personId: a.personId, role: a.role, limited: a.via === "TEAM" && !a.management };
+}
+
 function checkNumber(number: unknown): number {
   if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) throw new svc.TaskRuleError("Неверный номер задачи");
   return number;
@@ -113,7 +118,7 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
 /** Задача целиком: карточка дозагружает её, если в списке она пришла без комментариев (этап 14) */
 export async function getTaskAction(number: number): Promise<TaskActionResult> {
   const a = await actor();
-  const task = await svc.getTask(checkNumber(number), { personId: a.personId, role: a.role });
+  const task = await svc.getTask(checkNumber(number), readerOf(a));
   if (!task || (task.archived && a.management !== "OWNER")) return { ok: false, error: `Задачи ${number} нет` };
   return { ok: true, task, number };
 }
@@ -123,7 +128,7 @@ export async function moveTaskAction(number: number, team: string): Promise<Task
   try {
     const a = await actor();
     await moveTask(a, checkNumber(number), String(team ?? ""));
-    const task = await svc.getTask(number, { personId: a.personId, role: a.role });
+    const task = await svc.getTask(number, readerOf(a));
     return { ok: true, task, number };
   } catch (error) {
     unstable_rethrow(error);
@@ -136,10 +141,10 @@ export async function moveTaskAction(number: number, team: string): Promise<Task
 /** История задачи (матрица раздела 2): лидер видит историю своих задач, владелец и администраторы всю */
 export async function taskHistoryAction(number: number): Promise<{ ok: true; items: HistoryItem[] } | { ok: false; error: string }> {
   const a = await actor();
-  const task = await svc.getTask(checkNumber(number), { personId: a.personId, role: a.role });
+  const task = await svc.getTask(checkNumber(number), readerOf(a));
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
   if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
-  const scope = await loadScope(prisma, { id: a.personId, role: a.role });
+  const scope = await loadScope(prisma, { id: a.personId, role: a.role, limited: readerOf(a).limited });
   if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads }))
     return { ok: false, error: "История видна участникам задачи, руководителю команды, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };

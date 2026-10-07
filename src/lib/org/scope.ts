@@ -41,6 +41,8 @@ export type Scope = {
   visible: string[];
   /** Люди, у которых он функциональный руководитель */
   functional: string[];
+  /** Люди команд, которыми он руководит (руководители и участники): им он ставит задачи сразу «В работе» */
+  leadPeople: string[];
 };
 
 export async function loadTeamNodes(db: Db): Promise<TeamNode[]> {
@@ -101,7 +103,18 @@ export function seesAll(role: Role): boolean {
   return role === "OWNER" || role === "ADMIN" || role === "OBSERVER";
 }
 
-export function scopeOf(nodes: TeamNode[], person: { id: string; role: Role }, functional: string[] = []): Scope {
+/**
+ * Чей доступ считаем. limited: вход по общему логину team без режима управления. Общий пароль знают все в топ-команде,
+ * поэтому такой вход видит только топ-команду и свои задачи и никакими командами не руководит, какой бы профиль ни выбрали
+ */
+export type ScopeSubject = { id: string; role: Role; limited?: boolean };
+
+export function scopeOf(nodes: TeamNode[], person: ScopeSubject, functional: string[] = []): Scope {
+  if (person.limited) {
+    const top = nodes.find((n) => n.id === TOP_TEAM);
+    const inTop = !!top && (top.leaderId === person.id || top.members.includes(person.id));
+    return { all: false, member: inTop ? [TOP_TEAM] : [], leads: [], visible: [TOP_TEAM], functional: [], leadPeople: [] };
+  }
   const active = nodes.filter((n) => n.active);
   const member = active.filter((n) => n.leaderId === person.id || n.members.includes(person.id)).map((n) => n.id);
   const leads = new Set<string>();
@@ -111,10 +124,11 @@ export function scopeOf(nodes: TeamNode[], person: { id: string; role: Role }, f
   }
   const all = seesAll(person.role);
   const visible = all ? nodes.map((n) => n.id) : [...new Set([...member, ...leads])];
-  return { all, member, leads: [...leads], visible, functional };
+  const leadPeople = [...new Set(active.filter((n) => leads.has(n.id)).flatMap(teamPeopleIds))].filter((id) => id !== person.id);
+  return { all, member, leads: [...leads], visible, functional, leadPeople };
 }
 
-export async function loadScope(db: Db, person: { id: string; role: Role }): Promise<Scope> {
+export async function loadScope(db: Db, person: ScopeSubject): Promise<Scope> {
   const [nodes, functional] = await Promise.all([
     loadTeamNodes(db),
     db.person.findMany({ where: { functionalManagerId: person.id }, select: { id: true } }),

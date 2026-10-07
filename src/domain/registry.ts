@@ -4,7 +4,6 @@
 import { applyDictionaries, type DictEntry, type EditableDictKind } from "./dictionaries";
 import { applyPeople, type PersonEntry } from "./people";
 import { applyTeams, type TeamEntry } from "./teams";
-import type { PersonSlug } from "./types";
 import { setStaleDays } from "@/lib/tasks/rules";
 
 export type RegistrySnapshot = {
@@ -21,15 +20,14 @@ export type RegistrySnapshot = {
 let applied = "";
 
 /**
- * team: люди выбранной команды. Ими становится список PEOPLE, из которого выбирают ответственных
- * и по которому строятся сводки команды. Без него PEOPLE: все включённые люди
+ * Снимок общий для всех: подменяется на месте и на сервере, и в браузере. Поэтому люди выбранной команды сюда
+ * не попадают: они у каждого свои и приходят через контекст экрана (usePrototype().teamPeople, этап 14)
  */
-export function applyRegistry(snapshot: RegistrySnapshot, team?: { id: string | null; people: PersonSlug[] }) {
-  const key = `${snapshot.version}|${team?.id ?? ""}|${team?.people.join(",") ?? ""}`;
-  if (key === applied) return;
-  applyPeople(snapshot.people, team?.people);
+export function applyRegistry(snapshot: RegistrySnapshot) {
+  if (snapshot.version === applied) return;
+  applyPeople(snapshot.people);
   applyTeams(snapshot.teams ?? []);
   applyDictionaries(snapshot.dicts);
   setStaleDays(snapshot.staleDays);
-  applied = key;
+  applied = snapshot.version;
 }

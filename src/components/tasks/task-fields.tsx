@@ -12,7 +12,7 @@ import { useTaskActions } from "./task-actions";
 
 export function useViewer(): Viewer {
   const { me, manageRole, observer, leads } = usePrototype();
-  return { slug: me.slug, management: manageRole, observer, leads };
+  return { slug: me.slug, management: manageRole, observer, leads, employee: me.role === "EMPLOYEE" };
 }
 
 export function useTaskPermissions(task: Task) {

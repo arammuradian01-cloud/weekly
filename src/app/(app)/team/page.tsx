@@ -5,14 +5,15 @@ import { currentReportingKey, weeklyStates } from "@/lib/weekly/service";
 import { weekNumberOf } from "@/lib/weekly/weeks";
 import { PageHeader } from "@/components/page-header";
 import { TeamSummary } from "@/components/team/team-summary";
-import { audienceOf, currentTeam } from "@/lib/org/current";
+import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
 
 export const metadata: Metadata = { title: "Команда" };
 
 export default async function TeamPage() {
-  const { person } = await requireContext();
+  const ctx = await requireContext();
+  const { person } = ctx;
   const key = await currentReportingKey();
-  const team = await currentTeam({ id: person.id, role: person.role });
+  const team = await currentTeam(subjectOf(ctx));
   const reports = await weeklyStates(key, audienceOf(team));
   return (
     <>

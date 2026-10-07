@@ -600,23 +600,25 @@ model Vacancy {
 
 /// Команда руководителя (этап 14). У каждой задачи и weekly есть команда. Топ-команда: id «top»
 model Team {
-  id        String   @id @default(cuid())
-  name      String
-  kind      TeamKind @default(UNIT)
+  id           String   @id @default(cuid())
+  name         String
+  kind         TeamKind @default(UNIT)
   /// Руководитель команды. null: пока не назначен
-  leaderId  String?
-  leader    Person?  @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  leaderId     String?
+  leader       Person?  @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   /// Команда уровнем выше: в неё руководитель сдаёт свой weekly
-  parentId  String?
-  parent    Team?    @relation("TeamTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children  Team[]   @relation("TeamTree")
+  parentId     String?
+  /// Команду выше поставил владелец руками: загрузка структуры её больше не пересчитывает
+  parentManual Boolean  @default(false)
+  parent       Team?    @relation("TeamTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Team[]   @relation("TeamTree")
   /// Подразделение, по которому собрана команда
-  unitId    String?
-  unit      OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  active    Boolean  @default(true)
-  sortOrder Int      @default(0)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  unitId       String?
+  unit         OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
 
   members TeamMember[]
   tasks   Task[]
@@ -634,6 +636,9 @@ model TeamMember {
   person    Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
   addedById String?
   addedAt   DateTime @default(now()) @db.Timestamptz(3)
+  /// Добавлен по структуре как прямой подчинённый руководителя. Такие участники пересчитываются при загрузке структуры,
+  /// добавленные руками остаются
+  auto      Boolean  @default(false)
 
   @@id([teamId, personId])
   @@index([personId])

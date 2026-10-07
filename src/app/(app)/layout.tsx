@@ -21,7 +21,7 @@ import { prisma } from "@/lib/db";
 import { inboxCount } from "@/lib/inbox/service";
 import { InboxCountProvider } from "@/components/inbox/inbox-count";
 import { TeamSwitcher } from "@/components/shell/team-switcher";
-import { currentTeam } from "@/lib/org/current";
+import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
 import Link from "next/link";
 
@@ -35,8 +35,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
   // Выбранная команда (этап 14): задачи этой команды и свои задачи в любой команде
-  const team = await currentTeam({ id: ctx.person.id, role: ctx.person.role });
-  const reader = { personId: ctx.person.id, role: ctx.person.role };
+  const subject = subjectOf(ctx);
+  const team = await currentTeam(subject);
+  const reader = { personId: ctx.person.id, role: ctx.person.role, limited: subject.limited };
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
   const [tasks, registry, lagging, banner, owner, inbox, slugs] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER", reader, team: team.id && team.id !== ALL_TEAMS ? team.id : undefined }),

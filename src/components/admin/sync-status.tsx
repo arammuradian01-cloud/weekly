@@ -93,6 +93,9 @@ export function SyncStatus({ view }: { view: SyncView }) {
         <p className="mt-1 max-w-[760px] text-body text-ink">
           Ресурс сам пишет в отдельную Google-таблицу все задачи, и из Bord, и заведённые в ресурсе, а ещё комментарии и weekly. В одну сторону: таблицу правит только ресурс.
         </p>
+        <p className="mt-2 max-w-[760px] rounded-lg bg-warning-soft px-4 py-3 text-body text-ink">
+          В таблице задачи всех команд департамента, колонка «Команда» показывает, чья задача. Давайте доступ к ней только тем, кому можно видеть весь департамент: права ресурса на таблицу не распространяются.
+        </p>
       </div>
 
       {view.connected ? <Tiles view={view} /> : null}

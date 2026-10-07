@@ -6,7 +6,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import type { Role } from "@/generated/prisma/enums";
-import { TOP_TEAM, loadTeamNodes, scopeOf, teamPeopleIds, type Scope, type TeamNode } from "./scope";
+import { TOP_TEAM, loadTeamNodes, scopeOf, teamPeopleIds, type Scope, type ScopeSubject, type TeamNode } from "./scope";
 
 import { ALL_TEAMS } from "@/domain/teams";
 
@@ -84,7 +84,12 @@ export function pickCurrent(options: TeamOption[], wanted: string | undefined): 
   return options[0]?.id ?? null;
 }
 
-export async function currentTeam(person: { id: string; role: Role }): Promise<CurrentTeam> {
+/** Чей доступ: профиль и как вошли. Общий логин без режима управления видит только топ-команду */
+export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown }): ScopeSubject {
+  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management };
+}
+
+export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
   const [nodes, functional, jar] = await Promise.all([
     loadTeamNodes(prisma),
     prisma.person.findMany({ where: { functionalManagerId: person.id }, select: { id: true } }),
@@ -112,12 +117,25 @@ export async function currentTeam(person: { id: string; role: Role }): Promise<C
 /** Чей weekly показывать для выбранной команды. Общие записи без автора бывают только у топ-команды */
 export function audienceOf(current: CurrentTeam): { personIds: string[]; shared: boolean } {
   const shared = current.id === TOP_TEAM || (current.id === ALL_TEAMS && current.options.some((o) => o.id === TOP_TEAM));
-  return { personIds: current.people, shared };
+  // Weekly руководителя команды принадлежит команде выше: его видят он сам и те, кто выше, но не его подчинённые
+  const byId = new Map(current.nodes.map((n) => [n.id, n]));
+  const showLeader = (id: string) => id === TOP_TEAM || current.scope.all || current.scope.leads.includes(id);
+  const ids = current.id === ALL_TEAMS ? current.options.map((o) => o.id) : current.id ? [current.id] : [];
+  if (!ids.length) return { personIds: current.people, shared };
+  const people = new Set<string>();
+  for (const id of ids) {
+    const n = byId.get(id);
+    if (!n) continue;
+    for (const m of n.members) people.add(m);
+    if (n.leaderId && showLeader(id)) people.add(n.leaderId);
+  }
+  return { personIds: [...people], shared };
 }
 
 /** Weekly топ-команды: для отчёта CEO он собирается из неё, как и раньше */
-export async function topAudience(): Promise<{ personIds: string[]; shared: boolean }> {
+export async function topAudience(): Promise<{ personIds: string[]; shared: boolean; ceo: boolean }> {
   const top = await prisma.team.findUnique({ where: { id: TOP_TEAM }, include: { members: { select: { personId: true } } } });
-  if (!top) return { personIds: [], shared: true };
-  return { personIds: [...new Set([...(top.leaderId ? [top.leaderId] : []), ...top.members.map((m) => m.personId)])], shared: true };
+  // Плюс записи сотрудников любых команд, которые владелец или администратор отметили «В отчёт CEO»
+  if (!top) return { personIds: [], shared: true, ceo: true };
+  return { personIds: [...new Set([...(top.leaderId ? [top.leaderId] : []), ...top.members.map((m) => m.personId)])], shared: true, ceo: true };
 }

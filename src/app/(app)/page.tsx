@@ -15,7 +15,7 @@ import {
 } from "@/lib/week";
 import { WeekStrip, type StripDay } from "@/components/brand/week-strip";
 import { Suspense } from "react";
-import { audienceOf, currentTeam } from "@/lib/org/current";
+import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
 import { MyWeek } from "@/components/weekly/my-week";
 import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
 import { fromCalendar } from "@/domain/dates";
@@ -28,7 +28,8 @@ function sameDay(a: { year: number; month: number; day: number }, b: { year: num
 }
 
 export default async function MyWeekPage() {
-  const { person, management } = await requireContext();
+  const ctx = await requireContext();
+  const { person, management } = ctx;
   const deadlineSetting = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const now = new Date();
   const week = reportingWeek(now, deadlineSetting);
@@ -45,7 +46,7 @@ export default async function MyWeekPage() {
   });
   const deadlineDay = moscowDate(deadline);
   const weekKey = fromCalendar(week.start);
-  const current = management ? await currentTeam({ id: person.id, role: person.role }) : null;
+  const current = management ? await currentTeam(subjectOf(ctx)) : null;
   const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null)]);
   const currentWeek = isoWeekOf(today);
 

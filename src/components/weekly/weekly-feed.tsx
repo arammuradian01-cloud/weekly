@@ -66,7 +66,7 @@ function WeekLock({ week }: { week: WeekInfo }) {
 }
 
 export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport: PersonWeekly }) {
-  const { manage } = usePrototype();
+  const { manage, teamPeople } = usePrototype();
   const week = data.week;
   const [view, setView] = useState<View>("people");
   const [direction, setDirection] = useState<DirectionCode | "">("");
@@ -155,7 +155,7 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
           <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
           <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
           <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
-          <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...PEOPLE.map((p) => ({ value: p.slug, label: p.fullName }))]} />
+          <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))]} />
           <div className="col-span-2 sm:col-span-1">
             <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={all.filter((e) => e.help).length}>
               Нужна помощь
@@ -204,7 +204,7 @@ function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
 }
 
 function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; entries: WeeklyEntry[]; reporting: boolean }) {
-  const { manage } = usePrototype();
+  const { manage, teamPeople } = usePrototype();
   const run = useRunWeekly();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
   const reportOf = (slug: PersonSlug) => reports.find((w) => w.author === slug);
@@ -216,7 +216,7 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
     (a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)],
   );
   const assignAuthor = (id: string, slug: PersonSlug) =>
-    void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${PEOPLE.find((p) => p.slug === slug)?.fullName ?? slug}`);
+    void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${personOf(slug).fullName}`);
   const common = entries.filter((e) => !e.author);
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
@@ -241,7 +241,7 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
                     value=""
                     onChange={(ev) => ev.target.value && assignAuthor(e.id, ev.target.value as PersonSlug)}
                     className="sm:w-72"
-                    options={[{ value: "", label: "Выберите, кто берёт" }, ...PEOPLE.map((p) => ({ value: p.slug, label: p.fullName }))]}
+                    options={[{ value: "", label: "Выберите, кто берёт" }, ...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))]}
                   />
                 ) : null}
               </li>

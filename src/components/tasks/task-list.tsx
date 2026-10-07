@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Search, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, compactName, ownerName } from "@/domain/people";
+import { compactName, ownerName } from "@/domain/people";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { defaultOrder, isClosed, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/domain/rules";
@@ -36,7 +36,7 @@ function matches(task: Task, q: string): boolean {
 }
 
 export function TaskList() {
-  const { data, me, manageRole } = usePrototype();
+  const { data, me, manageRole, teamPeople } = usePrototype();
   const params = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
   const [active, setActive] = useState<QuickFilter[]>([]);
@@ -76,7 +76,7 @@ export function TaskList() {
     // Порядок справочника, а в конце те, кого уже выключили или скрыли: их задачи не пропадают из списка
     const known =
       groupBy === "owner"
-        ? [...PEOPLE.map((p) => p.slug as string), "all"]
+        ? [...teamPeople.map((p) => p.slug as string), "all"]
         : groupBy === "direction"
           ? DIRECTIONS.map((d) => d.code as string)
           : [...PRIORITIES.map((p) => p.code as string), "unset"];
@@ -90,7 +90,7 @@ export function TaskList() {
     return order
       .map((k) => ({ key: k, title: titleOf(k), tasks: filtered.filter((t) => keyOf(t) === k) }))
       .filter((g) => g.tasks.length > 0);
-  }, [filtered, groupBy]);
+  }, [filtered, groupBy, teamPeople]);
 
   const toggle = (f: QuickFilter) => setActive((a) => (a.includes(f) ? a.filter((x) => x !== f) : [...a, f]));
 

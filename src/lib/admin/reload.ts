@@ -2,6 +2,7 @@
 // Общая часть для команды npm run reload:bord и для раздела «Перезаливка из выгрузки» в настройках владельца.
 // Модуль без server-only: его загружает и скрипт на сервере.
 
+import { TOP_TEAM } from "@/domain/teams";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { checkBordTasks, importBordTasks } from "@/lib/tasks/bord-import";
 import { checkBordWeekly, importBordWeekly } from "@/lib/weekly/bord-import";
@@ -22,12 +23,19 @@ export type ReloadResult = { tasks: number; entries: number; weeks: number[]; ne
 /** Кто перезаливает: владелец из настроек или скрипт на сервере */
 export type ReloadActor = { personId: string | null; name: string; source: "APP" | "SYSTEM"; ip?: string | null };
 
+/** Люди топ-команды: перезаливка из Bord трогает только их задачи и weekly (этап 14) */
+async function topPeople(db: Pick<PrismaClient, "team">): Promise<string[]> {
+  const top = await db.team.findUnique({ where: { id: TOP_TEAM }, include: { members: { select: { personId: true } } } });
+  return [...new Set([...(top?.leaderId ? [top.leaderId] : []), ...(top?.members.map((m) => m.personId) ?? [])])];
+}
+
 export async function currentCounts(db: PrismaClient): Promise<ReloadCounts> {
+  const ids = await topPeople(db);
   const [tasks, comments, entries, reports, ceo] = await Promise.all([
-    db.task.count(),
-    db.taskComment.count(),
-    db.weeklyEntry.count(),
-    db.weeklyReport.count(),
+    db.task.count({ where: { teamId: TOP_TEAM } }),
+    db.taskComment.count({ where: { task: { teamId: TOP_TEAM } } }),
+    db.weeklyEntry.count({ where: { OR: [{ authorId: null }, { authorId: { in: ids } }] } }),
+    db.weeklyReport.count({ where: { authorId: { in: ids } } }),
     db.ceoReport.count(),
   ]);
   return { tasks, comments, entries, reports, ceo };
@@ -55,8 +63,9 @@ export async function planReload(db: PrismaClient, tasksText: string, weeklyText
 }
 
 /**
- * Удаляет все задачи (вместе с комментариями, переносами и ссылками), записи и сдачи weekly, черновики отчёта CEO
- * и недели, затем загружает выгрузку. Люди, справочники, настройки и журнал остаются.
+ * Удаляет задачи топ-команды (вместе с комментариями, переносами и ссылками), записи и сдачи weekly людей топ-команды,
+ * черновики отчёта CEO и опустевшие недели, затем загружает выгрузку. Задачи и weekly других команд, люди, справочники,
+ * настройки и журнал остаются.
  * Битая выгрузка останавливает перезаливку до удаления
  */
 export async function reloadFromBord(db: PrismaClient, tasksText: string, weeklyText: string, opts: { batch: string; actor: ReloadActor }): Promise<ReloadResult> {
@@ -64,12 +73,15 @@ export async function reloadFromBord(db: PrismaClient, tasksText: string, weekly
   if (plan.problems.length) throw new ReloadProblemsError(plan.problems);
 
   await db.$transaction(async (tx) => {
+    // Только данные топ-команды: Bord ведёт она, задачи и weekly остальных команд перезаливка не трогает (этап 14).
     // Комментарии, переносы, ссылки и соисполнители удаляются вместе с задачами (каскад в базе)
-    await tx.task.deleteMany();
-    await tx.weeklyEntry.deleteMany();
-    await tx.weeklyReport.deleteMany();
+    const ids = await topPeople(tx);
+    await tx.task.deleteMany({ where: { teamId: TOP_TEAM } });
+    await tx.weeklyEntry.deleteMany({ where: { OR: [{ authorId: null }, { authorId: { in: ids } }] } });
+    await tx.weeklyReport.deleteMany({ where: { authorId: { in: ids } } });
     await tx.ceoReport.deleteMany();
-    await tx.week.deleteMany();
+    // Недели, где не осталось ни записей, ни сдач других команд
+    await tx.week.deleteMany({ where: { entries: { none: {} }, reports: { none: {} } } });
     // Номера новых задач начнутся после самой старшей задачи из выгрузки, а при заборе из Bord от 1001
     const pullOn = await tx.setting.findUnique({ where: { key: "bord.sourceId" } });
     const first = typeof pullOn?.value === "string" && pullOn.value ? 1001 : 1;

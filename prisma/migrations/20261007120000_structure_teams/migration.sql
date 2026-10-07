@@ -50,6 +50,7 @@ CREATE TABLE "teams" (
     "kind" "TeamKind" NOT NULL DEFAULT 'UNIT',
     "leaderId" TEXT,
     "parentId" TEXT,
+    "parentManual" BOOLEAN NOT NULL DEFAULT false,
     "unitId" TEXT,
     "active" BOOLEAN NOT NULL DEFAULT true,
     "sortOrder" INTEGER NOT NULL DEFAULT 0,
@@ -65,6 +66,7 @@ CREATE TABLE "team_members" (
     "personId" TEXT NOT NULL,
     "addedById" TEXT,
     "addedAt" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "auto" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "team_members_pkey" PRIMARY KEY ("teamId","personId")
 );
@@ -131,3 +133,15 @@ ALTER TABLE "team_members" ADD CONSTRAINT "team_members_teamId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "team_members" ADD CONSTRAINT "team_members_personId_fkey" FOREIGN KEY ("personId") REFERENCES "people"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Таблица для просмотра (этап 14): новое название команды меняет колонку «Команда» во многих строках, выгружаем всё.
+-- Состав топ-команды меняет строки вкладки «Сводка»
+CREATE TRIGGER teams_sheet_enqueue AFTER UPDATE OF "name" ON "teams"
+  FOR EACH ROW WHEN (OLD."name" IS DISTINCT FROM NEW."name")
+  EXECUTE FUNCTION sheet_enqueue_all();
+CREATE TRIGGER team_members_sheet_enqueue_summary_ins AFTER INSERT ON "team_members"
+  FOR EACH ROW WHEN (NEW."teamId" = 'top')
+  EXECUTE FUNCTION sheet_enqueue_summary();
+CREATE TRIGGER team_members_sheet_enqueue_summary_del AFTER DELETE ON "team_members"
+  FOR EACH ROW WHEN (OLD."teamId" = 'top')
+  EXECUTE FUNCTION sheet_enqueue_summary();

@@ -6,7 +6,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { personOf } from "./people";
+import { peopleOf, personOf } from "./people";
 import type { Person, PersonSlug, Task } from "./types";
 import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
@@ -41,6 +41,8 @@ type Store = {
   /** Команды, которыми человек руководит, с командами ниже (этап 14) */
   leads: string[];
   team: CurrentTeamView;
+  /** Люди выбранной команды (руководитель и участники, включённые, без наблюдателей): ответственные, сводки, разбор */
+  teamPeople: Person[];
   /** Ответ сервера по задаче: обновить её на экране, показать тост с отменой или ошибку. true, если сохранилось */
   applyTaskResult: (result: TaskActionResult, toastText: string) => boolean;
   /** Выполнить действие с задачей на сервере и применить ответ */
@@ -81,7 +83,7 @@ export function PrototypeProvider({
   leads?: string[];
   children: React.ReactNode;
 }) {
-  applyRegistry(registry, { id: team.id, people: team.people });
+  applyRegistry(registry);
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -135,6 +137,7 @@ export function PrototypeProvider({
     [router, showToast],
   );
 
+  const teamPeople = useMemo(() => peopleOf(team.people), [team.people, registry.version]);
   const data = useMemo<AppData>(
     () => ({
       today,
@@ -155,6 +158,7 @@ export function PrototypeProvider({
       observer,
       leads,
       team,
+      teamPeople,
       applyTaskResult,
       runTask: async (action, toastText) => {
         try {
@@ -203,7 +207,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, leads, team, toast, showToast, applyTaskResult]);
+  }, [data, me, manageRole, observer, leads, team, teamPeople, toast, showToast, applyTaskResult]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

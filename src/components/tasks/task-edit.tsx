@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, Plus, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { PEOPLE, personOf } from "@/domain/people";
+import { teamOf, teamPeople } from "@/domain/teams";
 import { dictOptions, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner, PersonSlug, Task } from "@/domain/types";
 import { addLinkAction, assignOwnerAction, editTaskAction, removeLinkAction, setCoExecutorsAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
@@ -80,11 +81,15 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
     onOpenChange(false);
   };
 
-  const people = PEOPLE.map((p) => ({ value: p.slug, label: p.fullName }));
-  // Выключенный ответственный или соисполнитель остаётся в форме: иначе выбор незаметно сменится или его не снять
-  const gone = (slug: string) => !PEOPLE.some((p) => p.slug === slug);
-  if (task.owner !== "all" && gone(task.owner)) people.push({ value: task.owner, label: `${personOf(task.owner).fullName} (выключен)` });
-  const coChoices = [...PEOPLE, ...task.coExecutors.filter(gone).map(personOf)].filter((p) => p.slug !== owner);
+  // Выбор из людей команды задачи (этап 14). Команды нет в снимке: все включённые люди
+  const target = teamOf(task.team);
+  const pool = target ? PEOPLE.filter((p) => teamPeople(target).includes(p.slug)) : PEOPLE;
+  const people = pool.map((p) => ({ value: p.slug, label: p.fullName }));
+  // Нынешний ответственный или соисполнитель вне списка остаётся в форме: иначе выбор незаметно сменится или его не снять
+  const outside = (slug: string) => !pool.some((p) => p.slug === slug);
+  const label = (slug: string) => `${personOf(slug).fullName}${PEOPLE.some((p) => p.slug === slug) ? "" : " (выключен)"}`;
+  if (task.owner !== "all" && outside(task.owner)) people.push({ value: task.owner, label: label(task.owner) });
+  const coChoices = [...pool, ...task.coExecutors.filter(outside).map(personOf)].filter((p) => p.slug !== owner);
 
   return (
     <Modal open={open} onOpenChange={onOpenChange} title={`Изменить задачу ${task.number}`} description="Каждая правка попадёт в историю задачи">
@@ -115,8 +120,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
                     onChange={(e) => setCo((prev) => (e.target.checked ? [...prev, p.slug] : prev.filter((s) => s !== p.slug)))}
                     className="h-4 w-4 accent-blue-700"
                   />
-                  {p.fullName}
-                  {gone(p.slug) ? " (выключен)" : ""}
+                  {label(p.slug)}
                 </label>
               ))}
             </div>

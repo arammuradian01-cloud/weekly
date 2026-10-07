@@ -1,7 +1,8 @@
 // Люди и справочники из базы на экранах (этап 5): снимок подменяет стартовые значения, скрытое остаётся подписью.
 import { afterAll, describe, expect, it } from "vitest";
 import { applyRegistry, type RegistrySnapshot } from "@/domain/registry";
-import { PEOPLE, authorName, compactName, isPersonSlug, personOf } from "@/domain/people";
+import { PEOPLE, authorName, compactName, isPersonSlug, peopleOf, personOf } from "@/domain/people";
+import { teamOf } from "@/domain/teams";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, directionLabel, dictOptions, entryTypeLabel } from "@/domain/dictionaries";
 import { isStale, staleDays } from "@/lib/tasks/rules";
 import { slugify, uniqueSlug } from "@/lib/translit";
@@ -87,31 +88,20 @@ describe("коды из русских названий", () => {
 });
 
 describe("люди выбранной команды (этап 14)", () => {
-  it("в списках выбора только руководитель и участники выбранной команды, подписи остаются у всех", () => {
-    applyRegistry(
-      {
-        version: "teams-1",
-        staleDays: 14,
-        ...structuredClone(base),
-        people: [...base.people, { slug: "ivanova", fullName: "Иванова Мария", shortName: "Мария", role: "EMPLOYEE", zone: "", direction: "osago", active: true }],
-        teams: [{ id: "t1", name: "Сектор ОСАГО", kind: "UNIT", leader: "reva", parent: "top", members: ["ivanova"], active: true }],
-      },
-      { id: "t1", people: ["reva", "ivanova"] },
-    );
-    expect(PEOPLE.map((p) => p.slug)).toEqual(["reva", "ivanova"]);
-    expect(authorName("golovkin", "full")).toBe("Головкин Владислав");
-    // Та же версия снимка, другая команда: список пересобирается
-    applyRegistry(
-      {
-        version: "teams-1",
-        staleDays: 14,
-        ...structuredClone(base),
-        people: [...base.people, { slug: "ivanova", fullName: "Иванова Мария", shortName: "Мария", role: "EMPLOYEE", zone: "", direction: "osago", active: true }],
-        teams: [],
-      },
-      { id: "top", people: base.people.map((p) => p.slug) },
-    );
-    expect(PEOPLE.some((p) => p.slug === "ivanova")).toBe(false);
+  it("общий список PEOPLE не зависит от команды, люди команды берутся из него по слагам", () => {
+    applyRegistry({
+      version: "teams-1",
+      staleDays: 14,
+      ...structuredClone(base),
+      people: [...base.people, { slug: "ivanova", fullName: "Иванова Мария", shortName: "Мария", role: "EMPLOYEE", zone: "", direction: "osago", active: true }],
+      teams: [{ id: "t1", name: "Сектор ОСАГО", kind: "UNIT", leader: "reva", parent: "top", members: ["ivanova"], active: true }],
+    });
+    // Список общий для всех запросов сервера: в нём все включённые люди
+    expect(PEOPLE.some((p) => p.slug === "ivanova")).toBe(true);
     expect(PEOPLE.some((p) => p.slug === "golovkin")).toBe(true);
+    // Порядок как в настройках, выключенных и чужих нет
+    expect(peopleOf(["ivanova", "reva", "nobody"]).map((p) => p.slug)).toEqual(["reva", "ivanova"]);
+    expect(teamOf("t1")?.name).toBe("Сектор ОСАГО");
+    expect(authorName("golovkin", "full")).toBe("Головкин Владислав");
   });
 });

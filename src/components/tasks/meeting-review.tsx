@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, personOf } from "@/domain/people";
+import { personOf } from "@/domain/people";
+import { teamOf } from "@/domain/teams";
 import { formatLong, formatShort } from "@/domain/dates";
 import { isClosedThisWeek, isOverdue, overdueDays } from "@/domain/rules";
 import type { PersonSlug, Task } from "@/domain/types";
@@ -17,13 +18,18 @@ import { useOpenTask } from "./task-drawer";
 
 /** Разбор на встрече: по каждому лидеру подряд критичные, просроченные, заблокированные и закрытые за неделю */
 export function MeetingReview() {
-  const { data, manage } = usePrototype();
+  const { data, manage, teamPeople, team } = usePrototype();
   // Выключенные с открытыми задачами тоже разбираются: их задачи надо передать
-  const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !PEOPLE.some((p) => p.slug === t.owner)).map((t) => t.owner))];
-  const order = [...PEOPLE.filter((p) => p.role !== "OWNER").map((p) => p.slug), ...gone];
+  const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !teamPeople.some((p) => p.slug === t.owner)).map((t) => t.owner))];
+  // Руководителя выбранной команды не разбираем: встречу ведёт он сам
+  const leader = teamOf(team.id)?.leader;
+  const order = [...teamPeople.filter((p) => p.slug !== leader && p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
   const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
-  const slug = order[index]!;
+  if (!order.length) return <p className="rounded-xl bg-surface px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников в разделе «Структура».</p>;
+  // После переключения команды очередь короче: остаёмся в её пределах
+  const current = Math.min(index, order.length - 1);
+  const slug = order[current]!;
   const person = personOf(slug);
   const own = (t: Task) => (t.owner === slug || t.owner === "all") && !t.archived;
 
@@ -48,15 +54,15 @@ export function MeetingReview() {
                 <button
                   type="button"
                   onClick={() => setIndex(i)}
-                  aria-current={i === index ? "step" : undefined}
+                  aria-current={i === current ? "step" : undefined}
                   className={cn(
                     "inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-small transition-colors",
-                    i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
+                    i === current ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                   )}
                 >
                   {personOf(s).shortName}
                   {n ? (
-                    <span className={cn("rounded-full px-1.5 text-tiny tabular-nums", i === index ? "bg-white/15" : "bg-danger-soft text-danger-ink")}>{n}</span>
+                    <span className={cn("rounded-full px-1.5 text-tiny tabular-nums", i === current ? "bg-white/15" : "bg-danger-soft text-danger-ink")}>{n}</span>
                   ) : null}
                 </button>
               </li>
@@ -79,10 +85,10 @@ export function MeetingReview() {
                 Задача со встречи
               </Button>
             ) : null}
-            <Button size="sm" variant="secondary" onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={index === 0} aria-label="Предыдущий лидер">
+            <Button size="sm" variant="secondary" onClick={() => setIndex(Math.max(0, current - 1))} disabled={current === 0} aria-label="Предыдущий лидер">
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => setIndex((i) => Math.min(order.length - 1, i + 1))} disabled={index === order.length - 1}>
+            <Button size="sm" variant="secondary" onClick={() => setIndex(Math.min(order.length - 1, current + 1))} disabled={current === order.length - 1}>
               Следующий
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Button>

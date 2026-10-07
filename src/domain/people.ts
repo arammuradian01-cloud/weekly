@@ -17,19 +17,17 @@ export type PersonEntry = Person & { active: boolean; position?: string | null }
 
 const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
 
-/**
- * Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте.
- * team: слаги людей выбранной команды (этап 14). Тогда PEOPLE: только они, в порядке из настроек
- */
-export function applyPeople(list: PersonEntry[], team?: PersonSlug[]) {
+/** Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте: в нём все включённые люди, кроме наблюдателей */
+export function applyPeople(list: PersonEntry[]) {
   if (!list.length) return;
   ALL_PEOPLE.splice(0, ALL_PEOPLE.length, ...list);
-  const inTeam = team ? new Set(team) : null;
-  PEOPLE.splice(
-    0,
-    PEOPLE.length,
-    ...list.filter((p) => p.active && p.role !== "OBSERVER" && (!inTeam || inTeam.has(p.slug))).map(({ active: _active, position: _position, ...p }) => p),
-  );
+  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, position: _position, ...p }) => p));
+}
+
+/** Включённые люди из списка слагов в порядке из настроек: люди выбранной команды (этап 14) */
+export function peopleOf(slugs: PersonSlug[]): Person[] {
+  const set = new Set(slugs);
+  return PEOPLE.filter((p) => set.has(p.slug));
 }
 
 /** Должность по структуре (этап 14): null, если структура не загружена */

@@ -37,6 +37,8 @@ const ROLES: { value: Role; label: string }[] = [
   { value: "ADMIN", label: "Администратор" },
   { value: "LEADER", label: "Лидер" },
   { value: "OBSERVER", label: "Наблюдатель" },
+  // Этап 14: сотрудник департамента вне топ-команды, обычно приходит из загрузки структуры
+  { value: "EMPLOYEE", label: "Сотрудник" },
 ];
 const roleLabel = (r: Role) => ROLES.find((x) => x.value === r)?.label ?? r;
 const dayOptions = WEEKDAYS.map((d, i) => ({ value: String(i + 1), label: d.charAt(0).toUpperCase() + d.slice(1) }));

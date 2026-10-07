@@ -85,6 +85,8 @@ export type Viewer = {
   observer?: boolean;
   /** Команды, которыми человек руководит, вместе с командами ниже (этап 14). Топ-команды здесь нет */
   leads?: string[];
+  /** Сотрудник вне топ-команды: задачи «Все лидеры» к нему не относятся */
+  employee?: boolean;
 };
 
 /** Руководитель команды задачи или команды выше неё: ведёт задачу как режим управления, кроме архива */
@@ -124,8 +126,8 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   // Режим управления или руководитель команды задачи (этап 14)
   const manage = !!v.management || leadsTeam(v, task.team);
   const me = v.slug;
-  // «Все лидеры»: общую задачу ведёт любой из команды
-  const owner = task.owner === me || task.owner === "all";
+  // «Все лидеры»: общую задачу ведёт любой лидер топ-команды, сотрудника это не касается
+  const owner = task.owner === me || (task.owner === "all" && !v.employee);
   const directOwner = task.owner === me;
   const co = task.coExecutors.includes(me);
   const creator = task.createdBy === me;

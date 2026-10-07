@@ -140,7 +140,12 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       if (!fallback) throw new Error("В справочнике нет направления «Департамент»: сначала запустите сид");
       const people = await tx.person.findMany({ select: { id: true, slug: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true } });
       const byId = new Map(people.map((p) => [p.id, p]));
-      const index = new NameIndex(people);
+      // Bord ведёт топ-команда: имена сначала ищем среди её людей. Остальных сотрудников департамента только запасным
+      // вариантом, иначе второй Евгений из структуры сделал бы «Евгения» из Bord неоднозначным (этап 14)
+      const top = await tx.team.findUnique({ where: { id: TOP_TEAM }, include: { members: { select: { personId: true } } } });
+      const topIds = new Set([...(top?.leaderId ? [top.leaderId] : []), ...(top?.members.map((m) => m.personId) ?? [])]);
+      const index = new NameIndex(people.filter((p) => topIds.has(p.id)));
+      const rest = new NameIndex(people.filter((p) => !topIds.has(p.id)));
       const takenSlugs = new Set([...people.map((p) => p.slug), "all", "system"]);
       let sortOrder = Math.max(0, ...people.map((p) => p.sortOrder));
 
@@ -148,6 +153,9 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         const hit = index.find(name);
         if (hit.person) return hit.person.id;
         if (hit.ambiguous) return "ambiguous";
+        const other = rest.find(name);
+        if (other.person) return other.person.id;
+        if (other.ambiguous) return "ambiguous";
         const { fullName, shortName } = personNameFromBord(name);
         const slug = uniqueSlug(slugify(fullName.split(" ")[0] ?? fullName, 24), takenSlugs);
         takenSlugs.add(slug);

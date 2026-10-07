@@ -11,6 +11,7 @@ import { formatLong, type IsoDate } from "@/domain/dates";
 import type { Link, PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
+import { colleaguesOf } from "@/lib/org/people";
 import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections } from "./rules";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
@@ -111,11 +112,11 @@ const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft", SUBMI
  * Чей weekly показывать (этап 14): люди выбранной команды. shared: показывать и общие записи без автора
  * («Все лидеры» из таблицы), они бывают только у топ-команды. Без аудитории: все включённые люди, как до команд
  */
-export type WeekAudience = { personIds: string[]; shared: boolean };
+export type WeekAudience = { personIds: string[]; shared: boolean; /** И записи любой команды с отметкой «В отчёт CEO» */ ceo?: boolean };
 
 function entryScope(audience: WeekAudience | undefined): Prisma.WeeklyEntryWhereInput {
   if (!audience) return {};
-  return { OR: [{ authorId: { in: audience.personIds } }, ...(audience.shared ? [{ authorId: null }] : [])] };
+  return { OR: [{ authorId: { in: audience.personIds } }, ...(audience.shared ? [{ authorId: null }] : []), ...(audience.ceo ? [{ ceo: true }] : [])] };
 }
 
 /** Неделя для ленты, режима встречи и отчёта CEO. Без ключа: отчётная, а если она пустая, последняя с записями */
@@ -604,6 +605,9 @@ export async function setAbsence(actor: Actor, input: { slug: string; week: Week
     const s = await prisma.person.findUnique({ where: { slug: input.substitute } });
     if (!s || !s.active || s.role === "OBSERVER") fail("Замещающего выберите из списка команды");
     if (s!.id === person.id) fail("Замещающим не может быть сам отсутствующий");
+    // Замещает коллега по команде (этап 14): человек из другой ветки не видит задач и weekly отсутствующего
+    const colleague = await prisma.person.count({ where: { id: s!.id, ...colleaguesOf(person.id) } });
+    if (!colleague) fail("Замещающего выберите из своей команды");
     substitute = s!;
   }
   return prisma.$transaction(async (tx) => {
