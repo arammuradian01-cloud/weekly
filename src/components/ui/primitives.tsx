@@ -40,7 +40,7 @@ export function Segmented<V extends string>({
   className?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className={cn("inline-flex rounded-lg bg-field p-1", className)}>
+    <div role="radiogroup" aria-label={label} className={cn("inline-flex max-w-full flex-wrap rounded-lg bg-field p-1", className)}>
       {options.map((o) => {
         const active = o.value === value;
         return (
