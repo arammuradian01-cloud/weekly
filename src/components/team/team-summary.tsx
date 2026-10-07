@@ -156,5 +156,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
 /** Weekly руководителя команды сдаётся в команду выше: его подчинённым он не показывается (этап 14) */
 function WeeklyOrAbove({ weekly }: { weekly: PersonWeekly | undefined }) {
   if (!weekly) return <span className="text-small text-muted">сдаёт в команду выше</span>;
+  // Специалист, от кого weekly не ждут (этап 15): пока не начал, это не долг
+  if (weekly.optional && weekly.state === "not-started") return <span className="text-small text-muted">weekly по желанию</span>;
   return <WeeklyBadge state={weekly.state} />;
 }

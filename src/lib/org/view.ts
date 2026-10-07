@@ -83,11 +83,14 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
     const node = nodes.find((n) => n.id === id)!;
     const expected = expectedOf(node, leaders).filter((pid) => counted.has(pid));
     const deadline = teamDeadline(reporting, node, departmentDeadline);
+    // Кого нет на неделе, в счёт не входит, если только всё равно не сдал: как в полосе сдачи ленты
+    const sent = (pid: string) => stateOf.get(pid) === "SUBMITTED" || stateOf.get(pid) === "LATE";
+    const inCount = expected.filter((pid) => !absentIds.has(pid) || sent(pid));
     return {
-      expected: expected.filter((pid) => !absentIds.has(pid)).length,
-      submitted: expected.filter((pid) => stateOf.get(pid) === "SUBMITTED").length,
-      late: expected.filter((pid) => stateOf.get(pid) === "LATE").length,
-      absent: expected.filter((pid) => absentIds.has(pid)).length,
+      expected: inCount.length,
+      submitted: inCount.filter((pid) => stateOf.get(pid) === "SUBMITTED").length,
+      late: inCount.filter((pid) => stateOf.get(pid) === "LATE").length,
+      absent: expected.filter((pid) => absentIds.has(pid) && !sent(pid)).length,
       deadline: deadline.toISOString(),
       passed: now > deadline.getTime(),
       closed: !!week?.closedAt || closedTeams.has(id),

@@ -86,7 +86,20 @@ function TeamWeekLock({ week, team }: { week: WeekInfo; team: { id: string; name
 
 type TeamWeek = { id: string; name: string } | null;
 
-export function WeeklyFeed({ view: data, myReport, promoteFrom = [], teamWeek = null }: { view: WeekView; myReport: PersonWeekly; promoteFrom?: PersonSlug[]; teamWeek?: TeamWeek }) {
+export function WeeklyFeed({
+  view: data,
+  myReport,
+  promoteFrom = [],
+  teamWeek = null,
+  promoteClosed = false,
+}: {
+  view: WeekView;
+  myReport: PersonWeekly;
+  promoteFrom?: PersonSlug[];
+  teamWeek?: TeamWeek;
+  /** Мой weekly за эту неделю закрыт: поднимать записи наверх уже нельзя */
+  promoteClosed?: boolean;
+}) {
   const { manage, teamPeople } = usePrototype();
   const week = data.week;
   const [view, setView] = useState<View>("people");
@@ -130,7 +143,8 @@ export function WeeklyFeed({ view: data, myReport, promoteFrom = [], teamWeek = 
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
           </Link>
-          {teamWeek ? <TeamWeekLock week={week} team={teamWeek} /> : manage ? <WeekLock week={week} /> : null}
+          {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
+          {manage ? <WeekLock week={{ ...week, closed: data.departmentClosed ?? week.closed }} /> : null}
         </div>
       </header>
 
@@ -146,7 +160,7 @@ export function WeeklyFeed({ view: data, myReport, promoteFrom = [], teamWeek = 
       {week.closed ? (
         <p className="mb-4 inline-flex items-center gap-2 text-small text-muted">
           <Lock className="h-4 w-4" aria-hidden="true" />
-          {teamWeek ? "Неделя команды закрыта: люди команды свой weekly больше не правят" : "Неделя закрыта: записи правят только владелец и администраторы"}
+          {teamWeek && !data.departmentClosed ? "Неделя команды закрыта: люди команды свой weekly больше не правят" : "Неделя закрыта: записи правят только владелец и администраторы"}
         </p>
       ) : null}
 
@@ -196,10 +210,10 @@ export function WeeklyFeed({ view: data, myReport, promoteFrom = [], teamWeek = 
       ) : view === "people" ? (
         <div className="mt-6 flex flex-col gap-6">
           {helpEntries.length && !helpOnly ? <HelpBlock entries={helpEntries} /> : null}
-          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={week.closed} />
+          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} />
         </div>
       ) : (
-        <BlocksView entries={entries} promoteFrom={promoteFrom} closed={week.closed} />
+        <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} />
       )}
     </div>
   );
@@ -249,8 +263,10 @@ function PeopleView({
   // Свои записи ленты: авторы из команды. Записи, которые пришли наверх, видны у того, кто их поднял (этап 15)
   const ownFeed = (e: WeeklyEntry) => !feedAuthors || (!!e.author && feedAuthors.includes(e.author));
   const promotedBy = (slug: PersonSlug) => entries.filter((e) => e.author !== slug && e.promoted?.some((p) => p.by === slug));
+  // Кто сдаёт по желанию (этап 15), появляется в ленте, только если что-то написал или сдал
+  const listed = (w: PersonWeekly) => !w.optional || w.state !== "not-started";
   const inFeed = (slug: PersonSlug) =>
-    entries.some((e) => e.author === slug && ownFeed(e)) || reports.some((w) => w.author === slug) || (!!feedAuthors?.includes(slug) && promotedBy(slug).length > 0);
+    entries.some((e) => e.author === slug && ownFeed(e)) || reports.some((w) => w.author === slug && listed(w)) || (!!feedAuthors?.includes(slug) && promotedBy(slug).length > 0);
   const gone = [...new Set(entries.map((e) => e.author).filter((s): s is PersonSlug => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
   const authors = [...PEOPLE, ...gone].filter((p) => inFeed(p.slug)).sort((a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)]);
   const assignAuthor = (id: string, slug: PersonSlug) =>

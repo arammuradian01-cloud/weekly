@@ -725,6 +725,12 @@ export async function setTeamRhythm(actor: Actor, teamId: string, input: RhythmI
     if (input.deadline && slotMoment(key, input.deadline).getTime() > department.getTime()) {
       fail(`Срок команды не позже срока департамента (${WEEKDAY_NAMES[setting.weekday - 1]} следующей недели, ${setting.time}): руководитель должен успеть собрать weekly команды`);
     }
+    // И не позже срока команды выше, если у неё свой срок: её руководитель сдаёт weekly с записями этой команды
+    const parent = team.parentId && team.parentId !== TOP_TEAM ? await tx.team.findUnique({ where: { id: team.parentId } }) : null;
+    const parentSlot = parent?.active ? slotOf(parent.deadlineWeek, parent.deadlineWeekday, parent.deadlineTime) : null;
+    if (input.deadline && parentSlot && slotMoment(key, input.deadline).getTime() > slotMoment(key, parentSlot).getTime()) {
+      fail(`Срок команды не позже срока команды выше «${parent!.name}» (${slotText(parentSlot)}): её руководитель должен успеть собрать weekly`);
+    }
     const ownDeadline = input.deadline ? slotMoment(key, input.deadline) : department;
     if (input.meeting && slotMoment(key, input.meeting).getTime() < ownDeadline.getTime()) fail("Встреча команды не раньше срока сдачи: на встрече разбирают сданные weekly");
 

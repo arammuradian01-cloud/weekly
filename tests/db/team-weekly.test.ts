@@ -170,10 +170,33 @@ describe("наверх", () => {
     expect(await prisma.auditLog.count({ where: { action: "weekly.entry.unpromote", entityId: e } })).toBe(1);
   });
 
-  it("с общего логина наверх не поднимают", async () => {
+  it("фраза руководителя не уходит автору записи, отмена удаления возвращает отметки «наверх»", async () => {
+    const alisa = await actor("Чемоданова");
+    const antonov = await actor("Антонов");
+    const e = (await prisma.weeklyEntry.findFirstOrThrow({ where: { author: { slug: alisa.slug }, what: { startsWith: "Согласовали макет" } } })).id;
+    const mine = await weekly.getMyWeekly(alisa.personId, week);
+    expect(mine.entries.find((x) => x.id === e)!.promoted).toEqual([{ by: antonov.slug }]);
+    const sector = await teamOf("Антонов");
+    const feed = await weekly.getWeekView(week, new Date(), { personIds: [alisa.personId], authorIds: [alisa.personId], shared: false, teamIds: [sector.id] });
+    expect(feed.entries.find((x) => x.id === e)!.promoted).toEqual([{ by: antonov.slug }]);
+    const snapshot = await weekly.deleteEntry(alisa, e);
+    expect(await prisma.weeklyPromotion.count({ where: { entryId: e } })).toBe(0);
+    await weekly.restoreEntry(alisa, snapshot);
+    expect((await prisma.weeklyPromotion.findMany({ where: { entryId: e } })).map((x) => x.note)).toEqual(["Форма выйдет в релиз 20 октября"]);
+  });
+
+  it("с общего логина наверх не поднимают и не убирают", async () => {
     const antonov = await actor("Антонов");
     const e = (await prisma.weeklyEntry.findFirstOrThrow({ where: { author: { fullName: { startsWith: "Чемоданова" } } } })).id;
     await expectRule(weekly.promoteEntry({ ...antonov, via: "TEAM" }, e), /личной ссылке/);
+    await expectRule(weekly.unpromoteEntry({ ...antonov, via: "TEAM" }, e), /личной ссылке/);
+  });
+
+  it("специалист, от кого weekly не ждут, в ленте команды сдаёт по желанию", async () => {
+    const analytics = await teamOf("Токов");
+    const ivanova = await actor("Иванова");
+    const view = await weekly.getWeekView(week, new Date(), { personIds: [], authorIds: [ivanova.personId], shared: false, teamIds: [analytics.id] });
+    expect(view.reports.find((r) => r.author === ivanova.slug)?.optional).toBe(true);
   });
 });
 
@@ -211,5 +234,20 @@ describe("страница «Структура»", () => {
     expect(revaTeam.weekly.submitted + revaTeam.weekly.late).toBe(1);
     const analytics = view.teams.find((t) => t.name === "Продуктовая аналитика")!;
     expect(analytics.weekly.expected).toBe(0);
+  });
+});
+
+describe("срок команды выше", () => {
+  it("срок команды не позже своего срока команды выше", async () => {
+    const revaTeam = await teamOf("Рева");
+    const sector = await teamOf("Антонов");
+    const reva = await svc.actorFor("reva");
+    await org.setTeamRhythm(reva, revaTeam.id, { deadline: { week: 0, weekday: 4, time: "12:00" }, meeting: null, specialists: false });
+    await expectRule(
+      org.setTeamRhythm(await actor("Антонов"), sector.id, { deadline: { week: 0, weekday: 5, time: "16:00" }, meeting: null, specialists: true }),
+      /не позже срока команды выше «Управление развития продуктов»/,
+    );
+    await org.setTeamRhythm(await actor("Антонов"), sector.id, { deadline: { week: 0, weekday: 3, time: "18:00" }, meeting: null, specialists: true });
+    await org.setTeamRhythm(reva, revaTeam.id, { deadline: null, meeting: null, specialists: false });
   });
 });

@@ -26,7 +26,10 @@ export default async function WeeklyPage({ searchParams }: { searchParams: Promi
     team.id && team.id !== ALL_TEAMS && team.id !== TOP_TEAM && (ctx.management || team.scope.leads.includes(team.id)) && ctx.person.role !== "OBSERVER"
       ? { id: team.id, name: team.name }
       : null;
-  return <WeeklyFeed key={view.week.key} view={view} myReport={mine.report} promoteFrom={promoteFrom} teamWeek={teamWeek} />;
+  // Поднимать наверх можно, пока открыт мой weekly за показанную неделю: он закрывается по моим командам, а не по показанной
+  const forWeek = view.week.key === view.reportingKey ? mine : await getMyWeekly(person.id, view.week.key);
+  const promoteClosed = !ctx.management && forWeek.week.closed;
+  return <WeeklyFeed key={view.week.key} view={view} myReport={mine.report} promoteFrom={promoteFrom} teamWeek={teamWeek} promoteClosed={promoteClosed} />;
 }
 
 async function slugsOf(ids: string[]): Promise<PersonSlug[]> {
