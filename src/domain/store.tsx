@@ -12,7 +12,7 @@ import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import type { NewTaskInput } from "@/lib/tasks/service";
 import { applyRegistry, type RegistrySnapshot } from "./registry";
-import { ALL_TEAMS } from "./teams";
+import { ALL_TEAMS, TOP_TEAM } from "./teams";
 
 type Toast = { id: number; text: string; undoToken?: string; onUndo?: () => void; tone?: "error" };
 
@@ -144,7 +144,11 @@ export function PrototypeProvider({
       tasks,
       team: team.id,
       // «Все мои команды»: все задачи, что пришли; без команды: только свои
-      teamTasks: team.id === ALL_TEAMS || team.id === null ? tasks : tasks.filter((t) => t.team === team.id),
+      // И предложенные людям команды задачи из других команд: просьбы к ним (этап 16)
+      teamTasks:
+        team.id === ALL_TEAMS || team.id === null
+          ? tasks
+          : tasks.filter((t) => t.team === team.id || (team.id !== TOP_TEAM && t.status === "proposed" && t.owner !== "all" && team.people.includes(t.owner))),
     }),
     [today, tasks, team.id],
   );

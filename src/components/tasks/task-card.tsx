@@ -18,6 +18,7 @@ import { OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from "./task-fields";
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
+import { TaskExtrasBlock } from "./task-extras";
 
 function personInitials(slug: string) {
   const p = personOf(slug as Parameters<typeof personOf>[0]);
@@ -110,7 +111,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
 
       {task.status === "proposed" && !can.confirm ? (
         <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700">
-          Задача предложена. Задачей она станет после подтверждения {task.team === TOP_TEAM ? "владельцем или администратором" : "руководителем команды"}.
+          Задача предложена. Задачей она станет после подтверждения {task.team === TOP_TEAM ? "владельцем или администратором" : "адресатом, его руководителем или руководителем команды"}.
         </p>
       ) : null}
 
@@ -224,6 +225,8 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         </Meta>
         <Meta label="Обновлена">{formatAgo(task.updatedAt, data.today)}</Meta>
       </dl>
+
+      <TaskExtrasBlock task={task} headingLevel={H} />
 
       {task.transfers.length ? (
         <section aria-labelledby={`transfers-${task.number}`}>

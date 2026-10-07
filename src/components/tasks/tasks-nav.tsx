@@ -6,7 +6,9 @@ import { cn } from "@/lib/cn";
 
 const VIEWS = [
   { href: "/tasks", label: "Список" },
-  { href: "/tasks/board", label: "Доска" },
+  { href: "/tasks/board", label: "По статусам" },
+  { href: "/tasks/people", label: "По людям" },
+  { href: "/tasks/changes", label: "Изменилось за неделю" },
   { href: "/tasks/mine", label: "Мои задачи" },
   { href: "/tasks/review", label: "Разбор на встрече" },
 ];

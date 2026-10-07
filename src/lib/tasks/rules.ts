@@ -1,5 +1,6 @@
 // Правила задач из разделов 2 и 4 ТЗ. Чистые функции: ими пользуются сервер (проверка прав и правил) и экраны (что показать).
 
+import { TOP_TEAM } from "@/domain/teams";
 import { addDays, diffDays, weekOf, fromCalendar, type IsoDate } from "@/domain/dates";
 import { OPEN_STATUSES, priorityOf, type StatusCode } from "@/domain/dictionaries";
 import type { PersonSlug, Role, Task } from "@/domain/types";
@@ -20,6 +21,8 @@ export function overdueDays(task: Task, today: IsoDate): number {
 export function canSeeTaskHistory(task: Pick<Task, "owner" | "coExecutors" | "createdBy" | "team">, v: Viewer): boolean {
   if (v.observer) return false;
   if (v.management || leadsTeam(v, task.team)) return true;
+  // Руководитель ответственного вне топ-команды (этап 16)
+  if (task.team !== TOP_TEAM && task.owner !== "all" && v.people?.includes(task.owner)) return true;
   return task.owner === v.slug || task.owner === "all" || task.coExecutors.includes(v.slug) || task.createdBy === v.slug;
 }
 
@@ -87,6 +90,8 @@ export type Viewer = {
   leads?: string[];
   /** Сотрудник вне топ-команды: задачи «Все лидеры» к нему не относятся */
   employee?: boolean;
+  /** Люди команд, которыми он руководит (этап 16): предложенную им задачу из другой команды он принимает за них */
+  people?: PersonSlug[];
 };
 
 /** Руководитель команды задачи или команды выше неё: ведёт задачу как режим управления, кроме архива */
@@ -133,6 +138,9 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   const creator = task.createdBy === me;
   // Предложенная задача становится задачей только после подтверждения владельцем или администратором
   const proposed = task.status === "proposed";
+  // Этап 16: вне топ-команды предложенную задачу принимает сам адресат или его руководитель, а не только руководитель
+  // команды задачи. В топ-команде, как и раньше, решает режим управления
+  const addressee = proposed && task.team !== TOP_TEAM && task.owner !== "all" && (directOwner || !!v.people?.includes(task.owner));
   return {
     status: manage || (owner && !proposed),
     state: manage || (owner && !proposed),
@@ -145,7 +153,7 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
     links: manage || owner || co || creator,
     comment: true,
     archive: v.management === "OWNER",
-    confirm: manage,
+    confirm: manage || addressee,
   };
 }
 
