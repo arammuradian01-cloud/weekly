@@ -1,6 +1,7 @@
 // Правила weekly из разделов 2 и 3 ТЗ. Чистые функции: ими пользуются сервер и экраны.
 
 import type { PersonSlug, WeekInfo, WeekKey, WeeklyEntry } from "@/domain/types";
+import type { DirectionCode } from "@/domain/dictionaries";
 import type { Viewer } from "@/lib/tasks/rules";
 
 export const WEEKLY_LIMITS = { headline: 150, what: 150, details: 1000, impact: 500, fact: 300, next: 500, help: 300, linkTitle: 120, url: 500 };
@@ -28,17 +29,35 @@ export function cleanDash(text: string): string {
   return text.replace(/[—–→⟶⇒]/g, "-");
 }
 
+/** Числа текста: «20 700» и «20700» одно и то же */
+function numbersIn(text: string): string[] {
+  return text.replace(/(\d)[\s\u00a0](?=\d{3}(?!\d))/g, "$1").match(/\d+(?:[.,]\d+)?/g) ?? [];
+}
+
+/** «Цифра или факт» повторяет то, что уже сказано: все её числа есть в тексте записи. Тогда в отчёт её не дописываем */
+export function repeatsNumbers(extra: string, text: string): boolean {
+  const own = numbersIn(extra);
+  if (!own.length) return false;
+  const have = new Set(numbersIn(text));
+  return own.every((n) => have.has(n));
+}
+
 /**
- * Черновик отчёта CEO из записей с флажком «В отчёт CEO»: результаты и события в «Главное»,
- * риски в «Риски», «Что дальше» и планы в «Что дальше». Подпись автора в скобках
+ * Черновик отчёта CEO из записей с флажком «В отчёт CEO»: результаты и события в «Главное», риски в «Риски»,
+ * «Что дальше» и планы в «Что дальше». Каждая строка начинается с продукта (направления записи), строки одного
+ * продукта идут подряд: CEO читает отчёт по продуктам, а не по людям. «Цифра или факт» дописывается, если она
+ * не повторяет числа из самой записи
  */
-export function buildCeoSections(entries: WeeklyEntry[], nameOf: (slug: PersonSlug | null) => string): CeoSections {
-  const flagged = entries.filter((e) => e.ceo);
-  // Запись пришла снизу (этап 15): в скобках автор и кто её поднял
-  const who = (e: WeeklyEntry) => (e.promoted?.length ? `${nameOf(e.author)}, через ${e.promoted.map((p) => nameOf(p.by)).join(", ")}` : nameOf(e.author));
+export function buildCeoSections(entries: WeeklyEntry[], productOf: (code: DirectionCode) => string): CeoSections {
+  // Продукты в порядке первой отмеченной записи: важное, что владелец поставил выше, остаётся выше
+  const order = new Map<DirectionCode, number>();
+  for (const e of entries) if (e.ceo && !order.has(e.direction)) order.set(e.direction, order.size);
+  const flagged = entries.filter((e) => e.ceo).sort((a, b) => order.get(a.direction)! - order.get(b.direction)!);
+  const trim = (text: string) => text.trim().replace(/\.$/, "");
   const line = (e: WeeklyEntry) => {
     const extra = e.fact ?? e.impact;
-    return `- ${e.what.replace(/\.$/, "")}${extra ? `. ${extra.replace(/\.$/, "")}` : ""} (${who(e)})`;
+    const tail = extra && !repeatsNumbers(extra, e.what) ? `. ${trim(extra)}` : "";
+    return `- ${productOf(e.direction)}. ${trim(e.what)}${tail}`;
   };
   return {
     main: cleanDash(flagged.filter((e) => e.type === "result" || e.type === "event").map(line).join("\n")),
@@ -46,7 +65,7 @@ export function buildCeoSections(entries: WeeklyEntry[], nameOf: (slug: PersonSl
     next: cleanDash(
       flagged
         .filter((e) => e.next || e.type === "plan")
-        .map((e) => `- ${e.next ?? e.what} (${who(e)})`)
+        .map((e) => `- ${productOf(e.direction)}. ${trim(e.next ?? e.what)}`)
         .join("\n"),
     ),
   };
