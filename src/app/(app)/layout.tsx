@@ -71,6 +71,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       me={ctx.person.slug}
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
+      limited={subject.limited}
       initialTasks={tasks}
       registry={registry}
       team={teamView}

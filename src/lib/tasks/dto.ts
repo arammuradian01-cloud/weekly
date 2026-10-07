@@ -3,7 +3,7 @@
 import type { Prisma } from "@/generated/prisma/client";
 import type { DirectionCode, SourceCode } from "@/domain/dictionaries";
 import type { Comment, Owner, PersonSlug, Task, Transfer } from "@/domain/types";
-import { priorityCode, stateCode, statusCode } from "./codes";
+import { CLOSED_DB as CLOSED, priorityCode, stateCode, statusCode } from "./codes";
 import { isoFromDbDate, moscowIso } from "./dates";
 import { commentDto, reactionInclude } from "@/lib/discuss/common";
 
@@ -16,6 +16,8 @@ export const taskInclude = {
   comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" } } } },
   links: { orderBy: { at: "asc" } },
   goal: { select: { id: true, title: true, code: true } },
+  // Какие задачи эта ждёт (этап 21): номер, срок и закрыта ли. Названия карточка грузит отдельно, с проверкой доступа
+  waitsFor: { select: { blocker: { select: { number: true, due: true, status: true, archivedAt: true } } } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -29,6 +31,7 @@ export const taskListInclude = {
   transfers: taskInclude.transfers,
   links: taskInclude.links,
   goal: taskInclude.goal,
+  waitsFor: taskInclude.waitsFor,
   _count: { select: { comments: true } },
 } satisfies Prisma.TaskInclude;
 
@@ -65,6 +68,8 @@ export function toTaskDto(row: TaskRow): Task {
     status: statusCode(row.status),
     state: stateCode(row.state),
     blockedBy: row.blockedBy ?? undefined,
+    riskNote: row.riskNote ?? undefined,
+    waitsFor: row.waitsFor.map((w) => ({ number: w.blocker.number, due: isoFromDbDate(w.blocker.due), closed: CLOSED.includes(w.blocker.status) || !!w.blocker.archivedAt })),
     where: row.whereNow,
     whereUpdatedAt: isoFromDbDate(row.whereUpdatedAt),
     due,

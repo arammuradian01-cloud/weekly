@@ -37,6 +37,8 @@ type Store = {
   manage: boolean;
   manageRole: "OWNER" | "ADMIN" | null;
   /** Наблюдатель только читает */
+  /** Общий логин без режима управления: передача задачи и другие личные действия скрыты */
+  limited: boolean;
   observer: boolean;
   /** Команды, которыми человек руководит, с командами ниже (этап 14) */
   leads: string[];
@@ -69,6 +71,7 @@ export function PrototypeProvider({
   registry,
   team,
   leads = [],
+  limited = false,
   children,
 }: {
   today: string;
@@ -81,6 +84,8 @@ export function PrototypeProvider({
   initialTasks: Task[];
   team: CurrentTeamView;
   leads?: string[];
+  /** Общий логин без режима управления (этап 21): часть действий только при личном входе */
+  limited?: boolean;
   children: React.ReactNode;
 }) {
   applyRegistry(registry);
@@ -161,6 +166,7 @@ export function PrototypeProvider({
       manage: manageRole !== null,
       manageRole,
       observer,
+      limited,
       leads,
       team,
       teamPeople,
@@ -212,7 +218,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, leads, team, teamPeople, toast, showToast, applyTaskResult]);
+  }, [data, me, manageRole, observer, limited, leads, team, teamPeople, toast, showToast, applyTaskResult]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

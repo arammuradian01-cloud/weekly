@@ -14,7 +14,7 @@ import { RequestBadge } from "./request-parts";
 export function RequestRow({ request, mode }: { request: RequestView; mode: "incoming" | "outgoing" | "any" }) {
   const r = request;
   const active = r.status === "open" || r.status === "accepted";
-  const who = mode === "incoming" ? `от ${compactName(r.author)}` : mode === "outgoing" ? `${compactName(r.addressee)}` : `${compactName(r.author)} просит ${compactName(r.addressee)}`;
+  const who = mode === "incoming" ? `от ${compactName(r.author)}` : mode === "outgoing" ? `${compactName(r.addressee)}` : `${compactName(r.author)}, адресат ${compactName(r.addressee)}`;
   return (
     <li className="flex flex-col gap-3 px-4 py-3">
       <div className="min-w-0">

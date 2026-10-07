@@ -23,6 +23,7 @@ import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
 import { TaskExtrasBlock } from "./task-extras";
 import { TaskRequests } from "@/components/requests/task-requests";
+import { TaskWaits } from "./task-waits";
 import { TaskGoal } from "./task-goal";
 
 function personInitials(slug: string) {
@@ -143,6 +144,13 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         </div>
       ) : null}
 
+      {task.state === "at-risk" && task.riskNote ? (
+        <div className="rounded-xl border-l-4 border-warning bg-warning-soft px-4 py-3">
+          <p className="text-caption font-semibold text-warning-ink">Есть риск. Что вернёт задачу в график</p>
+          <p className="mt-0.5 text-body text-ink">{task.riskNote}</p>
+        </div>
+      ) : null}
+
       {task.resolution && (task.status === "done" || task.status === "failed" || task.status === "cancelled") ? (
         <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : "bg-surface")}>
           <p className={cn("text-caption font-semibold", task.status === "done" ? "text-green-ink" : "text-muted")}>
@@ -241,6 +249,8 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       <TaskExtrasBlock task={task} headingLevel={H} />
 
       <TaskRequests task={task} headingLevel={H} />
+
+      <TaskWaits task={task} headingLevel={H} />
 
       {task.transfers.length ? (
         <section aria-labelledby={`transfers-${task.number}`}>

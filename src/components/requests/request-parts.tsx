@@ -59,9 +59,24 @@ export function DueField({ id, label, value, onChange, today }: { id: string; la
 }
 
 /** Кого просить: включённые люди департамента, кроме себя и наблюдателей, по алфавиту, с должностью */
-export function PersonSelect({ id, label, value, onChange, exclude }: { id: string; label: string; value: string; onChange: (v: PersonSlug) => void; exclude: PersonSlug }) {
+export function PersonSelect({
+  id,
+  label,
+  value,
+  onChange,
+  exclude,
+  only,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: PersonSlug) => void;
+  exclude: PersonSlug;
+  /** Только эти люди, например команда задачи */
+  only?: PersonSlug[];
+}) {
   const people = allPeople()
-    .filter((p) => p.active && p.role !== "OBSERVER" && p.slug !== exclude)
+    .filter((p) => p.active && p.role !== "OBSERVER" && p.slug !== exclude && (!only || only.includes(p.slug)))
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
   const options = [{ value: "", label: "Выберите человека" }, ...people.map((p) => ({ value: p.slug, label: p.position ? `${p.fullName}, ${p.position}` : `${p.fullName}, ${p.zone}`.replace(/, $/, "") }))];
   return <SelectField label={label} id={id} value={value} onChange={(e) => onChange(e.target.value as PersonSlug)} options={options} />;

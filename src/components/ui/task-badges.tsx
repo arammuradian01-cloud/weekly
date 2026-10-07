@@ -2,6 +2,8 @@
 
 import { cn } from "@/lib/cn";
 import { Badge } from "./badge";
+import type { Task } from "@/domain/types";
+import { lateWaits } from "@/lib/tasks/rules";
 import {
   priorityOf,
   stateLabel,
@@ -79,4 +81,11 @@ export function OverdueNote({ days, className }: { days: number; className?: str
 
 export function StaleNote({ className }: { className?: string }) {
   return <span className={cn("whitespace-nowrap text-caption text-warning-ink", className)}>давно не обновлялась</span>;
+}
+
+/** Задача ждёт другие, а их срок позже её срока (этап 21) */
+export function LateWaits({ task, className }: { task: Pick<Task, "waitsFor" | "due" | "status">; className?: string }) {
+  const late = lateWaits(task);
+  if (!late.length) return null;
+  return <span className={cn("text-caption font-medium text-danger-ink", className)}>ждёт {late.length > 1 ? "задачи" : "задачу"} {late.join(", ")} с более поздним сроком</span>;
 }

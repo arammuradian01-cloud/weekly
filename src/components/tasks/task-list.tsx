@@ -11,7 +11,7 @@ import { defaultOrder, isClosed, isDueThisWeek, isMine, isOverdue, isStale, over
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Chip, SelectField } from "@/components/ui/primitives";
-import { OverdueNote, StaleNote } from "@/components/ui/task-badges";
+import { LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { PrioritySelect, StateSelect, StatusSelect } from "./task-fields";
 import { useOpenTask } from "./task-drawer";
@@ -246,6 +246,7 @@ export function TaskTable({
                     </button>
                     <p className="mt-0.5 line-clamp-1 text-caption text-muted">{t.where}</p>
                     {stale ? <StaleNote className="mt-0.5 block" /> : null}
+                    <LateWaits task={t} className="mt-0.5 block" />
                   </td>
                   {showOwner ? <td className="px-2 py-3 text-ink">{t.owner === "all" ? "Все лидеры" : compactName(t.owner)}</td> : null}
                   <td className="px-2 py-2"><PrioritySelect task={t} /></td>
@@ -292,6 +293,7 @@ export function TaskTable({
                       <span className={cn("tabular-nums", overdue && "font-semibold text-danger-ink")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                       {isStale(t, data.today) ? <StaleNote /> : null}
+                      <LateWaits task={t} />
                     </p>
                   </li>
                 );

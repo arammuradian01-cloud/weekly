@@ -127,7 +127,7 @@ function ReviewBlock({ title, empty, tasks, danger }: { title: string; empty: st
                 <span className="mr-1.5 font-normal tabular-nums text-muted">{t.number}</span>
                 {t.title}
               </button>
-              <p className="mt-0.5 text-caption text-muted">{t.state === "blocked" && t.blockedBy ? t.blockedBy : t.resolution && t.closedAt ? t.resolution : t.where}</p>
+              <p className="mt-0.5 text-caption text-muted">{t.state === "blocked" && t.blockedBy ? t.blockedBy : t.state === "at-risk" && t.riskNote ? `Риск. Вернёт в график: ${t.riskNote}` : t.resolution && t.closedAt ? t.resolution : t.where}</p>
               <div className="mt-1 flex flex-wrap items-center gap-x-4">
                 {t.closedAt ? <StatusBadge status={t.status} /> : <StatusSelect task={t} />}
                 {!t.closedAt ? <StateSelect task={t} /> : null}

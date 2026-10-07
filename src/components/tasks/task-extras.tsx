@@ -10,6 +10,7 @@ import type { Task } from "@/domain/types";
 import { requestUpdateAction, taskExtrasAction, watchTaskAction, type TaskExtras } from "@/app/(app)/tasks/actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
+import { HandOverButton } from "./task-waits";
 
 const TONE: Record<StatusCode, string> = {
   proposed: "bg-mist",
@@ -92,6 +93,7 @@ export function TaskExtrasBlock({ task, headingLevel = "h3" }: { task: Task; hea
             {extras.watching ? <BellOff className="h-4 w-4" aria-hidden="true" /> : <Bell className="h-4 w-4" aria-hidden="true" />}
             {extras.watching ? "Не следить" : "Следить за задачей"}
           </Button>
+          <HandOverButton task={task} />
           {extras.canAsk ? (
             <Button size="sm" variant="secondary" onClick={ask} disabled={busy}>
               <MessageSquareMore className="h-4 w-4" aria-hidden="true" />

@@ -77,8 +77,12 @@ export type Task = {
   priority: PriorityCode;
   status: StatusCode;
   state: StateCode;
-  /** Чем заблокирована и кто может помочь: обязательно при «Заблокирована» */
+  /** Чем заблокирована и кто может помочь: пояснение при «Заблокирована» */
   blockedBy?: string;
+  /** Что вернёт задачу в график: при «Есть риск» (этап 21) */
+  riskNote?: string;
+  /** Какие задачи эта ждёт (этап 21): номер, срок, закрыта ли */
+  waitsFor?: { number: number; due: IsoDate; closed: boolean }[];
   where: string;
   whereUpdatedAt: IsoDate;
   due: IsoDate;
