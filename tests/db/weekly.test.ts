@@ -262,7 +262,7 @@ describe("нет на неделе (этап 9)", () => {
 
     // Смена замещающего и отмена
     await svc.setAbsence(reva, { slug: "reva", week: W40, substitute: null }, NOW);
-    const logs = await prisma.auditLog.findMany({ where: { action: "weekly.absence.set" }, orderBy: { id: "asc" } });
+    const logs = await prisma.auditLog.findMany({ where: { action: "weekly.absence.set", entityId: `${W40}/reva` }, orderBy: { id: "asc" } });
     expect(logs.map((l) => [l.entityId, l.before, l.after])).toEqual([
       [`${W40}/reva`, "на месте", "нет, замещает Головкин Владислав"],
       [`${W40}/reva`, "нет, замещает Головкин Владислав", "нет, без замещающего"],
