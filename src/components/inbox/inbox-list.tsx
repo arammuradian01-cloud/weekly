@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { AlarmClock, Check, CheckCheck } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
-import { markAllDoneAction, markDoneAction, snoozeAction } from "@/app/(app)/me/actions";
+import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { usePrototype } from "@/domain/store";
 import { isMine, isOverdue, overdueDays } from "@/lib/tasks/rules";
 import { addDays, formatShort } from "@/domain/dates";
@@ -71,6 +71,11 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
   const run = useRunAction();
   const { data } = usePrototype();
   const [busy, setBusy] = useState<string | null>(null);
+  // Человек открыл «Мне» и видит события: письма о них уже не нужны (этап 20)
+  const seenKey = items.map((i) => `${i.subject}:${i.count}`).join("|");
+  useEffect(() => {
+    if (seenKey) markSeenAction().catch(() => undefined);
+  }, [seenKey]);
 
   const act = async (subject: string, fn: () => Promise<Result<unknown>>, ok: string) => {
     setBusy(subject);
@@ -101,11 +106,15 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     <Link href={`/tasks/${item.taskNumber}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
                       <span className="tabular-nums text-muted">{item.taskNumber}</span> {item.taskTitle}
                     </Link>
+                  ) : item.entryId ? (
+                    <Link href={`/weekly/entry/${item.entryId}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                      <span className="text-muted">Запись weekly:</span> {item.entryTitle}
+                    </Link>
                   ) : null}
                   <p className="mt-0.5 text-body text-ink">{item.text}</p>
                   <p className="mt-0.5 text-caption text-muted">
                     {item.actorName ?? "Система"}, {when(item.at, data.today)}
-                    {item.count > 1 ? `. Ещё событий по задаче: ${item.count - 1}` : ""}
+                    {item.count > 1 ? `. Ещё событий по ${item.entryId ? "записи" : "задаче"}: ${item.count - 1}` : ""}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-1">
@@ -114,13 +123,13 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     className={itemAction}
                     disabled={busy !== null}
                     onClick={() => void act(item.subject, () => markDoneAction(item.subject), "Разобрано")}
-                    aria-label={`Разобрано: ${item.taskTitle ?? item.text}`}
+                    aria-label={`Разобрано: ${item.taskTitle ?? item.entryTitle ?? item.text}`}
                   >
                     <Check className="h-4 w-4" aria-hidden="true" />
                     Разобрано
                   </button>
                   <Menu.Root>
-                    <Menu.Trigger className={itemAction} disabled={busy !== null} aria-label={`Напомнить: ${item.taskTitle ?? item.text}`}>
+                    <Menu.Trigger className={itemAction} disabled={busy !== null} aria-label={`Напомнить: ${item.taskTitle ?? item.entryTitle ?? item.text}`}>
                       <AlarmClock className="h-4 w-4" aria-hidden="true" />
                       Напомнить
                     </Menu.Trigger>
@@ -149,7 +158,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
           </ul>
         ) : (
           <EmptyState title="Всё разобрано">
-            Здесь появится то, что ждёт вас: задачи, которые вам поставили или передали, комментарии к вашим задачам, переносы сроков, подтверждённые предложения.
+            Здесь появится то, что ждёт вас: задачи, которые вам поставили или передали, комментарии к вашим задачам и записям weekly, упоминания, реакции, переносы сроков.
           </EmptyState>
         )}
         {snoozed ? <p className="mt-3 text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}

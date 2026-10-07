@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ClipboardCopy, RefreshCw, Save } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { authorName } from "@/domain/people";
+import { directionLabel } from "@/domain/dictionaries";
 import { formatLong } from "@/domain/dates";
 import type { WeekView } from "@/domain/types";
 import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
@@ -17,7 +17,8 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 
 type History = { key: string; number: number; flagged: number; meeting: string; savedBy?: string; savedAt?: string }[];
 
-const fromEntries = (view: WeekView) => buildCeoSections(view.entries, (slug) => authorName(slug, "short", "все лидеры"));
+// В строке отчёта продукт, а не человек: CEO читает по продуктам (07.10)
+const fromEntries = (view: WeekView) => buildCeoSections(view.entries, directionLabel);
 
 function moment(iso: string): string {
   const at = new Date(iso);

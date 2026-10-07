@@ -307,7 +307,7 @@ export function WeeklySubmit({
                 ) : (
                   <li key={e.id} className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <EntryItem entry={e} />
+                      <EntryItem entry={e} discussion={false} />
                     </div>
                     {canEdit ? <div className="flex shrink-0 gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(e.id)} aria-label={`Изменить запись «${e.what}»`}>
@@ -333,7 +333,7 @@ export function WeeklySubmit({
                     const note = e.promoted?.find((x) => x.by === me.slug)?.note;
                     return (
                       <li key={e.id} className="flex flex-col gap-2 rounded-xl px-4 py-3 ring-1 ring-line">
-                        <EntryItem entry={e} showAuthor />
+                        <EntryItem entry={e} showAuthor discussion={false} />
                         {note ? (
                           <p className="text-body text-ink">
                             <span className="text-muted">От себя: </span>

@@ -129,7 +129,8 @@ export function PrototypeProvider({
         const exists = prev.some((t) => t.number === result.number);
         return exists ? prev.map((t) => (t.number === result.number ? result.task! : t)) : [...prev, result.task];
       });
-      showToast(toastText, { undoToken: result.undo });
+      // Правка прошла, но упоминание до кого-то не дошло (этап 20): говорим об этом вместо «Сохранено»
+      showToast(result.warning ?? toastText, { undoToken: result.undo, ...(result.warning ? { tone: "error" as const } : {}) });
       // Остальные экраны (сводки, «Моя неделя») пересчитаются с сервера
       router.refresh();
       return true;

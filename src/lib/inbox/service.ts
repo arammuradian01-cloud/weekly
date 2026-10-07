@@ -9,6 +9,9 @@ import { prisma } from "@/lib/db";
 import { moscowDate, moscowDateTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { InboxKind, Prisma } from "@/generated/prisma/client";
+import { loadScope, loadTeamNodes, type ScopeSubject } from "@/lib/org/scope";
+import { seesTask } from "@/lib/tasks/watch";
+import { seesEntry } from "@/lib/discuss/access";
 
 export { notify, quote, taskSubject, type InboxInput } from "./notify";
 
@@ -21,6 +24,9 @@ export type InboxItem = {
   /** Номер задачи для ссылки и подписи */
   taskNumber: number | null;
   taskTitle: string | null;
+  /** Запись weekly (этап 20): ссылка на страницу записи и её «что произошло» */
+  entryId: string | null;
+  entryTitle: string | null;
   /** Последнее событие предмета: кто и что */
   actorName: string | null;
   kind: InboxKind;
@@ -38,17 +44,38 @@ const open = (personId: string, now: Date): Prisma.InboxEventWhereInput => ({
   OR: [{ snoozeUntil: null }, { snoozeUntil: { lte: now } }],
 });
 
+/**
+ * Общий логин без режима управления видит только топ-команду (этап 14). Профиль можно выбрать чужой, поэтому
+ * в «Мне» такой вход показывает только события о задачах и записях, которые видны и так. viewer не задан: личный вход
+ */
+async function limitedFilter(personId: string, viewer: ScopeSubject | undefined) {
+  if (!viewer?.limited) return null;
+  const [scope, nodes] = await Promise.all([loadScope(prisma, { ...viewer, id: personId }), loadTeamNodes(prisma)]);
+  return (r: { task: { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null; entry: { authorId: string | null; ceo: boolean; promotions: { byId: string }[] } | null }) => {
+    if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
+    if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
+    return true;
+  };
+}
+
+const inboxInclude = {
+  task: { select: { number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } },
+  entry: { select: { id: true, what: true, authorId: true, ceo: true, promotions: { select: { byId: true } } } },
+} satisfies Prisma.InboxEventInclude;
+
 /** Неразобранное, одна строка на предмет, свежие сверху */
-export async function listInbox(personId: string, now = new Date()): Promise<InboxView> {
-  const [rows, snoozed] = await Promise.all([
+export async function listInbox(personId: string, now = new Date(), viewer?: ScopeSubject): Promise<InboxView> {
+  const [all, snoozed, keep] = await Promise.all([
     prisma.inboxEvent.findMany({
       where: open(personId, now),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: { task: { select: { number: true, title: true } } },
+      include: inboxInclude,
       take: 500,
     }),
     prisma.inboxEvent.groupBy({ by: ["subject"], where: { recipientId: personId, doneAt: null, snoozeUntil: { gt: now } } }),
+    limitedFilter(personId, viewer),
   ]);
+  const rows = keep ? all.filter(keep) : all;
   const bySubject = new Map<string, InboxItem>();
   for (const r of rows) {
     const item = bySubject.get(r.subject);
@@ -60,6 +87,8 @@ export async function listInbox(personId: string, now = new Date()): Promise<Inb
       subject: r.subject,
       taskNumber: r.task?.number ?? null,
       taskTitle: r.task?.title ?? null,
+      entryId: r.entry?.id ?? null,
+      entryTitle: r.entry?.what ?? null,
       actorName: r.actorName,
       kind: r.kind,
       text: r.text,
@@ -72,22 +101,52 @@ export async function listInbox(personId: string, now = new Date()): Promise<Inb
 }
 
 /** Счётчик в меню: сколько предметов ждут */
-export async function inboxCount(personId: string, now = new Date()): Promise<number> {
+export async function inboxCount(personId: string, now = new Date(), viewer?: ScopeSubject): Promise<number> {
+  if (viewer?.limited) return (await listInbox(personId, now, viewer)).items.length;
   const subjects = await prisma.inboxEvent.groupBy({ by: ["subject"], where: open(personId, now) });
   return subjects.length;
 }
 
 /** «Разобрано»: все события предмета у этого человека уходят из списка */
 export async function markDone(actor: Actor, subject: string, now = new Date()): Promise<number> {
+  await requireVisible(actor, [subject], now);
   const done = await prisma.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject, doneAt: null }, data: { doneAt: now } });
   if (!done.count) fail("Это уже разобрано");
   return done.count;
 }
 
+/**
+ * Человек видел события в ресурсе (этап 20): открыл «Мне» или сам предмет. Письмо по таким событиям не уходит.
+ * subjects не задан: всё, что сейчас видно в «Мне»
+ */
+export async function markSeen(personId: string, subjects?: string[], now = new Date()): Promise<number> {
+  const where: Prisma.InboxEventWhereInput = subjects ? { recipientId: personId, subject: { in: subjects.map(String).slice(0, 50) }, seenAt: null } : { ...open(personId, now), seenAt: null };
+  const seen = await prisma.inboxEvent.updateMany({ where, data: { seenAt: now } });
+  return seen.count;
+}
+
 /** «Разобрано» всё сразу */
 export async function markAllDone(actor: Actor, now = new Date()): Promise<number> {
-  const done = await prisma.inboxEvent.updateMany({ where: open(actor.personId, now), data: { doneAt: now } });
+  // Общий логин разбирает только то, что ему показано: скрытые события человека остаются ему
+  const viewer = viewerOf(actor);
+  const where: Prisma.InboxEventWhereInput = viewer.limited
+    ? { ...open(actor.personId, now), subject: { in: (await listInbox(actor.personId, now, viewer)).items.map((i) => i.subject) } }
+    : open(actor.personId, now);
+  const done = await prisma.inboxEvent.updateMany({ where, data: { doneAt: now } });
   return done.count;
+}
+
+/** Доступ того, кто действует: общий логин без режима управления видит только топ-команду */
+function viewerOf(actor: Actor): ScopeSubject {
+  return { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management };
+}
+
+/** Общий логин трогает только предметы, которые ему показаны в «Мне» */
+async function requireVisible(actor: Actor, subjects: string[], now: Date): Promise<void> {
+  const viewer = viewerOf(actor);
+  if (!viewer.limited) return;
+  const shown = new Set((await listInbox(actor.personId, now, viewer)).items.map((i) => i.subject));
+  if (subjects.some((s) => !shown.has(s))) fail("Это уже разобрано");
 }
 
 export type SnoozeChoice = "tomorrow" | "monday";
@@ -106,6 +165,7 @@ export function snoozeMoment(choice: SnoozeChoice, now = new Date()): Date {
 export async function snooze(actor: Actor, subject: string, choice: SnoozeChoice, now = new Date()): Promise<Date> {
   if (choice !== "tomorrow" && choice !== "monday") fail("Выберите, когда напомнить");
   const until = snoozeMoment(choice, now);
+  await requireVisible(actor, [subject], now);
   const hidden = await prisma.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject, doneAt: null }, data: { snoozeUntil: until } });
   if (!hidden.count) fail("Это уже разобрано");
   return until;

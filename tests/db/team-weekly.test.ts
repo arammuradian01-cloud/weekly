@@ -151,11 +151,11 @@ describe("наверх", () => {
     const inTop = topFeed.entries.find((x) => x.id === e)!;
     expect(inTop.author).toBe(alisa.slug);
 
-    // Отчёт CEO: отмеченная запись снизу подписана автором и цепочкой
+    // Отчёт CEO: отмеченная запись снизу попадает в отчёт топ-команды, подписана продуктом
     await weekly.setCeoFlag(await owner(), e, true);
     const ceo = await weekly.getWeekView(week, new Date(), { personIds: topIds, authorIds: topIds, shared: true, ceo: true, teamIds: [TOP_TEAM] });
-    const sections = buildCeoSections(ceo.entries, (s) => s ?? "все");
-    expect(sections.main).toContain(`(${alisa.slug}, через ${antonov.slug}, reva)`);
+    const sections = buildCeoSections(ceo.entries, (code) => code.toUpperCase());
+    expect(sections.main).toContain(`- OSAGO. ${inTop.what.replace(/\.$/, "")}`);
 
     // Weekly Антонова: запись в «Из команды», сдать можно и без своих записей
     const mine = await weekly.getMyWeekly(antonov.personId, week);

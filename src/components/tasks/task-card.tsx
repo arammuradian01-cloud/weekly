@@ -9,7 +9,10 @@ import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { HistoryItem, Task } from "@/domain/types";
-import { archiveTaskAction, getTaskAction, moveTaskAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { CommentList } from "@/components/discuss/comment-list";
+import { MentionArea } from "@/components/discuss/mention-area";
+import { markSeenAction } from "@/app/(app)/me/actions";
 import { TOP_TEAM, teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
@@ -44,6 +47,10 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
   const task = listed.partial && loaded && loaded.number === listed.number ? { ...listed, comments: loaded.comments, partial: false } : listed;
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
+  // Задачу открыли: события «Мне» по ней просмотрены, письмо о них не нужно (этап 20)
+  useEffect(() => {
+    markSeenAction([`task:${listed.number}`]).catch(() => undefined);
+  }, [listed.number, listed.updatedAt]);
   const [where, setWhere] = useState(task.where);
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
@@ -264,19 +271,16 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         {tab === "comments" ? (
           <div className="mt-4 flex flex-col gap-4">
             {task.partial ? <p className="text-small text-muted">Загружаю комментарии…</p> : task.comments.length === 0 ? <p className="text-small text-muted">Комментариев пока нет.</p> : null}
-            <ol className="flex flex-col gap-4">
-              {task.comments.map((c) => (
-                <li key={c.id} className="flex gap-3">
-                  <Avatar text={personInitials(c.author)} size="sm" tone={c.author === me.slug ? "navy" : "light"} />
-                  <div className="min-w-0">
-                    <p className="text-caption text-muted">
-                      <span className="font-semibold text-ink">{compactName(c.author)}</span> {formatShort(c.at)}, {c.time}
-                    </p>
-                    <p className="mt-0.5 text-body leading-relaxed text-ink">{c.text}</p>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            <CommentList
+              idPrefix={`task-${task.number}`}
+              comments={task.comments}
+              me={me.slug}
+              manage={manage}
+              readOnly={observer}
+              onEdit={(id, text) => runTask(() => editCommentAction(task.number, id, text), "Комментарий изменён")}
+              onDelete={(id) => runTask(() => deleteCommentAction(task.number, id), "Комментарий удалён")}
+              onReact={(id, code, q) => runTask(() => reactCommentAction(task.number, id, code, q), "Реакция сохранена")}
+            />
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
@@ -288,7 +292,14 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
               }}
               className="flex flex-col gap-2"
             >
-              <TextArea id={`comment-${task.number}`} label="Новый комментарий" value={comment} onChange={(e) => setComment(e.target.value)} rows={2} />
+              <MentionArea
+                id={`comment-${task.number}`}
+                label="Новый комментарий"
+                value={comment}
+                onChange={setComment}
+                maxLength={2000}
+                hint="Чтобы позвать коллегу, наберите @ и начало имени"
+              />
               <div>
                 <Button size="sm" type="submit" variant="secondary" disabled={!comment.trim() || sending}>
                   <MessageSquare className="h-4 w-4" aria-hidden="true" />

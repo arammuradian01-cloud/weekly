@@ -3,6 +3,7 @@
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { sessionSecretFromEnv } from "@/lib/database-url";
+import type { ReactionKind } from "@/generated/prisma/enums";
 
 export const ENTRY_UNDO_TTL_MS = 60_000;
 
@@ -29,6 +30,12 @@ export type EntrySnapshot = {
   taskIds: string[];
   /** Кто поднял запись наверх и с какой фразой (этап 15): при отмене удаления отметки возвращаются */
   promotions?: { byId: string; note: string | null; createdAt: string }[];
+  /** Упомянутые в записи (этап 20): при отмене удаления повторно им событие не приходит */
+  mentions?: string[];
+  /** Обсуждение под записью (этап 20) */
+  comments?: { id: string; authorId: string; text: string; mentions: string[]; at: string; editedAt: string | null }[];
+  reactions?: { kind: ReactionKind; personId: string; entryCommentId: string | null; question: string | null; discussedAt: string | null; discussedById: string | null; createdAt: string }[];
+  watchers?: string[];
 };
 
 type Payload = { snapshot: EntrySnapshot; by: string; exp: number };

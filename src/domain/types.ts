@@ -32,7 +32,26 @@ export type Owner = PersonSlug | "all";
 /** from = null: срок переносили в таблице до запуска ресурса, прежний срок не записан */
 export type Transfer = { from: IsoDate | null; to: IsoDate; by: PersonSlug | null; reason: string; at: IsoDate | null };
 
-export type Comment = { id: string; author: PersonSlug; text: string; at: IsoDate; time: string };
+/** Реакции: набор фиксированный (этап 20) */
+export type ReactionCode = "accepted" | "question" | "discuss" | "thanks";
+
+/** Реакция. У «Обсудить на встрече» вопрос и отметка «обсуждено» */
+export type ReactionView = { id: string; kind: ReactionCode; by: PersonSlug; question?: string; discussed?: boolean };
+
+/**
+ * Комментарий к задаче или к записи weekly. moment: момент в ISO, по нему экран знает, можно ли ещё править (15 минут).
+ * edited: автор поправил текст (этап 20). Упоминания экран находит в тексте сам, по списку людей
+ */
+export type Comment = {
+  id: string;
+  author: PersonSlug;
+  text: string;
+  at: IsoDate;
+  time: string;
+  moment?: string;
+  edited?: boolean;
+  reactions?: ReactionView[];
+};
 
 export type HistoryItem = {
   id: string;
@@ -128,6 +147,9 @@ export type WeeklyEntry = {
   taskNumber?: number;
   /** Кто поднял запись наверх, в свой weekly в команде выше, и его фраза (этап 15) */
   promoted?: { by: PersonSlug; note?: string }[];
+  /** Обсуждение под записью и реакции на неё (этап 20) */
+  comments?: Comment[];
+  reactions?: ReactionView[];
 };
 
 export type PersonWeekly = {

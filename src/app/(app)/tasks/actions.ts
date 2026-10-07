@@ -15,7 +15,7 @@ import { loadScope, TOP_TEAM } from "@/lib/org/scope";
 import { moveTask } from "@/lib/org/service";
 import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
 
-export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string } | { ok: false; error: string };
+export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string } | { ok: false; error: string };
 
 async function actor(): Promise<svc.Actor> {
   const ctx = await requireContext();
@@ -43,7 +43,7 @@ function checkNumber(number: unknown): number {
 async function run(fn: (a: svc.Actor) => Promise<svc.TaskResult>): Promise<TaskActionResult> {
   try {
     const r = await fn(await actor());
-    return { ok: true, task: r.task, number: r.task.number, undo: r.undo };
+    return { ok: true, task: r.task, number: r.task.number, undo: r.undo, ...(r.warning ? { warning: r.warning } : {}) };
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
@@ -102,6 +102,19 @@ export async function archiveTaskAction(number: number, archived: boolean) {
 
 export async function addCommentAction(number: number, text: string) {
   return run((a) => svc.addComment(a, checkNumber(number), text));
+}
+
+/** Правка и удаление своего комментария, реакции на комментарий (этап 20) */
+export async function editCommentAction(number: number, commentId: string, text: string) {
+  return run((a) => svc.editComment(a, checkNumber(number), String(commentId), String(text ?? "")));
+}
+
+export async function deleteCommentAction(number: number, commentId: string) {
+  return run((a) => svc.deleteComment(a, checkNumber(number), String(commentId)));
+}
+
+export async function reactCommentAction(number: number, commentId: string, kind: string, question?: string | null) {
+  return run((a) => svc.reactToComment(a, checkNumber(number), String(commentId), kind, question == null ? null : String(question)));
 }
 
 export async function undoAction(token: string): Promise<TaskActionResult> {

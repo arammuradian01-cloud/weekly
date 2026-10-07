@@ -9,6 +9,9 @@ import { DeviceList } from "@/components/profile/device-list";
 import { Absences } from "@/components/profile/absences";
 import { absenceWeeks, upcomingAbsences } from "@/lib/weekly/service";
 import { prisma } from "@/lib/db";
+import { mailConfigured } from "@/lib/mail";
+import { mailPrefsFor } from "@/lib/letters/service";
+import { MailPrefsForm } from "@/components/profile/mail-prefs";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -25,7 +28,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function ProfilePage() {
   const ctx = await requireContext();
   const observer = ctx.person.role === "OBSERVER";
-  const [devices, absences, weeks, colleagues] = await Promise.all([
+  const [devices, absences, weeks, colleagues, prefs] = await Promise.all([
     ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
     observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
     absenceWeeks(),
@@ -34,7 +37,9 @@ export default async function ProfilePage() {
       orderBy: { sortOrder: "asc" },
       select: { slug: true, fullName: true },
     }),
+    mailPrefsFor(ctx.person.id),
   ]);
+  const mailOn = mailConfigured();
   return (
     <div className="max-w-3xl">
       <PageHeader title="Профиль" description="Роль, зону и почту меняет владелец ресурса в настройках" />
@@ -55,6 +60,18 @@ export default async function ProfilePage() {
           <Absences absences={absences} weeks={weeks} people={colleagues.map((p) => ({ value: p.slug, label: p.fullName }))} />
         </section>
       )}
+
+      <section className="mt-10 border-t border-line pt-8">
+        <h2 className="text-title font-semibold text-ink">Письма</h2>
+        <p className="mt-1 text-small text-muted">
+          {mailOn
+            ? `Приходят на ${ctx.person.email ?? "почту из карточки"}: о том, что ждёт вас и что вы не увидели в ресурсе за 15 минут. Вне рабочего времени, с 20:00 до 9:00 и в выходные, письма копятся до утра. В письме только кто и что, подробности после входа.`
+            : "Почта ресурса ещё не настроена: письма начнут приходить, когда владелец подключит почтовый сервер. Настройки ниже уже сохраняются."}
+        </p>
+        {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
+        {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
+        <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
+      </section>
 
       <section className="mt-10 border-t border-line pt-8">
         <h2 className="text-title font-semibold text-ink">Где открыт ваш вход</h2>

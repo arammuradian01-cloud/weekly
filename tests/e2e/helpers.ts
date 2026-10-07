@@ -12,7 +12,9 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   // Этап 9: личные входы, ссылки и почта начинаются с чистого листа, общий логин работает
   await client.query("DELETE FROM device_sessions");
   await client.query("DELETE FROM login_links");
-  await client.query("UPDATE people SET email = NULL");
+  await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb`);
+  // Этап 20: письма уходили по прошлым тестам
+  await client.query("DELETE FROM mail_marks");
   await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
   // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
@@ -28,6 +30,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_entries WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_reports WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
+  // Этап 20: комментарии к записям держат автора, их убираем до людей
+  await client.query("DELETE FROM entry_comments WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM people WHERE slug <> ALL($1)", [SEED_PEOPLE]);
   await client.query("UPDATE people SET active = (slug NOT IN ('analyst', 'ceo'))");
   await client.query(

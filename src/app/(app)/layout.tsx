@@ -46,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ctx.management ? syncLagging() : Promise.resolve(false),
     getStandBanner(),
     prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" }, select: { fullName: true } }),
-    inboxCount(ctx.person.id),
+    inboxCount(ctx.person.id, new Date(), subjectOf(ctx)),
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
   ]);
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };

@@ -43,6 +43,12 @@ export async function sendMail(mail: Mail): Promise<void> {
     return;
   }
   if (!process.env.SMTP_URL || !process.env.MAIL_FROM) throw new Error("Почта не настроена: задайте SMTP_URL и MAIL_FROM");
-  const transport = nodemailer.createTransport(process.env.SMTP_URL);
+  // Короткие таймауты: при недоступном сервере проход писем не висит минутами, а повторяется в следующую минуту
+  // Адрес дописываем строкой, без разбора: так логин и пароль в нём остаются как есть
+  let url = process.env.SMTP_URL;
+  for (const [key, value] of [["connectionTimeout", "10000"], ["greetingTimeout", "10000"], ["socketTimeout", "30000"]] as const) {
+    if (!new RegExp(`[?&]${key}=`).test(url)) url += `${url.includes("?") ? "&" : "?"}${key}=${value}`;
+  }
+  const transport = nodemailer.createTransport(url);
   await transport.sendMail({ from: process.env.MAIL_FROM, to: mail.to, subject: mail.subject, text: mail.text });
 }
