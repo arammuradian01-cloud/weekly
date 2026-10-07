@@ -4,6 +4,7 @@ import { requireContext } from "@/lib/auth";
 import { formatDuration, formatMoment } from "@/lib/week";
 import { currentReportingKey, getMyWeekly } from "@/lib/weekly/service";
 import { entryPromises } from "@/lib/weekly/promise-service";
+import { weekFacts } from "@/lib/weekly/facts-service";
 import { canEditWeekly } from "@/lib/weekly/rules";
 import { formatLong } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
@@ -15,7 +16,7 @@ export const metadata: Metadata = { title: "Сдать weekly" };
 export default async function SubmitWeeklyPage() {
   const ctx = await requireContext();
   const key = await currentReportingKey();
-  const [mine, promises] = await Promise.all([getMyWeekly(ctx.person.id, key), entryPromises(ctx.person.id, key)]);
+  const [mine, promises, facts] = await Promise.all([getMyWeekly(ctx.person.id, key), entryPromises(ctx.person.id, key), weekFacts(ctx.person.id, key)]);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
   const msLeft = deadline.getTime() - now.getTime();
@@ -41,6 +42,7 @@ export default async function SubmitWeeklyPage() {
           promoted={mine.promoted}
           expectedIn={mine.expectedIn}
           promises={promises}
+          facts={facts}
         />
         <TaskDrawer />
       </Suspense>

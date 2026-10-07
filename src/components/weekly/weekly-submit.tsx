@@ -24,6 +24,10 @@ import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
 import { PromiseStep } from "./promise-step";
+import { FactSuggestions } from "./fact-suggestions";
+import { ThanksField } from "./thanks-field";
+import type { WeekFact } from "@/lib/weekly/facts";
+import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
@@ -48,6 +52,7 @@ export function WeeklySubmit({
   promoted = [],
   expectedIn,
   promises: initialPromises = [],
+  facts: initialFacts = [],
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -62,6 +67,8 @@ export function WeeklySubmit({
   expectedIn?: { id: string; name: string }[];
   /** Планы прошлого weekly с итогами (этап 22) */
   promises?: EntryPromise[];
+  /** Факты недели для черновика (этап 22): закрытое, перенесённое, заблокированное, выполненные просьбы */
+  facts?: WeekFact[];
 }) {
   const { data, me, notify, notifyUndo } = usePrototype();
   const router = useRouter();
@@ -118,6 +125,7 @@ export function WeeklySubmit({
 
   // Обещания недели (этап 22): планы прошлого weekly и мои задачи со сроком на этой неделе
   const [promises, setPromises] = useState<EntryPromise[]>(initialPromises);
+  const [facts, setFacts] = useState<WeekFact[]>(initialFacts);
   const range = { start: week.start, end: week.end };
   const owed = promiseTasks(data.tasks, me.slug, range);
   const owedNumbers = new Set(owed.map((t) => t.number));
@@ -128,7 +136,7 @@ export function WeeklySubmit({
       !t.archived &&
       !owedNumbers.has(t.number) &&
       isMine(t, me.slug, me.role) &&
-      (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today)),
+      (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today) || greenOutside(t, data.today) !== null),
   );
 
   const newEntry = (): WeeklyEntry => ({
@@ -332,7 +340,12 @@ export function WeeklySubmit({
           <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
         </Step>
 
-        <Step id="step-tasks" n={2} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
+        <Step
+          id="step-tasks"
+          n={2}
+          title="Обновить задачи"
+          description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений, «В графике» без оснований"
+        >
           {tasks.length === 0 ? (
             <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
           ) : (
@@ -355,7 +368,11 @@ export function WeeklySubmit({
             readOnly={!canEdit}
             counter={{ value: headline.length, max: HEADLINE_MAX }}
           />
+          <div className="mt-4">
+            <ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={canEdit} />
+          </div>
           <div className="mt-6 flex flex-col gap-4">
+            {canEdit ? <FactSuggestions week={week.key} facts={facts} setFacts={setFacts} onAdded={upsert} /> : null}
             <h3 className="text-lead font-semibold text-ink">
               Записи <span className="font-normal text-muted">{entries.length}</span>
             </h3>
@@ -537,6 +554,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
   const { open } = useOpenTask();
   const [where, setWhere] = useState(task.where);
   const overdue = isOverdue(task, data.today);
+  const green = greenOutside(task, data.today);
   const changed = where.trim() !== task.where && where.trim().length > 0;
   return (
     <li className={cn("flex flex-col gap-2 px-4 py-3", overdue && "bg-danger-soft")}>
@@ -555,6 +573,11 @@ function TaskUpdateRow({ task }: { task: Task }) {
         <StatusSelect task={task} />
         <StateSelect task={task} />
       </div>
+      {green ? (
+        <p className="text-small text-orange-ink">
+          {greenOutsideText(green)}. {green.unconfirmed ? "«В графике» не считается, пока не обновите «где сейчас»" : "Проверьте состояние и обновите «где сейчас»"}
+        </p>
+      ) : null}
       <form
         className="flex flex-col gap-2 sm:flex-row sm:items-center"
         onSubmit={(e) => {

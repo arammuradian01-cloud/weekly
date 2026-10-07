@@ -4,6 +4,8 @@ import { cn } from "@/lib/cn";
 import { Badge } from "./badge";
 import type { Task } from "@/domain/types";
 import { lateWaits } from "@/lib/tasks/rules";
+import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
+import type { IsoDate } from "@/domain/dates";
 import {
   priorityOf,
   stateLabel,
@@ -81,6 +83,21 @@ export function OverdueNote({ days, className }: { days: number; className?: str
 
 export function StaleNote({ className }: { className?: string }) {
   return <span className={cn("whitespace-nowrap text-caption text-warning-ink", className)}>давно не обновлялась</span>;
+}
+
+/**
+ * «Зелёное снаружи» (этап 22): «В графике», но просрочена, срок переносили 2 раза или давно без обновлений.
+ * С 14 дней без обновлений «В графике» не считается, пока не обновят «где сейчас»
+ */
+export function GreenOutsideNote({ task, today, className }: { task: Parameters<typeof greenOutside>[0]; today: IsoDate; className?: string }) {
+  const g = greenOutside(task, today);
+  if (!g) return null;
+  return (
+    <span className={cn("text-caption font-medium text-orange-ink", className)}>
+      {greenOutsideText(g)}
+      {g.unconfirmed ? ": не подтверждено" : ""}
+    </span>
+  );
 }
 
 /** Задача ждёт другие, а их срок позже её срока (этап 21) */

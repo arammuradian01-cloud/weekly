@@ -210,6 +210,7 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
         week: target,
         author: p.slug as PersonSlug,
         headline: r?.headline ?? "",
+        ...(r?.thanks ? { thanks: r.thanks } : {}),
         state: r ? STATE_CODE[r.state] : "not-started",
         submittedAt: r?.submittedAt?.toISOString(),
         ...(absences.has(p.id) ? { absent: { substitute: absences.get(p.id)! } } : {}),
@@ -274,6 +275,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
       week: key,
       author: person.slug as PersonSlug,
       headline: report?.headline ?? "",
+      ...(report?.thanks ? { thanks: report.thanks } : {}),
       state: report ? STATE_CODE[report.state] : "not-started",
       submittedAt: report?.submittedAt?.toISOString(),
       ...(absence ? { absent: { substitute: (absence.substitute?.slug as PersonSlug | undefined) ?? null } } : {}),
@@ -376,6 +378,36 @@ export async function saveHeadline(actor: Actor, key: WeekKey, headline: string)
   });
 }
 
+/** «Спасибо @коллега за…» одной строкой (этап 22) */
+export const THANKS_MAX = 300;
+
+/**
+ * Благодарность в weekly: необязательная строка, попадает в ленту и блок отчёта CEO. Упомянутый коллега получает
+ * событие один раз, повторное сохранение его не дублирует
+ */
+export async function saveThanks(actor: Actor, key: WeekKey, text: string): Promise<{ thanks: string }> {
+  const value = clean(text);
+  if (value.length > THANKS_MAX) fail(`Благодарность: не длиннее ${THANKS_MAX} знаков`);
+  return prisma.$transaction(async (tx) => {
+    const { row, info, reporting } = await weekContext(tx, key, actor.personId);
+    canEdit(info, reporting, actor, actor.slug);
+    const existing = await reportOf(tx, row.id, actor.personId);
+    if ((existing?.thanks ?? "") === value) return { thanks: value };
+    const report = await tx.weeklyReport.upsert({
+      where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } },
+      update: { thanks: value || null },
+      create: { weekId: row.id, authorId: actor.personId, thanks: value || null, state: "DRAFT" },
+    });
+    if (existing && existing.state !== "DRAFT") await audit(tx, actor, "weekly.update", "weekly", `${key}/${actor.slug}`, "Благодарность", existing.thanks, value || null);
+    const fresh = (await mentionsIn(tx, [value], actor.personId)).filter((id) => !report.thanksMentions.includes(id));
+    if (fresh.length) {
+      await tx.weeklyReport.update({ where: { id: report.id }, data: { thanksMentions: { push: fresh } } });
+      await notify(tx, { kind: "THANKS", recipients: fresh, actor, subject: `thanks:${key}:${actor.slug}`, text: `Спасибо в weekly за неделю ${info.number}: «${quote(value)}»` });
+    }
+    return { thanks: value };
+  });
+}
+
 export type EntryInput = {
   id?: string;
   week: WeekKey;
@@ -389,6 +421,8 @@ export type EntryInput = {
   next?: string;
   help?: string;
   links?: Link[];
+  /** Запись из факта недели (этап 22): ставит только сервер, из экрана не приходит */
+  factKey?: string;
 };
 
 /** Значение справочника по коду. Скрытое в справочнике можно оставить, если запись уже с ним, выбрать заново нельзя */
@@ -488,7 +522,12 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       }
     } else {
       const count = await tx.weeklyEntry.count({ where: { weekId: row.id, authorId: actor.personId } });
-      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count }, include: entryInclude });
+      // Двойное нажатие «Добавить» у факта: второй запрос ждёт первый и получает понятный отказ
+      if (input.factKey) await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`fact:${row.id}:${actor.personId}:${input.factKey}`}))::text`;
+      if (input.factKey && (await tx.weeklyEntry.findFirst({ where: { weekId: row.id, authorId: actor.personId, factKey: input.factKey }, select: { id: true } }))) {
+        fail("Этот факт уже в weekly");
+      }
+      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count, factKey: input.factKey ?? null }, include: entryInclude });
       await tx.weeklyReport.upsert({
         where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } },
         update: {},
@@ -538,6 +577,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       ceo: existing.ceo,
       sortOrder: existing.sortOrder,
       importBatch: existing.importBatch,
+      factKey: existing.factKey,
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
       requestIds: existing.helpRequests.map((r) => r.id),
@@ -594,6 +634,11 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
         ceo: snapshot.ceo,
         sortOrder: snapshot.sortOrder,
         importBatch: snapshot.importBatch,
+        // Тот же факт за это время добавили снова: возвращённая запись остаётся обычной
+        factKey:
+          snapshot.factKey && !(await tx.weeklyEntry.findFirst({ where: { weekId: snapshot.weekId, authorId: snapshot.authorId, factKey: snapshot.factKey }, select: { id: true } }))
+            ? snapshot.factKey
+            : null,
         createdAt: new Date(snapshot.createdAt),
         // События об упоминаниях удалились вместе с записью: следующая правка упомянет людей заново
         mentions: [],

@@ -10,6 +10,7 @@ import type { Task } from "@/domain/types";
 import { InlineSelect } from "@/components/ui/overlays";
 import { PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
 import { useTaskActions } from "./task-actions";
+import { greenOutside } from "@/lib/tasks/green-outside";
 
 export function useViewer(): Viewer {
   const { me, manageRole, observer, leads } = usePrototype();
@@ -47,11 +48,14 @@ export function StatusSelect({ task }: { task: Task }) {
 export function StateSelect({ task }: { task: Task }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
+  const { data } = usePrototype();
+  // 14 дней без обновления «где сейчас»: «В графике» не считается, пока его не подтвердят обновлением (этап 22)
+  const unconfirmed = greenOutside(task, data.today)?.unconfirmed ?? false;
   return (
     <InlineSelect
       label="Состояние"
       value={task.state}
-      valueLabel={stateLabel(task.state)}
+      valueLabel={unconfirmed ? "В графике не подтверждено" : stateLabel(task.state)}
       options={STATES.map((s) => ({ value: s.code, label: s.label }))}
       disabled={!can.state}
       onChange={(v) => actions.changeState(task, v)}

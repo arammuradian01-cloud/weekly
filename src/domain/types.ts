@@ -162,6 +162,8 @@ export type PersonWeekly = {
   week: WeekKey;
   author: PersonSlug;
   headline: string;
+  /** «Спасибо @коллега за…» (этап 22) */
+  thanks?: string;
   state: WeeklyStateCode;
   /** Когда сдан, момент в ISO */
   submittedAt?: string;

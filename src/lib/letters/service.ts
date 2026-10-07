@@ -67,6 +67,8 @@ export function eventPhrase(e: EventLine): string {
       return e.entryId ? `${who}реакция на ${e.commentId ? "ваш комментарий к записи weekly" : "вашу запись weekly"}` : `${who}реакция на ваш комментарий в задаче${n}`;
     case "REQUEST":
       return `${who}просьба к вам`;
+    case "THANKS":
+      return `${who}благодарность в weekly`;
     case "TASK_DEPENDENCY":
       return `${who}изменения по связанной задаче${n}`;
     case "REQUEST_ANSWER":
