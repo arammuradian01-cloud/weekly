@@ -9,6 +9,8 @@ import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { Button } from "@/components/ui/button";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { openNewTask, TASK_FROM_ENTRY_EVENT } from "@/components/prototype/new-task";
+import { MentionArea } from "@/components/discuss/mention-area";
+import { usePrototype } from "@/domain/store";
 
 /** Запись ещё не на сервере: такой id выдаёт экран до первого сохранения */
 export const isLocalId = (id: string) => id.startsWith("new-");
@@ -47,6 +49,7 @@ export function EntryForm({
   /** Автосохранение прошло: экран обновляет список, форма остаётся открытой */
   onAutosaved?: (entry: WeeklyEntry) => void;
 }) {
+  const { notify } = usePrototype();
   const [e, setE] = useState<WeeklyEntry>(initial);
   const [needHelp, setNeedHelp] = useState(!!initial.help);
   const [link, setLink] = useState(initial.links[0]?.url ?? "");
@@ -88,6 +91,9 @@ export function EntryForm({
     if (result.ok) {
       setE((prev) => ({ ...prev, id: result.value.id, taskNumber: result.value.taskNumber }));
       latest.current.e = { ...latest.current.e, id: result.value.id };
+      // Упомянули того, кто запись не видит (этап 20): запись сохранилась, но упоминание до него не дошло
+      const warning = (result.value as WeeklyEntry & { warning?: string }).warning;
+      if (warning) notify(warning, "error");
     }
     return result;
   };
@@ -145,7 +151,15 @@ export function EntryForm({
         <SelectField label="Тип" id={`${initial.id}-type`} value={e.type} onChange={(ev) => set("type", ev.target.value as EntryTypeCode)} options={dictOptions("ENTRY_TYPE", e.type)} />
       </div>
       <TextArea label="Что произошло" id={`${initial.id}-what`} value={e.what} onChange={(ev) => set("what", ev.target.value)} rows={2} counter={{ value: e.what.length, max: WEEKLY_LIMITS.what }} autoFocus />
-      <TextArea label="Подробнее" id={`${initial.id}-details`} value={e.details ?? ""} onChange={(ev) => set("details", ev.target.value)} counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }} />
+      <MentionArea
+        label="Подробнее"
+        id={`${initial.id}-details`}
+        value={e.details ?? ""}
+        onChange={(v) => set("details", v)}
+        rows={3}
+        counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }}
+        hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись в «Мне»"
+      />
       <div className="grid gap-4 sm:grid-cols-2">
         <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} hint="Словами: что это меняет для выручки, маржи или клиентов" />
         <TextArea label="Цифра или факт" id={`${initial.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} hint="Одна цифра или факт, на который опирается запись" />
@@ -183,7 +197,16 @@ export function EntryForm({
           />
           Нужна помощь
         </label>
-        {needHelp ? <TextInput label="Какая помощь и от кого" id={`${initial.id}-help`} value={e.help ?? ""} onChange={(ev) => set("help", ev.target.value)} /> : null}
+        {needHelp ? (
+          <MentionArea
+            label="Какая помощь и от кого"
+            id={`${initial.id}-help`}
+            value={e.help ?? ""}
+            onChange={(v) => set("help", v)}
+            rows={2}
+            hint="Упомяните, от кого ждёте помощи: @ и начало имени"
+          />
+        ) : null}
       </div>
       <TextInput
         label="Ссылка на артефакт"

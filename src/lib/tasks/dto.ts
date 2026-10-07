@@ -4,7 +4,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import type { DirectionCode, SourceCode } from "@/domain/dictionaries";
 import type { Comment, Owner, PersonSlug, Task, Transfer } from "@/domain/types";
 import { priorityCode, stateCode, statusCode } from "./codes";
-import { isoFromDbDate, moscowIso, moscowTime } from "./dates";
+import { isoFromDbDate, moscowIso } from "./dates";
+import { commentDto, reactionInclude } from "@/lib/discuss/common";
 
 export const taskInclude = {
   owner: { select: { slug: true } },
@@ -12,7 +13,7 @@ export const taskInclude = {
   direction: { select: { code: true } },
   coExecutors: { select: { personId: true, person: { select: { slug: true, sortOrder: true } } } },
   transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true } } } },
-  comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } } } },
+  comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" } } } },
   links: { orderBy: { at: "asc" } },
   goal: { select: { id: true, title: true, code: true } },
 } satisfies Prisma.TaskInclude;
@@ -48,13 +49,7 @@ export function toTaskDto(row: TaskRow): Task {
     reason: t.reason,
     at: t.at ? moscowIso(t.at) : null,
   }));
-  const comments: Comment[] = row.comments.map((c) => ({
-    id: c.id,
-    author: slug(c.author.slug),
-    text: c.text,
-    at: moscowIso(c.at),
-    time: moscowTime(c.at),
-  }));
+  const comments: Comment[] = row.comments.map(commentDto);
   const due = isoFromDbDate(row.due);
   return {
     number: row.number,

@@ -129,6 +129,8 @@ model Person {
   /// Функциональный руководитель: видит работу человека, но не управляет его задачами
   functionalManagerId String?
   functionalManager   Person?         @relation("PersonFunctionalManager", fields: [functionalManagerId], references: [id], onDelete: SetNull)
+  /// Какие письма человек получает (этап 20): { events, mentions, reactions, reminders, digest }. Нет ключа: по умолчанию
+  mailPrefs           Json            @default("{}")
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
@@ -157,6 +159,11 @@ model Person {
   watches           TaskWatch[]
   ownedGoals        Goal[]            @relation("GoalOwner")
   createdGoals      Goal[]            @relation("GoalCreator")
+  entryComments     EntryComment[]
+  entryWatches      EntryWatch[]
+  reactions         Reaction[]        @relation("ReactionPerson")
+  discussed         Reaction[]        @relation("ReactionDiscussedBy")
+  mailMarks         MailMark[]
 
   @@map("people")
 }
@@ -322,7 +329,7 @@ model TaskTransfer {
   @@map("task_transfers")
 }
 
-/// Комментарии не затираются: только добавляются
+/// Комментарий к задаче. Автор правит его 15 минут (этап 20), удаление оставляет след в журнале
 model TaskComment {
   id          String       @id @default(cuid())
   taskId      String
@@ -332,7 +339,12 @@ model TaskComment {
   text        String
   source      ChangeSource @default(APP)
   at          DateTime     @default(now()) @db.Timestamptz(3)
+  /// Когда автор поправил текст: пометка «изменено»
+  editedAt    DateTime?    @db.Timestamptz(3)
+  /// id упомянутых людей (этап 20)
+  mentions    String[]     @default([])
   inboxEvents InboxEvent[]
+  reactions   Reaction[]
 
   @@index([taskId, at])
   @@map("task_comments")
@@ -425,8 +437,14 @@ model WeeklyEntry {
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
 
+  /// id упомянутых людей (этап 20): событие получает только тот, кого упомянули впервые
+  mentions   String[]          @default([])
   tasks      Task[]
   promotions WeeklyPromotion[]
+  comments   EntryComment[]
+  watches    EntryWatch[]
+  reactions  Reaction[]
+  inbox      InboxEvent[]
 
   @@index([weekId, authorId])
   @@map("weekly_entries")
@@ -545,6 +563,12 @@ enum InboxKind {
   UPDATE_REQUEST
   /// Подписка: у задачи, за которой человек следит, сменился статус или срок (этап 16)
   TASK_WATCH
+  /// Упомянули в комментарии или записи weekly (этап 20)
+  MENTION
+  /// Комментарий к записи weekly: автору записи и подписчикам (этап 20)
+  ENTRY_COMMENT
+  /// Реакция на запись или комментарий (этап 20)
+  REACTION
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -562,6 +586,11 @@ model InboxEvent {
   task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
   commentId   String?
   comment     TaskComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  /// Запись weekly и комментарий к ней (этап 20): предмет entry:<id>
+  entryId        String?
+  entry          WeeklyEntry?  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entryCommentId String?
+  entryComment   EntryComment? @relation(fields: [entryCommentId], references: [id], onDelete: Cascade)
   /// Коротко, что случилось: «передал вам задачу», «прокомментировал: ...»
   text        String
   createdAt   DateTime     @default(now()) @db.Timestamptz(3)
@@ -569,9 +598,14 @@ model InboxEvent {
   doneAt      DateTime?    @db.Timestamptz(3)
   /// «Напомнить»: до этого момента событие скрыто
   snoozeUntil DateTime?    @db.Timestamptz(3)
+  /// Человек видел событие в ресурсе (открыл «Мне» или сам предмет): письмо по нему не нужно (этап 20)
+  seenAt      DateTime?    @db.Timestamptz(3)
+  /// Письмо по событию ушло или не нужно (выключено в настройках, нет почты)
+  mailedAt    DateTime?    @db.Timestamptz(3)
 
   @@index([recipientId, doneAt])
   @@index([recipientId, subject])
+  @@index([mailedAt, createdAt])
   @@map("inbox_events")
 }
 
@@ -770,4 +804,83 @@ model Goal {
   @@index([quarter, teamId])
   @@index([parentId])
   @@map("goals")
+}
+
+/// Комментарий к записи weekly (этап 20): короткая ветка под записью, видна в ленте и в режиме встречи
+model EntryComment {
+  id          String       @id @default(cuid())
+  entryId     String
+  entry       WeeklyEntry  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      Person       @relation(fields: [authorId], references: [id])
+  text        String
+  mentions    String[]     @default([])
+  at          DateTime     @default(now()) @db.Timestamptz(3)
+  editedAt    DateTime?    @db.Timestamptz(3)
+  reactions   Reaction[]
+  inboxEvents InboxEvent[]
+
+  @@index([entryId, at])
+  @@map("entry_comments")
+}
+
+/// Подписка на запись weekly (этап 20): кто прокомментировал или кого упомянули, получает новые комментарии
+model EntryWatch {
+  entryId   String
+  entry     WeeklyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  personId  String
+  person    Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@id([entryId, personId])
+  @@index([personId])
+  @@map("entry_watches")
+}
+
+/// Реакции: набор фиксированный (этап 20)
+enum ReactionKind {
+  ACCEPTED
+  QUESTION
+  DISCUSS
+  THANKS
+}
+
+/// Реакция на запись weekly, комментарий к записи или комментарий к задаче. Цель ровно одна (проверка в базе).
+/// «Обсудить на встрече» требует вопрос, он попадает в повестку встречи, пока его не отметят «обсуждено»
+model Reaction {
+  id             String        @id @default(cuid())
+  kind           ReactionKind
+  personId       String
+  person         Person        @relation("ReactionPerson", fields: [personId], references: [id], onDelete: Cascade)
+  entryId        String?
+  entry          WeeklyEntry?  @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  entryCommentId String?
+  entryComment   EntryComment? @relation(fields: [entryCommentId], references: [id], onDelete: Cascade)
+  taskCommentId  String?
+  taskComment    TaskComment?  @relation(fields: [taskCommentId], references: [id], onDelete: Cascade)
+  question       String?
+  discussedAt    DateTime?     @db.Timestamptz(3)
+  discussedById  String?
+  discussedBy    Person?       @relation("ReactionDiscussedBy", fields: [discussedById], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@unique([personId, kind, entryId])
+  @@unique([personId, kind, entryCommentId])
+  @@unique([personId, kind, taskCommentId])
+  @@index([entryId])
+  @@map("reactions")
+}
+
+/// Что из писем уже ушло человеку за неделю (этап 20): напоминания о сдаче и дайджест. Не больше двух напоминаний
+model MailMark {
+  personId String
+  person   Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Понедельник недели
+  week     DateTime @db.Date
+  /// remind1, remind2, digest
+  kind     String
+  sentAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([personId, week, kind])
+  @@map("mail_marks")
 }

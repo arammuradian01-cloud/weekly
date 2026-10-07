@@ -21,6 +21,9 @@ export type InboxItem = {
   /** Номер задачи для ссылки и подписи */
   taskNumber: number | null;
   taskTitle: string | null;
+  /** Запись weekly (этап 20): ссылка на страницу записи и её «что произошло» */
+  entryId: string | null;
+  entryTitle: string | null;
   /** Последнее событие предмета: кто и что */
   actorName: string | null;
   kind: InboxKind;
@@ -44,7 +47,7 @@ export async function listInbox(personId: string, now = new Date()): Promise<Inb
     prisma.inboxEvent.findMany({
       where: open(personId, now),
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      include: { task: { select: { number: true, title: true } } },
+      include: { task: { select: { number: true, title: true } }, entry: { select: { id: true, what: true } } },
       take: 500,
     }),
     prisma.inboxEvent.groupBy({ by: ["subject"], where: { recipientId: personId, doneAt: null, snoozeUntil: { gt: now } } }),
@@ -60,6 +63,8 @@ export async function listInbox(personId: string, now = new Date()): Promise<Inb
       subject: r.subject,
       taskNumber: r.task?.number ?? null,
       taskTitle: r.task?.title ?? null,
+      entryId: r.entry?.id ?? null,
+      entryTitle: r.entry?.what ?? null,
       actorName: r.actorName,
       kind: r.kind,
       text: r.text,
@@ -82,6 +87,16 @@ export async function markDone(actor: Actor, subject: string, now = new Date()):
   const done = await prisma.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject, doneAt: null }, data: { doneAt: now } });
   if (!done.count) fail("Это уже разобрано");
   return done.count;
+}
+
+/**
+ * Человек видел события в ресурсе (этап 20): открыл «Мне» или сам предмет. Письмо по таким событиям не уходит.
+ * subjects не задан: всё, что сейчас видно в «Мне»
+ */
+export async function markSeen(personId: string, subjects?: string[], now = new Date()): Promise<number> {
+  const where: Prisma.InboxEventWhereInput = subjects ? { recipientId: personId, subject: { in: subjects.map(String).slice(0, 50) }, seenAt: null } : { ...open(personId, now), seenAt: null };
+  const seen = await prisma.inboxEvent.updateMany({ where, data: { seenAt: now } });
+  return seen.count;
 }
 
 /** «Разобрано» всё сразу */

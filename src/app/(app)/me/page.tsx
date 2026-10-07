@@ -12,7 +12,7 @@ export default async function MePage() {
   const inbox = await listInbox(ctx.person.id);
   return (
     <>
-      <PageHeader title="Мне" description="Что ждёт вашего внимания: новые задачи, комментарии, переносы сроков. Разберите, и список опустеет." />
+      <PageHeader title="Мне" description="Что ждёт вашего внимания: новые задачи, комментарии, упоминания, реакции, переносы сроков. Разберите, и список опустеет." />
       <InboxList items={inbox.items} snoozed={inbox.snoozed} />
     </>
   );

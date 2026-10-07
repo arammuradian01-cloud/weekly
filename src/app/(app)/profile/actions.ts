@@ -9,6 +9,7 @@ import { runAction } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
 import type { WeekKey } from "@/domain/types";
+import { saveMailPrefs } from "@/lib/letters/service";
 
 export async function revokeDeviceAction(id: string) {
   const session = await readSession();
@@ -41,5 +42,12 @@ export async function setAbsenceAction(week: string, substitute: string | null) 
 export async function removeAbsenceAction(week: string) {
   const result = await runAction("Отмена отсутствия", (a) => removeAbsence(a, a.slug, String(week) as WeekKey));
   if (result.ok) revalidatePath("/", "layout");
+  return result;
+}
+
+/** Какие письма приходят (этап 20). Только при личном входе */
+export async function saveMailPrefsAction(prefs: Record<string, boolean>) {
+  const result = await runAction("Настройки писем", (a) => saveMailPrefs(a, prefs));
+  if (result.ok) revalidatePath("/profile");
   return result;
 }

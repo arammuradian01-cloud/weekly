@@ -14,6 +14,9 @@ import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { notifyWatchers } from "./watch";
+import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/common";
+import { taskReaders } from "@/lib/discuss/access";
+import { applyReaction, dropReactionEvent } from "@/lib/discuss/reactions";
 import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
@@ -33,7 +36,8 @@ export type Actor = {
 /** Ошибка правила: текст показывается человеку как есть */
 export class TaskRuleError extends Error {}
 
-export type TaskResult = { task: Task; undo?: string };
+/** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
+export type TaskResult = { task: Task; undo?: string; warning?: string };
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -230,7 +234,7 @@ export async function listTasks(opts: { archived?: boolean; reader?: TaskReader;
   const me = opts.reader?.personId;
   const own = rows.filter((r) => !me || r.ownerId === me || r.createdById === me || r.coExecutors.some((c) => c.personId === me) || r._count.comments <= 3);
   const comments = own.length
-    ? await prisma.taskComment.findMany({ where: { taskId: { in: own.map((r) => r.id) } }, orderBy: { at: "asc" }, include: { author: { select: { slug: true } } } })
+    ? await prisma.taskComment.findMany({ where: { taskId: { in: own.map((r) => r.id) } }, orderBy: { at: "asc" }, include: taskInclude.comments.include })
     : [];
   const byTask = new Map<string, typeof comments>();
   for (const c of comments) byTask.set(c.taskId, [...(byTask.get(c.taskId) ?? []), c]);
@@ -670,20 +674,116 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
     // Руководитель ответственного комментирует задачу своего человека и в чужой команде, например, просьбу к нему (этап 16)
     const ownersLeader = !!row.ownerId && scope.leadPeople.includes(row.ownerId) && row.teamId !== TOP_TEAM;
     if (!scope.all && !scope.visible.includes(row.teamId) && !participant && !ownersLeader) fail("Функциональный руководитель видит задачу, но не комментирует её");
-    const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value } });
-    // Комментарий видят в «Мне» ответственный, соисполнители и тот, кто поставил задачу
+    // Упоминания (этап 20): доходят только до тех, кто видит задачу
+    const mentioned = await mentionsIn(tx, [value], actor.personId);
+    const reach = mentioned.length ? await taskReaders(tx, row, mentioned) : [];
+    const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value, mentions: reach } });
+    const participants = [row.ownerId, row.createdById, ...row.coExecutors.map((c) => c.personId)];
+    await mentionTask(tx, actor, row, comment.id, reach, participants, value);
+    // Комментарий видят в «Мне» ответственный, соисполнители и тот, кто поставил задачу. Упомянутые получают упоминание
     await notify(tx, {
       kind: "TASK_COMMENT",
-      recipients: [row.ownerId, row.createdById, ...row.coExecutors.map((c) => c.personId)],
+      recipients: participants.filter((id) => !id || !reach.includes(id)),
       actor,
       subject: taskSubject(number),
       taskId: row.id,
       commentId: comment.id,
       text: `Комментарий: «${quote(value)}»`,
     });
+    // Подписчики задачи (этап 16) тоже видят комментарии
+    await notifyWatchers(tx, row.id, `Комментарий: «${quote(value)}»`, actor, [...participants, ...reach]);
     await audit(tx, actor, number, [{ action: "task.comment", field: "Комментарий", after: value }]);
     const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
-    return { task: toTaskDto(updated), undo: issueUndoToken({ kind: "comment", number, commentId: comment.id }, actor.personId) };
+    return {
+      task: toTaskDto(updated),
+      undo: issueUndoToken({ kind: "comment", number, commentId: comment.id }, actor.personId),
+      ...(await unreachedWarning(tx, mentioned, reach, "эту задачу")),
+    };
+  });
+}
+
+/** Событие упомянутым и подписка на задачу: упомянутый дальше видит её изменения в «Мне» (этап 20) */
+async function mentionTask(tx: Tx, actor: Actor, row: TaskRow, commentId: string, reach: string[], participants: (string | null)[], text: string) {
+  if (!reach.length) return;
+  const watchers = reach.filter((id) => !participants.includes(id));
+  if (watchers.length) await tx.taskWatch.createMany({ data: watchers.map((personId) => ({ taskId: row.id, personId })), skipDuplicates: true });
+  await notify(tx, { kind: "MENTION", recipients: reach, actor, subject: taskSubject(row.number), taskId: row.id, commentId, text: `Упоминание: «${quote(text)}»` });
+}
+
+/** Упомянули тех, кто не видит предмет: правка прошла, человеку говорим, до кого упоминание не дошло */
+async function unreachedWarning(db: Db, mentioned: string[], reach: string[], what: string): Promise<{ warning?: string }> {
+  const lost = mentioned.filter((id) => !reach.includes(id));
+  if (!lost.length) return {};
+  const names = await namesOf(db, lost);
+  return { warning: `Упоминание не дошло: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} ${what}` };
+}
+
+async function lockComment(tx: Tx, actor: Actor, number: number, commentId: string) {
+  const scope = await scopeOfActor(tx, actor);
+  const row = await lockRow(tx, number, { scope, personId: actor.personId });
+  if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
+  const comment = row.comments.find((c) => c.id === commentId);
+  if (!comment) fail("Комментарий уже удалён");
+  return { row, comment: comment! };
+}
+
+/** Свой комментарий можно поправить 15 минут: появится пометка «изменено», в журнале было и стало (этап 20) */
+export async function editComment(actor: Actor, number: number, commentId: string, text: string, now = new Date()): Promise<TaskResult> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель не комментирует");
+  const value = required(text, LIMITS.comment, "Напишите комментарий", "Комментарий");
+  return prisma.$transaction(async (tx) => {
+    const { row, comment } = await lockComment(tx, actor, number, commentId);
+    if (comment.authorId !== actor.personId) fail("Править можно только свой комментарий");
+    if (!editable(comment.at, now)) fail("Комментарий правят 15 минут после отправки. Напишите новый");
+    if (comment.text === value) return { task: toTaskDto(row) };
+    // Новые упоминания получают событие, прежние повторно нет
+    const mentioned = (await mentionsIn(tx, [value], actor.personId)).filter((id) => !comment.mentions.includes(id));
+    const reach = mentioned.length ? await taskReaders(tx, row, mentioned) : [];
+    await tx.taskComment.update({ where: { id: comment.id }, data: { text: value, editedAt: now, mentions: [...comment.mentions, ...reach] } });
+    await mentionTask(tx, actor, row, comment.id, reach, [row.ownerId, row.createdById, ...row.coExecutors.map((c) => c.personId)], value);
+    await audit(tx, actor, number, [{ action: "task.comment.edit", field: "Комментарий изменён", before: comment.text, after: value }]);
+    const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
+    return { task: toTaskDto(updated), ...(await unreachedWarning(tx, mentioned, reach, "эту задачу")) };
+  });
+}
+
+/** Удалить комментарий: свой или любой в режиме управления. Текст остаётся в журнале (этап 20) */
+export async function deleteComment(actor: Actor, number: number, commentId: string): Promise<TaskResult> {
+  return prisma.$transaction(async (tx) => {
+    const { row, comment } = await lockComment(tx, actor, number, commentId);
+    if (comment.authorId !== actor.personId && !actor.management) fail("Удалить можно только свой комментарий");
+    await tx.taskComment.delete({ where: { id: comment.id } });
+    await audit(tx, actor, number, [{ action: "task.comment.delete", field: "Комментарий удалён", before: comment.text }]);
+    const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
+    return { task: toTaskDto(updated) };
+  });
+}
+
+/** Реакция на комментарий к задаче (этап 20). Автор комментария видит её в «Мне» */
+export async function reactToComment(actor: Actor, number: number, commentId: string, kind: unknown, question?: string | null): Promise<TaskResult> {
+  return prisma.$transaction(async (tx) => {
+    const { row, comment } = await lockComment(tx, actor, number, commentId);
+    const change = await applyReaction(tx, actor, { taskCommentId: comment.id }, kind, question);
+    if (change.on && change.kind === "discuss") {
+      await audit(tx, actor, number, [{ action: "task.discuss", field: "Обсудить на встрече", before: change.was?.question ?? null, after: change.question }]);
+    } else if (!change.on && change.kind === "discuss") {
+      await audit(tx, actor, number, [{ action: "task.discuss", field: "Обсудить на встрече снято", before: change.was?.question ?? null }]);
+    }
+    if (change.on) {
+      await notify(tx, {
+        kind: "REACTION",
+        recipients: [comment.authorId],
+        actor,
+        subject: taskSubject(number),
+        taskId: row.id,
+        commentId: comment.id,
+        text: change.question ? `${REACTION_LABEL[change.kind]}: «${quote(change.question)}»` : `«${REACTION_LABEL[change.kind]}» к вашему комментарию`,
+      });
+    } else if (change.was) {
+      await dropReactionEvent(tx, actor, { commentId: comment.id }, change.was.createdAt);
+    }
+    const updated = await tx.task.findUniqueOrThrow({ where: { id: row.id }, include: taskInclude });
+    return { task: toTaskDto(updated) };
   });
 }
 

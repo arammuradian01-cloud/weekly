@@ -12,12 +12,14 @@ import { WeeklyBadge } from "@/components/ui/task-badges";
 import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { EntryItem } from "./entry-item";
 import { AbsentBadge, absentLine, substituteText } from "./absence";
+import type { MeetingQuestion } from "@/lib/discuss/service";
+import { MeetingQuestions } from "./meeting-questions";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
  * Сначала риски и запросы помощи, потом лидеры по очереди (раздел 3 ТЗ).
  */
-export function MeetingMode({ view }: { view: WeekView }) {
+export function MeetingMode({ view, questions = [] }: { view: WeekView; questions?: MeetingQuestion[] }) {
   // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе (сервер выбирает её сам)
   const week = view.week.number;
   const entries = view.entries;
@@ -32,12 +34,15 @@ export function MeetingMode({ view }: { view: WeekView }) {
   const raisedBy = (slug: string) => (view.authors && !view.authors.includes(slug) ? [] : entries.filter((e) => e.author !== slug && e.promoted?.some((x) => x.by === slug)));
   const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug && own(e)) || raisedBy(p.slug).length > 0).sort((a, b) => last(a) - last(b));
   const hasCommon = entries.some((e) => !e.author);
-  const slides: string[] = ["risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
+  // Этап 20: вопросы «Обсудить на встрече» первым шагом, если они есть
+  const slides: string[] = [...(questions.length ? ["questions"] : []), "risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   const [index, setIndex] = useState(0);
   const slide = slides[index]!;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Стрелки в поле комментария двигают курсор, а не встречу
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu']")) return;
       if (e.key === "ArrowRight" || e.key === "PageDown") setIndex((i) => Math.min(slides.length - 1, i + 1));
       if (e.key === "ArrowLeft" || e.key === "PageUp") setIndex((i) => Math.max(0, i - 1));
     };
@@ -63,7 +68,7 @@ export function MeetingMode({ view }: { view: WeekView }) {
                   i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                 )}
               >
-                {s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
+                {s === "questions" ? `Вопросы: ${questions.filter((q) => !q.discussed).length}` : s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
               </button>
             </li>
           ))}
@@ -85,7 +90,9 @@ export function MeetingMode({ view }: { view: WeekView }) {
       </div>
 
       <section aria-live="polite" className="flex-1">
-        {slide === "risks" ? (
+        {slide === "questions" ? (
+          <MeetingQuestions week={week} questions={questions} />
+        ) : slide === "risks" ? (
           <>
             <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Риски и запросы помощи</h1>
             <p className="mt-2 text-title text-muted">Неделя {week}. С этого начинаем</p>

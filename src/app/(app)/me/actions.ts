@@ -4,7 +4,7 @@
 
 import { revalidatePath } from "next/cache";
 import { runAction } from "@/lib/action-runner";
-import { markAllDone, markDone, snooze, type SnoozeChoice } from "@/lib/inbox/service";
+import { markAllDone, markDone, markSeen, snooze, type SnoozeChoice } from "@/lib/inbox/service";
 
 export async function markDoneAction(subject: string) {
   const r = await runAction("Разобрано", (a) => markDone(a, String(subject)));
@@ -22,4 +22,9 @@ export async function markAllDoneAction() {
   const r = await runAction("Разобрать всё", (a) => markAllDone(a));
   if (r.ok) revalidatePath("/", "layout");
   return r;
+}
+
+/** Человек видел события (этап 20): открыл «Мне» или сам предмет. Письмо по ним не уйдёт */
+export async function markSeenAction(subjects?: string[]) {
+  return runAction("Просмотрено", (a) => markSeen(a.personId, Array.isArray(subjects) ? subjects.map(String) : undefined));
 }

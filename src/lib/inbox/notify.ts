@@ -8,6 +8,7 @@ type Tx = Prisma.TransactionClient;
 const QUOTE = 120;
 
 export const taskSubject = (number: number) => `task:${number}`;
+export const entrySubject = (id: string) => `entry:${id}`;
 
 export type InboxInput = {
   kind: InboxKind;
@@ -17,6 +18,9 @@ export type InboxInput = {
   text: string;
   taskId?: string | null;
   commentId?: string | null;
+  /** Запись weekly и комментарий к ней (этап 20) */
+  entryId?: string | null;
+  entryCommentId?: string | null;
 };
 
 /** Событие адресатам: без самого автора, без повторов, только включённым людям */
@@ -34,6 +38,8 @@ export async function notify(tx: Tx, input: InboxInput, now = new Date()): Promi
       subject: input.subject,
       taskId: input.taskId ?? null,
       commentId: input.commentId ?? null,
+      entryId: input.entryId ?? null,
+      entryCommentId: input.entryCommentId ?? null,
       text: input.text,
       createdAt: now,
     })),

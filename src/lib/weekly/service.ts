@@ -17,6 +17,9 @@ import { closedFor, expectingTeams, leadersOf, personDeadline, promotableFrom, t
 import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections } from "./rules";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
+import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
+import { entryReaders } from "@/lib/discuss/access";
+import { entrySubject, notify, quote } from "@/lib/inbox/notify";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -82,7 +85,10 @@ const entryInclude = {
   block: { select: { code: true, label: true } },
   type: { select: { code: true, label: true } },
   tasks: { select: { number: true }, orderBy: { number: "asc" as const }, take: 1 },
-  promotions: { select: { note: true, by: { select: { slug: true } } }, orderBy: { createdAt: "asc" as const } },
+  promotions: { select: { note: true, byId: true, by: { select: { slug: true } } }, orderBy: { createdAt: "asc" as const } },
+  // Обсуждение под записью (этап 20)
+  comments: { orderBy: { at: "asc" as const }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } } } },
+  reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } },
 } satisfies Prisma.WeeklyEntryInclude;
 
 type EntryRow = Prisma.WeeklyEntryGetPayload<{ include: typeof entryInclude }>;
@@ -105,6 +111,8 @@ function toEntryDto(e: EntryRow): WeeklyEntry {
     ceo: e.ceo,
     taskNumber: e.tasks[0]?.number,
     ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
+    ...(e.comments.length ? { comments: e.comments.map(commentDto) } : {}),
+    ...(e.reactions.length ? { reactions: e.reactions.map(reactionDto) } : {}),
   };
 }
 
@@ -214,6 +222,13 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
     departmentClosed: row.closedAt !== null,
     ...(authorSlugs ? { authors: authorSlugs } : {}),
   };
+}
+
+/** Одна запись с обсуждением, без проверки доступа: её делает вызывающий (страница записи, этап 20) */
+export async function getEntry(id: string): Promise<WeeklyEntry | null> {
+  const row = await prisma.weeklyEntry.findUnique({ where: { id: String(id) }, include: entryInclude });
+  // Фразы руководителей к поднятой записи на отдельной странице не показываем: они видны только в их ленте
+  return row ? keepNotes(toEntryDto(row), () => false) : null;
 }
 
 /** Оставить фразы только тех, кто поднял запись и кому её можно показать */
@@ -388,8 +403,32 @@ function linksText(value: unknown): string | null {
   return list.length ? list.map((l) => (l.title ? `${l.title}: ${l.url}` : (l.url ?? ""))).join(", ") : null;
 }
 
+/** Записанная запись. warning: упоминание не дошло до тех, кто запись не видит (этап 20) */
+export type SavedEntry = WeeklyEntry & { warning?: string };
+
+/**
+ * Упоминания в записи (этап 20): событие получает только тот, кого упомянули впервые, и только если он видит запись.
+ * Упомянутый подписывается на запись и дальше видит комментарии к ней
+ */
+async function mentionEntry(tx: Tx, actor: Actor, saved: EntryRow): Promise<{ mentions: string[]; warning?: string }> {
+  const authorId = saved.authorId ?? actor.personId;
+  const found = (await mentionsIn(tx, [saved.what, saved.details, saved.impact, saved.fact, saved.next, saved.help], authorId)).filter((id) => id !== actor.personId);
+  const fresh = found.filter((id) => !saved.mentions.includes(id));
+  if (!fresh.length) return { mentions: saved.mentions };
+  const reach = await entryReaders(tx, { authorId: saved.authorId, ceo: saved.ceo, promotedBy: saved.promotions.map((p) => p.byId) }, fresh);
+  if (reach.length) {
+    await tx.weeklyEntry.update({ where: { id: saved.id }, data: { mentions: [...saved.mentions, ...reach] } });
+    await tx.entryWatch.createMany({ data: reach.map((personId) => ({ entryId: saved.id, personId })), skipDuplicates: true });
+    await notify(tx, { kind: "MENTION", recipients: reach, actor, subject: entrySubject(saved.id), entryId: saved.id, text: `Упоминание в записи weekly: «${quote(saved.what)}»` });
+  }
+  const lost = fresh.filter((id) => !reach.includes(id));
+  if (!lost.length) return { mentions: [...saved.mentions, ...reach] };
+  const names = await namesOf(tx, lost);
+  return { mentions: [...saved.mentions, ...reach], warning: `Упоминание не дошло: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} эту запись` };
+}
+
 /** Создать или поправить запись. Автор: тот, кто пишет; чужие записи правят владелец и администраторы */
-export async function saveEntry(actor: Actor, input: EntryInput): Promise<WeeklyEntry> {
+export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedEntry> {
   const what = clean(input.what);
   if (!what) fail("Напишите одной фразой, что произошло");
   if (what.length > WEEKLY_LIMITS.what) fail(`«Что произошло» длиннее ${WEEKLY_LIMITS.what} знаков: сократите до одной фразы`);
@@ -456,7 +495,8 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
       });
       await audit(tx, actor, "weekly.entry.create", "weekly-entry", saved.id, "Запись weekly", null, `Неделя ${info.number}: ${what}`);
     }
-    return toEntryDto(saved);
+    const mention = await mentionEntry(tx, actor, saved);
+    return { ...toEntryDto(saved), ...(mention.warning ? { warning: mention.warning } : {}) };
   });
 }
 
@@ -465,7 +505,14 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
   return prisma.$transaction(async (tx) => {
     const existing = await tx.weeklyEntry.findUnique({
       where: { id },
-      include: { ...entryInclude, tasks: { select: { id: true } }, promotions: { select: { byId: true, note: true, createdAt: true } } },
+      include: {
+        ...entryInclude,
+        tasks: { select: { id: true } },
+        promotions: { select: { byId: true, note: true, createdAt: true } },
+        comments: { include: { reactions: true } },
+        reactions: true,
+        watches: { select: { personId: true } },
+      },
     });
     if (!existing) return fail("Запись уже удалена");
     const { info, reporting } = await weekContext(tx, isoFromDbDate(existing.week.start), existing.authorId);
@@ -490,6 +537,19 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
       promotions: existing.promotions.map((p) => ({ byId: p.byId, note: p.note, createdAt: p.createdAt.toISOString() })),
+      mentions: existing.mentions,
+      // Обсуждение возвращается вместе с записью (этап 20)
+      comments: existing.comments.map((c) => ({ id: c.id, authorId: c.authorId, text: c.text, mentions: c.mentions, at: c.at.toISOString(), editedAt: c.editedAt?.toISOString() ?? null })),
+      reactions: [...existing.reactions, ...existing.comments.flatMap((c) => c.reactions)].map((r) => ({
+        kind: r.kind,
+        personId: r.personId,
+        entryCommentId: r.entryCommentId,
+        question: r.question,
+        discussedAt: r.discussedAt?.toISOString() ?? null,
+        discussedById: r.discussedById,
+        createdAt: r.createdAt.toISOString(),
+      })),
+      watchers: existing.watches.map((w) => w.personId),
     };
     await tx.weeklyEntry.delete({ where: { id } });
     await audit(tx, actor, "weekly.entry.delete", "weekly-entry", id, "Запись weekly удалена", existing.what, null);
@@ -528,6 +588,7 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
         sortOrder: snapshot.sortOrder,
         importBatch: snapshot.importBatch,
         createdAt: new Date(snapshot.createdAt),
+        mentions: snapshot.mentions ?? [],
       },
       include: entryInclude,
     });
@@ -544,9 +605,45 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
         skipDuplicates: true,
       });
     }
+    await restoreDiscussion(tx, snapshot);
     await audit(tx, actor, "weekly.entry.restore", "weekly-entry", snapshot.id, "Удаление записи weekly отменено", null, snapshot.what);
     return toEntryDto(await tx.weeklyEntry.findUniqueOrThrow({ where: { id: saved.id }, include: entryInclude }));
   });
+}
+
+/** Обсуждение удалённой записи: комментарии, реакции и подписки тех людей, кто ещё есть в базе (этап 20) */
+async function restoreDiscussion(tx: Tx, snapshot: EntrySnapshot): Promise<void> {
+  const comments = snapshot.comments ?? [];
+  const reactions = snapshot.reactions ?? [];
+  const watchers = snapshot.watchers ?? [];
+  const ids = [...new Set([...comments.map((c) => c.authorId), ...reactions.map((r) => r.personId), ...watchers])];
+  if (!ids.length) return;
+  const alive = new Set((await tx.person.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((p) => p.id));
+  const kept = comments.filter((c) => alive.has(c.authorId));
+  if (kept.length) {
+    await tx.entryComment.createMany({
+      data: kept.map((c) => ({ id: c.id, entryId: snapshot.id, authorId: c.authorId, text: c.text, mentions: c.mentions, at: new Date(c.at), editedAt: c.editedAt ? new Date(c.editedAt) : null })),
+      skipDuplicates: true,
+    });
+  }
+  const keptComments = new Set(kept.map((c) => c.id));
+  const keptReactions = reactions.filter((r) => alive.has(r.personId) && (!r.entryCommentId || keptComments.has(r.entryCommentId)));
+  if (keptReactions.length) {
+    await tx.reaction.createMany({
+      data: keptReactions.map((r) => ({
+        kind: r.kind,
+        personId: r.personId,
+        ...(r.entryCommentId ? { entryCommentId: r.entryCommentId } : { entryId: snapshot.id }),
+        question: r.question,
+        discussedAt: r.discussedAt ? new Date(r.discussedAt) : null,
+        discussedById: r.discussedById && alive.has(r.discussedById) ? r.discussedById : null,
+        createdAt: new Date(r.createdAt),
+      })),
+      skipDuplicates: true,
+    });
+  }
+  const keptWatchers = watchers.filter((id) => alive.has(id));
+  if (keptWatchers.length) await tx.entryWatch.createMany({ data: keptWatchers.map((personId) => ({ entryId: snapshot.id, personId })), skipDuplicates: true });
 }
 
 /** «Сдать»: нужна главная фраза и хотя бы одна запись. После срока: «Сдан с опозданием» */

@@ -11,6 +11,8 @@ import { authorName } from "@/domain/people";
 import type { WeeklyEntry } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
+import { MentionText } from "@/components/discuss/mention-text";
+import { EntryDiscussion } from "@/components/discuss/entry-discussion";
 
 const TYPE_TONE: Record<EntryTypeCode, BadgeTone> = {
   result: "green",
@@ -26,7 +28,20 @@ export function EntryTypeBadge({ type }: { type: EntryTypeCode }) {
 /**
  * Одна запись weekly: одно событие. Флажок «В отчёт CEO» видят и ставят только владелец и администраторы.
  */
-export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEntry; showAuthor?: boolean; large?: boolean; demo?: boolean }) {
+export function EntryItem({
+  entry,
+  showAuthor,
+  large,
+  demo,
+  discussion = true,
+}: {
+  entry: WeeklyEntry;
+  showAuthor?: boolean;
+  large?: boolean;
+  demo?: boolean;
+  /** Реакции и обсуждение под записью (этап 20). "open": ветка сразу открыта, как на странице записи */
+  discussion?: boolean | "open";
+}) {
   const { manage, notify } = usePrototype();
   const run = useRunWeekly();
   const [ceo, setCeo] = useState(entry.ceo);
@@ -52,7 +67,7 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
         ) : null}
       </div>
       <h3 className={cn("font-semibold leading-snug text-ink", large ? "text-headline" : "text-lead")}>{entry.what}</h3>
-      {entry.details ? <p className={cn("whitespace-pre-line leading-relaxed text-ink", large ? "text-title" : "text-body")}>{entry.details}</p> : null}
+      {entry.details ? <MentionText text={entry.details} className={cn("whitespace-pre-line leading-relaxed text-ink", large ? "text-title" : "text-body")} /> : null}
       {entry.impact ? (
         <p className={cn("leading-relaxed", large ? "text-title" : "text-body")}>
           <span className="text-muted">Влияние на бизнес: </span>
@@ -74,7 +89,7 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
       {entry.help ? (
         <p className={cn("inline-flex items-start gap-2 font-medium text-warning-ink", large ? "text-title" : "text-body")}>
           <HandHelping className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          {entry.help}
+          <MentionText as="span" text={entry.help} className="whitespace-pre-line" />
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -104,6 +119,7 @@ export function EntryItem({ entry, showAuthor, large, demo }: { entry: WeeklyEnt
           </button>
         ) : null}
       </div>
+      {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} /> : null}
     </article>
   );
 }

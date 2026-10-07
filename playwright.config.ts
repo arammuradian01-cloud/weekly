@@ -46,6 +46,8 @@ export default defineConfig({
       SHEET_FAKE: "1",
       MAIL_TRANSPORT: "log",
       MAIL_LOG_FILE: E2E_MAIL_LOG,
+      // Письма о событиях и напоминания проверяют тесты базы: в сквозных тестах лог писем только для ссылок входа
+      MAIL_LOOP: "off",
     },
   },
 });
