@@ -49,8 +49,8 @@
 | Шкала | text-caption | 12/16 (12/16, 18/24) | то же | --text-caption | --text-caption | text-caption | заменяет text-caption 13, text-tiny 12, text-micro 11 |
 | Шкала | text-table-head | 12/16, 600 (12/16, 16/20) | то же | --text-table-head | --text-table-head | text-table-head |  |
 | Шкала | text-number | 28/32 (25/32, 50/52) | то же | --text-number | --text-number | text-number | заменяет text-hero, text-display |
-| Радиусы | radius-control | 8px | то же | --radius-control | --radius-control | rounded-control | кнопки и поля 36, 44 |
-| Радиусы | radius-control-lg | 12px | то же | --radius-control-lg | --radius-control-lg | rounded-control-lg | кнопки 52, аватары, меню |
+| Радиусы | radius-control | 12px | было 8px | --radius-control | --radius-control | rounded-control | кнопки и поля 36, 44; брендбук H36 R12 |
+| Радиусы | radius-control-lg | 16px | было 12px | --radius-control-lg | --radius-control-lg | rounded-control-lg | кнопки 52, меню; брендбук H52 R16 |
 | Радиусы | radius-card | 16px | то же | --radius-card | --radius-card | rounded-card |  |
 | Радиусы | radius-panel | 24px | то же | --radius-panel | --radius-panel | rounded-panel | боковая панель, окна |
 | Радиусы | radius-tag | 20px | то же | --radius-tag | --radius-tag | rounded-tag | теги, бейджи |

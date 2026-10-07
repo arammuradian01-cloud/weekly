@@ -115,3 +115,43 @@
 .sv-chip-task--soon { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .sv-chip-task--done { color: var(--color-text-secondary); text-decoration: line-through; }
 .sv-people-row__empty { color: var(--color-text-disabled); font-size: var(--text-caption); }
+
+/* Строка срока в «Мне»: номер серый, название, справа пилюля просрочки */
+.sv-deadline { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 16px; border-bottom: 1px solid var(--color-border); color: var(--color-text); text-decoration: none; }
+.sv-deadline:last-child { border-bottom: 0; }
+.sv-deadline:hover { background: var(--color-field); text-decoration: none; color: var(--color-text); }
+.sv-deadline__num { color: var(--color-text-secondary); flex: none; font-variant-numeric: tabular-nums; }
+.sv-deadline__title { flex: 1; min-width: 0; font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.sv-deadline-list { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+@container shell (max-width: 767px) { .sv-deadline { flex-wrap: wrap; padding: 10px 12px; } .sv-deadline .sv-overdue { margin-left: 28px; } }
+
+/* Таблица команды: люди по строкам, цифры по колонкам, итог внизу */
+.sv-team-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; font-size: var(--text-body); }
+.sv-team-table th { text-align: right; font-weight: 400; color: var(--color-text-secondary); font-size: var(--text-caption); padding: 12px 16px; background: var(--color-page); border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+.sv-team-table th:first-child { text-align: left; }
+.sv-team-table td { padding: 12px 16px; border-bottom: 1px solid var(--color-border); text-align: right; font-variant-numeric: tabular-nums; vertical-align: middle; }
+.sv-team-table td:first-child { text-align: left; }
+.sv-team-table tbody tr:hover td { background: var(--color-field); }
+.sv-team-table tfoot td { background: var(--color-page); font-weight: var(--font-weight-semibold); border-bottom: 0; }
+.sv-team-table__name { font-weight: var(--font-weight-semibold); color: var(--color-text); text-decoration: none; display: inline-flex; gap: 8px; align-items: baseline; }
+.sv-team-table__name:hover { color: var(--color-link); }
+.sv-team-table__you { font-size: var(--text-caption); color: var(--color-text-secondary); font-weight: 400; }
+.sv-team-table__role { font-size: var(--text-caption); color: var(--color-text-secondary); margin-top: 2px; }
+.sv-team-table .is-bad { color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+.sv-team-table .is-zero { color: var(--color-text-secondary); opacity: 0.7; }
+.sv-team-table__wrap { overflow-x: auto; }
+@container shell (max-width: 1023px) { .sv-team-table th, .sv-team-table td { padding: 10px 12px; } .sv-team-table .col-opt { display: none; } }
+/* Телефон: карточки людей, цифры сеткой 3×2 с подписями сверху, как на стенде */
+.sv-team-cards { display: none; }
+@container shell (max-width: 767px) {
+  .sv-team-table__wrap { display: none; }
+  .sv-team-cards { display: block; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+  .sv-team-card { padding: 14px 16px; border-bottom: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 12px; }
+  .sv-team-card:last-child { border-bottom: 0; }
+  .sv-team-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .sv-team-card__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; }
+  .sv-team-card__cell { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+  .sv-team-card__cell span:first-child { font-size: var(--text-caption); color: var(--color-text-secondary); line-height: var(--leading-caption); }
+  .sv-team-card__cell span:last-child { font-size: var(--text-card); }
+  .sv-team-card .is-bad { color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+}

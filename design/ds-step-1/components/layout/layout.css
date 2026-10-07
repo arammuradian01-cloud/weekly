@@ -108,7 +108,7 @@
 .sv-page-head__title { margin: 0; font-size: var(--text-page); line-height: var(--leading-page); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-wrap: balance; }
 .sv-page-head__sub { color: var(--color-text-secondary); font-size: var(--text-body); line-height: var(--leading-body); }
 .sv-page-head__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
-@container shell (max-width: 1023px) { .sv-page-head__row { flex-direction: column; align-items: stretch; } .sv-page-head__actions { justify-content: flex-start; } }
+@container shell (max-width: 1023px) { .sv-page-head__row { flex-direction: column; align-items: stretch; } .sv-page-head__titles { flex: 0 0 auto; min-width: 0; } .sv-page-head__actions { justify-content: flex-start; } }
 @container shell (max-width: 767px) { .sv-page-head { margin-bottom: var(--space-4); } .sv-page-head__actions { width: 100%; } .sv-page-head__actions .sv-btn--primary { flex: 1; } }
 
 /* Плитки как на главной сайта: крупные скруглённые карточки с заголовком, подписью и цифрой */
