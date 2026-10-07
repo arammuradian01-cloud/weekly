@@ -94,6 +94,8 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       { header: "В архиве", width: 9 },
       { header: "Ссылки", width: 40 },
       { header: "Из записи weekly", width: 40 },
+      { header: "Что вернёт в график", width: 40 },
+      { header: "Ждёт задачи", width: 14 },
     ],
     tasks.map((t) => [
       t.number,
@@ -120,6 +122,8 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       yes(!!t.archived),
       t.links.map((l) => `${l.title}: ${l.url}`).join("\n"),
       fromEntry.get(t.number) ?? "",
+      t.riskNote ?? "",
+      (t.waitsFor ?? []).map((w) => w.number).join(", "),
     ]),
   );
 

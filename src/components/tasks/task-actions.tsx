@@ -1,7 +1,8 @@
 "use client";
 
 // Правки задачи с правилами раздела 4 ТЗ: перенос, отмена и «Не выполнена» без причины невозможны,
-// для «Выполнена» нужен итог, для «Заблокирована» нужно написать, чем и кто может помочь.
+// для «Выполнена» нужен итог. С этапа 21 «Заблокирована» требует ссылку: задачу, которую эта ждёт, или человека
+// (тогда ему уходит просьба), а «Есть риск» требует фразу, что вернёт задачу в график.
 // С этапа 3 правки уходят на сервер: он проверяет те же правила и права ещё раз.
 
 import { createContext, useContext, useState } from "react";
@@ -11,6 +12,7 @@ import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, ty
 import { statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/domain/types";
 import {
+  blockOnPersonAction,
   changePriorityAction,
   changeStateAction,
   changeStatusAction,
@@ -19,8 +21,13 @@ import {
   type TaskActionResult,
 } from "@/app/(app)/tasks/actions";
 import { Modal } from "@/components/ui/overlays";
-import { TextArea, TextInput } from "@/components/ui/primitives";
+import { Segmented, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { addDays } from "@/domain/dates";
+import { DueField, PersonSelect } from "@/components/requests/request-parts";
+import { REQUESTS_CHANGED } from "@/components/requests/request-dialog";
+
+type WaitMode = "task" | "person" | "existing";
 
 type Actions = {
   changeStatus: (task: Task, next: StatusCode) => void;
@@ -33,13 +40,20 @@ type Actions = {
 type Pending =
   | { kind: "status"; task: Task; next: StatusCode; note: "result" | "reason" }
   | { kind: "blocked"; task: Task }
+  | { kind: "risk"; task: Task }
   | { kind: "transfer"; task: Task };
 
 const ActionsContext = createContext<Actions | null>(null);
 
 export function TaskActionsProvider({ children }: { children: React.ReactNode }) {
-  const { runTask, applyTaskResult } = usePrototype();
+  const { runTask, applyTaskResult, data, me } = usePrototype();
   const [pending, setPending] = useState<Pending | null>(null);
+  // «Заблокирована»: чего ждёт задача (этап 21)
+  const [mode, setMode] = useState<WaitMode>("task");
+  const [waitTask, setWaitTask] = useState("");
+  const [person, setPerson] = useState("");
+  const [ask, setAsk] = useState("");
+  const [askDue, setAskDue] = useState<IsoDate>("");
   const [text, setText] = useState("");
   const [date, setDate] = useState<IsoDate>("");
   const [error, setError] = useState<string | null>(null);
@@ -67,8 +81,19 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
     },
     changeState: (task, next) => {
       if (next === "blocked") {
-        setText(task.blockedBy ?? "");
+        const linked = (task.waitsFor ?? []).some((w) => !w.closed);
+        setText(task.state === "blocked" ? (task.blockedBy ?? "") : "");
+        setMode(linked ? "existing" : "task");
+        setWaitTask("");
+        setPerson("");
+        setAsk("");
+        setAskDue(addDays(data.today, 2));
         setPending({ kind: "blocked", task });
+        return;
+      }
+      if (next === "at-risk") {
+        setText(task.riskNote ?? "");
+        setPending({ kind: "risk", task });
         return;
       }
       void runTask(() => changeStateAction(task.number, next), `Состояние: ${stateLabel(next).toLowerCase()}`);
@@ -109,18 +134,33 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       const t = pending.task;
       return void finish(() => transferDueAction(t.number, date, text.trim()), `Срок задачи ${t.number} перенесён на ${formatLong(date)}`);
     }
-    if (!text.trim()) {
-      return setError(
-        pending.kind === "blocked"
-          ? "Напишите, чем заблокирована задача и кто может помочь"
-          : pending.note === "result"
-            ? "Нужен короткий итог или ссылка на результат"
-            : "Без причины так закрыть задачу нельзя",
-      );
-    }
     if (pending.kind === "blocked") {
       const t = pending.task;
-      return void finish(() => changeStateAction(t.number, "blocked", text.trim()), `Задача ${t.number} заблокирована`);
+      const note = text.trim() || undefined;
+      if (mode === "task") {
+        const n = Number(waitTask.replace(/\D/g, ""));
+        if (!n) return setError("Укажите номер задачи, которую ждёт эта");
+        return void finish(() => changeStateAction(t.number, "blocked", note, n), `Задача ${t.number} ждёт задачу ${n}`);
+      }
+      if (mode === "person") {
+        if (!person) return setError("Выберите, кого ждёт задача");
+        if (!ask.trim()) return setError("Напишите, что нужно от человека: это уйдёт ему просьбой");
+        return void finish(async () => {
+          const r = await blockOnPersonAction(t.number, { to: person, text: ask, due: askDue, note: note ?? null });
+          if (r.ok) window.dispatchEvent(new Event(REQUESTS_CHANGED));
+          return r;
+        }, `Задача ${t.number} заблокирована, просьба ушла`);
+      }
+      return void finish(() => changeStateAction(t.number, "blocked", note), `Задача ${t.number} заблокирована`);
+    }
+    if (!text.trim()) {
+      return setError(
+        pending.kind === "risk" ? "Напишите одной фразой, что вернёт задачу в график" : pending.note === "result" ? "Нужен короткий итог или ссылка на результат" : "Без причины так закрыть задачу нельзя",
+      );
+    }
+    if (pending.kind === "risk") {
+      const t = pending.task;
+      return void finish(() => changeStateAction(t.number, "at-risk", text.trim()), `Задача ${t.number}: есть риск`);
     }
     const { task, next } = pending;
     void finish(() => changeStatusAction(task.number, next, text.trim()), statusToast(task, next));
@@ -131,6 +171,8 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       ? `Перенести срок задачи ${pending.task.number}`
       : pending?.kind === "blocked"
         ? `Задача ${pending.task.number} заблокирована`
+        : pending?.kind === "risk"
+          ? `Задача ${pending.task.number}: есть риск`
         : pending
           ? `Задача ${pending.task.number}: ${statusOf(pending.next).label.toLowerCase()}`
           : "";
@@ -157,12 +199,41 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
                 />
                 <TextArea label="Причина переноса" id="tr-reason" value={text} onChange={(e) => setText(e.target.value)} autoFocus />
               </>
+            ) : pending.kind === "blocked" ? (
+              <>
+                <Segmented
+                  label="Чего ждёт задача"
+                  value={mode}
+                  onChange={setMode}
+                  options={[
+                    ...((pending.task.waitsFor ?? []).some((w) => !w.closed) ? [{ value: "existing" as const, label: "Связь уже есть" }] : []),
+                    { value: "task" as const, label: "Ждёт задачу" },
+                    { value: "person" as const, label: "Ждёт человека" },
+                  ]}
+                  className="self-start"
+                />
+                {mode === "task" ? (
+                  <TextInput label="Номер задачи, которую ждёт эта" id="st-wait" inputMode="numeric" value={waitTask} onChange={(e) => setWaitTask(e.target.value)} autoFocus />
+                ) : mode === "person" ? (
+                  <>
+                    <PersonSelect id="st-person" label="Кого ждёт" value={person} onChange={setPerson} exclude={me.slug} />
+                    <TextArea label="Что нужно от человека" id="st-ask" value={ask} onChange={(e) => setAsk(e.target.value)} hint="Уйдёт ему просьбой в «Мне»: он примет её со сроком или ответит отказом" />
+                    <DueField id="st-ask-due" label="К какому сроку" value={askDue} onChange={setAskDue} today={data.today} />
+                  </>
+                ) : (
+                  <p className="text-small text-muted">
+                    Задача уже ждёт: {(pending.task.waitsFor ?? []).filter((w) => !w.closed).map((w) => `задачу ${w.number}`).join(", ")}.
+                  </p>
+                )}
+                <TextArea label="Пояснение, если нужно" id="st-note" value={text} onChange={(e) => setText(e.target.value)} />
+              </>
             ) : (
               <TextArea
-                label={pending.kind === "blocked" ? "Чем заблокирована и кто может помочь" : pending.note === "result" ? "Итог или ссылка на результат" : "Причина"}
+                label={pending.kind === "risk" ? "Что вернёт задачу в график" : pending.note === "result" ? "Итог или ссылка на результат" : "Причина"}
                 id="st-note"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
+                hint={pending.kind === "risk" ? "Одна фраза: например, «Договоримся с партнёром о данных до пятницы»" : undefined}
                 autoFocus
               />
             )}

@@ -143,6 +143,7 @@ function snapshot(row: TaskRow): TaskSnapshot {
     closedAt: row.closedAt?.toISOString() ?? null,
     state: row.state,
     blockedBy: row.blockedBy,
+    riskNote: row.riskNote,
     priority: row.priority,
     whereNow: row.whereNow,
     whereUpdatedAt: isoFromDbDate(row.whereUpdatedAt),
@@ -179,22 +180,25 @@ type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: O
  * plan получает задачу и права и возвращает изменения. undo: false значит «эту правку не отменяют».
  */
 async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
-  return prisma.$transaction(async (tx) => {
-    const scope = await scopeOfActor(tx, actor);
-    const row = await lockRow(tx, number, { scope, personId: actor.personId });
-    if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
-    const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(tx, scope.leadPeople) });
-    const before = snapshot(row);
-    const p = await plan(row, can, tx);
-    if (!p.changes.length) fail("Ничего не изменилось");
-    const updated = await tx.task.update({ where: { id: row.id }, data: p.data, include: taskInclude });
-    await audit(tx, actor, number, p.changes);
-    const undo =
-      p.undo === false
-        ? undefined
-        : issueUndoToken({ kind: "restore", number, snapshot: before, expectUpdatedAt: updated.updatedAt.toISOString(), ...(p.undo ?? {}) }, actor.personId);
-    return { task: toTaskDto(updated), undo };
-  });
+  return prisma.$transaction((tx) => mutateIn(tx, actor, number, plan));
+}
+
+/** Тот же ход правки внутри чужой транзакции: так «Заблокирована, ждёт человека» создаёт просьбу и меняет задачу разом */
+async function mutateIn(tx: Tx, actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
+  const scope = await scopeOfActor(tx, actor);
+  const row = await lockRow(tx, number, { scope, personId: actor.personId });
+  if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
+  const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(tx, scope.leadPeople) });
+  const before = snapshot(row);
+  const p = await plan(row, can, tx);
+  if (!p.changes.length) fail("Ничего не изменилось");
+  const updated = await tx.task.update({ where: { id: row.id }, data: p.data, include: taskInclude });
+  await audit(tx, actor, number, p.changes);
+  const undo =
+    p.undo === false
+      ? undefined
+      : issueUndoToken({ kind: "restore", number, snapshot: before, expectUpdatedAt: updated.updatedAt.toISOString(), ...(p.undo ?? {}) }, actor.personId);
+  return { task: toTaskDto(updated), undo };
 }
 
 // ---------- Чтение ----------
@@ -445,6 +449,8 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
     // Задача из просьбы закрыта: просьба закрывается вместе с ней, автор просьбы узнаёт об этом. Закрытую задачу
     // открыли снова: просьба снова принята (этап 21)
     if (closing) await finishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    // Задачу ждали другие: их ответственные узнают, что её закрыли (этап 21)
+    if (closing) await notifyDependents(tx, { id: row.id, number }, actor, (dep) => `Задача ${number}, которую ждёт ваша задача ${dep.number}: ${statusOf(next).label.toLowerCase()}`);
     else if (CLOSED_DB.includes(row.status)) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
     await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
@@ -469,18 +475,150 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
   });
 }
 
-export async function changeState(actor: Actor, number: number, next: StateCode, blockedBy?: string): Promise<TaskResult> {
-  return mutate(actor, number, async (row, can) => {
-    if (!can.state) fail("Состояние меняет ответственный, владелец или администратор");
-    if (next === "unset") fail("Выберите состояние");
-    const db: TaskState = stateDb(next) ?? fail("Нет такого состояния");
-    const reason = db === "BLOCKED" ? required(blockedBy, LIMITS.reason, "Напишите, чем заблокирована задача и кто может помочь", "Чем заблокирована") : null;
-    if (db === row.state && reason === row.blockedBy) fail("Состояние уже такое");
-    return {
-      data: { state: db, blockedBy: reason },
-      changes: [{ field: "Состояние", before: stateLabel(stateCode(row.state)), after: reason ? `${stateLabel(next)}. ${reason}` : stateLabel(next) }],
-    };
+/** Чего ждёт задача, когда её блокируют (этап 21): другую задачу по номеру. Человека ждут через просьбу (requests) */
+export type StateOptions = { waitTask?: number | null };
+
+/**
+ * Состояние задачи (этап 21, модуль М5). «Заблокирована» требует ссылку: задачу, которую эта ждёт, или открытую
+ * просьбу по задаче. Текст остаётся пояснением. «Есть риск» требует фразу: что вернёт задачу в график
+ */
+export async function changeState(actor: Actor, number: number, next: StateCode, note?: string | null, opts: StateOptions = {}): Promise<TaskResult> {
+  return mutate(actor, number, (row, can, tx) => statePlan(tx, actor, row, can, next, note, opts));
+}
+
+/** То же внутри чужой транзакции: «ждёт человека» сначала создаёт просьбу, потом блокирует задачу */
+export async function changeStateIn(tx: Tx, actor: Actor, number: number, next: StateCode, note?: string | null, opts: StateOptions = {}): Promise<TaskResult> {
+  return mutateIn(tx, actor, number, (row, can, t) => statePlan(t, actor, row, can, next, note, opts));
+}
+
+async function statePlan(tx: Tx, actor: Actor, row: TaskRow, can: TaskPermissions, next: StateCode, note: string | null | undefined, opts: StateOptions): Promise<Plan> {
+  if (!can.state) fail("Состояние меняет ответственный, владелец или администратор");
+  if (next === "unset") fail("Выберите состояние");
+  const db: TaskState = stateDb(next) ?? fail("Нет такого состояния");
+  const text = optional(note, LIMITS.reason, db === "AT_RISK" ? "Что вернёт задачу в график" : "Пояснение");
+  const changes: Change[] = [];
+  let blockedBy: string | null = null;
+  let riskNote: string | null = null;
+  if (db === "AT_RISK") {
+    if (!text) fail("Напишите одной фразой, что вернёт задачу в график");
+    riskNote = text;
+  }
+  if (db === "BLOCKED") {
+    if (opts.waitTask !== undefined && opts.waitTask !== null) {
+      const link = await linkDependency(tx, actor, row, Number(opts.waitTask));
+      if (link.created) changes.push({ field: "Ждёт задачу", after: `${link.number}. ${link.title}` });
+      blockedBy = text ?? `Ждёт задачу ${link.number}`;
+    } else {
+      const waits = await openWaits(tx, row.id);
+      if (!waits) fail("Укажите, кого ждёт задача: другую задачу или человека");
+      blockedBy = text ?? waits;
+    }
+  }
+  if (db === row.state && blockedBy === row.blockedBy && riskNote === row.riskNote && !changes.length) fail("Состояние уже такое");
+  const label = stateLabel(next);
+  const detail = blockedBy ?? riskNote;
+  changes.unshift({ field: "Состояние", before: stateLabel(stateCode(row.state)), after: detail ? `${label}. ${detail}` : label });
+  return { data: { state: db, blockedBy, riskNote }, changes };
+}
+
+/** Есть ли у задачи открытая ссылка: задача, которую она ждёт, или просьба по ней. Ответ: подпись для «Чем заблокирована» */
+async function openWaits(tx: Tx, taskId: string): Promise<string | null> {
+  const [request, dep] = await Promise.all([
+    tx.helpRequest.findFirst({ where: { taskId, status: { in: ["OPEN", "ACCEPTED"] } }, orderBy: { createdAt: "desc" }, select: { addressee: { select: { fullName: true } } } }),
+    tx.taskDependency.findFirst({ where: { taskId, blocker: { status: { notIn: CLOSED_DB } } }, orderBy: { createdAt: "desc" }, select: { blocker: { select: { number: true } } } }),
+  ]);
+  if (request) return `Ждёт ответа: ${request.addressee.fullName}`;
+  if (dep) return `Ждёт задачу ${dep.blocker.number}`;
+  return null;
+}
+
+/**
+ * Связать задачу с задачей, которую она ждёт. Обе видны тому, кто связывает, круга не будет. Ответственному
+ * за ту задачу событие: её ждут (без названия зависимой: он может её не видеть)
+ */
+async function linkDependency(tx: Tx, actor: Actor, row: TaskRow, blockerNumber: number): Promise<{ created: boolean; number: number; title: string }> {
+  if (!Number.isInteger(blockerNumber) || blockerNumber < 1 || blockerNumber > 2_147_483_647) fail("Укажите номер задачи, которую ждёт эта");
+  if (blockerNumber === row.number) fail("Задача не может ждать сама себя");
+  const blocker = await tx.task.findUnique({
+    where: { number: blockerNumber },
+    select: { id: true, number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } },
   });
+  const scope = await scopeOfActor(tx, actor);
+  if (!blocker || blocker.archivedAt || !canSeeRow(scope, blocker, actor.personId)) fail(`Задачи ${blockerNumber} нет`);
+  const exists = await tx.taskDependency.findUnique({ where: { taskId_blockerId: { taskId: row.id, blockerId: blocker!.id } } });
+  if (exists) return { created: false, number: blocker!.number, title: blocker!.title };
+  // Круг: та задача сама (через другие) уже ждёт эту
+  let frontier = [blocker!.id];
+  const seen = new Set(frontier);
+  for (let depth = 0; frontier.length && depth < 50; depth++) {
+    const next = await tx.taskDependency.findMany({ where: { taskId: { in: frontier } }, select: { blockerId: true } });
+    if (next.some((d) => d.blockerId === row.id)) fail(`Связь замкнётся в круг: задача ${blocker!.number} уже ждёт эту`);
+    frontier = next.map((d) => d.blockerId).filter((id) => !seen.has(id));
+    for (const id of frontier) seen.add(id);
+  }
+  await tx.taskDependency.createMany({ data: [{ taskId: row.id, blockerId: blocker!.id, createdById: actor.personId }], skipDuplicates: true });
+  await notify(tx, { kind: "TASK_DEPENDENCY", recipients: [blocker!.ownerId], actor, subject: taskSubject(blocker!.number), taskId: blocker!.id, text: `Вашу задачу ждёт задача ${row.number}` });
+  return { created: true, number: blocker!.number, title: blocker!.title };
+}
+
+/** Связь «ждёт задачу» вручную, из карточки (этап 21) */
+export async function addDependency(actor: Actor, number: number, blockerNumber: number): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    if (!can.state) fail("Связи задачи меняет ответственный, владелец или администратор");
+    const link = await linkDependency(tx, actor, row, Number(blockerNumber));
+    if (!link.created) fail("Эта связь уже есть");
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Ждёт задачу", after: `${link.number}. ${link.title}` }], undo: false };
+  });
+}
+
+export async function removeDependency(actor: Actor, number: number, blockerNumber: number): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    if (!can.state) fail("Связи задачи меняет ответственный, владелец или администратор");
+    const blocker = await tx.task.findUnique({ where: { number: Number(blockerNumber) }, select: { id: true, number: true } });
+    const removed = blocker ? await tx.taskDependency.deleteMany({ where: { taskId: row.id, blockerId: blocker.id } }) : { count: 0 };
+    if (!removed.count) fail("Этой связи уже нет");
+    return { data: { updatedAt: new Date() }, changes: [{ field: "Ждёт задачу", before: String(blocker!.number), after: "связь снята" }], undo: false };
+  });
+}
+
+/** Событие ответственным задач, которые ждут эту: только открытым и, если задан, только тем, кого касается */
+async function notifyDependents(tx: Tx, blocker: { id: string; number: number }, actor: Actor, text: (dep: { number: number; due: Date }) => string | null): Promise<number> {
+  const deps = await tx.taskDependency.findMany({
+    where: { blockerId: blocker.id, task: { status: { notIn: CLOSED_DB }, archivedAt: null } },
+    select: { task: { select: { id: true, number: true, due: true, ownerId: true } } },
+  });
+  let sent = 0;
+  for (const { task } of deps) {
+    const line = text(task);
+    if (!line) continue;
+    sent += await notify(tx, { kind: "TASK_DEPENDENCY", recipients: [task.ownerId], actor, subject: taskSubject(task.number), taskId: task.id, text: line });
+  }
+  return sent;
+}
+
+export type TaskLinkView = { number: number; title: string | null; due: IsoDate; status: StatusCode; owner: PersonSlug | null; late: boolean };
+
+/** Связи задачи для карточки: что она ждёт и кто ждёт её. Чужие задачи без названия */
+export async function taskLinks(actor: Actor, number: number): Promise<{ waitsFor: TaskLinkView[]; blocks: TaskLinkView[]; canEdit: boolean } | null> {
+  const scope = await scopeOfActor(prisma, actor);
+  const row = await prisma.task.findUnique({ where: { number }, include: taskInclude });
+  if (!row || !canSeeRow(scope, row, actor.personId)) return null;
+  const select = { id: true, number: true, title: true, due: true, status: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, owner: { select: { slug: true } }, coExecutors: { select: { personId: true } } } as const;
+  const [waits, blocks] = await Promise.all([
+    prisma.taskDependency.findMany({ where: { taskId: row.id }, select: { blocker: { select } }, orderBy: { createdAt: "asc" } }),
+    prisma.taskDependency.findMany({ where: { blockerId: row.id }, select: { task: { select } }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const view = (t: (typeof waits)[number]["blocker"], late: boolean): TaskLinkView => {
+    const visible = !t.archivedAt && canSeeRow(scope, t, actor.personId);
+    return { number: t.number, title: visible ? t.title : null, due: isoFromDbDate(t.due), status: statusCode(t.status), owner: visible ? ((t.owner?.slug as PersonSlug | undefined) ?? null) : null, late };
+  };
+  const open = (s: TaskStatus) => !CLOSED_DB.includes(s);
+  const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(prisma, scope.leadPeople) });
+  return {
+    waitsFor: waits.map((w) => view(w.blocker, open(w.blocker.status) && w.blocker.due > row.due)),
+    blocks: blocks.map((b) => view(b.task, open(row.status) && row.due > b.task.due)),
+    canEdit: can.state,
+  };
 }
 
 export async function changePriority(actor: Actor, number: number, next: PriorityCode): Promise<TaskResult> {
@@ -518,6 +656,9 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
     // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
     await syncRequestDue(tx, { id: row.id, number }, dbDate(to), actor);
+    // Задачи, которые ждут эту: срок ушёл позже их срока, их ответственные узнают (этап 21)
+    const newDue = dbDate(to);
+    await notifyDependents(tx, { id: row.id, number }, actor, (dep) => (dep.due < newDue ? `Срок задачи ${number}, которую ждёт ваша задача ${dep.number}, перенесён на ${formatLong(to)}: позже вашего срока` : null));
     // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
     await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
     await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
@@ -603,6 +744,40 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
       changes.push({ field: "Соисполнители", before: list(co), after: list(co.filter((x) => x !== owner)) });
     }
     return { data: { ownerId, ownerAll: owner === "all" }, changes, undo: false };
+  });
+}
+
+/**
+ * Передать задачу (этап 21, модуль М5): новый ответственный и комментарий, прежний становится соисполнителем.
+ * Ответственный передаёт человеку из команды задачи, руководитель команды людям своих команд, режим управления кому угодно.
+ * В истории видно, кто кому и почему передал, новому ответственному событие в «Мне»
+ */
+export async function handOver(actor: Actor, number: number, to: PersonSlug, comment: string): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can, tx) => {
+    if (!can.handover) fail(row.status === "PROPOSED" ? "Предложенную задачу сначала принимают, потом передают" : CLOSED_DB.includes(row.status) ? "Закрытую задачу не передают" : "Передаёт задачу ответственный, руководитель команды или режим управления");
+    const why = required(comment, LIMITS.reason, "Напишите, почему передаёте: новый ответственный увидит комментарий", "Комментарий");
+    const target = (await peopleBySlug(tx)).get(String(to));
+    if (!target) fail("Выберите, кому передать, из списка");
+    if (target!.id === row.ownerId) fail("Задача уже у этого человека");
+    if (!actor.management) {
+      const scope = await scopeOfActor(tx, actor);
+      const team = await tx.team.findUnique({ where: { id: row.teamId }, select: { leaderId: true, members: { select: { personId: true } } } });
+      const inTeam = !!team && (team.leaderId === target!.id || team.members.some((m) => m.personId === target!.id));
+      if (!inTeam && !scope.leadPeople.includes(target!.id)) fail("Передать можно человеку из команды задачи. Другому её можно предложить новой задачей или попросить его");
+    }
+    const names = await nameMap(tx);
+    const before = ownerLabel(row, names);
+    const changes: Change[] = [{ action: "task.handover", field: "Ответственный", before, after: `${target!.fullName}. Причина: ${why}` }];
+    const prevId = row.ownerAll ? null : row.ownerId;
+    // Прежний ответственный остаётся в задаче соисполнителем, новый соисполнителем больше не числится
+    await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: target!.id } });
+    if (prevId) await tx.taskCoExecutor.createMany({ data: [{ taskId: row.id, personId: prevId }], skipDuplicates: true });
+    await notify(tx, { kind: "TASK_ASSIGNED", recipients: [target!.id], actor, subject: taskSubject(number), taskId: row.id, text: `Задача передана вам: ${quote(why)}` });
+    if (prevId && prevId !== actor.personId) {
+      await notify(tx, { kind: "TASK_COEXECUTOR", recipients: [prevId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу передали: ${target!.fullName}. Вы соисполнитель` });
+    }
+    await notifyWatchers(tx, row.id, `Задачу передали: ${target!.fullName}`, actor, [target!.id, prevId]);
+    return { data: { ownerId: target!.id, ownerAll: false }, changes, undo: false };
   });
 }
 
@@ -816,6 +991,7 @@ async function restoreChanges(tx: Tx, row: TaskRow, b: TaskSnapshot): Promise<Ch
   add("Итог или причина", row.resolution, b.resolution);
   add("Состояние", stateLabel(stateCode(row.state)), stateLabel(stateCode(b.state as TaskState | null)));
   add("Чем заблокирована", row.blockedBy, b.blockedBy);
+  if (b.riskNote !== undefined) add("Что вернёт в график", row.riskNote, b.riskNote);
   add("Приоритет", priorityOf(priorityCode(row.priority)).label, priorityOf(priorityCode(b.priority as TaskPriority | null)).label);
   add("Где сейчас", row.whereNow, b.whereNow);
   add("Срок", formatLong(isoFromDbDate(row.due)), formatLong(b.due));
@@ -888,6 +1064,7 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
         closedAt: b.closedAt ? new Date(b.closedAt) : null,
         state: b.state as TaskState | null,
         blockedBy: b.blockedBy,
+        riskNote: b.riskNote === undefined ? row.riskNote : b.riskNote,
         priority: b.priority as TaskPriority | null,
         whereNow: b.whereNow,
         whereUpdatedAt: dbDate(b.whereUpdatedAt),

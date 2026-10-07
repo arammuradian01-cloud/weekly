@@ -16,7 +16,7 @@ import type { RequestStatus } from "@/generated/prisma/enums";
 import { formatShort, type IsoDate } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import { REQUEST_STATUS, type RequestCan, type RequestStatusCode, type RequestView } from "@/domain/requests";
-import { TaskRuleError, createTaskIn, type Actor } from "@/lib/tasks/service";
+import { TaskRuleError, changeStateIn, createTaskIn, type Actor, type TaskResult } from "@/lib/tasks/service";
 import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowToday } from "@/lib/tasks/dates";
 import { CLOSED_DB } from "@/lib/tasks/codes";
 import { TOP_TEAM, loadScope, loadTeamNodes, type Scope, type TeamNode } from "@/lib/org/scope";
@@ -212,6 +212,18 @@ export async function createRequest(actor: Actor, input: NewRequestInput, now = 
   return prisma.$transaction(async (tx) => {
     const row = await createRequestIn(tx, actor, input, now);
     return toView(await accessOf(tx, actor), row, now);
+  });
+}
+
+/**
+ * «Заблокирована, ждёт человека» (этап 21, модуль М5): одной транзакцией просьба к человеку по задаче и состояние
+ * задачи. Пояснение необязательно, без него в задаче будет «Ждёт ответа: имя»
+ */
+export async function blockOnPerson(actor: Actor, taskNumber: number, input: { to: string; text: string; due: IsoDate; note?: string | null }, now = new Date()): Promise<{ task: TaskResult; request: RequestView }> {
+  return prisma.$transaction(async (tx) => {
+    const row = await createRequestIn(tx, actor, { to: input.to, text: input.text, due: input.due, task: taskNumber }, now);
+    const task = await changeStateIn(tx, actor, taskNumber, "blocked", input.note ?? null);
+    return { task, request: toView(await accessOf(tx, actor), row, now) };
   });
 }
 

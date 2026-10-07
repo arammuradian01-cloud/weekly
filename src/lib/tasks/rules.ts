@@ -117,6 +117,8 @@ export type TaskPermissions = {
   archive: boolean;
   /** Предложенную задачу принимает или отклоняет адресат, его руководитель или режим управления */
   confirm: boolean;
+  /** Передать задачу другому с комментарием (этап 21): ответственный, руководитель команды задачи, режим управления */
+  handover: boolean;
 };
 
 /**
@@ -126,7 +128,7 @@ export type TaskPermissions = {
 export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?: boolean): TaskPermissions {
   const v: Viewer = typeof viewer === "string" ? { slug: viewer, management: manageFlag ? "ADMIN" : null } : viewer;
   if (v.observer) {
-    return { status: false, state: false, where: false, due: false, priority: false, edit: false, owner: false, coExecutors: false, links: false, comment: false, archive: false, confirm: false };
+    return { status: false, state: false, where: false, due: false, priority: false, edit: false, owner: false, coExecutors: false, links: false, comment: false, archive: false, confirm: false, handover: false };
   }
   // Режим управления или руководитель команды задачи (этап 14)
   const manage = !!v.management || leadsTeam(v, task.team);
@@ -154,6 +156,7 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
     comment: true,
     archive: v.management === "OWNER",
     confirm: manage || addressee,
+    handover: !proposed && !["done", "failed", "cancelled"].includes(task.status) && (manage || directOwner),
   };
 }
 
@@ -193,4 +196,10 @@ export function statusNeedsNote(next: StatusCode): "result" | "reason" | null {
   if (next === "done") return "result";
   if (next === "failed" || next === "cancelled") return "reason";
   return null;
+}
+
+/** Задачи, которые эта ждёт и которые не успеют к её сроку (этап 21): открыты, а их срок позже */
+export function lateWaits(task: Pick<Task, "waitsFor" | "due" | "status">): number[] {
+  if (task.status === "done" || task.status === "failed" || task.status === "cancelled") return [];
+  return (task.waitsFor ?? []).filter((w) => !w.closed && w.due > task.due).map((w) => w.number);
 }

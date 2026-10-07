@@ -18,6 +18,8 @@ export type TaskSnapshot = {
   closedAt: string | null;
   state: string | null;
   blockedBy: string | null;
+  /** Что вернёт в график (этап 21). Нет в старых токенах */
+  riskNote?: string | null;
   priority: string | null;
   whereNow: string;
   whereUpdatedAt: string;

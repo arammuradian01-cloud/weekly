@@ -14,6 +14,7 @@ import { prisma } from "@/lib/db";
 import { loadScope, TOP_TEAM } from "@/lib/org/scope";
 import { moveTask } from "@/lib/org/service";
 import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
+import { blockOnPerson } from "@/lib/requests/service";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string } | { ok: false; error: string };
 
@@ -36,7 +37,7 @@ function readerOf(a: svc.Actor): svc.TaskReader {
 }
 
 function checkNumber(number: unknown): number {
-  if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) throw new svc.TaskRuleError("Неверный номер задачи");
+  if (typeof number !== "number" || !Number.isInteger(number) || number <= 0 || number > 2_147_483_647) throw new svc.TaskRuleError("Неверный номер задачи");
   return number;
 }
 
@@ -60,8 +61,40 @@ export async function changeStatusAction(number: number, next: StatusCode, note?
   return run((a) => svc.changeStatus(a, checkNumber(number), next, note));
 }
 
-export async function changeStateAction(number: number, next: StateCode, blockedBy?: string) {
-  return run((a) => svc.changeState(a, checkNumber(number), next, blockedBy));
+export async function changeStateAction(number: number, next: StateCode, note?: string, waitTask?: number | null) {
+  return run((a) => svc.changeState(a, checkNumber(number), next, note, { waitTask: waitTask === undefined || waitTask === null ? null : Number(waitTask) }));
+}
+
+/** «Заблокирована, ждёт человека» (этап 21): просьба человеку и состояние задачи разом */
+export async function blockOnPersonAction(number: number, input: { to: string; text: string; due: IsoDate; note?: string | null }) {
+  return run(async (a) => (await blockOnPerson(a, checkNumber(number), { to: String(input?.to ?? ""), text: String(input?.text ?? ""), due: String(input?.due ?? ""), note: input?.note ? String(input.note) : null })).task);
+}
+
+export async function addDependencyAction(number: number, blocker: number) {
+  return run((a) => svc.addDependency(a, checkNumber(number), Number(blocker)));
+}
+
+export async function removeDependencyAction(number: number, blocker: number) {
+  return run((a) => svc.removeDependency(a, checkNumber(number), Number(blocker)));
+}
+
+/** Передать задачу с комментарием (этап 21) */
+export async function handOverAction(number: number, to: string, comment: string) {
+  return run((a) => svc.handOver(a, checkNumber(number), String(to ?? "") as PersonSlug, String(comment ?? "")));
+}
+
+/** Связи задачи для карточки: что ждёт и кто ждёт её (этап 21) */
+export async function taskLinksAction(number: number): Promise<{ ok: true; value: NonNullable<Awaited<ReturnType<typeof svc.taskLinks>>> } | { ok: false; error: string }> {
+  try {
+    const value = await svc.taskLinks(await actor(), checkNumber(number));
+    if (!value) return { ok: false, error: `Задачи ${number} нет` };
+    return { ok: true, value };
+  } catch (error) {
+    unstable_rethrow(error);
+    if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
+    console.error("Связи задачи не загрузились", error);
+    return { ok: false, error: "Не загрузилось. Обновите страницу" };
+  }
 }
 
 export async function changePriorityAction(number: number, next: PriorityCode) {

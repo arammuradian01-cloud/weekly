@@ -269,8 +269,10 @@ model Task {
   status         TaskStatus     @default(IN_PROGRESS)
   /// null: состояние не задано (задачи из таблицы)
   state          TaskState?
-  /// Чем заблокирована и кто может помочь: обязательно при BLOCKED
+  /// Чем заблокирована и кто может помочь: при BLOCKED. С этапа 21 пояснение к ссылке на задачу или человека
   blockedBy      String?
+  /// Что вернёт задачу в график: обязательно при AT_RISK (этап 21)
+  riskNote       String?
   /// «Где сейчас»: одна-две фразы о текущем состоянии
   whereNow       String         @default("")
   whereUpdatedAt DateTime       @db.Date
@@ -312,6 +314,9 @@ model Task {
   /// Просьбы по задаче и просьбы, из которых задача сделана (этап 21)
   requests     HelpRequest[] @relation("RequestTask")
   fromRequests HelpRequest[] @relation("RequestResultTask")
+  /// Связи задач (этап 21): какие задачи эта ждёт и какие ждут её
+  waitsFor     TaskDependency[] @relation("DependencyTask")
+  blocks       TaskDependency[] @relation("DependencyBlocker")
 
   @@index([status])
   @@index([ownerId])
@@ -594,6 +599,8 @@ enum InboxKind {
   REQUEST
   /// Ответ на вашу просьбу: принята, отклонена, выполнена, стала задачей (этап 21)
   REQUEST_ANSWER
+  /// Связь задач: вашу задачу ждут, задача, которую ждёт ваша, перенесена или закрыта (этап 21)
+  TASK_DEPENDENCY
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -976,4 +983,19 @@ model HelpRequest {
   @@index([entryId])
   @@index([resultTaskId])
   @@map("help_requests")
+}
+
+/// Связь задач (этап 21, модуль М5): задача task ждёт задачу blocker. Круговых связей нет: это проверяет сервер
+model TaskDependency {
+  taskId      String
+  task        Task     @relation("DependencyTask", fields: [taskId], references: [id], onDelete: Cascade)
+  blockerId   String
+  blocker     Task     @relation("DependencyBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  /// Кто связал: id человека, без связи с таблицей людей
+  createdById String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([taskId, blockerId])
+  @@index([blockerId])
+  @@map("task_dependencies")
 }

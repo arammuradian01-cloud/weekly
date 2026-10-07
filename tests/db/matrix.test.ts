@@ -199,7 +199,7 @@ const MATRIX: Row[] = [
     expect: [true, true, true, false],
     steps: (a, who) => [
       { name: "статус своей", act: () => tasks.changeStatus(a, ownTask(who), "clarify") },
-      { name: "состояние своей", act: () => tasks.changeState(a, ownTask(who), "at-risk") },
+      { name: "состояние своей", act: () => tasks.changeState(a, ownTask(who), "at-risk", "Договоримся о данных до пятницы") },
     ],
   },
   {
@@ -207,7 +207,7 @@ const MATRIX: Row[] = [
     expect: [true, true, false, false],
     steps: (a) => [
       { name: "статус чужой", act: () => tasks.changeStatus(a, fx.foreign, "clarify") },
-      { name: "состояние чужой", act: () => tasks.changeState(a, fx.foreign, "at-risk") },
+      { name: "состояние чужой", act: () => tasks.changeState(a, fx.foreign, "at-risk", "Договоримся о данных до пятницы") },
     ],
   },
   {

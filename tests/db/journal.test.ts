@@ -50,7 +50,7 @@ describe("по любой правке видно, что было и что с�
 
     const edits: Edit[] = [
       { name: "статус задачи", run: () => tasks.changeStatus(reva, t, "clarify"), both: true },
-      { name: "состояние задачи", run: () => tasks.changeState(reva, t, "at-risk"), both: true },
+      { name: "состояние задачи", run: () => tasks.changeState(reva, t, "at-risk", "Договоримся о данных до пятницы"), both: true },
       { name: "приоритет", run: () => tasks.changePriority(owner, t, "high"), both: true },
       { name: "где сейчас", run: () => tasks.updateWhere(reva, t, "Жду ответа партнёра") },
       { name: "срок", run: () => tasks.transferDue(reva, t, addDays(due, 7), "Партнёр в отпуске"), both: true },

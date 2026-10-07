@@ -99,7 +99,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
                 </Link>
                 <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-muted">
                   <RequestBadge status={r.status} />
-                  {compactName(r.author)} просит {compactName(r.addressee)}, срок {formatShort(currentDue(r))}
+                  {compactName(r.author)}, адресат {compactName(r.addressee)}, срок {formatShort(currentDue(r))}
                 </p>
               </li>
             ))}

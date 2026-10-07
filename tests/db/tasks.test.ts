@@ -177,10 +177,11 @@ describe("правила просрочки и переносов (раздел 
     await expect(prisma.task.update({ where: { number: 7 }, data: { status: "CANCELLED", resolution: null } })).rejects.toThrow();
   });
 
-  it("«Заблокирована» только с объяснением, закрытой задаче срок не переносят", async () => {
+  it("«Заблокирована» только со ссылкой на задачу или человека (этап 21), закрытой задаче срок не переносят", async () => {
     const reva = await actors.reva();
-    await expectRule(svc.changeState(reva, 9, "blocked"), /чем заблокирована/);
-    const blocked = await svc.changeState(reva, 9, "blocked", "Нет доступа к LRF, поможет Даша");
+    await expectRule(svc.changeState(reva, 9, "blocked"), /кого ждёт задача/);
+    await expectRule(svc.changeState(reva, 9, "blocked", "Нет доступа к LRF, поможет Даша"), /кого ждёт задача/);
+    const blocked = await svc.changeState(reva, 9, "blocked", "Нет доступа к LRF, поможет Даша", { waitTask: 13 });
     expect(blocked.task.blockedBy).toBe("Нет доступа к LRF, поможет Даша");
     const unblocked = await svc.changeState(reva, 9, "on-track");
     expect(unblocked.task.blockedBy).toBeUndefined();
@@ -193,7 +194,7 @@ describe("матрица прав раздела 2 на сервере", () => {
   it("лидер меняет статус, состояние и срок только своей задачи", async () => {
     const reva = await actors.reva();
     await expectRule(svc.changeStatus(reva, 13, "clarify"), /Статус меняет/);
-    await expectRule(svc.changeState(reva, 13, "at-risk"), /Состояние меняет/);
+    await expectRule(svc.changeState(reva, 13, "at-risk", "Ждём данные"), /Состояние меняет/);
     await expectRule(svc.transferDue(reva, 13, future, "Причина"), /Срок переносит/);
     await expectRule(svc.updateWhere(reva, 13, "Текст"), /пишут ответственный и соисполнители/);
     expect((await svc.changeStatus(await actors.admin(), 13, "clarify")).task.status).toBe("clarify");

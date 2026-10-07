@@ -66,6 +66,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "task.import": "Задача перенесена из таблицы",
   "task.bord": "Задача изменена в Bord",
   "task.renumber": "Номер задачи изменён",
+  "task.handover": "Задача передана",
   "weekly.draft": "Weekly начат",
   "weekly.update": "Weekly изменён",
   "weekly.submit": "Weekly сдан",

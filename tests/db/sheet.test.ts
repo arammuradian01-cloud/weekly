@@ -214,7 +214,7 @@ describe("выгрузка изменений", () => {
     const [first, second] = [...(await taskRows(null)).keys()].map(Number);
     await tasks.changeStatus(a, first!, "clarify");
     await tasks.updateWhere(a, first!, "Ждём ответа партнёра");
-    await tasks.changeState(a, second!, "blocked", "Нет доступа к данным, поможет Головкин");
+    await tasks.changeState(a, second!, "blocked", "Нет доступа к данным, поможет Головкин", { waitTask: first! });
     await tasks.addComment(a, second!, "Напомнил партнёру");
     const reva = await tasks.actorFor("reva");
     const rk = await weekly.currentReportingKey();
