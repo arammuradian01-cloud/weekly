@@ -103,7 +103,7 @@ describe("номера и постановка задач", () => {
     expect(setting?.value).toBe(56);
   });
 
-  it("лидер ставит задачу себе, другому только предлагает, предложенную подтверждает администратор", async () => {
+  it("лидер ставит задачу себе, другому только предлагает; предложенную принимает адресат или администратор (этап 21)", async () => {
     const reva = await actors.reva();
     const own = await svc.createTask(reva, { title: "Себе", outcome: "Готово", owner: "reva", direction: "product", due: future });
     expect(own.task.status).toBe("in-progress");
@@ -111,11 +111,16 @@ describe("номера и постановка задач", () => {
     expect(own.task.state).toBe("on-track");
     const offer = await svc.createTask(reva, { title: "Логиновой", outcome: "Готово", owner: "loginova", direction: "red", due: future });
     expect(offer.task.status).toBe("proposed");
-    // Ответственный не берёт предложенную задачу в работу сам
-    await expectRule(svc.changeStatus(await actors.loginova(), offer.task.number, "in-progress"), /подтверждает владелец или администратор/);
-    const ok = await svc.changeStatus(await actors.admin(), offer.task.number, "in-progress");
+    // Посторонний лидер предложение не решает, адресат решает сам и в топ-команде
+    await expectRule(svc.changeStatus(await actors.fatyanov(), offer.task.number, "in-progress"), /принимает адресат/);
+    // Адресат только принимает или отклоняет: сразу закрыть предложенную задачу нельзя
+    await expectRule(svc.changeStatus(await actors.loginova(), offer.task.number, "done", "Сделано"), /принять в работу или отклонить/);
+    const ok = await svc.changeStatus(await actors.loginova(), offer.task.number, "in-progress");
     expect(ok.task.status).toBe("in-progress");
     expect((await lastAudit(offer.task.number))?.before).toBe("Предложена");
+    // Режим управления решает за адресата
+    const second = await svc.createTask(reva, { title: "Ещё Логиновой", outcome: "Готово", owner: "loginova", direction: "red", due: future });
+    expect((await svc.changeStatus(await actors.admin(), second.task.number, "in-progress")).task.status).toBe("in-progress");
   });
 
   it("наблюдатель не ставит задач и не комментирует, лидер не ставит задачу в прошлое", async () => {

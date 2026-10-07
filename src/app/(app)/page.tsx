@@ -20,6 +20,8 @@ import { MyWeek } from "@/components/weekly/my-week";
 import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
 import { fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
+import { myRequests } from "@/lib/requests/service";
+import { currentActor } from "@/lib/action-runner";
 
 export const metadata: Metadata = { title: "Моя неделя" };
 
@@ -35,7 +37,11 @@ export default async function MyWeekPage() {
   const week = reportingWeek(now, deadlineSetting);
   const weekKey = fromCalendar(week.start);
   const current = management ? await currentTeam(subjectOf(ctx)) : null;
-  const [mine, team] = await Promise.all([getMyWeekly(person.id, weekKey), current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null)]);
+  const [mine, team, requests] = await Promise.all([
+    getMyWeekly(person.id, weekKey),
+    current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
+    myRequests(await currentActor(), now),
+  ]);
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
@@ -79,6 +85,7 @@ export default async function MyWeekPage() {
           report={mine.report}
           entriesCount={mine.entries.length}
           team={team}
+          requests={requests}
         />
         <TaskDrawer />
       </Suspense>

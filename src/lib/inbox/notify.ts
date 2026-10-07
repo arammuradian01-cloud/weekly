@@ -23,6 +23,8 @@ export type InboxInput = {
   entryCommentId?: string | null;
   /** Реакция, о которой событие: снятая реакция убирает событие */
   reactionId?: string | null;
+  /** Просьба (этап 21): предмет request:<номер> */
+  requestId?: string | null;
 };
 
 /** Событие адресатам: без самого автора, без повторов, только включённым людям */
@@ -43,6 +45,7 @@ export async function notify(tx: Tx, input: InboxInput, now = new Date()): Promi
       entryId: input.entryId ?? null,
       entryCommentId: input.entryCommentId ?? null,
       reactionId: input.reactionId ?? null,
+      requestId: input.requestId ?? null,
       text: input.text,
       createdAt: now,
     })),

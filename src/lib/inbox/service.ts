@@ -12,6 +12,8 @@ import type { InboxKind, Prisma } from "@/generated/prisma/client";
 import { loadScope, loadTeamNodes, type ScopeSubject } from "@/lib/org/scope";
 import { seesTask } from "@/lib/tasks/watch";
 import { seesEntry } from "@/lib/discuss/access";
+import type { RequestStatusCode } from "@/domain/requests";
+import { TOP_TEAM } from "@/lib/org/scope";
 
 export { notify, quote, taskSubject, type InboxInput } from "./notify";
 
@@ -27,6 +29,10 @@ export type InboxItem = {
   /** Запись weekly (этап 20): ссылка на страницу записи и её «что произошло» */
   entryId: string | null;
   entryTitle: string | null;
+  /** Просьба (этап 21): ссылка на страницу просьбы, её текст и состояние */
+  requestNumber: number | null;
+  requestText: string | null;
+  requestStatus: RequestStatusCode | null;
   /** Последнее событие предмета: кто и что */
   actorName: string | null;
   kind: InboxKind;
@@ -51,7 +57,15 @@ const open = (personId: string, now: Date): Prisma.InboxEventWhereInput => ({
 async function limitedFilter(personId: string, viewer: ScopeSubject | undefined) {
   if (!viewer?.limited) return null;
   const [scope, nodes] = await Promise.all([loadScope(prisma, { ...viewer, id: personId }), loadTeamNodes(prisma)]);
-  return (r: { task: { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null; entry: { authorId: string | null; ceo: boolean; promotions: { byId: string }[] } | null }) => {
+  const topNode = nodes.find((n) => n.id === TOP_TEAM);
+  const top = new Set([...(topNode?.leaderId ? [topNode.leaderId] : []), ...(topNode?.members ?? [])]);
+  return (r: {
+    task: { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null;
+    entry: { authorId: string | null; ceo: boolean; promotions: { byId: string }[] } | null;
+    request: { authorId: string; addresseeId: string } | null;
+  }) => {
+    // Просьбы по общему логину: только между людьми топ-команды (этап 21)
+    if (r.request) return top.has(r.request.authorId) && top.has(r.request.addresseeId);
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;
@@ -61,6 +75,7 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
 const inboxInclude = {
   task: { select: { number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } },
   entry: { select: { id: true, what: true, authorId: true, ceo: true, promotions: { select: { byId: true } } } },
+  request: { select: { number: true, text: true, status: true, authorId: true, addresseeId: true } },
 } satisfies Prisma.InboxEventInclude;
 
 /** Неразобранное, одна строка на предмет, свежие сверху */
@@ -89,6 +104,9 @@ export async function listInbox(personId: string, now = new Date(), viewer?: Sco
       taskTitle: r.task?.title ?? null,
       entryId: r.entry?.id ?? null,
       entryTitle: r.entry?.what ?? null,
+      requestNumber: r.request?.number ?? null,
+      requestText: r.request?.text ?? null,
+      requestStatus: r.request ? (r.request.status.toLowerCase() as RequestStatusCode) : null,
       actorName: r.actorName,
       kind: r.kind,
       text: r.text,

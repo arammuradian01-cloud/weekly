@@ -115,7 +115,7 @@ export type TaskPermissions = {
   comment: boolean;
   /** В архив: только владелец в режиме управления */
   archive: boolean;
-  /** Предложенную задачу подтверждает или отклоняет режим управления */
+  /** Предложенную задачу принимает или отклоняет адресат, его руководитель или режим управления */
   confirm: boolean;
 };
 
@@ -136,11 +136,11 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   const directOwner = task.owner === me;
   const co = task.coExecutors.includes(me);
   const creator = task.createdBy === me;
-  // Предложенная задача становится задачей только после подтверждения владельцем или администратором
+  // Предложенная задача становится задачей только после того, как её приняли
   const proposed = task.status === "proposed";
-  // Этап 16: вне топ-команды предложенную задачу принимает сам адресат или его руководитель, а не только руководитель
-  // команды задачи. В топ-команде, как и раньше, решает режим управления
-  const addressee = proposed && task.team !== TOP_TEAM && task.owner !== "all" && (directOwner || !!v.people?.includes(task.owner));
+  // Предложенную задачу принимает или отклоняет сам адресат или его руководитель (этап 16), с этапа 21 и в топ-команде.
+  // Режим управления может решить за адресата
+  const addressee = proposed && task.owner !== "all" && (directOwner || !!v.people?.includes(task.owner));
   return {
     status: manage || (owner && !proposed),
     state: manage || (owner && !proposed),

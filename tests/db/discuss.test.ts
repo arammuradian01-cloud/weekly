@@ -424,7 +424,7 @@ describe("письма", () => {
     const golovkin = { ...(await svc.actorFor("golovkin")), via: "EMAIL" as const };
     await expectRule(letters.saveMailPrefs({ ...golovkin, via: "TEAM" }, { tasks: false }), /личном входе/);
     expect(await letters.saveMailPrefs(golovkin, { tasks: false })).toMatchObject({ tasks: false, mentions: true });
-    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "settings.mail", entityId: "golovkin" }, orderBy: { id: "desc" } })).after).toBe("Задачи: нет");
+    expect((await prisma.auditLog.findFirstOrThrow({ where: { action: "settings.mail", entityId: "golovkin" }, orderBy: { id: "desc" } })).after).toBe("Задачи и просьбы: нет");
     await event("golovkin", msk("2026-10-12T10:00:00"));
     await event("golovkin", msk("2026-10-12T10:00:00"), { kind: "MENTION" });
     expect((await letters.eventMailPass(msk("2026-10-12T10:20:00"))).sent).toBe(1);

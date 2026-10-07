@@ -76,17 +76,18 @@ describe("просьба человеку другой команды", () => {
     // Руководитель адресата видит просьбы к своим людям и принимает за них
     const second = await newTask(alisa, "Посчитать конверсию шага оплаты", ivanova.slug, sector.id);
     expect((await svc.listTasks({ reader: reader(tokov) })).map((t) => t.number)).toContain(second.number);
-    await expectRule(svc.changeStatus(petrov, second.number, "in-progress"), /подтверждает адресат, его руководитель/);
+    await expectRule(svc.changeStatus(petrov, second.number, "in-progress"), /принимает адресат, его руководитель/);
     expect((await svc.changeStatus(tokov, second.number, "in-progress")).task.status).toBe("in-progress");
     // Отклонить можно с причиной
     const third = await newTask(alisa, "Сделать дашборд по КАСКО", ivanova.slug, sector.id);
     expect((await svc.changeStatus(ivanova, third.number, "cancelled", "Это задача команды КАСКО")).task.status).toBe("cancelled");
   });
 
-  it("в топ-команде предложенную задачу по-прежнему подтверждает только режим управления", async () => {
+  it("в топ-команде предложенную задачу с этапа 21 тоже принимает сам адресат, посторонний нет", async () => {
     const offer = await newTask(await svc.actorFor("loginova"), "Сверить отчёт по ДВС", "reva");
     expect(offer.status).toBe("proposed");
-    await expectRule(svc.changeStatus(await svc.actorFor("reva"), offer.number, "in-progress"), /владелец или администратор/);
+    await expectRule(svc.changeStatus(await svc.actorFor("fatyanov"), offer.number, "in-progress"), /принимает адресат/);
+    expect((await svc.changeStatus(await svc.actorFor("reva"), offer.number, "in-progress")).task.status).toBe("in-progress");
   });
 
   it("руководитель видит задачи своих людей в любой команде", async () => {

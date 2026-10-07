@@ -108,4 +108,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "auth.device.revoke": "Вход на устройстве завершён",
   "auth.device.revoke-all": "Завершены все входы",
   "auth.team-login": "Изменён общий логин team",
+  "request.create": "Просьба коллеге",
+  "request.accept": "Просьба принята",
+  "request.decline": "Просьба отклонена",
+  "request.done": "Просьба выполнена",
+  "request.withdraw": "Просьба отозвана",
+  "request.remind": "Напоминание о просьбе",
+  "request.task": "Просьба стала задачей",
 };

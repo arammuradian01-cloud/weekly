@@ -206,9 +206,11 @@ describe("правила задач (раздел 4 ТЗ)", () => {
     expect(permissions(base, { slug: "reva" }).edit).toBe(false);
     const observer = permissions(base, { slug: "sakhibullina", observer: true });
     expect(Object.values(observer).every((v) => v === false)).toBe(true);
-    // Предложенную задачу ответственный не берёт в работу сам: её подтверждает режим управления
+    // Предложенную задачу адресат не ведёт, пока не примет: принять или отклонить может он сам (этап 21) и режим управления
     const proposed = at({ status: "proposed" });
     expect(permissions(proposed, { slug: "sakhibullina" }).status).toBe(false);
+    expect(permissions(proposed, { slug: "sakhibullina" }).confirm).toBe(true);
+    expect(permissions(proposed, { slug: "reva" }).confirm).toBe(false);
     expect(permissions(proposed, admin).confirm).toBe(true);
     expect(newTaskStatus("reva", { slug: "reva" })).toBe("in-progress");
     expect(newTaskStatus("loginova", { slug: "reva" })).toBe("proposed");

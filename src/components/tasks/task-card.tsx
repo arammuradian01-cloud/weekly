@@ -22,6 +22,7 @@ import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from ".
 import { useTaskActions } from "./task-actions";
 import { TaskEditModal, TaskLinks } from "./task-edit";
 import { TaskExtrasBlock } from "./task-extras";
+import { TaskRequests } from "@/components/requests/task-requests";
 import { TaskGoal } from "./task-goal";
 
 function personInitials(slug: string) {
@@ -238,6 +239,8 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       </dl>
 
       <TaskExtrasBlock task={task} headingLevel={H} />
+
+      <TaskRequests task={task} headingLevel={H} />
 
       {task.transfers.length ? (
         <section aria-labelledby={`transfers-${task.number}`}>

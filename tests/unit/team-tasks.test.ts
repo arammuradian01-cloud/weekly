@@ -40,8 +40,9 @@ describe("предложенная задача из другой команды
     expect(permissions(task({}), { slug: "antonov", leads: ["sector"] }).confirm).toBe(true);
   });
 
-  it("в топ-команде решает только режим управления", () => {
-    expect(permissions(task({ team: "top", owner: "reva" }), { slug: "reva" }).confirm).toBe(false);
+  it("в топ-команде с этапа 21 тоже решает адресат, посторонний нет, режим управления может за него", () => {
+    expect(permissions(task({ team: "top", owner: "reva" }), { slug: "reva" }).confirm).toBe(true);
+    expect(permissions(task({ team: "top", owner: "reva" }), { slug: "fatyanov" }).confirm).toBe(false);
     expect(permissions(task({ team: "top", owner: "reva" }), { slug: "golovkin", management: "ADMIN" }).confirm).toBe(true);
   });
 });

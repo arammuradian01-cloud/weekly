@@ -6,6 +6,10 @@ import { MessagesSquare } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { authorName, compactName } from "@/domain/people";
 import type { MeetingQuestion } from "@/lib/discuss/service";
+import type { StaleProposal } from "@/lib/requests/service";
+import { currentDue, type RequestView } from "@/domain/requests";
+import { formatShort } from "@/domain/dates";
+import { RequestBadge } from "@/components/requests/request-parts";
 import { setDiscussedAction } from "@/app/(app)/weekly/discuss-actions";
 import { weekNumberOf } from "@/lib/weekly/weeks";
 import { cn } from "@/lib/cn";
@@ -15,7 +19,10 @@ import { Button } from "@/components/ui/button";
  * Вопросы к встрече (этап 20): «Обсудить на встрече» к записям и комментариям. Необсуждённые сверху,
  * «Обсуждено» убирает вопрос из повестки. Прошлые недели показывают только то, что ещё не обсудили
  */
-export function MeetingQuestions({ week, questions }: { week: number; questions: MeetingQuestion[] }) {
+/** Что зависло (этап 21): просьбы без ответа больше 2 рабочих дней и просроченные принятые, предложения без ответа 3 дня */
+export type StuckItems = { requests: RequestView[]; proposals: StaleProposal[] };
+
+export function MeetingQuestions({ week, questions, stuck = { requests: [], proposals: [] } }: { week: number; questions: MeetingQuestion[]; stuck?: StuckItems }) {
   const { notify, observer } = usePrototype();
   const [list, setList] = useState(questions);
   const [busy, setBusy] = useState<string | null>(null);
@@ -78,6 +85,37 @@ export function MeetingQuestions({ week, questions }: { week: number; questions:
           </li>
         ))}
       </ul>
+      {stuck.requests.length || stuck.proposals.length ? (
+        <section aria-labelledby="meeting-stuck" className="mt-10">
+          <h2 id="meeting-stuck" className="text-title-lg font-semibold text-ink">
+            Зависло: {stuck.requests.length + stuck.proposals.length}
+          </h2>
+          <p className="mt-1 text-body text-muted">Просьбы без ответа больше 2 рабочих дней, принятые с прошедшим сроком и предложенные задачи без ответа 3 дня. Уходят отсюда, когда на них ответят.</p>
+          <ul className="mt-5 flex flex-col gap-3">
+            {stuck.requests.map((r) => (
+              <li key={`r${r.number}`} className="rounded-xl bg-white px-5 py-4 ring-1 ring-line">
+                <Link href={`/requests/${r.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
+                  Просьба {r.number}: {r.text}
+                </Link>
+                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-body text-muted">
+                  <RequestBadge status={r.status} />
+                  {compactName(r.author)} просит {compactName(r.addressee)}, срок {formatShort(currentDue(r))}
+                </p>
+              </li>
+            ))}
+            {stuck.proposals.map((p) => (
+              <li key={`p${p.number}`} className="rounded-xl bg-white px-5 py-4 ring-1 ring-line">
+                <Link href={`/tasks/${p.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
+                  Предложена задача {p.number}: {p.title}
+                </Link>
+                <p className="mt-1 text-body text-muted">
+                  Предложение{p.createdBy ? ` от ${compactName(p.createdBy)}` : ""}{p.owner ? ` для ${compactName(p.owner)}` : ""}, без ответа {p.days} дн.
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </>
   );
 }

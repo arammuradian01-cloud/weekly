@@ -11,6 +11,7 @@ import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { openNewTask, TASK_FROM_ENTRY_EVENT } from "@/components/prototype/new-task";
 import { MentionArea } from "@/components/discuss/mention-area";
 import { usePrototype } from "@/domain/store";
+import { AskColleagueButton } from "@/components/requests/request-dialog";
 
 /** Запись ещё не на сервере: такой id выдаёт экран до первого сохранения */
 export const isLocalId = (id: string) => id.startsWith("new-");
@@ -204,8 +205,13 @@ export function EntryForm({
             value={e.help ?? ""}
             onChange={(v) => set("help", v)}
             rows={2}
-            hint="Упомяните, от кого ждёте помощи: @ и начало имени"
+            hint="Упомяните, от кого ждёте помощи: @ и начало имени. Чтобы у помощи были срок и ответ, оформите её просьбой"
           />
+        ) : null}
+        {needHelp && !isLocalId(e.id) ? (
+          <div>
+            <AskColleagueButton size="sm" label="Оформить просьбой" prefill={{ entry: { id: e.id, what: e.what }, text: (e.help ?? "").trim() }} />
+          </div>
         ) : null}
       </div>
       <TextInput

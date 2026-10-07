@@ -13,13 +13,13 @@ import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { EntryItem } from "./entry-item";
 import { AbsentBadge, absentLine, substituteText } from "./absence";
 import type { MeetingQuestion } from "@/lib/discuss/service";
-import { MeetingQuestions } from "./meeting-questions";
+import { MeetingQuestions, type StuckItems } from "./meeting-questions";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
  * Сначала риски и запросы помощи, потом лидеры по очереди (раздел 3 ТЗ).
  */
-export function MeetingMode({ view, questions = [] }: { view: WeekView; questions?: MeetingQuestion[] }) {
+export function MeetingMode({ view, questions = [], stuck = { requests: [], proposals: [] } }: { view: WeekView; questions?: MeetingQuestion[]; stuck?: StuckItems }) {
   // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе (сервер выбирает её сам)
   const week = view.week.number;
   const entries = view.entries;
@@ -35,7 +35,9 @@ export function MeetingMode({ view, questions = [] }: { view: WeekView; question
   const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug && own(e)) || raisedBy(p.slug).length > 0).sort((a, b) => last(a) - last(b));
   const hasCommon = entries.some((e) => !e.author);
   // Этап 20: вопросы «Обсудить на встрече» первым шагом, если они есть
-  const slides: string[] = [...(questions.length ? ["questions"] : []), "risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
+  // Этап 21: туда же зависшие просьбы и предложения задач без ответа
+  const hasStuck = stuck.requests.length + stuck.proposals.length > 0;
+  const slides: string[] = [...(questions.length || hasStuck ? ["questions"] : []), "risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   // Шаг хранится по имени, а не по номеру: вопрос, добавленный во время встречи, не сдвигает экран ведущего,
   // а пропавший шаг (ушёл последний вопрос) открывает соседний
   const [current, setCurrent] = useState<string>(slides[0]!);
@@ -80,7 +82,7 @@ export function MeetingMode({ view, questions = [] }: { view: WeekView; question
                   i === index ? "bg-navy font-semibold text-white" : "bg-white text-ink ring-1 ring-line hover:ring-navy-600/40",
                 )}
               >
-                {s === "questions" ? `Вопросы: ${questions.filter((q) => !q.discussed).length}` : s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
+                {s === "questions" ? `Вопросы: ${questions.filter((q) => !q.discussed).length + stuck.requests.length + stuck.proposals.length}` : s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
               </button>
             </li>
           ))}
@@ -103,7 +105,7 @@ export function MeetingMode({ view, questions = [] }: { view: WeekView; question
 
       <section aria-live="polite" className="flex-1">
         {slide === "questions" ? (
-          <MeetingQuestions week={week} questions={questions} />
+          <MeetingQuestions week={week} questions={questions} stuck={stuck} />
         ) : slide === "risks" ? (
           <>
             <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Риски и запросы помощи</h1>

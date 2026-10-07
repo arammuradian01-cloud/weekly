@@ -25,7 +25,7 @@ export type MailPrefKey = keyof MailPrefs;
 export const DEFAULT_PREFS: MailPrefs = { tasks: true, mentions: true, reactions: true, reminders: true, digest: true };
 
 export const PREF_LABELS: Record<MailPrefKey, { title: string; hint: string }> = {
-  tasks: { title: "Задачи", hint: "Вам поставили, передали или предложили задачу, прокомментировали её, просят обновить, изменилась задача, за которой вы следите" },
+  tasks: { title: "Задачи и просьбы", hint: "Вам поставили, передали или предложили задачу, прокомментировали её, просят обновить, изменилась задача, за которой вы следите. Просьбы коллег к вам и ответы на ваши просьбы" },
   mentions: { title: "Упоминания и обсуждения", hint: "Вас упомянули, прокомментировали вашу запись weekly или обсуждение, в котором вы участвуете" },
   reactions: { title: "Реакции", hint: "Отреагировали на вашу запись или комментарий: «Принято», «Вопрос», «Обсудить на встрече», «Спасибо»" },
   reminders: { title: "Напоминания о сдаче weekly", hint: "За 6 часов и за час до вашего срока, если weekly ещё не сдан. Не больше двух в неделю" },

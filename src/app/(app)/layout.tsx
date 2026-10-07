@@ -11,6 +11,7 @@ import { moscowDate } from "@/lib/week";
 import { PrototypeBanner } from "@/components/prototype/banner";
 import { Toaster } from "@/components/prototype/toaster";
 import { GlobalHotkeys } from "@/components/prototype/new-task";
+import { RequestDialogHost } from "@/components/requests/request-dialog";
 import { HeaderSearch } from "@/components/prototype/header-search";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
@@ -133,6 +134,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <MobileNav leader={leader} />
       <Toaster />
       <GlobalHotkeys />
+      <RequestDialogHost />
     </div>
     </InboxCountProvider>
     </TaskActionsProvider>
