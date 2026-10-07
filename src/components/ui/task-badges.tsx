@@ -58,11 +58,11 @@ const STATE_DOT: Record<StateCode, string> = {
   unset: "border border-dashed border-steel bg-transparent",
 };
 
-export function StateDot({ state, className }: { state: StateCode; className?: string }) {
+export function StateDot({ state, className, label }: { state: StateCode; className?: string; label?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2 whitespace-nowrap text-small text-ink", state === "blocked" && "font-medium text-danger-ink", state === "unset" && "text-muted", className)}>
       <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", STATE_DOT[state])} aria-hidden="true" />
-      {stateLabel(state)}
+      {label ?? stateLabel(state)}
     </span>
   );
 }

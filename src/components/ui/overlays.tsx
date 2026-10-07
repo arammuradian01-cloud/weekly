@@ -110,7 +110,7 @@ export function InlineSelect<V extends string>({
   return (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`${label}: ${options.find((o) => o.value === value)?.label ?? valueLabel ?? value}. Изменить`}
+        aria-label={`${label}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
         className="group -mx-1.5 inline-flex min-h-9 items-center gap-1 rounded-md px-1.5 hover:bg-surface data-[state=open]:bg-surface"
       >
         {render(value)}

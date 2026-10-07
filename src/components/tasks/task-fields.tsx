@@ -56,10 +56,10 @@ export function StateSelect({ task }: { task: Task }) {
       label="Состояние"
       value={task.state}
       valueLabel={unconfirmed ? "В графике не подтверждено" : stateLabel(task.state)}
+      render={(v) => (unconfirmed && v === "on-track" ? <StateDot state="unset" label="В графике не подтверждено" /> : <StateDot state={v} />)}
       options={STATES.map((s) => ({ value: s.code, label: s.label }))}
       disabled={!can.state}
       onChange={(v) => actions.changeState(task, v)}
-      render={(v) => <StateDot state={v} />}
     />
   );
 }
