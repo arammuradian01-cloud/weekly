@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, type LucideIcon } from "lucide-react";
+import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -142,6 +142,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/tasks/mine", "Мои задачи", ListChecks, "мои"],
       ["/goals", "Цели", Target, "цели квартала"],
       ["/decisions", "Решения", Gavel, "журнал решений"],
+      ["/forecast", "Прогноз", TrendingUp, "цифры недели прогноз месяца"],
       ["/my-teams", "Мои команды", LayoutDashboard, "панель руководителя"],
       ["/team", "Команда", Users, "люди состав"],
     ];

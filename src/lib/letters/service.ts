@@ -437,6 +437,12 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const built = await agendaPass(now);
       return { sent: built, skipped: 0, failed: 0 };
     });
+    // Цифры недели (этап 24): недельный отчёт перечитывается раз в час
+    await safe("Недельный отчёт", async () => {
+      const { pullNumbersIfDue } = await import("@/lib/numbers/service");
+      await pullNumbersIfDue(now);
+      return { sent: 0, skipped: 0, failed: 0 };
+    });
     // Повторяющиеся задачи по расписанию (этап 25): следующая в день срока
     await safe("Повторы задач", async () => {
       const { repeatPass } = await import("@/lib/tasks/service");

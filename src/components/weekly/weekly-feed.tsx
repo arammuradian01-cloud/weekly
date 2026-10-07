@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, TrendingUp } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
@@ -134,6 +134,10 @@ export function WeeklyFeed({
           <div className="col-span-2 sm:col-span-1">
             <WeekSwitcher view={data} />
           </div>
+          <Link href={`/forecast?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
+            <TrendingUp className="h-4 w-4" aria-hidden="true" />
+            Прогноз
+          </Link>
           <Link href={`/weekly/meeting?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <MonitorPlay className="h-4 w-4" aria-hidden="true" />
             <span className="sm:hidden">Встреча</span>

@@ -9,6 +9,8 @@ import { PROD_SHEET_ID } from "@/lib/sheet/client";
 import { bordStatus } from "@/lib/bord/service";
 import { RESOURCE_FIRST_NUMBER } from "@/lib/bord/pull";
 import type { BordView } from "@/components/admin/bord-pull";
+import type { NumbersView } from "@/components/admin/numbers-setup";
+import { METRICS_MAX, numbersStatus } from "@/lib/numbers/service";
 
 export const metadata: Metadata = { title: "Синхронизация" };
 export const dynamic = "force-dynamic";
@@ -45,9 +47,10 @@ function resultOf(r: SyncRun): { text: string; tone: SyncView["runs"][number]["t
 export default async function SyncPage() {
   await requireManagement(OWNER_ROLES, "/sync");
   const now = new Date();
-  const [status, bord, tasks, comments, entries] = await Promise.all([
+  const [status, bord, numbers, tasks, comments, entries] = await Promise.all([
     syncStatus(now),
     bordStatus(now),
+    numbersStatus(now),
     prisma.task.count({ where: { archivedAt: null } }),
     prisma.taskComment.count({ where: { task: { archivedAt: null } } }),
     prisma.weeklyEntry.count(),
@@ -72,6 +75,22 @@ export default async function SyncPage() {
     })),
     firstNumber: RESOURCE_FIRST_NUMBER,
   };
+  const ns = numbers.state;
+  const numbersView: NumbersView = {
+    sourceId: numbers.sourceId,
+    tab: numbers.tab,
+    connected: numbers.connected,
+    hasKey: numbers.hasKey,
+    serviceEmail: numbers.serviceEmail,
+    lastOk: ns.lastOkAt ? { ago: ago(ns.lastOkAt, now), at: moscow(ns.lastOkAt) } : null,
+    next: numbers.nextAt ? (new Date(numbers.nextAt).getTime() - now.getTime() < 60_000 ? "в ближайшую минуту" : moscow(numbers.nextAt)) : null,
+    error: ns.ok === false && ns.lastAttemptAt ? { at: moscow(ns.lastAttemptAt), message: ns.error ?? "Ошибка" } : null,
+    rows: ns.rows,
+    weeks: ns.weeks,
+    latestWeek: ns.latestWeek,
+    metrics: numbers.metrics,
+    metricsMax: METRICS_MAX,
+  };
   const waitingMs = status.queue.oldestAt ? now.getTime() - new Date(status.queue.oldestAt).getTime() : null;
   const view: SyncView = {
     connected: status.mode !== null,
@@ -88,10 +107,11 @@ export default async function SyncPage() {
     runs: status.runs.map((r) => ({ id: r.id, at: moscow(r.startedAt), kind: KIND[r.kind], ...resultOf(r) })),
     counts: { tasks, comments, entries },
     bord: bordView,
+    numbers: numbersView,
   };
   return (
     <>
-      <PageHeader title="Синхронизация" description="Задачи из рабочего Bord в ресурс и все задачи ресурса в таблицу для просмотра. В Bord ресурс не пишет" />
+      <PageHeader title="Синхронизация" description="Задачи из рабочего Bord и цифры из недельного отчёта в ресурс, все задачи ресурса в таблицу для просмотра. В Bord и отчёт ресурс не пишет" />
       <SyncStatus view={view} />
     </>
   );

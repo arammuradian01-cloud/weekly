@@ -186,6 +186,8 @@ model Person {
   /// Поиск, виды и чек-листы (этап 25)
   checklistDone     TaskChecklistItem[]
   savedViews        SavedView[]
+  /// Прогноз до конца месяца (этап 24)
+  forecasts         Forecast[]
 
   @@map("people")
 }
@@ -206,6 +208,7 @@ model DictionaryItem {
   entriesByDirection WeeklyEntry[] @relation("EntryDirection")
   entriesByBlock     WeeklyEntry[] @relation("EntryBlock")
   entriesByType      WeeklyEntry[] @relation("EntryType")
+  forecasts          Forecast[]    @relation("ForecastDirection")
 
   @@unique([kind, code])
   @@map("dictionary_items")
@@ -398,6 +401,71 @@ model SavedView {
   @@map("saved_views")
 }
 
+/// Строка недельного отчёта (этап 24): ключ из пяти ячеек, значения по неделям. Снимок перечитывается целиком при каждом заборе,
+/// ресурс отчёт только читает
+model NumbersRow {
+  key       String   @id
+  article   String
+  iface     String
+  product   String
+  mapping   String
+  comment   String
+  /// Порядок строки в отчёте
+  ord       Int
+  /// Значения по неделям: [{ week: "2026-09-07", value: 504337 }], неделя по понедельнику, null: ячейка пустая
+  values    Json
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([ord])
+  @@map("numbers_rows")
+}
+
+/// Метрика прогноза: выручка, промо-маржа, прямая маржа в млн руб без НДС, продажи в штуках
+enum ForecastMetric {
+  REVENUE
+  PROMO_MARGIN
+  DIRECT_MARGIN
+  SALES
+}
+
+/// Что поехало: причина отклонения прогноза от бюджета
+enum ForecastReason {
+  TRAFFIC
+  CONVERSION
+  CHECK_KV
+  PARTNER_SK
+  BUDGET_BASE
+  OTHER
+}
+
+/// Прогноз лидера до конца месяца (этап 24, модуль М9): строка на неделю, линию, метрику и месяц. История по неделям
+/// хранится как есть, прошлый прогноз это та же строка за предыдущую неделю
+model Forecast {
+  id          String          @id @default(cuid())
+  weekId      String
+  week        Week            @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      Person          @relation(fields: [authorId], references: [id])
+  teamId      String
+  team        Team            @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  directionId String
+  direction   DictionaryItem  @relation("ForecastDirection", fields: [directionId], references: [id])
+  metric      ForecastMetric
+  /// Месяц прогноза: 2026-10
+  month       String
+  /// Бюджет месяца из LRF, вводится руками
+  budget      Float?
+  forecast    Float
+  reason      ForecastReason?
+  comment     String?
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+
+  @@unique([weekId, authorId, directionId, metric, month])
+  @@index([month, directionId])
+  @@map("forecasts")
+}
+
 model TaskCoExecutor {
   taskId   String
   task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -484,6 +552,7 @@ model Week {
   promises   PromiseReview[]
   snapshot   WeekSnapshot?
   meetings   Meeting[]
+  forecasts  Forecast[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -824,6 +893,7 @@ model Team {
   /// Встречи и решения команды (этап 23)
   meetings  Meeting[]
   decisions Decision[]
+  forecasts Forecast[]
 
   @@index([leaderId])
   @@index([parentId])
