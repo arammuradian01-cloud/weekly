@@ -4,7 +4,8 @@
 import { prisma } from "@/lib/db";
 import { STATUSES, type StatusCode } from "@/domain/dictionaries";
 import type { PersonSlug } from "@/domain/types";
-import { loadScope, visibleTasksWhere } from "@/lib/org/scope";
+import { loadScope, TOP_TEAM, visibleTasksWhere } from "@/lib/org/scope";
+import type { Prisma } from "@/generated/prisma/client";
 import type { TaskReader } from "./service";
 
 export type ChangeKind = "new" | "closed" | "status" | "due" | "owner" | "team";
@@ -24,16 +25,46 @@ export type TaskChange = {
 };
 
 const NEW_ACTIONS = ["task.create", "task.propose", "task.import"];
-const FIELDS: Record<string, ChangeKind> = { Статус: "status", Срок: "due", Ответственный: "owner", Команда: "team" };
+const FIELDS: Record<string, ChangeKind> = {
+  Статус: "status",
+  Срок: "due",
+  Ответственный: "owner",
+  Команда: "team",
+  // Отмена правки возвращает прежнее значение: это тоже смена статуса или срока
+  "Статус (отмена)": "status",
+  "Срок (отмена)": "due",
+};
 const CLOSED_LABELS = STATUSES.filter((s) => ["done", "failed", "cancelled"].includes(s.code)).map((s) => s.label);
 
-/** Изменения задач за последние дни: задачи, которые человек видит, в выбранных командах (null: во всех видимых) */
-export async function recentChanges(reader: TaskReader, teamIds: string[] | null, opts: { days?: number; now?: Date } = {}): Promise<{ since: string; changes: TaskChange[] }> {
+/**
+ * Изменения задач за последние дни в выбранных командах (null: во всех видимых). Как и история в карточке, видна
+ * участникам задачи, руководителю команды задачи и руководителю ответственного, владельцу и администраторам.
+ * Архивные задачи не показываем: их видит только владелец
+ */
+export async function recentChanges(
+  reader: TaskReader & { management?: boolean },
+  teamIds: string[] | null,
+  opts: { days?: number; now?: Date } = {},
+): Promise<{ since: string; changes: TaskChange[] }> {
   const now = opts.now ?? new Date();
   const since = new Date(now.getTime() - (opts.days ?? 7) * 24 * 60 * 60 * 1000);
   const scope = await loadScope(prisma, { id: reader.personId, role: reader.role, limited: reader.limited });
+  if (reader.role === "OBSERVER") return { since: since.toISOString(), changes: [] };
+  const me = reader.personId;
+  const historyOf: Prisma.TaskWhereInput = reader.management
+    ? {}
+    : {
+        OR: [
+          { teamId: { in: scope.leads } },
+          { ownerId: me },
+          { ownerId: null },
+          { createdById: me },
+          { coExecutors: { some: { personId: me } } },
+          ...(scope.leadPeople.length ? [{ ownerId: { in: scope.leadPeople }, teamId: { not: TOP_TEAM } }] : []),
+        ],
+      };
   const tasks = await prisma.task.findMany({
-    where: { AND: [visibleTasksWhere(scope, reader.personId), teamIds ? { teamId: { in: teamIds } } : {}] },
+    where: { AND: [{ archivedAt: null }, visibleTasksWhere(scope, me), historyOf, teamIds ? { teamId: { in: teamIds } } : {}] },
     select: { number: true, title: true, teamId: true, createdAt: true },
   });
   if (!tasks.length) return { since: since.toISOString(), changes: [] };
@@ -106,7 +137,7 @@ export function statusSpans(created: Date, changes: { at: Date; after: string | 
   spans.set(status, (spans.get(status) ?? 0) + Math.max(0, now.getTime() - from.getTime()));
   const day = 24 * 60 * 60 * 1000;
   return [...spans.entries()]
-    .filter(([, ms]) => ms > 0 || current)
+    .filter(([code, ms]) => ms > 0 || code === current)
     .map(([code, ms]) => ({ status: code, label: labelOf(code), days: Math.round((ms / day) * 10) / 10, current: code === current }));
 }
 
@@ -115,7 +146,7 @@ export async function taskStatusSpans(number: number, now = new Date()): Promise
   const task = await prisma.task.findUnique({ where: { number }, select: { createdAt: true, status: true } });
   if (!task) return [];
   const rows = await prisma.auditLog.findMany({
-    where: { entity: "task", entityId: String(number), field: "Статус", action: { in: ["task.update", "task.bord", "task.undo"] } },
+    where: { entity: "task", entityId: String(number), field: { in: ["Статус", "Статус (отмена)"] }, action: { in: ["task.update", "task.bord", "task.undo"] } },
     orderBy: [{ at: "asc" }, { id: "asc" }],
     select: { at: true, after: true, action: true, before: true },
   });

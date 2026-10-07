@@ -13,6 +13,7 @@
 // - задачу, которую удалили из Bord, ресурс не трогает и показывает в списке «нет в Bord».
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
+import { notifyWatchers } from "@/lib/tasks/watch";
 import { TOP_TEAM } from "@/domain/teams";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
@@ -396,6 +397,9 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         }
         await tx.task.update({ where: { id: task.id }, data: { ...data, ...(extra.transfer ? { transfers: { create: [extra.transfer] } } : {}) } });
         for (const [field, before, after] of changes) await audit(row.number, "task.bord", field, before, after);
+        // Подписчики узнают о смене статуса и срока и тогда, когда их поменяли в Bord (этап 16)
+        const watched = changes.filter(([field]) => field === "Статус" || field === "Срок").map(([field, , after]) => `${field} в Bord: ${after ?? ""}`);
+        if (watched.length) await notifyWatchers(tx, task.id, watched.join(", "), null);
         report.updated.push(row.number);
         report.fields += changes.length;
       }

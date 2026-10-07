@@ -28,6 +28,8 @@ export function MyTeams({ panel }: { panel: Panel }) {
                 <span className="font-semibold text-ink" aria-current="page">
                   {p.name}
                 </span>
+              ) : !p.link ? (
+                <span className="text-muted">{p.name}</span>
               ) : (
                 <Link href={`/my-teams?team=${p.id}`} className="text-blue-700 hover:underline">
                   {p.name}

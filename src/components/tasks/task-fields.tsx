@@ -26,7 +26,12 @@ export function StatusSelect({ task }: { task: Task }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   // «Предложена» выставляет только система: лидер предлагает задачу, владелец или администратор её принимает
-  const options = STATUSES.filter((s) => s.code !== "proposed" || task.status === "proposed").map((s) => ({ value: s.code, label: s.label }));
+  // Адресат предложенной задачи (этап 16) только принимает её или отклоняет
+  const decideOnly = task.status === "proposed" && can.confirm && !can.status;
+  const options = STATUSES.filter((s) => (s.code !== "proposed" || task.status === "proposed") && (!decideOnly || ["proposed", "in-progress", "cancelled"].includes(s.code))).map((s) => ({
+    value: s.code,
+    label: s.label,
+  }));
   return (
     <InlineSelect
       label="Статус"

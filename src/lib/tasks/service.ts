@@ -13,6 +13,7 @@ import { dbDate, isIsoDate, isoFromDbDate, moscowIso, moscowTime, moscowToday } 
 import { ownerOf, taskInclude, taskListInclude, toTaskDto, type TaskRow } from "./dto";
 import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from "./undo";
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
+import { notifyWatchers } from "./watch";
 import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
@@ -62,7 +63,7 @@ export function canSeeRow(scope: Scope, row: Pick<TaskRow, "teamId" | "ownerId" 
   if (row.ownerId === personId || row.createdById === personId) return true;
   if (row.coExecutors.some((c) => c.personId === personId)) return true;
   // Этап 16: руководитель видит задачи своих людей в любой команде, в том числе предложенные им из другой команды
-  return !!row.ownerId && (scope.functional.includes(row.ownerId) || scope.leadPeople.includes(row.ownerId));
+  return !!row.ownerId && (scope.functional.includes(row.ownerId) || (row.teamId !== TOP_TEAM && scope.leadPeople.includes(row.ownerId)));
 }
 
 function clean(text: string | null | undefined): string {
@@ -439,10 +440,21 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       );
     }
     const closing = CLOSED_DB.includes(db);
-    await notifyWatchers(tx, row.id, number, actor, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`);
+    await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
-      await notify(tx, { kind: "TASK_CONFIRMED", recipients: [row.ownerId, row.createdById], actor, subject: taskSubject(number), taskId: row.id, text: "Задача подтверждена" });
+      // Адресат или его руководитель решают только «принять» или «отклонить»; остальные статусы у режима управления
+      // и руководителя команды задачи (этап 16)
+      if (!can.status && next !== "in-progress" && next !== "cancelled") fail("Предложенную задачу можно принять в работу или отклонить с причиной");
+      const declined = next === "cancelled";
+      await notify(tx, {
+        kind: "TASK_CONFIRMED",
+        recipients: declined ? [row.createdById, row.ownerId] : [row.ownerId, row.createdById],
+        actor,
+        subject: taskSubject(number),
+        taskId: row.id,
+        text: declined ? `Предложение отклонено: ${quote(resolution ?? "")}` : "Задача подтверждена",
+      });
     }
     return {
       data: { status: db, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null },
@@ -500,7 +512,7 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
     // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
     await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
-    await notifyWatchers(tx, row.id, number, actor, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, [row.ownerId]);
+    await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
     return {
       data: { due: dbDate(to) },
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
@@ -655,7 +667,9 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
     if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
     // Функциональный руководитель задачи своих людей только смотрит
     const participant = row.ownerId === actor.personId || row.createdById === actor.personId || row.coExecutors.some((c) => c.personId === actor.personId);
-    if (!scope.all && !scope.visible.includes(row.teamId) && !participant) fail("Функциональный руководитель видит задачу, но не комментирует её");
+    // Руководитель ответственного комментирует задачу своего человека и в чужой команде, например, просьбу к нему (этап 16)
+    const ownersLeader = !!row.ownerId && scope.leadPeople.includes(row.ownerId) && row.teamId !== TOP_TEAM;
+    if (!scope.all && !scope.visible.includes(row.teamId) && !participant && !ownersLeader) fail("Функциональный руководитель видит задачу, но не комментирует её");
     const comment = await tx.taskComment.create({ data: { taskId: row.id, authorId: actor.personId, text: value } });
     // Комментарий видят в «Мне» ответственный, соисполнители и тот, кто поставил задачу
     await notify(tx, {
@@ -732,6 +746,9 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
     if (row.updatedAt.toISOString() !== s.expectUpdatedAt) fail("Задачу уже изменили после этого: отменить нельзя");
     const b = s.snapshot;
     const changes = await restoreChanges(tx, row, b);
+    // Отмена вернула статус или срок: подписчики узнают и об этом (этап 16)
+    const watched = changes.filter((c) => c.field === "Статус (отмена)" || c.field === "Срок (отмена)").map((c) => `${c.field.replace(" (отмена)", "")} снова: ${c.after ?? ""}`);
+    if (watched.length) await notifyWatchers(tx, row.id, `Правку отменили. ${watched.join(", ")}`, actor);
     if (s.removeTransferId) {
       const t = row.transfers.find((x) => x.id === s.removeTransferId);
       await tx.taskTransfer.deleteMany({ where: { id: s.removeTransferId, taskId: row.id } });
@@ -778,19 +795,13 @@ export { personName };
 
 // ---------- Задачи команд (этап 16) ----------
 
-/** Событие подписчикам задачи: кроме автора правки и тех, кто уже получил событие об этой правке */
-async function notifyWatchers(tx: Tx, taskId: string, number: number, actor: Actor, text: string, skip: (string | null)[] = []) {
-  const watchers = await tx.taskWatch.findMany({ where: { taskId }, select: { personId: true } });
-  const recipients = watchers.map((w) => w.personId).filter((id) => !skip.includes(id));
-  if (recipients.length) await notify(tx, { kind: "TASK_WATCH", recipients, actor, subject: taskSubject(number), taskId, text });
-}
-
 /** Подписаться на задачу или отписаться: событие в «Мне», когда меняются статус или срок */
 export async function watchTask(actor: Actor, number: number, on: boolean): Promise<{ watching: boolean }> {
   return prisma.$transaction(async (tx) => {
     const scope = await scopeOfActor(tx, actor);
     const row = await tx.task.findUnique({ where: { number }, include: taskInclude });
     if (!row || !canSeeRow(scope, row, actor.personId)) return fail(`Задачи ${number} нет`);
+    if (row.archivedAt && on) fail(`Задача ${number} в архиве`);
     if (on) await tx.taskWatch.createMany({ data: [{ taskId: row.id, personId: actor.personId }], skipDuplicates: true });
     else await tx.taskWatch.deleteMany({ where: { taskId: row.id, personId: actor.personId } });
     return { watching: on };
@@ -814,10 +825,11 @@ export async function requestUpdate(actor: Actor, number: number, now = new Date
   return prisma.$transaction(async (tx) => {
     const scope = await scopeOfActor(tx, actor);
     const row = await lockRow(tx, number, { scope, personId: actor.personId });
+    if (row.archivedAt) fail(`Задача ${number} в архиве`);
     if (!row.ownerId) fail("У задачи «Все лидеры» нет одного ответственного: попросите на встрече");
     if (row.ownerId === actor.personId) fail("Это ваша задача: обновите её сами");
     if (!["IN_PROGRESS", "CLARIFY"].includes(row.status)) fail("Обновить просят только задачу в работе");
-    const leads = actor.management || scope.leads.includes(row.teamId) || scope.leadPeople.includes(row.ownerId!);
+    const leads = actor.management || scope.leads.includes(row.teamId) || (row.teamId !== TOP_TEAM && scope.leadPeople.includes(row.ownerId!));
     if (!leads) fail("Попросить обновить может руководитель команды или ответственного");
     const since = new Date(now.getTime() - ASK_AGAIN_HOURS * 60 * 60 * 1000);
     const recent = await tx.inboxEvent.count({ where: { kind: "UPDATE_REQUEST", subject: taskSubject(number), recipientId: row.ownerId!, actorId: actor.personId, createdAt: { gt: since } } });

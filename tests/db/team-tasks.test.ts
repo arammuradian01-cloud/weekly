@@ -190,3 +190,42 @@ describe("изменилось за неделю и история статус�
     expect(spans.find((s) => s.current)?.status).toBe("done");
   });
 });
+
+describe("правки по проверке кода", () => {
+  it("адресат только принимает или отклоняет; отказ приходит автору как отказ", async () => {
+    const sector = await teamOf("Антонов");
+    const alisa = await actor("Чемоданова");
+    const ivanova = await actor("Иванова");
+    const t = await newTask(alisa, "Проверить формулу скидки", ivanova.slug, sector.id);
+    await expectRule(svc.changeStatus(ivanova, t.number, "done", "Готово"), /принять в работу или отклонить/);
+    await svc.changeStatus(ivanova, t.number, "cancelled", "Это не наша зона");
+    const ev = await prisma.inboxEvent.findFirstOrThrow({ where: { kind: "TASK_CONFIRMED", recipientId: alisa.personId, subject: `task:${t.number}` } });
+    expect(ev.text).toBe("Предложение отклонено: Это не наша зона");
+  });
+
+  it("руководитель ответственного комментирует задачу своего человека в чужой команде", async () => {
+    const sector = await teamOf("Антонов");
+    const t = await newTask(await actor("Чемоданова"), "Свести данные по отказам", await slugOf("Иванова"), sector.id);
+    expect((await svc.addComment(await actor("Токов"), t.number, "Возьмём на следующей неделе")).task.number).toBe(t.number);
+  });
+
+  it("подписчик, которого убрали из команды, событий больше не получает; архивную задачу не подписать и не показать в изменениях", async () => {
+    const sector = await teamOf("Антонов");
+    const antonov = await actor("Антонов");
+    const alisa = await actor("Чемоданова");
+    const petrov = await actor("Петров");
+    const t = await newTask(antonov, "Собрать отзывы о форме", alisa.slug, sector.id);
+    await svc.watchTask(petrov, t.number, true);
+    await org.removeTeamMember(await owner(), sector.id, petrov.slug);
+    await svc.changeStatus(alisa, t.number, "clarify");
+    expect(await prisma.inboxEvent.count({ where: { kind: "TASK_WATCH", recipientId: petrov.personId, subject: `task:${t.number}` } })).toBe(0);
+    await org.addTeamMember(await owner(), sector.id, petrov.slug);
+    // Участник команды без отношения к задаче её историю не видит, руководитель видит
+    expect((await recentChanges(reader(petrov), [sector.id])).changes.some((c) => c.number === t.number)).toBe(false);
+    expect((await recentChanges(reader(antonov), [sector.id])).changes.some((c) => c.number === t.number)).toBe(true);
+    await svc.archiveTask(await owner(), t.number, true);
+    await expectRule(svc.watchTask(antonov, t.number, true), /в архиве/);
+    await expectRule(svc.requestUpdate(antonov, t.number), /в архиве|Задачи/);
+    expect((await recentChanges(reader(antonov), [sector.id])).changes.some((c) => c.number === t.number)).toBe(false);
+  });
+});

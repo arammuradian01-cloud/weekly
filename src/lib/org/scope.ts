@@ -154,8 +154,8 @@ export function visibleTasksWhere(scope: Scope, personId: string): Prisma.TaskWh
       { createdById: personId },
       { coExecutors: { some: { personId } } },
       ...(scope.functional.length ? [{ ownerId: { in: scope.functional } }] : []),
-      // Этап 16: задачи людей своих команд в любой команде
-      ...(scope.leadPeople.length ? [{ ownerId: { in: scope.leadPeople } }] : []),
+      // Этап 16: задачи людей своих команд в любой команде, кроме топ-команды: её задачи видят её люди и управление
+      ...(scope.leadPeople.length ? [{ ownerId: { in: scope.leadPeople }, teamId: { not: TOP_TEAM } }] : []),
     ],
   };
 }

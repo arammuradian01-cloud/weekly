@@ -12,6 +12,7 @@ import { diffDays, type IsoDate } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import { ancestorsOf, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type ScopeSubject, type TeamNode } from "./scope";
 import { expectedOf, expectingTeams, leadersOf, teamDeadline } from "./rhythm";
+import { seesTask } from "@/lib/tasks/watch";
 
 export type WeeklyLight = { expected: number; submitted: number; late: number; absent: number; deadline: string; passed: boolean; closed: boolean };
 
@@ -69,7 +70,8 @@ export type PanelPerson = {
 
 export type Panel = {
   team: { id: string; name: string };
-  path: { id: string; name: string }[];
+  /** Путь по командам сверху вниз. link: команду можно открыть в панели */
+  path: { id: string; name: string; link: boolean }[];
   teams: PanelTeam[];
   people: PanelPerson[];
   attention: PanelTask[];
@@ -172,20 +174,16 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
       orderBy: { due: "asc" },
     }),
     prisma.person.findMany({ where: { id: { in: peopleIds }, active: true, role: { not: "OBSERVER" } }, select: { id: true, slug: true, fullName: true, position: true, sortOrder: true }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] }),
-    prisma.taskTransfer.findMany({ where: { at: { gte: since30 }, task: { ownerId: { in: peopleIds } } }, select: { task: { select: { ownerId: true } } } }),
+    prisma.taskTransfer.findMany({
+      where: { at: { gte: since30 }, task: { ownerId: { in: peopleIds }, archivedAt: null } },
+      select: { task: { select: { ownerId: true, teamId: true, createdById: true, coExecutors: { select: { personId: true } } } } },
+    }),
     weeklyLights(nodes),
   ]);
 
   // Задачи людей из чужих команд показываем только те, что человек видит и так (этап 14): участник, автор, руководитель людей
-  const seen = tasks.filter(
-    (t) =>
-      scope.all ||
-      visible.has(t.teamId) ||
-      t.ownerId === subject.id ||
-      t.createdById === subject.id ||
-      t.coExecutors.some((c) => c.personId === subject.id) ||
-      (!!t.ownerId && (scope.functional.includes(t.ownerId) || scope.leadPeople.includes(t.ownerId))),
-  );
+  const sees = (t: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[] }) => seesTask(scope, t, subject.id);
+  const seen = tasks.filter(sees);
   const view = (t: (typeof seen)[number]): PanelTask => {
     const due = isoFromDbDate(t.due);
     const late = t.status !== "PROPOSED" ? Math.max(0, diffDays(due, today)) : 0;
@@ -202,7 +200,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
       ownerName: t.owner?.fullName ?? "Все лидеры",
       team: t.teamId,
       teamName: byId.get(t.teamId)?.name ?? "Команда",
-      canAsk: !!t.ownerId && t.ownerId !== subject.id && t.status !== "PROPOSED" && (!!subject.management || scope.leads.includes(t.teamId) || scope.leadPeople.includes(t.ownerId)),
+      canAsk: !!t.ownerId && t.ownerId !== subject.id && t.status !== "PROPOSED" && (!!subject.management || scope.leads.includes(t.teamId) || (t.teamId !== TOP_TEAM && scope.leadPeople.includes(t.ownerId))),
     };
   };
   const all = seen.map((t) => ({ row: t, view: view(t) }));
@@ -232,7 +230,8 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
   };
 
   const transfersBy = new Map<string, number>();
-  for (const t of transfers) if (t.task.ownerId) transfersBy.set(t.task.ownerId, (transfersBy.get(t.task.ownerId) ?? 0) + 1);
+  // Переносы только по задачам, которые руководитель и так видит
+  for (const t of transfers) if (t.task.ownerId && sees(t.task)) transfersBy.set(t.task.ownerId, (transfersBy.get(t.task.ownerId) ?? 0) + 1);
 
   const attention = all
     .filter((x) => subtree.includes(x.row.teamId) && x.view.status !== "proposed" && (x.view.overdue > 0 || x.view.blocked || x.view.stale))
@@ -243,7 +242,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
   const ancestors = ancestorsOf(nodes, id).reverse();
   return {
     team: { id, name: selected.name },
-    path: [...ancestors.filter((a) => a !== id).map((a) => ({ id: a, name: byId.get(a)?.name ?? "Команда" })), { id, name: selected.name }],
+    path: [...ancestors.filter((a) => a !== id).map((a) => ({ id: a, name: byId.get(a)?.name ?? "Команда", link: visible.has(a) })), { id, name: selected.name, link: false }],
     teams: rows.map((n, i) => teamRow(n, i === 0 ? "self" : "below")),
     people: people.map((p) => {
       const mine = all.filter((x) => x.row.ownerId === p.id);

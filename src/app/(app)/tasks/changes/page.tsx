@@ -16,7 +16,7 @@ export default async function TaskChangesPage() {
   const subject = subjectOf(ctx);
   const team = await currentTeam(subject);
   const teamIds = team.id === ALL_TEAMS ? null : team.id ? [team.id] : [];
-  const { since, changes } = await recentChanges({ personId: ctx.person.id, role: ctx.person.role, limited: subject.limited }, teamIds);
+  const { since, changes } = await recentChanges({ personId: ctx.person.id, role: ctx.person.role, limited: subject.limited, management: !!ctx.management }, teamIds);
   return (
     <>
       <TasksHeader />

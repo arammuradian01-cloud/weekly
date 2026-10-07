@@ -11,7 +11,7 @@ import type { PriorityCode, StateCode, StatusCode } from "@/domain/dictionaries"
 import type { IsoDate } from "@/domain/dates";
 import type { HistoryItem, Owner, PersonSlug, Task } from "@/domain/types";
 import { prisma } from "@/lib/db";
-import { loadScope } from "@/lib/org/scope";
+import { loadScope, TOP_TEAM } from "@/lib/org/scope";
 import { moveTask } from "@/lib/org/service";
 import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
 
@@ -146,8 +146,9 @@ export async function taskHistoryAction(number: number): Promise<{ ok: true; ite
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
   if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
   const scope = await loadScope(prisma, { id: a.personId, role: a.role, limited: readerOf(a).limited });
-  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads }))
-    return { ok: false, error: "История видна участникам задачи, руководителю команды, владельцу и администраторам" };
+  const people = (await prisma.person.findMany({ where: { id: { in: scope.leadPeople } }, select: { slug: true } })).map((p) => p.slug as PersonSlug);
+  if (!canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads, people }))
+    return { ok: false, error: "История видна участникам задачи, руководителю команды и руководителю ответственного, владельцу и администраторам" };
   return { ok: true, items: await svc.taskHistory(task.number) };
 }
 
@@ -162,15 +163,19 @@ export async function taskExtrasAction(number: number): Promise<{ ok: true; extr
     const n = checkNumber(number);
     const task = await svc.getTask(n, readerOf(a));
     if (!task) return { ok: false, error: `Задачи ${n} нет` };
+    if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${n} в архиве` };
     const scope = await loadScope(prisma, { id: a.personId, role: a.role, limited: readerOf(a).limited });
+    const people = (await prisma.person.findMany({ where: { id: { in: scope.leadPeople } }, select: { slug: true } })).map((p) => p.slug as PersonSlug);
+    // История статусов видна тем же, кому видна история задачи
+    const history = canSeeTaskHistory(task, { slug: a.slug, management: a.management, observer: a.role === "OBSERVER", leads: scope.leads, people });
     const [watch, owner, spans] = await Promise.all([
       prisma.taskWatch.findFirst({ where: { personId: a.personId, task: { number: n } } }),
       task.owner !== "all" ? prisma.person.findUnique({ where: { slug: task.owner }, select: { id: true } }) : Promise.resolve(null),
-      taskStatusSpans(n),
+      history ? taskStatusSpans(n) : Promise.resolve([]),
     ]);
-    const open = task.status === "in-progress" || task.status === "clarify";
+    const open = (task.status === "in-progress" || task.status === "clarify") && !task.archived;
     const canAsk =
-      a.role !== "OBSERVER" && open && !!owner && owner.id !== a.personId && (!!a.management || scope.leads.includes(task.team) || scope.leadPeople.includes(owner.id));
+      a.role !== "OBSERVER" && open && !!owner && owner.id !== a.personId && (!!a.management || scope.leads.includes(task.team) || (task.team !== TOP_TEAM && scope.leadPeople.includes(owner.id)));
     return { ok: true, extras: { watching: !!watch, canAsk, spans } };
   } catch (error) {
     unstable_rethrow(error);

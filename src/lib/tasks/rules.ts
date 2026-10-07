@@ -21,6 +21,8 @@ export function overdueDays(task: Task, today: IsoDate): number {
 export function canSeeTaskHistory(task: Pick<Task, "owner" | "coExecutors" | "createdBy" | "team">, v: Viewer): boolean {
   if (v.observer) return false;
   if (v.management || leadsTeam(v, task.team)) return true;
+  // Руководитель ответственного вне топ-команды (этап 16)
+  if (task.team !== TOP_TEAM && task.owner !== "all" && v.people?.includes(task.owner)) return true;
   return task.owner === v.slug || task.owner === "all" || task.coExecutors.includes(v.slug) || task.createdBy === v.slug;
 }
 
