@@ -12,7 +12,7 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   // Этап 9: личные входы, ссылки и почта начинаются с чистого листа, общий логин работает
   await client.query("DELETE FROM device_sessions");
   await client.query("DELETE FROM login_links");
-  await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb`);
+  await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb, "passwordHash" = NULL, "passwordSetAt" = NULL`);
   // Этап 20: письма уходили по прошлым тестам
   await client.query("DELETE FROM mail_marks");
   await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
@@ -111,13 +111,23 @@ export function linkFrom(text: string): string {
   return text.split("\n").find((line) => line.startsWith("http"))!;
 }
 
-/** Вход по личной ссылке из консоли сервера (этап 14): у сотрудников нет общего логина */
+/** Пароль тестовых личных входов (этап 20а): без имён и логинов, проходит проверку */
+export const TEST_PASSWORD = "Проверка входа 2026";
+
+/** Личный пароль по ссылке: человек сам задаёт его на экране ссылки и сразу входит (этап 20а) */
+export async function setPasswordByLink(page: Page, link: string, password = TEST_PASSWORD) {
+  await page.goto(link);
+  await page.getByLabel(/Придумайте пароль|Новый пароль/).fill(password);
+  await page.getByLabel("Повторите пароль").fill(password);
+  await page.getByRole("button", { name: "Задать пароль и войти" }).click();
+  await expect(page).toHaveURL(/\/$/);
+}
+
+/** Вход по личной ссылке из консоли сервера (этап 14): у сотрудников нет общего логина. С этапа 20а по ссылке задают пароль */
 export async function enterByLink(page: Page, slug: string) {
   const out = execSync(`npx tsx scripts/login-link.ts ${slug}`, {
     env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL, APP_URL: "http://localhost:3100" },
   }).toString();
   const link = out.split("\n").find((l) => l.startsWith("http"))!;
-  await page.goto(link);
-  await page.getByRole("button", { name: /Войти как/ }).click();
-  await expect(page).toHaveURL(/\/$/);
+  await setPasswordByLink(page, link);
 }

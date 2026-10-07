@@ -1,15 +1,28 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { login, requestEmailLinkAction, type EmailFormState, type FormState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Field, FormError } from "@/components/ui/field";
 
 export function LoginForm() {
   const [state, action, pending] = useActionState<FormState, FormData>(login, null);
+  // Логин держим сами: после неверного пароля форма сбрасывается, логин набирать заново не нужно
+  const [value, setValue] = useState("");
   return (
     <form action={action} className="flex flex-col gap-4" noValidate>
-      <Field label="Логин" id="login" name="login" autoComplete="username" autoCapitalize="none" spellCheck={false} required />
+      <Field
+        label="Логин"
+        id="login"
+        name="login"
+        autoComplete="username"
+        autoCapitalize="none"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        hint="Короткое имя, например reva, или рабочая почта"
+        required
+      />
       <Field label="Пароль" id="password" name="password" type="password" autoComplete="current-password" required />
       <FormError message={state?.error} />
       <Button type="submit" disabled={pending} className="mt-1 w-full">

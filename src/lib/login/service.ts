@@ -74,7 +74,7 @@ export async function saveTeamLogin(actor: Actor, mode: TeamLogin): Promise<Team
   if (mode !== "on" && mode !== "off") fail("Выберите способ входа из списка");
   const before = await getTeamLogin();
   if (before === mode) return mode;
-  if (mode === "off" && actor.via === "TEAM") fail("Сначала войдите сами по личной ссылке: после выключения общего логина войти по нему не сможет никто, и вы тоже");
+  if (mode === "off" && actor.via === "TEAM") fail("Сначала войдите сами лично, со своим логином и паролем: после выключения общего логина войти по нему не сможет никто, и вы тоже");
   await prisma.$transaction(async (tx) => {
     await tx.setting.upsert({ where: { key: "auth.teamLogin" }, update: { value: mode }, create: { key: "auth.teamLogin", value: mode } });
     // Новое поколение общего логина: если его потом включат обратно, старые сессии не оживут
@@ -148,12 +148,12 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
 
 export type LinkStatus = "ok" | "used" | "expired" | "unknown" | "inactive";
 
-/** Что за ссылка, без её использования: для экрана «Войти как ...» */
-export async function peekLink(token: string, now = new Date()): Promise<{ status: LinkStatus; kind?: LinkKind; fullName?: string }> {
+/** Что за ссылка, без её использования: для экрана «Войти как ...». login и hasPassword нужны экрану задания пароля */
+export async function peekLink(token: string, now = new Date()): Promise<{ status: LinkStatus; kind?: LinkKind; fullName?: string; login?: string; hasPassword?: boolean }> {
   if (!token) return { status: "unknown" };
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) }, include: { person: true } });
   if (!link) return { status: "unknown" };
-  const base = { kind: link.kind, fullName: link.person.fullName };
+  const base = { kind: link.kind, fullName: link.person.fullName, login: link.person.slug, hasPassword: !!link.person.passwordHash };
   if (link.usedAt) return { status: "used", ...base };
   if (link.expiresAt <= now) return { status: "expired", ...base };
   if (!link.person.active) return { status: "inactive", ...base };

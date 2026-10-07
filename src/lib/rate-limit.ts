@@ -18,7 +18,7 @@ export type LockState = {
  * Считает состояние по истории попыток одного адреса.
  * Попытки во время блокировки не продлевают её. Успешный вход обнуляет счёт.
  */
-export function computeLockState(attempts: Attempt[], now: Date): LockState {
+export function computeLockState(attempts: Attempt[], now: Date, max = MAX_FAILURES): LockState {
   const sorted = [...attempts].sort((a, b) => a.at.getTime() - b.at.getTime());
   let failures: number[] = [];
   let lockUntil = 0;
@@ -32,7 +32,7 @@ export function computeLockState(attempts: Attempt[], now: Date): LockState {
     }
     failures = failures.filter((f) => f > t - FAILURE_WINDOW_MS);
     failures.push(t);
-    if (failures.length >= MAX_FAILURES) {
+    if (failures.length >= max) {
       lockUntil = t + LOCK_MS;
       failures = [];
     }
@@ -43,7 +43,7 @@ export function computeLockState(attempts: Attempt[], now: Date): LockState {
     return { locked: true, lockedUntil: new Date(lockUntil), remaining: 0 };
   }
   const recent = failures.filter((f) => f > nowMs - FAILURE_WINDOW_MS).length;
-  return { locked: false, lockedUntil: null, remaining: MAX_FAILURES - recent };
+  return { locked: false, lockedUntil: null, remaining: max - recent };
 }
 
 /** С какого момента нужна история, чтобы посчитать состояние */
