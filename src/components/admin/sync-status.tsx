@@ -11,6 +11,7 @@ import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 import { pushNowAction, rebuildNowAction, reconcileNowAction, setSpreadsheetAction } from "@/app/(app)/sync/actions";
 import { BordPull, type BordView } from "./bord-pull";
+import { NumbersSetup, type NumbersView } from "./numbers-setup";
 
 type Tone = "ok" | "warn" | "error" | "pending";
 
@@ -29,6 +30,7 @@ export type SyncView = {
   runs: { id: string; at: string; kind: string; text: string; tone: Tone }[];
   counts: { tasks: number; comments: number; entries: number };
   bord: BordView;
+  numbers: NumbersView;
 };
 
 const sheetUrl = (id: string) => `https://docs.google.com/spreadsheets/d/${id}/edit`;
@@ -84,6 +86,8 @@ export function SyncStatus({ view }: { view: SyncView }) {
       ) : null}
 
       <BordPull view={view.bord} />
+
+      <NumbersSetup view={view.numbers} />
 
       <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
       <div>

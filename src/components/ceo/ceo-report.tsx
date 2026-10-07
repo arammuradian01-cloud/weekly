@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useState } from "react";
 import { ClipboardCopy, RefreshCw, Save } from "lucide-react";
 import { usePrototype } from "@/domain/store";
+import { numbersText, type WeekNumbers } from "@/lib/numbers/text";
+import { forecastText } from "@/lib/forecast/codes";
+import type { ForecastSummary } from "@/lib/forecast/types";
+import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
@@ -52,6 +56,9 @@ export function CeoReport({
   history,
   promises,
   stats,
+  numbers,
+  forecast,
+  owner = false,
 }: {
   view: WeekView;
   saved: CeoReportView;
@@ -59,6 +66,10 @@ export function CeoReport({
   promises?: Promises;
   /** Личная статистика за 8 недель: только директору */
   stats?: PromiseHistory[];
+  /** Цифры недели из недельного отчёта и прогноз лидеров (этап 24) */
+  numbers?: WeekNumbers;
+  forecast?: ForecastSummary;
+  owner?: boolean;
 }) {
   const thanks = view.reports.filter((r) => r.thanks);
   const { notify } = usePrototype();
@@ -77,8 +88,9 @@ export function CeoReport({
     `Отчёт за неделю ${week.number}`,
     "",
     "Цифры недели",
-    "Появятся после подключения недельного отчёта.",
+    ...(numbers ? numbersText(numbers) : ["Появятся после подключения недельного отчёта."]),
     "",
+    ...(forecast ? ["Прогноз до конца месяца", ...forecastText(forecast), ""] : []),
     ...(promises?.total.total ? ["Обещания недели", promiseLine(promises.total), ""] : []),
     ...(thanks.length ? ["Благодарности", ...thanks.map((r) => `- ${compactName(r.author)}: ${r.thanks}`), ""] : []),
     "Главное за неделю",
@@ -148,10 +160,15 @@ export function CeoReport({
           </div>
         </div>
 
-        <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
-          <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
-          <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта (этап 10). Руками факт никто не вводит.</p>
-        </section>
+        {numbers ? (
+          <WeekNumbersBlock numbers={numbers} manage={owner} />
+        ) : (
+          <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
+            <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
+            <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
+          </section>
+        )}
+        {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
 
         <section aria-labelledby="ceo-promises" className="rounded-xl px-5 py-4 ring-1 ring-line">
           <h2 id="ceo-promises" className="text-title-sm font-semibold text-ink">Обещания недели</h2>

@@ -81,6 +81,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "meeting.decision.cancel": "Решение отменено",
   "meeting.intake": "Приём из Notion",
   "weekly.promise": "Итог обещания",
+  "weekly.forecast": "Прогноз месяца",
+  "sync.numbers": "Недельный отчёт: цифры недели",
   "weekly.entry.create": "Запись weekly добавлена",
   "weekly.entry.update": "Запись weekly изменена",
   "weekly.entry.delete": "Запись weekly удалена",
