@@ -12,6 +12,7 @@ import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { Role, TeamKind } from "@/generated/prisma/enums";
 
 import { TOP_TEAM } from "@/domain/teams";
+import { slotOf, type TeamRhythm } from "./rhythm";
 
 export { TOP_TEAM };
 
@@ -28,6 +29,8 @@ export type TeamNode = {
   sortOrder: number;
   /** id участников, без руководителя */
   members: string[];
+  /** Ритм weekly команды (этап 15) */
+  rhythm: TeamRhythm;
 };
 
 export type Scope = {
@@ -60,6 +63,11 @@ export async function loadTeamNodes(db: Db): Promise<TeamNode[]> {
     active: t.active,
     sortOrder: t.sortOrder,
     members: t.members.map((m) => m.personId),
+    rhythm: {
+      deadline: slotOf(t.deadlineWeek, t.deadlineWeekday, t.deadlineTime),
+      meeting: slotOf(t.meetingWeek, t.meetingWeekday, t.meetingTime),
+      specialists: t.specialistsWeekly,
+    },
   }));
 }
 

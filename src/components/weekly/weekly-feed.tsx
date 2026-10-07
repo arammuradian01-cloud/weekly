@@ -9,7 +9,7 @@ import { formatLong } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
-import { assignEntryAuthorAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
+import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Segmented, SelectField } from "@/components/ui/primitives";
@@ -19,6 +19,7 @@ import { EntryItem } from "./entry-item";
 import { SubmissionStrip } from "./submission-strip";
 import { AbsentBadge, substituteText } from "./absence";
 import { useRunWeekly } from "./use-weekly";
+import { PromoteControl, PromotedNote } from "./promote";
 
 type View = "people" | "blocks";
 
@@ -65,7 +66,40 @@ function WeekLock({ week }: { week: WeekInfo }) {
   );
 }
 
-export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport: PersonWeekly }) {
+/** Неделя команды (этап 15): руководитель закрывает её после встречи команды, дальше люди команды свой weekly не правят */
+function TeamWeekLock({ week, team }: { week: WeekInfo; team: { id: string; name: string } }) {
+  const run = useRunWeekly();
+  const [busy, setBusy] = useState(false);
+  const toggle = async () => {
+    setBusy(true);
+    await run(() => setTeamWeekClosedAction(team.id, week.key, !week.closed), week.closed ? `Неделя ${week.number} команды снова открыта` : `Неделя ${week.number} команды закрыта`);
+    setBusy(false);
+  };
+  return (
+    <Button variant="secondary" onClick={toggle} disabled={busy} className="px-3 sm:px-5" aria-label={week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}>
+      {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+      <span className="sm:hidden">{week.closed ? "Открыть неделю" : "Закрыть неделю"}</span>
+      <span className="hidden sm:inline">{week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}</span>
+    </Button>
+  );
+}
+
+type TeamWeek = { id: string; name: string } | null;
+
+export function WeeklyFeed({
+  view: data,
+  myReport,
+  promoteFrom = [],
+  teamWeek = null,
+  promoteClosed = false,
+}: {
+  view: WeekView;
+  myReport: PersonWeekly;
+  promoteFrom?: PersonSlug[];
+  teamWeek?: TeamWeek;
+  /** Мой weekly за эту неделю закрыт: поднимать записи наверх уже нельзя */
+  promoteClosed?: boolean;
+}) {
   const { manage, teamPeople } = usePrototype();
   const week = data.week;
   const [view, setView] = useState<View>("people");
@@ -109,7 +143,8 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
           </Link>
-          {manage ? <WeekLock week={week} /> : null}
+          {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
+          {manage ? <WeekLock week={{ ...week, closed: data.departmentClosed ?? week.closed }} /> : null}
         </div>
       </header>
 
@@ -125,7 +160,7 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
       {week.closed ? (
         <p className="mb-4 inline-flex items-center gap-2 text-small text-muted">
           <Lock className="h-4 w-4" aria-hidden="true" />
-          Неделя закрыта: записи правят только владелец и администраторы
+          {teamWeek && !data.departmentClosed ? "Неделя команды закрыта: люди команды свой weekly больше не правят" : "Неделя закрыта: записи правят только владелец и администраторы"}
         </p>
       ) : null}
 
@@ -175,10 +210,10 @@ export function WeeklyFeed({ view: data, myReport }: { view: WeekView; myReport:
       ) : view === "people" ? (
         <div className="mt-6 flex flex-col gap-6">
           {helpEntries.length && !helpOnly ? <HelpBlock entries={helpEntries} /> : null}
-          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} />
+          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} />
         </div>
       ) : (
-        <BlocksView entries={entries} />
+        <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} />
       )}
     </div>
   );
@@ -203,7 +238,21 @@ function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
   );
 }
 
-function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; entries: WeeklyEntry[]; reporting: boolean }) {
+function PeopleView({
+  reports,
+  entries,
+  reporting,
+  feedAuthors,
+  promoteFrom,
+  closed,
+}: {
+  reports: PersonWeekly[];
+  entries: WeeklyEntry[];
+  reporting: boolean;
+  feedAuthors?: PersonSlug[];
+  promoteFrom: PersonSlug[];
+  closed: boolean;
+}) {
   const { manage, teamPeople } = usePrototype();
   const run = useRunWeekly();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
@@ -211,10 +260,15 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
   const stateOf = (slug: PersonSlug) => reportOf(slug)?.state ?? "not-started";
   // Сначала сдавшие, потом черновики, в конце те, кто не начинал
   // Записи тех, кого уже выключили, остаются в ленте прошлых недель
+  // Свои записи ленты: авторы из команды. Записи, которые пришли наверх, видны у того, кто их поднял (этап 15)
+  const ownFeed = (e: WeeklyEntry) => !feedAuthors || (!!e.author && feedAuthors.includes(e.author));
+  const promotedBy = (slug: PersonSlug) => entries.filter((e) => e.author !== slug && e.promoted?.some((p) => p.by === slug));
+  // Кто сдаёт по желанию (этап 15), появляется в ленте, только если что-то написал или сдал
+  const listed = (w: PersonWeekly) => !w.optional || w.state !== "not-started";
+  const inFeed = (slug: PersonSlug) =>
+    entries.some((e) => e.author === slug && ownFeed(e)) || reports.some((w) => w.author === slug && listed(w)) || (!!feedAuthors?.includes(slug) && promotedBy(slug).length > 0);
   const gone = [...new Set(entries.map((e) => e.author).filter((s): s is PersonSlug => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
-  const authors = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug) || reports.some((w) => w.author === p.slug)).sort(
-    (a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)],
-  );
+  const authors = [...PEOPLE, ...gone].filter((p) => inFeed(p.slug)).sort((a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)]);
   const assignAuthor = (id: string, slug: PersonSlug) =>
     void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${personOf(slug).fullName}`);
   const common = entries.filter((e) => !e.author);
@@ -251,7 +305,8 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
       ) : null}
       {authors.map((p) => {
         const weekly = reportOf(p.slug);
-        const own = entries.filter((e) => e.author === p.slug);
+        const own = entries.filter((e) => e.author === p.slug && ownFeed(e));
+        const fromTeam = feedAuthors?.includes(p.slug) ?? true ? promotedBy(p.slug) : [];
         const state = weekly?.state ?? "not-started";
         return (
           <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col rounded-xl ring-1 ring-line">
@@ -261,6 +316,7 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
                   {p.fullName}
                 </h2>
                 <div className="flex items-center gap-2">
+                  {weekly?.deadline && state !== "submitted" && state !== "late" ? <span className="text-caption text-muted">{deadlineText(weekly.deadline)}</span> : null}
                   {weekly?.submittedAt ? <span className="text-caption text-muted">{submittedText(weekly.submittedAt)}</span> : null}
                   {weekly?.absent && state !== "submitted" && state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={state} />}
                 </div>
@@ -276,14 +332,40 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
             {own.length ? (
               <ul className="flex flex-col divide-y divide-line">
                 {own.map((e) => (
-                  <li key={e.id} className="px-5 py-4">
+                  <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
                     <EntryItem entry={e} />
+                    <PromotedNote entry={e} />
+                    <PromoteControl entry={e} promoteFrom={promoteFrom} closed={closed} />
                   </li>
                 ))}
               </ul>
-            ) : (
+            ) : fromTeam.length ? null : (
               <p className={cn("px-5 py-4 text-body text-muted")}>Записей нет</p>
             )}
+            {fromTeam.length ? (
+              <div className="border-t border-line bg-surface/60">
+                <h3 className="px-5 pt-3 text-small font-semibold text-ink">
+                  Из команды <span className="font-normal text-muted">{fromTeam.length}</span>
+                </h3>
+                <ul className="flex flex-col divide-y divide-line">
+                  {fromTeam.map((e) => {
+                    const note = e.promoted?.find((x) => x.by === p.slug)?.note;
+                    return (
+                      <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
+                        <EntryItem entry={e} showAuthor />
+                        {note ? (
+                          <p className="text-body text-ink">
+                            <span className="text-muted">От себя: </span>
+                            {note}
+                          </p>
+                        ) : null}
+                        <PromoteControl entry={e} promoteFrom={promoteFrom} closed={closed} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ) : null}
           </section>
         );
       })}
@@ -291,7 +373,7 @@ function PeopleView({ reports, entries, reporting }: { reports: PersonWeekly[]; 
   );
 }
 
-function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
+function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; promoteFrom: PersonSlug[]; closed: boolean }) {
   // Риски первыми: с них начинается разбор. Дальше порядок справочника, в конце блоки, которые уже скрыли
   const known = BLOCKS.map((b) => b.code);
   const order: BlockCode[] = [...new Set(["risks", ...known, ...entries.map((e) => e.block)])];
@@ -307,8 +389,10 @@ function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
             </h2>
             <ul className="flex flex-col divide-y divide-line">
               {list.map((e) => (
-                <li key={e.id} className="px-5 py-4">
+                <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
                   <EntryItem entry={e} showAuthor />
+                  <PromotedNote entry={e} />
+                  <PromoteControl entry={e} promoteFrom={promoteFrom} closed={closed} />
                 </li>
               ))}
             </ul>
@@ -319,6 +403,14 @@ function BlocksView({ entries }: { entries: WeeklyEntry[] }) {
   );
 }
 
+
+/** «срок пт, 16:00»: свой срок человека, если команда сдаёт раньше департамента */
+export function deadlineText(iso: string): string {
+  const at = new Date(iso);
+  const day = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", weekday: "short" }).format(at);
+  const time = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit" }).format(at);
+  return `срок ${day}, ${time}`;
+}
 
 /** «пн 17:42»: когда сдан weekly */
 export function submittedText(iso: string): string {

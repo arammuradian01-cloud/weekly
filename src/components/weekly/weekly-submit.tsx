@@ -21,6 +21,7 @@ import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
 import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
+import { PromoteControl } from "./promote";
 import { submittedText } from "./weekly-feed";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
@@ -42,6 +43,8 @@ export function WeeklySubmit({
   deadlineText,
   timeLeft,
   late,
+  promoted = [],
+  expectedIn,
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -50,6 +53,10 @@ export function WeeklySubmit({
   deadlineText: string;
   timeLeft: string;
   late: boolean;
+  /** Записи людей моих команд, которые я поднял в свой weekly (этап 15) */
+  promoted?: WeeklyEntry[];
+  /** Команды, которые ждут мой weekly. Пусто: weekly от меня не ждут */
+  expectedIn?: { id: string; name: string }[];
 }) {
   const { data, me, notify, notifyUndo } = usePrototype();
   const router = useRouter();
@@ -191,7 +198,7 @@ export function WeeklySubmit({
 
   const problems = [
     !headline.trim() ? "Нет главной фразы недели" : null,
-    entries.length === 0 ? "Нет ни одной записи" : null,
+    entries.length === 0 && promoted.length === 0 ? "Нет ни одной записи" : null,
     headline.length > HEADLINE_MAX ? "Главная фраза длиннее 150 знаков" : null,
   ].filter(Boolean) as string[];
 
@@ -226,6 +233,7 @@ export function WeeklySubmit({
           <p className="mt-3 text-small text-muted">
             Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
           </p>
+          {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
           <p className="mt-2 inline-flex items-center gap-1.5 text-caption text-muted" aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
@@ -255,6 +263,11 @@ export function WeeklySubmit({
           <p className="inline-flex items-start gap-2 rounded-xl bg-surface px-5 py-4 text-body text-ink">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
+          </p>
+        ) : null}
+        {expectedIn && expectedIn.length === 0 && !submitted ? (
+          <p className="rounded-xl bg-surface px-5 py-4 text-body text-ink">
+            Weekly от вас сейчас не ждут: в вашей команде его сдают руководители. Достаточно обновлять задачи, а если за неделю было важное, его можно записать и сдать.
           </p>
         ) : null}
         <Step id="step-tasks" n={1} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
@@ -309,6 +322,31 @@ export function WeeklySubmit({
                 ),
               )}
             </ul>
+            {promoted.length ? (
+              <section aria-labelledby="from-team" className="flex flex-col gap-3">
+                <h3 id="from-team" className="text-lead font-semibold text-ink">
+                  Из команды <span className="font-normal text-muted">{promoted.length}</span>
+                </h3>
+                <p className="text-small text-muted">Записи людей ваших команд, которые вы подняли наверх. Они уйдут с вашим weekly, переписывать их не нужно</p>
+                <ul className="flex flex-col gap-3">
+                  {promoted.map((e) => {
+                    const note = e.promoted?.find((x) => x.by === me.slug)?.note;
+                    return (
+                      <li key={e.id} className="flex flex-col gap-2 rounded-xl px-4 py-3 ring-1 ring-line">
+                        <EntryItem entry={e} showAuthor />
+                        {note ? (
+                          <p className="text-body text-ink">
+                            <span className="text-muted">От себя: </span>
+                            {note}
+                          </p>
+                        ) : null}
+                        <PromoteControl entry={e} promoteFrom={[]} closed={!canEdit} />
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ) : null}
             {!canEdit ? null : draft ? (
               <EntryForm
                 initial={draft}

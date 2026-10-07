@@ -9,7 +9,7 @@ import { teamOf } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
-import type { PersonSlug, WeekView } from "@/domain/types";
+import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { EntryItem } from "./entry-item";
 import { AbsentBadge, absentLine, substituteText } from "./absence";
 
@@ -27,7 +27,10 @@ export function MeetingMode({ view }: { view: WeekView }) {
   const { team } = usePrototype();
   const lead = teamOf(team.id)?.leader;
   const last = (p: { slug: string; role: string }) => Number(p.slug === lead || p.role === "OWNER");
-  const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug)).sort((a, b) => last(a) - last(b));
+  // Свои записи ленты и записи, поднятые наверх людьми команды (этап 15): поднятые рассказывает тот, кто их поднял
+  const own = (e: WeeklyEntry) => !view.authors || (!!e.author && view.authors.includes(e.author));
+  const raisedBy = (slug: string) => (view.authors && !view.authors.includes(slug) ? [] : entries.filter((e) => e.author !== slug && e.promoted?.some((x) => x.by === slug)));
+  const leaders = [...PEOPLE, ...gone].filter((p) => entries.some((e) => e.author === p.slug && own(e)) || raisedBy(p.slug).length > 0).sort((a, b) => last(a) - last(b));
   const hasCommon = entries.some((e) => !e.author);
   const slides: string[] = ["risks", ...(hasCommon ? ["common"] : []), ...leaders.map((p) => p.slug)];
   const [index, setIndex] = useState(0);
@@ -123,7 +126,7 @@ export function MeetingMode({ view }: { view: WeekView }) {
             <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries
-                .filter((e) => e.author === slide)
+                .filter((e) => e.author === slide && own(e))
                 .sort((a, b) => Number(b.type === "risk" || !!b.help) - Number(a.type === "risk" || !!a.help))
                 .map((e) => (
                   <li key={e.id} className="max-w-[72ch]">
@@ -131,6 +134,22 @@ export function MeetingMode({ view }: { view: WeekView }) {
                   </li>
                 ))}
             </ul>
+            {raisedBy(slide).length ? (
+              <>
+                <h2 className="mt-10 text-title font-semibold text-ink">Из команды</h2>
+                <ul className="mt-4 flex flex-col gap-8">
+                  {raisedBy(slide).map((e) => {
+                    const note = e.promoted?.find((x) => x.by === slide)?.note;
+                    return (
+                      <li key={e.id} className="max-w-[72ch]">
+                        <EntryItem entry={e} large showAuthor />
+                        {note ? <p className="mt-2 text-title text-ink">От себя: {note}</p> : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            ) : null}
           </>
         )}
       </section>

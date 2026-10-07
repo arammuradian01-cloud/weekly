@@ -37,6 +37,8 @@ export default async function SubmitWeeklyPage() {
           deadlineText={formatMoment(deadline)}
           timeLeft={formatDuration(Math.max(0, msLeft))}
           late={msLeft < 0}
+          promoted={mine.promoted}
+          expectedIn={mine.expectedIn}
         />
         <TaskDrawer />
       </Suspense>

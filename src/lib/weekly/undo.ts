@@ -27,6 +27,8 @@ export type EntrySnapshot = {
   createdAt: string;
   /** Задачи, созданные из записи: при удалении связь обнуляется, при отмене возвращается */
   taskIds: string[];
+  /** Кто поднял запись наверх и с какой фразой (этап 15): при отмене удаления отметки возвращаются */
+  promotions?: { byId: string; note: string | null; createdAt: string }[];
 };
 
 type Payload = { snapshot: EntrySnapshot; by: string; exp: number };

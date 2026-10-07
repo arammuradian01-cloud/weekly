@@ -23,11 +23,13 @@ const WORD: Record<WeeklyStateCode, string> = {
 /** Полоса сдачи: кто сдал, кто в черновике, кто не начинал. Кого нет на неделе, виден серым с замещающим и в счёт не входит */
 export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[]; className?: string }) {
   // Люди в порядке команды, но только те, кого сервер считает участниками weekly (без выключенных и наблюдателей)
-  const states = PEOPLE.filter((p) => reports.some((r) => r.author === p.slug)).map((p) => {
+  // Кто сдаёт по желанию (специалисты, от кого weekly не ждут, этап 15), виден, только если уже сдал, и в счёт не входит
+  const sent = (r: PersonWeekly) => r.state === "submitted" || r.state === "late";
+  const states = PEOPLE.filter((p) => reports.some((r) => r.author === p.slug && (!r.optional || sent(r)))).map((p) => {
     const report = reports.find((w) => w.author === p.slug);
-    return { person: p, state: (report?.state ?? "not-started") as WeeklyStateCode, absent: report?.absent };
+    return { person: p, state: (report?.state ?? "not-started") as WeeklyStateCode, absent: report?.absent, optional: !!report?.optional };
   });
-  const expected = states.filter((s) => !s.absent || s.state === "submitted" || s.state === "late");
+  const expected = states.filter((s) => !s.optional && (!s.absent || s.state === "submitted" || s.state === "late"));
   const done = expected.filter((s) => s.state === "submitted" || s.state === "late").length;
   return (
     <section aria-label="Кто сдал weekly" className={cn("rounded-xl bg-surface px-4 py-3", className)}>
@@ -36,13 +38,13 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
           <span className="font-semibold">Сдали {done} из {expected.length}</span>
         </p>
         <ul className="flex flex-wrap gap-x-4 gap-y-2">
-          {states.map(({ person, state, absent }) => {
+          {states.map(({ person, state, absent, optional }) => {
             const away = absent && state !== "submitted" && state !== "late";
             return (
               <li key={person.slug} className="inline-flex items-center gap-2 text-small">
                 <span className={cn("h-2.5 w-2.5 rounded-full", away ? "bg-transparent ring-2 ring-inset ring-mist" : DOT[state])} aria-hidden="true" />
                 <span className={away ? "text-muted" : "text-ink"}>{person.shortName}</span>
-                <span className="text-muted">{away ? `нет на неделе, ${substituteText(absent.substitute)}` : WORD[state]}</span>
+                <span className="text-muted">{away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`}</span>
               </li>
             );
           })}

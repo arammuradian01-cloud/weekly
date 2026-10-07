@@ -20,15 +20,18 @@ import {
   createTeamAction,
   removeMemberAction,
   setPersonOrgAction,
+  setTeamRhythmAction,
   syncTeamsAction,
   updateTeamAction,
   updateUnitAction,
 } from "@/app/(app)/structure/actions";
 import { StructureImport } from "./structure-import";
+import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
+import { deadlineText } from "@/components/weekly/weekly-feed";
 
 type Candidate = { slug: string; fullName: string; position: string | null };
 
-export function StructureScreen({ view, owner, me, candidates }: { view: StructureView; owner: boolean; me: string; candidates: Candidate[] }) {
+export function StructureScreen({ view, owner, me, candidates, leads = [] }: { view: StructureView; owner: boolean; me: string; candidates: Candidate[]; leads?: string[] }) {
   const [tab, setTab] = useState<"units" | "teams">("units");
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -87,7 +90,7 @@ export function StructureScreen({ view, owner, me, candidates }: { view: Structu
           <UnitTree units={view.units} owner={owner} people={candidates} onSave={run} />
         )
       ) : (
-        <TeamTree teams={view.teams} owner={owner} me={me} candidates={candidates} onSave={run} pending={pending} />
+        <TeamTree teams={view.teams} owner={owner} me={me} candidates={candidates} onSave={run} pending={pending} leads={leads} />
       )}
 
       {owner && tab === "units" && view.unplaced.length ? (
@@ -341,9 +344,26 @@ function orderTeams(teams: TeamView[]): { team: TeamView; depth: number }[] {
   return out;
 }
 
-function TeamTree({ teams, owner, me, candidates, onSave, pending }: { teams: TeamView[]; owner: boolean; me: string; candidates: Candidate[]; onSave: Runner; pending: boolean }) {
+function TeamTree({
+  teams,
+  owner,
+  me,
+  candidates,
+  onSave,
+  pending,
+  leads,
+}: {
+  teams: TeamView[];
+  owner: boolean;
+  me: string;
+  candidates: Candidate[];
+  onSave: Runner;
+  pending: boolean;
+  leads: string[];
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<TeamView | null>(null);
+  const [rhythm, setRhythm] = useState<TeamView | null>(null);
   return (
     <>
       <ul className="flex flex-col divide-y divide-line rounded-xl border border-line" aria-label="Команды">
@@ -370,9 +390,12 @@ function TeamTree({ teams, owner, me, candidates, onSave, pending }: { teams: Te
                   </p>
                   <p className="text-small text-muted">
                     {t.leader ? `Руководитель: ${t.leader.fullName}` : "Руководитель не назначен"}, участников {t.members.length}, открытых задач {t.openTasks}
+                    {t.overdue ? <span className="text-danger-ink">, просрочено {t.overdue}</span> : null}
                   </p>
+                  {t.active ? <WeeklyLight weekly={t.weekly} /> : null}
                   {open ? (
                     <div className="mt-2 flex flex-col gap-2">
+                      <p className="text-small text-muted">{rhythmText(t)}</p>
                       {t.members.length ? (
                         <ul className="flex flex-col gap-1">
                           {t.members.map((m) => (
@@ -391,11 +414,18 @@ function TeamTree({ teams, owner, me, candidates, onSave, pending }: { teams: Te
                         <p className="text-small text-muted">Участников пока нет.</p>
                       )}
                       {canEdit && addable.length ? <AddMember team={t} people={addable} onSave={onSave} /> : null}
-                      {owner ? (
-                        <button type="button" className="self-start text-small text-blue-700 hover:underline" onClick={() => setEditing(t)}>
-                          Изменить команду
-                        </button>
-                      ) : null}
+                      <div className="flex flex-wrap gap-x-4 gap-y-1">
+                        {t.active && t.id !== TOP_TEAM && (owner || leads.includes(t.id)) ? (
+                          <button type="button" className="text-small text-blue-700 hover:underline" onClick={() => setRhythm(t)}>
+                            Ритм weekly
+                          </button>
+                        ) : null}
+                        {owner ? (
+                          <button type="button" className="text-small text-blue-700 hover:underline" onClick={() => setEditing(t)}>
+                            Изменить команду
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -405,7 +435,108 @@ function TeamTree({ teams, owner, me, candidates, onSave, pending }: { teams: Te
         })}
       </ul>
       {editing ? <TeamModal team={editing} teams={teams} people={candidates} onClose={() => setEditing(null)} onSave={onSave} /> : null}
+      {rhythm ? <RhythmModal team={rhythm} onClose={() => setRhythm(null)} onSave={onSave} /> : null}
     </>
+  );
+}
+
+const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((d, i) => ({ value: String(i + 1), label: d.charAt(0).toUpperCase() + d.slice(1) }));
+
+/** «Сдача: пятница, 16:00. Встреча: понедельник следующей недели, 11:00. Weekly сдают руководители» */
+function rhythmText(t: TeamView): string {
+  if (t.id === TOP_TEAM) return "Срок и встреча как у департамента. Weekly сдают все участники";
+  const deadline = t.rhythm.deadline ? `Сдача: ${slotText(t.rhythm.deadline)}` : "Сдача как у департамента";
+  const meeting = t.rhythm.meeting ? `встреча: ${slotText(t.rhythm.meeting)}` : "встреча как у департамента";
+  return `${deadline}, ${meeting}. Weekly сдают ${t.rhythm.specialists ? "все участники" : "руководители команд, специалисты обновляют задачи"}`;
+}
+
+/** Светофор сдачи weekly за отчётную неделю (этап 15) */
+function WeeklyLight({ weekly }: { weekly: TeamView["weekly"] }) {
+  const done = weekly.submitted + weekly.late;
+  if (weekly.expected === 0 && weekly.absent === 0) return <p className="mt-0.5 text-small text-muted">Weekly в этой команде не ждём</p>;
+  const tone = done >= weekly.expected ? "bg-green" : weekly.passed ? "bg-danger" : "bg-amber";
+  const word = done >= weekly.expected ? "все сдали" : weekly.passed ? "срок прошёл" : `срок ${deadlineText(weekly.deadline).replace("срок ", "")}`;
+  return (
+    <p className="mt-0.5 inline-flex items-center gap-2 text-small text-ink">
+      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
+      Weekly: сдали {done} из {weekly.expected}
+      {weekly.late ? `, с опозданием ${weekly.late}` : ""}
+      {weekly.absent ? `, нет на неделе ${weekly.absent}` : ""}
+      <span className="text-muted">({word}{weekly.closed ? ", неделя закрыта" : ""})</span>
+    </p>
+  );
+}
+
+type SlotDraft = { own: boolean; week: "0" | "1"; weekday: string; time: string };
+const draftOf = (slot: Slot | null, fallback: SlotDraft): SlotDraft => (slot ? { own: true, week: String(slot.week) as "0" | "1", weekday: String(slot.weekday), time: slot.time } : fallback);
+const slotFrom = (d: SlotDraft): Slot | null => (d.own ? { week: Number(d.week) as 0 | 1, weekday: Number(d.weekday), time: d.time } : null);
+
+/** Ритм weekly команды: срок сдачи, встреча и кто сдаёт. Задают руководитель команды, руководитель выше и владелец */
+function RhythmModal({ team, onClose, onSave }: { team: TeamView; onClose: () => void; onSave: Runner }) {
+  const [deadline, setDeadline] = useState<SlotDraft>(draftOf(team.rhythm.deadline, { own: false, week: "0", weekday: "5", time: "16:00" }));
+  const [meeting, setMeeting] = useState<SlotDraft>(draftOf(team.rhythm.meeting, { own: false, week: "1", weekday: "1", time: "11:00" }));
+  const [specialists, setSpecialists] = useState(team.rhythm.specialists);
+  return (
+    <Modal open onOpenChange={(o) => !o && onClose()} title={`Ритм weekly: ${team.name}`} description="Срок сдачи команды не позже срока департамента: руководитель должен успеть собрать weekly команды и сдать свой">
+      <form
+        className="flex flex-col gap-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave(() => setTeamRhythmAction(team.id, { deadline: slotFrom(deadline), meeting: slotFrom(meeting), specialists }), "Ритм команды сохранён");
+          onClose();
+        }}
+      >
+        <SlotFields legend="Срок сдачи" id="rh-deadline" value={deadline} onChange={setDeadline} />
+        <SlotFields legend="Встреча команды" id="rh-meeting" value={meeting} onChange={setMeeting} />
+        <label className="flex items-start gap-3 text-body text-ink">
+          <input type="checkbox" checked={specialists} onChange={(e) => setSpecialists(e.target.checked)} className="mt-1 h-4 w-4 accent-blue-700" />
+          <span>
+            Weekly сдают и специалисты
+            <span className="block text-small text-muted">Выключено: weekly сдают только руководители команд, специалисты обновляют задачи</span>
+          </span>
+        </label>
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button type="submit">Сохранить</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function SlotFields({ legend, id, value, onChange }: { legend: string; id: string; value: SlotDraft; onChange: (v: SlotDraft) => void }) {
+  return (
+    <fieldset className="flex flex-col gap-3">
+      <legend className="text-body font-semibold text-ink">{legend}</legend>
+      <SelectField
+        label="Когда"
+        id={`${id}-mode`}
+        value={value.own ? "own" : "department"}
+        onChange={(e) => onChange({ ...value, own: e.target.value === "own" })}
+        options={[
+          { value: "department", label: "Как у департамента" },
+          { value: "own", label: "Свой день и время" },
+        ]}
+      />
+      {value.own ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SelectField
+            label="Неделя"
+            id={`${id}-week`}
+            value={value.week}
+            onChange={(e) => onChange({ ...value, week: e.target.value as "0" | "1" })}
+            options={[
+              { value: "0", label: "Отчётная" },
+              { value: "1", label: "Следующая" },
+            ]}
+          />
+          <SelectField label="День" id={`${id}-day`} value={value.weekday} onChange={(e) => onChange({ ...value, weekday: e.target.value })} options={WEEKDAY_OPTIONS} />
+          <TextInput label="Время" id={`${id}-time`} type="time" value={value.time} onChange={(e) => onChange({ ...value, time: e.target.value })} />
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 

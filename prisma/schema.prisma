@@ -132,13 +132,13 @@ model Person {
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
-  reports           Person[]         @relation("PersonManager")
-  functionalReports Person[]         @relation("PersonFunctionalManager")
-  headOf            OrgUnit[]        @relation("UnitHead")
-  leads             Team[]           @relation("TeamLeader")
+  reports           Person[]          @relation("PersonManager")
+  functionalReports Person[]          @relation("PersonFunctionalManager")
+  headOf            OrgUnit[]         @relation("UnitHead")
+  leads             Team[]            @relation("TeamLeader")
   teams             TeamMember[]
-  ownedTasks        Task[]           @relation("TaskOwner")
-  createdTasks      Task[]           @relation("TaskCreator")
+  ownedTasks        Task[]            @relation("TaskOwner")
+  createdTasks      Task[]            @relation("TaskCreator")
   coTasks           TaskCoExecutor[]
   transfers         TaskTransfer[]
   taskComments      TaskComment[]
@@ -149,9 +149,11 @@ model Person {
   ceoReports        CeoReport[]
   loginLinks        LoginLink[]
   devices           DeviceSession[]
-  absences          Absence[]        @relation("AbsencePerson")
-  substitutions     Absence[]        @relation("AbsenceSubstitute")
-  inbox             InboxEvent[]     @relation("InboxRecipient")
+  absences          Absence[]         @relation("AbsencePerson")
+  substitutions     Absence[]         @relation("AbsenceSubstitute")
+  inbox             InboxEvent[]      @relation("InboxRecipient")
+  promotions        WeeklyPromotion[]
+  teamWeekCloses    TeamWeekClose[]
 
   @@map("people")
 }
@@ -357,10 +359,11 @@ model Week {
   closedById  String?
   closedBy    Person?   @relation(fields: [closedById], references: [id])
 
-  reports   WeeklyReport[]
-  entries   WeeklyEntry[]
-  ceoReport CeoReport?
-  absences  Absence[]
+  reports    WeeklyReport[]
+  entries    WeeklyEntry[]
+  ceoReport  CeoReport?
+  absences   Absence[]
+  teamCloses TeamWeekClose[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -414,7 +417,8 @@ model WeeklyEntry {
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
 
-  tasks Task[]
+  tasks      Task[]
+  promotions WeeklyPromotion[]
 
   @@index([weekId, authorId])
   @@map("weekly_entries")
@@ -600,28 +604,40 @@ model Vacancy {
 
 /// Команда руководителя (этап 14). У каждой задачи и weekly есть команда. Топ-команда: id «top»
 model Team {
-  id           String   @id @default(cuid())
-  name         String
-  kind         TeamKind @default(UNIT)
+  id                String   @id @default(cuid())
+  name              String
+  kind              TeamKind @default(UNIT)
   /// Руководитель команды. null: пока не назначен
-  leaderId     String?
-  leader       Person?  @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  leaderId          String?
+  leader            Person?  @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   /// Команда уровнем выше: в неё руководитель сдаёт свой weekly
-  parentId     String?
+  parentId          String?
   /// Команду выше поставил владелец руками: загрузка структуры её больше не пересчитывает
-  parentManual Boolean  @default(false)
-  parent       Team?    @relation("TeamTree", fields: [parentId], references: [id], onDelete: SetNull)
-  children     Team[]   @relation("TeamTree")
+  parentManual      Boolean  @default(false)
+  parent            Team?    @relation("TeamTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children          Team[]   @relation("TeamTree")
   /// Подразделение, по которому собрана команда
-  unitId       String?
-  unit         OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
-  active       Boolean  @default(true)
-  sortOrder    Int      @default(0)
-  createdAt    DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+  unitId            String?
+  unit              OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  /// Ритм weekly (этап 15). Срок сдачи: неделя (0 та же отчётная, 1 следующая), день ISO и время по Москве.
+  /// Пусто: как у департамента. Позже срока департамента срок команды не бывает
+  deadlineWeek      Int?
+  deadlineWeekday   Int?
+  deadlineTime      String?
+  /// Встреча команды: неделя (0 или 1), день и время. Пусто: как у департамента
+  meetingWeek       Int?
+  meetingWeekday    Int?
+  meetingTime       String?
+  /// Weekly сдают и специалисты, а не только руководители команд (решение 7: выбирает руководитель команды)
+  specialistsWeekly Boolean  @default(false)
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
 
   members TeamMember[]
   tasks   Task[]
+  closes  TeamWeekClose[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -643,4 +659,37 @@ model TeamMember {
   @@id([teamId, personId])
   @@index([personId])
   @@map("team_members")
+}
+
+/// Отметка «наверх» (этап 15): руководитель поднимает запись своего человека в свой weekly, в команду уровнем выше.
+/// Запись не копируется: та же запись видна в ленте команды выше под его именем, с автором и его фразой
+model WeeklyPromotion {
+  id        String      @id @default(cuid())
+  entryId   String
+  entry     WeeklyEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  byId      String
+  by        Person      @relation(fields: [byId], references: [id], onDelete: Cascade)
+  /// Фраза руководителя от себя, до 150 знаков
+  note      String?
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@unique([entryId, byId])
+  @@index([byId])
+  @@map("weekly_promotions")
+}
+
+/// Неделя закрыта для команды (этап 15): руководитель разобрал weekly своей команды, дальше её люди не правят.
+/// Неделю всего департамента по-прежнему закрывает администратор (weeks.closedAt)
+model TeamWeekClose {
+  teamId     String
+  team       Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  weekId     String
+  week       Week     @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  closedAt   DateTime @default(now()) @db.Timestamptz(3)
+  closedById String?
+  closedBy   Person?  @relation(fields: [closedById], references: [id], onDelete: SetNull)
+
+  @@id([teamId, weekId])
+  @@index([weekId])
+  @@map("team_week_closes")
 }

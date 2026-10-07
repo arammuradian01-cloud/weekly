@@ -34,9 +34,11 @@ export function cleanDash(text: string): string {
  */
 export function buildCeoSections(entries: WeeklyEntry[], nameOf: (slug: PersonSlug | null) => string): CeoSections {
   const flagged = entries.filter((e) => e.ceo);
+  // Запись пришла снизу (этап 15): в скобках автор и кто её поднял
+  const who = (e: WeeklyEntry) => (e.promoted?.length ? `${nameOf(e.author)}, через ${e.promoted.map((p) => nameOf(p.by)).join(", ")}` : nameOf(e.author));
   const line = (e: WeeklyEntry) => {
     const extra = e.fact ?? e.impact;
-    return `- ${e.what.replace(/\.$/, "")}${extra ? `. ${extra.replace(/\.$/, "")}` : ""} (${nameOf(e.author)})`;
+    return `- ${e.what.replace(/\.$/, "")}${extra ? `. ${extra.replace(/\.$/, "")}` : ""} (${who(e)})`;
   };
   return {
     main: cleanDash(flagged.filter((e) => e.type === "result" || e.type === "event").map(line).join("\n")),
@@ -44,7 +46,7 @@ export function buildCeoSections(entries: WeeklyEntry[], nameOf: (slug: PersonSl
     next: cleanDash(
       flagged
         .filter((e) => e.next || e.type === "plan")
-        .map((e) => `- ${e.next ?? e.what} (${nameOf(e.author)})`)
+        .map((e) => `- ${e.next ?? e.what} (${who(e)})`)
         .join("\n"),
     ),
   };

@@ -12,6 +12,8 @@ import type { Link, PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, Weekl
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
 import { colleaguesOf } from "@/lib/org/people";
+import { loadScope, loadTeamNodes, TOP_TEAM } from "@/lib/org/scope";
+import { closedFor, expectingTeams, leadersOf, personDeadline, promotableFrom, teamDeadline } from "@/lib/org/rhythm";
 import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections } from "./rules";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
@@ -80,6 +82,7 @@ const entryInclude = {
   block: { select: { code: true, label: true } },
   type: { select: { code: true, label: true } },
   tasks: { select: { number: true }, orderBy: { number: "asc" as const }, take: 1 },
+  promotions: { select: { note: true, by: { select: { slug: true } } }, orderBy: { createdAt: "asc" as const } },
 } satisfies Prisma.WeeklyEntryInclude;
 
 type EntryRow = Prisma.WeeklyEntryGetPayload<{ include: typeof entryInclude }>;
@@ -101,6 +104,7 @@ function toEntryDto(e: EntryRow): WeeklyEntry {
     links: Array.isArray(e.links) ? (e.links as Link[]) : [],
     ceo: e.ceo,
     taskNumber: e.tasks[0]?.number,
+    ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
   };
 }
 
@@ -109,14 +113,42 @@ const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft", SUBMI
 // ---------- Чтение ----------
 
 /**
- * Чей weekly показывать (этап 14): люди выбранной команды. shared: показывать и общие записи без автора
- * («Все лидеры» из таблицы), они бывают только у топ-команды. Без аудитории: все включённые люди, как до команд
+ * Чей weekly показывать (этапы 14-15).
+ * - personIds: от кого ждём weekly, их состояние сдачи в полосе «сдали N из M»;
+ * - authorIds: чьи записи в ленте (все участники команды, и те специалисты, от кого weekly не ждут);
+ *   и записи, которые эти люди подняли наверх из своих команд;
+ * - shared: общие записи без автора («Все лидеры» из таблицы), бывают только у топ-команды;
+ * - ceo: и записи любой команды с отметкой «В отчёт CEO»;
+ * - teamIds: какие команды показаны: по ним срок и закрытие недели в шапке ленты.
+ * Без аудитории: все включённые люди, как до команд
  */
-export type WeekAudience = { personIds: string[]; shared: boolean; /** И записи любой команды с отметкой «В отчёт CEO» */ ceo?: boolean };
+export type WeekAudience = { personIds: string[]; authorIds?: string[]; shared: boolean; ceo?: boolean; teamIds?: string[] };
 
 function entryScope(audience: WeekAudience | undefined): Prisma.WeeklyEntryWhereInput {
   if (!audience) return {};
-  return { OR: [{ authorId: { in: audience.personIds } }, ...(audience.shared ? [{ authorId: null }] : []), ...(audience.ceo ? [{ ceo: true }] : [])] };
+  const authors = audience.authorIds ?? audience.personIds;
+  return {
+    OR: [
+      { authorId: { in: authors } },
+      { promotions: { some: { byId: { in: authors } } } },
+      ...(audience.shared ? [{ authorId: null }] : []),
+      ...(audience.ceo ? [{ ceo: true }] : []),
+    ],
+  };
+}
+
+/** Команды и закрытия недели командами: для сроков людей и закрытия недели (этап 15) */
+async function weekTeams(db: Tx | typeof prisma, weekId: string) {
+  const [nodes, closes] = await Promise.all([loadTeamNodes(db), db.teamWeekClose.findMany({ where: { weekId }, select: { teamId: true } })]);
+  return { nodes, leaders: leadersOf(nodes), closedTeams: new Set(closes.map((c) => c.teamId)) };
+}
+type WeekTeams = Awaited<ReturnType<typeof weekTeams>>;
+
+/** Неделя закрыта для показанных команд: закрыта неделя департамента или все показанные команды её закрыли */
+function viewClosed(row: WeekRow, teams: WeekTeams, teamIds: string[] | undefined): boolean {
+  if (row.closedAt) return true;
+  if (!teamIds?.length) return false;
+  return teamIds.every((id) => id !== TOP_TEAM && teams.closedTeams.has(id));
 }
 
 /** Неделя для ленты, режима встречи и отчёта CEO. Без ключа: отчётная, а если она пустая, последняя с записями */
@@ -138,18 +170,27 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
   }
   if (target > reporting) target = reporting;
   const row = await ensureWeek(prisma, target);
-  const [reports, entries, people, absences] = await Promise.all([
+  const [reports, entries, people, absences, teams] = await Promise.all([
     prisma.weeklyReport.findMany({ where: { weekId: row.id }, include: { author: { select: { slug: true } } } }),
     prisma.weeklyEntry.findMany({ where: { AND: [{ weekId: row.id }, scope] }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    // Люди ленты: от кого ждём weekly и остальные участники, которые могут сдать по желанию (этап 15)
     prisma.person.findMany({
-      where: { active: true, role: { not: "OBSERVER" }, ...(audience ? { id: { in: audience.personIds } } : {}) },
+      where: { active: true, role: { not: "OBSERVER" }, ...(audience ? { id: { in: [...new Set([...audience.personIds, ...(audience.authorIds ?? [])])] } } : {}) },
       orderBy: { sortOrder: "asc" },
     }),
     absenceMap(row.id),
+    weekTeams(prisma, row.id),
   ]);
   const byAuthor = new Map(reports.map((r) => [r.author.slug, r]));
+  const expected = audience ? new Set(audience.personIds) : null;
+  const authorSlugs = audience ? await slugsOfIds(audience.authorIds ?? audience.personIds) : null;
+  const info = weekInfo(row, reporting);
+  info.closed = viewClosed(row, teams, audience?.teamIds);
+  // Срок показанной команды: у одной команды её срок, у нескольких срок департамента
+  const shown = audience?.teamIds?.length === 1 ? teams.nodes.find((n) => n.id === audience.teamIds![0]) : undefined;
+  if (shown) info.deadline = teamDeadline(target, shown, row.deadline).toISOString();
   return {
-    week: weekInfo(row, reporting),
+    week: info,
     prev: shiftWeek(target, -1),
     next: target < reporting ? shiftWeek(target, 1) : null,
     reportingKey: reporting,
@@ -164,10 +205,32 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
         state: r ? STATE_CODE[r.state] : "not-started",
         submittedAt: r?.submittedAt?.toISOString(),
         ...(absences.has(p.id) ? { absent: { substitute: absences.get(p.id)! } } : {}),
+        ...deadlineField(p.id, target, row, teams),
+        ...(expected && !expected.has(p.id) ? { optional: true } : {}),
       } satisfies PersonWeekly;
     }),
-    entries: entries.map(toEntryDto),
+    // Фраза руководителя к поднятой записи видна только в ленте, где он сам автор: автору записи её не показываем
+    entries: entries.map((e) => keepNotes(toEntryDto(e), (slug) => !authorSlugs || authorSlugs.includes(slug))),
+    departmentClosed: row.closedAt !== null,
+    ...(authorSlugs ? { authors: authorSlugs } : {}),
   };
+}
+
+/** Оставить фразы только тех, кто поднял запись и кому её можно показать */
+function keepNotes(e: WeeklyEntry, allowed: (slug: PersonSlug) => boolean): WeeklyEntry {
+  if (!e.promoted) return e;
+  return { ...e, promoted: e.promoted.map((p) => (allowed(p.by) ? p : { by: p.by })) };
+}
+
+async function slugsOfIds(ids: string[]): Promise<PersonSlug[]> {
+  if (!ids.length) return [];
+  return (await prisma.person.findMany({ where: { id: { in: ids } }, select: { slug: true } })).map((p) => p.slug as PersonSlug);
+}
+
+/** Свой срок человека, если он раньше срока департамента: команда ниже сдаёт раньше */
+function deadlineField(personId: string, key: WeekKey, row: WeekRow, teams: WeekTeams): { deadline?: string } {
+  const d = personDeadline(personId, key, teams.nodes, row.deadline, teams.leaders);
+  return d.getTime() < row.deadline.getTime() ? { deadline: d.toISOString() } : {};
 }
 
 /** Мой weekly за неделю: для экрана сдачи и «Моей недели» */
@@ -175,13 +238,23 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
   const reporting = await currentReportingKey(now);
   const row = await ensureWeek(prisma, key);
   const person = await prisma.person.findUniqueOrThrow({ where: { id: personId } });
-  const [report, entries, absence] = await Promise.all([
+  const [report, entries, absence, teams, promoted] = await Promise.all([
     prisma.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId: personId } } }),
     prisma.weeklyEntry.findMany({ where: { weekId: row.id, authorId: personId }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.absence.findUnique({ where: { personId_weekId: { personId, weekId: row.id } }, include: { substitute: { select: { slug: true } } } }),
+    weekTeams(prisma, row.id),
+    prisma.weeklyEntry.findMany({ where: { weekId: row.id, promotions: { some: { byId: personId } } }, include: entryInclude, orderBy: [{ createdAt: "asc" }] }),
   ]);
+  const info = weekInfo(row, reporting);
+  info.deadline = personDeadline(personId, key, teams.nodes, row.deadline, teams.leaders).toISOString();
+  info.closed = closedFor(personId, teams.nodes, row.closedAt !== null, teams.closedTeams, teams.leaders);
+  const expecting = expectingTeams(personId, teams.nodes, teams.leaders);
   return {
-    week: weekInfo(row, reporting),
+    week: info,
+    /** Команды, которые ждут weekly человека. Пусто: weekly от него не ждут, достаточно обновлять задачи */
+    expectedIn: expecting.map((n) => ({ id: n.id, name: n.name })),
+    /** Записи людей его команд, которые он поднял в свой weekly */
+    promoted: promoted.map((e) => keepNotes(toEntryDto(e), (slug) => slug === person.slug)),
     report: {
       week: key,
       author: person.slug as PersonSlug,
@@ -190,7 +263,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
       submittedAt: report?.submittedAt?.toISOString(),
       ...(absence ? { absent: { substitute: (absence.substitute?.slug as PersonSlug | undefined) ?? null } } : {}),
     } satisfies PersonWeekly,
-    entries: entries.map(toEntryDto),
+    entries: entries.map((e) => keepNotes(toEntryDto(e), () => false)),
   };
 }
 
@@ -240,10 +313,19 @@ async function audit(db: Tx, actor: Actor, action: string, entity: string, entit
   });
 }
 
-async function weekContext(tx: Tx, key: WeekKey) {
+/**
+ * Неделя для правки weekly. author: чей weekly правят. Неделя закрыта для него, если её закрыл администратор
+ * или все команды, которые ждут его weekly (этап 15). Общие записи без автора закрываются только с неделей департамента
+ */
+async function weekContext(tx: Tx, key: WeekKey, authorId?: string | null) {
   const reporting = await currentReportingKey();
   const row = await ensureWeek(tx, key);
-  return { row, info: weekInfo(row, reporting), reporting };
+  const info = weekInfo(row, reporting);
+  if (authorId && !info.closed) {
+    const teams = await weekTeams(tx, row.id);
+    info.closed = closedFor(authorId, teams.nodes, false, teams.closedTeams, teams.leaders);
+  }
+  return { row, info, reporting };
 }
 
 function canEdit(info: WeekInfo, reporting: WeekKey, actor: Actor, author: PersonSlug | null): void {
@@ -263,7 +345,7 @@ export async function saveHeadline(actor: Actor, key: WeekKey, headline: string)
   const value = clean(headline);
   if (value.length > WEEKLY_LIMITS.headline) fail(`Главное: не длиннее ${WEEKLY_LIMITS.headline} знаков`);
   return prisma.$transaction(async (tx) => {
-    const { row, info, reporting } = await weekContext(tx, key);
+    const { row, info, reporting } = await weekContext(tx, key, actor.personId);
     canEdit(info, reporting, actor, actor.slug);
     const existing = await reportOf(tx, row.id, actor.personId);
     const report = await tx.weeklyReport.upsert({
@@ -322,7 +404,7 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
     const existing = input.id ? await tx.weeklyEntry.findUnique({ where: { id: input.id }, include: entryInclude }) : null;
     if (input.id && !existing) fail("Запись уже удалена");
     const key = existing ? isoFromDbDate(existing.week.start) : input.week;
-    const { row, info, reporting } = await weekContext(tx, key);
+    const { row, info, reporting } = await weekContext(tx, key, existing ? existing.authorId : actor.personId);
     const author = existing ? ((existing.author?.slug as PersonSlug | undefined) ?? null) : actor.slug;
     canEdit(info, reporting, actor, author);
     if (!(ENTRY_TYPE_CODES as string[]).includes(input.type)) fail("Выберите тип записи");
@@ -381,9 +463,12 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<Weekly
 /** Удаление возвращает полную копию записи: по ней отмена вернёт запись с тем же id */
 export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapshot> {
   return prisma.$transaction(async (tx) => {
-    const existing = await tx.weeklyEntry.findUnique({ where: { id }, include: { ...entryInclude, tasks: { select: { id: true } } } });
+    const existing = await tx.weeklyEntry.findUnique({
+      where: { id },
+      include: { ...entryInclude, tasks: { select: { id: true } }, promotions: { select: { byId: true, note: true, createdAt: true } } },
+    });
     if (!existing) return fail("Запись уже удалена");
-    const { info, reporting } = await weekContext(tx, isoFromDbDate(existing.week.start));
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(existing.week.start), existing.authorId);
     canEdit(info, reporting, actor, (existing.author?.slug as PersonSlug | undefined) ?? null);
     const snapshot: EntrySnapshot = {
       id: existing.id,
@@ -404,6 +489,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       importBatch: existing.importBatch,
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
+      promotions: existing.promotions.map((p) => ({ byId: p.byId, note: p.note, createdAt: p.createdAt.toISOString() })),
     };
     await tx.weeklyEntry.delete({ where: { id } });
     await audit(tx, actor, "weekly.entry.delete", "weekly-entry", id, "Запись weekly удалена", existing.what, null);
@@ -420,7 +506,7 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
     if (await tx.weeklyEntry.findUnique({ where: { id: snapshot.id }, select: { id: true } })) fail("Запись уже на месте");
     const week = await tx.week.findUnique({ where: { id: snapshot.weekId } });
     if (!week) return fail("Неделя этой записи больше не существует");
-    const { info, reporting } = await weekContext(tx, isoFromDbDate(week.start));
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(week.start), snapshot.authorId);
     const author = snapshot.authorId ? await tx.person.findUnique({ where: { id: snapshot.authorId }, select: { slug: true } }) : null;
     canEdit(info, reporting, actor, (author?.slug as PersonSlug | undefined) ?? null);
     const saved = await tx.weeklyEntry.create({
@@ -449,6 +535,15 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
     if (snapshot.taskIds.length) {
       await tx.$executeRaw`UPDATE tasks SET "weeklyEntryId" = ${snapshot.id} WHERE id = ANY(${snapshot.taskIds}::text[]) AND "weeklyEntryId" IS NULL`;
     }
+    // Отметки «наверх» возвращаются вместе с записью, кроме тех, чьих людей за это время удалили
+    const promotions = snapshot.promotions ?? [];
+    if (promotions.length) {
+      const alive = new Set((await tx.person.findMany({ where: { id: { in: promotions.map((p) => p.byId) } }, select: { id: true } })).map((p) => p.id));
+      await tx.weeklyPromotion.createMany({
+        data: promotions.filter((p) => alive.has(p.byId)).map((p) => ({ entryId: snapshot.id, byId: p.byId, note: p.note, createdAt: new Date(p.createdAt) })),
+        skipDuplicates: true,
+      });
+    }
     await audit(tx, actor, "weekly.entry.restore", "weekly-entry", snapshot.id, "Удаление записи weekly отменено", null, snapshot.what);
     return toEntryDto(await tx.weeklyEntry.findUniqueOrThrow({ where: { id: saved.id }, include: entryInclude }));
   });
@@ -457,18 +552,23 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
 /** «Сдать»: нужна главная фраза и хотя бы одна запись. После срока: «Сдан с опозданием» */
 export async function submitWeekly(actor: Actor, key: WeekKey, now = new Date()): Promise<PersonWeekly> {
   return prisma.$transaction(async (tx) => {
-    const { row, info, reporting } = await weekContext(tx, key);
+    const { row, info, reporting } = await weekContext(tx, key, actor.personId);
     canEdit(info, reporting, actor, actor.slug);
     const report = await reportOf(tx, row.id, actor.personId);
     const entries = await tx.weeklyEntry.count({ where: { weekId: row.id, authorId: actor.personId } });
     if (!report?.headline.trim()) fail("Напишите главное за неделю одной фразой");
-    if (!entries) fail("Добавьте хотя бы одну запись");
+    // Записи команды, поднятые наверх, тоже часть weekly руководителя (этап 15)
+    const raised = entries ? 0 : await tx.weeklyPromotion.count({ where: { byId: actor.personId, entry: { weekId: row.id } } });
+    if (!entries && !raised) fail("Добавьте хотя бы одну запись");
     if (report!.state !== "DRAFT") fail("Weekly уже сдан");
     // Отсутствие на неделе: сдать можно, но опозданием это не считается. Своя отметка считается, только если поставлена
     // до срока; задним числом отсутствие отмечают владелец или администратор, тогда оно считается всегда
     const absent = await tx.absence.findUnique({ where: { personId_weekId: { personId: actor.personId, weekId: row.id } } });
-    const excused = absent !== null && (absent.createdById !== actor.personId || absent.createdAt <= row.deadline);
-    const state = excused || submitState(now, row.deadline) === "submitted" ? "SUBMITTED" : "LATE";
+    // Срок человека: самый ранний из сроков его команд (этап 15)
+    const teams = await weekTeams(tx, row.id);
+    const deadline = personDeadline(actor.personId, key, teams.nodes, row.deadline, teams.leaders);
+    const excused = absent !== null && (absent.createdById !== actor.personId || absent.createdAt <= deadline);
+    const state = excused || submitState(now, deadline) === "submitted" ? "SUBMITTED" : "LATE";
     const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now } });
     await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", state === "LATE" ? "Сдан с опозданием" : "Сдан");
     return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString() };
@@ -516,6 +616,100 @@ export async function setWeekClosed(actor: Actor, key: WeekKey, closed: boolean)
     const saved = await tx.week.update({ where: { id: row.id }, data: { closedAt: closed ? new Date() : null, closedById: closed ? actor.personId : null } });
     await audit(tx, actor, closed ? "weekly.week.close" : "weekly.week.open", "week", key, `Неделя ${info.number}`, closed ? "открыта" : "закрыта", closed ? "закрыта" : "открыта");
     return weekInfo(saved, reporting);
+  });
+}
+
+// ---------- Weekly команд (этап 15) ----------
+
+const PROMOTION_NOTE = 150;
+
+/**
+ * «Наверх»: руководитель поднимает запись человека своей команды в свой weekly. Запись не копируется, её видно в ленте
+ * команды выше под его именем, с автором и его фразой. Поднять можно и запись, которую уже поднял человек его команды:
+ * так запись из сектора доходит до Арама через два уровня
+ */
+export async function promoteEntry(actor: Actor, id: string, note?: string | null): Promise<WeeklyEntry> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель weekly не пишет");
+  if (actor.via === "TEAM" && !actor.management) fail("Поднимать записи наверх руководитель может, войдя по личной ссылке");
+  const value = optional(note, PROMOTION_NOTE, "Фраза от себя");
+  return prisma.$transaction(async (tx) => {
+    const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: { week: true, promotions: true } });
+    if (!entry) return fail("Запись уже удалена");
+    if (!entry.authorId) fail("Общую запись без автора поднимать некуда: сначала назначьте автора");
+    if (entry.authorId === actor.personId) fail("Своя запись и так в вашем weekly");
+    const teams = await weekTeams(tx, entry.weekId);
+    const from = promotableFrom(actor.personId, teams.nodes);
+    if (!from.has(entry.authorId!) && !entry.promotions.some((p) => from.has(p.byId))) fail("Наверх поднимают записи людей своей команды");
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(entry.week.start), actor.personId);
+    canEdit(info, reporting, actor, actor.slug);
+    const existing = entry.promotions.find((p) => p.byId === actor.personId);
+    if (existing && (existing.note ?? null) === value) fail("Запись уже в вашем weekly");
+    if (existing) {
+      await tx.weeklyPromotion.update({ where: { id: existing.id }, data: { note: value } });
+      await audit(tx, actor, "weekly.entry.promote", "weekly-entry", id, "Фраза к записи наверху", existing.note, value);
+    } else {
+      // Двойное нажатие: вторая отметка упирается в уникальный ключ, отвечаем правилом, а не общей ошибкой
+      const created = await tx.weeklyPromotion.createMany({ data: [{ entryId: id, byId: actor.personId, note: value }], skipDuplicates: true });
+      if (!created.count) fail("Запись уже в вашем weekly");
+      // Поднятая запись попадает в weekly руководителя: если его weekly ещё не начат, появляется черновик
+      await tx.weeklyReport.upsert({
+        where: { weekId_authorId: { weekId: entry.weekId, authorId: actor.personId } },
+        update: {},
+        create: { weekId: entry.weekId, authorId: actor.personId, state: "DRAFT" },
+      });
+      await audit(tx, actor, "weekly.entry.promote", "weekly-entry", id, "Наверх", null, value ? `${entry.what}. От себя: ${value}` : entry.what);
+    }
+    return toEntryDto(await tx.weeklyEntry.findUniqueOrThrow({ where: { id }, include: entryInclude }));
+  });
+}
+
+/** Снять запись из своего weekly. Владелец и администраторы в режиме управления снимают за любого */
+export async function unpromoteEntry(actor: Actor, id: string, by?: PersonSlug): Promise<WeeklyEntry> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель weekly не пишет");
+  if (actor.via === "TEAM" && !actor.management) fail("Убирать поднятые записи руководитель может, войдя по личной ссылке");
+  return prisma.$transaction(async (tx) => {
+    const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: { week: true, promotions: { include: { by: true } } } });
+    if (!entry) return fail("Запись уже удалена");
+    const whose = by ?? actor.slug;
+    if (whose !== actor.slug && !actor.management) fail("Снять запись из чужого weekly могут только владелец и администраторы");
+    const promotion = entry.promotions.find((p) => p.by.slug === whose);
+    if (!promotion) return fail("Этой записи уже нет в weekly");
+    const { info, reporting } = await weekContext(tx, isoFromDbDate(entry.week.start), promotion.byId);
+    canEdit(info, reporting, actor, whose as PersonSlug);
+    const removed = await tx.weeklyPromotion.deleteMany({ where: { id: promotion.id } });
+    if (!removed.count) fail("Этой записи уже нет в weekly");
+    await audit(tx, actor, "weekly.entry.unpromote", "weekly-entry", id, `Наверх: ${promotion.by.fullName}`, entry.what, null);
+    return toEntryDto(await tx.weeklyEntry.findUniqueOrThrow({ where: { id }, include: entryInclude }));
+  });
+}
+
+/**
+ * Неделя команды: руководитель закрывает её после встречи команды, дальше люди команды свой weekly не правят.
+ * Неделю топ-команды закрывает администратор вместе с неделей департамента
+ */
+export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekKey, closed: boolean): Promise<{ closed: boolean }> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель неделю не закрывает");
+  if (teamId === TOP_TEAM) fail("Неделю топ-команды закрывают вместе с неделей департамента: «Закрыть неделю» в режиме управления");
+  return prisma.$transaction(async (tx) => {
+    const team = await tx.team.findUnique({ where: { id: teamId } });
+    if (!team || !team.active) return fail("Такой команды нет");
+    if (!actor.management) {
+      const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" });
+      if (!scope.leads.includes(teamId)) fail("Неделю команды закрывает её руководитель или руководитель выше");
+    }
+    const row = await ensureWeek(tx, key);
+    if (row.closedAt) fail(`Неделя ${row.isoNumber} уже закрыта для всего департамента`);
+    const reporting = await currentReportingKey();
+    if (key > reporting) fail("Будущую неделю не закрывают");
+    const existing = await tx.teamWeekClose.findUnique({ where: { teamId_weekId: { teamId, weekId: row.id } } });
+    if (closed === !!existing) fail(closed ? "Неделя команды уже закрыта" : "Неделя команды уже открыта");
+    // Двойное нажатие: повтор не падает общей ошибкой
+    const changed = closed
+      ? (await tx.teamWeekClose.createMany({ data: [{ teamId, weekId: row.id, closedById: actor.personId }], skipDuplicates: true })).count
+      : (await tx.teamWeekClose.deleteMany({ where: { teamId, weekId: row.id } })).count;
+    if (!changed) fail(closed ? "Неделя команды уже закрыта" : "Неделя команды уже открыта");
+    await audit(tx, actor, closed ? "weekly.team.close" : "weekly.team.open", "team-week", `${teamId}/${key}`, `${team.name}, неделя ${row.isoNumber}`, closed ? "открыта" : "закрыта", closed ? "закрыта" : "открыта");
+    return { closed };
   });
 }
 
@@ -614,7 +808,8 @@ export async function setAbsence(actor: Actor, input: { slug: string; week: Week
     const week = await ensureWeek(tx, input.week);
     if (week.closedAt) fail(`Неделя ${week.isoNumber} закрыта: её уже разобрали на встрече`);
     // Себе задним числом отметить нельзя, иначе отметка снимала бы «сдан с опозданием». Коллеге может управление
-    if (input.slug === actor.slug && now >= week.deadline) {
+    const teams = await weekTeams(tx, week.id);
+    if (input.slug === actor.slug && now >= personDeadline(person.id, input.week, teams.nodes, week.deadline, teams.leaders)) {
       fail(`Срок сдачи недели ${week.isoNumber} уже прошёл: отметить отсутствие задним числом может владелец или администратор`);
     }
     const before = await tx.absence.findUnique({ where: { personId_weekId: { personId: person.id, weekId: week.id } }, include: { substitute: true } });
