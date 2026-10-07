@@ -20,6 +20,13 @@ import { FormError } from "@/components/ui/field";
 import { PersonSelect } from "@/components/requests/request-parts";
 import { cn } from "@/lib/cn";
 import { useTaskPermissions } from "./task-fields";
+import { teamOf, teamPeople } from "@/domain/teams";
+
+/** Люди команды задачи: им ответственный может передать задачу. Нет данных о команде: выбор не сужаем */
+function teamPeopleOf(id: string): PersonSlug[] | undefined {
+  const team = teamOf(id);
+  return team ? teamPeople(team) : undefined;
+}
 
 type Links = { waitsFor: TaskLinkView[]; blocks: TaskLinkView[]; canEdit: boolean };
 
@@ -28,9 +35,15 @@ function LinkRow({ t, onRemove, kind }: { t: TaskLinkView; onRemove?: () => void
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
       <div className="min-w-0">
-        <Link href={`/tasks/${t.number}`} className={cn("text-small font-medium hover:underline", closed ? "text-muted" : "text-ink hover:text-blue-700")}>
-          <span className="tabular-nums text-muted">{t.number}</span> {t.title ?? "задача другой команды"}
-        </Link>
+        {t.title ? (
+          <Link href={`/tasks/${t.number}`} className={cn("text-small font-medium hover:underline", closed ? "text-muted" : "text-ink hover:text-blue-700")}>
+            <span className="tabular-nums text-muted">{t.number}</span> {t.title}
+          </Link>
+        ) : (
+          <p className="text-small text-muted">
+            <span className="tabular-nums">{t.number}</span> задача другой команды
+          </p>
+        )}
         <p className="text-caption text-muted">
           {statusOf(t.status).label}, срок {formatShort(t.due)}
           {t.owner ? `, ${compactName(t.owner)}` : ""}
@@ -90,12 +103,16 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
     }
   };
   const remove = async (n: number) => {
+    if (busy) return;
+    setBusy(true);
     try {
       const r = await removeDependencyAction(task.number, n);
       if (!r.ok) return notify(r.error, "error");
       applyTaskResult(r, `Связь с задачей ${n} снята`);
     } catch {
       notify("Нет связи с сервером: связь не снялась", "error");
+    } finally {
+      setBusy(false);
     }
   };
   if (!links.waitsFor.length && !links.blocks.length && !links.canEdit) return null;
@@ -106,7 +123,15 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
           Связи с задачами
         </H>
         {links.canEdit ? (
-          <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setNumber("");
+              setError(null);
+              setAdding(true);
+            }}
+          >
             <Link2 className="h-4 w-4" aria-hidden="true" />
             Ждёт задачу
           </Button>
@@ -154,7 +179,7 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
 
 /** «Передать» (этап 21): новый ответственный и комментарий, прежний остаётся соисполнителем */
 export function HandOverButton({ task }: { task: Task }) {
-  const { applyTaskResult, me } = usePrototype();
+  const { applyTaskResult, me, manage } = usePrototype();
   const can = useTaskPermissions(task);
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState<string>("");
@@ -196,7 +221,14 @@ export function HandOverButton({ task }: { task: Task }) {
       </Button>
       <Modal open={open} onOpenChange={setOpen} title={`Передать задачу ${task.number}`} description="Новый ответственный получит задачу в «Мне» с вашим комментарием. Прежний ответственный останется соисполнителем.">
         <form onSubmit={submit} className="flex flex-col gap-4">
-          <PersonSelect id={`ho-${task.number}`} label="Кому передать" value={to} onChange={setTo} exclude={(task.owner === "all" ? me.slug : task.owner) as PersonSlug} />
+          <PersonSelect
+            id={`ho-${task.number}`}
+            label="Кому передать"
+            value={to}
+            onChange={setTo}
+            exclude={(task.owner === "all" ? me.slug : task.owner) as PersonSlug}
+            only={manage ? undefined : teamPeopleOf(task.team)}
+          />
           <TextArea label="Почему передаёте" id={`ho-why-${task.number}`} value={comment} onChange={(e) => setComment(e.target.value)} counter={{ value: comment.length, max: 500 }} />
           <FormError message={error ?? undefined} />
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

@@ -14,6 +14,7 @@
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
 import { notifyWatchers } from "@/lib/tasks/watch";
+import { notifyDependents } from "@/lib/tasks/dependents";
 import { TOP_TEAM } from "@/domain/teams";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
@@ -400,6 +401,15 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         // Подписчики узнают о смене статуса и срока и тогда, когда их поменяли в Bord (этап 16)
         const watched = changes.filter(([field]) => field === "Статус" || field === "Срок").map(([field, , after]) => `${field} в Bord: ${after ?? ""}`);
         if (watched.length) await notifyWatchers(tx, task.id, watched.join(", "), null);
+        // Задачи, которые ждут эту (этап 21): срок ушёл позже их срока или задачу закрыли в Bord
+        if (extra.transfer && row.due) {
+          const newDue = dbDate(row.due);
+          const label = formatLong(row.due);
+          await notifyDependents(tx, { id: task.id }, null, (dep) => (dep.due < newDue ? `Срок задачи ${row.number}, которую ждёт ваша задача ${dep.number}, перенесён в Bord на ${label}: позже вашего срока` : null));
+        }
+        if (data.status && CLOSED.includes(data.status as TaskStatus) && !CLOSED.includes(task.status)) {
+          await notifyDependents(tx, { id: task.id }, null, (dep) => `Задачу ${row.number}, которую ждёт ваша задача ${dep.number}, закрыли в Bord`);
+        }
         report.updated.push(row.number);
         report.fields += changes.length;
       }

@@ -71,11 +71,11 @@ export async function blockOnPersonAction(number: number, input: { to: string; t
 }
 
 export async function addDependencyAction(number: number, blocker: number) {
-  return run((a) => svc.addDependency(a, checkNumber(number), Number(blocker)));
+  return run((a) => svc.addDependency(a, checkNumber(number), checkNumber(blocker)));
 }
 
 export async function removeDependencyAction(number: number, blocker: number) {
-  return run((a) => svc.removeDependency(a, checkNumber(number), Number(blocker)));
+  return run((a) => svc.removeDependency(a, checkNumber(number), checkNumber(blocker)));
 }
 
 /** Передать задачу с комментарием (этап 21) */

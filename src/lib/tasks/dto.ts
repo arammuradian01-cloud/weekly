@@ -17,7 +17,7 @@ export const taskInclude = {
   links: { orderBy: { at: "asc" } },
   goal: { select: { id: true, title: true, code: true } },
   // Какие задачи эта ждёт (этап 21): номер, срок и закрыта ли. Названия карточка грузит отдельно, с проверкой доступа
-  waitsFor: { select: { blocker: { select: { number: true, due: true, status: true } } } },
+  waitsFor: { select: { blocker: { select: { number: true, due: true, status: true, archivedAt: true } } } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -69,7 +69,7 @@ export function toTaskDto(row: TaskRow): Task {
     state: stateCode(row.state),
     blockedBy: row.blockedBy ?? undefined,
     riskNote: row.riskNote ?? undefined,
-    waitsFor: row.waitsFor.map((w) => ({ number: w.blocker.number, due: isoFromDbDate(w.blocker.due), closed: CLOSED.includes(w.blocker.status) })),
+    waitsFor: row.waitsFor.map((w) => ({ number: w.blocker.number, due: isoFromDbDate(w.blocker.due), closed: CLOSED.includes(w.blocker.status) || !!w.blocker.archivedAt })),
     where: row.whereNow,
     whereUpdatedAt: isoFromDbDate(row.whereUpdatedAt),
     due,

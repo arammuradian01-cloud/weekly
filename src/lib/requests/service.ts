@@ -223,7 +223,8 @@ export async function blockOnPerson(actor: Actor, taskNumber: number, input: { t
   return prisma.$transaction(async (tx) => {
     const row = await createRequestIn(tx, actor, { to: input.to, text: input.text, due: input.due, task: taskNumber }, now);
     const task = await changeStateIn(tx, actor, taskNumber, "blocked", input.note ?? null);
-    return { task, request: toView(await accessOf(tx, actor), row, now) };
+    // Отмена вернула бы только состояние, а просьба уже ушла: такую правку не отменяют, просьбу отзывают
+    return { task: { ...task, undo: undefined }, request: toView(await accessOf(tx, actor), row, now) };
   });
 }
 

@@ -5,7 +5,7 @@
 // (тогда ему уходит просьба), а «Есть риск» требует фразу, что вернёт задачу в график.
 // С этапа 3 правки уходят на сервер: он проверяет те же правила и права ещё раз.
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useRef, useState } from "react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
@@ -13,6 +13,7 @@ import { statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/domain/types";
 import {
   blockOnPersonAction,
+  taskLinksAction,
   changePriorityAction,
   changeStateAction,
   changeStatusAction,
@@ -54,6 +55,10 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
   const [person, setPerson] = useState("");
   const [ask, setAsk] = useState("");
   const [askDue, setAskDue] = useState<IsoDate>("");
+  /** Задача уже чего-то ждёт (открытая задача или просьба): подпись с сервера */
+  const [existing, setExisting] = useState<string | null>(null);
+  const waitTaskRef = useRef("");
+  waitTaskRef.current = waitTask;
   const [text, setText] = useState("");
   const [date, setDate] = useState<IsoDate>("");
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +89,15 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
         const linked = (task.waitsFor ?? []).some((w) => !w.closed);
         setText(task.state === "blocked" ? (task.blockedBy ?? "") : "");
         setMode(linked ? "existing" : "task");
+        setExisting(linked ? `Ждёт задачу ${(task.waitsFor ?? []).find((w) => !w.closed)!.number}` : null);
+        // Открытая просьба по задаче тоже ссылка: спрашиваем сервер, окно уже открыто
+        void taskLinksAction(task.number)
+          .then((r) => {
+            if (!r.ok || !r.value.existing) return;
+            setExisting(r.value.existing);
+            setMode((m) => (m === "task" && !waitTaskRef.current ? "existing" : m));
+          })
+          .catch(() => undefined);
         setWaitTask("");
         setPerson("");
         setAsk("");
@@ -206,11 +220,11 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
                   value={mode}
                   onChange={setMode}
                   options={[
-                    ...((pending.task.waitsFor ?? []).some((w) => !w.closed) ? [{ value: "existing" as const, label: "Связь уже есть" }] : []),
+                    ...(existing ? [{ value: "existing" as const, label: "Связь уже есть" }] : []),
                     { value: "task" as const, label: "Ждёт задачу" },
                     { value: "person" as const, label: "Ждёт человека" },
                   ]}
-                  className="self-start"
+                  className="flex-wrap self-start"
                 />
                 {mode === "task" ? (
                   <TextInput label="Номер задачи, которую ждёт эта" id="st-wait" inputMode="numeric" value={waitTask} onChange={(e) => setWaitTask(e.target.value)} autoFocus />
@@ -221,9 +235,7 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
                     <DueField id="st-ask-due" label="К какому сроку" value={askDue} onChange={setAskDue} today={data.today} />
                   </>
                 ) : (
-                  <p className="text-small text-muted">
-                    Задача уже ждёт: {(pending.task.waitsFor ?? []).filter((w) => !w.closed).map((w) => `задачу ${w.number}`).join(", ")}.
-                  </p>
+                  <p className="text-small text-muted">Задача уже ждёт: {existing}. Можно оставить эту ссылку и дописать пояснение.</p>
                 )}
                 <TextArea label="Пояснение, если нужно" id="st-note" value={text} onChange={(e) => setText(e.target.value)} />
               </>
