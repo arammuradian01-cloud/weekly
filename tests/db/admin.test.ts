@@ -184,7 +184,7 @@ describe("выгрузка в Excel", () => {
     expect(summary).toMatchObject({ tasks: 51, entries: 51 });
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(["Задачи", "Переносы", "Комментарии", "Weekly", "Сдача weekly", "Недели", "Отчёты CEO", "Просьбы", "Люди", "Справочники", "Журнал"]);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Задачи", "Переносы", "Комментарии", "Weekly", "Сдача weekly", "Недели", "Отчёты CEO", "Итоги обещаний", "Просьбы", "Люди", "Справочники", "Журнал"]);
     const t = wb.getWorksheet("Задачи")!;
     expect(t.rowCount).toBe(52);
     const header = (t.getRow(1).values as string[]).slice(1);

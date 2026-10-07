@@ -118,8 +118,8 @@ export function TaskBoard() {
     data.teamTasks.filter((t) => !t.archived && (!onlyMine || t.owner === me.slug || t.coExecutors.includes(me.slug))),
     data.today,
   );
-  // «Не выполнена» и «Отменена» нужны редко: по умолчанию четыре колонки помещаются на ноутбуке без прокрутки
-  const columns = STATUSES.filter((s) => showClosed || !["failed", "cancelled"].includes(s.code));
+  // «Частично», «Не выполнена» и «Отменена» нужны редко: по умолчанию четыре колонки помещаются на ноутбуке без прокрутки
+  const columns = STATUSES.filter((s) => showClosed || !["partial", "failed", "cancelled"].includes(s.code));
   const active = activeId ? data.tasks.find((t) => t.number === activeId) : undefined;
 
   const onDragStart = (e: DragStartEvent) => setActiveId(Number(e.active.id));

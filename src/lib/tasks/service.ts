@@ -15,7 +15,7 @@ import { issueUndoToken, readUndoToken, type TaskSnapshot, type UndoSpec } from 
 import { notify, quote, taskSubject } from "@/lib/inbox/notify";
 import { notifyWatchers } from "./watch";
 import { notifyDependents } from "./dependents";
-import { finishRequestsOfTask, reopenRequestsOfTask, syncRequestDue, type TaskOutcome } from "@/lib/requests/hooks";
+import { finishRequestsOfTask, refinishRequestsOfTask, reopenRequestsOfTask, syncRequestDue, type TaskOutcome } from "@/lib/requests/hooks";
 import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/common";
 import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
@@ -442,17 +442,19 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       resolution = required(
         note,
         LIMITS.note,
-        need === "result" ? "Нужен короткий итог или ссылка на результат" : "Без причины так закрыть задачу нельзя",
-        need === "result" ? "Итог" : "Причина",
+        need === "result" ? "Нужен короткий итог или ссылка на результат" : need === "partial" ? "Напишите, что сделано и что нет" : "Без причины так закрыть задачу нельзя",
+        need === "reason" ? "Причина" : "Итог",
       );
     }
     const closing = CLOSED_DB.includes(db);
+    const wasClosed = CLOSED_DB.includes(row.status);
     // Задача из просьбы закрыта: просьба закрывается вместе с ней, автор просьбы узнаёт об этом. Закрытую задачу
-    // открыли снова: просьба снова принята (этап 21)
-    if (closing) await finishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    // открыли снова: просьба снова принята (этап 21). У закрытой сменили итог: у просьбы тот же новый итог (этап 22)
+    if (closing && wasClosed) await refinishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    else if (closing) await finishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
+    else if (wasClosed) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
     // Задачу ждали другие: их ответственные узнают, что её закрыли (этап 21)
-    if (closing && !CLOSED_DB.includes(row.status)) await notifyDependents(tx, { id: row.id }, actor, (dep) => `Задача ${number}, которую ждёт ваша задача ${dep.number}: ${statusOf(next).label.toLowerCase()}`);
-    else if (CLOSED_DB.includes(row.status)) await reopenRequestsOfTask(tx, { id: row.id, number }, actor);
+    if (closing && !wasClosed) await notifyDependents(tx, { id: row.id }, actor, (dep) => `Задача ${number}, которую ждёт ваша задача ${dep.number}: ${statusOf(next).label.toLowerCase()}`);
     await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
@@ -1095,6 +1097,7 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
     const nowClosed = CLOSED_DB.includes(b.status as TaskStatus);
     if (wasClosed && !nowClosed) await reopenRequestsOfTask(tx, ref, actor);
     if (!wasClosed && nowClosed) await finishRequestsOfTask(tx, ref, b.status as TaskOutcome, b.resolution, actor);
+    if (wasClosed && nowClosed && row.status !== b.status) await refinishRequestsOfTask(tx, ref, b.status as TaskOutcome, b.resolution, actor);
     if (isoFromDbDate(row.due) !== b.due) await syncRequestDue(tx, ref, dbDate(b.due), actor);
     await audit(tx, actor, s.number, changes.length ? changes : [{ action: "task.undo", field: "Последнее действие отменено" }]);
     return { task: toTaskDto(updated), number: s.number };

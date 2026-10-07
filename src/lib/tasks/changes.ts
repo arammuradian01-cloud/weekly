@@ -2,7 +2,7 @@
 // поэтому новые, закрытые, перенесённые и сменившие статус задачи видны с автором, временем, было и стало.
 
 import { prisma } from "@/lib/db";
-import { STATUSES, type StatusCode } from "@/domain/dictionaries";
+import { CLOSED_STATUSES, STATUSES, type StatusCode } from "@/domain/dictionaries";
 import type { PersonSlug } from "@/domain/types";
 import { loadScope, TOP_TEAM, visibleTasksWhere } from "@/lib/org/scope";
 import type { Prisma } from "@/generated/prisma/client";
@@ -34,7 +34,7 @@ const FIELDS: Record<string, ChangeKind> = {
   "Статус (отмена)": "status",
   "Срок (отмена)": "due",
 };
-const CLOSED_LABELS = STATUSES.filter((s) => ["done", "failed", "cancelled"].includes(s.code)).map((s) => s.label);
+const CLOSED_LABELS = STATUSES.filter((s) => CLOSED_STATUSES.includes(s.code)).map((s) => s.label);
 
 /**
  * Изменения задач за последние дни в выбранных командах (null: во всех видимых). Как и история в карточке, видна
@@ -167,4 +167,4 @@ export async function taskStatusSpans(number: number, now = new Date()): Promise
   );
 }
 
-const STATUS_CODE: Record<string, StatusCode> = { PROPOSED: "proposed", IN_PROGRESS: "in-progress", CLARIFY: "clarify", DONE: "done", FAILED: "failed", CANCELLED: "cancelled" };
+const STATUS_CODE: Record<string, StatusCode> = { PROPOSED: "proposed", IN_PROGRESS: "in-progress", CLARIFY: "clarify", DONE: "done", PARTIAL: "partial", FAILED: "failed", CANCELLED: "cancelled" };

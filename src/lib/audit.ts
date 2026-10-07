@@ -70,6 +70,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "weekly.draft": "Weekly начат",
   "weekly.update": "Weekly изменён",
   "weekly.submit": "Weekly сдан",
+  "weekly.reopen": "Weekly возвращён в черновик",
+  "weekly.promise": "Итог обещания",
   "weekly.entry.create": "Запись weekly добавлена",
   "weekly.entry.update": "Запись weekly изменена",
   "weekly.entry.delete": "Запись weekly удалена",

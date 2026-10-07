@@ -8,6 +8,7 @@ const STATUS: Record<TaskStatus, StatusCode> = {
   IN_PROGRESS: "in-progress",
   CLARIFY: "clarify",
   DONE: "done",
+  PARTIAL: "partial",
   FAILED: "failed",
   CANCELLED: "cancelled",
 };
@@ -47,4 +48,4 @@ export function stateDb(code: string): TaskState | null {
   return (STATE_DB as Record<string, TaskState>)[code] ?? null;
 }
 
-export const CLOSED_DB: TaskStatus[] = ["DONE", "FAILED", "CANCELLED"];
+export const CLOSED_DB: TaskStatus[] = ["DONE", "PARTIAL", "FAILED", "CANCELLED"];

@@ -83,6 +83,7 @@ export function toTaskDto(row: TaskRow): Task {
     createdBy: row.createdBy ? slug(row.createdBy.slug) : null,
     createdAt: row.sourceDate ? isoFromDbDate(row.sourceDate) : moscowIso(row.createdAt),
     updatedAt: moscowIso(row.updatedAt),
+    rev: row.updatedAt.toISOString(),
     closedAt: row.closedAt ? moscowIso(row.closedAt) : undefined,
     resolution: row.resolution ?? undefined,
     archived: row.archivedAt !== null,

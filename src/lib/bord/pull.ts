@@ -15,6 +15,7 @@
 
 import { notifyWatchers } from "@/lib/tasks/watch";
 import { notifyDependents } from "@/lib/tasks/dependents";
+import { CLOSED_DB } from "@/lib/tasks/codes";
 import { TOP_TEAM } from "@/domain/teams";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { TaskStatus } from "@/generated/prisma/enums";
@@ -83,7 +84,7 @@ export type PullState = {
 
 export const EMPTY_PULL_STATE: PullState = { lastAttemptAt: null, lastOkAt: null, ok: null, error: null, report: null, history: [] };
 
-const CLOSED: TaskStatus[] = ["DONE", "FAILED", "CANCELLED"];
+const CLOSED: TaskStatus[] = CLOSED_DB;
 
 const clipTitle = (title: string) => (title.length <= TITLE_MAX ? title : `${title.slice(0, TITLE_MAX - 3).trimEnd()}...`);
 const outcomeOf = (s: Snap) => (s.outcome || s.title || "").slice(0, OUTCOME_MAX);

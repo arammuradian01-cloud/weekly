@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2 } from "lucide-react";
+import { CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
-import { deleteEntryAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPromise } from "@/lib/weekly/promises";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import { useOpenTask } from "@/components/tasks/task-drawer";
 import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
+import { PromiseStep } from "./promise-step";
 import { submittedText } from "./weekly-feed";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
@@ -31,7 +33,7 @@ function nowTime() {
 }
 
 /**
- * Сдача weekly в три шага на одном экране (раздел 3 ТЗ):
+ * Сдача weekly в четыре шага на одном экране (раздел 3 ТЗ, этап 22): итоги обещаний прошлой недели,
  * обновить свои задачи, написать главное и записи, проверить и сдать.
  * Черновик сохраняется на сервере сам: главная фраза через пару секунд после ввода, записи так же
  */
@@ -45,6 +47,7 @@ export function WeeklySubmit({
   late,
   promoted = [],
   expectedIn,
+  promises: initialPromises = [],
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -57,6 +60,8 @@ export function WeeklySubmit({
   promoted?: WeeklyEntry[];
   /** Команды, которые ждут мой weekly. Пусто: weekly от меня не ждут */
   expectedIn?: { id: string; name: string }[];
+  /** Планы прошлого weekly с итогами (этап 22) */
+  promises?: EntryPromise[];
 }) {
   const { data, me, notify, notifyUndo } = usePrototype();
   const router = useRouter();
@@ -111,9 +116,17 @@ export function WeeklySubmit({
     return () => document.removeEventListener("visibilitychange", flush);
   }, [saveHeadline]);
 
+  // Обещания недели (этап 22): планы прошлого weekly и мои задачи со сроком на этой неделе
+  const [promises, setPromises] = useState<EntryPromise[]>(initialPromises);
+  const range = { start: week.start, end: week.end };
+  const owed = promiseTasks(data.tasks, me.slug, range);
+  const owedNumbers = new Set(owed.map((t) => t.number));
+  const promiseSummary = summarize([...promises.map((p) => p.review?.result), ...owed.map((t) => taskPromiseOutcome(t, range, data.today).result)]);
+
   const tasks = data.tasks.filter(
     (t) =>
       !t.archived &&
+      !owedNumbers.has(t.number) &&
       isMine(t, me.slug, me.role) &&
       (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today)),
   );
@@ -153,13 +166,18 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
-  const restore = async (token: string, index: number) => {
+  /** Перенесённый план удалили или вернули: шаг обещаний показывает это без перезагрузки (этап 22) */
+  const setCarried = (promiseEntryId: string, carried: { id: string; what: string } | undefined) =>
+    setPromises((prev) => prev.map((p) => (p.entryId === promiseEntryId && p.review ? { ...p, review: { ...p.review, carried } } : p)));
+
+  const restore = async (token: string, index: number, carriedBy?: string) => {
     try {
       const result = await restoreEntryAction(token);
       if (!result.ok) return notify(result.error, "error");
       const back = result.value;
       // Запись встаёт на прежнее место, а не в конец
       setEntries((prev) => (prev.some((e) => e.id === back.id) ? prev : [...prev.slice(0, index), back, ...prev.slice(index)]));
+      if (carriedBy) setCarried(carriedBy, { id: back.id, what: back.what });
       notify("Запись возвращена");
     } catch {
       notify("Нет связи с сервером: запись не вернулась", "error");
@@ -170,11 +188,13 @@ export function WeeklySubmit({
     if (isLocalId(entry.id)) return;
     try {
       const index = entries.findIndex((e) => e.id === entry.id);
+      const carriedBy = promises.find((p) => p.review?.carried?.id === entry.id)?.entryId;
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      if (carriedBy) setCarried(carriedBy, undefined);
       const token = result.value.undo;
-      notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0)));
+      notifyUndo("Запись удалена", () => void restore(token, Math.max(index, 0), carriedBy));
     } catch {
       notify("Нет связи с сервером: запись не удалилась", "error");
     }
@@ -193,6 +213,24 @@ export function WeeklySubmit({
       notify("Нет связи с сервером: weekly не сдан", "error");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const [reopening, setReopening] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
+  const reopen = async () => {
+    setConfirmReopen(false);
+    setReopening(true);
+    try {
+      const result = await reopenWeeklyAction(week.key);
+      if (!result.ok) return notify(result.error, "error");
+      setWeekly((w) => ({ ...w, state: "draft", submittedAt: undefined }));
+      notify("Weekly снова черновик: сдайте его, когда допишете");
+      router.refresh();
+    } catch {
+      notify("Нет связи с сервером: weekly остался сданным", "error");
+    } finally {
+      setReopening(false);
     }
   };
 
@@ -227,6 +265,20 @@ export function WeeklySubmit({
           </Button>
         </div>
       </Modal>
+      <Modal
+        open={confirmReopen}
+        onOpenChange={setConfirmReopen}
+        title="Вернуть weekly в черновик?"
+        description="Команда увидит, что weekly не сдан. Когда допишете, сдайте его снова."
+      >
+        {late ? <p className="text-small font-medium text-danger-ink">Срок сдачи уже прошёл: повторная сдача будет с отметкой «Сдан с опозданием».</p> : null}
+        <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setConfirmReopen(false)}>
+            Оставить сданным
+          </Button>
+          <Button onClick={() => void reopen()}>Вернуть в черновик</Button>
+        </div>
+      </Modal>
       <aside className="mb-6 lg:mb-0">
         <div className="lg:sticky lg:top-24">
           <WeeklyBadge state={weekly.state} />
@@ -241,6 +293,7 @@ export function WeeklySubmit({
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
             <ol className="flex flex-col gap-1">
               {[
+                { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}` },
                 { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}` },
                 { href: "#step-entries", label: "Главное и записи", note: `${entries.length}` },
                 { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "" },
@@ -270,7 +323,16 @@ export function WeeklySubmit({
             Weekly от вас сейчас не ждут: в вашей команде его сдают руководители. Достаточно обновлять задачи, а если за неделю было важное, его можно записать и сдать.
           </p>
         ) : null}
-        <Step id="step-tasks" n={1} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
+        <Step
+          id="step-promises"
+          n={1}
+          title="Что вы обещали на прошлой неделе"
+          description="Итог по каждому плану и одна фраза. Невыполненное можно перенести в план: через неделю оно снова будет здесь"
+        >
+          <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
+        </Step>
+
+        <Step id="step-tasks" n={2} title="Обновить задачи" description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений">
           {tasks.length === 0 ? (
             <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
           ) : (
@@ -282,7 +344,7 @@ export function WeeklySubmit({
           )}
         </Step>
 
-        <Step id="step-entries" n={2} title="Главное за неделю" description="Одна фраза о главном и записи о событиях, обычно от 3 до 7">
+        <Step id="step-entries" n={3} title="Главное за неделю" description="Одна фраза о главном и записи о событиях, обычно от 3 до 7">
           <TextArea
             label="Главное одной фразой"
             id="headline"
@@ -368,7 +430,7 @@ export function WeeklySubmit({
           </div>
         </Step>
 
-        <Step id="step-submit" n={3} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
+        <Step id="step-submit" n={4} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
           {submitted ? (
             <div className="flex flex-col gap-3 rounded-xl bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="inline-flex items-start gap-2 text-lead text-green-ink">
@@ -378,13 +440,25 @@ export function WeeklySubmit({
                   {weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}. Правки до закрытия недели разрешены.
                 </span>
               </p>
-              <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-navy hover:bg-white/60">
-                Открыть ленту недели
-              </Link>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-navy hover:bg-white/60">
+                  Открыть ленту недели
+                </Link>
+                {canEdit ? (
+                  <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening}>
+                    <Undo2 className="h-4 w-4" aria-hidden="true" />
+                    {reopening ? "Возвращаю…" : "Вернуть в черновик"}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : (
             <div className="rounded-xl ring-1 ring-line">
-              <dl className="grid gap-4 p-5 sm:grid-cols-3">
+              <dl className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+                <div>
+                  <dt className="text-caption text-muted">Обещания</dt>
+                  <dd className="mt-1 text-body text-ink">{summaryText(promiseSummary)}</dd>
+                </div>
                 <div>
                   <dt className="text-caption text-muted">Главное</dt>
                   <dd className={cn("mt-1 text-body", headline.trim() ? "text-ink" : "text-danger-ink")}>{headline.trim() || "Не написано"}</dd>
@@ -408,15 +482,22 @@ export function WeeklySubmit({
                 </div>
               </dl>
               <div className="flex flex-col gap-3 border-t border-line p-5 sm:flex-row sm:items-center sm:justify-between">
-                {problems.length ? (
-                  <ul className="text-small text-danger-ink">
-                    {problems.map((p) => (
-                      <li key={p}>{p}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
-                )}
+                <div className="flex flex-col gap-1">
+                  {problems.length ? (
+                    <ul className="text-small text-danger-ink">
+                      {problems.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
+                  )}
+                  {promiseSummary.pending ? (
+                    <p className="text-small text-ink">
+                      Без итога обещаний: {promiseSummary.pending}. В доле выполненных обещаний они считаются невыполненными, сдать weekly можно и так.
+                    </p>
+                  ) : null}
+                </div>
                 <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} className="sm:min-w-44">
                   {submitting ? "Сдаю…" : "Сдать weekly"}
                 </Button>

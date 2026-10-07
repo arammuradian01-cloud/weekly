@@ -38,6 +38,9 @@ export type EntrySnapshot = {
   comments?: { id: string; authorId: string; text: string; mentions: string[]; at: string; editedAt: string | null }[];
   reactions?: { kind: ReactionKind; personId: string; entryCommentId: string | null; question: string | null; discussedAt: string | null; discussedById: string | null; createdAt: string }[];
   watchers?: string[];
+  /** Итог обещания из этой записи и итог, из которого запись перенесена в план (этап 22): при отмене связь возвращается */
+  promiseReviewId?: string | null;
+  carriedFromReviewId?: string | null;
 };
 
 type Payload = { snapshot: EntrySnapshot; by: string; exp: number };

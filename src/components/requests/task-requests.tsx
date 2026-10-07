@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import type { RequestView } from "@/domain/requests";
 import type { Task } from "@/domain/types";
+import { isClosed } from "@/lib/tasks/rules";
 import { taskRequestsAction } from "@/app/(app)/requests/actions";
 import { RequestRow } from "./request-list";
 import { AskColleagueButton, REQUESTS_CHANGED } from "./request-dialog";
@@ -27,7 +28,7 @@ export function TaskRequests({ task, headingLevel = "h3" }: { task: Task; headin
     };
   }, [task.number, task.updatedAt, tick]);
   const H = headingLevel;
-  const closed = task.status === "done" || task.status === "failed" || task.status === "cancelled";
+  const closed = isClosed(task);
   return (
     <section aria-labelledby={`requests-${task.number}`} className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2">

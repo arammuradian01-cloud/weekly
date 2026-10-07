@@ -84,6 +84,8 @@ enum TaskStatus {
   IN_PROGRESS
   CLARIFY
   DONE
+  /// Выполнена частично (этап 22): задача закрыта, часть результата не будет
+  PARTIAL
   FAILED
   CANCELLED
 }
@@ -173,6 +175,7 @@ model Person {
   mailMarks         MailMark[]
   requestsMade      HelpRequest[]     @relation("RequestAuthor")
   requestsReceived  HelpRequest[]     @relation("RequestAddressee")
+  promiseReviews    PromiseReview[]   @relation("PromiseAuthor")
 
   @@map("people")
 }
@@ -293,7 +296,7 @@ model Task {
   createdAt      DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
   closedAt       DateTime?      @db.Timestamptz(3)
-  /// Итог для DONE, причина для FAILED и CANCELLED
+  /// Итог для DONE, что сделано и что нет для PARTIAL, причина для FAILED и CANCELLED
   resolution     String?
   archivedAt     DateTime?      @db.Timestamptz(3)
   /// Партия импорта из таблицы, например bord-2026-10-05. Нужна сверке
@@ -305,15 +308,15 @@ model Task {
   goalId         String?
   goal           Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
 
-  coExecutors TaskCoExecutor[]
-  transfers   TaskTransfer[]
-  comments    TaskComment[]
-  links       TaskLink[]
-  inboxEvents InboxEvent[]
-  watchers    TaskWatch[]
+  coExecutors  TaskCoExecutor[]
+  transfers    TaskTransfer[]
+  comments     TaskComment[]
+  links        TaskLink[]
+  inboxEvents  InboxEvent[]
+  watchers     TaskWatch[]
   /// Просьбы по задаче и просьбы, из которых задача сделана (этап 21)
-  requests     HelpRequest[] @relation("RequestTask")
-  fromRequests HelpRequest[] @relation("RequestResultTask")
+  requests     HelpRequest[]    @relation("RequestTask")
+  fromRequests HelpRequest[]    @relation("RequestResultTask")
   /// Связи задач (этап 21): какие задачи эта ждёт и какие ждут её
   waitsFor     TaskDependency[] @relation("DependencyTask")
   blocks       TaskDependency[] @relation("DependencyBlocker")
@@ -408,6 +411,7 @@ model Week {
   ceoReport  CeoReport?
   absences   Absence[]
   teamCloses TeamWeekClose[]
+  promises   PromiseReview[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -462,15 +466,18 @@ model WeeklyEntry {
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
 
   /// id уже упомянутых людей (этап 20), и тех, до кого упоминание не дошло: событие приходит только при первом упоминании
-  mentions   String[]          @default([])
-  tasks      Task[]
-  promotions WeeklyPromotion[]
-  comments   EntryComment[]
-  watches    EntryWatch[]
-  reactions  Reaction[]
-  inbox      InboxEvent[]
+  mentions      String[]          @default([])
+  tasks         Task[]
+  promotions    WeeklyPromotion[]
+  comments      EntryComment[]
+  watches       EntryWatch[]
+  reactions     Reaction[]
+  inbox         InboxEvent[]
   /// Просьба о помощи из записи (этап 21)
-  helpRequests HelpRequest[]
+  helpRequests  HelpRequest[]
+  /// Итог обещания из этой записи (этап 22) и итог, из которого запись перенесена в план
+  promiseReview PromiseReview?    @relation("PromiseEntry")
+  carriedFrom   PromiseReview?    @relation("PromiseCarried")
 
   @@index([weekId, authorId])
   @@map("weekly_entries")
@@ -606,18 +613,18 @@ enum InboxKind {
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
 /// «Разобрано» закрывает все события предмета, новое событие возвращает его наверх
 model InboxEvent {
-  id          String       @id @default(cuid())
-  recipientId String
-  recipient   Person       @relation("InboxRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
-  kind        InboxKind
-  actorId     String?
-  actorName   String?
+  id             String        @id @default(cuid())
+  recipientId    String
+  recipient      Person        @relation("InboxRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  kind           InboxKind
+  actorId        String?
+  actorName      String?
   /// task:47
-  subject     String
-  taskId      String?
-  task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  commentId   String?
-  comment     TaskComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  subject        String
+  taskId         String?
+  task           Task?         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  commentId      String?
+  comment        TaskComment?  @relation(fields: [commentId], references: [id], onDelete: Cascade)
   /// Запись weekly и комментарий к ней (этап 20): предмет entry:<id>
   entryId        String?
   entry          WeeklyEntry?  @relation(fields: [entryId], references: [id], onDelete: Cascade)
@@ -630,16 +637,16 @@ model InboxEvent {
   requestId      String?
   request        HelpRequest?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
   /// Коротко, что случилось: «передал вам задачу», «прокомментировал: ...»
-  text        String
-  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  text           String
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
   /// «Разобрано»
-  doneAt      DateTime?    @db.Timestamptz(3)
+  doneAt         DateTime?     @db.Timestamptz(3)
   /// «Напомнить»: до этого момента событие скрыто
-  snoozeUntil DateTime?    @db.Timestamptz(3)
+  snoozeUntil    DateTime?     @db.Timestamptz(3)
   /// Человек видел событие в ресурсе (открыл «Мне» или сам предмет): письмо по нему не нужно (этап 20)
-  seenAt      DateTime?    @db.Timestamptz(3)
+  seenAt         DateTime?     @db.Timestamptz(3)
   /// Письмо по событию ушло или не нужно (выключено в настройках, нет почты)
-  mailedAt    DateTime?    @db.Timestamptz(3)
+  mailedAt       DateTime?     @db.Timestamptz(3)
 
   @@index([recipientId, doneAt])
   @@index([recipientId, subject])
@@ -998,4 +1005,39 @@ model TaskDependency {
   @@id([taskId, blockerId])
   @@index([blockerId])
   @@map("task_dependencies")
+}
+
+/// Итог обещания (этап 22, модуль М6)
+enum PromiseResult {
+  DONE
+  PARTIAL
+  NOT_DONE
+  DROPPED
+}
+
+/// Итог обещания прошлой недели: план или «что делаем дальше» из прошлого weekly. Лидер ставит его, когда пишет weekly
+/// следующей недели, итог хранится в этой неделе: прошлая может быть закрыта, её записи не меняются. Задачи со сроком
+/// на неделе сюда не пишутся: их итог это статус самой задачи
+model PromiseReview {
+  id        String        @id @default(cuid())
+  /// Неделя weekly, в котором подведён итог
+  weekId    String
+  week      Week          @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Person        @relation("PromiseAuthor", fields: [authorId], references: [id])
+  /// Запись прошлой недели. Её удалили: итог остаётся с текстом обещания
+  entryId   String?       @unique
+  entry     WeeklyEntry?  @relation("PromiseEntry", fields: [entryId], references: [id], onDelete: SetNull)
+  /// Что обещал, на момент итога
+  what      String
+  result    PromiseResult
+  note      String?
+  /// План этой недели, куда перенесли невыполненное. План удалили: перенести можно снова
+  carriedId String?       @unique
+  carried   WeeklyEntry?  @relation("PromiseCarried", fields: [carriedId], references: [id], onDelete: SetNull)
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+
+  @@index([weekId, authorId])
+  @@map("promise_reviews")
 }

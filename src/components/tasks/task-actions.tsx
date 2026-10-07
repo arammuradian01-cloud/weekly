@@ -39,7 +39,7 @@ type Actions = {
 };
 
 type Pending =
-  | { kind: "status"; task: Task; next: StatusCode; note: "result" | "reason" }
+  | { kind: "status"; task: Task; next: StatusCode; note: "result" | "partial" | "reason" }
   | { kind: "blocked"; task: Task }
   | { kind: "risk"; task: Task }
   | { kind: "transfer"; task: Task };
@@ -169,7 +169,13 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
     }
     if (!text.trim()) {
       return setError(
-        pending.kind === "risk" ? "Напишите одной фразой, что вернёт задачу в график" : pending.note === "result" ? "Нужен короткий итог или ссылка на результат" : "Без причины так закрыть задачу нельзя",
+        pending.kind === "risk"
+          ? "Напишите одной фразой, что вернёт задачу в график"
+          : pending.note === "result"
+            ? "Нужен короткий итог или ссылка на результат"
+            : pending.note === "partial"
+              ? "Напишите, что сделано и что нет"
+              : "Без причины так закрыть задачу нельзя",
       );
     }
     if (pending.kind === "risk") {
@@ -241,7 +247,7 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
               </>
             ) : (
               <TextArea
-                label={pending.kind === "risk" ? "Что вернёт задачу в график" : pending.note === "result" ? "Итог или ссылка на результат" : "Причина"}
+                label={pending.kind === "risk" ? "Что вернёт задачу в график" : pending.note === "result" ? "Итог или ссылка на результат" : pending.note === "partial" ? "Что сделано и что нет" : "Причина"}
                 id="st-note"
                 value={text}
                 onChange={(e) => setText(e.target.value)}

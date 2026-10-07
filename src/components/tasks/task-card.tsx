@@ -15,6 +15,7 @@ import { MentionArea } from "@/components/discuss/mention-area";
 import { markSeenAction } from "@/app/(app)/me/actions";
 import { teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
+import { isClosed } from "@/lib/tasks/rules";
 import { Button } from "@/components/ui/button";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
 import { OverdueNote, StaleNote } from "@/components/ui/task-badges";
@@ -151,10 +152,10 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         </div>
       ) : null}
 
-      {task.resolution && (task.status === "done" || task.status === "failed" || task.status === "cancelled") ? (
-        <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : "bg-surface")}>
-          <p className={cn("text-caption font-semibold", task.status === "done" ? "text-green-ink" : "text-muted")}>
-            {task.status === "done" ? "Итог" : "Причина"}
+      {task.resolution && isClosed(task) ? (
+        <div className={cn("rounded-xl px-4 py-3", task.status === "done" ? "bg-green-soft" : task.status === "partial" ? "bg-orange-soft" : "bg-surface")}>
+          <p className={cn("text-caption font-semibold", task.status === "done" ? "text-green-ink" : task.status === "partial" ? "text-orange-ink" : "text-muted")}>
+            {task.status === "done" ? "Итог" : task.status === "partial" ? "Что сделано и что нет" : "Причина"}
           </p>
           <p className="mt-0.5 text-body text-ink">{task.resolution}</p>
         </div>
@@ -219,7 +220,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
               {task.transfers[0]?.from === null ? "Исходный срок не записан" : `Исходный срок ${formatLong(task.originalDue)}`}, переносов {task.transfers.length}
             </span>
           ) : null}
-          {can.due && task.status !== "done" && task.status !== "cancelled" && task.status !== "failed" ? (
+          {can.due && !isClosed(task) ? (
             <button type="button" onClick={() => actions.transfer(task)} className="mt-1.5 inline-flex h-9 items-center gap-1.5 rounded-md text-small font-medium text-blue-700 hover:underline">
               <CalendarClock className="h-4 w-4" aria-hidden="true" />
               Перенести срок

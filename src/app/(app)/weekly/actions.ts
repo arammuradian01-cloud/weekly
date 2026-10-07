@@ -6,6 +6,8 @@ import { unstable_rethrow } from "next/navigation";
 import { requestIp, requireContext } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
+import { carryPromise, reopenWeekly, reviewPromise } from "@/lib/weekly/promise-service";
+import type { EntryPromise } from "@/lib/weekly/promises";
 import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
 import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
@@ -64,6 +66,24 @@ export async function restoreEntryAction(token: string): Promise<Result<WeeklyEn
 
 export async function submitWeeklyAction(week: WeekKey): Promise<Result<PersonWeekly>> {
   return run((a) => svc.submitWeekly(a, week));
+}
+
+/** Вернуть сданный weekly в черновик, пока неделя открыта (этап 22) */
+export async function reopenWeeklyAction(week: WeekKey): Promise<Result<null>> {
+  return run(async (a) => {
+    await reopenWeekly(a, week);
+    return null;
+  });
+}
+
+/** Итог обещания прошлой недели (этап 22) */
+export async function reviewPromiseAction(entryId: string, result: string, note?: string | null): Promise<Result<EntryPromise>> {
+  return run((a) => reviewPromise(a, String(entryId), String(result), note == null ? null : String(note)));
+}
+
+/** Невыполненное обещание в план этой недели (этап 22) */
+export async function carryPromiseAction(entryId: string): Promise<Result<{ promise: EntryPromise; entry: WeeklyEntry }>> {
+  return run((a) => carryPromise(a, String(entryId)));
 }
 
 export async function setCeoFlagAction(id: string, ceo: boolean): Promise<Result<WeeklyEntry>> {

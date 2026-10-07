@@ -8,7 +8,7 @@ import type { BadgeTone } from "@/components/ui/badge";
 export type DirectionCode = string;
 export type BlockCode = string;
 export type EntryTypeCode = "result" | "event" | "risk" | "plan";
-export type StatusCode = "proposed" | "in-progress" | "clarify" | "done" | "failed" | "cancelled";
+export type StatusCode = "proposed" | "in-progress" | "clarify" | "done" | "partial" | "failed" | "cancelled";
 /** unset: задача пришла из таблицы, где приоритета нет. Выбрать «не задан» вручную нельзя */
 export type PriorityCode = "critical" | "high" | "medium" | "low" | "unset";
 /** unset: задача пришла из таблицы, где состояния нет. Выбрать «не задано» вручную нельзя */
@@ -56,6 +56,7 @@ export const STATUSES: (Item<StatusCode> & { tone: BadgeTone })[] = [
   { code: "in-progress", label: "В работе", tone: "blue" },
   { code: "clarify", label: "Требует уточнений", tone: "yellow" },
   { code: "done", label: "Выполнена", tone: "green" },
+  { code: "partial", label: "Выполнена частично", tone: "orange" },
   { code: "failed", label: "Не выполнена", tone: "red" },
   { code: "cancelled", label: "Отменена", tone: "gray" },
 ];
@@ -143,4 +144,4 @@ export const sourceLabel = (c: SourceCode) => labelIn("TASK_SOURCE", c);
 /** Открытые статусы: по ним считается просрочка (раздел 4 ТЗ) */
 export const OPEN_STATUSES: StatusCode[] = ["in-progress", "clarify"];
 /** Закрытые статусы: задача больше не в работе */
-export const CLOSED_STATUSES: StatusCode[] = ["done", "failed", "cancelled"];
+export const CLOSED_STATUSES: StatusCode[] = ["done", "partial", "failed", "cancelled"];
