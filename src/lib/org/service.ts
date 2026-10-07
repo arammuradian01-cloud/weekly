@@ -521,10 +521,18 @@ export async function moveTask(actor: Actor, number: number, teamId: string): Pr
     if (task.ownerAll && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды: сначала назначьте ответственного");
     const nodes = await loadTeamNodes(tx);
     const from = nodes.find((n) => n.id === task.teamId)?.name ?? task.teamId;
-    await tx.task.update({ where: { id: task.id }, data: { teamId } });
+    // Цель задачи берётся из её команды или команд выше (этап 17): в чужой ветке цель снимается
+    const goal = task.goalId ? await tx.goal.findUnique({ where: { id: task.goalId }, select: { teamId: true, title: true } }) : null;
+    const keepGoal = !goal || [teamId, ...ancestorsOf(nodes, teamId)].includes(goal.teamId);
+    await tx.task.update({ where: { id: task.id }, data: { teamId, ...(keepGoal ? {} : { goalId: null }) } });
     await tx.auditLog.create({
       data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Команда", before: from, after: target.name, ip: actor.ip ?? null, via: actor.via ?? null },
     });
+    if (!keepGoal) {
+      await tx.auditLog.create({
+        data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: goal!.title, after: undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+      });
+    }
   });
 }
 

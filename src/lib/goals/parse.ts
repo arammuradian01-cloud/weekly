@@ -151,8 +151,11 @@ export function readGoalsTable(input: string | string[][], defaultQuarter: strin
     if (!cells.length) continue;
     const first = cells[0]!;
     if (STOP.test(first)) break;
-    // Раздел «Запланировано на Q4 2026»: одна непустая ячейка с кварталом
-    const sectionQuarter = cells.length <= 2 ? normalizeQuarter(cells.join(" ")) : null;
+    // Раздел «Запланировано на Q4 2026»: одна ячейка с кварталом или строка со словом «Запланировано». Строка цели
+    // с кварталом в названии («Подготовить запуск к Q1 2027») разделом не считается: у неё есть номер или колонка цели
+    const joined = cells.join(" ");
+    const titled = !!get(r, "title") && !/^запланировано/i.test(get(r, "title"));
+    const sectionQuarter = !titled && (cells.length === 1 || /^запланировано/i.test(joined)) ? normalizeQuarter(joined) : null;
     if (sectionQuarter && !get(r, "metric") && !get(r, "target")) {
       quarter = sectionQuarter;
       continue;
@@ -170,7 +173,8 @@ export function readGoalsTable(input: string | string[][], defaultQuarter: strin
     const code = get(r, "code");
     const q = ownQuarter ?? quarter;
     if (code) {
-      const key = `${q}/${code}`;
+      // Номер уникален внутри квартала и команды: у разных команд свои номера 1, 2, 3
+      const key = `${q}/${norm(get(r, "team"))}/${code}`;
       if (seen.has(key)) problems.push({ line, text: `Цель ${code} за ${quarterLabel(q)} уже есть в строке ${seen.get(key)}` });
       else seen.set(key, line);
     }

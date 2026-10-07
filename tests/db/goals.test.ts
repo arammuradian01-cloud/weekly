@@ -195,3 +195,32 @@ describe("загрузка целей", () => {
     expect(row).toMatchObject({ open: 2, withoutGoal: 1, highWithoutGoal: 1 });
   });
 });
+
+describe("правки по проверке кода", () => {
+  it("повторная загрузка не стирает описание и ссылку, петля целей откатывает загрузку, номера у разных команд свои", async () => {
+    const o = await owner();
+    const sector = await teamOf("Антонов");
+    const analytics = await teamOf("Токов");
+    await goals.updateGoal(o, ids.s1, { description: "Форма с новым дизайном", link: "https://docs.google.com/spreadsheets/d/x" });
+    const tab = ["№\tЗапланировано\tЦелевые", "1\tНовая форма расчёта на всём трафике\t100% трафика"].join("\n");
+    await goals.applyGoals(o, tab, { team: sector.id, quarter: Q });
+    const s1 = await prisma.goal.findUniqueOrThrow({ where: { id: ids.s1 } });
+    expect([s1.description, s1.link, s1.target]).toEqual(["Форма с новым дизайном", "https://docs.google.com/spreadsheets/d/x", "100% трафика"]);
+    const loop = ["№\tЗапланировано\tРодительская цель", "c1\tПетля один\tc2", "c2\tПетля два\tc1"].join("\n");
+    await expectRule(goals.applyGoals(o, loop, { team: sector.id, quarter: Q }), /ниже самой себя/);
+    expect(await prisma.goal.count({ where: { code: { in: ["c1", "c2"] } } })).toBe(0);
+    const twoTeams = ["Команда\tID\tЦель", "Сектор автострахования\t7\tЦель сектора семь", "Продуктовая аналитика\t7\tЦель аналитики семь"].join("\n");
+    expect((await goals.planGoals(o, twoTeams, { team: sector.id, quarter: Q })).problems).toEqual([]);
+    void analytics;
+  });
+
+  it("задача, перенесённая в другую ветку, теряет цель; чужой задаче цели не предлагаются", async () => {
+    const sector = await teamOf("Антонов");
+    const analytics = await teamOf("Токов");
+    const t = await prisma.task.findFirstOrThrow({ where: { goalId: ids.s1, status: { not: "DONE" } } });
+    await org.moveTask(await svc.actorFor("reva"), t.number, analytics.id);
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).goalId).toBeNull();
+    await expectRule(goals.goalOptions(who(await svc.actorFor("fatyanov")), t.number), new RegExp(`Задачи ${t.number} нет`));
+    void sector;
+  });
+});

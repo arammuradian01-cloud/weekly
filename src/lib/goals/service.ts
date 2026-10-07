@@ -160,10 +160,12 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
       if (guard.has(c)) continue;
       const r = roll(c, guard);
       const child = byId.get(c)!;
+      // Снятая цель ниже в прогресс и просрочку цели выше не входит
+      if (child.result === "DROPPED") continue;
       done += r.done;
       total += r.total;
       overdue += r.overdue;
-      if (child.result !== "DROPPED") belowTotal += 1;
+      belowTotal += 1;
       if (child.result === "ACHIEVED") achieved += 1;
       if (r.risk && !childRisk && child.result === "IN_PROGRESS") childRisk = `в риске цель ниже: ${child.title}`;
     }
@@ -347,7 +349,7 @@ export async function updateGoal(actor: Actor, id: string, input: GoalInput & { 
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const who = { personId: actor.personId, role: actor.role, management: actor.management };
     const editor = canEditTeam(who, scope, goal.teamId);
-    const marker = editor || goal.ownerId === actor.personId;
+    const marker = editor || (goal.ownerId === actor.personId && actor.role !== "OBSERVER");
     const fields = Object.keys(input).filter((k) => (input as Record<string, unknown>)[k] !== undefined);
     const markOnly = fields.every((k) => k === "atRisk" || k === "riskNote" || k === "result");
     if (!(markOnly ? marker : editor)) fail(markOnly ? "Отмечают цель её владелец и руководитель команды" : "Цель правят руководитель её команды или команды выше и режим управления");
@@ -373,7 +375,13 @@ export async function updateGoal(actor: Actor, id: string, input: GoalInput & { 
       set("code", "Номер", goal.code, code, code);
     }
     if (input.owner !== undefined) {
-      const owner = input.owner ? ((await tx.person.findUnique({ where: { slug: input.owner } })) ?? fail("Такого человека нет")) : null;
+      // Пусто: владелец цели руководитель её команды, как при создании
+      const owner = input.owner
+        ? ((await tx.person.findUnique({ where: { slug: input.owner } })) ?? fail("Такого человека нет"))
+        : goal.team.leaderId
+          ? await tx.person.findUnique({ where: { id: goal.team.leaderId } })
+          : null;
+      if (owner && !owner.active) fail(`${owner.fullName} выключен`);
       set("ownerId", "Владелец", goal.owner?.fullName ?? null, owner?.fullName ?? null, owner?.id ?? null);
     }
     if (input.parent !== undefined) {
@@ -398,7 +406,7 @@ export async function updateGoal(actor: Actor, id: string, input: GoalInput & { 
 export async function deleteGoal(actor: Actor, id: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const goal = (await tx.goal.findUnique({ where: { id }, include: { _count: { select: { tasks: true, children: true } } } })) ?? fail("Цели уже нет");
-    const { scope } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management });
+    const { scope } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     if (!canEditTeam({ personId: actor.personId, role: actor.role, management: actor.management }, scope, goal.teamId)) fail("Цель удаляет руководитель её команды или режим управления");
     if (goal._count.tasks || goal._count.children) fail("У цели есть задачи или цели ниже: удалить нельзя, поставьте итог «Снята»");
     await tx.goal.delete({ where: { id } });
@@ -408,9 +416,10 @@ export async function deleteGoal(actor: Actor, id: string): Promise<void> {
 
 /** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше */
 export async function goalOptions(who: Who, number: number): Promise<{ id: string; label: string }[]> {
-  const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true } });
-  if (!task) return [];
-  const nodes = await loadTeamNodes(prisma);
+  const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
+  const { scope, nodes } = await scopeFor(prisma, who);
+  // Чужую задачу не подтверждаем: ни команду, ни срок, ни цель
+  if (!task || task.archivedAt || !seesTask(scope, task, who.personId)) return fail(`Задачи ${number} нет`);
   const teams = [task.teamId, ...ancestorsOf(nodes, task.teamId)];
   const quarters = [...new Set([quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))])];
   const goals = await prisma.goal.findMany({
@@ -418,7 +427,6 @@ export async function goalOptions(who: Who, number: number): Promise<{ id: strin
     include: { team: { select: { name: true } } },
     orderBy: [{ quarter: "desc" }, { sortOrder: "asc" }],
   });
-  void who;
   return goals.map((g) => ({ id: g.id, label: `${quarterLabel(g.quarter)}, ${g.team.name}: ${g.code ? `${g.code}. ` : ""}${g.title}` }));
 }
 
@@ -438,6 +446,8 @@ export async function linkTaskGoal(actor: Actor, number: number, goalId: string 
       const nodes = await loadTeamNodes(tx);
       if (![task.teamId, ...ancestorsOf(nodes, task.teamId)].includes(g.teamId)) fail("Задачу привязывают к цели своей команды или команды выше");
       if (g.result === "DROPPED") fail("Цель снята: выберите другую");
+      const quarters = [quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))];
+      if (!quarters.includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
       goal = g;
     }
     if ((task.goalId ?? null) === (goal?.id ?? null)) fail("Цель уже такая");
@@ -504,15 +514,19 @@ export async function planGoals(actor: Actor, input: string | string[][], opts: 
       cmp("база", found.base, r.base);
       cmp("целевое", found.target, r.target);
       if (r.result !== "IN_PROGRESS" && r.result !== found.result) changes.push(`итог: ${RESULT_LABELS[found.result]}, станет ${RESULT_LABELS[r.result]}`);
+      if (ownerId && ownerId !== found.ownerId) changes.push(`владелец: ${people.find((x) => x.id === found.ownerId)?.fullName ?? "не задан"}, станет ${people.find((x) => x.id === ownerId)?.fullName}`);
+      cmp("описание", found.description, r.description);
+      cmp("ссылка", found.link, r.link);
       if (changes.length) out.change.push({ line: r.line, title: r.title, changes });
       else out.same += 1;
     }
   }
-  // Цель выше по номеру: из файла или уже заведённая, в том же квартале
+  // Цель выше по номеру: из файла или уже заведённая, в том же квартале, в своей команде или команде выше
   for (const r of out.rows) {
     if (!r.parent) continue;
-    const inFile = out.rows.some((x) => x.quarter === r.quarter && x.code === r.parent);
-    const inBase = existing.some((g) => g.quarter === r.quarter && g.code === r.parent);
+    const chain = [r.teamId, ...ancestorsOf(nodes, r.teamId)];
+    const inFile = out.rows.some((x) => x.quarter === r.quarter && x.code === r.parent && chain.includes(x.teamId));
+    const inBase = existing.some((g) => g.quarter === r.quarter && g.code === r.parent && chain.includes(g.teamId));
     // Сквозные цели вида S1-S12 бывают и не заведены: тогда связь просто не ставим, это не ошибка
     if (!inFile && !inBase && !/^s\d+$/i.test(r.parent)) out.problems.push({ line: r.line, text: `Цель выше «${r.parent}» не найдена ни в файле, ни в ресурсе` });
   }
@@ -529,20 +543,21 @@ export async function applyGoals(actor: Actor, input: string | string[][], opts:
       let added = 0;
       let changed = 0;
       for (const r of plan.rows) {
+        // Пустая ячейка таблицы не стирает то, что уже есть у цели: описание, ссылку, метрику
         const data = {
           title: r.title,
-          description: r.description || null,
-          metric: r.metric || null,
-          base: r.base || null,
-          target: r.target || null,
-          link: r.link || null,
+          ...(r.description ? { description: r.description } : {}),
+          ...(r.metric ? { metric: r.metric } : {}),
+          ...(r.base ? { base: r.base } : {}),
+          ...(r.target ? { target: r.target } : {}),
+          ...(r.link ? { link: r.link } : {}),
           ...(r.ownerId ? { ownerId: r.ownerId } : {}),
           ...(r.result !== "IN_PROGRESS" ? { result: r.result as GoalResult } : {}),
         };
         let id = r.existingId;
         if (id) {
           const before = await tx.goal.findUniqueOrThrow({ where: { id } });
-          const differs = (["title", "metric", "base", "target"] as const).some((k) => (data[k] ?? null) !== (before[k] ?? null) && data[k]) || (data.result && data.result !== before.result);
+          const differs = (Object.keys(data) as (keyof typeof data)[]).some((k) => (data[k] ?? null) !== ((before as Record<string, unknown>)[k] ?? null));
           if (differs) {
             await tx.goal.update({ where: { id }, data });
             await audit(tx, actor, id, "Цель обновлена из таблицы", before.title, r.title);
@@ -558,17 +573,27 @@ export async function applyGoals(actor: Actor, input: string | string[][], opts:
           added += 1;
           await audit(tx, actor, id, "Цель заведена из таблицы", null, `${quarterLabel(r.quarter)}, ${team.name}: ${r.title}`, "goal.create");
         }
-        if (r.code) idOf.set(`${r.quarter}/${r.code}`, id!);
+        if (r.code) idOf.set(`${r.quarter}/${r.teamId}/${r.code}`, id!);
       }
       // Связи с целью выше: после того, как все цели заведены
       for (const r of plan.rows) {
         if (!r.parent) continue;
-        const id = r.code ? idOf.get(`${r.quarter}/${r.code}`) : (await tx.goal.findFirst({ where: { quarter: r.quarter, teamId: r.teamId, title: r.title } }))?.id;
-        const parentId = idOf.get(`${r.quarter}/${r.parent}`) ?? (await tx.goal.findFirst({ where: { quarter: r.quarter, code: r.parent }, orderBy: { createdAt: "asc" } }))?.id;
+        const id = r.code ? idOf.get(`${r.quarter}/${r.teamId}/${r.code}`) : (await tx.goal.findFirst({ where: { quarter: r.quarter, teamId: r.teamId, title: r.title } }))?.id;
+        // Цель выше ищем в своей команде, потом в командах выше по порядку: ближайшая с таким номером
+        let parentId: string | undefined;
+        for (const t of [r.teamId, ...ancestorsOf(nodes, r.teamId)]) {
+          parentId = idOf.get(`${r.quarter}/${t}/${r.parent}`) ?? (await tx.goal.findFirst({ where: { quarter: r.quarter, teamId: t, code: r.parent } }))?.id;
+          if (parentId) break;
+        }
         if (!id || !parentId || parentId === id) continue;
-        const parent = await tx.goal.findUniqueOrThrow({ where: { id: parentId } });
-        const up = [r.teamId, ...ancestorsOf(nodes, r.teamId)];
-        if (!up.includes(parent.teamId)) continue;
+        // Петля: цель выше сама стоит ниже этой цели. Загрузка откатывается целиком
+        let cur: string | null = parentId;
+        const guard = new Set<string>();
+        while (cur && !guard.has(cur)) {
+          if (cur === id) fail(`Цели не загрузить, база не тронута: строка ${r.line} ставит цель ниже самой себя`);
+          guard.add(cur);
+          cur = (await tx.goal.findUnique({ where: { id: cur }, select: { parentId: true } }))?.parentId ?? null;
+        }
         await tx.goal.update({ where: { id }, data: { parentId } });
       }
       await tx.auditLog.create({

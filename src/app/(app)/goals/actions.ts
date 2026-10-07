@@ -42,7 +42,7 @@ export async function applyBordGoalsAction(tab: string, team: string, quarter: s
 }
 
 export async function goalOptionsAction(number: number): Promise<Result<{ id: string; label: string }[]>> {
-  return runAction("Цели для задачи", (a) => goals.goalOptions({ personId: a.personId, role: a.role, management: a.management }, Number(number)));
+  return runAction("Цели для задачи", (a) => goals.goalOptions({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, Number(number)));
 }
 
 export async function linkGoalAction(number: number, goalId: string | null): Promise<Result<{ goal: string | null }>> {
