@@ -145,57 +145,61 @@ model Person {
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
-  reports           Person[]            @relation("PersonManager")
-  functionalReports Person[]            @relation("PersonFunctionalManager")
-  headOf            OrgUnit[]           @relation("UnitHead")
-  leads             Team[]              @relation("TeamLeader")
-  teams             TeamMember[]
-  ownedTasks        Task[]              @relation("TaskOwner")
-  createdTasks      Task[]              @relation("TaskCreator")
-  coTasks           TaskCoExecutor[]
-  transfers         TaskTransfer[]
-  taskComments      TaskComment[]
-  taskLinks         TaskLink[]
-  weeks             Week[]
-  weeklyReports     WeeklyReport[]
-  weeklyEntries     WeeklyEntry[]
-  ceoReports        CeoReport[]
-  loginLinks        LoginLink[]
-  devices           DeviceSession[]
-  pushSubscriptions PushSubscription[]
-  absences          Absence[]           @relation("AbsencePerson")
-  substitutions     Absence[]           @relation("AbsenceSubstitute")
-  inbox             InboxEvent[]        @relation("InboxRecipient")
-  promotions        WeeklyPromotion[]
-  teamWeekCloses    TeamWeekClose[]
-  watches           TaskWatch[]
-  ownedGoals        Goal[]              @relation("GoalOwner")
-  createdGoals      Goal[]              @relation("GoalCreator")
-  entryComments     EntryComment[]
-  entryWatches      EntryWatch[]
-  reactions         Reaction[]          @relation("ReactionPerson")
-  discussed         Reaction[]          @relation("ReactionDiscussedBy")
-  mailMarks         MailMark[]
-  requestsMade      HelpRequest[]       @relation("RequestAuthor")
-  requestsReceived  HelpRequest[]       @relation("RequestAddressee")
-  promiseReviews    PromiseReview[]     @relation("PromiseAuthor")
+  reports            Person[]            @relation("PersonManager")
+  functionalReports  Person[]            @relation("PersonFunctionalManager")
+  headOf             OrgUnit[]           @relation("UnitHead")
+  leads              Team[]              @relation("TeamLeader")
+  teams              TeamMember[]
+  ownedTasks         Task[]              @relation("TaskOwner")
+  createdTasks       Task[]              @relation("TaskCreator")
+  coTasks            TaskCoExecutor[]
+  transfers          TaskTransfer[]
+  taskComments       TaskComment[]
+  taskLinks          TaskLink[]
+  weeks              Week[]
+  weeklyReports      WeeklyReport[]
+  weeklyEntries      WeeklyEntry[]
+  ceoReports         CeoReport[]
+  loginLinks         LoginLink[]
+  devices            DeviceSession[]
+  pushSubscriptions  PushSubscription[]
+  absences           Absence[]           @relation("AbsencePerson")
+  substitutions      Absence[]           @relation("AbsenceSubstitute")
+  inbox              InboxEvent[]        @relation("InboxRecipient")
+  promotions         WeeklyPromotion[]
+  teamWeekCloses     TeamWeekClose[]
+  watches            TaskWatch[]
+  ownedGoals         Goal[]              @relation("GoalOwner")
+  createdGoals       Goal[]              @relation("GoalCreator")
+  entryComments      EntryComment[]
+  entryWatches       EntryWatch[]
+  reactions          Reaction[]          @relation("ReactionPerson")
+  discussed          Reaction[]          @relation("ReactionDiscussedBy")
+  mailMarks          MailMark[]
+  requestsMade       HelpRequest[]       @relation("RequestAuthor")
+  requestsReceived   HelpRequest[]       @relation("RequestAddressee")
+  promiseReviews     PromiseReview[]     @relation("PromiseAuthor")
   /// Встреча 2.0 (этап 23)
-  meetingsLed       Meeting[]           @relation("MeetingLeader")
-  agendaItems       AgendaItem[]        @relation("AgendaPerson")
-  agendaDiscussed   AgendaItem[]        @relation("AgendaDiscussedBy")
-  decisionsOwned    Decision[]          @relation("DecisionOwner")
-  decisionsMade     Decision[]          @relation("DecisionCreator")
-  decisionsClosed   Decision[]          @relation("DecisionCanceller")
+  meetingsLed        Meeting[]           @relation("MeetingLeader")
+  agendaItems        AgendaItem[]        @relation("AgendaPerson")
+  agendaDiscussed    AgendaItem[]        @relation("AgendaDiscussedBy")
+  decisionsOwned     Decision[]          @relation("DecisionOwner")
+  decisionsMade      Decision[]          @relation("DecisionCreator")
+  decisionsClosed    Decision[]          @relation("DecisionCanceller")
   /// Поиск, виды и чек-листы (этап 25)
-  checklistDone     TaskChecklistItem[]
-  savedViews        SavedView[]
+  checklistDone      TaskChecklistItem[]
+  savedViews         SavedView[]
   /// Прогноз до конца месяца (этап 24)
-  forecasts         Forecast[]
+  forecasts          Forecast[]
   /// Встречи один на один (этап 28)
-  oneOnOneManaged   OneOnOnePair[]      @relation("OneOnOneManager")
-  oneOnOneReported  OneOnOnePair[]      @relation("OneOnOneReport")
-  oneOnOneTopics    OneOnOneTopic[]     @relation("OneOnOneTopicAuthor")
-  oneOnOneNotes     OneOnOneNote[]
+  oneOnOneManaged    OneOnOnePair[]      @relation("OneOnOneManager")
+  oneOnOneReported   OneOnOnePair[]      @relation("OneOnOneReport")
+  oneOnOneTopics     OneOnOneTopic[]     @relation("OneOnOneTopicAuthor")
+  oneOnOneNotes      OneOnOneNote[]
+  /// Личная ссылка на календарь сроков (этап 29)
+  calendarFeed       CalendarFeed?
+  /// Кто уже оценил встречи команды (этап 29): без связи с самой оценкой
+  meetingRatingVotes MeetingRatingVote[]
 
   @@map("people")
 }
@@ -906,14 +910,17 @@ model Team {
   createdAt         DateTime @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime @updatedAt @db.Timestamptz(3)
 
-  members   TeamMember[]
-  tasks     Task[]
-  closes    TeamWeekClose[]
-  goals     Goal[]
+  members     TeamMember[]
+  tasks       Task[]
+  closes      TeamWeekClose[]
+  goals       Goal[]
   /// Встречи и решения команды (этап 23)
-  meetings  Meeting[]
-  decisions Decision[]
-  forecasts Forecast[]
+  meetings    Meeting[]
+  decisions   Decision[]
+  forecasts   Forecast[]
+  /// Анонимная оценка встреч раз в месяц (этап 29)
+  ratingVotes MeetingRatingVote[]
+  ratings     MeetingRating[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -1490,4 +1497,49 @@ model OneOnOneNote {
 
   @@unique([meetingId, authorId])
   @@map("one_on_one_notes")
+}
+
+/// Личная ссылка на календарь сроков (этап 29): подписка в Google, Яндекс или Outlook. Хранится только отпечаток
+/// ссылки, саму ссылку видно один раз при создании. У человека одна ссылка: новая заменяет прежнюю
+model CalendarFeed {
+  id         String    @id @default(cuid())
+  personId   String    @unique
+  person     Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  /// Названия задач и имена в календаре. По умолчанию выключены: сервис календаря хранит всё у себя
+  withTitles Boolean   @default(false)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  /// Когда календарь последний раз забирал данные (не чаще раза в 15 минут)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+
+  @@map("calendar_feeds")
+}
+
+/// Кто уже оценил встречи команды за месяц (этап 29). Отдельно от оценок и без времени: по базе не связать человека
+/// с ответом. Ключ случайный, не по времени
+model MeetingRatingVote {
+  id       String @id @default(uuid())
+  teamId   String
+  team     Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// Месяц вида 2026-10
+  month    String
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, month, personId])
+  @@map("meeting_rating_votes")
+}
+
+/// Анонимная оценка встреч команды за месяц: полезность от 1 до 5 и что убрать. Без автора и без времени
+model MeetingRating {
+  id     String @id @default(uuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  month  String
+  score  Int
+  /// Что убрать из встреч: одна-две фразы, можно пусто
+  remove String @default("")
+
+  @@index([teamId, month])
+  @@map("meeting_ratings")
 }

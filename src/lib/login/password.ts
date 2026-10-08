@@ -271,8 +271,9 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: null, passwordSetAt: null } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "owner" } });
     await tx.loginLink.updateMany({ where: { personId: person.id, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+    await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
     await tx.auditLog.create({
-      data: { action: "auth.password.reset", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: person.slug, field: person.fullName, after: "пароль сброшен, входы завершены", ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.password.reset", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: person.slug, field: person.fullName, after: "пароль сброшен, входы и ссылка на календарь отключены", ip: actor.ip ?? null, via: actor.via ?? null },
     });
   });
 }

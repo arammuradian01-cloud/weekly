@@ -4,7 +4,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { clearSession, readSession, requestUserAgent, requireContext } from "@/lib/auth";
+import { baseUrl, clearSession, readSession, requestUserAgent, requireContext } from "@/lib/auth";
+import { createFeed, feedUrl, revokeFeed, setFeedTitles } from "@/lib/calendar/service";
 import { changePassword } from "@/lib/login/password";
 import { runAction } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
@@ -101,4 +102,26 @@ export async function testPushAction() {
 export async function syncPushAction(subscription: unknown, owner: string | null) {
   const ctx = await requireContext();
   return runAction("Сверка уведомлений", (a) => syncSubscription(a, ctx.deviceId, subscription, typeof owner === "string" ? owner : null));
+}
+
+// ---------- Календарь сроков (этап 29). Только при личном входе ----------
+
+/** Новая ссылка на календарь: возвращает адрес подписки, его показывают один раз */
+export async function createCalendarAction(withTitles: boolean) {
+  const base = await baseUrl();
+  const result = await runAction("Ссылка на календарь", async (a) => feedUrl(base, (await createFeed(a, withTitles === true)).token));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+export async function calendarTitlesAction(withTitles: boolean) {
+  const result = await runAction("Названия в календаре", (a) => setFeedTitles(a, withTitles === true));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+export async function revokeCalendarAction() {
+  const result = await runAction("Отключение календаря", (a) => revokeFeed(a));
+  if (result.ok) revalidatePath("/profile");
+  return result;
 }

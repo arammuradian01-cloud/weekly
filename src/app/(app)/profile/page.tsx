@@ -15,6 +15,8 @@ import { MailPrefsForm } from "@/components/profile/mail-prefs";
 import { PasswordForm } from "@/components/profile/password-form";
 import { InstallApp, PushSettings } from "@/components/profile/push-settings";
 import { pushDevices, pushPrefsFor, pushPublicKey } from "@/lib/push/service";
+import { feedFor } from "@/lib/calendar/service";
+import { CalendarFeedSettings } from "@/components/profile/calendar-feed";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -32,7 +34,7 @@ export default async function ProfilePage() {
   const ctx = await requireContext();
   const observer = ctx.person.role === "OBSERVER";
   const personal = ctx.via !== "TEAM";
-  const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList] = await Promise.all([
+  const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed] = await Promise.all([
     ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
     observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
     absenceWeeks(),
@@ -45,7 +47,14 @@ export default async function ProfilePage() {
     personal ? pushPublicKey() : Promise.resolve(""),
     pushPrefsFor(ctx.person.id),
     personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
+    feedFor(ctx.person.id),
   ]);
+  // Календарь сроков (этап 29): ссылка личная, по общему логину её не выдаём
+  const calendarLocked = !personal
+    ? "Календарь сроков подключается при личном входе: по общему логину можно выбрать чужой профиль."
+    : observer
+      ? "У наблюдателя нет своих сроков и встреч."
+      : null;
   const mailOn = mailConfigured();
   return (
     <div className="max-w-3xl">
@@ -106,6 +115,17 @@ export default async function ProfilePage() {
         <p className="mt-1 text-small text-muted">Ответить на просьбу, обновить задачу, прочитать ленту и повестку можно с телефона в два нажатия.</p>
         <InstallApp />
         <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />
+      </section>
+
+      <section className="mt-10 border-t border-line pt-8" aria-labelledby="calendar-feed">
+        <h2 id="calendar-feed" className="text-title font-semibold text-ink">
+          Календарь сроков
+        </h2>
+        <p className="mt-1 text-small text-muted">
+          Сроки ваших задач, срок weekly, встречи команды и один на один в вашем календаре: Google, Яндекс, Outlook или на телефоне. Календарь только показывает,
+          менять сроки по-прежнему в ресурсе.
+        </p>
+        <CalendarFeedSettings feed={feed} locked={calendarLocked} />
       </section>
 
       <section className="mt-10 border-t border-line pt-8">
