@@ -211,7 +211,7 @@ function UiSampleBody() {
         <Block id="colors" title="Цвета" description="Все цвета задаются одним набором переменных в src/app/globals.css. Цвет никогда не единственный носитель смысла: рядом всегда есть слово.">
           <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {COLORS.map((c) => (
-              <li key={c.token} className="rounded-xl ring-1 ring-line">
+              <li key={c.token} className="sv-card sv-card--soft">
                 <div className={`h-16 rounded-t-xl ${SWATCH[c.token]}`} aria-hidden="true" />
                 <div className="px-3 py-2.5">
                   <p className="text-body font-semibold text-ink">{c.name}</p>
@@ -228,7 +228,7 @@ function UiSampleBody() {
           title="Шрифт"
           description="Golos Text, он уже служит заменой фирменному Aeroport в презентациях. Размеры заданы по ролям в src/app/globals.css: класс text-caption, text-body и так далее. Числом размер в экранах не пишем, это проверяет тест."
         >
-          <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
             {(Object.keys(TEXT_SIZES) as TextSize[]).map((name) => (
               <li key={name} className="grid gap-1 px-4 py-3 sm:grid-cols-[200px_minmax(0,1fr)] sm:items-baseline sm:gap-4">
                 <p className="text-caption tabular-nums text-muted">
@@ -281,7 +281,7 @@ function UiSampleBody() {
               <input type="checkbox" defaultChecked className="h-4 w-4 accent-blue-700" />
               Нужна помощь
             </label>
-            <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink sm:col-span-2">
+            <p role="alert" className="sv-alert sv-alert--danger sm:col-span-2">
               Без причины перенести нельзя
             </p>
           </div>

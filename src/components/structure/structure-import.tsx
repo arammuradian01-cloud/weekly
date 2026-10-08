@@ -89,7 +89,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
         </label>
         <TextArea label="Или вставьте ячейки из таблицы" id="structure-paste" value={text} onChange={(e) => setText(e.target.value)} rows={6} hint="Выделите лист вместе со строкой заголовков, скопируйте и вставьте сюда" />
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
+          <p role="alert" className="sv-alert sv-alert--danger">
             {error}
           </p>
         ) : null}

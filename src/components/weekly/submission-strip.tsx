@@ -5,12 +5,14 @@ import type { PersonWeekly } from "@/domain/types";
 import type { WeeklyStateCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
 import { substituteText } from "./absence";
+import { avatarTone } from "@/components/ui/primitives";
 
+// Точка состояния на аватаре, как в дизайн-системе (weekly/SubmissionBar.jsx)
 const DOT: Record<WeeklyStateCode, string> = {
-  submitted: "bg-green",
-  late: "bg-amber",
-  draft: "bg-blue",
-  "not-started": "bg-mist",
+  submitted: "sv-avatar__status--success",
+  late: "sv-avatar__status--warning",
+  draft: "sv-avatar__status--accent",
+  "not-started": "sv-avatar__status--neutral",
 };
 
 const WORD: Record<WeeklyStateCode, string> = {
@@ -31,25 +33,35 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
   });
   const expected = states.filter((s) => !s.optional && (!s.absent || s.state === "submitted" || s.state === "late"));
   const done = expected.filter((s) => s.state === "submitted" || s.state === "late").length;
+  const percent = expected.length ? Math.round((done / expected.length) * 100) : 0;
   return (
-    <section aria-label="Кто сдал weekly" className={cn("rounded-xl bg-field px-4 py-3", className)}>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-6">
-        <p className="shrink-0 text-body text-ink">
-          <span className="font-semibold">Сдали {done} из {expected.length}</span>
-        </p>
-        <ul className="flex flex-wrap gap-x-4 gap-y-2">
-          {states.map(({ person, state, absent, optional }) => {
-            const away = absent && state !== "submitted" && state !== "late";
-            return (
-              <li key={person.slug} className="inline-flex items-center gap-2 text-small">
-                <span className={cn("h-2.5 w-2.5 rounded-full", away ? "bg-transparent ring-2 ring-inset ring-mist" : DOT[state])} aria-hidden="true" />
-                <span className={away ? "text-muted" : "text-ink"}>{person.shortName}</span>
-                <span className="text-muted">{away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`}</span>
-              </li>
-            );
-          })}
-        </ul>
+    <section aria-label="Кто сдал weekly" className={cn("sv-card sv-card--soft px-4 py-3", className)}>
+      <div className="sv-submit-bar">
+        <p className="sv-submit-bar__text">Сдали {done} из {expected.length}</p>
+        <div className="sv-submit-bar__track max-w-60" aria-hidden="true">
+          <div className="sv-submit-bar__fill" style={{ width: `${percent}%` }} />
+        </div>
       </div>
+      <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+        {states.map(({ person, state, absent, optional }) => {
+          const away = absent && state !== "submitted" && state !== "late";
+          return (
+            <li key={person.slug} className={cn("inline-flex items-center gap-2 text-small", (away || state === "not-started") && "opacity-70")}>
+              <span className={cn("sv-avatar sv-avatar--sm", `sv-avatar--${avatarTone(person.fullName)}`)} aria-hidden="true">
+                {initialsOf(person.fullName)}
+                <span className={cn("sv-avatar__status", away ? "sv-avatar__status--neutral" : DOT[state])} />
+              </span>
+              <span className="font-semibold text-ink">{person.shortName}</span>
+              <span className="text-text-secondary">{away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`}</span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
+}
+
+function initialsOf(fullName: string) {
+  const [last, first] = fullName.split(" ");
+  return `${(first ?? "").charAt(0)}${(last ?? "").charAt(0)}`.toUpperCase();
 }

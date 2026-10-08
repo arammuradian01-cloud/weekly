@@ -80,7 +80,7 @@ export function RequestList({
         {action}
       </div>
       {items.length ? (
-        <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+        <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
           {items.map((r) => (
             <RequestRow key={r.number} request={r} mode={mode} />
           ))}

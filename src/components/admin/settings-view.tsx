@@ -238,7 +238,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
   return (
     <div className="min-w-0">
       <h3 className="mb-2 text-body font-semibold text-ink">{title}</h3>
-      <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+      <ul className="divide-y divide-line sv-card sv-card--soft">
         {items.map((item) => (
           <li key={item.code} className="flex items-center justify-between gap-3 px-4 py-2">
             {editing === item.code ? (
@@ -390,7 +390,7 @@ function PeopleSection({
 
   return (
     <Section title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
-      <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+      <ul className="divide-y divide-line sv-card sv-card--soft">
         {people.map((p) => (
           <li key={p.slug} className="px-4 py-3">
             {editing === p.slug ? (
@@ -489,7 +489,7 @@ function PeopleSection({
               </div>
             )}
             {confirmOff === p.slug ? (
-              <div role="alert" className="mt-2 flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between">
+              <div role="alert" className="mt-2 flex flex-col gap-2 sv-alert sv-alert--warning sm:flex-row sm:items-center sm:justify-between">
                 <span>
                   У человека {p.openTasks} {plural(p.openTasks, "открытая задача", "открытые задачи", "открытых задач")}. Задачи останутся за ним, передайте их другому в карточке задачи.
                 </span>
@@ -508,7 +508,7 @@ function PeopleSection({
       </ul>
       {adding ? (
         <form
-          className="mt-3 flex flex-col gap-3 rounded-xl bg-field p-4"
+          className="mt-3 flex flex-col gap-3 sv-card sv-card--soft p-4"
           onSubmit={async (e) => {
             e.preventDefault();
             const r = await run(() => createPersonAction(draft), `${draft.fullName.trim()} добавлен`);
@@ -905,7 +905,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
         </p>
       ) : null}
       {login.passwords ? (
-        <div className="mt-5 rounded-xl bg-field p-4">
+        <div className="mt-5 sv-card sv-card--soft p-4">
           <p className="text-body text-ink">
             Личный пароль задали: <span className="font-semibold tabular-nums">{login.passwords.withPassword}</span> из {login.passwords.total}
           </p>

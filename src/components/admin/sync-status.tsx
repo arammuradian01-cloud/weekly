@@ -173,7 +173,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
           История выгрузок
         </h3>
         {view.runs.length ? (
-          <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="divide-y divide-line sv-card sv-card--soft">
             {view.runs.map((r) => (
               <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-body sm:grid-cols-[150px_110px_1fr]">
                 <span className="tabular-nums text-muted">{r.at}</span>
@@ -240,7 +240,7 @@ function Tiles({ view }: { view: SyncView }) {
               : "Уйдёт в ближайшие 30 секунд"}
         </p>
       </div>
-      <div className="rounded-xl bg-field px-5 py-4">
+      <div className="sv-card sv-card--soft px-5 py-4">
         <p className="text-small font-medium text-muted">Сверка с таблицей</p>
         <p className={cn("mt-1 text-headline-sm font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
           {view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было"}

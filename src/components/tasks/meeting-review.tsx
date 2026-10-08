@@ -26,7 +26,7 @@ export function MeetingReview() {
   const order = [...teamPeople.filter((p) => p.slug !== leader && p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
   const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
-  if (!order.length) return <p className="rounded-xl bg-field px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников в разделе «Структура».</p>;
+  if (!order.length) return <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников в разделе «Структура».</p>;
   // После переключения команды очередь короче: остаёмся в её пределах
   const current = Math.min(index, order.length - 1);
   const slug = order[current]!;
@@ -72,7 +72,7 @@ export function MeetingReview() {
         <p className="text-small text-muted">Встреча {formatLong(data.today)}. Цифра у имени: просроченные и заблокированные.</p>
       </div>
 
-      <section aria-labelledby="review-person" className="rounded-xl ring-1 ring-line">
+      <section aria-labelledby="review-person" className="sv-card sv-card--soft">
         <header className="flex flex-col gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 id="review-person" className="text-headline-sm font-semibold text-ink">{person.fullName}</h2>

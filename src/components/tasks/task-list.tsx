@@ -187,7 +187,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       </div>
 
       {archive ? (
-        <p className="mt-3 rounded-xl bg-field px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
+        <p className="mt-3 sv-card sv-card--soft px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
         <EmptyState title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"} className="mt-4">

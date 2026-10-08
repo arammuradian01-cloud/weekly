@@ -46,7 +46,7 @@ export function TaskChanges({ since, changes }: { since: string; changes: TaskCh
         })}
       </div>
       {shown.length ? (
-        <ol className="flex flex-col divide-y divide-line rounded-xl border border-line">
+        <ol className="flex flex-col divide-y divide-line sv-card sv-card--soft">
           {shown.map((c) => (
             <li key={c.id} className="flex flex-col gap-1 px-4 py-3">
               <button type="button" onClick={() => openTask.open(c.number)} className="self-start text-left text-body font-medium text-ink hover:underline">

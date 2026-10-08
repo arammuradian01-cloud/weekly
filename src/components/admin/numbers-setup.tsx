@@ -134,12 +134,12 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
             <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
           </div>
-          <div className="rounded-xl bg-field px-5 py-4">
+          <div className="sv-card sv-card--soft px-5 py-4">
             <p className="text-small font-medium text-muted">В отчёте</p>
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.rows}</p>
             <p className="text-caption text-muted">строк с цифрами, недель {view.weeks}</p>
           </div>
-          <div className="rounded-xl bg-field px-5 py-4">
+          <div className="sv-card sv-card--soft px-5 py-4">
             <p className="text-small font-medium text-muted">Последняя неделя в отчёте</p>
             <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">{view.latestWeek ? `с ${view.latestWeek}` : "нет"}</p>
             <p className="mt-1 text-caption text-muted">Следующее чтение: {view.next ?? "выключено"}</p>

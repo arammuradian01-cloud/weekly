@@ -42,7 +42,7 @@ export function Absences({
   return (
     <div className="mt-4 flex flex-col gap-5">
       {absences.length ? (
-        <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+        <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
           {absences.map((a) => (
             <li key={a.week} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-start gap-3">
@@ -75,7 +75,7 @@ export function Absences({
 
       {free.length ? (
         <form
-          className={cn("flex flex-col gap-3 rounded-xl bg-field p-4", !slug && "sm:flex-row sm:items-end")}
+          className={cn("flex flex-col gap-3 sv-card sv-card--soft p-4", !slug && "sm:flex-row sm:items-end")}
           onSubmit={async (e) => {
             e.preventDefault();
             if (!week) return;

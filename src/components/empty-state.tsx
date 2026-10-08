@@ -29,7 +29,7 @@ export function EmptyState({
   centered?: boolean;
 }) {
   return (
-    <div className={cn("sv-empty sv-card--soft border border-dashed border-line", !centered && "sv-empty--compact", className)}>
+    <div className={cn("sv-empty sv-card--soft border border-dashed border-line bg-surface", !centered && "sv-empty--compact", className)}>
       <IconCircle icon={icon} tone={tone} size={centered ? 56 : 40} />
       <div className="min-w-0">
         <h3 className="sv-empty__title">{title}</h3>

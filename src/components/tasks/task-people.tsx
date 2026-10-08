@@ -24,7 +24,7 @@ export function TaskPeople() {
   if (!people.length) return <EmptyState title="В команде пока нет людей">Состав команды задаётся на странице «Структура».</EmptyState>;
   const max = Math.max(1, ...people.map((p) => open.filter((t) => t.owner === p.slug).length));
   return (
-    <ul className="flex flex-col divide-y divide-line rounded-xl border border-line">
+    <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
       {people.map((p) => {
         const mine = open.filter((t) => t.owner === p.slug).sort((a, b) => a.due.localeCompare(b.due));
         const late = mine.filter((t) => isOverdue(t, data.today)).length;

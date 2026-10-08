@@ -127,7 +127,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
           </fieldset>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
+          <p role="alert" className="sv-alert sv-alert--danger">
             {error}
           </p>
         ) : null}

@@ -29,7 +29,7 @@ export function Sign({ className }: { className?: string }) {
 export function SidebarBrand() {
   return (
     <div className="sv-sidebar__brand">
-      <Logo onDark className="h-6" />
+      <Logo onDark className="h-5" />
       <span className="sv-sidebar__sign">
         <Sign />
       </span>

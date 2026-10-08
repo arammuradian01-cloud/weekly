@@ -44,7 +44,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
         <h2 id="mt-teams" className="text-title font-semibold text-ink">
           {panel.teams.length > 1 ? "Команда и команды ниже" : "Команда"}
         </h2>
-        <ul className="mt-3 flex flex-col divide-y divide-line rounded-xl border border-line">
+        <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
           {panel.teams.map((t) => (
             <TeamRow key={t.id} team={t} />
           ))}
@@ -57,7 +57,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
         </h2>
         <p className="mt-1 text-small text-muted">Просроченные, заблокированные и без обновлений дольше {panel.staleDays} дней, по команде и командам ниже</p>
         {panel.attention.length ? (
-          <ul className="mt-3 flex flex-col divide-y divide-line rounded-xl border border-line">
+          <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
             {panel.attention.map((t) => (
               <li key={t.number} className="px-4 py-3">
                 <TaskLine task={t} showOwner />
@@ -76,7 +76,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
           Люди команды <span className="font-normal text-muted">{panel.people.length}</span>
         </h2>
         <p className="mt-1 text-small text-muted">Weekly за неделю {panel.reportingNumber}, открытые задачи, переносы срока за 30 дней и просьбы к человеку</p>
-        <ul className="mt-3 flex flex-col divide-y divide-line rounded-xl border border-line">
+        <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
           {panel.people.map((p) => (
             <PersonRow key={p.slug} person={p} />
           ))}

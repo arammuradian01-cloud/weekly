@@ -69,9 +69,9 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
         <Segmented<Status> label="Состояние" value={status} onChange={setStatus} options={[{ value: "all", label: "Все" }, { value: "active", label: "В силе" }, { value: "cancelled", label: "Отменённые" }]} />
       </div>
       {items.length === 0 ? (
-        <p className="rounded-xl bg-field px-5 py-6 text-body text-muted">{query ? "Ничего не нашлось." : "Решений пока нет. Они появляются на встрече кнопкой «Записать решение»."}</p>
+        <p className="sv-card sv-card--soft px-5 py-6 text-body text-muted">{query ? "Ничего не нашлось." : "Решений пока нет. Они появляются на встрече кнопкой «Записать решение»."}</p>
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+        <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
           {items.map((d) => (
             <li key={d.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">

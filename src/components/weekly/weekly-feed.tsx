@@ -153,7 +153,7 @@ export function WeeklyFeed({
       </header>
 
       {data.fallback ? (
-        <p className="mb-4 rounded-xl border border-line px-5 py-3 text-body text-ink">
+        <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink">
           За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
           <Link href={`/weekly?week=${data.reportingKey}`} className="font-medium text-blue-700 hover:underline">
             Открыть неделю {data.reportingNumber}
@@ -279,7 +279,7 @@ function PeopleView({
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
       {common.length ? (
-        <section aria-labelledby="wk-common" className="flex flex-col rounded-xl ring-1 ring-line xl:col-span-2">
+        <section aria-labelledby="wk-common" className="flex flex-col sv-card sv-card--soft xl:col-span-2">
           <header className="border-b border-line px-5 py-4">
             <h2 id="wk-common" className="text-title-sm font-semibold text-ink">
               Общее, без автора <span className="font-normal text-muted">{common.length}</span>
@@ -313,7 +313,7 @@ function PeopleView({
         const fromTeam = feedAuthors?.includes(p.slug) ?? true ? promotedBy(p.slug) : [];
         const state = weekly?.state ?? "not-started";
         return (
-          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col rounded-xl ring-1 ring-line">
+          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col sv-card sv-card--soft">
             <header className="border-b border-line px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 id={`wk-${p.slug}`} className="text-title-sm font-semibold text-ink">
@@ -390,7 +390,7 @@ function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; 
         const list = entries.filter((e) => e.block === code);
         if (!list.length) return null;
         return (
-          <section key={code} aria-labelledby={`blk-${code}`} className="rounded-xl ring-1 ring-line">
+          <section key={code} aria-labelledby={`blk-${code}`} className="sv-card sv-card--soft">
             <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-title-sm font-semibold text-ink">
               {blockLabel(code)} <span className="font-normal text-muted">{list.length}</span>
             </h2>

@@ -49,7 +49,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
 
   return (
     <>
-      <div className="overflow-hidden rounded-xl ring-1 ring-line">
+      <div className="overflow-hidden sv-card sv-card--soft">
         <table className="hidden w-full text-left text-body md:table">
           <caption className="sr-only">Задачи и weekly по каждому</caption>
           <thead className="bg-field text-caption text-muted">

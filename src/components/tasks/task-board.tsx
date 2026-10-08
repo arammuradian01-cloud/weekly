@@ -31,7 +31,7 @@ function CardBody({ task, today }: { task: Task; today: string }) {
   const overdue = isOverdue(task, today);
   return (
     <>
-      <p className="text-body font-medium leading-snug text-ink">
+      <p className="text-body font-semibold leading-snug text-ink">
         <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
         {task.title}
       </p>
@@ -61,10 +61,10 @@ function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string
       <div
         ref={setNodeRef}
         className={cn(
-          "select-none rounded-lg border bg-surface p-3 transition-shadow",
-          overdue ? "border-l-4 border-danger-line border-l-danger bg-danger-soft" : "border-line",
-          canMove && "cursor-grab active:cursor-grabbing",
-          isDragging && "opacity-40",
+          "sv-card-task select-none",
+          overdue && "!bg-[var(--color-row-overdue)]",
+          !canMove && "!cursor-pointer",
+          isDragging && "is-placeholder",
         )}
         {...attributes}
         {...listeners}
@@ -77,6 +77,7 @@ function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string
           if (e.key === "Enter" && !e.defaultPrevented) onOpen();
         }}
       >
+        {overdue ? <span className="sv-card-task__stripe bg-danger" aria-hidden="true" /> : task.state === "at-risk" ? <span className="sv-card-task__stripe sv-card-task__stripe--risk" aria-hidden="true" /> : null}
         <CardBody task={task} today={today} />
       </div>
     </li>
@@ -89,11 +90,11 @@ function Column({ status, tasks, children }: { status: StatusCode; tasks: Task[]
     <section
       ref={setNodeRef}
       aria-label={`${STATUSES.find((s) => s.code === status)!.label}: ${tasks.length}`}
-      className={cn("flex w-[280px] shrink-0 snap-start flex-col rounded-xl bg-field p-2 transition-colors xl:w-auto xl:min-w-[240px] xl:flex-1", isOver && "bg-blue-soft ring-2 ring-blue")}
+      className={cn("sv-board__col w-[280px] shrink-0 snap-start xl:w-auto xl:min-w-[240px] xl:flex-1", isOver && "is-over")}
     >
-      <header className="flex items-center justify-between px-1.5 pb-2 pt-1">
+      <header className="sv-board__head">
         <StatusBadge status={status} />
-        <span className="text-caption tabular-nums text-muted">{tasks.length}</span>
+        <span className="sv-counter sv-counter--neutral">{tasks.length}</span>
       </header>
       <ul className="flex min-h-24 flex-col gap-2">{children}</ul>
     </section>
@@ -158,7 +159,7 @@ export function TaskBoard() {
         </div>
         <DragOverlay>
           {active ? (
-            <div className="w-[264px] rotate-2 rounded-lg border border-line bg-surface p-3 shadow-drag">
+            <div className="sv-card-task is-dragging w-[264px]">
               <CardBody task={active} today={data.today} />
             </div>
           ) : null}

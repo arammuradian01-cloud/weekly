@@ -94,7 +94,7 @@ export function StructureScreen({ view, owner, me, candidates, leads = [] }: { v
       )}
 
       {owner && tab === "units" && view.unplaced.length ? (
-        <section aria-labelledby="unplaced" className="rounded-xl border border-line p-4">
+        <section aria-labelledby="unplaced" className="sv-card sv-card--soft p-4">
           <h2 id="unplaced" className="text-title-sm font-semibold text-ink">
             Не в структуре: {view.unplaced.length}
           </h2>
@@ -145,7 +145,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
   });
   return (
     <>
-      <ul className="flex flex-col divide-y divide-line rounded-xl border border-line" aria-label="Подразделения департамента">
+      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Подразделения департамента">
         {units.filter((u) => !hidden.has(u.id)).map((u) => {
           const open = openIds.has(u.id);
           return (
@@ -366,7 +366,7 @@ function TeamTree({
   const [rhythm, setRhythm] = useState<TeamView | null>(null);
   return (
     <>
-      <ul className="flex flex-col divide-y divide-line rounded-xl border border-line" aria-label="Команды">
+      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Команды">
         {orderTeams(teams).map(({ team: t, depth }) => {
           const canEdit = owner || (t.id !== TOP_TEAM && t.leader?.slug === me);
           const open = openId === t.id;

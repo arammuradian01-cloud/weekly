@@ -111,7 +111,7 @@ export function GoalsScreen({ view, defaultTeam, bordTabs }: { view: GoalsView; 
       )}
 
       {view.unlinked.length ? (
-        <section aria-labelledby="unlinked" className="rounded-xl border border-line p-4">
+        <section aria-labelledby="unlinked" className="sv-card sv-card--soft p-4">
           <h2 id="unlinked" className="text-title-sm font-semibold text-ink">
             Задачи без цели
           </h2>
@@ -182,7 +182,7 @@ function GoalItem({
   const [open, setOpen] = useState(depth === 0);
   const kids = g.childIds.map((id) => byId.get(id)).filter((x): x is GoalNode => !!x);
   return (
-    <li id={`goal-${g.id}`} className={cn("rounded-xl border border-line bg-surface", depth > 0 && "border-l-4 border-l-blue-soft")}>
+    <li id={`goal-${g.id}`} className={cn("sv-card sv-card--soft bg-surface", depth > 0 && "border-l-4 border-l-blue-soft")}>
       <div className="flex flex-col gap-2 px-4 py-3">
         <div className="flex items-start gap-2">
           <button
@@ -485,7 +485,7 @@ function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { team
           </div>
         )}
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
+          <p role="alert" className="sv-alert sv-alert--danger">
             {error}
           </p>
         ) : null}
