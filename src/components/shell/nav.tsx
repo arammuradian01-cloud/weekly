@@ -19,6 +19,7 @@ import {
   Mail,
   BarChart3,
   MessagesSquare,
+  Rocket,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -42,6 +43,8 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/tasks", label: "Задачи", icon: SquareCheck },
   // Сквозные цели (этап 17): на телефоне открываются из «Моих команд»
   { href: "/goals", label: "Цели", icon: Target, desktopOnly: true },
+  // Шкала готовности крупных инициатив (этап 30): на телефоне в меню профиля
+  { href: "/initiatives", label: "Инициативы", icon: Rocket, desktopOnly: true },
   { href: "/decisions", label: "Решения", icon: Gavel, desktopOnly: true },
   // Цифры недели и прогноз (этап 24): на телефоне открывается из Weekly
   { href: "/forecast", label: "Прогноз", icon: TrendingUp, desktopOnly: true },

@@ -5,7 +5,7 @@ import type { PersonSlug, WeekKey } from "./types";
 
 export type MeetingStatusCode = "planned" | "live" | "done";
 
-export type AgendaKindCode = "follow-up" | "request" | "task-state" | "task-attention" | "question" | "proposal" | "person" | "manual";
+export type AgendaKindCode = "follow-up" | "request" | "task-state" | "task-attention" | "question" | "proposal" | "initiative" | "person" | "manual";
 
 export const AGENDA_KIND_LABELS: Record<AgendaKindCode, string> = {
   "follow-up": "Поручение прошлой встречи",
@@ -14,6 +14,7 @@ export const AGENDA_KIND_LABELS: Record<AgendaKindCode, string> = {
   "task-attention": "Задача на контроле",
   question: "Вопрос к записи",
   proposal: "Предложенная задача",
+  initiative: "Крупная инициатива",
   person: "Weekly",
   manual: "Пункт ведущего",
 };
@@ -47,6 +48,8 @@ export type AgendaItemView = {
   task?: { number: number; title: string; status: string; state: string; due: IsoDate; owner: PersonSlug | null };
   entry?: { id: string; what: string; author: PersonSlug | null };
   request?: { number: number; text: string; status: string; author: PersonSlug; addressee: PersonSlug };
+  /** Крупная инициатива (этап 30) */
+  initiative?: { id: string; title: string; state: "searching" | "doing"; note: string };
   person?: PersonSlug;
   /** Решения, записанные в этом пункте */
   decisions: DecisionView[];

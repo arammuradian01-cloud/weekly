@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, MessagesSquare, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, MessagesSquare, Rocket, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
@@ -98,6 +98,14 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
               </Link>
             </Menu.Item>
           ) : null}
+
+          {/* Крупные инициативы (этап 30): на телефоне в нижнем меню места нет */}
+          <Menu.Item asChild>
+            <Link href="/initiatives" className={cn(itemClass, "lg:hidden")}>
+              <Rocket className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+              Инициативы
+            </Link>
+          </Menu.Item>
 
           <Menu.Item asChild>
             <Link href="/profile" className={itemClass}>

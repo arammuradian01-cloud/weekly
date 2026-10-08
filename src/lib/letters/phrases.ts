@@ -43,6 +43,8 @@ export function eventPhrase(e: EventLine): string {
       return `${who}изменения по просьбе`;
     case "ONE_ON_ONE":
       return `${who}встреча один на один`;
+    case "INITIATIVE":
+      return `${who}крупная инициатива`;
     default:
       return `${who}новое событие`;
   }
@@ -52,6 +54,8 @@ export function eventPhrase(e: EventLine): string {
 export function pathOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null; subject?: string }): string {
   // Встреча один на один (этап 28): страница пары откроется только у её участника
   if (e.subject?.startsWith("1on1:")) return `/one-on-one?pair=${encodeURIComponent(e.subject.slice(5))}`;
+  // Крупная инициатива (этап 30): карточка на странице инициатив
+  if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

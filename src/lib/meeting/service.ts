@@ -20,6 +20,8 @@ import { stuckForMeeting } from "@/lib/requests/service";
 import { meetingQuestions } from "@/lib/discuss/service";
 import { notify, taskSubject } from "@/lib/inbox/notify";
 import { mailConfigured, sendMail } from "@/lib/mail";
+import { initiativesForAgenda } from "@/lib/initiatives/service";
+import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -44,11 +46,12 @@ const KIND_CODE: Record<AgendaKind, AgendaKindCode> = {
   PROPOSAL: "proposal",
   PERSON: "person",
   MANUAL: "manual",
+  INITIATIVE: "initiative",
 };
 const DECISION_CODE: Record<DecisionStatus, "active" | "cancelled"> = { ACTIVE: "active", CANCELLED: "cancelled" };
 
 /** Порядок блоков: поручения прошлой встречи, риски и помощь, лидеры, ручные пункты в конце блока «риски» */
-const KIND_ORDER: Record<AgendaKind, number> = { FOLLOW_UP: 0, REQUEST: 10, TASK_STATE: 11, TASK_ATTENTION: 12, PROPOSAL: 13, QUESTION: 14, MANUAL: 20, PERSON: 30 };
+const KIND_ORDER: Record<AgendaKind, number> = { FOLLOW_UP: 0, REQUEST: 10, TASK_STATE: 11, TASK_ATTENTION: 12, PROPOSAL: 13, QUESTION: 14, INITIATIVE: 15, MANUAL: 20, PERSON: 30 };
 
 /** Просрочка, с которой задача попадает на встречу сама */
 const OVERDUE_DAYS = 7;
@@ -65,6 +68,7 @@ const meetingInclude = {
       entry: { select: { id: true, what: true, author: { select: { slug: true } } } },
       request: { select: { number: true, text: true, status: true, author: { select: { slug: true } }, addressee: { select: { slug: true } } } },
       person: { select: { slug: true } },
+      initiative: { select: { id: true, title: true, state: true, note: true } },
       discussedBy: { select: { slug: true } },
       decisions: { include: decisionIncludeInner(), orderBy: { createdAt: "asc" as const } },
     },
@@ -125,6 +129,7 @@ function itemDto(i: MeetingRow["items"][number]): AgendaItemView {
       ? { request: { number: i.request.number, text: i.request.text, status: i.request.status.toLowerCase(), author: i.request.author.slug as PersonSlug, addressee: i.request.addressee.slug as PersonSlug } }
       : {}),
     ...(i.person ? { person: i.person.slug as PersonSlug } : {}),
+    ...(i.initiative ? { initiative: { id: i.initiative.id, title: i.initiative.title, state: INITIATIVE_STATE[i.initiative.state], note: i.initiative.note } } : {}),
     decisions: i.decisions.map(decisionDto),
   };
 }
@@ -212,10 +217,21 @@ export async function canLeadTeam(actor: Actor, teamId: string): Promise<boolean
 
 // ---------- Повестка ----------
 
-type Draft = { kind: AgendaKind; autoKey: string; title: string; note?: string | null; taskId?: string; entryId?: string; requestId?: string; personId?: string; reactionId?: string };
+type Draft = {
+  kind: AgendaKind;
+  autoKey: string;
+  title: string;
+  note?: string | null;
+  taskId?: string;
+  entryId?: string;
+  requestId?: string;
+  personId?: string;
+  reactionId?: string;
+  initiativeId?: string;
+};
 
 /** Предложения пунктов по данным команды на неделю. Каждый пункт сформулирован вопросом */
-async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<Draft[]> {
+async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new Date()): Promise<Draft[]> {
   const team = a.node;
   const people = participantsOf(a.nodes, team);
   const prevKey = shiftWeek(key, -1);
@@ -277,6 +293,13 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<D
     else if (overdue > OVERDUE_DAYS) drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Задача ${t.number} просрочена на ${overdue} дн.: ${t.title}. Новый срок или снимаем?` });
   }
 
+  // Крупные инициативы, которые ведёт команда: долго ищут, как сделать, или давно без новостей (этап 30)
+  for (const i of await initiativesForAgenda(team.id, now)) {
+    const title = agendaTitle(i.title, i.flags);
+    // Заметку пункт показывает из самой инициативы: она всегда свежая
+    if (title) drafts.push({ kind: "INITIATIVE", autoKey: `initiative:${i.id}`, initiativeId: i.id, title });
+  }
+
   // Вопросы «Обсудить на встрече» к записям недели и задачам команды (этап 20)
   const entryIds = (await prisma.weeklyEntry.findMany({ where: { week: { start: dbDate(key) }, authorId: { in: people } }, select: { id: true } })).map((e) => e.id);
   const questions = await meetingQuestions(a.actor, key, { current: entryIds }, [team.id]);
@@ -307,7 +330,7 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
   const week = await ensureWeek(prisma, key);
   const { meeting } = await weekSettings();
   const date = teamMeeting(key, a.node, meetingOf(key, meeting)).date;
-  const drafts = await collectAgenda(a, key, moscowToday());
+  const drafts = await collectAgenda(a, key, moscowToday(now), now);
   const row = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`meeting:${week.id}:${teamId}`}))::text`;
     const m = await tx.meeting.upsert({
@@ -341,6 +364,7 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
           requestId: d.requestId ?? null,
           personId: d.personId ?? null,
           reactionId: d.reactionId ?? null,
+          initiativeId: d.initiativeId ?? null,
         },
       });
     }
