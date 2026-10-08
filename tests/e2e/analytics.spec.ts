@@ -114,8 +114,13 @@ test.describe("аналитика руководителя", () => {
     await expect(reva).toHaveURL(/\/my-teams\?team=/);
     await reva.goBack();
     const [sector] = await sql(`SELECT t.id FROM teams t JOIN people p ON p.id = t."leaderId" WHERE p."fullName" LIKE 'Антонов%'`);
+    const before = reva.url();
     await reva.getByRole("main").getByLabel("Команда", { exact: true }).selectOption(sector!.id as string);
-    await expect(reva).toHaveURL(/\/analytics\?team=/);
+    // Выбор в списке сам не переходит: команда открывается по «Показать»
+    await reva.waitForTimeout(300);
+    expect(reva.url()).toBe(before);
+    await reva.getByRole("button", { name: "Показать" }).click();
+    await expect(reva).toHaveURL(new RegExp(`/analytics\\?team=${sector!.id}`));
     await expect(reva.getByText("Ниже этой команды других команд нет.")).toBeVisible();
     await shot(reva, "sector");
     await reva.close();
@@ -181,13 +186,15 @@ test.describe("отчёт CEO 2.0", () => {
       expect(text).toContain("- Запускаем пилот ОСАГО с партнёром в ноябре");
     }
 
-    // Черновик письма: тема и текст в ссылке
+    // Черновик письма: тема в ссылке. Отчёт длинный и в адрес письма не влезает: в письме подсказка вставить текст,
+    // сам текст по нажатию уходит в буфер обмена
     const mail = page.getByRole("link", { name: "Открыть письмом" });
     const href = (await mail.getAttribute("href"))!;
     const url = new URL(href);
     expect(url.protocol).toBe("mailto:");
+    expect(href.length).toBeLessThanOrEqual(1900);
     expect(url.searchParams.get("subject")).toBe("Отчёт за неделю 39");
-    expect(url.searchParams.get("body")).toContain("Встреча с партнёрами по ноябрю");
+    expect(url.searchParams.get("body")).toBe("Полный текст отчёта скопирован в буфер обмена: вставьте его сюда.");
     await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-an-ceo-report.png`, fullPage: true });
 
     // Неделя 40: сравнение с отчётом недели 39
@@ -222,7 +229,22 @@ test.describe("отчёт CEO 2.0", () => {
     await page.getByLabel("Риски").fill("- Риск с первого устройства");
     await page.getByRole("button", { name: "Сохранить" }).click();
     await expect(page.getByText(/уже сохранён с другого устройства или другим человеком/).first()).toBeVisible();
-    await page.reload();
+
+    // Страница обновилась сама (вкладка снова на виду): набранное не пропадает, видно предупреждение
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await expect(page.getByText(/Отчёт за эту неделю сохранён на другом устройстве или другим человеком/)).toBeVisible();
+    await expect(page.getByLabel("Риски")).toHaveValue("- Риск с первого устройства");
+    await page.getByRole("button", { name: "Показать сохранённую версию" }).click();
     await expect(page.getByLabel("Риски")).toHaveValue("- Риск со второго устройства");
+
+    // Своё сохранение после этого проходит, и обновление страницы не стирает то, что набрано после него
+    await page.getByLabel("Что дальше").fill("- Дальше с первого устройства");
+    await page.getByRole("button", { name: "Сохранить" }).click();
+    await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
+    await page.getByLabel("Риски").fill("- Набрано после сохранения");
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await page.waitForTimeout(1500);
+    await expect(page.getByLabel("Риски")).toHaveValue("- Набрано после сохранения");
+    await expect(page.getByText("Есть несохранённые правки")).toBeVisible();
   });
 });

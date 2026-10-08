@@ -13,6 +13,7 @@ import { dbDate, moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
 import { shiftWeek, weekKeyOf } from "@/lib/weekly/weeks";
 import { quarterOf } from "@/lib/goals/parse";
+import { setSetting } from "@/lib/settings";
 import type { WeekKey } from "@/domain/types";
 
 const STRUCTURE = [
@@ -93,6 +94,8 @@ beforeAll(async () => {
   W = lastWeeks(reporting);
   C = lastWeeks(weekKeyOf(today));
   directionId = (await prisma.dictionaryItem.findFirstOrThrow({ where: { code: "department" } })).id;
+  // Другие файлы тестов меняют порог «давно не обновлялась»: здесь он стартовый
+  await setSetting("tasks.staleDays", 14);
 });
 
 afterAll(async () => {
@@ -194,15 +197,19 @@ describe("задачи, просьбы и цели", () => {
 
     const cpo = await teamOf("Рева");
     const a = (await teamAnalytics(await subject("Мурадян"), cpo.id))!;
-    expect(a.now).toEqual({ open: 3, overdue: 1, stale: 1, blocked: 1, clarify: 0, proposed: 1 });
+    expect(a.now).toEqual({ inWork: 3, overdue: 1, stale: 1, blocked: 1, clarify: 0, proposed: 1 });
     expect(a.tasks.map((t) => t.key)).toEqual(C);
     expect(a.tasks[7]).toMatchObject({ current: true, closed: 1, transfers: 1, overdue: 1 });
     expect(a.tasks[6]).toMatchObject({ current: false, closed: 1, transfers: 0, overdue: 2 });
     const ant = a.leaders.find((c) => c.leader?.fullName === "Антонов Дмитрий")!;
-    expect(ant).toMatchObject({ closed: 2, transfers: 1, now: { open: 3, overdue: 1, stale: 1, blocked: 1 } });
+    expect(ant).toMatchObject({ closed: 2, transfers: 1, now: { inWork: 3, overdue: 1, stale: 1, blocked: 1 } });
     expect(ant.overdue.slice(6)).toEqual([2, 1]);
     const tok = a.leaders.find((c) => c.leader?.fullName === "Токов Никита")!;
-    expect(tok).toMatchObject({ closed: 0, transfers: 0, now: { open: 0, overdue: 0 } });
+    expect(tok).toMatchObject({ closed: 0, transfers: 0, now: { inWork: 0, overdue: 0 } });
+    // «В работе» как в «Моих командах»: только статус «В работе», уточнение отдельной цифрой
+    await task(sector.id, { ownerId: alisa.id, status: "CLARIFY" });
+    const b = (await teamAnalytics(await subject("Мурадян"), cpo.id))!;
+    expect(b.now).toMatchObject({ inWork: 3, clarify: 1 });
   });
 
   it("просьбы к людям команды: медиана в рабочих часах, ждут ответа и просроченные", async () => {
@@ -257,7 +264,7 @@ describe("задачи, просьбы и цели", () => {
     const started = performance.now();
     const a = (await teamAnalytics(me, TOP_TEAM))!;
     const took = performance.now() - started;
-    expect(a.now.open).toBeGreaterThan(2000);
+    expect(a.now.inWork).toBeGreaterThan(2000);
     expect(took).toBeLessThan(2000);
     await prisma.task.deleteMany({ where: { number: { gte: 20000 } } });
   });
@@ -269,9 +276,10 @@ describe("отчёт CEO 2.0", () => {
     const key = shiftWeek(reporting, -1);
     const first = await weekly.saveCeoReport(me, key, { main: "Главное", risks: "", next: "" }, [{ title: "С партнёрами — ноябрь", text: "Обсуждали условия. Договорились о скидке." }, { title: "", text: "" }], null);
     expect(first.meetings).toEqual([{ title: "С партнёрами - ноябрь", text: "Обсуждали условия. Договорились о скидке." }]);
-    // Старый экран без встреч: встречи не теряются
+    // Вызов без встреч или с не-списком: встречи не теряются
     const second = await weekly.saveCeoReport(me, key, { main: "Главное 2", risks: "", next: "" });
     expect(second.meetings).toHaveLength(1);
+    expect((await weekly.saveCeoReport(me, key, { main: "Главное 3", risks: "", next: "" }, null)).meetings).toHaveLength(1);
     expect((await weekly.getCeoReport(key)).meetings[0].title).toBe("С партнёрами - ноябрь");
     const log = await prisma.auditLog.findMany({ where: { entity: "ceo-report", entityId: key }, orderBy: { at: "asc" } });
     expect(log.map((l) => l.field)).toContain("Отчёт CEO, мои встречи недели");
@@ -304,8 +312,16 @@ describe("отчёт CEO 2.0", () => {
     await d("Другая команда", { teamId: cpo.id });
     await d("Встреча следующей недели", { meetingId: nextMeeting.id, date: next.meetingDate });
     await d("Без встречи до начала недели", { date: dbDate(addDays(key, -1)) });
+    // До встречи прошлой недели (вторник этой недели): решение уже было в прошлом отчёте
+    await d("Без встречи в понедельник", { date: dbDate(key) });
+    // Понедельник следующей недели, до встречи этой: в этом отчёте, и только в нём
+    await d("Без встречи в понедельник после недели", { date: dbDate(addDays(key, 7)) });
     const list = await weekly.ceoDecisions(key);
-    expect(list.map((x) => x.text).sort()).toEqual(["Без встречи в среду", "На встрече недели"]);
+    expect(list.map((x) => x.text).sort()).toEqual(["Без встречи в понедельник после недели", "Без встречи в среду", "На встрече недели"]);
     expect(list.find((x) => x.text === "На встрече недели")?.owner).toBe("Рева Тарас");
+    const nextList = await weekly.ceoDecisions(shiftWeek(key, 1));
+    expect(nextList.map((x) => x.text)).not.toContain("Без встречи в понедельник после недели");
+    expect(nextList.map((x) => x.text)).toContain("Встреча следующей недели");
+    expect((await weekly.ceoDecisions(shiftWeek(key, -1))).map((x) => x.text)).toContain("Без встречи в понедельник");
   });
 });

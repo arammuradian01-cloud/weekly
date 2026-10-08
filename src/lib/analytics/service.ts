@@ -20,7 +20,7 @@ import { diffDays, type IsoDate } from "@/domain/dates";
 import type { PersonSlug, WeekKey } from "@/domain/types";
 import { quarterOf } from "@/lib/goals/parse";
 import { ancestorsOf, loadTeamNodes, orderTeams, scopeOf, seesAll, subtreeOf, teamPeopleIds, TOP_TEAM, type ScopeSubject, type TeamNode } from "@/lib/org/scope";
-import { expectedOf, leadersOf, personDeadline } from "@/lib/org/rhythm";
+import { expectedOf, expectingTeams, leadersOf, teamDeadline } from "@/lib/org/rhythm";
 import {
   cardTeams,
   countCells,
@@ -38,13 +38,15 @@ import {
 
 export type WeeklyPoint = WeeklyCounts & { key: WeekKey; number: number; current: boolean; onTimeShare: number | null; submittedShare: number | null };
 export type TaskPoint = { key: WeekKey; number: number; current: boolean; closed: number; transfers: number; overdue: number; answerHours: number | null; answered: number };
-export type AreaNow = { open: number; overdue: number; stale: number; blocked: number; clarify: number; proposed: number };
+/** inWork: «В работе», как на странице «Мои команды»; просрочка, давность и блокировка считаются по принятым задачам (в работе и требуют уточнений) */
+export type AreaNow = { inWork: number; overdue: number; stale: number; blocked: number; clarify: number; proposed: number };
 export type AreaRequests = { waiting: number; accepted: number; overdue: number; medianHours: number | null; answered: number };
 export type AreaGoals = { quarter: string; total: number; onTrack: number; atRisk: number; achieved: number; partial: number; missed: number; dropped: number };
 
 export type LeaderCard = {
   key: string;
-  leader: { slug: PersonSlug; fullName: string; position: string | null } | null;
+  /** active: false, если руководителя выключили в ресурсе или он наблюдатель: его weekly не считается */
+  leader: { slug: PersonSlug; fullName: string; position: string | null; active: boolean } | null;
   teams: { id: string; name: string; below: boolean }[];
   people: number;
   /** Свой weekly лидера по отчётным неделям. optional: weekly от него нигде не ждут */
@@ -79,9 +81,10 @@ const OPEN = ["PROPOSED", "IN_PROGRESS", "CLARIFY"] as const;
 
 /** Какие команды человек может открыть в аналитике */
 export function analyticsTeams(nodes: TeamNode[], subject: ScopeSubject): Set<string> {
-  if (subject.limited) return new Set();
+  // Общий вход и наблюдатель аналитику не видят, даже если наблюдатель указан руководителем команды
+  if (subject.limited || subject.role === "OBSERVER") return new Set();
   const active = nodes.filter((n) => n.active);
-  if (seesAll(subject.role) && subject.role !== "OBSERVER") return new Set(active.map((n) => n.id));
+  if (seesAll(subject.role)) return new Set(active.map((n) => n.id));
   const scope = scopeOf(nodes, subject);
   return new Set(scope.leads);
 }
@@ -112,19 +115,21 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
   // Полночь понедельника по Москве: в UTC это 21:00 воскресенья
   const mskStart = (key: WeekKey) => new Date(dbDate(key).getTime() - 3 * 60 * 60 * 1000);
   const windowStart = mskStart(calendarWeeks[0]);
-  // Начало окна просьб: самая ранняя из первых недель двух рядов
-  const since = new Date(Math.min(windowStart.getTime(), mskStart(reportingWeeks[0]).getTime()));
+  // Просьбы считаются за те же 8 календарных недель, что и график ответа
+  const since = windowStart;
 
   const leaders = leadersOf(nodes);
   const peopleIds = [...new Set(subtree.flatMap((t) => teamPeopleIds(byId.get(t)!)))];
   const cardNodes = cardTeams(nodes, id, allowed);
   const cardLeaders = cardNodes.map((n) => n.leaderId).filter((x): x is string => !!x);
 
-  const [people, weeks, tasks, requests, goals] = await Promise.all([
+  const [people, leaderRows, weeks, tasks, requests, goals] = await Promise.all([
     prisma.person.findMany({
       where: { id: { in: [...new Set([...peopleIds, ...cardLeaders])] }, active: true, role: { not: "OBSERVER" } },
       select: { id: true, slug: true, fullName: true, position: true, createdAt: true },
     }),
+    // Имена руководителей карточек: и выключенных, чтобы карточка не говорила «руководитель не назначен»
+    prisma.person.findMany({ where: { id: { in: cardLeaders } }, select: { id: true, slug: true, fullName: true, position: true } }),
     prisma.week.findMany({
       where: { start: { in: reportingWeeks.map(dbDate) } },
       select: { start: true, deadline: true, reports: { select: { authorId: true, state: true } }, absences: { select: { personId: true } } },
@@ -165,6 +170,15 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
   );
 
   // ---------- weekly: клетка по каждому человеку и неделе ----------
+  const expectingCache = new Map<string, TeamNode[]>();
+  const expectingOf = (personId: string): TeamNode[] => {
+    let list = expectingCache.get(personId);
+    if (!list) {
+      list = expectingTeams(personId, nodes, leaders);
+      expectingCache.set(personId, list);
+    }
+    return list;
+  };
   const cellCache = new Map<string, WeeklyCell>();
   const cellOf = (personId: string, key: WeekKey, expected: boolean): WeeklyCell => {
     const cacheKey = `${personId}/${key}/${expected}`;
@@ -173,7 +187,12 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     const p = personById.get(personId);
     const w = weekByKey.get(key);
     const department = w?.deadline ?? deadlineOf(key, settings.deadline);
-    const deadline = personDeadline(personId, key, nodes, department, leaders);
+    // Срок человека: самый ранний из сроков команд, которые ждут его weekly (как personDeadline, но команды считаются один раз)
+    let deadline = department;
+    for (const n of expectingOf(personId)) {
+      const d = teamDeadline(key, n, department);
+      if (d.getTime() < deadline.getTime()) deadline = d;
+    }
     const state = w?.state.get(personId) ?? null;
     // Человека завели после срока недели: за неё с него не спрашиваем
     const existed = !!p && p.createdAt.getTime() <= deadline.getTime();
@@ -223,14 +242,15 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
       transfers: t.transfers.map((x) => ({ at: x.at, fromDue: x.fromDue ? isoFromDbDate(x.fromDue) : null })),
     };
     const open = t.archivedAt === null && (OPEN as readonly string[]).includes(t.status);
+    // Принятая: в работе или требует уточнений. Предложенную ещё никто не взял
     const accepted = open && t.status !== "PROPOSED";
     return {
       teamId: t.teamId,
       overdueBy: ends.map((e) => overdueAt(history, e.moment, e.day)),
       closedIn: t.status === "DONE" || t.status === "PARTIAL" ? weekIndex(t.closedAt) : -1,
       transfersIn: t.transfers.map((x) => weekIndex(x.at)).filter((i) => i >= 0),
-      open,
       accepted,
+      inWork: open && t.status === "IN_PROGRESS",
       proposed: open && t.status === "PROPOSED",
       overdue: accepted && diffDays(history.due, today) > 0,
       stale: accepted && diffDays(isoFromDbDate(t.whereUpdatedAt), today) > staleDays,
@@ -265,7 +285,7 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     const rq = requestRows.filter((r) => people.has(r.addresseeId));
     const gs = goalRows.filter((g) => teams.has(g.teamId));
     const now: AreaNow = {
-      open: ts.filter((r) => r.accepted).length,
+      inWork: ts.filter((r) => r.inWork).length,
       overdue: ts.filter((r) => r.overdue).length,
       stale: ts.filter((r) => r.stale).length,
       blocked: ts.filter((r) => r.blocked).length,
@@ -318,12 +338,13 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     const teamIds = [...new Set(teams.flatMap((t) => subtreeOf(active, t.id)))].filter((t) => subtreeSet.has(t));
     const a = area(teamIds);
     const leaderId = teams[0].leaderId;
-    const leader = leaderId ? personById.get(leaderId) : undefined;
-    const optional = !leaderId || !nodes.some((n) => n.active && expectedOf(n, leaders).includes(leaderId));
+    const leader = leaderId ? leaderRows.find((p) => p.id === leaderId) : undefined;
+    const counted = !!leaderId && personById.has(leaderId);
+    const optional = !leaderId || !counted || expectingOf(leaderId).length === 0;
     const cells = reportingWeeks.map((wk) => ({ key: wk, number: weekNumberOf(wk), cell: leaderId ? cellOf(leaderId, wk, !optional) : ("none" as WeeklyCell) }));
     return {
       key,
-      leader: leader ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position } : null,
+      leader: leader ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position, active: counted } : null,
       teams: teams.map((t) => ({ id: t.id, name: t.name, below: active.some((c) => c.parentId === t.id && c.id !== t.id && allowed.has(c.id)) })),
       people: a.people.size,
       weekly: {

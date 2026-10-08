@@ -55,12 +55,13 @@ export type TransferPoint = { at: Date | null; fromDue: IsoDate | null };
 
 /**
  * Срок задачи в момент времени. Берём прежний срок первого переноса после этого момента; переносов позже нет: нынешний срок.
+ * У первого переноса прежний срок не записан: срок в тот момент неизвестен, берём нынешний, а не срок из следующего переноса.
  * Переносы без времени были в таблице до запуска ресурса и на окно панели не влияют
  */
 export function dueAt(currentDue: IsoDate, transfers: TransferPoint[], moment: Date): IsoDate {
-  const later = transfers.filter((t) => t.at && t.at.getTime() > moment.getTime()).sort((x, y) => x.at!.getTime() - y.at!.getTime());
-  for (const t of later) if (t.fromDue) return t.fromDue;
-  return currentDue;
+  let first: TransferPoint | null = null;
+  for (const t of transfers) if (t.at && t.at.getTime() > moment.getTime() && (!first || t.at.getTime() < first.at!.getTime())) first = t;
+  return first?.fromDue ?? currentDue;
 }
 
 /** Задача для восстановления просрочки на конец недели */
@@ -75,7 +76,10 @@ export type TaskHistory = {
 
 const CLOSED = new Set(["DONE", "PARTIAL", "FAILED", "CANCELLED"]);
 
-/** Была ли задача открыта и просрочена в момент moment (день по Москве: day) */
+/**
+ * Была ли задача открыта и просрочена в момент moment (день по Москве: day). Статус истории не хранит, поэтому берётся
+ * сегодняшний: задача, которую приняли позже, считается принятой и в прошлых неделях; переоткрытую считаем по closedAt
+ */
 export function overdueAt(task: TaskHistory, moment: Date, day: IsoDate): boolean {
   // Предложенные, но не принятые задачи в просрочку не идут: их ещё никто не взял
   if (task.status === "PROPOSED") return false;

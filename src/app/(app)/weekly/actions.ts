@@ -129,7 +129,12 @@ export async function setWeekClosedAction(week: WeekKey, closed: boolean): Promi
   });
 }
 
-export async function saveCeoReportAction(week: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<Result<svc.CeoReportView>> {
+/**
+ * Отчёт CEO (этап 27): экран обязан прислать момент прошлого сохранения, который он видел (null: отчёт ещё не сохраняли).
+ * Без него сервер не может проверить, что сохранение не затрёт чужое: такой запрос шлёт только старая вкладка
+ */
+export async function saveCeoReportAction(week: WeekKey, sections: CeoSections, meetings: unknown, expected: string | null): Promise<Result<svc.CeoReportView>> {
+  if (expected !== null && typeof expected !== "string") return { ok: false, error: "Страница устарела: обновите её, чтобы сохранить отчёт. Свои правки сначала скопируйте" };
   return run((a) => svc.saveCeoReport(a, week, sections, meetings, expected));
 }
 

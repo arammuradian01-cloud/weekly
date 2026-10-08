@@ -4,7 +4,7 @@
 // требуют правила графиков: одна шкала, тонкие столбики со скруглённым верхом, линия 2 px с точками, подсказка при
 // наведении и касании, таблица вместо графика, легенда при двух рядах и подпись последнего значения.
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 
 export type ChartWeek = { key: string; number: number; current: boolean };
@@ -42,6 +42,10 @@ export function niceMax(value: number): number {
 
 export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns }: WeekChartProps) {
   const [active, setActive] = useState<number | null>(null);
+  // Касание пальцем: подсказка по нажатию (click), а не по началу жеста, чтобы прокрутка страницы её не дёргала
+  const touch = useRef(false);
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [tipW, setTipW] = useState(0);
   const [table, setTable] = useState(false);
   const id = useId();
   const plot = useRef<HTMLDivElement>(null);
@@ -56,6 +60,23 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
     ro.observe(el);
     return () => ro.disconnect();
   }, [table]);
+  // Подсказка не выходит за края графика: центр сдвигается на половину её ширины от края (в пикселях, не в процентах)
+  useLayoutEffect(() => {
+    if (active !== null && tipRef.current) setTipW(tipRef.current.offsetWidth);
+  }, [active]);
+  const tipLeft = (x: number) => {
+    const half = Math.min(tipW, W) / 2;
+    return `${Math.min(W - half, Math.max(half, x))}px`;
+  };
+  // Касание вне графика прячет подсказку
+  useEffect(() => {
+    if (active === null || !touch.current) return;
+    const away = (e: PointerEvent) => {
+      if (plot.current && !plot.current.contains(e.target as Node)) setActive(null);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [active]);
   const n = weeks.length || 1;
   const all = [...(bars?.values ?? []), ...(line?.values ?? [])].filter((v): v is number => v !== null);
   const max = unit === "%" ? 100 : niceMax(Math.max(0, ...all));
@@ -91,7 +112,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
         <figcaption id={`${id}-t`} className="sv-chart__title">
           {title}
         </figcaption>
-        <button type="button" className="shrink-0 text-small font-medium text-link hover:underline" aria-pressed={table} onClick={() => setTable((t) => !t)}>
+        <button type="button" className="shrink-0 text-small font-medium text-link hover:underline" onClick={() => setTable((t) => !t)}>
           {table ? "Графиком" : "Таблицей"}
         </button>
       </div>
@@ -127,7 +148,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
           </table>
         </div>
       ) : (
-        <div ref={plot} className="sv-chart__plot" onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)}>
+        <div ref={plot} className="sv-chart__plot" onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)} onPointerDown={(e) => (touch.current = e.pointerType !== "mouse")}>
           <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}. Подробности по неделям в таблице: кнопка «Таблицей»`}>
             {ticks.map((t) => (
               <g key={t}>
@@ -175,13 +196,13 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
                 height={H}
                 // Мышь: подсказка, пока указатель над неделей. Палец: касание показывает, повторное касание прячет
                 onPointerEnter={(e) => e.pointerType === "mouse" && setActive(i)}
-                onPointerDown={(e) => e.pointerType !== "mouse" && setActive((a) => (a === i ? null : i))}
+                onClick={() => touch.current && setActive((a) => (a === i ? null : i))}
                 aria-hidden="true"
               />
             ))}
           </svg>
           {active !== null ? (
-            <div className="sv-tooltip sv-tooltip--top sv-chart__tip" style={{ left: `${Math.min(86, Math.max(14, (cx(active) / W) * 100))}%` }} aria-hidden="true">
+            <div ref={tipRef} className="sv-tooltip sv-tooltip--top sv-chart__tip" style={{ left: tipLeft(cx(active)) }} aria-hidden="true">
               <b className="block">Неделя {weeks[active].number}{weeks[active].current ? ", идёт" : ""}</b>
               {tip(active).map((t) => (
                 <span key={t} className="block">

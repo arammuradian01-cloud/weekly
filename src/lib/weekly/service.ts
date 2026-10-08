@@ -951,7 +951,8 @@ export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSec
     if (expected !== undefined && (before?.updatedAt.toISOString() ?? null) !== (expected ?? null)) {
       fail("Отчёт за эту неделю уже сохранён с другого устройства или другим человеком. Скопируйте свои правки и обновите страницу, чтобы не затереть чужие");
     }
-    const list = meetings === undefined ? cleanMeetings(before?.meetings ?? []) : cleanMeetings(meetings);
+    // Встречи не передали (или передали не список): остаются прежние, а не стираются
+    const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
     const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
     const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
     // Было и стало по каждому разделу, который поменялся
@@ -972,20 +973,26 @@ export type CeoDecision = { id: string; text: string; owner: string | null; date
 
 /**
  * Решения недели для отчёта CEO (этап 27): решения топ-команды, принятые на встрече по этой неделе, и решения без встречи
- * со дня начала недели по день встречи. Отменённые не попадают
+ * после встречи прошлой недели по день встречи этой. Так решение без встречи попадает ровно в один отчёт. Отменённые не попадают
  */
 export async function ceoDecisions(key: WeekKey): Promise<CeoDecision[]> {
-  const week = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true, meetingDate: true } });
-  const meeting = week ? isoFromDbDate(week.meetingDate) : meetingOf(key, (await weekSettings()).meeting);
+  const prevKey = shiftWeek(key, -1);
+  const [week, prev, settings] = await Promise.all([
+    prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true, meetingDate: true } }),
+    prisma.week.findUnique({ where: { start: dbDate(prevKey) }, select: { meetingDate: true } }),
+    weekSettings(),
+  ]);
+  const meeting = week ? isoFromDbDate(week.meetingDate) : meetingOf(key, settings.meeting);
+  const prevMeeting = prev ? isoFromDbDate(prev.meetingDate) : meetingOf(prevKey, settings.meeting);
   const rows = await prisma.decision.findMany({
     where: {
       teamId: TOP_TEAM,
       status: "ACTIVE",
-      OR: [...(week ? [{ meeting: { weekId: week.id } }] : []), { meetingId: null, date: { gte: dbDate(key), lte: dbDate(meeting) } }],
+      OR: [...(week ? [{ meeting: { weekId: week.id } }] : []), { meetingId: null, date: { gt: dbDate(prevMeeting), lte: dbDate(meeting) } }],
     },
     select: { id: true, text: true, date: true, owner: { select: { fullName: true } } },
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
-    take: 50,
+    take: 200,
   });
   return rows.map((d) => ({ id: d.id, text: d.text, owner: d.owner?.fullName ?? null, date: isoFromDbDate(d.date) }));
 }

@@ -37,7 +37,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
     <>
       <PageHeader title="Отчёт CEO" description="Черновик из отмеченных записей weekly: цифры недели, главное, решения недели, риски, что дальше, благодарности и мои встречи" />
       <CeoReport
-        key={`${view.week.key}-${saved.updatedAt ?? ""}`}
+        // Ключ только по неделе: обновление страницы не пересоздаёт редактор и не стирает набранное (новую версию он принимает сам)
+        key={view.week.key}
         view={view}
         saved={saved}
         history={history}

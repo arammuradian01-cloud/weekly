@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardCopy, Columns2, Mail, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { numbersText, type WeekNumbers } from "@/lib/numbers/text";
@@ -16,7 +16,7 @@ import { promiseShare, summaryText, type PromiseSummary } from "@/lib/weekly/pro
 import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
 import type { CeoDecision, CeoReportView } from "@/lib/weekly/service";
-import { MEETINGS_MAX, MEETING_TEXT_MAX, MEETING_TITLE_MAX, ceoReportText, cleanMeetings, countSentences, mailtoHref, type CeoMeeting } from "@/lib/ceo/text";
+import { MAIL_PASTE_HINT, MEETINGS_MAX, MEETING_TEXT_MAX, MEETING_TITLE_MAX, ceoReportText, cleanMeetings, countSentences, mailtoHref, type CeoMeeting } from "@/lib/ceo/text";
 import { saveCeoReportAction } from "@/app/(app)/weekly/actions";
 import { Button, buttonClass } from "@/components/ui/button";
 import { TextArea, TextInput } from "@/components/ui/primitives";
@@ -107,14 +107,47 @@ export function CeoReport({
   const [compare, setCompare] = useState(false);
   // Момент последнего сохранения, который видел экран: сервер сверяет его, чтобы не затереть чужие правки
   const [savedAt, setSavedAt] = useState<{ at: string | null; by?: string }>({ at: saved.updatedAt ?? null, by: saved.updatedBy });
+  const savedAtRef = useRef<string | null>(saved.updatedAt ?? null);
+  // Счётчик правок: правки во время сохранения не помечаются сохранёнными, свежая версия с сервера не затирает набранное
+  const rev = useRef(0);
+  const syncedRev = useRef(0);
+  const markDirty = () => {
+    rev.current += 1;
+    setDirty(true);
+  };
+  /** Сохранённая версия с другого устройства или от другого человека пришла, пока здесь есть несохранённые правки */
+  const [newer, setNewer] = useState<CeoReportView | null>(null);
   const set = (key: keyof CeoSections, value: string) => {
     setSections((s) => ({ ...s, [key]: cleanDash(value) }));
-    setDirty(true);
+    markDirty();
   };
   const setMeeting = (i: number, patch: Partial<Draft>) => {
     setMeetings((list) => list.map((m, j) => (j === i ? { ...m, ...patch } : m)));
-    setDirty(true);
+    markDirty();
   };
+
+  const adopt = (r: CeoReportView) => {
+    setSections(r.sections ?? fromEntries(view));
+    setMeetings(r.meetings.map(withKey));
+    savedAtRef.current = r.updatedAt ?? null;
+    setSavedAt({ at: r.updatedAt ?? null, by: r.updatedBy });
+    syncedRev.current = rev.current;
+    setDirty(!r.sections);
+    setNewer(null);
+  };
+
+  // Страница обновляется сама (раз в минуту и при возвращении на вкладку). Новая сохранённая версия: без своих правок
+  // берём её, со своими правками показываем предупреждение, набранное не пропадает
+  const seen = useRef(saved.updatedAt ?? null);
+  useEffect(() => {
+    const at = saved.updatedAt ?? null;
+    if (at === seen.current) return;
+    seen.current = at;
+    if (at === savedAtRef.current) return;
+    if (rev.current === syncedRev.current) adopt(saved);
+    else setNewer(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saved]);
 
   const fullText = useMemo(
     () =>
@@ -145,27 +178,31 @@ export function CeoReport({
   };
 
   const subject = `Отчёт за неделю ${week.number}`;
-  // Черновик письма обычной ссылкой: почтовая программа открывается сама. Очень длинный текст почтовые программы
-  // обрезают: тогда текст уходит в буфер обмена, а письмо открывается с одной темой
-  const mailHref = mailtoHref(subject, fullText);
-  const mailLong = async () => {
-    if (await copy("Текст длинный: он скопирован, вставьте его в письмо")) window.location.href = mailtoHref(subject, "") ?? "mailto:";
-  };
+  // Черновик письма обычной ссылкой: почтовая программа открывается сама. Длинный текст в адрес письма не влезает:
+  // тогда по нажатию он уходит в буфер обмена, а письмо открывается с темой и подсказкой вставить текст
+  const fullHref = mailtoHref(subject, fullText);
+  const mailHref = fullHref ?? mailtoHref(subject, MAIL_PASTE_HINT) ?? "mailto:";
 
   const save = async () => {
+    const startRev = rev.current;
     setBusy(true);
-    const result = await run(() => saveCeoReportAction(week.key, sections, cleanMeetings(meetings), savedAt.at), `Отчёт за неделю ${week.number} сохранён`, { refresh: false });
+    const result = await run(() => saveCeoReportAction(week.key, sections, cleanMeetings(meetings), savedAtRef.current), `Отчёт за неделю ${week.number} сохранён`);
     setBusy(false);
     if (result) {
-      setDirty(false);
-      setMeetings(result.meetings.map(withKey));
+      savedAtRef.current = result.updatedAt ?? null;
       setSavedAt({ at: result.updatedAt ?? null, by: result.updatedBy });
+      setNewer(null);
+      // Пока шло сохранение, правили дальше: эти правки ещё не на сервере
+      if (rev.current === startRev) {
+        syncedRev.current = startRev;
+        setDirty(false);
+      }
     }
   };
 
   const rebuild = () => {
     setSections(fromEntries(view));
-    setDirty(true);
+    markDirty();
     setConfirm(false);
     notify("Главное, риски и что дальше собраны заново из отмеченных записей");
   };
@@ -200,7 +237,7 @@ export function CeoReport({
               Собрать заново
             </Button>
             {previous ? (
-              <Button size="sm" variant="secondary" aria-pressed={compare} onClick={() => setCompare((c) => !c)}>
+              <Button size="sm" variant="secondary" onClick={() => setCompare((c) => !c)}>
                 <Columns2 className="h-4 w-4" aria-hidden="true" />
                 {compare ? "Скрыть прошлую неделю" : "Сравнить с прошлой неделей"}
               </Button>
@@ -209,22 +246,25 @@ export function CeoReport({
               <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
               Скопировать текст
             </Button>
-            {mailHref ? (
-              <a href={mailHref} className={buttonClass("secondary", "sm")}>
-                <Mail className="h-4 w-4" aria-hidden="true" />
-                Открыть письмом
-              </a>
-            ) : (
-              <Button size="sm" variant="secondary" onClick={() => void mailLong()}>
-                <Mail className="h-4 w-4" aria-hidden="true" />
-                Открыть письмом
-              </Button>
-            )}
+            <a href={mailHref} className={buttonClass("secondary", "sm")} onClick={() => (fullHref ? undefined : void copy("Текст длинный: он скопирован, вставьте его в письмо"))}>
+              <Mail className="h-4 w-4" aria-hidden="true" />
+              Открыть письмом
+            </a>
             <Button size="sm" onClick={save} disabled={busy || !dirty}>
               <Save className="h-4 w-4" aria-hidden="true" />
               {busy ? "Сохраняю…" : "Сохранить"}
             </Button>
           </div>
+          {newer ? (
+            <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status">
+              <p>
+                Отчёт за эту неделю сохранён на другом устройстве или другим человеком{newer.updatedBy ? ` (${newer.updatedBy})` : ""}. Ваши правки ещё не сохранены: скопируйте их, если они нужны.
+              </p>
+              <Button size="sm" variant="secondary" className="shrink-0" onClick={() => adopt(newer)}>
+                Показать сохранённую версию
+              </Button>
+            </div>
+          ) : null}
           {compare && previous && !prev?.sections ? (
             <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p>
           ) : null}
@@ -346,7 +386,7 @@ export function CeoReport({
                   aria-label={`Убрать встречу ${i + 1}`}
                   onClick={() => {
                     setMeetings((list) => list.filter((_, j) => j !== i));
-                    setDirty(true);
+                    markDirty();
                   }}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -360,7 +400,7 @@ export function CeoReport({
                 rows={4}
                 maxLength={MEETING_TEXT_MAX}
                 onChange={(e) => setMeeting(i, { text: cleanDash(e.target.value) })}
-                hint={m.text.trim() ? `${sentences(m.text)}. Хорошо, когда их 4-5` : "Например: «С партнёрами обсуждали условия на ноябрь. Договорились, что…»"}
+                hint={m.text.trim() ? `${sentences(m.text)}. Хорошо, когда их 4-5` : "Например: «С партнёрами обсуждали условия на ноябрь и договорились о скидке»"}
               />
             </div>
           ))}
@@ -371,7 +411,7 @@ export function CeoReport({
                 variant="soft"
                 onClick={() => {
                   setMeetings((list) => [...list, withKey({ title: "", text: "" })]);
-                  setDirty(true);
+                  markDirty();
                 }}
               >
                 <Plus className="h-4 w-4" aria-hidden="true" />

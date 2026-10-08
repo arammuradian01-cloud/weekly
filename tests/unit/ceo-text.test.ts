@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAILTO_MAX, MEETINGS_MAX, ceoReportText, cleanMeetings, countSentences, mailtoHref } from "@/lib/ceo/text";
+import { MAILTO_MAX, MAIL_PASTE_HINT, MEETINGS_MAX, ceoReportText, cleanMeetings, countSentences, mailtoHref } from "@/lib/ceo/text";
 
 // Отчёт CEO 2.0 (этап 27): встречи недели, текст отчёта и черновик письма
 
@@ -88,5 +88,8 @@ describe("черновик письма", () => {
   it("слишком длинный текст: null, экран кладёт его в буфер", () => {
     expect(mailtoHref("Тема", "я".repeat(MAILTO_MAX))).toBeNull();
     expect(mailtoHref("Тема", "")).not.toBeNull();
+    // Подсказка вставить текст влезает всегда, и адрес не длиннее, чем открывает Outlook
+    expect(mailtoHref("Отчёт за неделю 41", MAIL_PASTE_HINT)).not.toBeNull();
+    expect(MAILTO_MAX).toBeLessThanOrEqual(2000);
   });
 });

@@ -76,7 +76,9 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 .sv-chart__cross { stroke: var(--color-border-strong); stroke-width: 1; }
 .sv-chart__bar { transition: opacity var(--duration-color); }
 .sv-chart__bar.is-dim { opacity: 0.45; }
-.sv-chart__tip { position: absolute; top: 0; z-index: 5; width: max-content; transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; }
+.sv-chart__tip { position: absolute; top: 0; z-index: 5; width: max-content; max-width: min(280px, 100%); transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; }
+/* Подсказка у края графика сдвигается, поэтому стрелку не рисуем: неделю показывает линия-указатель */
+.sv-chart__tip.sv-tooltip--top::after { display: none; }
 .sv-chart__line--solo { stroke: var(--color-chart-1); }
 .sv-chart__dot--solo { stroke: var(--color-chart-1); }
 .sv-chart__legend .sv-chart__swatch-bar { background: var(--color-chart-1); }

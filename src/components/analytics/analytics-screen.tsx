@@ -4,12 +4,13 @@
 // выбор команды, «Сейчас», weekly и задачи по неделям, просьбы, цели квартала и карточки лидеров без рейтинга.
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import Form from "next/form";
 import { ChevronRight } from "lucide-react";
 import type { Analytics, AreaGoals, AreaNow, AreaRequests, LeaderCard } from "@/lib/analytics/service";
 import { hoursText, share, type WeeklyCell } from "@/lib/analytics/rules";
 import { plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 import { WeekChart } from "./week-chart";
 
 const CELL_WORDS: Record<WeeklyCell, string> = {
@@ -22,7 +23,6 @@ const CELL_WORDS: Record<WeeklyCell, string> = {
 };
 
 export function AnalyticsScreen({ data }: { data: Analytics }) {
-  const router = useRouter();
   const done = data.weekly.filter((w) => !w.current || w.pending === 0);
   const due = done.reduce((s, w) => s + w.expected - w.pending, 0);
   const onTime = share(
@@ -58,16 +58,20 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
           </ol>
         </nav>
         {data.options.length > 1 ? (
-          <div className="flex items-center gap-2 text-small text-muted">
+          // Выбор и кнопка «Показать»: стрелки в списке не открывают команду на каждом шаге
+          <Form action="/analytics" className="flex items-center gap-2 text-small text-muted">
             <label htmlFor="an-team">Команда</label>
-            <select id="an-team" className="sv-control min-w-0 max-w-[320px]" value={data.team.id} onChange={(e) => router.push(`/analytics?team=${e.target.value}`)}>
+            <select id="an-team" name="team" key={data.team.id} defaultValue={data.team.id} className="sv-control min-w-0 max-w-[280px]">
               {data.options.map((o) => (
                 <option key={o.id} value={o.id}>
                   {`${"\u00A0\u00A0".repeat(o.depth)}${o.name}`}
                 </option>
               ))}
             </select>
-          </div>
+            <Button type="submit" size="sm" variant="secondary" className="shrink-0">
+              Показать
+            </Button>
+          </Form>
         ) : null}
       </div>
 
@@ -115,7 +119,8 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             { label: "Ждали", value: (i) => data.weekly[i].expected },
             { label: "Вовремя", value: (i) => data.weekly[i].onTime },
             { label: "С опозданием", value: (i) => data.weekly[i].late },
-            { label: "Не сдали", value: (i) => data.weekly[i].missing + data.weekly[i].pending },
+            { label: "Не сдали", value: (i) => data.weekly[i].missing },
+            { label: "Ещё сдают", value: (i) => data.weekly[i].pending },
             { label: "В отпуске", value: (i) => data.weekly[i].absent },
             { label: "Вовремя, %", value: (i) => data.weekly[i].onTimeShare ?? "" },
           ]}
@@ -152,7 +157,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
               title="Просрочено на конец недели"
               weeks={data.tasks}
               line={{ label: "Просрочено", values: data.tasks.map((w) => w.overdue) }}
-              insight={`Сейчас просрочено ${data.now.overdue}, восемь недель назад было ${firstOverdue}. Прошлые недели восстановлены по переносам срока.`}
+              insight={`Сейчас просрочено ${data.now.overdue}, на конец недели ${data.tasks[0]?.number ?? ""} было ${firstOverdue}. Прошлые недели восстановлены по переносам срока, статус задачи берётся сегодняшний.`}
               tip={(i) => [`Просрочено ${data.tasks[i].overdue}`]}
               columns={[{ label: "Просрочено", value: (i) => data.tasks[i].overdue }]}
             />
@@ -211,7 +216,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             <StripLegend />
             <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               {data.leaders.map((c) => (
-                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} />
+                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} firstWeek={data.tasks[0]?.number ?? 0} />
               ))}
             </ul>
           </>
@@ -233,7 +238,7 @@ const staleLabel = (days: number) => `Без обновлений дольше $
 
 function NowTiles({ now, staleDays }: { now: AreaNow; staleDays: number }) {
   const items: [string, number][] = [
-    ["В работе", now.open],
+    ["В работе", now.inWork],
     ["Просрочено", now.overdue],
     [staleLabel(staleDays), now.stale],
     ["Заблокировано", now.blocked],
@@ -336,11 +341,11 @@ function Spark({ values, label }: { values: number[]; label: string }) {
   );
 }
 
-function LeaderCardView({ card: c, staleDays }: { card: LeaderCard; staleDays: number }) {
+function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; staleDays: number; firstWeek: number }) {
   const first = c.overdue[0] ?? 0;
   const last = c.overdue[c.overdue.length - 1] ?? 0;
-  const trend = last > first ? `больше, чем 8 недель назад (${first})` : last < first ? `меньше, чем 8 недель назад (${first})` : "столько же, сколько 8 недель назад";
-  const name = c.leader?.fullName ?? "Руководитель не назначен";
+  const trend = last > first ? `больше, чем на конец недели ${firstWeek} (${first})` : last < first ? `меньше, чем на конец недели ${firstWeek} (${first})` : `столько же, сколько на конец недели ${firstWeek}`;
+  const name = c.leader ? `${c.leader.fullName}${c.leader.active ? "" : ", выключен в ресурсе"}` : "Руководитель не назначен";
   const deeper = c.teams.find((t) => t.below);
   return (
     <li className="sv-card sv-card--soft flex flex-col gap-3 px-5 py-4" aria-label={`Карточка: ${name}`}>
@@ -369,13 +374,15 @@ function LeaderCardView({ card: c, staleDays }: { card: LeaderCard; staleDays: n
             <i key={x.key} className={`sv-wstrip__cell sv-wstrip__cell--${x.cell}`} title={`Неделя ${x.number}: ${CELL_WORDS[x.cell]}`} />
           ))}
         </span>
-        <span className="text-ink">{c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Сдавать ещё не начинали"}</span>
+        <span className="text-ink">
+          {c.leader && !c.leader.active ? "Weekly не считается" : c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Законченных недель со сдачей ещё нет"}
+        </span>
       </div>
 
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-small">
         <div>
           <dt className="text-muted">В работе</dt>
-          <dd className="font-semibold tabular-nums text-ink">{c.now.open}</dd>
+          <dd className="font-semibold tabular-nums text-ink">{c.now.inWork}</dd>
         </div>
         <div>
           <dt className="text-muted">Просрочено</dt>
