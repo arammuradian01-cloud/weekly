@@ -366,8 +366,10 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
     where: { personId: person!.id, revokedAt: null, expiresAt: { gt: now } },
     data: { revokedAt: now, revokedBy: own ? "self" : "owner" },
   });
-  // Неиспользованные ссылки тоже гаснут: «выйти везде» на случай утечки ссылки или потери телефона
+  // Неиспользованные ссылки тоже гаснут: «выйти везде» на случай утечки ссылки или потери телефона. И ссылка на
+  // календарь сроков (этап 29): её могли переслать вместе с телефоном
   await prisma.loginLink.updateMany({ where: { personId: person!.id, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  await prisma.calendarFeed.deleteMany({ where: { personId: person!.id } });
   await prisma.auditLog.create({
     data: {
       action: "auth.device.revoke-all",
@@ -396,7 +398,13 @@ export async function deviceSummary(now = new Date()): Promise<Map<string, { dev
 }
 
 /** Выключение человека завершает его входы и гасит ссылки (вызывается из настроек людей) */
-export async function revokeOnDeactivate(tx: { deviceSession: typeof prisma.deviceSession; loginLink: typeof prisma.loginLink }, personId: string, now = new Date()) {
+export async function revokeOnDeactivate(
+  tx: { deviceSession: typeof prisma.deviceSession; loginLink: typeof prisma.loginLink; calendarFeed: typeof prisma.calendarFeed },
+  personId: string,
+  now = new Date(),
+) {
   await tx.deviceSession.updateMany({ where: { personId, revokedAt: null }, data: { revokedAt: now, revokedBy: "deactivate" } });
   await tx.loginLink.updateMany({ where: { personId, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  // Ссылка на календарь сроков гаснет вместе со входами (этап 29)
+  await tx.calendarFeed.deleteMany({ where: { personId } });
 }

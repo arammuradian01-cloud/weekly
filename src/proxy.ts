@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, SESSION_TTL_SEC, refreshSessionToken, verifySession } from "@/lib/session";
 import { sessionSecretFromEnv } from "@/lib/database-url";
 
-// Без входа открыты экран входа, первичная настройка паролей и проверки здоровья для хостинга
-const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live"];
+// Без входа открыты экран входа, первичная настройка паролей и проверки здоровья для хостинга. Календарь сроков
+// (этап 29) забирают сервисы календарей без cookie: доступ даёт секретная часть адреса
+const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live", "/api/calendar"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

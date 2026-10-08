@@ -26,6 +26,7 @@ import { addDays, formatLong, fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
 import { currentActor } from "@/lib/action-runner";
+import { ratingPrompt } from "@/lib/meeting-rating/service";
 
 export const metadata: Metadata = { title: "Моя неделя" };
 
@@ -40,13 +41,16 @@ export default async function MyWeekPage() {
   const week = reportingWeek(now, deadlineSetting);
   const weekKey = fromCalendar(week.start);
   const current = management ? await currentTeam(subjectOf(ctx)) : null;
-  const [mine, team, requests, stats] = await Promise.all([
+  const actor = await currentActor();
+  const [mine, team, requests, stats, rating] = await Promise.all([
     getMyWeekly(person.id, weekKey),
     current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
-    myRequests(await currentActor(), now),
+    myRequests(actor, now),
     // «Обещал и сделал» за законченные недели: отчётная ещё идёт (этап 22). По общему логину профиль мог выбрать
     // кто угодно, поэтому статистику показываем только при личном входе
     subjectOf(ctx).limited ? Promise.resolve([]) : promiseHistory([person.id], shiftWeek(weekKey, -1)),
+    // Анонимная оценка встреч (этап 29): напоминание в конце месяца и в первые дни следующего
+    ratingPrompt(actor, now),
   ]);
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
@@ -79,6 +83,17 @@ export default async function MyWeekPage() {
           {submitted ? "Открыть мой weekly" : state === "draft" ? "Продолжить weekly" : "Сдать weekly"}
         </Link>
       </PageHeader>
+
+      {rating ? (
+        <div className="sv-card sv-card--soft mb-6 flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-body text-ink">
+            Оцените встречи {rating.teams > 1 ? `ваших команд (${rating.teams})` : "команды"} за {rating.label}: две минуты, анонимно. Ответить можно до {rating.closesLabel}.
+          </p>
+          <Link href="/meeting-rating" className={buttonClass("secondary", "sm", "shrink-0")}>
+            Оценить встречи
+          </Link>
+        </div>
+      ) : null}
 
       <Suspense>
         <MyWeek

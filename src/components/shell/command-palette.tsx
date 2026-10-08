@@ -146,6 +146,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/my-teams", "Мои команды", LayoutDashboard, "панель руководителя"],
       ["/analytics", "Аналитика", BarChart3, "панель директора weekly просрочка переносы просьбы лидеры"],
       ["/one-on-one", "Один на один", Users, "встреча один на один 1:1 повестка руководитель"],
+      ["/meeting-rating", "Оценка встреч", Users, "оценка встреч анонимно опрос полезность что убрать"],
       ["/team", "Команда", Users, "люди состав"],
     ];
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
