@@ -24,7 +24,7 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
 
   return (
     <div className="mt-4 flex flex-col gap-4">
-      <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
         {devices.map((d) => (
           <li key={d.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">

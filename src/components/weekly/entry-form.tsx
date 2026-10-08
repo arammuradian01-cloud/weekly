@@ -171,7 +171,7 @@ export function EntryForm({
   const saved = !isLocalId(e.id);
 
   return (
-    <form onSubmit={submit} className="flex flex-col gap-4 rounded-xl bg-field p-4 sm:p-5">
+    <form onSubmit={submit} className="flex flex-col gap-4 sv-card sv-card--soft p-4 sm:p-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <SelectField label="Направление" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={dictOptions("DIRECTION", e.direction)} />
         <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={dictOptions("WEEKLY_BLOCK", e.block)} />
@@ -278,7 +278,7 @@ export function EntryForm({
         ) : null}
       </fieldset>
       {error ? (
-        <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
+        <p role="alert" className="sv-alert sv-alert--danger">
           {error}
         </p>
       ) : null}

@@ -214,7 +214,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       </Header>
 
       {meeting.status === "live" && !leading ? (
-        <p className="flex flex-wrap items-center gap-3 rounded-xl bg-field px-4 py-2 text-small text-ink">
+        <p className="flex flex-wrap items-center gap-3 sv-card sv-card--soft px-4 py-2 text-small text-ink">
           {following ? `Экран идёт за ведущим${meeting.leader ? `: ${compactName(meeting.leader)}` : ""}` : "Вы смотрите свой пункт"}
           <Button size="sm" variant="ghost" onClick={() => setFollowing((f) => !f)}>
             {following ? "Смотреть самому" : "Снова за ведущим"}
@@ -234,7 +234,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
           {!projector ? (
             <>
               {/* На телефоне повестка свёрнута, сначала текущий пункт */}
-              <details className="rounded-xl ring-1 ring-line lg:hidden">
+              <details className="sv-card sv-card--soft lg:hidden">
                 <summary className="cursor-pointer px-4 py-3 text-body font-medium text-ink">
                   Повестка: {meeting.items.length} пунктов, обсуждено {discussedCount}
                 </summary>
@@ -315,7 +315,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
                   aria-current={i.id === current ? "step" : undefined}
                   className={cn(
                     "flex min-h-10 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left text-small",
-                    i.id === current ? "bg-navy font-semibold text-white" : "text-ink hover:bg-field",
+                    i.id === current ? "bg-accent-soft font-semibold text-link sv-mark-active" : "text-ink hover:bg-field",
                     i.discussed && i.id !== current && "text-muted line-through decoration-line",
                   )}
                 >
@@ -342,7 +342,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
         type="button"
         onClick={() => onSelect(DECISIONS)}
         aria-current={current === DECISIONS ? "step" : undefined}
-        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-navy text-white" : "text-ink hover:bg-field")}
+        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-accent-soft text-link sv-mark-active" : "text-ink hover:bg-field")}
       >
         Решения {meeting.decisions.length ? <span className="font-normal opacity-70">{meeting.decisions.length}</span> : null}
       </button>
@@ -378,7 +378,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
       </div>
 
       {task ? (
-        <div className="rounded-xl px-4 py-3 ring-1 ring-line">
+        <div className="sv-card sv-card--soft px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium text-ink hover:text-blue-700 hover:underline">
               <span className="mr-1.5 tabular-nums text-muted">{task.number}</span>
@@ -486,7 +486,7 @@ function EntryBlock({ view, entryId, projector }: { view: WeekView; entryId: str
 function DecisionList({ decisions, compact }: { decisions: DecisionView[]; compact?: boolean }) {
   if (!decisions.length) return null;
   return (
-    <ul className={cn("flex flex-col divide-y divide-line rounded-xl ring-1 ring-line", compact && "text-small")}>
+    <ul className={cn("flex flex-col divide-y divide-line sv-card sv-card--soft", compact && "text-small")}>
       {decisions.map((d) => (
         <li key={d.id} className="px-4 py-3">
           <p className={cn("text-ink", d.status === "cancelled" && "text-muted line-through")}>{d.text}</p>
@@ -666,7 +666,7 @@ function Protocol({ meeting }: { meeting: MeetingView }) {
           ) : null}
         </div>
       </div>
-      <pre className="whitespace-pre-wrap rounded-xl bg-field p-5 font-sans text-body leading-relaxed text-ink">{meeting.protocol}</pre>
+      <pre className="whitespace-pre-wrap sv-card sv-card--soft p-5 font-sans text-body leading-relaxed text-ink">{meeting.protocol}</pre>
       <DecisionList decisions={meeting.decisions} />
     </section>
   );

@@ -129,7 +129,7 @@ export function CeoReport({
           </p>
         </div>
 
-        <div className="flex flex-col gap-3 rounded-xl bg-field px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-body text-ink">
             {flaggedCount ? `Записей с отметкой «В отчёт CEO»: ${flaggedCount}.` : "Отметок «В отчёт CEO» за эту неделю нет."} Отметки ставятся в{" "}
             <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
@@ -163,14 +163,14 @@ export function CeoReport({
         {numbers ? (
           <WeekNumbersBlock numbers={numbers} manage={owner} />
         ) : (
-          <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
+          <section aria-labelledby="ceo-numbers" className="sv-card sv-card--soft border border-dashed border-line px-5 py-4">
             <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
             <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
           </section>
         )}
         {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
 
-        <section aria-labelledby="ceo-promises" className="rounded-xl px-5 py-4 ring-1 ring-line">
+        <section aria-labelledby="ceo-promises" className="sv-card sv-card--soft px-5 py-4">
           <h2 id="ceo-promises" className="text-title-sm font-semibold text-ink">Обещания недели</h2>
           {promises?.total.total ? (
             <>
@@ -200,7 +200,7 @@ export function CeoReport({
         </section>
 
         {thanks.length ? (
-          <section aria-labelledby="ceo-thanks" className="rounded-xl px-5 py-4 ring-1 ring-line">
+          <section aria-labelledby="ceo-thanks" className="sv-card sv-card--soft px-5 py-4">
             <h2 id="ceo-thanks" className="text-title-sm font-semibold text-ink">Благодарности</h2>
             <ul className="mt-2 flex flex-col gap-1">
               {thanks.map((r) => (
@@ -223,7 +223,7 @@ export function CeoReport({
         {history.length === 0 ? (
           <p className="text-small text-muted">Пока ни одного отчёта.</p>
         ) : (
-          <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="divide-y divide-line sv-card sv-card--soft">
             {history.map((h) => (
               <li key={h.key}>
                 <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-3 hover:bg-field aria-[current=page]:bg-field">

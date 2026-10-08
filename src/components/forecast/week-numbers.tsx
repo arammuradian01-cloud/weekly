@@ -75,7 +75,7 @@ export function WeekNumbersBlock({ numbers, compact = false, manage = false, hea
 /** Сводка прогноза недели по направлениям: бюджет, прогноз, отклонения, причина */
 export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuthor = true, compact = false }: { summary: ForecastSummary; headingLevel?: "h2" | "h3"; showAuthor?: boolean; compact?: boolean }) {
   return (
-    <section aria-labelledby="forecast-summary" className="rounded-xl px-5 py-4 ring-1 ring-line">
+    <section aria-labelledby="forecast-summary" className="sv-card sv-card--soft px-5 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <H id="forecast-summary" className="text-title-sm font-semibold text-ink">
           Прогноз до конца месяца

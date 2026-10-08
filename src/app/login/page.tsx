@@ -31,13 +31,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
-      <section className="relative flex flex-col justify-between gap-6 overflow-hidden bg-navy px-5 py-6 text-white sm:gap-10 sm:px-10 sm:py-8 lg:px-14 lg:py-12">
+      <section className="relative flex flex-col justify-between gap-6 overflow-hidden bg-sidebar px-5 py-6 text-white sm:gap-10 sm:px-10 sm:py-8 lg:px-14 lg:py-12">
         <Wordmark />
         <div className="flex flex-col gap-5 sm:gap-8">
-          <h1 className="max-w-md text-headline font-semibold sm:text-hero">
+          <h1 className="max-w-md text-page sm:text-number">
             Итоги недели и задачи команды в одном месте
           </h1>
-          <WeekStrip days={days} deadline={{ weekday: "Пн", time: "18:00" }} meeting={{ label: "Вт встреча" }} tone="dark" size="lg" className="max-w-xl" />
+          <WeekStrip days={days} deadline={{ weekday: "Пн", time: "18:00" }} meeting={{ label: "вт, разбор недели" }} tone="dark" size="lg" className="max-w-xl" />
           <p className="hidden max-w-md text-body leading-relaxed text-white/70 sm:block">
             До 18:00 понедельника каждый сдаёт weekly за прошедшую неделю. Во вторник разбираем его и задачи на встрече.
           </p>
@@ -47,7 +47,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
 
       <section className="flex items-start justify-center px-5 py-8 sm:items-center sm:px-10 sm:py-10">
         <div className="w-full max-w-sm">
-          <h2 className="text-page font-semibold text-ink">Вход</h2>
+          <h2 className="text-page">Вход</h2>
           <p className="mb-6 mt-1.5 text-body text-muted">
             {teamLogin === "on"
               ? "Ваш личный логин и пароль. Пока идёт переходный период, работает и общий логин team: после входа по нему выберите себя из списка."
@@ -55,17 +55,17 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           </p>
           <p className="-mt-3 mb-6 text-small text-muted sm:hidden">Weekly сдаём до 18:00 понедельника, во вторник встреча.</p>
           {ended ? (
-            <p role="status" className="mb-5 rounded-lg bg-blue-soft px-3.5 py-2.5 text-sm text-blue-700">
+            <p role="status" className="sv-alert sv-alert--info mb-5">
               Вход на этом устройстве завершён. Войдите снова со своим логином и паролем.
             </p>
           ) : null}
           {setup === "done" ? (
-            <p role="status" className="mb-5 rounded-lg bg-green-soft px-3.5 py-2.5 text-sm text-green-ink">
+            <p role="status" className="sv-alert sv-alert--success mb-5">
               Пароли заданы. Войдите с логином team и паролем общего входа.
             </p>
           ) : null}
           {needsSetup ? (
-            <p className="mb-5 rounded-lg bg-blue-soft px-3.5 py-2.5 text-sm text-blue-700">
+            <p className="sv-alert sv-alert--info mb-5">
               Пароли ещё не заданы.{" "}
               <Link href="/setup" className="font-semibold underline underline-offset-2">
                 Перейти к первичной настройке

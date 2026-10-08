@@ -128,7 +128,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       ) : null}
 
       {task.archived ? (
-        <div className="flex flex-col gap-3 rounded-xl bg-field p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 sv-card sv-card--soft p-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-small text-ink">Задача в архиве: её видит только владелец.</p>
           {can.archive ? (
             <Button size="sm" variant="secondary" onClick={() => void runTask(() => archiveTaskAction(task.number, false), `Задача ${task.number} возвращена из архива`)}>
@@ -408,7 +408,7 @@ function TaskTeam({
         id={`move-${task.number}`}
         value=""
         onChange={(e) => e.target.value && onMove(e.target.value)}
-        className="h-9 max-w-[260px] rounded-md border border-line bg-surface px-2 text-small text-blue-700 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="sv-control h-9 max-w-[260px] px-2 text-small"
       >
         <option value="">Перенести в команду…</option>
         {targets.map((o) => (

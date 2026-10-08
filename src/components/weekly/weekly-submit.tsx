@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Check, CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -319,18 +319,19 @@ export function WeeklySubmit({
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
           </p>
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
-            <ol className="flex flex-col gap-1">
+            {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный */}
+            <ol className="sv-steps m-0 list-none p-0">
               {[
-                { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}` },
-                { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}` },
-                { href: "#step-entries", label: "Главное и записи", note: `${entries.length}` },
-                { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "" },
+                { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}`, done: submitted },
+                { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}`, done: submitted || tasks.length === 0 },
+                { href: "#step-entries", label: "Главное и записи", note: `${entries.length}`, done: submitted },
+                { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "", done: submitted },
               ].map((s, i) => (
                 <li key={s.href}>
-                  <a href={s.href} className="flex h-10 items-center gap-3 rounded-lg px-2 text-body text-ink hover:bg-field">
-                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-navy text-tiny font-semibold text-white">{i + 1}</span>
+                  <a href={s.href} className={cn("sv-step w-full", s.done && "is-done")}>
+                    <span className="sv-step__n">{s.done ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" /> : i + 1}</span>
                     <span className="flex-1">{s.label}</span>
-                    <span className="text-caption tabular-nums text-muted">{s.note}</span>
+                    <span className="text-caption tabular-nums text-text-secondary">{s.note}</span>
                   </a>
                 </li>
               ))}
@@ -341,13 +342,13 @@ export function WeeklySubmit({
 
       <div className="flex min-w-0 flex-col gap-10">
         {!canEdit ? (
-          <p className="inline-flex items-start gap-2 rounded-xl bg-field px-5 py-4 text-body text-ink">
+          <p className="inline-flex items-start gap-2 sv-card sv-card--soft px-5 py-4 text-body text-ink">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
           </p>
         ) : null}
         {expectedIn && expectedIn.length === 0 && !submitted ? (
-          <p className="rounded-xl bg-field px-5 py-4 text-body text-ink">
+          <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">
             Weekly от вас сейчас не ждут: в вашей команде его сдают руководители. Достаточно обновлять задачи, а если за неделю было важное, его можно записать и сдать.
           </p>
         ) : null}
@@ -369,7 +370,7 @@ export function WeeklySubmit({
           {tasks.length === 0 ? (
             <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
           ) : (
-            <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+            <ul className="divide-y divide-line sv-card sv-card--soft">
               {tasks.map((t) => (
                 <TaskUpdateRow key={`${t.number}-${t.where}`} task={t} />
               ))}
@@ -404,7 +405,7 @@ export function WeeklySubmit({
                     <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} />
                   </li>
                 ) : (
-                  <li key={e.id} className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
+                  <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <EntryItem entry={e} discussion={false} />
                     </div>
@@ -431,7 +432,7 @@ export function WeeklySubmit({
                   {promoted.map((e) => {
                     const note = e.promoted?.find((x) => x.by === me.slug)?.note;
                     return (
-                      <li key={e.id} className="flex flex-col gap-2 rounded-xl px-4 py-3 ring-1 ring-line">
+                      <li key={e.id} className="flex flex-col gap-2 sv-card sv-card--soft px-4 py-3">
                         <EntryItem entry={e} showAuthor discussion={false} />
                         {note ? (
                           <p className="text-body text-ink">
@@ -469,7 +470,7 @@ export function WeeklySubmit({
 
         <Step id="step-submit" n={4} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
           {submitted ? (
-            <div className="flex flex-col gap-3 rounded-xl bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sv-card sv-card--soft bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="inline-flex items-start gap-2 text-lead text-green-ink">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <span>
@@ -490,7 +491,7 @@ export function WeeklySubmit({
               </div>
             </div>
           ) : (
-            <div className="rounded-xl ring-1 ring-line">
+            <div className="sv-card sv-card--soft">
               <dl className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
                 <div>
                   <dt className="text-caption text-muted">Обещания</dt>
@@ -551,15 +552,15 @@ function Step({ id, n, title, description, children }: { id: string; n: number; 
   return (
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-24">
       <div className="mb-4 flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy text-body font-semibold text-white" aria-hidden="true">
+        <span className="sv-step__n mt-1 !h-8 !w-8 !border-link !text-body !text-link" aria-hidden="true">
           {n}
         </span>
         <div>
-          <h2 id={`${id}-title`} className="text-title-lg font-semibold text-ink">
+          <h2 id={`${id}-title`} className="text-section">
             <span className="sr-only">Шаг {n}. </span>
             {title}
           </h2>
-          <p className="mt-0.5 text-small text-muted">{description}</p>
+          <p className="mt-0.5 text-body text-text-secondary">{description}</p>
         </div>
       </div>
       {children}
@@ -612,7 +613,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
           id={`w-${task.number}`}
           value={where}
           onChange={(e) => setWhere(e.target.value)}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-small text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
+          className="sv-control h-11 w-full min-w-0 px-3 text-small sm:h-10 sm:flex-1"
         />
         {changed ? (
           <Button size="sm" type="submit" className="h-11 sm:h-10">

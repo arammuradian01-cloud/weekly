@@ -30,7 +30,7 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
   const [busy, setBusy] = useState(false);
   return (
     <form
-      className="mt-2 flex flex-col gap-2 rounded-lg bg-field p-3"
+      className="sv-mq mt-2"
       onSubmit={async (e) => {
         e.preventDefault();
         if (!text.trim() || busy) return;
@@ -40,7 +40,7 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
         if (ok) onCancel();
       }}
     >
-      <label htmlFor={id} className="text-sm font-medium text-ink">
+      <label htmlFor={id} className="sv-label">
         Что обсудить на встрече? Сформулируйте вопросом
       </label>
       <input
@@ -50,7 +50,7 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
         autoFocus
         onChange={(e) => setText(e.target.value)}
         placeholder="Например: успеваем ли запустить до конца месяца?"
-        className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-body text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="sv-control h-10 w-full px-3 text-body"
       />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" type="submit" variant="secondary" disabled={!text.trim() || busy}>
@@ -71,18 +71,18 @@ function ReactionMenu({ reactions, me, disabled, onPick }: { reactions: Reaction
   return (
     <Menu.Root>
       <Menu.Trigger
-        className="inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-caption text-muted hover:bg-field hover:text-ink"
+        className="sv-reaction sv-reaction--discuss"
         aria-label="Поставить реакцию"
         disabled={disabled}
       >
-        <SmilePlus className="h-3.5 w-3.5" aria-hidden="true" />
+        <SmilePlus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
         Реакция
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content
           align="start"
           sideOffset={4}
-          className="z-50 min-w-52 rounded-lg border border-line bg-surface p-1 shadow-menu"
+          className="z-50 min-w-52 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium"
           onCloseAutoFocus={(e) => {
             if (!keepFocus.current) return;
             keepFocus.current = false;
@@ -98,7 +98,7 @@ function ReactionMenu({ reactions, me, disabled, onPick }: { reactions: Reaction
                   if (code === "discuss" && !mine) keepFocus.current = true;
                   onPick(code, mine);
                 }}
-                className="flex h-10 cursor-pointer select-none items-center gap-2 rounded-md px-2.5 text-small text-ink outline-none data-[highlighted]:bg-field"
+                className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field"
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {mine ? `Убрать «${label}»` : label}
@@ -161,15 +161,11 @@ export function ReactionBar({
               aria-pressed={mine}
               title={list.length ? `${label}: ${whoText(list)}` : label}
               onClick={() => void press(code)}
-              className={cn(
-                "inline-flex min-h-8 items-center gap-1.5 rounded-full px-2.5 font-medium transition-colors disabled:cursor-default",
-                large ? "text-small" : "text-caption",
-                mine ? "bg-navy text-white" : "text-muted ring-1 ring-line hover:text-ink enabled:hover:ring-border-strong",
-              )}
+              className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
             >
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
               {label}
-              {list.length ? <span className="tabular-nums">{list.length}</span> : null}
+              {list.length ? <span className="sv-reaction__count">{list.length}</span> : null}
             </button>
           );
         })}
@@ -192,7 +188,7 @@ export function ReactionBar({
           {questions.map((q) => (
             <li
               key={q.id}
-              className={cn("flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg px-3 py-2 text-small", q.discussed ? "bg-field text-muted" : "bg-warning-soft/60 text-ink")}
+              className={cn("sv-mq !flex-row flex-wrap items-baseline !gap-x-2 !gap-y-1 !py-2 text-small", q.discussed && "!bg-field text-text-secondary")}
             >
               <MessagesSquare className="h-3.5 w-3.5 shrink-0 self-center" aria-hidden="true" />
               <span>
@@ -251,7 +247,7 @@ export function CommentReactions({
               title={`${label}: ${whoText(list)}`}
               aria-label={`${label}: ${list.length}`}
               onClick={() => (code === "discuss" && !mine ? setAsking(true) : void toggle(code))}
-              className={cn("inline-flex min-h-7 items-center gap-1 rounded-full px-2 text-caption font-medium", mine ? "bg-navy text-white" : "text-muted ring-1 ring-line")}
+              className={cn("sv-reaction !h-7 !px-2", mine && "is-mine")}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
               <span className="tabular-nums">{list.length}</span>

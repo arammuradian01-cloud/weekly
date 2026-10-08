@@ -27,23 +27,23 @@ type View = "people" | "blocks";
 export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekView, "week" | "prev" | "next" | "reportingKey">; basePath?: string }) {
   const router = useRouter();
   const go = (key: string) => router.push(`${basePath}?week=${key}`, { scroll: false });
+  // Вид по дизайн-системе (navigation/WeekSwitcher.jsx, sv-week): стрелки, номер, «отчётная», «Текущая»
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg bg-field p-1" role="group" aria-label="Выбор недели">
-      <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface" aria-label="Предыдущая неделя">
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+    <div className="sv-week" role="group" aria-label="Выбор недели">
+      <button type="button" onClick={() => go(view.prev)} className="sv-icon-btn sv-icon-btn--sm" aria-label="Предыдущая неделя">
+        <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
       </button>
-      <span className="min-w-36 px-2 text-center text-small font-semibold text-ink" aria-live="polite">
-        Неделя {view.week.number}
-        {view.week.reporting ? <span className="font-normal text-muted"> отчётная</span> : null}
+      <span className="sv-week__label cursor-default hover:bg-transparent" aria-live="polite">
+        <span>Неделя {view.week.number}</span>
+        {view.week.reporting ? <span className="sv-week__dates">отчётная</span> : null}
       </span>
-      <button
-        type="button"
-        onClick={() => view.next && go(view.next)}
-        disabled={!view.next}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface disabled:text-line disabled:hover:bg-transparent"
-        aria-label="Следующая неделя"
-      >
-        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+      {!view.week.reporting ? (
+        <button type="button" className="sv-week__now" onClick={() => go(view.reportingKey)}>
+          Текущая
+        </button>
+      ) : null}
+      <button type="button" onClick={() => view.next && go(view.next)} disabled={!view.next} className="sv-icon-btn sv-icon-btn--sm" aria-label="Следующая неделя">
+        <ChevronRight className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
       </button>
     </div>
   );
@@ -153,7 +153,7 @@ export function WeeklyFeed({
       </header>
 
       {data.fallback ? (
-        <p className="mb-4 rounded-xl border border-line px-5 py-3 text-body text-ink">
+        <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink">
           За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
           <Link href={`/weekly?week=${data.reportingKey}`} className="font-medium text-blue-700 hover:underline">
             Открыть неделю {data.reportingNumber}
@@ -279,7 +279,7 @@ function PeopleView({
   return (
     <div className="grid items-start gap-5 xl:grid-cols-2">
       {common.length ? (
-        <section aria-labelledby="wk-common" className="flex flex-col rounded-xl ring-1 ring-line xl:col-span-2">
+        <section aria-labelledby="wk-common" className="flex flex-col sv-card sv-card--soft xl:col-span-2">
           <header className="border-b border-line px-5 py-4">
             <h2 id="wk-common" className="text-title-sm font-semibold text-ink">
               Общее, без автора <span className="font-normal text-muted">{common.length}</span>
@@ -313,7 +313,7 @@ function PeopleView({
         const fromTeam = feedAuthors?.includes(p.slug) ?? true ? promotedBy(p.slug) : [];
         const state = weekly?.state ?? "not-started";
         return (
-          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col rounded-xl ring-1 ring-line">
+          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col sv-card sv-card--soft">
             <header className="border-b border-line px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 id={`wk-${p.slug}`} className="text-title-sm font-semibold text-ink">
@@ -390,7 +390,7 @@ function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; 
         const list = entries.filter((e) => e.block === code);
         if (!list.length) return null;
         return (
-          <section key={code} aria-labelledby={`blk-${code}`} className="rounded-xl ring-1 ring-line">
+          <section key={code} aria-labelledby={`blk-${code}`} className="sv-card sv-card--soft">
             <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-title-sm font-semibold text-ink">
               {blockLabel(code)} <span className="font-normal text-muted">{list.length}</span>
             </h2>

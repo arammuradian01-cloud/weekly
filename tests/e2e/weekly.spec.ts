@@ -70,7 +70,8 @@ test("лидер сдаёт weekly в три шага, черновик живё
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Открыть мой weekly" })).toBeVisible();
-  await expect(page.getByText(/Записей: 1/)).toBeVisible();
+  // Плитка «Мой weekly» (дизайн-система): крупная цифра записей и подпись
+  await expect(page.getByRole("link", { name: /Мой weekly за неделю \d+.*1\s*запись/ })).toBeVisible();
 });
 
 test("удаление записи спрашивает подтверждение и отменяется кнопкой «Отменить» (этап 7)", async ({ page }) => {

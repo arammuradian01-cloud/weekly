@@ -23,7 +23,7 @@ export function RequestCard({ request, history }: { request: RequestView; histor
   const active = isActiveRequest(r.status);
   return (
     <div className="flex flex-col gap-6">
-      <section className="rounded-xl px-4 py-5 ring-1 ring-line sm:px-6">
+      <section className="sv-card sv-card--soft px-4 py-5 sm:px-6">
         <RequestBadge status={r.status} stuck={r.stuck} />
         <p className="mt-3 whitespace-pre-line text-title font-semibold leading-snug text-ink">{r.text}</p>
         <dl className="mt-5 grid gap-4 sm:grid-cols-2">

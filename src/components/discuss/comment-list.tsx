@@ -1,5 +1,6 @@
 "use client";
 
+import { cn } from "@/lib/cn";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { compactName, initials } from "@/domain/people";
@@ -57,17 +58,20 @@ export function CommentList({
   const now = useNow();
   if (!comments.length) return null;
   return (
-    <ol className="flex flex-col gap-4">
+    <ol className="sv-thread m-0 list-none p-0">
       {comments.map((c) => {
         const mine = c.author === me;
         const editable = !readOnly && canEditComment(c, me, now);
         return (
-          <li key={c.id} className="flex gap-3">
-            <Avatar text={initials(c.author)} size="sm" tone={mine ? "navy" : "light"} />
+          <li key={c.id} className={cn("sv-comment", mine && "sv-comment--mine")}>
+            <Avatar text={initials(c.author)} name={c.author} />
             <div className="min-w-0 flex-1">
-              <p className="text-caption text-muted">
-                <span className="font-semibold text-ink">{compactName(c.author)}</span> {formatShort(c.at)}, {c.time}
-                {c.edited ? <span>, изменено</span> : null}
+              <p className="sv-comment__head">
+                <span className="sv-comment__author">{compactName(c.author)}</span>
+                <span className="sv-comment__meta">
+                  {formatShort(c.at)}, {c.time}
+                  {c.edited ? ", изменено" : ""}
+                </span>
               </p>
               {editing?.id === c.id ? (
                 <form

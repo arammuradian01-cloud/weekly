@@ -1,22 +1,41 @@
 import { cn } from "@/lib/cn";
 
-/** Цвет никогда не единственный носитель смысла: в метке всегда есть слово (раздел 7 ТЗ) */
-export type BadgeTone = "green" | "blue" | "yellow" | "red" | "gray" | "outline" | "navy" | "orange";
+/** Цвет никогда не единственный носитель смысла: в метке всегда есть слово (раздел 7 ТЗ).
+ *  Вид из дизайн-системы (sv-badge): подложка тона, текст тона, точка слева у статусов */
+export type BadgeTone = "green" | "blue" | "yellow" | "red" | "gray" | "outline" | "navy" | "orange" | "info";
 
 const tones: Record<BadgeTone, string> = {
-  green: "bg-green-soft text-green-ink",
-  blue: "bg-blue-soft text-blue-700",
-  yellow: "bg-warning-soft text-warning-ink",
-  red: "bg-danger-soft text-danger-ink",
-  gray: "bg-field text-muted",
-  outline: "bg-surface text-ink ring-1 ring-line",
-  navy: "bg-navy text-white",
-  orange: "bg-orange-soft text-orange-ink",
+  green: "sv-badge--success",
+  blue: "sv-badge--accent",
+  yellow: "sv-badge--warning",
+  red: "sv-badge--danger",
+  gray: "sv-badge--neutral",
+  outline: "sv-badge--outline",
+  navy: "sv-badge--brand",
+  orange: "sv-badge--warning",
+  info: "sv-badge--info",
 };
 
-export function Badge({ tone = "gray", children, className }: { tone?: BadgeTone; children: React.ReactNode; className?: string }) {
+export function Badge({
+  tone = "gray",
+  dot = false,
+  half = false,
+  size,
+  children,
+  className,
+}: {
+  tone?: BadgeTone;
+  /** Точка тона слева: у статусов задач, weekly и просьб */
+  dot?: boolean;
+  /** Половинная точка: «Выполнена частично» */
+  half?: boolean;
+  size?: "lg";
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <span className={cn("inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-tag px-2.5 text-caption font-semibold", tones[tone], className)}>
+    <span className={cn("sv-badge shrink-0", tones[tone], size === "lg" && "sv-badge--lg", className)}>
+      {dot ? <span className={cn("sv-badge__dot", half && "sv-badge__dot--half")} aria-hidden="true" /> : null}
       {children}
     </span>
   );

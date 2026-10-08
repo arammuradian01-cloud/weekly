@@ -141,7 +141,7 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
       {links.waitsFor.length ? (
         <div>
           <p className="mb-1 text-caption text-muted">Эта задача ждёт</p>
-          <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
             {links.waitsFor.map((t) => (
               <LinkRow key={t.number} t={t} kind="waits" onRemove={links.canEdit ? () => void remove(t.number) : undefined} />
             ))}
@@ -151,7 +151,7 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
       {links.blocks.length ? (
         <div>
           <p className="mb-1 text-caption text-muted">Эту задачу ждут</p>
-          <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
             {links.blocks.map((t) => (
               <LinkRow key={t.number} t={t} kind="blocks" />
             ))}

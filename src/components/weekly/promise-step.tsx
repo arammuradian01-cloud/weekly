@@ -79,7 +79,7 @@ export function PromiseStep({
             Задачи со сроком на неделе <span className="font-normal text-muted">{tasks.length}</span>
           </h3>
           <p className="text-small text-muted">Итог задачи это её статус. Закройте сделанное или перенесите срок с причиной.</p>
-          <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+          <ul className="divide-y divide-line sv-card sv-card--soft">
             {tasks.map((t) => (
               <PromiseTaskRow key={t.number} task={t} range={range} />
             ))}
@@ -152,7 +152,7 @@ function PromiseRow({
   };
 
   return (
-    <li className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line">
+    <li className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3">
       <div>
         <p id={`${id}-what`} className="text-body font-medium text-ink">
           {promise.what}

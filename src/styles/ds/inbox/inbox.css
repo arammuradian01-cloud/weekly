@@ -1,0 +1,44 @@
+/* «Мне»: строка события; просьба; «Жду от коллег» */
+.sv-event { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: flex-start; padding: 12px var(--space-4); border-bottom: 1px solid var(--color-border); background: var(--color-surface); transition: background-color var(--duration-color); }
+.sv-event:last-child { border-bottom: 0; }
+.sv-event:hover { background: var(--color-row-hover); }
+.sv-event.is-unread { box-shadow: inset 3px 0 0 var(--color-accent); }
+.sv-event.is-done { opacity: 0.6; }
+.sv-event__text { font-size: var(--text-body); line-height: var(--leading-body); color: var(--color-text); margin: 0; overflow-wrap: anywhere; }
+.sv-event__text b { font-weight: var(--font-weight-semibold); }
+.sv-event__subject { display: inline-flex; align-items: center; gap: 6px; margin-top: 4px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-link); max-width: 100%; }
+.sv-event__subject span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-event__time { font-size: var(--text-caption); color: var(--color-text-secondary); white-space: nowrap; }
+.sv-event__actions { display: flex; gap: 2px; align-items: center; opacity: 0; transition: opacity var(--duration-color); }
+.sv-event:hover .sv-event__actions, .sv-event:focus-within .sv-event__actions, .sv-event.is-request .sv-event__actions { opacity: 1; }
+.sv-event__side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.sv-event__request-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.sv-event-group { padding: 12px var(--space-4) 6px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); background: var(--color-page); position: sticky; top: 0; }
+.sv-event-list { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; }
+@media (max-width: 767px) { .sv-event { grid-template-columns: 36px 1fr; } .sv-event__side { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; } .sv-event__actions { opacity: 1; } }
+/* Карточка просьбы */
+.sv-request { display: flex; flex-direction: column; gap: 10px; padding: var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.sv-request__head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sv-request__who { display: flex; align-items: center; gap: 8px; font-size: var(--text-body); }
+.sv-request__who b { font-weight: var(--font-weight-semibold); }
+.sv-request__arrow { color: var(--color-icon); }
+.sv-request__text { font-size: var(--text-card); line-height: var(--leading-card); font-family: var(--font-heading); font-weight: var(--font-weight-heading); margin: 0; overflow-wrap: anywhere; }
+.sv-request__meta { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-request__meta a { color: var(--color-link); }
+.sv-request__actions { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 4px; }
+.sv-request__answer { padding: 10px 12px; border-radius: var(--radius-control-lg); background: var(--color-page); font-size: var(--text-body); line-height: var(--leading-body); }
+[data-theme="dark"] .sv-request__answer { background: var(--color-field); }
+.sv-request__answer b { font-weight: var(--font-weight-semibold); }
+.sv-request.is-overdue { border-color: var(--color-danger-text); }
+.sv-request.is-done .sv-request__text { color: var(--color-text-secondary); }
+/* Блок «Жду от коллег» */
+.sv-waiting { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; }
+.sv-waiting__head { display: flex; align-items: center; gap: 8px; padding: 12px var(--space-4); font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); border-bottom: 1px solid var(--color-border); }
+.sv-waiting__head .sv-counter { margin-left: 4px; }
+.sv-waiting__head a { margin-left: auto; font-family: var(--font-body); font-weight: var(--font-weight-semibold); font-size: var(--text-caption); }
+.sv-waiting__row { display: grid; grid-template-columns: 32px 1fr auto; gap: 10px; align-items: center; padding: 10px var(--space-4); border-bottom: 1px solid var(--color-border); min-height: 52px; box-sizing: border-box; }
+.sv-waiting__row:last-child { border-bottom: 0; }
+.sv-waiting__row:hover { background: var(--color-row-hover); }
+.sv-waiting__text { font-size: var(--text-body); line-height: var(--leading-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-waiting__sub { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-waiting__empty { padding: var(--space-5) var(--space-4); color: var(--color-text-secondary); font-size: var(--text-body); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }

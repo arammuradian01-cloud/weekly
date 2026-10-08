@@ -103,7 +103,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
       {events.length === 0 ? (
         <EmptyState title="Событий под эти фильтры нет" className="mt-4" />
       ) : (
-        <div className={cn("mt-4 overflow-hidden rounded-xl ring-1 ring-line transition-opacity", pending && "opacity-60")}>
+        <div className={cn("mt-4 overflow-hidden sv-card sv-card--soft transition-opacity", pending && "opacity-60")}>
           <table className="hidden w-full text-left text-small md:table">
             <caption className="sr-only">Журнал изменений</caption>
             <thead className="bg-field text-caption text-muted">

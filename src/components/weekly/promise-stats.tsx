@@ -8,7 +8,7 @@ export function PromiseStats({ stats }: { stats: PromiseHistory }) {
   if (!stats.active) return null;
   const share = promiseShare(stats.total);
   return (
-    <section aria-labelledby="promise-stats" className="rounded-xl px-5 py-4 ring-1 ring-line">
+    <section aria-labelledby="promise-stats" className="sv-card sv-card--soft px-5 py-4">
       <h2 id="promise-stats" className="text-title-sm font-semibold text-ink">
         Обещания и итоги
       </h2>

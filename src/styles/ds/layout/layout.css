@@ -1,0 +1,150 @@
+/* Оболочка и блоки страниц. Адаптив через container queries: оболочка сама перестраивается под ширину контейнера (ноутбук, планшет, телефон) */
+.sv-shell-root { container-type: inline-size; container-name: shell; height: 100%; min-height: 100%; }
+.sv-shell { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); min-height: 100%; background: var(--color-page); color: var(--color-text); }
+.sv-shell__side { grid-row: 1 / -1; display: flex; }
+.sv-shell__side .sv-sidebar { height: 100%; }
+.sv-shell__top { grid-column: 2; }
+.sv-shell__main { grid-column: 2; min-width: 0; padding: var(--space-5) var(--content-pad) var(--space-10); }
+.sv-shell__content { max-width: var(--content-max); margin: 0 auto; }
+.sv-shell__bottom { display: none; }
+.sv-shell__header { display: none; }
+/* Вариант «шапка как на сайте»: без бокового меню */
+.sv-shell--header { grid-template-columns: minmax(0, 1fr); }
+.sv-shell--header .sv-shell__side, .sv-shell--header .sv-shell__top { display: none; }
+.sv-shell--header .sv-shell__header { display: block; grid-column: 1; }
+.sv-shell--header .sv-shell__main { grid-column: 1; }
+/* Планшет и узкий ноутбук 1024-1259: боковое меню сжимается до иконок */
+@media (max-width: 1259px) {
+  .sv-shell { grid-template-columns: 72px minmax(0, 1fr); }
+  .sv-shell--header { grid-template-columns: minmax(0, 1fr); }
+  .sv-shell__side .sv-sidebar { width: 72px; padding: var(--space-4) var(--space-2); }
+  .sv-shell__side .sv-sidebar__brand { justify-content: center; padding-left: 0; padding-right: 0; overflow: hidden; }
+  .sv-shell__side .sv-sidebar__brand > *:not(:first-child) { display: none; }
+  .sv-shell__side .sv-sidebar__brand > .sv-logo { display: none !important; }
+  .sv-shell__side .sv-sidebar__brand > .sv-sidebar__sign { display: inline-flex; }
+  .sv-shell__side .sv-sidebar__item { justify-content: center; padding: 0; }
+  .sv-shell__side .sv-sidebar__item__label, .sv-shell__side .sv-sidebar__group, .sv-shell__side .sv-sidebar__profile > div { display: none; }
+  .sv-shell__side .sv-sidebar__item .sv-counter { position: absolute; top: 4px; right: 4px; margin: 0; }
+  .sv-shell__side .sv-sidebar__item { position: relative; }
+  .sv-shell__top .sv-topbar { padding: 0 var(--space-5); gap: var(--space-2); }
+  .sv-shell__top .sv-topbar__search { min-width: 0; width: var(--control-sm); padding: 0; justify-content: center; }
+  .sv-shell__top .sv-topbar__search > *:not(.sv-icon) { display: none; }
+  .sv-shell__top .sv-team-switch__role, .sv-shell__top .sv-week__dates { display: none; }
+  .sv-shell__top .sv-btn--dark > span:not(.sv-icon) { display: none; }
+  .sv-shell__top .sv-btn--dark { padding-inline: 10px; }
+}
+/* Планшет 768-1023: шапка как на сайте, разделы в прокручиваемой строке, бокового меню нет */
+@media (max-width: 1023px) {
+  .sv-shell { grid-template-columns: minmax(0, 1fr); }
+  .sv-shell__side, .sv-shell__top { display: none; }
+  .sv-shell__header { display: block; grid-column: 1; }
+  .sv-shell__main { grid-column: 1; padding: var(--space-4) var(--space-5) var(--space-8); }
+}
+/* Телефон до 767: нижнее меню, поля 16, шапка компактная */
+@media (max-width: 767px) {
+  .sv-shell { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .sv-shell__main { padding: var(--space-3) var(--content-pad-phone) calc(var(--space-6) + 64px); }
+  .sv-shell__bottom { display: block; position: sticky; bottom: 0; grid-column: 1; }
+  .sv-shell__header .sv-site-header__nav { display: none; }
+  .sv-shell__header .sv-site-header__row { height: 56px; }
+}
+
+/* Шапка как на сайте Сравни: логотип, разделы в строку, справа действия */
+.sv-site-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); position: relative; z-index: 30; }
+.sv-site-header__row { display: flex; align-items: center; gap: var(--space-4); height: 64px; padding: 0 var(--content-pad); max-width: calc(var(--content-max) + var(--content-pad) * 2); margin: 0 auto; box-sizing: border-box; }
+.sv-site-header__brand { display: flex; align-items: center; gap: 10px; flex: none; text-decoration: none; color: inherit; }
+.sv-site-header__brand:hover { text-decoration: none; color: inherit; }
+.sv-site-header__product { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); padding-left: 10px; border-left: 1px solid var(--color-border); }
+.sv-site-header__nav { display: flex; align-items: center; gap: 2px; flex: 1 1 auto; min-width: 120px; overflow-x: auto; overflow-y: visible; scrollbar-width: none; }
+.sv-site-header__nav::-webkit-scrollbar { display: none; }
+.sv-site-header__link { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text); font: inherit; font-size: var(--text-body); font-weight: var(--font-weight-semibold); white-space: nowrap; cursor: pointer; text-decoration: none; transition: background-color var(--duration-color), color var(--duration-color); }
+.sv-site-header__link:hover { background: var(--color-field); text-decoration: none; color: var(--color-text); }
+.sv-site-header__link.is-active { background: var(--color-accent-soft); color: var(--color-link); }
+.sv-site-header__link.is-open { background: var(--color-field); }
+.sv-site-header__link:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
+.sv-site-header__link .sv-icon { color: var(--color-text-secondary); }
+.sv-site-header__link.is-active .sv-icon { color: var(--color-link); }
+.sv-site-header__actions { display: flex; align-items: center; gap: var(--space-2); flex: 0 1 auto; min-width: 0; margin-left: auto; }
+.sv-site-header__actions .sv-topbar__search { min-width: 0; }
+.sv-site-header__actions .sv-btn--dark { padding-inline: 10px; }
+.sv-site-header__sub { border-top: 1px solid var(--color-border); background: var(--color-page); }
+.sv-site-header__sub .sv-site-header__row { height: 52px; gap: var(--space-3); }
+@media (max-width: 1023px) {
+  .sv-site-header__row { padding: 0 var(--space-5); }
+  .sv-site-header__product { display: none; }
+  .sv-site-header__actions { flex: none; }
+  .sv-site-header__actions .sv-week__dates, .sv-site-header__actions .sv-team-switch__role { display: none; }
+  .sv-site-header__nav { min-width: 80px; }
+  .sv-site-header__actions .sv-topbar__search > span:not(.sv-icon), .sv-site-header__actions .sv-btn > span:not(.sv-icon) { display: none; }
+  .sv-site-header__actions .sv-topbar__search { width: var(--control-sm); padding: 0; justify-content: center; }
+}
+@media (max-width: 767px) {
+  .sv-site-header__row { padding: 0 var(--content-pad-phone); gap: var(--space-2); }
+  .sv-site-header__actions .sv-topbar__search, .sv-site-header__actions .sv-btn, .sv-site-header__actions .sv-week { display: none; }
+}
+
+/* Выпадающее меню как на сайте: иконки на тонированных кругах в две колонки, снизу строка ссылок */
+.sv-mega { position: absolute; top: calc(100% + 10px); left: 0; z-index: 40; min-width: 520px; max-width: 720px; padding: var(--space-4); box-sizing: border-box; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); box-shadow: var(--shadow-medium); }
+.sv-mega--static { position: static; }
+.sv-mega__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.sv-mega__item { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 10px; border: 0; border-radius: var(--radius-control-lg); background: transparent; color: var(--color-text); font: inherit; font-size: var(--text-body); line-height: var(--leading-body); text-align: left; cursor: pointer; text-decoration: none; transition: background-color var(--duration-color); }
+.sv-mega__item:hover { background: var(--color-field); text-decoration: none; color: var(--color-text); }
+.sv-mega__item.is-active { background: var(--color-accent-soft); }
+.sv-mega__item:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
+.sv-mega__item__body { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.sv-mega__item__body > span:first-child { font-weight: var(--font-weight-semibold); }
+.sv-mega__item__sub { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-mega__item .sv-counter { align-self: flex-start; }
+.sv-mega__links { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); font-size: var(--text-body); }
+.sv-mega__links a { color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
+.sv-mega__links a:hover { color: var(--color-link); text-decoration: none; }
+.sv-mega__head { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); margin: 0 0 var(--space-2); padding: 0 10px; }
+@media (max-width: 767px) { .sv-mega { min-width: 0; width: 100%; max-width: none; border-radius: var(--radius-card); } .sv-mega__grid { grid-template-columns: 1fr; } }
+
+/* Заголовок страницы: путь по структуре, заголовок, подпись, действия, вкладки */
+.sv-page-head { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-5); }
+.sv-page-head__row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3) var(--space-4); }
+.sv-page-head__titles { min-width: min(100%, 320px); flex: 1 1 320px; display: flex; flex-direction: column; gap: 4px; }
+.sv-page-head__title { margin: 0; font-size: var(--text-page); line-height: var(--leading-page); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; text-wrap: balance; }
+.sv-page-head__sub { color: var(--color-text-secondary); font-size: var(--text-body); line-height: var(--leading-body); }
+.sv-page-head__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+@media (max-width: 1023px) { .sv-page-head__row { flex-direction: column; align-items: stretch; } .sv-page-head__titles { flex: 0 0 auto; min-width: 0; } .sv-page-head__actions { justify-content: flex-start; } }
+@media (max-width: 767px) { .sv-page-head { margin-bottom: var(--space-4); } .sv-page-head__actions { width: 100%; } .sv-page-head__actions .sv-btn--primary { flex: 1; } }
+
+/* Плитки как на главной сайта: крупные скруглённые карточки с заголовком, подписью и цифрой */
+.sv-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--space-3); }
+.sv-tile { position: relative; display: flex; flex-direction: column; gap: 8px; min-height: 140px; padding: var(--space-4); box-sizing: border-box; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); color: var(--color-text); text-decoration: none; cursor: pointer; transition: box-shadow var(--duration-color), border-color var(--duration-color), transform var(--duration) var(--ease); }
+.sv-tile:hover { box-shadow: var(--shadow-medium); text-decoration: none; color: var(--color-text); }
+.sv-tile:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.sv-tile--accent { background: var(--color-accent-soft); border-color: var(--color-accent-soft-border); }
+.sv-tile--brand { background: var(--color-brand-dark); color: #FFFFFF; border-color: transparent; }
+.sv-tile--brand:hover { color: #FFFFFF; }
+[data-theme="dark"] .sv-tile--brand { background: #0F2A3A; border-color: var(--color-accent-soft-border); }
+.sv-tile--brand .sv-tile__sub { color: rgba(255,255,255,0.72); }
+.sv-tile--primary { background: var(--color-primary); color: var(--color-on-primary); border-color: transparent; }
+.sv-tile--primary:hover { color: var(--color-on-primary); background: var(--color-primary-hover); }
+.sv-tile--primary .sv-tile__sub { color: var(--color-on-primary); opacity: 0.8; }
+.sv-tile--wide { grid-column: span 2; }
+.sv-tile__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sv-tile__title { margin: 0; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); overflow-wrap: anywhere; }
+.sv-tile__sub { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-tile__value { margin-top: auto; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-number); line-height: var(--leading-number); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; }
+.sv-tile__value small { font-family: var(--font-body); font-weight: 400; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-tile--brand .sv-tile__value small, .sv-tile--primary .sv-tile__value small { color: inherit; opacity: 0.75; }
+.sv-tile__foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.sv-tile .sv-icon-circle { flex: none; }
+@media (max-width: 767px) { .sv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); } .sv-tile { min-height: 120px; padding: var(--space-3); border-radius: var(--radius-card); } .sv-tile--wide { grid-column: span 2; } }
+
+/* Блок раздела страницы: заголовок, ссылка «Все», содержимое */
+.sv-section { display: flex; flex-direction: column; gap: var(--space-3); }
+.sv-section__head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.sv-section__title { margin: 0; font-size: var(--text-section); line-height: var(--leading-section); display: inline-flex; align-items: center; gap: 8px; }
+.sv-section__title .sv-counter { position: relative; top: -2px; }
+.sv-section__link { margin-left: auto; font-size: var(--text-body); font-weight: var(--font-weight-semibold); }
+.sv-section__hint { color: var(--color-text-secondary); font-size: var(--text-body); }
+.sv-section + .sv-section { margin-top: var(--space-8); }
+.sv-columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.sv-columns--even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sv-columns--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1023px) { .sv-columns--three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 767px) { .sv-columns, .sv-columns--even, .sv-columns--three { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); } .sv-section + .sv-section { margin-top: var(--space-6); } }

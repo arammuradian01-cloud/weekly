@@ -93,7 +93,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
           <p className="mt-1 text-body text-muted">Просьбы без ответа больше 2 рабочих дней, принятые с прошедшим сроком и предложенные задачи без ответа 3 дня. Уходят отсюда, когда на них ответят.</p>
           <ul className="mt-5 flex flex-col gap-3">
             {stuck.requests.map((r) => (
-              <li key={`r${r.number}`} className="rounded-xl bg-surface px-5 py-4 ring-1 ring-line">
+              <li key={`r${r.number}`} className="sv-card sv-card--soft px-5 py-4">
                 <Link href={`/requests/${r.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
                   Просьба {r.number}: {r.text}
                 </Link>
@@ -104,7 +104,7 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
               </li>
             ))}
             {stuck.proposals.map((p) => (
-              <li key={`p${p.number}`} className="rounded-xl bg-surface px-5 py-4 ring-1 ring-line">
+              <li key={`p${p.number}`} className="sv-card sv-card--soft px-5 py-4">
                 <Link href={`/tasks/${p.number}`} className="text-title font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
                   Предложена задача {p.number}: {p.title}
                 </Link>

@@ -43,8 +43,8 @@ export function ThemeSwitch({ className }: { className?: string }) {
   };
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <p className="px-3 text-caption text-muted">Тема</p>
-      <div role="radiogroup" aria-label="Тема оформления" className="mx-3 grid grid-cols-3 gap-1 rounded-control bg-field p-1">
+      <p className="px-2.5 text-caption font-semibold text-text-secondary">Тема</p>
+      <div role="radiogroup" aria-label="Тема оформления" className="sv-segment sv-segment--block mx-2">
         {OPTIONS.map((o) => (
           <button
             key={o.value}
@@ -52,14 +52,33 @@ export function ThemeSwitch({ className }: { className?: string }) {
             role="radio"
             aria-checked={choice === o.value}
             onClick={() => pick(o.value)}
-            className={cn("inline-flex h-9 items-center justify-center gap-1.5 rounded-md text-caption font-semibold transition-colors", choice === o.value ? "bg-surface text-ink shadow-segment" : "text-muted hover:text-ink")}
+            className={cn("sv-segment__item px-2 text-caption", choice === o.value && "is-active")}
           >
-            <o.icon className="h-4 w-4" aria-hidden="true" />
+            <o.icon className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
             <span className="hidden sm:inline">{o.label}</span>
             <span className="sr-only sm:hidden">{o.label}</span>
           </button>
         ))}
       </div>
     </div>
+  );
+}
+
+/** Быстрый переключатель темы в профиле бокового меню (дизайн-система: луна и солнце рядом с именем) */
+export function ThemeToggle({ className }: { className?: string }) {
+  const [dark, setDark] = useState(false);
+  useEffect(() => setDark(document.documentElement.getAttribute("data-theme") === "dark"), []);
+  const toggle = () => {
+    const next: ThemeChoice = dark ? "light" : "dark";
+    document.cookie = `theme=${next}; path=/; max-age=31536000; samesite=lax`;
+    applyTheme(next);
+    setDark(!dark);
+  };
+  const label = dark ? "Светлая тема" : "Тёмная тема";
+  const Icon = dark ? Sun : Moon;
+  return (
+    <button type="button" onClick={toggle} aria-label={label} title={label} className={cn("sv-icon-btn sv-icon-btn--sm sv-icon-btn--inverse shrink-0", className)}>
+      <Icon className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+    </button>
   );
 }

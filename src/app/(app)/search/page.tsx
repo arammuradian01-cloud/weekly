@@ -37,7 +37,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               <h2 id={`search-${g.kind}`} className="mb-2 text-title font-semibold text-ink">
                 {g.title} <span className="font-normal text-muted">{g.hits.length}</span>
               </h2>
-              <ul className="divide-y divide-line overflow-hidden rounded-xl ring-1 ring-line">
+              <ul className="divide-y divide-line overflow-hidden sv-card sv-card--soft">
                 {g.hits.map((h) => (
                   <li key={hitId(h)} className="bg-surface">
                     <Link href={hitHref(h)} className="block px-4 py-3 hover:bg-field/60">

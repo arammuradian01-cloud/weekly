@@ -38,7 +38,7 @@ export function TaskRequests({ task, headingLevel = "h3" }: { task: Task; headin
         {!closed && !task.archived ? <AskColleagueButton size="sm" prefill={{ task: { number: task.number, title: task.title } }} /> : null}
       </div>
       {items?.length ? (
-        <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+        <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
           {items.map((r) => (
             <RequestRow key={r.number} request={r} mode="any" />
           ))}

@@ -8,16 +8,16 @@ export function Field({
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; hint?: string }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-ink">
+    <div className={cn("sv-field", className)}>
+      <label htmlFor={id} className="sv-label">
         {label}
       </label>
       <input
         id={id}
-        className="h-11 rounded-lg border border-line bg-surface px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="sv-control w-full"
         {...props}
       />
-      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
+      {hint ? <p className="sv-field__hint">{hint}</p> : null}
     </div>
   );
 }
@@ -25,7 +25,7 @@ export function Field({
 export function FormError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-sm text-danger-ink">
+    <p role="alert" className="sv-alert sv-alert--danger">
       {message}
     </p>
   );

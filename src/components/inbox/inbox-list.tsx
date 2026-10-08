@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, Check, CheckCheck } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, Presentation, SquareCheck, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { usePrototype } from "@/domain/store";
 import { isMine, isOverdue, overdueDays } from "@/lib/tasks/rules";
 import { addDays, formatShort } from "@/domain/dates";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { OverdueNote } from "@/components/ui/task-badges";
+import { IconCircle } from "@/components/ui/tile";
 import { EmptyState } from "@/components/empty-state";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
@@ -35,26 +36,24 @@ function Deadlines() {
     .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.number - b.number));
   if (!hot.length) return null;
   return (
-    <section aria-labelledby="me-deadlines" className="mt-10">
-      <h2 id="me-deadlines" className="mb-3 text-title font-semibold text-ink">
-        Сроки <span className="font-normal text-muted">{hot.length}</span>
-      </h2>
-      <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
+    <section aria-labelledby="me-deadlines" className="sv-section mt-8">
+      <div className="sv-section__head">
+        <h2 id="me-deadlines" className="sv-section__title">
+          Сроки <span className="sv-section__count">{hot.length}</span>
+        </h2>
+      </div>
+      <ul className="sv-event-list m-0 list-none divide-y divide-line p-0">
         {hot.map((t) => {
           const late = isOverdue(t, data.today);
           return (
             <li key={t.number} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <Link href={`/tasks/${t.number}`} className="min-w-0 text-body font-medium text-ink hover:text-blue-700 hover:underline">
-                <span className="tabular-nums text-muted">{t.number}</span> {t.title}
+              <Link href={`/tasks/${t.number}`} className="min-w-0 text-body text-ink hover:text-link">
+                <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
               </Link>
               {late ? (
-                <Badge tone="red" className="self-start sm:self-auto">
-                  просрочена на {overdueDays(t, data.today)} дн.
-                </Badge>
+                <OverdueNote days={overdueDays(t, data.today)} className="self-start sm:self-auto" />
               ) : (
-                <Badge tone="yellow" className="self-start sm:self-auto">
-                  {t.due === data.today ? "срок сегодня" : "срок завтра"}
-                </Badge>
+                <span className="sv-due sv-due--soon self-start sm:self-auto">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>
               )}
             </li>
           );
@@ -64,7 +63,18 @@ function Deadlines() {
   );
 }
 
-const itemAction = "inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-small font-semibold text-ink hover:bg-field disabled:text-muted";
+// Иконка события на круге, как в дизайн-системе (inbox/EventRow.jsx): по предмету события
+function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info" | "success" | "warning" | "neutral" } {
+  if (item.requestNumber) return { icon: Hand, tone: "info" };
+  if (item.subject.startsWith("meeting:")) return { icon: Presentation, tone: "neutral" };
+  if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
+  if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
+  if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
+  if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
+  if (item.entryId) return { icon: FileText, tone: "accent" };
+  if (/коммент/i.test(item.text)) return { icon: MessageSquare, tone: "accent" };
+  return { icon: SquareCheck, tone: "accent" };
+}
 
 /** События «Мне»: одна строка на задачу, свежие сверху */
 export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: number }) {
@@ -86,71 +96,75 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
   return (
     <div>
       <section aria-labelledby="me-events">
-        <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-          <h2 id="me-events" className="text-title font-semibold text-ink">
-            События <span className="font-normal text-muted">{items.length}</span>
+        <div className="sv-section__head mb-3">
+          <h2 id="me-events" className="sv-section__title">
+            События <span className="sv-section__count">{items.length}</span>
           </h2>
           {items.length > 1 ? (
-            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void act("*", () => markAllDoneAction(), "Всё разобрано")}>
-              <CheckCheck className="h-4 w-4" aria-hidden="true" />
+            <Button size="sm" variant="ghost" className="ml-auto" disabled={busy !== null} onClick={() => void act("*", () => markAllDoneAction(), "Всё разобрано")}>
+              <CheckCheck className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
               Разобрать всё
             </Button>
           ) : null}
         </div>
         {items.length ? (
-          <ul className="flex flex-col divide-y divide-line rounded-xl ring-1 ring-line">
-            {items.map((item) => (
-              <li key={item.subject} className={cn("flex flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between", busy === item.subject && "opacity-60")}>
+          <ul className="sv-event-list m-0 list-none p-0">
+            {items.map((item) => {
+              const kind = eventIcon(item);
+              return (
+              <li key={item.subject} className={cn("sv-event is-unread", busy === item.subject && "opacity-60")}>
+                <IconCircle icon={kind.icon} tone={kind.tone} size={40} />
                 <div className="min-w-0">
                   {item.requestNumber ? (
-                    <Link href={`/requests/${item.requestNumber}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/requests/${item.requestNumber}`} className="sv-event__text font-semibold hover:text-link">
                       <span className="text-muted">Просьба {item.requestNumber}:</span> {item.requestText}
                     </Link>
                   ) : item.taskNumber ? (
-                    <Link href={`/tasks/${item.taskNumber}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/tasks/${item.taskNumber}`} className="sv-event__text font-semibold hover:text-link">
                       <span className="tabular-nums text-muted">{item.taskNumber}</span> {item.taskTitle}
                     </Link>
                   ) : item.entryId ? (
-                    <Link href={`/weekly/entry/${item.entryId}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/weekly/entry/${item.entryId}`} className="sv-event__text font-semibold hover:text-link">
                       <span className="text-muted">Запись weekly:</span> {item.entryTitle}
                     </Link>
                   ) : item.subject.startsWith("meeting:") ? (
-                    <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                       Встреча
                     </Link>
                   ) : item.subject.startsWith("decision:") ? (
-                    <Link href="/decisions" className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href="/decisions" className="sv-event__text font-semibold hover:text-link">
                       Решение встречи
                     </Link>
                   ) : item.subject.startsWith("thanks:") ? (
-                    <Link href={`/weekly?week=${item.subject.split(":")[1]}`} className="text-body font-semibold text-ink hover:text-blue-700 hover:underline">
+                    <Link href={`/weekly?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                       Благодарность в weekly
                     </Link>
                   ) : null}
-                  <p className="mt-0.5 text-body text-ink">{item.text}</p>
-                  <p className="mt-0.5 text-caption text-muted">
-                    {item.actorName ?? "Система"}, {when(item.at, data.today)}
+                  <p className="sv-event__text mt-0.5">{item.text}</p>
+                  <p className="mt-1 text-caption text-text-secondary">
+                    <b className="font-semibold">{item.actorName ?? "Система"}</b>
                     {item.count > 1 ? `. Ещё событий по ${item.requestNumber ? "просьбе" : item.entryId ? "записи" : "задаче"}: ${item.count - 1}` : ""}
                   </p>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-1">
+                <div className="sv-event__side">
+                  <span className="sv-event__time">{when(item.at, data.today)}</span>
+                  <div className="sv-event__actions">
                   <button
                     type="button"
-                    className={itemAction}
+                    className="sv-icon-btn sv-icon-btn--sm"
+                    title="Разобрано"
                     disabled={busy !== null}
                     onClick={() => void act(item.subject, () => markDoneAction(item.subject), "Разобрано")}
                     aria-label={`Разобрано: ${item.requestText ?? item.taskTitle ?? item.entryTitle ?? item.text}`}
                   >
-                    <Check className="h-4 w-4" aria-hidden="true" />
-                    Разобрано
+                    <Check className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
                   </button>
                   <Menu.Root>
-                    <Menu.Trigger className={itemAction} disabled={busy !== null} aria-label={`Напомнить: ${item.requestText ?? item.taskTitle ?? item.entryTitle ?? item.text}`}>
-                      <AlarmClock className="h-4 w-4" aria-hidden="true" />
-                      Напомнить
+                    <Menu.Trigger className="sv-icon-btn sv-icon-btn--sm" title="Напомнить" disabled={busy !== null} aria-label={`Напомнить: ${item.requestText ?? item.taskTitle ?? item.entryTitle ?? item.text}`}>
+                      <AlarmClock className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
                     </Menu.Trigger>
                     <Menu.Portal>
-                      <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-lg border border-line bg-surface p-1 shadow-menu">
+                      <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium">
                         {(
                           [
                             ["tomorrow", "Завтра в 9:00"],
@@ -160,7 +174,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                           <Menu.Item
                             key={choice}
                             onSelect={() => void act(item.subject, () => snoozeAction(item.subject, choice), `Напомним: ${label.toLowerCase()}`)}
-                            className="flex h-10 cursor-pointer select-none items-center rounded-md px-2.5 text-small text-ink outline-none data-[highlighted]:bg-field"
+                            className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field"
                           >
                             {label}
                           </Menu.Item>
@@ -168,9 +182,11 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                       </Menu.Content>
                     </Menu.Portal>
                   </Menu.Root>
+                  </div>
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         ) : (
           <EmptyState title="Всё разобрано">

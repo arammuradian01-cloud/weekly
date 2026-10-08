@@ -5,15 +5,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, ArrowUpDown, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, ownerName } from "@/domain/people";
+import { compactName, initials as personInitials, ownerName } from "@/domain/people";
+import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isClosed, isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
-import { Chip, SelectField } from "@/components/ui/primitives";
+import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
 import { GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import type { SavedViewDto } from "@/lib/views/service";
@@ -138,7 +139,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               value={q}
               onChange={(e) => onQ(e.target.value)}
               placeholder="Текст или номер задачи"
-              className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+              className="sv-control h-11 w-full pl-9 pr-3 text-body"
             />
           </div>
           <SelectField label="Ответственный" id="filter-owner" value={p.owner ?? ""} onChange={(e) => setParams({ owner: e.target.value || null })} className="sm:w-52" options={ownerOptions} />
@@ -186,7 +187,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       </div>
 
       {archive ? (
-        <p className="mt-3 rounded-xl bg-field px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
+        <p className="mt-3 sv-card sv-card--soft px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
         <EmptyState title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"} className="mt-4">
@@ -210,13 +211,13 @@ export type Selection = { selected: Set<number>; toggle: (n: number) => void; to
 
 function SortHeader({ label, k, sort, dir, onSort, className }: { label: string; k: SortKey; sort: SortKey | null; dir: SortDir; onSort?: (k: SortKey) => void; className?: string }) {
   const activeSort = sort === k;
-  const Icon = activeSort ? (dir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  const Icon = activeSort ? (dir === "asc" ? ArrowUp : ArrowDown) : ChevronsUpDown;
   return (
-    <th scope="col" aria-sort={activeSort ? (dir === "asc" ? "ascending" : "descending") : "none"} className={cn("py-2.5 font-medium", className)}>
+    <th scope="col" aria-sort={activeSort ? (dir === "asc" ? "ascending" : "descending") : "none"} className={cn(onSort && "is-sortable", activeSort && "is-sorted", className)}>
       {onSort ? (
-        <button type="button" onClick={() => onSort(k)} className={cn("group inline-flex items-center gap-1 rounded hover:text-ink", activeSort && "text-ink")}>
+        <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-0.5 rounded hover:text-ink">
           {label}
-          <Icon className={cn("h-3.5 w-3.5", activeSort ? "text-blue-700" : "text-muted/50 group-hover:text-muted")} aria-hidden="true" />
+          <Icon className={cn("ml-0.5 h-3.5 w-3.5", activeSort ? "text-link" : "text-icon")} strokeWidth={1.75} aria-hidden="true" />
         </button>
       ) : (
         label
@@ -250,50 +251,52 @@ export function TaskTable({
   const open = onOpen ?? openTask;
   const cols = (showOwner ? 7 : 6) + (selection ? 1 : 0);
   return (
-    <div className="mt-4 overflow-hidden rounded-xl ring-1 ring-line">
-      {/* Ноутбук: таблица */}
-      <table className="hidden w-full table-fixed text-left text-small lg:table">
+    <div className="mt-4">
+      {/* Ноутбук: таблица по дизайн-системе (tasks/TaskTable.jsx): залипающая шапка, группы, подсветка просрочки */}
+      <div className="sv-table-wrap hidden lg:block">
+      <table className="sv-table table-fixed">
         <caption className="sr-only">Задачи команды</caption>
         <colgroup>
-          {selection ? <col className="w-11" /> : null}
+          {selection ? <col className="w-10" /> : null}
           <col className="w-14" />
           <col />
-          {showOwner ? <col className="w-[124px]" /> : null}
+          {showOwner ? <col className="w-[156px]" /> : null}
           <col className="w-[128px]" />
           <col className="w-[176px]" />
           <col className="w-[148px]" />
-          <col className="w-[156px]" />
+          <col className="w-[164px]" />
         </colgroup>
-        <thead className="bg-field text-caption text-muted">
+        <thead>
           <tr>
             {selection ? (
-              <th scope="col" className="px-3 py-2.5">
+              <th scope="col" className="is-check">
                 <span className="sr-only">Выбрать</span>
               </th>
             ) : null}
-            <SortHeader label="№" k="number" sort={sort} dir={dir} onSort={onSort} className="px-4" />
-            <SortHeader label="Задача и где сейчас" k="title" sort={sort} dir={dir} onSort={onSort} className="px-2" />
-            {showOwner ? <SortHeader label="Ответственный" k="owner" sort={sort} dir={dir} onSort={onSort} className="px-2" /> : null}
-            <SortHeader label="Приоритет" k="priority" sort={sort} dir={dir} onSort={onSort} className="px-2" />
-            <SortHeader label="Статус" k="status" sort={sort} dir={dir} onSort={onSort} className="px-2" />
-            <th scope="col" className="px-2 py-2.5 font-medium">Состояние</th>
-            <SortHeader label="Срок" k="due" sort={sort} dir={dir} onSort={onSort} className="px-3" />
+            <SortHeader label="№" k="number" sort={sort} dir={dir} onSort={onSort} />
+            <SortHeader label="Задача и где сейчас" k="title" sort={sort} dir={dir} onSort={onSort} />
+            {showOwner ? <SortHeader label="Ответственный" k="owner" sort={sort} dir={dir} onSort={onSort} /> : null}
+            <SortHeader label="Приоритет" k="priority" sort={sort} dir={dir} onSort={onSort} />
+            <SortHeader label="Статус" k="status" sort={sort} dir={dir} onSort={onSort} />
+            <th scope="col">Состояние</th>
+            <SortHeader label="Срок" k="due" sort={sort} dir={dir} onSort={onSort} />
           </tr>
         </thead>
         {groups.map((g) => {
           const numbers = g.tasks.map((t) => t.number);
           const allOn = selection ? numbers.every((n) => selection.selected.has(n)) : false;
           return (
-            <tbody key={g.key} className="divide-y divide-line border-t border-line">
+            <tbody key={g.key}>
               {g.title ? (
-                <tr className="bg-surface">
+                <tr className="sv-table__group">
                   {selection ? (
-                    <td className="px-3 pb-2 pt-4 align-middle">
-                      <input type="checkbox" checked={allOn} onChange={(e) => selection.toggleMany(numbers, e.target.checked)} aria-label={`Выбрать все: ${g.title}`} className="h-4 w-4 accent-blue-700" />
+                    <td className="is-check">
+                      <input type="checkbox" checked={allOn} onChange={(e) => selection.toggleMany(numbers, e.target.checked)} aria-label={`Выбрать все: ${g.title}`} className="h-4 w-4" />
                     </td>
                   ) : null}
-                  <th scope="colgroup" colSpan={cols - (selection ? 1 : 0)} className="px-4 pb-2 pt-4 text-body font-semibold text-ink">
-                    {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
+                  <th scope="colgroup" colSpan={cols - (selection ? 1 : 0)} className="!static !h-8 !border-b !bg-canvas !px-3 !text-caption">
+                    {g.title}
+                    <span className="sv-counter sv-counter--neutral ml-1.5">{g.tasks.length}</span>
                   </th>
                 </tr>
               ) : null}
@@ -303,35 +306,55 @@ export function TaskTable({
                 const closed = isClosed(t);
                 const picked = selection?.selected.has(t.number) ?? false;
                 const progress = checklistProgress(t);
+                const outside = !!greenOutside(t, data.today);
                 return (
-                  <tr key={t.number} className={cn("align-top", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-surface hover:bg-field/60", closed && "text-muted")}>
+                  <tr key={t.number} className={cn("!cursor-default", picked && "is-selected", overdue && !closed && "is-overdue", closed && "is-closed", outside && "is-outside")}>
                     {selection ? (
-                      <td className="px-3 py-3">
-                        <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="h-4 w-4 accent-blue-700" />
+                      <td className="is-check">
+                        <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="h-4 w-4" />
                       </td>
                     ) : null}
-                    <td className="px-4 py-3 tabular-nums text-muted">{t.number}</td>
-                    <td className="px-2 py-3">
-                      <button type="button" onClick={() => open(t.number)} className={cn("text-left text-body font-medium leading-snug hover:text-blue-700 hover:underline", closed ? "text-muted" : "text-ink")}>
-                        {t.title}
-                      </button>
-                      <p className="mt-0.5 line-clamp-1 text-caption text-muted">
-                        {progress ? <span className="mr-2 tabular-nums">☑ {progress.done}/{progress.total}</span> : null}
-                        {t.repeat?.active ? <span className="mr-2">↻</span> : null}
-                        {t.where}
-                      </p>
-                      {stale ? <StaleNote className="mt-0.5 block" /> : null}
-                      <LateWaits task={t} className="mt-0.5 block" />
-                      <GreenOutsideNote task={t} today={data.today} className="mt-0.5 block" />
+                    <td className="is-id">{t.number}</td>
+                    <td className="!whitespace-normal py-2">
+                      <div className="sv-task">
+                        <button type="button" onClick={() => open(t.number)} className="sv-task__title !max-w-none text-left hover:text-link" title={t.title}>
+                          {t.state === "blocked" ? <OctagonAlert className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} aria-label="Заблокирована" /> : null}
+                          <span className="truncate">{t.title}</span>
+                        </button>
+                        <span className={cn("sv-task__now !max-w-none", !t.where && !progress && "sv-task__now--empty")}>
+                          {progress ? (
+                            <span className="mr-2 inline-flex items-center gap-1 tabular-nums">
+                              <SquareCheck className="h-3 w-3" strokeWidth={1.75} aria-hidden="true" />
+                              {progress.done}/{progress.total}
+                            </span>
+                          ) : null}
+                          {t.repeat?.active ? <Repeat className="mr-1.5 inline h-3 w-3" strokeWidth={1.75} aria-label="Повторяется" /> : null}
+                          {t.where || (progress ? "" : "Где сейчас: не заполнено")}
+                        </span>
+                        {stale ? <StaleNote className="block" /> : null}
+                        <LateWaits task={t} className="block" />
+                        <GreenOutsideNote task={t} today={data.today} className="block" />
+                      </div>
                     </td>
-                    {showOwner ? <td className="px-2 py-3 text-ink">{t.owner === "all" ? "Все лидеры" : compactName(t.owner)}</td> : null}
-                    <td className="px-2 py-2"><PrioritySelect task={t} /></td>
-                    <td className="px-2 py-2"><StatusSelect task={t} /></td>
-                    <td className="px-2 py-2"><StateSelect task={t} /></td>
-                    <td className="px-3 py-3">
-                      <span className={cn("tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-ink")}>{formatShort(t.due)}</span>
-                      {overdue ? <OverdueNote days={overdueDays(t, data.today)} className="block" /> : null}
-                      {t.transfers.length ? <span className="block text-tiny text-muted">переносов {t.transfers.length}</span> : null}
+                    {showOwner ? (
+                      <td>
+                        {t.owner === "all" ? (
+                          <span className="sv-cell-person text-text-secondary">Все лидеры</span>
+                        ) : (
+                          <span className="sv-cell-person min-w-0">
+                            <Avatar text={personInitials(t.owner)} name={ownerName(t.owner)} size="sm" />
+                            <span className="truncate">{compactName(t.owner)}</span>
+                          </span>
+                        )}
+                      </td>
+                    ) : null}
+                    <td><PrioritySelect task={t} /></td>
+                    <td><StatusSelect task={t} /></td>
+                    <td><StateSelect task={t} /></td>
+                    <td className="!whitespace-normal">
+                      <span className={cn("sv-due block", overdue && !closed && "!font-semibold !text-danger-ink")}>{formatShort(t.due)}</span>
+                      {overdue && !closed ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
+                      {t.transfers.length ? <span className="block text-caption text-text-secondary">переносов {t.transfers.length}</span> : null}
                     </td>
                   </tr>
                 );
@@ -340,14 +363,15 @@ export function TaskTable({
           );
         })}
       </table>
+      </div>
 
       {/* Телефон и планшет: строки в одну колонку */}
-      <div className="lg:hidden">
+      <div className="sv-table-wrap lg:hidden">
         {groups.map((g) => (
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
-              <h2 className="border-b border-line bg-field px-4 py-2 text-body font-semibold text-ink">
-                {g.title} <span className="font-normal text-muted">{g.tasks.length}</span>
+              <h2 className="border-b border-line bg-canvas px-4 py-2 text-caption font-semibold text-text-secondary">
+                {g.title} <span className="sv-counter sv-counter--neutral ml-1">{g.tasks.length}</span>
               </h2>
             ) : null}
             <ul className="divide-y divide-line">
@@ -356,12 +380,12 @@ export function TaskTable({
                 const picked = selection?.selected.has(t.number) ?? false;
                 const progress = checklistProgress(t);
                 return (
-                  <li key={t.number} className={cn("flex gap-3 px-4 py-3", picked ? "bg-blue-soft/60" : overdue ? "bg-danger-soft" : "bg-surface")}>
-                    {selection ? <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="mt-1.5 h-4 w-4 shrink-0 accent-blue-700" /> : null}
+                  <li key={t.number} className={cn("flex gap-3 px-4 py-3", picked ? "bg-[var(--color-row-selected)]" : overdue ? "bg-[var(--color-row-overdue)]" : "bg-surface")}>
+                    {selection ? <input type="checkbox" checked={picked} onChange={() => selection.toggle(t.number)} aria-label={`Выбрать задачу ${t.number}`} className="mt-1.5 h-4 w-4 shrink-0" /> : null}
                     <div className="min-w-0 flex-1">
                       <button type="button" onClick={() => open(t.number)} className="block w-full text-left">
                         <span className="mr-1.5 tabular-nums text-muted">{t.number}</span>
-                        <span className="text-body font-medium leading-snug text-ink">{t.title}</span>
+                        <span className="text-body font-semibold leading-snug text-ink">{t.title}</span>
                       </button>
                       <p className="mt-1 line-clamp-2 text-caption text-muted">
                         {progress ? <span className="mr-2 tabular-nums">☑ {progress.done}/{progress.total}</span> : null}

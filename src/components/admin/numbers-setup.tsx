@@ -134,12 +134,12 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
             <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
           </div>
-          <div className="rounded-xl bg-field px-5 py-4">
+          <div className="sv-card sv-card--soft px-5 py-4">
             <p className="text-small font-medium text-muted">В отчёте</p>
             <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.rows}</p>
             <p className="text-caption text-muted">строк с цифрами, недель {view.weeks}</p>
           </div>
-          <div className="rounded-xl bg-field px-5 py-4">
+          <div className="sv-card sv-card--soft px-5 py-4">
             <p className="text-small font-medium text-muted">Последняя неделя в отчёте</p>
             <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">{view.latestWeek ? `с ${view.latestWeek}` : "нет"}</p>
             <p className="mt-1 text-caption text-muted">Следующее чтение: {view.next ?? "выключено"}</p>
@@ -148,7 +148,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
       ) : null}
 
       {view.error ? (
-        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
+        <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-medium text-danger-ink">Чтение не прошло {view.error.at}</p>
@@ -168,7 +168,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
       ) : null}
 
       {view.connected && view.rows ? (
-        <div className="rounded-xl px-5 py-5 ring-1 ring-line">
+        <div className="sv-card sv-card--soft px-5 py-5">
           <h3 className="text-title-sm font-semibold text-ink">Какие цифры показывать</h3>
           <p className="mt-1 text-body text-muted">Отметьте строки отчёта, до {view.metricsMax}. Подпись и единицу можно поправить. Порядок как здесь.</p>
           {metrics.length ? (
@@ -203,7 +203,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
                 Найти строку отчёта
               </label>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
+              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="sv-control h-11 w-full pl-9 pr-3 text-body" />
             </div>
             {found ? (
               <ul className="mt-3 max-h-[360px] divide-y divide-line overflow-y-auto rounded-lg ring-1 ring-line" aria-label="Строки отчёта">
@@ -226,7 +226,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
         </div>
       ) : null}
 
-      <div className="rounded-xl px-5 py-5 ring-1 ring-line">
+      <div className="sv-card sv-card--soft px-5 py-5">
         <h3 className="text-title-sm font-semibold text-ink">Подключение недельного отчёта</h3>
         {!view.connected ? (
           <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-body text-ink marker:text-muted">

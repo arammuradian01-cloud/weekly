@@ -49,7 +49,7 @@ export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: Week
   };
 
   return (
-    <section aria-labelledby="facts-title" className="flex flex-col gap-3 rounded-xl bg-field p-4 sm:p-5">
+    <section aria-labelledby="facts-title" className="flex flex-col gap-3 sv-card sv-card--soft p-4 sm:p-5">
       <div>
         <h3 id="facts-title" className="text-lead font-semibold text-ink">
           Из фактов недели <span className="font-normal text-muted">{facts.length}</span>

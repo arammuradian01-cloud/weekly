@@ -190,12 +190,12 @@ export function GlobalHotkeys() {
           <SelectField label="Повтор" id="nt-repeat" value={repeat} onChange={(e) => setRepeat(e.target.value as "" | RepeatKindCode)} options={[{ value: "", label: "Не повторяется" }, ...REPEAT_KINDS.map((k) => ({ value: k.code, label: k.label }))]} hint={repeat ? "Следующая появится при закрытии этой, режим можно сменить в карточке" : undefined} />
         </div>
         {proposing ? (
-          <p className="rounded-lg bg-blue-soft px-3.5 py-2.5 text-small text-blue-700">
+          <p className="sv-alert sv-alert--info">
             Задача уйдёт со статусом «Предложена». Адресат примет её или отклонит с причиной.
           </p>
         ) : null}
         {error ? (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3.5 py-2.5 text-small text-danger-ink">
+          <p role="alert" className="sv-alert sv-alert--danger">
             {error}
           </p>
         ) : null}

@@ -1,8 +1,8 @@
 import { requireContext } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import { ROLE_LABELS } from "@/lib/roles";
-import { formatTime, formatWeekRange, reportingWeek, type DeadlineSetting } from "@/lib/week";
-import { Wordmark } from "@/components/brand/wordmark";
+import { formatTime, reportingWeek, type DeadlineSetting } from "@/lib/week";
+import { SidebarBrand, Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
 import { ProfileMenu } from "@/components/shell/profile-menu";
 import { PrototypeProvider } from "@/domain/store";
@@ -12,7 +12,8 @@ import { PrototypeBanner } from "@/components/prototype/banner";
 import { Toaster } from "@/components/prototype/toaster";
 import { GlobalHotkeys } from "@/components/prototype/new-task";
 import { RequestDialogHost } from "@/components/requests/request-dialog";
-import { HeaderSearch } from "@/components/prototype/header-search";
+import { SearchButton, TopBar } from "@/components/shell/top-bar";
+import { ThemeToggle } from "@/components/shell/theme-switch";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
@@ -33,6 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const ctx = await requireContext();
   const deadline = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
   const week = reportingWeek(new Date(), deadline);
+  const reportingKey = fromCalendar(week.start);
   const managementUntil = ctx.management ? formatTime(new Date(ctx.management.until)) : null;
   // Сроки считаются от сегодняшней даты по Москве: одинаково на сервере и в браузере
   const today = fromCalendar(moscowDate(new Date()));
@@ -80,68 +82,68 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     >
     <TaskActionsProvider>
     <InboxCountProvider initial={inbox}>
-    <div className="min-h-dvh lg:grid lg:grid-cols-[var(--sidebar-width)_1fr]">
-      <aside className="sticky top-0 hidden h-dvh flex-col justify-between bg-sidebar px-3 py-5 lg:flex">
-        <div className="flex flex-col gap-8">
-          <div className="px-2">
-            <Wordmark />
-          </div>
+    {/* Оболочка по дизайн-системе (layout/AppShell.jsx): тёмно-синее меню 248 (на 1024-1259 иконками),
+        верхняя панель с командой, неделей, поиском и «Новой задачей»; на телефоне компактная шапка и нижнее меню */}
+    <div className="sv-shell min-h-dvh">
+      <aside className="sv-shell__side sticky top-0 h-dvh self-start">
+        <div className="sv-sidebar overflow-y-auto">
+          <a className="sv-sidebar__skip" href="#content">
+            Перейти к содержимому
+          </a>
+          <SidebarBrand />
           <SidebarNav management={profile.management} leader={leader} />
+          <div className="sv-sidebar__spacer" />
+          <div className="sv-sidebar__profile">
+            <ProfileMenu {...profile} tone="dark" />
+            <ThemeToggle />
+          </div>
         </div>
-        <ProfileMenu {...profile} tone="dark" />
       </aside>
 
-      <div className="flex min-w-0 flex-col">
-        <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 backdrop-blur sm:px-6 lg:h-16 lg:px-10">
-          <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
+      <div className="sv-shell__top sticky top-0 z-20">
+        <TopBar reportingKey={reportingKey} managementUntil={managementUntil} canCreate={ctx.person.role !== "OBSERVER"} />
+      </div>
+
+      <div className="sv-shell__header sticky top-0 z-20">
+        <header className="sv-site-header">
+          <div className="sv-site-header__row h-14 gap-2 px-4 sm:px-5">
             <Wordmark tone="light" compact />
             <TeamSwitcher compact />
-          </div>
-          <div className="hidden min-w-0 flex-1 items-center gap-6 lg:flex">
-            <TeamSwitcher />
-            <div className="flex shrink-0 items-baseline gap-2">
-              <span className="text-body font-semibold text-ink">Неделя {week.week}</span>
-              <span className="text-small text-muted">{formatWeekRange(week)}</span>
-            </div>
-            <HeaderSearch />
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="lg:hidden">
-              <HeaderSearch compact />
-            </div>
-            {managementUntil ? (
-              <span className="hidden rounded-md bg-blue-soft px-2.5 py-1 text-caption font-medium text-blue-700 sm:inline">
-                Режим управления до {managementUntil}
-              </span>
-            ) : null}
-            <div className="lg:hidden">
+            <div className="sv-site-header__actions ml-auto">
+              <SearchButton compact />
               <ProfileMenu {...profile} tone="light" />
             </div>
           </div>
         </header>
+      </div>
 
+      <div className="flex min-w-0 flex-col lg:col-start-2">
         {lagging ? (
-          <div role="status" className="border-b border-warning/30 bg-warning-soft px-4 py-2.5 text-small text-warning-ink sm:px-6 lg:px-10">
-            Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к таблице для просмотра. Изменения ждут в очереди и не теряются.{" "}
-            {ctx.management?.role === "OWNER" ? (
-              <Link href="/sync" className="font-medium underline underline-offset-2">
-                Открыть синхронизацию
-              </Link>
-            ) : (
-              "Подробности у владельца на странице «Синхронизация»."
-            )}
+          <div role="status" className="sv-alert sv-alert--warning rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]">
+            <span>
+              Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к таблице для просмотра. Изменения ждут в очереди и не теряются.{" "}
+              {ctx.management?.role === "OWNER" ? (
+                <Link href="/sync" className="font-semibold underline underline-offset-2">
+                  Открыть синхронизацию
+                </Link>
+              ) : (
+                "Подробности у владельца на странице «Синхронизация»."
+              )}
+            </span>
           </div>
         ) : null}
         <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} />
-        <main className="mx-auto w-full max-w-page flex-1 px-4 pb-28 pt-6 sm:px-6 lg:px-[30px] lg:pb-16 lg:pt-8">{children}</main>
+        <main className="sv-shell__main flex-1 max-lg:pb-28" id="content" tabIndex={-1}>
+          <div className="sv-shell__content">{children}</div>
+        </main>
       </div>
-
-      <MobileNav leader={leader} />
-      <Toaster />
-      <GlobalHotkeys />
-      <CommandPalette management={profile.management} />
-      <RequestDialogHost />
     </div>
+
+    <MobileNav leader={leader} />
+    <Toaster />
+    <GlobalHotkeys />
+    <CommandPalette management={profile.management} />
+    <RequestDialogHost />
     </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>
