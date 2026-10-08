@@ -2,7 +2,7 @@
 
 import type { InboxKind } from "@/generated/prisma/enums";
 
-export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null };
+export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null; subject?: string };
 
 /** Одна строка письма о событии: кто и что, без содержимого. Без глаголов с родом: «Рева Тарас: упоминание в задаче 47» */
 export function eventPhrase(e: EventLine): string {
@@ -41,13 +41,17 @@ export function eventPhrase(e: EventLine): string {
       return `${who}изменения по связанной задаче${n}`;
     case "REQUEST_ANSWER":
       return `${who}изменения по просьбе`;
+    case "ONE_ON_ONE":
+      return `${who}встреча один на один`;
     default:
       return `${who}новое событие`;
   }
 }
 
 /** Адрес предмета события внутри ресурса: просьба, задача, запись weekly или «Мне» */
-export function pathOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null }): string {
+export function pathOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null; subject?: string }): string {
+  // Встреча один на один (этап 28): страница пары откроется только у её участника
+  if (e.subject?.startsWith("1on1:")) return `/one-on-one?pair=${encodeURIComponent(e.subject.slice(5))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

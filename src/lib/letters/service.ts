@@ -39,7 +39,7 @@ function appUrl(): string {
 
 // ---------- Тексты ----------
 
-function linkOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null }): string {
+function linkOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null; subject?: string }): string {
   return `${appUrl()}${pathOf(e)}`;
 }
 

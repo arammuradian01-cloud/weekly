@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, Presentation, SquareCheck, type LucideIcon } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, SquareCheck, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
@@ -70,6 +70,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("meeting:")) return { icon: Presentation, tone: "neutral" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
+  if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -139,6 +140,10 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                   ) : item.subject.startsWith("thanks:") ? (
                     <Link href={`/weekly?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                       Благодарность в weekly
+                    </Link>
+                  ) : item.subject.startsWith("1on1:") ? (
+                    <Link href={`/one-on-one?pair=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
+                      {item.actorName ? `Один на один: ${item.actorName}` : "Встреча один на один"}
                     </Link>
                   ) : null}
                   <p className="sv-event__text mt-0.5">{item.text}</p>

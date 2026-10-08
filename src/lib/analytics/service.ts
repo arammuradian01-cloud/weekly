@@ -75,6 +75,8 @@ export type Analytics = {
   teams: number;
   staleDays: number;
   reportingNumber: number;
+  /** Смотрит руководитель выбранной команды: в карточках ссылка на встречу один на один (этап 28) */
+  viewerLeads: boolean;
 };
 
 const OPEN = ["PROPOSED", "IN_PROGRESS", "CLARIFY"] as const;
@@ -380,6 +382,7 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     teams: subtree.length,
     staleDays,
     reportingNumber: weekNumberOf(reporting),
+    viewerLeads: selected.leaderId === subject.id,
   };
 }
 

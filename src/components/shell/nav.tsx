@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Mail,
   BarChart3,
+  MessagesSquare,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -35,6 +36,8 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/my-teams", label: "Мои команды", shortLabel: "Команды", icon: Users, leaderOnly: true },
   // Аналитика руководителя (этап 27): на телефоне открывается из «Моих команд»
   { href: "/analytics", label: "Аналитика", icon: BarChart3, leaderOnly: true, desktopOnly: true },
+  // Встречи один на один (этап 28): у руководителей и у людей их команд, только при личном входе
+  { href: "/one-on-one", label: "Один на один", icon: MessagesSquare, desktopOnly: true },
   { href: "/weekly", label: "Weekly", icon: Newspaper },
   { href: "/tasks", label: "Задачи", icon: SquareCheck },
   // Сквозные цели (этап 17): на телефоне открываются из «Моих команд»

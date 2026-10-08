@@ -191,6 +191,11 @@ model Person {
   savedViews        SavedView[]
   /// Прогноз до конца месяца (этап 24)
   forecasts         Forecast[]
+  /// Встречи один на один (этап 28)
+  oneOnOneManaged   OneOnOnePair[]      @relation("OneOnOneManager")
+  oneOnOneReported  OneOnOnePair[]      @relation("OneOnOneReport")
+  oneOnOneTopics    OneOnOneTopic[]     @relation("OneOnOneTopicAuthor")
+  oneOnOneNotes     OneOnOneNote[]
 
   @@map("people")
 }
@@ -324,30 +329,32 @@ model Task {
   goalId         String?
   goal           Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
 
-  coExecutors  TaskCoExecutor[]
-  transfers    TaskTransfer[]
-  comments     TaskComment[]
-  links        TaskLink[]
-  inboxEvents  InboxEvent[]
-  watchers     TaskWatch[]
+  coExecutors    TaskCoExecutor[]
+  transfers      TaskTransfer[]
+  comments       TaskComment[]
+  links          TaskLink[]
+  inboxEvents    InboxEvent[]
+  watchers       TaskWatch[]
   /// Просьбы по задаче и просьбы, из которых задача сделана (этап 21)
-  requests     HelpRequest[]       @relation("RequestTask")
-  fromRequests HelpRequest[]       @relation("RequestResultTask")
+  requests       HelpRequest[]       @relation("RequestTask")
+  fromRequests   HelpRequest[]       @relation("RequestResultTask")
   /// Связи задач (этап 21): какие задачи эта ждёт и какие ждут её
-  waitsFor     TaskDependency[]    @relation("DependencyTask")
-  blocks       TaskDependency[]    @relation("DependencyBlocker")
+  waitsFor       TaskDependency[]    @relation("DependencyTask")
+  blocks         TaskDependency[]    @relation("DependencyBlocker")
   /// Встреча 2.0 (этап 23): пункты повестки по задаче и решения, к которым она привязана
-  agendaItems  AgendaItem[]
-  decisions    DecisionTask[]
+  agendaItems    AgendaItem[]
+  decisions      DecisionTask[]
+  /// Тема встречи один на один, из которой поставлена задача (этап 28)
+  oneOnOneTopics OneOnOneTopic[]
   /// Повтор задачи (этап 25): еженедельно или ежемесячно. Следующая создаётся при закрытии или по расписанию в день срока
-  repeat       RepeatKind?
-  repeatMode   RepeatMode          @default(ON_CLOSE)
+  repeat         RepeatKind?
+  repeatMode     RepeatMode          @default(ON_CLOSE)
   /// Из какой задачи сделан этот повтор. Уникальность: у задачи один следующий повтор
-  repeatOfId   String?             @unique
-  repeatOf     Task?               @relation("TaskRepeat", fields: [repeatOfId], references: [id], onDelete: SetNull)
-  repeatNext   Task?               @relation("TaskRepeat")
+  repeatOfId     String?             @unique
+  repeatOf       Task?               @relation("TaskRepeat", fields: [repeatOfId], references: [id], onDelete: SetNull)
+  repeatNext     Task?               @relation("TaskRepeat")
   /// Чек-лист внутри задачи (этап 25)
-  checklist    TaskChecklistItem[]
+  checklist      TaskChecklistItem[]
 
   @@index([status])
   @@index([ownerId])
@@ -772,6 +779,8 @@ enum InboxKind {
   THANKS
   /// Встреча (этап 23): протокол готов, вы владелец решения
   MEETING
+  /// Встреча один на один (этап 28): новая тема от второго участника, встреча назначена
+  ONE_ON_ONE
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -1391,4 +1400,92 @@ model PushSubscription {
 
   @@index([personId])
   @@map("push_subscriptions")
+}
+
+/// Встречи один на один (этап 28): руководитель и человек его команды. Видят только эти двое и только при личном входе:
+/// ни режим управления, ни общий логин, ни журнал содержимое не показывают
+enum OneOnOneStatus {
+  PLANNED
+  DONE
+}
+
+enum OneOnOneTopicStatus {
+  OPEN
+  DISCUSSED
+  DROPPED
+}
+
+/// Пара «руководитель и человек». Темы живут у пары: незакрытая тема переходит на следующую встречу сама
+model OneOnOnePair {
+  id        String   @id @default(cuid())
+  managerId String
+  manager   Person   @relation("OneOnOneManager", fields: [managerId], references: [id], onDelete: Cascade)
+  reportId  String
+  report    Person   @relation("OneOnOneReport", fields: [reportId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  meetings OneOnOne[]
+  topics   OneOnOneTopic[]
+
+  @@unique([managerId, reportId])
+  @@index([reportId])
+  @@map("one_on_one_pairs")
+}
+
+/// Встреча пары. Запланированная у пары одна (уникальный индекс в миграции)
+model OneOnOne {
+  id         String         @id @default(cuid())
+  pairId     String
+  pair       OneOnOnePair   @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  date       DateTime       @db.Date
+  status     OneOnOneStatus @default(PLANNED)
+  /// Общие заметки: видят оба участника
+  notes      String         @default("")
+  closedAt   DateTime?      @db.Timestamptz(3)
+  closedById String?
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
+
+  topics       OneOnOneTopic[]
+  privateNotes OneOnOneNote[]
+
+  @@index([pairId, date])
+  @@map("one_on_ones")
+}
+
+/// Тема встречи: кто поставил, итог обсуждения, задача из темы
+model OneOnOneTopic {
+  id        String              @id @default(cuid())
+  pairId    String
+  pair      OneOnOnePair        @relation(fields: [pairId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    Person?             @relation("OneOnOneTopicAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  text      String
+  status    OneOnOneTopicStatus @default(OPEN)
+  /// Итог: о чём договорились
+  outcome   String?
+  /// Встреча, на которой тему обсудили или сняли
+  meetingId String?
+  meeting   OneOnOne?           @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+  taskId    String?
+  task      Task?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  createdAt DateTime            @default(now()) @db.Timestamptz(3)
+  closedAt  DateTime?           @db.Timestamptz(3)
+
+  @@index([pairId, status])
+  @@map("one_on_one_topics")
+}
+
+/// Личная заметка к встрече: видит только автор
+model OneOnOneNote {
+  id        String   @id @default(cuid())
+  meetingId String
+  meeting   OneOnOne @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Person   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  text      String   @default("")
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@unique([meetingId, authorId])
+  @@map("one_on_one_notes")
 }
