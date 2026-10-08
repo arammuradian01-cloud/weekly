@@ -67,7 +67,7 @@ export function MyWeek({
   const overdueCount = openMine.filter((t) => isOverdue(t, data.today)).length;
   const waiting = requests.outgoing.filter((r) => r.status === "open").length;
   const weeklySub = weekly.absent && !submitted
-    ? `Вас нет на этой неделе, ${substituteText(weekly.absent.substitute)}`
+    ? `На этой неделе вас нет, ${substituteText(weekly.absent.substitute)}`
     : submitted
       ? (weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан")
       : late

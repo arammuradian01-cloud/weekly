@@ -77,7 +77,7 @@ export function ForecastForm({ initial }: { initial: MyForecast }) {
   };
 
   return (
-    <section aria-labelledby="my-forecast" className="rounded-xl px-5 py-5 ring-1 ring-line">
+    <section aria-labelledby="my-forecast" className="sv-card sv-card--soft px-5 py-5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="my-forecast" className="text-title-sm font-semibold text-ink">
           Мой прогноз, неделя {initial.weekNumber}

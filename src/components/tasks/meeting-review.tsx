@@ -55,10 +55,7 @@ export function MeetingReview() {
                   type="button"
                   onClick={() => setIndex(i)}
                   aria-current={i === current ? "step" : undefined}
-                  className={cn(
-                    "inline-flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-small transition-colors",
-                    i === current ? "bg-navy font-semibold text-white" : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
-                  )}
+                  className={cn("sv-pill", i === current && "is-active")}
                 >
                   {personOf(s).shortName}
                   {n ? (

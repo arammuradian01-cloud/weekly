@@ -80,7 +80,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
   return (
     <div className="flex flex-col gap-12">
       {view.imitation ? (
-        <p className="rounded-xl border border-dashed border-line px-5 py-3 text-body text-ink">
+        <p className="sv-card sv-card--soft border border-dashed border-line px-5 py-3 text-body text-ink">
           Режим имитации: вместо Google ресурс читает и пишет таблицы в памяти сервера. Так проверяют забор и выгрузку без ключа служебного аккаунта.
         </p>
       ) : null}
@@ -105,7 +105,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
       {view.connected ? <Tiles view={view} /> : null}
 
       {view.error ? (
-        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
+        <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-medium text-danger-ink">
@@ -188,7 +188,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
             ))}
           </ul>
         ) : (
-          <p className="rounded-xl px-5 py-4 text-body text-muted ring-1 ring-line">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
+          <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
         )}
       </section>
       </section>
@@ -276,7 +276,7 @@ function Connection({ view }: { view: SyncView }) {
   }
 
   return (
-    <section aria-labelledby="sync-connection" className="rounded-xl px-5 py-5 ring-1 ring-line">
+    <section aria-labelledby="sync-connection" className="sv-card sv-card--soft px-5 py-5">
       <h3 id="sync-connection" className="text-title-sm font-semibold text-ink">
         Подключение таблицы для просмотра
       </h3>

@@ -32,7 +32,7 @@ export default async function EntryPage({ params }: { params: Promise<{ id: stri
         </Link>
       </PageHeader>
       <SeenMark subject={`entry:${entry.id}`} />
-      <div className="rounded-xl px-4 py-4 ring-1 ring-line sm:px-6">
+      <div className="sv-card sv-card--soft px-4 py-4 sm:px-6">
         <EntryItem entry={entry} showAuthor discussion="open" />
       </div>
     </div>

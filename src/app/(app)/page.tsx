@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import {
+  greeting,
   formatDuration,
   formatMoment,
   formatWeekRange,
@@ -63,9 +64,10 @@ export default async function MyWeekPage() {
 
   return (
     <>
-      {/* Главная по дизайн-системе (оболочка shell-sidebar): заголовок с главным действием, ниже плитки */}
+      {/* Главная по дизайн-системе (оболочка shell-sidebar): заголовок с главным действием, ниже плитки. Раздел «Моя неделя»
+          назван в меню, в заголовке приветствие по имени */}
       <PageHeader
-        title="Моя неделя"
+        title={`${greeting(now)}, ${person.shortName}`}
         description={
           <>
             Отчётная неделя {week.week}, {formatWeekRange(week)}. Weekly сдаётся до {WEEKDAYS_GENITIVE[isoWeekday(deadlineDay) - 1]} {String(deadlineDay.day).padStart(2, "0")}.{String(deadlineDay.month).padStart(2, "0")}, {deadlineTime}

@@ -315,7 +315,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
                   aria-current={i.id === current ? "step" : undefined}
                   className={cn(
                     "flex min-h-10 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left text-small",
-                    i.id === current ? "bg-navy font-semibold text-white" : "text-ink hover:bg-field",
+                    i.id === current ? "bg-accent-soft font-semibold text-link sv-mark-active" : "text-ink hover:bg-field",
                     i.discussed && i.id !== current && "text-muted line-through decoration-line",
                   )}
                 >
@@ -342,7 +342,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: {
         type="button"
         onClick={() => onSelect(DECISIONS)}
         aria-current={current === DECISIONS ? "step" : undefined}
-        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-navy text-white" : "text-ink hover:bg-field")}
+        className={cn("flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-left text-small font-semibold", current === DECISIONS ? "bg-accent-soft text-link sv-mark-active" : "text-ink hover:bg-field")}
       >
         Решения {meeting.decisions.length ? <span className="font-normal opacity-70">{meeting.decisions.length}</span> : null}
       </button>
@@ -378,7 +378,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
       </div>
 
       {task ? (
-        <div className="rounded-xl px-4 py-3 ring-1 ring-line">
+        <div className="sv-card sv-card--soft px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium text-ink hover:text-blue-700 hover:underline">
               <span className="mr-1.5 tabular-nums text-muted">{task.number}</span>

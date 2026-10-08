@@ -129,7 +129,7 @@ export function BordPull({ view }: { view: BordView }) {
       {view.connected && !r && !view.error ? <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}
 
       {view.error ? (
-        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
+        <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-medium text-danger-ink">Забор не прошёл {view.error.at}</p>
@@ -150,7 +150,7 @@ export function BordPull({ view }: { view: BordView }) {
 
       {r && view.connected ? <ReportDetails report={r} firstNumber={view.firstNumber} /> : null}
 
-      <div className="rounded-xl px-5 py-5 ring-1 ring-line">
+      <div className="sv-card sv-card--soft px-5 py-5">
         <h3 className="text-title-sm font-semibold text-ink">Подключение Bord</h3>
         {!view.connected ? (
           <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-body text-ink marker:text-muted">

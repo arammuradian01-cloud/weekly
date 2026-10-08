@@ -55,7 +55,7 @@ export function EntryItem({
     const saved = await run(() => setCeoFlagAction(entry.id, !ceo), !ceo ? "Запись попадёт в отчёт CEO" : "Запись убрана из отчёта CEO");
     if (!saved) setCeo(ceo);
   };
-  const textSize = large ? "!text-title !leading-[var(--leading-section)]" : "";
+  const textSize = large ? "!text-title" : "";
   // Карточка записи по дизайн-системе (weekly/EntryCard.jsx, sv-entry): тип, блок и направление, заголовок,
   // подписанные блоки «Влияние на бизнес», «Цифра или факт», «Что делаем дальше», «Нужна помощь», ссылки
   return (

@@ -34,7 +34,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
         <WeekNumbersBlock numbers={numbers} manage={ctx.management?.role === "OWNER"} />
         {mine ? <ForecastForm key={key} initial={mine} /> : null}
         <ForecastSummaryBlock summary={summary} />
-        <section aria-labelledby="forecast-history" className="rounded-xl px-5 py-4 ring-1 ring-line">
+        <section aria-labelledby="forecast-history" className="sv-card sv-card--soft px-5 py-4">
           <h2 id="forecast-history" className="text-title-sm font-semibold text-ink">
             История прогноза по неделям
           </h2>

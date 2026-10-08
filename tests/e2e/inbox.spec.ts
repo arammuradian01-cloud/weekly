@@ -27,7 +27,9 @@ test("комментарий к задаче Ревы виден ему в «М�
   await nav.getByRole("link", { name: /Мне/ }).click();
   await expect(reva).toHaveURL(/\/me$/);
   await expect(reva.getByText("Комментарий: «Тарас, посмотри мой расчёт по КАСКО»")).toBeVisible();
-  await expect(reva.getByText(/^Фатьянов Евгений, сегодня в \d\d:\d\d/)).toBeVisible();
+  // Строка события по дизайн-системе: кто сделал под текстом, время справа
+  await expect(reva.getByText("Фатьянов Евгений", { exact: true })).toBeVisible();
+  await expect(reva.getByText(/^сегодня в \d\d:\d\d$/)).toBeVisible();
   await reva.screenshot({ path: `tests/e2e/screenshots/${test.info().project.name}-c-inbox.png`, fullPage: true });
 
   // «Напомнить завтра»: строка уходит, счётчик гаснет

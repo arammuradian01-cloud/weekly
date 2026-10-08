@@ -163,14 +163,14 @@ export function CeoReport({
         {numbers ? (
           <WeekNumbersBlock numbers={numbers} manage={owner} />
         ) : (
-          <section aria-labelledby="ceo-numbers" className="rounded-xl border border-dashed border-line px-5 py-4">
+          <section aria-labelledby="ceo-numbers" className="sv-card sv-card--soft border border-dashed border-line px-5 py-4">
             <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
             <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
           </section>
         )}
         {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
 
-        <section aria-labelledby="ceo-promises" className="rounded-xl px-5 py-4 ring-1 ring-line">
+        <section aria-labelledby="ceo-promises" className="sv-card sv-card--soft px-5 py-4">
           <h2 id="ceo-promises" className="text-title-sm font-semibold text-ink">Обещания недели</h2>
           {promises?.total.total ? (
             <>
@@ -200,7 +200,7 @@ export function CeoReport({
         </section>
 
         {thanks.length ? (
-          <section aria-labelledby="ceo-thanks" className="rounded-xl px-5 py-4 ring-1 ring-line">
+          <section aria-labelledby="ceo-thanks" className="sv-card sv-card--soft px-5 py-4">
             <h2 id="ceo-thanks" className="text-title-sm font-semibold text-ink">Благодарности</h2>
             <ul className="mt-2 flex flex-col gap-1">
               {thanks.map((r) => (

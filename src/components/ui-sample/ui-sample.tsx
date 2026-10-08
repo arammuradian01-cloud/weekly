@@ -356,7 +356,7 @@ function UiSampleBody() {
         </Block>
 
         <Block id="entry" title="Запись weekly" description="Одна запись равна одному событию. Запрос помощи подсвечен и поднимается наверх ленты.">
-          <div className="max-w-2xl rounded-xl px-5 py-4 ring-1 ring-line">
+          <div className="max-w-2xl sv-card sv-card--soft px-5 py-4">
             <EntryItem entry={entry} showAuthor demo />
           </div>
         </Block>
@@ -364,7 +364,7 @@ function UiSampleBody() {
         <Block id="states" title="Пустые состояния и загрузка" description="Пустой экран говорит, что делать дальше. Пока данные грузятся, вместо них серые блоки той же формы.">
           <div className="grid gap-4 xl:grid-cols-2">
             <EmptyState title="Под эти фильтры задач нет">Снимите часть фильтров или поищите по номеру задачи.</EmptyState>
-            <div role="group" className="flex flex-col gap-3 rounded-xl px-5 py-4 ring-1 ring-line" aria-label="Пример загрузки">
+            <div role="group" className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4" aria-label="Пример загрузки">
               <Skeleton className="h-5 w-2/3" />
               <Skeleton className="h-4 w-1/2" />
               <div className="flex gap-3">

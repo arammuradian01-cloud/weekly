@@ -152,7 +152,7 @@ function PromiseRow({
   };
 
   return (
-    <li className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line">
+    <li className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3">
       <div>
         <p id={`${id}-what`} className="text-body font-medium text-ink">
           {promise.what}

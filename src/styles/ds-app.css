@@ -65,3 +65,6 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 /* Логоблок меню: подпись департамента строкой под логотипом, чтобы не дробилась на три строки */
 .sv-sidebar__brand { flex-wrap: wrap; row-gap: 4px; }
 .sv-sidebar__brand .sv-sidebar__sub { flex-basis: 100%; }
+
+/* Выбранный пункт списка: голубая черта слева, как активный пункт меню системы */
+.sv-mark-active { box-shadow: inset 3px 0 0 var(--color-accent); }

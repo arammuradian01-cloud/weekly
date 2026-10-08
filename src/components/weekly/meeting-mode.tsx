@@ -77,10 +77,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
                 type="button"
                 onClick={() => setIndex(i)}
                 aria-current={i === index ? "step" : undefined}
-                className={cn(
-                  "inline-flex h-10 items-center whitespace-nowrap rounded-full px-4 text-body",
-                  i === index ? "bg-navy font-semibold text-white" : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
-                )}
+                className={cn("sv-pill sv-pill--lg", i === index && "is-active")}
               >
                 {s === "questions" ? `Вопросы: ${questions.filter((q) => !q.discussed).length + stuck.requests.length + stuck.proposals.length}` : s === "risks" ? "Риски и помощь" : s === "common" ? "Общее" : personOf(s as PersonSlug).shortName}
               </button>

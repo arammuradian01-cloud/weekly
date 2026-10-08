@@ -148,7 +148,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
       ) : null}
 
       {view.error ? (
-        <div role="alert" className="flex gap-3 rounded-xl bg-danger-soft px-5 py-4 text-body text-ink">
+        <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
           <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
           <div className="min-w-0">
             <p className="font-medium text-danger-ink">Чтение не прошло {view.error.at}</p>
@@ -168,7 +168,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
       ) : null}
 
       {view.connected && view.rows ? (
-        <div className="rounded-xl px-5 py-5 ring-1 ring-line">
+        <div className="sv-card sv-card--soft px-5 py-5">
           <h3 className="text-title-sm font-semibold text-ink">Какие цифры показывать</h3>
           <p className="mt-1 text-body text-muted">Отметьте строки отчёта, до {view.metricsMax}. Подпись и единицу можно поправить. Порядок как здесь.</p>
           {metrics.length ? (
@@ -226,7 +226,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
         </div>
       ) : null}
 
-      <div className="rounded-xl px-5 py-5 ring-1 ring-line">
+      <div className="sv-card sv-card--soft px-5 py-5">
         <h3 className="text-title-sm font-semibold text-ink">Подключение недельного отчёта</h3>
         {!view.connected ? (
           <ol className="mt-3 flex list-decimal flex-col gap-1.5 pl-5 text-body text-ink marker:text-muted">

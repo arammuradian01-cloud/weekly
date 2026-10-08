@@ -19,7 +19,7 @@ function ddmm(iso: string) {
 /** Отчётная неделя в шапке. Листать недели можно на экранах, где это имеет смысл (Weekly, встреча, отчёт, прогноз) */
 export function WeekSwitcher({ reportingKey }: { reportingKey: string }) {
   return (
-    <div className="sv-week" role="group" aria-label="Отчётная неделя">
+    <div className="sv-week" title="Отчётная неделя: за неё сейчас пишут weekly">
       <span className="sv-week__label cursor-default hover:bg-transparent">
         <span>Неделя {weekOf(reportingKey).week}</span>
         <span className="sv-week__dates">

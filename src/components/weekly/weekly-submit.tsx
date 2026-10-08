@@ -405,7 +405,7 @@ export function WeeklySubmit({
                     <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} />
                   </li>
                 ) : (
-                  <li key={e.id} className="flex flex-col gap-3 rounded-xl px-4 py-3 ring-1 ring-line sm:flex-row sm:items-start sm:justify-between">
+                  <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <EntryItem entry={e} discussion={false} />
                     </div>
@@ -432,7 +432,7 @@ export function WeeklySubmit({
                   {promoted.map((e) => {
                     const note = e.promoted?.find((x) => x.by === me.slug)?.note;
                     return (
-                      <li key={e.id} className="flex flex-col gap-2 rounded-xl px-4 py-3 ring-1 ring-line">
+                      <li key={e.id} className="flex flex-col gap-2 sv-card sv-card--soft px-4 py-3">
                         <EntryItem entry={e} showAuthor discussion={false} />
                         {note ? (
                           <p className="text-body text-ink">
@@ -470,7 +470,7 @@ export function WeeklySubmit({
 
         <Step id="step-submit" n={4} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
           {submitted ? (
-            <div className="flex flex-col gap-3 rounded-xl bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sv-card sv-card--soft bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="inline-flex items-start gap-2 text-lead text-green-ink">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <span>
