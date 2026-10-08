@@ -1,5 +1,7 @@
 node_modules/
 .next/
+# Скрипты запуска контейнера, собранные npm run build:start
+dist/
 out/
 next-env.d.ts
 *.tsbuildinfo
