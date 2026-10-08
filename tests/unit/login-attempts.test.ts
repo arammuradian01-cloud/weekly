@@ -96,4 +96,24 @@ describe("очередь попыток входа", () => {
     expect(ran).toBe(0);
     expect(queuedKeys()).toBe(0);
   });
+
+  it("несколько ключей: не дождался очереди на любом уровне, работа не начинается и позже", async () => {
+    let ran = 0;
+    let release!: () => void;
+    // Первый запрос держит ключ логина, второй ждёт его, держа ключ адреса
+    const first = serial("login:z", () => new Promise<void>((r) => (release = r)));
+    const second = serialAll(
+      ["ip:z", "login:z"],
+      async () => {
+        ran += 1;
+      },
+      { timeoutMs: 20 },
+    );
+    await expect(second).rejects.toBeInstanceOf(QueueBusy);
+    release();
+    await first;
+    await tick(10);
+    expect(ran).toBe(0);
+    expect(queuedKeys()).toBe(0);
+  });
 });

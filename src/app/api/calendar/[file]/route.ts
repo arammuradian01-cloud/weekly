@@ -23,9 +23,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ file
   const { file } = await params;
   // Ссылка из букв, цифр, дефиса и подчёркивания: раскодировать нечего
   const token = file.replace(/\.ics$/i, "");
+  // Поиск ссылки идёт и для адреса, который перебрал лимит неверных ссылок: без прокси у всех один адрес, и верная
+  // ссылка не должна закрываться из-за чужого перебора. Поиск по уникальному отпечатку дешёвый, перебор 256-битной
+  // ссылки бесполезен, лимит нужен против мусорной нагрузки
+  const missKey = `calendar-miss:${clientIp(request.headers)}`;
   const feed = await feedByToken(token);
   if (!feed) {
-    if (!rateLimit(`calendar-miss:${clientIp(request.headers)}`, MISSES_PER_MINUTE, 60_000)) return tooMany();
+    if (!rateLimit(missKey, MISSES_PER_MINUTE, 60_000)) return tooMany();
     return new Response("Ссылка на календарь не найдена или отключена", { status: 404, headers: COMMON });
   }
   if (!rateLimit(`calendar-feed:${feed.id}`, FETCHES_PER_MINUTE, 60_000)) return tooMany();

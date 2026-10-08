@@ -40,7 +40,11 @@ const pending = new Map<string, number>();
  * Очередь внутри процесса по ключу: следующий запрос с тем же ключом начинается, когда закончился предыдущий.
  * Запрос, который не дождался очереди за timeoutMs, не выполняется вовсе: человек уже получил «перегружен»
  */
-export async function serial<T>(key: string, fn: () => Promise<T>, opts: { maxPending?: number; timeoutMs?: number } = {}): Promise<T> {
+export async function serial<T>(
+  key: string,
+  fn: () => Promise<T>,
+  opts: { maxPending?: number; timeoutMs?: number; /** Общий флаг для вложенных очередей: истекло время любой из них */ guard?: { cancelled: boolean } } = {},
+): Promise<T> {
   const maxPending = opts.maxPending ?? MAX_PENDING;
   const count = pending.get(key) ?? 0;
   if (count >= maxPending) throw new QueueBusy();
@@ -48,7 +52,7 @@ export async function serial<T>(key: string, fn: () => Promise<T>, opts: { maxPe
   let started = false;
   let cancelled = false;
   const start = () => {
-    if (cancelled) throw new QueueBusy();
+    if (cancelled || opts.guard?.cancelled) throw new QueueBusy();
     started = true;
     return fn();
   };
@@ -69,6 +73,8 @@ export async function serial<T>(key: string, fn: () => Promise<T>, opts: { maxPe
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       if (!started) cancelled = true;
+      // Внешняя очередь уже «началась», когда встала во внутреннюю: флаг не даёт внутренней работе начаться позже
+      if (opts.guard) opts.guard.cancelled = true;
       reject(new QueueBusy());
     }, opts.timeoutMs ?? QUEUE_TIMEOUT_MS);
   });
@@ -80,9 +86,12 @@ export async function serial<T>(key: string, fn: () => Promise<T>, opts: { maxPe
 }
 
 /** Очередь по нескольким ключам. Ключи берутся всегда в одном порядке, поэтому два запроса не ждут друг друга по кругу */
-export function serialAll<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
+export function serialAll<T>(keys: string[], fn: () => Promise<T>, opts: { timeoutMs?: number } = {}): Promise<T> {
   const sorted = [...new Set(keys)].sort();
-  return sorted.reduceRight<() => Promise<T>>((inner, key) => () => serial(key, inner), fn)();
+  // Один срок и один флаг на все уровни: человек получил «перегружен», значит работа не начнётся ни на каком уровне
+  const guard = { cancelled: false };
+  const deadline = Date.now() + (opts.timeoutMs ?? QUEUE_TIMEOUT_MS);
+  return sorted.reduceRight<() => Promise<T>>((inner, key) => () => serial(key, inner, { guard, timeoutMs: Math.max(1, deadline - Date.now()) }), fn)();
 }
 
 /** Сколько ключей сейчас в очереди: для проверки, что очередь не копится */
