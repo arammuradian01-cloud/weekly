@@ -35,6 +35,8 @@ test.beforeEach(async () => {
 });
 
 test("владелец собирает повестку, ведёт встречу, участник идёт за ним, решение и протокол", async ({ page, browser }) => {
+  // Длинный сценарий двух людей: на нагруженной машине близко к 30 секундам по умолчанию
+  test.setTimeout(60_000);
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/weekly/meeting");

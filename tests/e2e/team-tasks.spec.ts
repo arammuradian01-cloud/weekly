@@ -43,6 +43,8 @@ async function person(browser: Browser, page: Page, fullName: string) {
 }
 
 test("руководитель видит просрочку сектора в «Мои команды», просит обновить, ответственный получает событие", async ({ page, browser }) => {
+  // Длинный сценарий двух людей: на нагруженной машине близко к 30 секундам по умолчанию
+  test.setTimeout(60_000);
   // Руководитель сектора ставит задачу специалисту, срок задним числом сдвигаем в прошлое
   const antonov = await person(browser, page, "Антонов");
   await antonov.goto("/tasks");

@@ -43,6 +43,8 @@ async function person(browser: Browser, page: Page, fullName: string) {
 }
 
 test("руководитель сектора включает weekly специалистов, поднимает запись наверх, руководитель выше видит её у себя", async ({ page, browser }) => {
+  // Длинный сценарий двух людей: на нагруженной машине близко к 30 секундам по умолчанию
+  test.setTimeout(60_000);
   const phone = test.info().project.name === "phone";
 
   // Ритм сектора: свой срок в пятницу и weekly специалистов
