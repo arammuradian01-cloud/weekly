@@ -13,8 +13,19 @@ export type FlushResult = { sent: number; rejected: string[]; offline: boolean }
 
 let running: Promise<FlushResult> | null = null;
 
+/** Что ушло за последнюю минуту: экран сдачи, который открылся позже отправки, всё равно покажет запись */
+const SENT_LOG_MS = 60_000;
+let sentLog: { at: number; detail: DraftSentDetail }[] = [];
+
 function announce(detail: DraftSentDetail) {
+  const now = Date.now();
+  sentLog = [...sentLog.filter((x) => now - x.at < SENT_LOG_MS), { at: now, detail }];
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent<DraftSentDetail>(DRAFT_SENT, { detail }));
+}
+
+/** Черновики, дошедшие до сервера за последнюю минуту */
+export function recentlySent(now = Date.now()): DraftSentDetail[] {
+  return sentLog.filter((x) => now - x.at < SENT_LOG_MS).map((x) => x.detail);
 }
 
 async function flush(person: string): Promise<FlushResult> {

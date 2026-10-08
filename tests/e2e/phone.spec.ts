@@ -78,6 +78,10 @@ test("черновик weekly без сети: запись не теряетс�
   await page.context().setOffline(true);
   await page.getByLabel("Что произошло").fill("Договорились о пилоте с банком");
   await expect(page.getByText("Нет сети: запись сохранена на этом устройстве").first()).toBeVisible({ timeout: 10_000 });
+  // Черновик уже на устройстве: сообщение выше могло остаться от первой записи
+  await expect
+    .poll(() => page.evaluate(() => Object.entries(localStorage).some(([k, v]) => k.startsWith("weekly-offline:") && v.includes("Договорились о пилоте с банком"))))
+    .toBe(true);
   await page.goto("/weekly/submit").catch(() => undefined);
   await page.context().setOffline(false);
   await page.goto("/weekly/submit");

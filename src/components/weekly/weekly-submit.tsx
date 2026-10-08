@@ -11,7 +11,7 @@ import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays }
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
 import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
 import { ACTIVE_DRAFTS, DRAFTS_CHANGED, dropDraftsForEntry, dropHeadlineDraft, entryDrafts, headlineDraft, isNetworkError, putHeadlineDraft, settleHeadlineDraft } from "@/lib/offline/drafts";
-import { DRAFT_SENT, flushOfflineDrafts, type DraftSentDetail } from "@/lib/offline/outbox";
+import { DRAFT_SENT, flushOfflineDrafts, recentlySent, type DraftSentDetail } from "@/lib/offline/outbox";
 import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPromise } from "@/lib/weekly/promises";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
@@ -224,6 +224,10 @@ export function WeeklySubmit({
       const { entry } = (ev as CustomEvent<DraftSentDetail>).detail;
       if (entry && entry.week === week.key) upsertRef.current(entry);
     };
+    // Оболочка могла отправить черновик раньше, чем открылся этот экран: такие записи тоже показываем
+    // Запись уже есть в списке с сервера: её не трогаем, версия с сервера свежее
+    const missed = recentlySent().flatMap((d) => (d.entry && d.entry.week === week.key ? [d.entry] : []));
+    if (missed.length) setEntries((prev) => [...prev, ...missed.filter((m) => !prev.some((e) => e.id === m.id))]);
     const back = () => {
       setOffline(false);
       void saveHeadline();
