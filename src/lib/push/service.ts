@@ -10,19 +10,20 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { inWorkHours } from "@/lib/letters/schedule";
+import { deviceLabel } from "@/lib/login/device-label";
 import {
   PUSH_DELAY_MS,
   PUSH_LABELS,
   PUSH_MAX_AGE_MS,
   PUSH_MAX_FAILURES,
   PUSH_PREF_ORDER,
-  PUSH_TTL_SEC,
-  deviceLabel,
+  isAuthStatus,
   isGoneStatus,
   parseSubscription,
   pushPayload,
   pushPrefOfKind,
   pushPrefsOf,
+  pushTtlSec,
   type PushPayload,
   type PushPrefs,
 } from "./rules";
@@ -72,20 +73,21 @@ function vapidSubject(): string {
 export type PushTarget = { endpoint: string; keys: { p256dh: string; auth: string } };
 /** Ответ службы уведомлений: код или ошибка сети (status не задан) */
 export type PushSendResult = { status?: number };
-export type PushSender = (target: PushTarget, payload: PushPayload) => Promise<PushSendResult>;
+export type PushSender = (target: PushTarget, payload: PushPayload, ttl: number) => Promise<PushSendResult>;
 
 /** Подмена отправки для тестов: настоящие службы уведомлений из тестов не трогаем */
 export function setPushSender(sender: PushSender | null): void {
   g.__pushSender = sender;
 }
 
-async function webPushSender(target: PushTarget, payload: PushPayload): Promise<PushSendResult> {
+async function webPushSender(target: PushTarget, payload: PushPayload, ttl: number): Promise<PushSendResult> {
   const webpush = (await import("web-push")).default;
   const keys = await vapidKeys();
   try {
     const res = await webpush.sendNotification(target, JSON.stringify(payload), {
       vapidDetails: { subject: vapidSubject(), publicKey: keys.publicKey, privateKey: keys.privateKey },
-      TTL: PUSH_TTL_SEC,
+      // До конца рабочего дня: телефон, включённый вечером, вчерашнее уже не покажет
+      TTL: ttl,
       urgency: "normal",
       // Тема заменяет недоставленное уведомление по тому же предмету: телефон после сети покажет одно, а не пачку
       topic: createHash("sha256").update(payload.tag).digest("base64url").slice(0, 32),
@@ -106,19 +108,26 @@ function sender(): PushSender {
 async function deliver(subs: { id: string; endpoint: string; p256dh: string; auth: string; failures: number }[], payload: PushPayload, now: Date): Promise<{ sent: number; failed: number }> {
   let sent = 0;
   let failed = 0;
+  const ttl = pushTtlSec(now);
   for (const s of subs) {
-    const res = await sender()({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload);
+    const res = await sender()({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, ttl);
+    // updateMany: человек мог выключить уведомления, пока шёл проход, и строки уже нет
     if (res.status && res.status >= 200 && res.status < 300) {
       sent += 1;
-      await prisma.pushSubscription.update({ where: { id: s.id }, data: { lastSentAt: now, failures: 0 } });
+      await prisma.pushSubscription.updateMany({ where: { id: s.id }, data: { lastSentAt: now, failures: 0 } });
       continue;
     }
     failed += 1;
+    if (isAuthStatus(res.status)) console.error(`Служба уведомлений отклонила подпись (${res.status}): ключи VAPID не совпадают с подпиской устройства или ошибка настройки`);
     if (isGoneStatus(res.status) || s.failures + 1 >= PUSH_MAX_FAILURES) await prisma.pushSubscription.deleteMany({ where: { id: s.id } });
-    else await prisma.pushSubscription.update({ where: { id: s.id }, data: { failures: { increment: 1 } } });
+    else await prisma.pushSubscription.updateMany({ where: { id: s.id }, data: { failures: { increment: 1 } } });
   }
   return { sent, failed };
 }
+
+/** Сколько людей обслуживаем одновременно и сколько времени отдаём проходу: медленная служба не держит цикл писем */
+const PUSH_PARALLEL = 5;
+const PUSH_BUDGET_MS = 45_000;
 
 export type PushPassResult = { sent: number; skipped: number; failed: number };
 
@@ -153,7 +162,8 @@ export async function pushPass(now = new Date()): Promise<PushPassResult> {
   const people = [...new Set(claimed.map((e) => e.recipientId))];
   const subs = await prisma.pushSubscription.findMany({ where: { personId: { in: people } } });
   const total = { ...zero };
-  for (const personId of people) {
+  const started = Date.now();
+  const one = async (personId: string) => {
     const events = claimed.filter((e) => e.recipientId === personId);
     const mine = subs.filter((s) => s.personId === personId);
     const person = events[0]!.recipient;
@@ -172,10 +182,19 @@ export async function pushPass(now = new Date()): Promise<PushPassResult> {
         createdAt: e.createdAt,
       })),
     );
-    if (!payload) continue;
+    if (!payload) return;
     const r = await deliver(mine, payload, now);
     total.sent += r.sent;
     total.failed += r.failed;
+  };
+  for (let i = 0; i < people.length; i += PUSH_PARALLEL) {
+    if (Date.now() - started > PUSH_BUDGET_MS) {
+      // Время прохода вышло: остальным уведомление не уйдёт, письмо придёт как обычно
+      total.skipped += claimed.filter((e) => people.slice(i).includes(e.recipientId)).length;
+      console.error(`Уведомления в браузере: проход не уложился в ${PUSH_BUDGET_MS / 1000} с, людей без уведомления: ${people.length - i}`);
+      break;
+    }
+    await Promise.all(people.slice(i, i + PUSH_PARALLEL).map(one));
   }
   return total;
 }
@@ -216,6 +235,35 @@ export async function saveSubscription(actor: Actor, deviceId: string | null, in
   await prisma.pushSubscription.upsert({ where: { endpoint: sub!.endpoint }, update: data, create: { ...data, endpoint: sub!.endpoint } });
   if (!before || before.personId !== actor.personId) await audit(actor, "Уведомления в браузере", null, `Включены: ${label}`);
   return { label };
+}
+
+/**
+ * Сверка при открытии ресурса (этап 26): браузер уже подписан, а вход сменился. Подписка остаётся, только если её
+ * включал этот же человек: тогда она переходит к новому входу. Общий логин и другой человек подписку снимают, и
+ * прежний владелец перестаёт получать уведомления на это устройство. owner: кто включал, по метке на устройстве
+ */
+export async function syncSubscription(actor: Actor, deviceId: string | null, input: unknown, owner: string | null): Promise<{ keep: boolean }> {
+  const sub = parseSubscription(input);
+  if (!sub) return { keep: false };
+  const row = await prisma.pushSubscription.findUnique({ where: { endpoint: sub.endpoint } });
+  if (actor.via === "TEAM" || !deviceId) {
+    if (row) await prisma.pushSubscription.delete({ where: { id: row.id } });
+    return { keep: false };
+  }
+  if (row) {
+    if (row.personId !== actor.personId) {
+      await prisma.pushSubscription.delete({ where: { id: row.id } });
+      return { keep: false };
+    }
+    if (row.deviceId !== deviceId) await prisma.pushSubscription.update({ where: { id: row.id }, data: { deviceId, failures: 0 } });
+    return { keep: true };
+  }
+  if (owner !== actor.slug) return { keep: false };
+  const device = await prisma.deviceSession.findUnique({ where: { id: deviceId }, select: { userAgent: true } });
+  await prisma.pushSubscription.create({
+    data: { personId: actor.personId, deviceId, endpoint: sub.endpoint, p256dh: sub.keys.p256dh, auth: sub.keys.auth, label: deviceLabel(device?.userAgent) },
+  });
+  return { keep: true };
 }
 
 /** Выключить на этом устройстве. Чужую подписку так не удалить */

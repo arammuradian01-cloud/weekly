@@ -11,7 +11,7 @@ import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
 import type { WeekKey } from "@/domain/types";
 import { saveMailPrefs } from "@/lib/letters/service";
-import { removeSubscription, removeSubscriptionById, savePushPrefs, saveSubscription, sendTestPush } from "@/lib/push/service";
+import { removeSubscription, removeSubscriptionById, savePushPrefs, saveSubscription, sendTestPush, syncSubscription } from "@/lib/push/service";
 
 export async function revokeDeviceAction(id: string) {
   const session = await readSession();
@@ -95,4 +95,10 @@ export async function savePushPrefsAction(prefs: Record<string, boolean>) {
 export async function testPushAction() {
   const ctx = await requireContext();
   return runAction("Проверка уведомлений", (a) => sendTestPush(a, ctx.deviceId));
+}
+
+/** Сверка подписки браузера с текущим входом при открытии ресурса. keep: false значит снять подписку в браузере */
+export async function syncPushAction(subscription: unknown, owner: string | null) {
+  const ctx = await requireContext();
+  return runAction("Сверка уведомлений", (a) => syncSubscription(a, ctx.deviceId, subscription, typeof owner === "string" ? owner : null));
 }

@@ -138,8 +138,8 @@ export function MyWeek({
                     </button>
                     {/* Статус и состояние меняются прямо здесь (этап 26): с телефона это два нажатия с главной */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <StatusSelect task={t} />
-                      <StateSelect task={t} />
+                      <StatusSelect task={t} subject={`задачи ${t.number}`} />
+                      <StateSelect task={t} subject={`задачи ${t.number}`} />
                       <span className={cn("sv-due", overdue && "!font-semibold !text-danger-ink")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                     </div>

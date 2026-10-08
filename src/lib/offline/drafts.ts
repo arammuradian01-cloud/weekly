@@ -26,15 +26,29 @@ export type EntryDraft = {
   entryId: string | null;
   /** Ключ новой записи для сервера: повтор правит ту же запись */
   clientKey: string | null;
+  /**
+   * Время правки записи на сервере, с которой начался черновик. Запись успели изменить позже на другом устройстве:
+   * черновик с этого не отправляется поверх, человек видит, что он устарел
+   */
+  baseUpdatedAt?: string | null;
   input: DraftEntryInput;
   savedAt: number;
 };
 
-export type HeadlineDraft = { week: string; value: string; savedAt: number };
+/** base: главная фраза на сервере, с которой начался черновик */
+export type HeadlineDraft = { week: string; value: string; savedAt: number; base?: string };
 
 type Store = { v: 1; entries: Record<string, EntryDraft>; headlines: Record<string, HeadlineDraft> };
 
 const PREFIX = "weekly-offline:v1:";
+/** Событие окна: черновики на устройстве изменились (экран сдачи пересчитывает, сколько ждёт отправки) */
+export const DRAFTS_CHANGED = "weekly-drafts-changed";
+
+/**
+ * Черновики, открытые сейчас на экране: запись в форме (её ключ) и главная фраза на экране сдачи (headline:<неделя>).
+ * Фоновая отправка их не трогает, экран отправляет сам
+ */
+export const ACTIVE_DRAFTS = new Set<string>();
 /** Черновики старше двух недель не отправляем: неделя уже закрыта, а текст устарел */
 export const DRAFT_MAX_AGE_MS = 14 * 24 * 3_600_000;
 
@@ -73,6 +87,7 @@ function write(person: string, store: Store, kv?: KeyValue): void {
   } catch {
     // Место кончилось или хранилище запрещено: черновик не сохранится, но сервер по-прежнему сохраняет сам
   }
+  if (!kv && typeof window !== "undefined") window.dispatchEvent(new Event(DRAFTS_CHANGED));
 }
 
 /** Новый ключ черновика: crypto.randomUUID, где он есть, иначе время и случайное число */
@@ -108,6 +123,43 @@ export function dropEntryDraft(person: string, key: string, kv?: KeyValue): void
   write(person, store, kv);
 }
 
+/** Запись удалили: убираем и её черновики, иначе фоновая отправка вернула бы её или споткнулась бы */
+export function dropDraftsForEntry(person: string, entryId: string, kv?: KeyValue): void {
+  const store = read(person, kv);
+  const keys = Object.values(store.entries)
+    .filter((d) => d.key === entryId || d.entryId === entryId)
+    .map((d) => d.key);
+  if (!keys.length) return;
+  for (const k of keys) delete store.entries[k];
+  write(person, store, kv);
+}
+
+/** Черновики записей всех недель, которые ещё не дошли до сервера. Старые выбрасываются */
+export function allEntryDrafts(person: string, now = Date.now(), kv?: KeyValue): EntryDraft[] {
+  const store = read(person, kv);
+  let changed = false;
+  for (const [k, d] of Object.entries(store.entries)) {
+    if (now - d.savedAt > DRAFT_MAX_AGE_MS) {
+      delete store.entries[k];
+      changed = true;
+    }
+  }
+  if (changed) write(person, store, kv);
+  return Object.values(store.entries).sort((a, b) => a.savedAt - b.savedAt);
+}
+
+/** Черновики главной фразы всех недель */
+export function allHeadlineDrafts(person: string, now = Date.now(), kv?: KeyValue): HeadlineDraft[] {
+  return Object.values(read(person, kv).headlines).filter((d) => now - d.savedAt <= DRAFT_MAX_AGE_MS);
+}
+
+export function dropHeadlineDraft(person: string, week: string, kv?: KeyValue): void {
+  const store = read(person, kv);
+  if (!store.headlines[week]) return;
+  delete store.headlines[week];
+  write(person, store, kv);
+}
+
 /** Черновики записей недели, которые ещё не дошли до сервера. Старые выбрасываются */
 export function entryDrafts(person: string, week: string, now = Date.now(), kv?: KeyValue): EntryDraft[] {
   const store = read(person, kv);
@@ -124,9 +176,10 @@ export function entryDrafts(person: string, week: string, now = Date.now(), kv?:
     .sort((a, b) => a.savedAt - b.savedAt);
 }
 
-export function putHeadlineDraft(person: string, week: string, value: string, now = Date.now(), kv?: KeyValue): void {
+/** base: главная фраза на сервере, когда начали править. У уже лежащего черновика база не меняется */
+export function putHeadlineDraft(person: string, week: string, value: string, base: string, now = Date.now(), kv?: KeyValue): void {
   const store = read(person, kv);
-  store.headlines[week] = { week, value, savedAt: now };
+  store.headlines[week] = { week, value, savedAt: now, base: store.headlines[week]?.base ?? base };
   write(person, store, kv);
 }
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DRAFT_MAX_AGE_MS,
+  allEntryDrafts,
+  allHeadlineDrafts,
   clearOfflineDrafts,
+  dropDraftsForEntry,
   dropEntryDraft,
   entryDrafts,
   headlineDraft,
@@ -64,20 +67,41 @@ describe("черновик записи weekly на устройстве", () =>
     expect(entryDrafts("loginova", "2026-W41", 2000, kv)).toEqual([]);
   });
 
-  it("главная фраза: убирается, только если на сервер ушёл именно этот текст", () => {
+  it("главная фраза: убирается, только если на сервер ушёл именно этот текст; база правки не меняется", () => {
     const kv = memory();
-    putHeadlineDraft("reva", "2026-W41", "Главное: пилот", 1000, kv);
+    putHeadlineDraft("reva", "2026-W41", "Главное", "С сервера", 900, kv);
+    putHeadlineDraft("reva", "2026-W41", "Главное: пилот", "Уже другое", 1000, kv);
+    expect(headlineDraft("reva", "2026-W41", 2000, kv)).toMatchObject({ value: "Главное: пилот", base: "С сервера" });
     settleHeadlineDraft("reva", "2026-W41", "Главное", kv);
     expect(headlineDraft("reva", "2026-W41", 2000, kv)?.value).toBe("Главное: пилот");
     settleHeadlineDraft("reva", "2026-W41", "Главное: пилот", kv);
     expect(headlineDraft("reva", "2026-W41", 2000, kv)).toBeNull();
   });
 
+  it("удалили запись: уходят и черновик по её id, и черновик новой записи, которая ею стала", () => {
+    const kv = memory();
+    putEntryDraft("reva", draft("entry-1", "Правка записи", 1000, { entryId: "entry-1", clientKey: null }), kv);
+    putEntryDraft("reva", draft("rand-key-1", "Новая, уже на сервере", 1000, { entryId: "entry-1" }), kv);
+    putEntryDraft("reva", draft("rand-key-2", "Другая", 1000), kv);
+    dropDraftsForEntry("reva", "entry-1", kv);
+    expect(allEntryDrafts("reva", 2000, kv).map((d) => d.key)).toEqual(["rand-key-2"]);
+  });
+
+  it("все недели сразу: черновики прошлой недели тоже уходят из оболочки приложения", () => {
+    const kv = memory();
+    putEntryDraft("reva", { ...draft("a", "Неделя 40", 1000), input: input("Неделя 40", "2026-W40") }, kv);
+    putEntryDraft("reva", draft("b", "Неделя 41", 1100), kv);
+    putHeadlineDraft("reva", "2026-W40", "Главное 40", "", 1000, kv);
+    expect(allEntryDrafts("reva", 2000, kv).map((d) => d.key)).toEqual(["a", "b"]);
+    expect(allHeadlineDrafts("reva", 2000, kv).map((d) => d.week)).toEqual(["2026-W40"]);
+    expect(allHeadlineDrafts("reva", 1000 + DRAFT_MAX_AGE_MS + 1, kv)).toEqual([]);
+  });
+
   it("выход стирает черновики всех людей и не трогает чужие ключи хранилища", () => {
     const kv = memory();
     kv.setItem("theme", "dark");
     putEntryDraft("reva", draft("a", "Текст", 1000), kv);
-    putHeadlineDraft("loginova", "2026-W41", "Главное", 1000, kv);
+    putHeadlineDraft("loginova", "2026-W41", "Главное", "", 1000, kv);
     clearOfflineDrafts(kv);
     expect(kv.dump()).toEqual({ theme: "dark" });
   });

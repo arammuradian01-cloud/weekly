@@ -7,17 +7,27 @@
 // - события одного человека за проход склеиваются: одно уведомление на предмет или одно «N событий ждут вас».
 
 import type { InboxKind } from "@/generated/prisma/enums";
-import { prefOfKind } from "@/lib/letters/schedule";
+import { WORK_HOURS, prefOfKind } from "@/lib/letters/schedule";
+import { moscowDate, moscowDateTime } from "@/lib/week";
 import { eventPhrase, pathOf, plural, type EventLine } from "@/lib/letters/phrases";
 
 /** Через сколько после события уходит уведомление: серия правок за минуту приходит одним уведомлением */
 export const PUSH_DELAY_MS = 60_000;
 /** Старше этого уведомлением не уходит: утром не будим вчерашним */
 export const PUSH_MAX_AGE_MS = 12 * 3_600_000;
-/** Сколько служба уведомлений хранит недоставленное, если устройство выключено */
+/** Дольше этого служба уведомлений недоставленное не хранит */
 export const PUSH_TTL_SEC = 12 * 3_600;
 /** После стольких неудач подряд подписка удаляется */
 export const PUSH_MAX_FAILURES = 10;
+
+/**
+ * Сколько служба уведомлений хранит недоставленное: до конца рабочего дня по Москве, не больше 12 часов.
+ * Телефон был выключен в 19:55 и включился в 23:00: вчерашнее уже не придёт, рабочие часы соблюдены
+ */
+export function pushTtlSec(now: Date): number {
+  const end = moscowDateTime(moscowDate(now), WORK_HOURS.end).getTime();
+  return Math.max(60, Math.min(PUSH_TTL_SEC, Math.floor((end - now.getTime()) / 1000)));
+}
 
 export type PushPrefs = { tasks: boolean; mentions: boolean; reactions: boolean };
 export type PushPrefKey = keyof PushPrefs;
@@ -26,7 +36,10 @@ export const DEFAULT_PUSH_PREFS: PushPrefs = { tasks: true, mentions: true, reac
 export const PUSH_PREF_ORDER: PushPrefKey[] = ["tasks", "mentions", "reactions"];
 
 export const PUSH_LABELS: Record<PushPrefKey, { title: string; hint: string }> = {
-  tasks: { title: "Задачи и просьбы", hint: "Вам поставили, передали или предложили задачу, прокомментировали её, просят обновить, просьба к вам или ответ на вашу" },
+  tasks: {
+    title: "Задачи и просьбы",
+    hint: "Вам поставили, передали или предложили задачу, прокомментировали её, просят обновить, подошёл срок вашей задачи, изменилась задача, за которой вы следите, просьба к вам или ответ на вашу",
+  },
   mentions: { title: "Упоминания и обсуждения", hint: "Вас упомянули или поблагодарили, прокомментировали вашу запись weekly, протокол и решения встречи" },
   reactions: { title: "Реакции", hint: "Отреагировали на вашу запись или комментарий" },
 };
@@ -66,28 +79,21 @@ export function pushPayload(items: (EventLine & { subject: string; createdAt: Da
   return { title: "Weekly", body: `${groups.length} ${plural(groups.length, ["событие ждёт", "события ждут", "событий ждут"])} вас в «Мне»`, url: "/me", tag: "inbox" };
 }
 
-/** Как назвать устройство в профиле: «Chrome на Android». По строке браузера, без точности до модели */
-export function deviceLabel(userAgent: string | null | undefined): string {
-  const ua = userAgent ?? "";
-  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "";
-  const browser = /YaBrowser/.test(ua)
-    ? "Яндекс Браузер"
-    : /Edg\//.test(ua)
-      ? "Edge"
-      : /Firefox\//.test(ua)
-        ? "Firefox"
-        : /(Chrome|CriOS)\//.test(ua)
-          ? "Chrome"
-          : /Safari\//.test(ua)
-            ? "Safari"
-            : "Браузер";
-  return os ? `${browser} на ${os}` : browser;
-}
-
 /** Подписка, которую прислал браузер: адрес службы уведомлений https и два ключа */
 export type PushSubscriptionInput = { endpoint: string; keys: { p256dh: string; auth: string } };
 
 const B64URL = /^[A-Za-z0-9_-]+={0,2}$/;
+
+/**
+ * Службы уведомлений браузеров: Chrome, Яндекс Браузер и Edge на Android через Google, Firefox, Safari, Edge на Windows.
+ * Адрес не из списка не принимаем: иначе сервер ходил бы по любому адресу, который прислали
+ */
+const PUSH_HOSTS = ["googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com", "yandex.net", "yandex.ru"];
+
+export function isPushHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return PUSH_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+}
 
 /** Проверка подписки от браузера. null: прислали не то */
 export function parseSubscription(value: unknown): PushSubscriptionInput | null {
@@ -99,7 +105,7 @@ export function parseSubscription(value: unknown): PushSubscriptionInput | null 
   } catch {
     return null;
   }
-  if (url.protocol !== "https:") return null;
+  if (url.protocol !== "https:" || !isPushHost(url.hostname) || url.username || url.password || (url.port && url.port !== "443")) return null;
   const p256dh = v.keys?.p256dh;
   const auth = v.keys?.auth;
   if (typeof p256dh !== "string" || typeof auth !== "string") return null;
@@ -107,7 +113,15 @@ export function parseSubscription(value: unknown): PushSubscriptionInput | null 
   return { endpoint: v.endpoint, keys: { p256dh, auth } };
 }
 
-/** Ответ службы уведомлений, после которого подписку надо удалить: устройство отписалось или ключи сменились */
+/** Ответ службы уведомлений, после которого подписку надо удалить: устройство отписалось */
 export function isGoneStatus(status: number | undefined): boolean {
-  return status === 404 || status === 410 || status === 401 || status === 403;
+  return status === 404 || status === 410;
+}
+
+/**
+ * Служба отказала в подписи (401, 403): ключи VAPID не те, с которыми подписывалось устройство, или ошибка настройки.
+ * Подписку не удаляем сразу: при ошибке настройки иначе пропали бы все. Неудачи копятся, в профиле видно, что делать
+ */
+export function isAuthStatus(status: number | undefined): boolean {
+  return status === 401 || status === 403;
 }

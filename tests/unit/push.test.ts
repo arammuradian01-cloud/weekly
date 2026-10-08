@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PUSH_PREFS, deviceLabel, isGoneStatus, parseSubscription, pushPayload, pushPrefOfKind, pushPrefsOf } from "@/lib/push/rules";
+import { DEFAULT_PUSH_PREFS, PUSH_TTL_SEC, isAuthStatus, isGoneStatus, isPushHost, parseSubscription, pushPayload, pushPrefOfKind, pushPrefsOf, pushTtlSec } from "@/lib/push/rules";
 import type { EventLine } from "@/lib/letters/phrases";
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 12, 7, min));
@@ -54,6 +54,11 @@ describe("подписка от браузера", () => {
   it("принимается только https и ключи в base64url нужной длины", () => {
     expect(parseSubscription(ok)).toEqual(ok);
     expect(parseSubscription({ ...ok, endpoint: "http://fcm.googleapis.com/x" })).toBeNull();
+    // Только службы уведомлений браузеров: на внутренние адреса сервер не пойдёт
+    expect(parseSubscription({ ...ok, endpoint: "https://10.0.0.5/admin" })).toBeNull();
+    expect(parseSubscription({ ...ok, endpoint: "https://fcm.googleapis.com.evil.test/x" })).toBeNull();
+    expect(parseSubscription({ ...ok, endpoint: "https://fcm.googleapis.com:8443/x" })).toBeNull();
+    expect(parseSubscription({ ...ok, endpoint: "https://web.push.apple.com/QK" })).not.toBeNull();
     expect(parseSubscription({ ...ok, endpoint: "не адрес" })).toBeNull();
     expect(parseSubscription({ ...ok, keys: { p256dh: "коротко", auth: ok.keys.auth } })).toBeNull();
     expect(parseSubscription({ ...ok, keys: { p256dh: ok.keys.p256dh, auth: "with spaces !!" } })).toBeNull();
@@ -61,18 +66,25 @@ describe("подписка от браузера", () => {
     expect(parseSubscription(null)).toBeNull();
   });
 
-  it("ответы, после которых подписка удаляется: устройство отписалось или ключи сменились", () => {
-    expect([404, 410, 401, 403].every(isGoneStatus)).toBe(true);
-    expect([undefined, 201, 413, 429, 500].some(isGoneStatus)).toBe(false);
+  it("подписка удаляется, только когда устройство отписалось; отказ в подписи копится как неудача", () => {
+    expect([404, 410].every(isGoneStatus)).toBe(true);
+    expect([undefined, 201, 401, 403, 413, 429, 500].some(isGoneStatus)).toBe(false);
+    expect([401, 403].every(isAuthStatus)).toBe(true);
+  });
+
+  it("службы уведомлений браузеров по имени и поддоменам", () => {
+    for (const h of ["fcm.googleapis.com", "updates.push.services.mozilla.com", "web.push.apple.com", "wns2-par02p.notify.windows.com"]) expect(isPushHost(h), h).toBe(true);
+    for (const h of ["localhost", "googleapis.com.evil.test", "evilgoogleapis.com", "push.example.test"]) expect(isPushHost(h), h).toBe(false);
   });
 });
 
-describe("название устройства в профиле", () => {
-  it("браузер и система без точности до модели", () => {
-    expect(deviceLabel("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36")).toBe("Chrome на Android");
-    expect(deviceLabel("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1")).toBe("Safari на iPhone");
-    expect(deviceLabel("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 YaBrowser/24.10 Safari/537.36")).toBe("Яндекс Браузер на Mac");
-    expect(deviceLabel("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36 Edg/129.0")).toBe("Edge на Windows");
-    expect(deviceLabel(null)).toBe("Браузер");
+describe("срок хранения в службе уведомлений", () => {
+  it("до 20:00 по Москве, не больше 12 часов и не меньше минуты", () => {
+    // 11:00 по Москве: до конца рабочего дня 9 часов
+    expect(pushTtlSec(new Date("2026-10-12T08:00:00Z"))).toBe(9 * 3600);
+    // 19:59:30: минимум минута
+    expect(pushTtlSec(new Date("2026-10-12T16:59:30Z"))).toBe(60);
+    // 07:00 по Москве: 13 часов до 20:00, но не больше 12
+    expect(pushTtlSec(new Date("2026-10-12T04:00:00Z"))).toBe(PUSH_TTL_SEC);
   });
 });

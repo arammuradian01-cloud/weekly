@@ -10,6 +10,8 @@ import { PUSH_LABELS, PUSH_PREF_ORDER, type PushPrefs } from "@/lib/push/rules";
 import type { PushDevice } from "@/lib/push/service";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { Button } from "@/components/ui/button";
+import { usePrototype } from "@/domain/store";
+import { PUSH_OWNER_KEY } from "@/components/pwa/device-sync";
 
 type State = "checking" | "unsupported" | "ios-install" | "denied" | "off" | "on" | "dev";
 
@@ -20,6 +22,24 @@ function keyBytes(base64url: string): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(new ArrayBuffer(raw.length));
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
+}
+
+/** Подписка браузера сделана с этим открытым ключом. Ключи сменились: старую подписку надо снять и сделать новую */
+function sameKey(sub: PushSubscription, publicKey: string): boolean {
+  const key = sub.options?.applicationServerKey;
+  if (!key) return true;
+  const bytes = new Uint8Array(key);
+  const want = keyBytes(publicKey);
+  return bytes.length === want.length && bytes.every((b, i) => b === want[i]);
+}
+
+function setOwner(slug: string | null) {
+  try {
+    if (slug) localStorage.setItem(PUSH_OWNER_KEY, slug);
+    else localStorage.removeItem(PUSH_OWNER_KEY);
+  } catch {
+    // Хранилище запрещено: подписка просто не перейдёт к новому входу сама
+  }
 }
 
 const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -95,6 +115,7 @@ export function InstallApp() {
 /** Уведомления в браузере на этом устройстве и настройки. Только при личном входе */
 export function PushSettings({ publicKey, locked, prefs: initialPrefs, devices }: { publicKey: string; locked: boolean; prefs: PushPrefs; devices: PushDevice[] }) {
   const run = useRunAction();
+  const { me } = usePrototype();
   const [state, setState] = useState<State>("checking");
   const [endpoint, setEndpoint] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -120,12 +141,12 @@ export function PushSettings({ publicKey, locked, prefs: initialPrefs, devices }
       const sub = await reg.pushManager.getSubscription().catch(() => null);
       if (cancelled) return;
       setEndpoint(sub?.endpoint ?? null);
-      setState(sub && sub.endpoint === known ? "on" : "off");
+      setState(sub && sub.endpoint === known && sameKey(sub, publicKey) ? "on" : "off");
     })();
     return () => {
       cancelled = true;
     };
-  }, [known]);
+  }, [known, publicKey]);
 
   const enable = async () => {
     setBusy(true);
@@ -137,10 +158,18 @@ export function PushSettings({ publicKey, locked, prefs: initialPrefs, devices }
       }
       const reg = await registration();
       if (!reg) return setState("unsupported");
-      const sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) }));
-      const saved = await run(() => savePushSubscriptionAction(sub.toJSON()), "Уведомления на этом устройстве включены");
+      let sub = await reg.pushManager.getSubscription();
+      // Подписка с прежними ключами: служба отклонит каждое уведомление, поэтому делаем новую
+      if (sub && !sameKey(sub, publicKey)) {
+        await sub.unsubscribe().catch(() => undefined);
+        sub = null;
+      }
+      sub ??= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) });
+      const fresh = sub;
+      const saved = await run(() => savePushSubscriptionAction(fresh.toJSON()), "Уведомления на этом устройстве включены");
       if (saved) {
-        setEndpoint(sub.endpoint);
+        setOwner(me.slug);
+        setEndpoint(fresh.endpoint);
         setState("on");
       }
     } catch {
@@ -158,6 +187,7 @@ export function PushSettings({ publicKey, locked, prefs: initialPrefs, devices }
       const ep = sub?.endpoint ?? endpoint;
       await sub?.unsubscribe().catch(() => undefined);
       if (ep) await run(() => removePushSubscriptionAction(ep), "Уведомления на этом устройстве выключены");
+      setOwner(null);
       setEndpoint(null);
       setState("off");
     } finally {

@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
 import { forgetThisDevice } from "@/lib/offline/sign-out";
+import { usePrototype } from "@/domain/store";
 
 type Props = {
   fullName: string;
@@ -33,6 +34,7 @@ const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[h
 
 export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
+  const { me } = usePrototype();
   const dark = tone === "dark";
 
   return (
@@ -141,7 +143,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             disabled={pending}
             onSelect={() =>
               startTransition(async () => {
-                await forgetThisDevice();
+                await forgetThisDevice(me.slug);
                 await logout();
               })
             }

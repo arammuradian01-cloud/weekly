@@ -147,6 +147,7 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     <Button
                       size="sm"
                       className="mt-2"
+                      aria-label={`Принять просьбу ${item.requestNumber} к ${formatShort(item.requestQuickDue >= data.today ? item.requestQuickDue : addDays(data.today, 1))}`}
                       disabled={busy !== null}
                       onClick={() => {
                         const due = item.requestQuickDue! >= data.today ? item.requestQuickDue! : addDays(data.today, 1);

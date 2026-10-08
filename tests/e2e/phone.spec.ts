@@ -20,9 +20,12 @@ async function shot(page: Page, name: string) {
 
 /** Служебный обработчик встал и управляет страницей */
 async function workerReady(page: Page) {
-  await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.state === "activated", null, { timeout: 15_000, polling: 250 });
-  await page.reload();
-  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15_000, polling: 250 });
+  await page.waitForFunction(async () => (await navigator.serviceWorker.getRegistration())?.active?.state === "activated", null, { timeout: 20_000, polling: 250 });
+  // clients.claim() берёт страницу под обработчик сам; если не успел, новая загрузка страницы точно под ним
+  const claimed = await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 5_000, polling: 250 }).then(() => true, () => false);
+  if (claimed) return;
+  await page.goto(page.url());
+  await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20_000, polling: 250 });
 }
 
 test("приложение на экран «Домой»: описание, значки и обработчик открыты без входа; без сети страница «Нет сети»", async ({ page, request }) => {
@@ -106,7 +109,7 @@ test("просьбу можно принять с телефона в два н�
   const row = page.locator("li.sv-event").filter({ hasText: "Цифры по трафику ДВС за сентябрь" });
   await shot(page, "me-request");
   // Нажатие 2: «Принять к …»
-  await row.getByRole("button", { name: /^Принять к \d{1,2} \S+$/ }).click();
+  await row.getByRole("button", { name: new RegExp(`^Принять просьбу ${number} к \\d{1,2} \\S+$`) }).click();
   await expect(page.getByText(/^Просьба принята, срок \d{1,2} \S+$/)).toBeVisible();
   const [r] = await sql(`SELECT status, "acceptedDue" = due AS same FROM help_requests WHERE id = 'rq-e2e-1'`);
   expect(r).toEqual({ status: "ACCEPTED", same: true });
@@ -128,9 +131,9 @@ test("задачу можно обновить с главной в два на�
   const urgent = page.locator("section", { has: page.getByRole("heading", { name: /Просроченные и срочные/ }) });
   const row = urgent.locator("li").filter({ hasText: new RegExp(`^${number}`) });
   // Нажатие 1: статус, нажатие 2: новый статус
-  await row.getByRole("button", { name: /^Статус: В работе/ }).click();
+  await row.getByRole("button", { name: new RegExp(`^Статус задачи ${number}: В работе`) }).click();
   await page.getByRole("menuitem", { name: "Требует уточнений" }).click();
-  await expect(row.getByRole("button", { name: /^Статус: Требует уточнений/ })).toBeVisible();
+  await expect(row.getByRole("button", { name: new RegExp(`^Статус задачи ${number}: Требует уточнений`) })).toBeVisible();
   const [t] = await sql(`SELECT status FROM tasks WHERE number = $1`, [number]);
   expect(t.status).toBe("CLARIFY");
   await shot(page, "home-status");

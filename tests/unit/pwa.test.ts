@@ -36,10 +36,12 @@ describe("служебный обработчик", () => {
   const sw = readFileSync("public/sw.js", "utf8");
   it("страницы с данными не кэширует: переход идёт в сеть, без сети страница «Нет сети»", () => {
     expect(sw).toContain('request.mode === "navigate"');
-    expect(sw).toMatch(/fetch\(request\)\.catch\(\(\) => caches\.match\(OFFLINE_URL\)\)/);
-    // Кэш пополняется только в ветке неизменяемых файлов
+    expect(sw).toContain("event.respondWith(fetch(request).catch(offlinePage))");
+    // Кэш пополняется только в ветке файлов сборки и значков, старые файлы сборки вытесняются
     expect(sw.match(/cache\.put\(/g)?.length).toBe(1);
+    expect(sw).toContain("if (isBuild(url) || isBrand(url)) {");
     expect(sw).toContain('url.pathname.startsWith("/_next/static/")');
+    expect(sw).toContain("const MAX_STATIC = 250;");
     expect(sw).toContain('if (request.method !== "GET") return;');
   });
   it("уведомление показывает кто и что и открывает предмет только внутри ресурса", () => {

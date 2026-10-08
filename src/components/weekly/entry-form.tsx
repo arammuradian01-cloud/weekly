@@ -12,7 +12,7 @@ import { openNewTask, TASK_FROM_ENTRY_EVENT } from "@/components/prototype/new-t
 import { MentionArea } from "@/components/discuss/mention-area";
 import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
-import { isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
+import { ACTIVE_DRAFTS, dropEntryDraft, isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
 
 function hostOf(url: string): string {
   try {
@@ -24,9 +24,6 @@ function hostOf(url: string): string {
 
 /** Запись ещё не на сервере: такой id выдаёт экран до первого сохранения */
 export const isLocalId = (id: string) => id.startsWith("new-");
-
-/** Черновики, которые сейчас открыты в форме: фоновая отправка их не трогает, форма отправляет сама (этап 26) */
-export const ACTIVE_DRAFTS = new Set<string>();
 
 const OFFLINE_TEXT = "Нет сети: запись сохранена на этом устройстве и уйдёт на сервер, когда появится связь";
 
@@ -74,6 +71,8 @@ export function EntryForm({
   const [e, setE] = useState<WeeklyEntry>(initial);
   // Ключ черновика на устройстве (этап 26): у записи с сервера её id, у новой случайный. Он же ключ повтора для сервера
   const draftKey = useRef(isLocalId(initial.id) ? newDraftKey() : initial.id);
+  // Версия записи на сервере, с которой начат черновик: фоновая отправка не пишет поверх более новой
+  const baseUpdatedAt = useRef<string | null>(initial.updatedAt ?? null);
   const [offline, setOffline] = useState(false);
   const [needHelp, setNeedHelp] = useState(!!initial.help);
   // Название по умолчанию это адрес сайта: такое название в поле не показываем, чтобы не мешало
@@ -137,6 +136,7 @@ export function EntryForm({
     }
     setOffline(false);
     if (result.ok) {
+      baseUpdatedAt.current = result.value.updatedAt ?? baseUpdatedAt.current;
       settleEntryDraft(me.slug, draftKey.current, result.value.id, sentAt);
       setE((prev) => ({ ...prev, id: result.value.id, taskNumber: result.value.taskNumber }));
       latest.current.e = { ...latest.current.e, id: result.value.id };
@@ -162,7 +162,14 @@ export function EntryForm({
     const { e: cur, needHelp: nh, links: ln } = latest.current;
     const input = toInput(cur, nh, ln);
     const draft: DraftEntryInput = { ...input, week: String(input.week), links: input.links.map((l) => ({ title: l.title, url: l.url })) };
-    putEntryDraft(me.slug, { key: draftKey.current, entryId: input.id ?? null, clientKey: input.id ? null : draftKey.current, input: draft, savedAt: Date.now() });
+    putEntryDraft(me.slug, {
+      key: draftKey.current,
+      entryId: input.id ?? null,
+      clientKey: input.id ? null : draftKey.current,
+      baseUpdatedAt: input.id ? baseUpdatedAt.current : null,
+      input: draft,
+      savedAt: Date.now(),
+    });
   }, [e, needHelp, links, me.slug]);
 
   const autosave = async () => {
@@ -227,6 +234,13 @@ export function EntryForm({
   };
 
   const saved = !isLocalId(e.id);
+
+  // «Отмена» у несохранённой записи выбрасывает и черновик на устройстве. «Закрыть» у сохранённой оставляет только то,
+  // что ждёт сети: человек видел, что оно уйдёт само
+  const cancel = () => {
+    if (!saved || (autoState !== "offline" && !offline)) dropEntryDraft(me.slug, draftKey.current);
+    onCancel();
+  };
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 sv-card sv-card--soft p-4 sm:p-5">
@@ -344,7 +358,7 @@ export function EntryForm({
         <span className={autoState === "offline" || offline ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"} aria-live="polite">
           {autoState === "offline" || offline ? OFFLINE_TEXT : autoState === "saving" ? "Сохраняю черновик записи" : autoState === "saved" ? "Черновик записи сохранён" : ""}
         </span>
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="ghost" onClick={cancel}>
           {saved ? "Закрыть" : "Отмена"}
         </Button>
         <Button type="submit" disabled={busy}>

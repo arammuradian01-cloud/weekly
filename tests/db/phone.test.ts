@@ -13,7 +13,7 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
 const MIN = 60_000;
 
 const sub = (n: number) => ({
-  endpoint: `https://push.example.test/send/device-${n}`,
+  endpoint: `https://fcm.googleapis.com/fcm/send/device-${n}`,
   keys: { p256dh: `BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1Xbjhaz${n}kj7I99e8QcYP7DkM`, auth: "tBHItJI5svbpez7KI4CCXg" },
 });
 
@@ -60,10 +60,12 @@ describe("подписка устройства", () => {
   it("включается на устройстве, называет устройство по браузеру, пишется в журнал; плохая подписка не принимается", async () => {
     const { actor, deviceId } = await personal("reva");
     const r = await push.saveSubscription(actor, deviceId, sub(1), "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36");
-    expect(r.label).toBe("Chrome на Android");
-    expect(await push.pushDevices(actor.personId, deviceId)).toEqual([expect.objectContaining({ label: "Chrome на Android", current: true, endpoint: sub(1).endpoint })]);
+    expect(r.label).toBe("Chrome, Android");
+    expect(await push.pushDevices(actor.personId, deviceId)).toEqual([expect.objectContaining({ label: "Chrome, Android", current: true, endpoint: sub(1).endpoint })]);
     expect(await prisma.auditLog.count({ where: { action: "settings.push", actorId: actor.personId } })).toBeGreaterThan(0);
     await expect(push.saveSubscription(actor, deviceId, { endpoint: "http://bad", keys: {} }, null)).rejects.toThrow(/неполную подписку/);
+    // Адрес не службы уведомлений: сервер туда не пойдёт
+    await expect(push.saveSubscription(actor, deviceId, { ...sub(9), endpoint: "https://intranet.local/hook" }, null)).rejects.toThrow(/неполную подписку/);
   });
 
   it("тот же адрес службы с другого входа переходит новому человеку; выключить можно только своё", async () => {
@@ -168,6 +170,28 @@ describe("проход отправки", () => {
     expect(await prisma.pushSubscription.findMany({ select: { endpoint: true, failures: true } })).toEqual([{ endpoint: sub(2).endpoint, failures: 1 }]);
   });
 
+  it("отказ в подписи (403) копится как неудача, подписка не удаляется сразу", async () => {
+    const reva = await personal("reva");
+    await push.saveSubscription(reva.actor, reva.deviceId, sub(1), null);
+    reply = () => 403;
+    await event("reva", { subject: "task:47", createdAt: ago(2 * MIN) });
+    expect(await push.pushPass(NOW)).toEqual({ sent: 0, skipped: 0, failed: 1 });
+    expect(await prisma.pushSubscription.findMany({ select: { failures: true } })).toEqual([{ failures: 1 }]);
+  });
+
+  it("служба хранит недоставленное только до конца рабочего дня", async () => {
+    const reva = await personal("reva");
+    await push.saveSubscription(reva.actor, reva.deviceId, sub(1), null);
+    let ttl = 0;
+    push.setPushSender(async (_t, _p, t) => {
+      ttl = t;
+      return { status: 201 };
+    });
+    await event("reva", { subject: "task:47", createdAt: ago(2 * MIN) });
+    await push.pushPass(NOW);
+    expect(ttl).toBe(9 * 3600);
+  });
+
   it("вышли на устройстве: подписка удаляется, туда ничего не уходит", async () => {
     const reva = await personal("reva");
     await push.saveSubscription(reva.actor, reva.deviceId, sub(1), null);
@@ -176,6 +200,31 @@ describe("проход отправки", () => {
     expect((await push.pushPass(NOW)).sent).toBe(0);
     expect(await prisma.pushSubscription.count()).toBe(0);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("сверка подписки при открытии ресурса", () => {
+  it("тот же человек вошёл заново: подписка переходит к новому входу; другой человек или общий логин её снимают", async () => {
+    const first = await personal("reva");
+    await push.saveSubscription(first.actor, first.deviceId, sub(1), null);
+    // Новый вход того же человека в том же браузере: прежняя запись устройства завершена, строка подписки ещё есть
+    const again = await personal("reva");
+    expect(await push.syncSubscription(again.actor, again.deviceId, sub(1), "reva")).toEqual({ keep: true });
+    expect((await prisma.pushSubscription.findUniqueOrThrow({ where: { endpoint: sub(1).endpoint } })).deviceId).toBe(again.deviceId);
+
+    // Коллега вошёл лично в этом браузере: уведомления прежнего человека сюда больше не идут
+    const other = await personal("loginova");
+    expect(await push.syncSubscription(other.actor, other.deviceId, sub(1), "reva")).toEqual({ keep: false });
+    expect(await prisma.pushSubscription.count()).toBe(0);
+
+    // Строки нет: подписку возвращаем, только если её включал этот же человек
+    expect(await push.syncSubscription(again.actor, again.deviceId, sub(1), "loginova")).toEqual({ keep: false });
+    expect(await push.syncSubscription(again.actor, again.deviceId, sub(1), "reva")).toEqual({ keep: true });
+
+    // Общий логин в этом браузере: подписка снимается
+    const team = { ...(await tasks.actorFor("fatyanov")), via: "TEAM" as const };
+    expect(await push.syncSubscription(team, null, sub(1), "reva")).toEqual({ keep: false });
+    expect(await prisma.pushSubscription.count()).toBe(0);
   });
 });
 
@@ -207,6 +256,30 @@ describe("черновик weekly с телефона", () => {
     const [a, b] = await Promise.all([svc.saveEntry(reva, input), svc.saveEntry(reva, input)]);
     expect(a.id).toBe(b.id);
     expect(await prisma.weeklyEntry.count({ where: { clientKey: "draft-key-race1" } })).toBe(1);
+  });
+
+  it("черновик со старой версии записи поверх более новой не пишется; тот же текст после потерянного ответа проходит", async () => {
+    const reva = await tasks.actorFor("reva");
+    const created = await svc.saveEntry(reva, await draft({ clientKey: "draft-key-base1" }));
+    const base = created.updatedAt!;
+    // На ноутбуке запись поправили позже
+    await new Promise((r) => setTimeout(r, 15));
+    await svc.saveEntry(reva, { ...(await draft()), id: created.id, what: "Поправили на ноутбуке" });
+    await expect(svc.saveEntry(reva, { ...(await draft()), id: created.id, what: "Старый черновик с телефона", baseUpdatedAt: base })).rejects.toThrow(svc.ENTRY_CONFLICT);
+    expect((await prisma.weeklyEntry.findUniqueOrThrow({ where: { id: created.id } })).what).toBe("Поправили на ноутбуке");
+    // Тот же текст, что уже на сервере: это повтор, а не конфликт
+    const same = await svc.saveEntry(reva, { ...(await draft()), id: created.id, what: "Поправили на ноутбуке", baseUpdatedAt: base });
+    expect(same.id).toBe(created.id);
+  });
+
+  it("главная фраза с устройства не пишется поверх изменённой на другом устройстве", async () => {
+    const reva = await tasks.actorFor("reva");
+    const week = await svc.currentReportingKey(new Date());
+    await svc.saveHeadline(reva, week, "С ноутбука");
+    await expect(svc.saveHeadline(reva, week, "С телефона", "Было раньше")).rejects.toThrow(svc.HEADLINE_CONFLICT);
+    expect((await svc.saveHeadline(reva, week, "С телефона", "С ноутбука")).headline).toBe("С телефона");
+    // Повтор того же текста после потерянного ответа: не конфликт
+    expect((await svc.saveHeadline(reva, week, "С телефона", "С ноутбука")).headline).toBe("С телефона");
   });
 
   it("ключ другого человека и негодный ключ не склеивают записи", async () => {

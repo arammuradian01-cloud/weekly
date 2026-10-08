@@ -3,8 +3,9 @@
 
 -- Уведомление в браузере по событию «Мне» ушло или не нужно
 ALTER TABLE "inbox_events" ADD COLUMN IF NOT EXISTS "pushedAt" TIMESTAMPTZ(3);
--- События, которые были до этапа 26, уведомлением не уходят: никому не придёт пачка старого
-UPDATE "inbox_events" SET "pushedAt" = now() WHERE "pushedAt" IS NULL;
+-- События, которые были до этапа 26, уведомлением не уходят: никому не придёт пачка старого. Старше 12 часов
+-- проход отметит сам, поэтому трогаем только свежие строки, а не всю таблицу
+UPDATE "inbox_events" SET "pushedAt" = now() WHERE "pushedAt" IS NULL AND "createdAt" > now() - interval '12 hours';
 CREATE INDEX IF NOT EXISTS "inbox_events_pushedAt_createdAt_idx" ON "inbox_events"("pushedAt", "createdAt");
 
 -- Какие уведомления в браузере получает человек

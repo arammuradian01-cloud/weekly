@@ -9,8 +9,9 @@ import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
-import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
-import { dropEntryDraft, entryDrafts, headlineDraft, isNetworkError, putHeadlineDraft, settleEntryDraft, settleHeadlineDraft } from "@/lib/offline/drafts";
+import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { ACTIVE_DRAFTS, DRAFTS_CHANGED, dropDraftsForEntry, dropHeadlineDraft, entryDrafts, headlineDraft, isNetworkError, putHeadlineDraft, settleHeadlineDraft } from "@/lib/offline/drafts";
+import { DRAFT_SENT, flushOfflineDrafts, type DraftSentDetail } from "@/lib/offline/outbox";
 import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPromise } from "@/lib/weekly/promises";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
@@ -21,7 +22,7 @@ import { Modal } from "@/components/ui/overlays";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
-import { ACTIVE_DRAFTS, EntryForm, isLocalId } from "./entry-form";
+import { EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
 import { PromiseStep } from "./promise-step";
@@ -84,7 +85,7 @@ export function WeeklySubmit({
   // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
   const setHeadline = (value: string) => {
     setHeadlineState(value);
-    if (canEdit) putHeadlineDraft(me.slug, week.key, value);
+    if (canEdit) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
   };
   const [offline, setOffline] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -110,7 +111,11 @@ export function WeeklySubmit({
         settleHeadlineDraft(me.slug, week.key, value);
         setWeekly(result.value);
         setSavedAt(nowTime());
-      } else notify(result.error, "error");
+      } else {
+        // Правило не пускает: черновик не повторяем при каждом открытии
+        dropHeadlineDraft(me.slug, week.key);
+        notify(result.error, "error");
+      }
     } catch (error) {
       // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
       if (isNetworkError(error)) setOffline(true);
@@ -196,66 +201,43 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
-  // Черновики с этого устройства, которые не дошли до сервера (этап 26): уходят при открытии страницы и когда
-  // возвращается связь. Открытые в форме черновики форма отправляет сама
+  // Черновики с этого устройства (этап 26): отправляет оболочка приложения при открытии и когда возвращается связь.
+  // Здесь видно, сколько ждёт отправки за эту неделю, и дошедшие записи встают в список без перезагрузки
   const [outbox, setOutbox] = useState(0);
-  const flushing = useRef(false);
   const upsertRef = useRef(upsert);
   upsertRef.current = upsert;
-  const flushOutbox = useCallback(async () => {
-    if (!canEdit || flushing.current) return;
-    const waiting = entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key));
-    setOutbox(waiting.length);
-    if (!waiting.length || (typeof navigator !== "undefined" && !navigator.onLine)) {
-      if (waiting.length) setOffline(true);
-      return;
-    }
-    flushing.current = true;
-    let left = waiting.length;
-    try {
-      for (const d of waiting) {
-        const sentAt = Date.now();
-        try {
-          const r = await saveEntryAction({ ...d.input, week: week.key, id: d.entryId ?? undefined, clientKey: d.entryId ? undefined : (d.clientKey ?? d.key) });
-          if (r.ok) {
-            settleEntryDraft(me.slug, d.key, r.value.id, sentAt);
-            upsertRef.current(r.value);
-          } else {
-            // Правило не пускает (неделя закрыта, запись удалили): повтор не поможет, черновик убираем и говорим об этом
-            dropEntryDraft(me.slug, d.key);
-            notify(`Черновик записи с этого устройства не отправлен: ${r.error}`, "error");
-          }
-          left -= 1;
-        } catch (error) {
-          if (isNetworkError(error)) {
-            setOffline(true);
-            break;
-          }
-          left -= 1;
-        }
-      }
-      if (left === 0) setOffline(false);
-    } finally {
-      flushing.current = false;
-      setOutbox(entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key)).length);
-    }
-  }, [canEdit, me.slug, week.key, notify]);
-
   useEffect(() => {
-    // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама
+    const headlineKey = `headline:${week.key}`;
+    ACTIVE_DRAFTS.add(headlineKey);
+    // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама. Если на сервере
+    // её уже изменили на другом устройстве, черновик устарел: не возвращаем и говорим об этом
     const kept = canEdit ? headlineDraft(me.slug, week.key) : null;
-    if (kept && kept.value !== savedHeadline.current) setHeadlineState(kept.value);
-    else if (kept) settleHeadlineDraft(me.slug, week.key, kept.value);
-    void flushOutbox();
+    if (kept && kept.value !== savedHeadline.current) {
+      if (kept.base !== undefined && kept.base !== savedHeadline.current) {
+        dropHeadlineDraft(me.slug, week.key);
+        notify("Главная фраза с этого устройства не восстановлена: её уже изменили на другом устройстве", "error");
+      } else setHeadlineState(kept.value);
+    } else if (kept) settleHeadlineDraft(me.slug, week.key, kept.value);
+    const count = () => setOutbox(entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key)).length);
+    count();
+    const sentHere = (ev: Event) => {
+      const { entry } = (ev as CustomEvent<DraftSentDetail>).detail;
+      if (entry && entry.week === week.key) upsertRef.current(entry);
+    };
     const back = () => {
       setOffline(false);
-      void flushOutbox();
       void saveHeadline();
     };
     const gone = () => setOffline(true);
+    if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
+    window.addEventListener(DRAFTS_CHANGED, count);
+    window.addEventListener(DRAFT_SENT, sentHere);
     window.addEventListener("online", back);
     window.addEventListener("offline", gone);
     return () => {
+      ACTIVE_DRAFTS.delete(headlineKey);
+      window.removeEventListener(DRAFTS_CHANGED, count);
+      window.removeEventListener(DRAFT_SENT, sentHere);
       window.removeEventListener("online", back);
       window.removeEventListener("offline", gone);
     };
@@ -288,7 +270,7 @@ export function WeeklySubmit({
       const carriedBy = promises.find((p) => p.review?.carried?.id === entry.id)?.entryId;
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
-      dropEntryDraft(me.slug, entry.id);
+      dropDraftsForEntry(me.slug, entry.id);
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
       if (carriedBy) setCarried(carriedBy, undefined);
       // Запись из факта удалили: факт снова предлагается
@@ -400,10 +382,13 @@ export function WeeklySubmit({
             <p role="status" className="mt-3 sv-alert sv-alert--warning inline-flex items-start gap-2 text-small">
               <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <span>
-                {offline
-                  ? "Нет сети. Черновик сохраняется на этом устройстве и уйдёт на сервер, когда связь вернётся."
-                  : "Отправляю черновик с этого устройства."}
+                {offline ? "Нет сети. Черновик сохраняется на этом устройстве и уйдёт на сервер, когда связь вернётся." : "Черновик с этого устройства ещё не дошёл до сервера."}
                 {outbox > 0 ? ` Ждут отправки: ${outbox}.` : ""}
+                {!offline && outbox > 0 ? (
+                  <button type="button" className="ml-1 font-semibold underline underline-offset-2" onClick={() => void flushOfflineDrafts(me.slug)}>
+                    Отправить сейчас
+                  </button>
+                ) : null}
               </span>
             </p>
           ) : null}

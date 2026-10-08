@@ -396,17 +396,16 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const { repeatPass } = await import("@/lib/tasks/service");
       return { sent: await repeatPass(now), skipped: 0, failed: 0 };
     });
-    // Уведомления в браузере (этап 26) раньше писем: письмо уходит только по тому, что так и не увидели за 15 минут
+    const reminders = await safe("Напоминания о сдаче", () => reminderPass(now));
+    const digest = await safe("Дайджест", () => digestPass(now));
+    const events = await safe("Письма о событиях", () => eventMailPass(now));
+    // Уведомления в браузере (этап 26) после писем: медленная служба уведомлений не задерживает напоминания и дайджест.
+    // Письмо о событии всё равно ждёт 15 минут, уведомление уходит через минуту
     const pushes = await safe("Уведомления в браузере", async () => {
       const { pushPass } = await import("@/lib/push/service");
       return pushPass(now);
     });
-    return {
-      pushes,
-      reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
-      digest: await safe("Дайджест", () => digestPass(now)),
-      events: await safe("Письма о событиях", () => eventMailPass(now)),
-    };
+    return { pushes, reminders, digest, events };
   });
 }
 
