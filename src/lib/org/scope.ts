@@ -164,3 +164,30 @@ export function visibleTasksWhere(scope: Scope, personId: string): Prisma.TaskWh
 export function teamPeopleIds(node: TeamNode): string[] {
   return [...new Set([...(node.leaderId ? [node.leaderId] : []), ...node.members])];
 }
+
+/** Команды по дереву: родитель, за ним его команды ниже, по порядку из настроек */
+export function orderTeams(nodes: TeamNode[]): { node: TeamNode; depth: number }[] {
+  const ids = new Set(nodes.map((n) => n.id));
+  const children = new Map<string | null, TeamNode[]>();
+  for (const n of nodes) {
+    const parent = n.parentId && ids.has(n.parentId) ? n.parentId : null;
+    const list = children.get(parent) ?? [];
+    list.push(n);
+    children.set(parent, list);
+  }
+  const out: { node: TeamNode; depth: number }[] = [];
+  const seen = new Set<string>();
+  const walk = (parent: string | null, depth: number) => {
+    const list = (children.get(parent) ?? []).sort((a, b) => Number(b.id === TOP_TEAM) - Number(a.id === TOP_TEAM) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "ru"));
+    for (const n of list) {
+      if (seen.has(n.id)) continue;
+      seen.add(n.id);
+      out.push({ node: n, depth });
+      walk(n.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  // Петля в дереве (команда ниже самой себя): такие команды всё равно показываем, в конце
+  for (const n of nodes) if (!seen.has(n.id)) out.push({ node: n, depth: 0 });
+  return out;
+}

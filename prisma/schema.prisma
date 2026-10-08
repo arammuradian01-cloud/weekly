@@ -648,6 +648,8 @@ model CeoReport {
   main        String   @default("")
   risks       String   @default("")
   next        String   @default("")
+  /// «Мои встречи недели» (этап 27): [{ title, text }], по 4-5 предложений на встречу от первого лица
+  meetings    Json     @default("[]")
   updatedById String?
   updatedBy   Person?  @relation(fields: [updatedById], references: [id])
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)

@@ -129,8 +129,8 @@ export async function setWeekClosedAction(week: WeekKey, closed: boolean): Promi
   });
 }
 
-export async function saveCeoReportAction(week: WeekKey, sections: CeoSections): Promise<Result<svc.CeoReportView>> {
-  return run((a) => svc.saveCeoReport(a, week, sections));
+export async function saveCeoReportAction(week: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<Result<svc.CeoReportView>> {
+  return run((a) => svc.saveCeoReport(a, week, sections, meetings, expected));
 }
 
 /** Неделя для режима встречи и ленты без перезагрузки страницы */

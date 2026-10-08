@@ -25,6 +25,9 @@ export default async function MyTeamsPage({ searchParams }: { searchParams: Prom
           <Link href="/tasks/changes" className="inline-flex h-10 items-center text-body font-medium text-blue-700 hover:underline">
             Изменилось за неделю
           </Link>
+          <Link href={panel ? `/analytics?team=${panel.team.id}` : "/analytics"} className="inline-flex h-10 items-center text-body font-medium text-blue-700 hover:underline">
+            Аналитика
+          </Link>
           <Link href="/goals" className="inline-flex h-10 items-center text-body font-medium text-blue-700 hover:underline">
             Цели
           </Link>
