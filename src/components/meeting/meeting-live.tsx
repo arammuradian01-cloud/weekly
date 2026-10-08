@@ -416,6 +416,16 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
         </p>
       ) : null}
 
+      {item.initiative ? (
+        <p className="text-body text-ink">
+          {item.initiative.state === "doing" ? "Уже делаем" : "Ещё ищем, как сделать"}
+          {item.initiative.note ? `: ${item.initiative.note.replace(/[.!?]+$/, "")}` : ""}.{" "}
+          <Link href={`/initiatives#i-${item.initiative.id}`} className="font-medium text-blue-700 hover:underline">
+            Открыть инициативу
+          </Link>
+        </p>
+      ) : null}
+
       {item.entry ? <EntryBlock view={view} entryId={item.entry.id} projector={projector} /> : null}
 
       <DecisionList decisions={item.decisions} compact />

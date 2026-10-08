@@ -20,6 +20,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   // Этап 21: просьбы держат авторов и адресатов, поэтому уходят до людей. Этап 22: итоги обещаний так же
   await client.query("DELETE FROM help_requests");
   await client.query("DELETE FROM promise_reviews");
+  // Этап 30: инициативы держат ответственного и команду, поэтому уходят до людей и команд
+  await client.query("DELETE FROM initiatives");
   await client.query(`INSERT INTO settings (key, value, "updatedAt") VALUES ('auth.teamLogin', '"on"'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '"on"'::jsonb`);
   // Настройки этапа 5: люди и значения справочников, которые добавили тесты, стартовый ритм недели
   const SEED_PEOPLE = ["muradyan", "golovkin", "analyst", "reva", "loginova", "fatyanov", "sakhibullina", "afanasyev", "cheychenets", "ceo"];
