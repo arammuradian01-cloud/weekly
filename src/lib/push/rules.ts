@@ -74,7 +74,7 @@ export function pushPayload(items: (EventLine & { subject: string; createdAt: Da
   const groups = [...bySubject.entries()];
   if (groups.length === 1) {
     const [subject, g] = groups[0]!;
-    return { title: "Weekly", body: `${eventPhrase(g.last)}${g.count > 1 ? ` (и ещё ${g.count - 1})` : ""}`, url: pathOf(g.last), tag: subject };
+    return { title: "Weekly", body: `${eventPhrase(g.last)}${g.count > 1 ? ` (и ещё ${g.count - 1})` : ""}`, url: pathOf({ ...g.last, subject }), tag: subject };
   }
   return { title: "Weekly", body: `${groups.length} ${plural(groups.length, ["событие ждёт", "события ждут", "событий ждут"])} вас в «Мне»`, url: "/me", tag: "inbox" };
 }

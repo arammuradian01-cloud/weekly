@@ -216,7 +216,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             <StripLegend />
             <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               {data.leaders.map((c) => (
-                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} firstWeek={data.tasks[0]?.number ?? 0} />
+                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} firstWeek={data.tasks[0]?.number ?? 0} meet={data.viewerLeads} />
               ))}
             </ul>
           </>
@@ -234,7 +234,22 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
   );
 }
 
-const staleLabel = (days: number) => `Без обновлений дольше ${days} ${plural(days, "дня", "дней", "дней")}`;
+/** Weekly лидера по неделям: клетки с формой по смыслу (этап 27, используются и во встрече один на один) */
+export function WeeklyStrip({ cells }: { cells: LeaderCard["weekly"]["cells"] }) {
+  return (
+    <span className="sv-wstrip" role="img" aria-label={`Weekly по неделям: ${cells.map((x) => `неделя ${x.number} ${CELL_WORDS[x.cell]}`).join(", ")}`}>
+      {cells.map((x) => (
+        <i key={x.key} className={`sv-wstrip__cell sv-wstrip__cell--${x.cell}`} title={`Неделя ${x.number}: ${CELL_WORDS[x.cell]}`} />
+      ))}
+    </span>
+  );
+}
+
+export function weeklySummary(c: LeaderCard): string {
+  return c.leader && !c.leader.active ? "Weekly не считается" : c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Законченных недель со сдачей ещё нет";
+}
+
+export const staleLabel = (days: number) => `Без обновлений дольше ${days} ${plural(days, "дня", "дней", "дней")}`;
 
 function NowTiles({ now, staleDays }: { now: AreaNow; staleDays: number }) {
   const items: [string, number][] = [
@@ -307,7 +322,7 @@ function GoalsLine({ goals: g, className }: { goals: AreaGoals; className?: stri
   );
 }
 
-function StripLegend() {
+export function StripLegend() {
   const cells: WeeklyCell[] = ["on-time", "late", "missing", "absent", "pending", "none"];
   return (
     <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-caption text-muted">
@@ -341,7 +356,7 @@ function Spark({ values, label }: { values: number[]; label: string }) {
   );
 }
 
-function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; staleDays: number; firstWeek: number }) {
+function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderCard; staleDays: number; firstWeek: number; meet: boolean }) {
   const first = c.overdue[0] ?? 0;
   const last = c.overdue[c.overdue.length - 1] ?? 0;
   const trend = last > first ? `больше, чем на конец недели ${firstWeek} (${first})` : last < first ? `меньше, чем на конец недели ${firstWeek} (${first})` : `столько же, сколько на конец недели ${firstWeek}`;
@@ -369,13 +384,9 @@ function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; s
       </div>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small">
-        <span className="sv-wstrip" role="img" aria-label={`Weekly по неделям: ${c.weekly.cells.map((x) => `неделя ${x.number} ${CELL_WORDS[x.cell]}`).join(", ")}`}>
-          {c.weekly.cells.map((x) => (
-            <i key={x.key} className={`sv-wstrip__cell sv-wstrip__cell--${x.cell}`} title={`Неделя ${x.number}: ${CELL_WORDS[x.cell]}`} />
-          ))}
-        </span>
+        <WeeklyStrip cells={c.weekly.cells} />
         <span className="text-ink">
-          {c.leader && !c.leader.active ? "Weekly не считается" : c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Законченных недель со сдачей ещё нет"}
+          {weeklySummary(c)}
         </span>
       </div>
 
@@ -436,6 +447,11 @@ function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; s
         {deeper ? (
           <Link href={`/analytics?team=${deeper.id}`} className="text-link hover:underline">
             Аналитика команды
+          </Link>
+        ) : null}
+        {meet && c.leader?.active ? (
+          <Link href={`/one-on-one/${c.leader.slug}`} className="text-link hover:underline">
+            Один на один
           </Link>
         ) : null}
       </div>

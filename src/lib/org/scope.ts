@@ -115,7 +115,13 @@ export function seesAll(role: Role): boolean {
  * Чей доступ считаем. limited: вход по общему логину team без режима управления. Общий пароль знают все в топ-команде,
  * поэтому такой вход видит только топ-команду и свои задачи и никакими командами не руководит, какой бы профиль ни выбрали
  */
-export type ScopeSubject = { id: string; role: Role; limited?: boolean };
+export type ScopeSubject = {
+  id: string;
+  role: Role;
+  limited?: boolean;
+  /** Вход по общему логину team, даже с режимом управления: профиль в нём выбирают сами. Встречи один на один такому входу не видны (этап 28) */
+  shared?: boolean;
+};
 
 export function scopeOf(nodes: TeamNode[], person: ScopeSubject, functional: string[] = []): Scope {
   if (person.limited) {

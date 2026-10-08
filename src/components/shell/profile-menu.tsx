@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, MessagesSquare, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
@@ -87,6 +87,16 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
               ))}
               <Menu.Separator className="my-1 h-px bg-line" />
             </div>
+          ) : null}
+
+          {personal ? (
+            // Встречи один на один (этап 28): на телефоне в нижнем меню места нет, открываются отсюда
+            <Menu.Item asChild>
+              <Link href="/one-on-one" className={cn(itemClass, "lg:hidden")}>
+                <MessagesSquare className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+                Один на один
+              </Link>
+            </Menu.Item>
           ) : null}
 
           <Menu.Item asChild>
