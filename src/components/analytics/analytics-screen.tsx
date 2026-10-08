@@ -345,7 +345,7 @@ function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; s
   const first = c.overdue[0] ?? 0;
   const last = c.overdue[c.overdue.length - 1] ?? 0;
   const trend = last > first ? `больше, чем на конец недели ${firstWeek} (${first})` : last < first ? `меньше, чем на конец недели ${firstWeek} (${first})` : `столько же, сколько на конец недели ${firstWeek}`;
-  const name = c.leader ? `${c.leader.fullName}${c.leader.active ? "" : ", выключен в ресурсе"}` : "Руководитель не назначен";
+  const name = c.leader ? `${c.leader.fullName}${c.leader.note ? `, ${c.leader.note}` : ""}` : "Руководитель не назначен";
   const deeper = c.teams.find((t) => t.below);
   return (
     <li className="sv-card sv-card--soft flex flex-col gap-3 px-5 py-4" aria-label={`Карточка: ${name}`}>

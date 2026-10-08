@@ -45,8 +45,8 @@ export type AreaGoals = { quarter: string; total: number; onTrack: number; atRis
 
 export type LeaderCard = {
   key: string;
-  /** active: false, если руководителя выключили в ресурсе или он наблюдатель: его weekly не считается */
-  leader: { slug: PersonSlug; fullName: string; position: string | null; active: boolean } | null;
+  /** active: false, если руководителя выключили в ресурсе или он наблюдатель: его weekly не считается. note: почему */
+  leader: { slug: PersonSlug; fullName: string; position: string | null; active: boolean; note: string | null } | null;
   teams: { id: string; name: string; below: boolean }[];
   people: number;
   /** Свой weekly лидера по отчётным неделям. optional: weekly от него нигде не ждут */
@@ -129,7 +129,7 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
       select: { id: true, slug: true, fullName: true, position: true, createdAt: true },
     }),
     // Имена руководителей карточек: и выключенных, чтобы карточка не говорила «руководитель не назначен»
-    prisma.person.findMany({ where: { id: { in: cardLeaders } }, select: { id: true, slug: true, fullName: true, position: true } }),
+    prisma.person.findMany({ where: { id: { in: cardLeaders } }, select: { id: true, slug: true, fullName: true, position: true, active: true, role: true } }),
     prisma.week.findMany({
       where: { start: { in: reportingWeeks.map(dbDate) } },
       select: { start: true, deadline: true, reports: { select: { authorId: true, state: true } }, absences: { select: { personId: true } } },
@@ -344,7 +344,9 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     const cells = reportingWeeks.map((wk) => ({ key: wk, number: weekNumberOf(wk), cell: leaderId ? cellOf(leaderId, wk, !optional) : ("none" as WeeklyCell) }));
     return {
       key,
-      leader: leader ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position, active: counted } : null,
+      leader: leader
+        ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position, active: counted, note: !leader.active ? "выключен в ресурсе" : leader.role === "OBSERVER" ? "наблюдатель" : null }
+        : null,
       teams: teams.map((t) => ({ id: t.id, name: t.name, below: active.some((c) => c.parentId === t.id && c.id !== t.id && allowed.has(c.id)) })),
       people: a.people.size,
       weekly: {

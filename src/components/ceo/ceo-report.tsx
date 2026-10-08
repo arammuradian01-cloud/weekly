@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardCopy, Columns2, Mail, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
@@ -96,6 +97,7 @@ export function CeoReport({
   const thanks = useMemo(() => view.reports.filter((r) => r.thanks), [view.reports]);
   const { notify } = usePrototype();
   const run = useRunWeekly();
+  const router = useRouter();
   const week = view.week;
   const flaggedCount = view.entries.filter((e) => e.ceo).length;
   const [sections, setSections] = useState<CeoSections>(() => saved.sections ?? fromEntries(view));
@@ -188,6 +190,9 @@ export function CeoReport({
     setBusy(true);
     const result = await run(() => saveCeoReportAction(week.key, sections, cleanMeetings(meetings), savedAtRef.current), `Отчёт за неделю ${week.number} сохранён`);
     setBusy(false);
+    // Не сохранилось (например, отчёт уже сохранили в другом месте): подтягиваем свежую версию, чтобы сразу
+    // появилось предупреждение с кнопкой «Показать сохранённую версию». Набранное при этом не пропадает
+    if (!result) router.refresh();
     if (result) {
       savedAtRef.current = result.updatedAt ?? null;
       setSavedAt({ at: result.updatedAt ?? null, by: result.updatedBy });
@@ -246,7 +251,18 @@ export function CeoReport({
               <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
               Скопировать текст
             </Button>
-            <a href={mailHref} className={buttonClass("secondary", "sm")} onClick={() => (fullHref ? undefined : void copy("Текст длинный: он скопирован, вставьте его в письмо"))}>
+            <a
+              href={mailHref}
+              className={buttonClass("secondary", "sm")}
+              onClick={(e) => {
+                if (fullHref) return;
+                // Письмо с подсказкой «вставьте текст» открываем только после того, как текст правда в буфере
+                e.preventDefault();
+                void copy("Текст длинный: он скопирован, вставьте его в письмо").then((ok) => {
+                  if (ok) window.location.href = mailHref;
+                });
+              }}
+            >
               <Mail className="h-4 w-4" aria-hidden="true" />
               Открыть письмом
             </a>

@@ -112,7 +112,11 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
         <figcaption id={`${id}-t`} className="sv-chart__title">
           {title}
         </figcaption>
-        <button type="button" className="shrink-0 text-small font-medium text-link hover:underline" onClick={() => setTable((t) => !t)}>
+        <button type="button" className="shrink-0 text-small font-medium text-link hover:underline" onClick={() => {
+            setActive(null);
+            setTable((t) => !t);
+          }}
+        >
           {table ? "Графиком" : "Таблицей"}
         </button>
       </div>
