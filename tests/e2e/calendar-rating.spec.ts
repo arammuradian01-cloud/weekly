@@ -24,7 +24,7 @@ test.beforeEach(async () => {
   await resetDatabase({ weekly: false });
   await sql("DELETE FROM calendar_feeds");
   await sql("DELETE FROM meeting_rating_votes");
-  await sql("DELETE FROM meeting_ratings");
+  await sql("DELETE FROM meeting_rating_boxes");
 });
 
 test("календарь сроков: ссылка один раз, файл открывается без входа, отключённая ссылка не работает", async ({ page, playwright }) => {
@@ -85,13 +85,7 @@ test("календарь по общему логину не подключит�
 test("оценка встреч: участник отвечает анонимно один раз, руководитель видит итог закрытого месяца от трёх ответов", async ({ page, browser }) => {
   // Закрытый месяц: три ответа уже есть, в нём итог и комментарии по алфавиту
   const closed = month(-2);
-  for (const [score, remove] of [
-    [5, ""],
-    [4, "статусы по кругу"],
-    [3, "длинные отчёты"],
-  ] as const) {
-    await sql(`INSERT INTO meeting_ratings (id, "teamId", month, score, remove) VALUES (gen_random_uuid()::text, 'top', $1, $2, $3)`, [closed, score, remove]);
-  }
+  await sql(`INSERT INTO meeting_rating_boxes ("teamId", month, counts, remove) VALUES ('top', $1, '{0,0,1,1,1}', $2)`, [closed, ["статусы по кругу", "длинные отчёты"]]);
 
   await enterByLink(page, "loginova");
   await page.goto("/meeting-rating");
@@ -107,10 +101,11 @@ test("оценка встреч: участник отвечает аноним�
   await expect(page.getByText(/ответ за .+ учтён/).last()).toBeVisible();
   await page.reload();
   await expect(page.getByText(/ответ за .+ учтён/).last()).toBeVisible();
-  // В базе ответ без автора
-  const rows = await sql("SELECT * FROM meeting_ratings WHERE month = $1", [month(0)]);
+  // В базе ответ без автора: только урна с суммами за месяц
+  const rows = await sql("SELECT * FROM meeting_rating_boxes WHERE month = $1", [month(0)]);
   expect(rows).toHaveLength(1);
-  expect(Object.keys(rows[0]).sort()).toEqual(["id", "month", "remove", "score", "teamId"]);
+  expect(Object.keys(rows[0]).sort()).toEqual(["counts", "month", "remove", "teamId"]);
+  expect(rows[0].counts).toEqual([0, 0, 0, 1, 0]);
 
   // Руководитель топ-команды видит итог в аналитике
   const ctx = await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone", hasTouch: test.info().project.name === "phone" });

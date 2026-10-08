@@ -77,9 +77,10 @@ export async function feedByToken(token: string, now = new Date()) {
   const row = await prisma.calendarFeed.findUnique({ where: { tokenHash: hashToken(token) }, include: { person: { select: { id: true, active: true, role: true } } } });
   if (!row || !row.person.active || row.person.role === "OBSERVER") return null;
   if (!row.lastUsedAt || now.getTime() - row.lastUsedAt.getTime() > TOUCH_MS) {
-    await prisma.calendarFeed.update({ where: { id: row.id }, data: { lastUsedAt: now } });
+    // updateMany: ссылку могли отключить, пока календарь её забирал. Тогда отметка просто не пишется
+    await prisma.calendarFeed.updateMany({ where: { id: row.id }, data: { lastUsedAt: now } });
   }
-  return { personId: row.personId, withTitles: row.withTitles };
+  return { id: row.id, personId: row.personId, withTitles: row.withTitles };
 }
 
 /** Файл календаря человека */

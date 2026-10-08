@@ -20,7 +20,7 @@ import { formatTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { Person, Prisma } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, INVITE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
-import { ATTEMPT_TX, BUSY_ERROR, advisoryLock, markAttemptOk, serialAll } from "./attempts";
+import { ATTEMPT_TX, BUSY_ERROR, QueueBusy, advisoryLock, lockTimeout, markAttemptOk, serialAll } from "./attempts";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -92,6 +92,7 @@ async function reserveAttempt(ip: string, key: string, personId: string | null, 
   const loginKey = `password-login:${key}`;
   // Сначала очередь в процессе, потом транзакция: ждущие запросы не держат соединения базы (этап 29)
   return serialAll([ipKey, loginKey], () => prisma.$transaction(async (tx): Promise<Reserved> => {
+    await lockTimeout(tx);
     await lock(tx, ipKey);
     await lock(tx, loginKey);
     const byIp = computeLockState(
@@ -206,7 +207,11 @@ export async function setPasswordByLink(token: string, password: string, repeat:
     const reset = !!person.passwordHash;
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: hash, passwordSetAt: now } });
     await expireLinks(tx, person.id, now);
-    if (reset) await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "password" } });
+    if (reset) {
+      await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "password" } });
+      // Ссылка на календарь сроков гаснет вместе со входами (этап 29): её мог создать тот, кто узнал прежний пароль
+      await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
+    }
     if (replaces) await tx.deviceSession.updateMany({ where: { id: replaces, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
     const session = await tx.deviceSession.create({
       data: {
@@ -231,7 +236,7 @@ export async function setPasswordByLink(token: string, password: string, repeat:
 
 /**
  * Смена пароля в профиле: только при личном входе. Если пароль уже есть, нужен текущий. Остальные входы человека
- * завершаются, текущее устройство остаётся
+ * завершаются, текущее устройство остаётся, ссылка на календарь сроков отключается
  */
 export async function changePassword(actor: Actor, deviceId: string | null, current: string, next: string, repeat: string, now = new Date()): Promise<void> {
   if (actor.via === "TEAM" || !deviceId) fail("Пароль меняют при личном входе: по общему логину можно выбрать чужой профиль");
@@ -239,7 +244,10 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
   const person = await prisma.person.findUniqueOrThrow({ where: { id: actor.personId } });
   if (person.passwordHash) {
     // Текущий пароль сверяется с тем же счётчиком, что и вход: из открытого чужого профиля его не подобрать
-    const reserved = await reserveAttempt(actor.ip ?? "unknown", attemptKey(person, person.slug), person.id, now);
+    const reserved = await reserveAttempt(actor.ip ?? "unknown", attemptKey(person, person.slug), person.id, now).catch((error) => {
+      if (error instanceof QueueBusy) fail(BUSY_ERROR);
+      throw error;
+    });
     if (!reserved.ok) fail(`Слишком много неверных попыток. Попробуйте снова в ${formatTime(reserved.until)}`);
     if (!(await verifyPassword(current, person.passwordHash))) fail("Текущий пароль неверный");
     if (reserved.ok) await markOk(prisma, reserved.attemptId);
@@ -251,6 +259,8 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: hash, passwordSetAt: now } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null, id: { not: deviceId! } }, data: { revokedAt: now, revokedBy: "password" } });
     await expireLinks(tx, person.id, now);
+    // И ссылка на календарь сроков (этап 29): смену пароля делают и тогда, когда прежний мог кто-то узнать
+    await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
     await tx.auditLog.create({
       data: { action: "auth.password.set", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: person.passwordHash ? "Пароль изменён" : "Пароль задан", ip: actor.ip ?? null, via: actor.via ?? null },
     });

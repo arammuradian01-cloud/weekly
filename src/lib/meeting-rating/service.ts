@@ -1,9 +1,13 @@
 // Анонимная оценка встреч на сервере (этап 29).
 //
-// Ответ пишется двумя строками в разные таблицы: «кто ответил» (человек, команда, месяц) и «что ответили» (команда,
-// месяц, оценка, текст). Общего ключа, времени и записи в журнале нет: по базе нельзя сказать, чья это оценка.
+// «Кто ответил» пишется отдельной строкой (человек, команда, месяц), без времени и без записи в журнале. Сам ответ
+// отдельной строкой не хранится: он добавляется в урну команды за месяц, где только сколько раз поставили каждую
+// оценку и тексты «что убрать» в случайном порядке. По базе видно, что человек ответил, но не что именно. Остаётся
+// одно: тот, у кого есть две копии базы до и после ответа одного человека, увидит разницу в урне. Это доступ
+// владельца к хостингу, руководитель команды так не может.
 // Отвечают только при личном входе: по общему логину можно выбрать чужой профиль и ответить за другого.
 
+import { randomInt } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { moscowToday } from "@/lib/tasks/dates";
@@ -11,7 +15,10 @@ import { personalLogin } from "@/lib/one-on-one/rules";
 import { loadTeamNodes, type ScopeSubject, type TeamNode } from "@/lib/org/scope";
 import { analyticsTeams } from "@/lib/analytics/service";
 import {
+  addToBox,
+  boxTotal,
   closesOn,
+  EMPTY_BOX,
   cleanRemove,
   dayLabel,
   HISTORY_MONTHS,
@@ -27,6 +34,7 @@ import {
   summarize,
   validScore,
   type Month,
+  type RatingBox,
   type RatingSummary,
 } from "./rules";
 
@@ -36,7 +44,8 @@ const fail = (message: string): never => {
 
 export type RateTeam = { id: string; name: string; leaderName: string | null; voted: boolean };
 export type RateMonth = { month: Month; label: string; closesLabel: string; teams: RateTeam[] };
-export type MyRatings = { locked: string | null; months: RateMonth[] };
+/** leads: человек руководит командой, её встречи оценивают участники */
+export type MyRatings = { locked: string | null; months: RateMonth[]; leads: boolean };
 
 const LOCKED_SHARED = "Встречи оценивают при личном входе: по общему логину можно выбрать чужой профиль и ответить за другого.";
 const LOCKED_OBSERVER = "Наблюдатель встречи не оценивает.";
@@ -62,12 +71,13 @@ function myTeams(nodes: TeamNode[], personId: string): TeamNode[] {
 /** Что человек может оценить сейчас: открытые месяцы и команды, отмечено, где ответ уже есть */
 export async function myRatings(actor: Actor, now = new Date()): Promise<MyRatings> {
   const locked = lockedFor(actor);
-  if (locked) return { locked, months: [] };
+  if (locked) return { locked, months: [], leads: false };
   const today = moscowToday(now);
   const months = openMonths(today);
   const nodes = await loadTeamNodes(prisma);
   const teams = myTeams(nodes, actor.personId);
-  if (!teams.length) return { locked: null, months: [] };
+  const leads = nodes.some((n) => n.active && n.leaderId === actor.personId);
+  if (!teams.length) return { locked: null, months: [], leads };
   const [votes, leaders] = await Promise.all([
     prisma.meetingRatingVote.findMany({ where: { personId: actor.personId, month: { in: months } }, select: { teamId: true, month: true } }),
     prisma.person.findMany({ where: { id: { in: teams.flatMap((t) => (t.leaderId ? [t.leaderId] : [])) } }, select: { id: true, fullName: true } }),
@@ -76,6 +86,7 @@ export async function myRatings(actor: Actor, now = new Date()): Promise<MyRatin
   const names = new Map(leaders.map((p) => [p.id, p.fullName]));
   return {
     locked: null,
+    leads,
     months: months.map((month) => ({
       month,
       label: monthLabel(month),
@@ -111,10 +122,16 @@ export async function submitRating(actor: Actor, input: RatingInput, now = new D
   const node = nodes.find((n) => n.id === String(input.teamId ?? "") && n.active);
   if (!node || !ratersOf(node).includes(actor.personId)) fail("Встречи команды оценивают её участники, кроме руководителя");
   if (!(await eligiblePeople([actor.personId])).has(actor.personId)) fail("Ваш профиль выключен");
+  const teamId = node!.id;
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.meetingRatingVote.create({ data: { teamId: node!.id, month, personId: actor.personId } });
-      await tx.meetingRating.create({ data: { teamId: node!.id, month, score, remove } });
+      // Строка «кто ответил»: уникальна на человека, команду и месяц. Вторая вкладка с тем же ответом упрётся сюда
+      await tx.meetingRatingVote.create({ data: { teamId, month, personId: actor.personId } });
+      // Урна: создаётся первым ответом, дальше меняется под замком строки, чтобы два ответа не потеряли друг друга
+      await tx.$executeRaw`INSERT INTO meeting_rating_boxes ("teamId", "month") VALUES (${teamId}, ${month}) ON CONFLICT DO NOTHING`;
+      const [box] = await tx.$queryRaw<RatingBox[]>`SELECT counts, remove FROM meeting_rating_boxes WHERE "teamId" = ${teamId} AND "month" = ${month} FOR UPDATE`;
+      const next = addToBox({ counts: box?.counts ?? EMPTY_BOX.counts, remove: box?.remove ?? [] }, score, remove, () => randomInt(0, 2 ** 31) / 2 ** 31);
+      await tx.meetingRatingBox.update({ where: { teamId_month: { teamId, month } }, data: { counts: next.counts, remove: next.remove } });
     });
   } catch (error) {
     if ((error as { code?: string }).code !== "P2002") throw error;
@@ -129,6 +146,8 @@ export type RatingMonthView = {
   open: boolean;
   closesLabel: string;
   answered: number;
+  /** Смотрящий сам ответил за этот месяц: итог для него от четырёх ответов */
+  selfVoted: boolean;
   summary: RatingSummary | null;
 };
 
@@ -146,23 +165,26 @@ export async function ratingResults(subject: ScopeSubject, teamId: string, now =
     const m = shiftMonth(monthOf(today), -i);
     if (!open.includes(m)) closed.push(m);
   }
-  const [votes, rows, raters] = await Promise.all([
+  const [votes, boxes, raters, mine] = await Promise.all([
     prisma.meetingRatingVote.groupBy({ by: ["month"], where: { teamId, month: { in: open } }, _count: { _all: true } }),
-    prisma.meetingRating.findMany({ where: { teamId, month: { in: closed } }, select: { month: true, score: true, remove: true } }),
+    prisma.meetingRatingBox.findMany({ where: { teamId, month: { in: closed } }, select: { month: true, counts: true, remove: true } }),
     eligiblePeople(ratersOf(node)),
+    // Ответил ли сам смотрящий: для него порог на один выше
+    prisma.meetingRatingVote.findMany({ where: { teamId, personId: subject.id, month: { in: closed } }, select: { month: true } }),
   ]);
   const openCount = new Map(votes.map((v) => [v.month, v._count._all]));
-  const byMonth = new Map<Month, { score: number; remove: string }[]>();
-  for (const r of rows) byMonth.set(r.month, [...(byMonth.get(r.month) ?? []), r]);
+  const byMonth = new Map<Month, RatingBox>(boxes.map((b) => [b.month, { counts: b.counts, remove: b.remove }]));
+  const selfVoted = new Set(mine.map((v) => v.month));
   const view = (month: Month, isOpenMonth: boolean): RatingMonthView => {
-    const list = byMonth.get(month) ?? [];
+    const box = byMonth.get(month) ?? EMPTY_BOX;
     return {
       month,
       label: monthLabel(month),
       open: isOpenMonth,
       closesLabel: dayLabel(closesOn(month)),
-      answered: isOpenMonth ? (openCount.get(month) ?? 0) : list.length,
-      summary: isOpenMonth || !resultsVisible(month, today) ? null : summarize(list),
+      answered: isOpenMonth ? (openCount.get(month) ?? 0) : boxTotal(box),
+      selfVoted: selfVoted.has(month),
+      summary: isOpenMonth || !resultsVisible(month, today) ? null : summarize(box, { selfVoted: selfVoted.has(month) }),
     };
   };
   return { team: { id: node.id, name: node.name }, raters: raters.size, months: [...open.map((m) => view(m, true)), ...closed.map((m) => view(m, false))] };

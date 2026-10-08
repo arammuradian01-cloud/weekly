@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  addToBox,
+  boxTotal,
   closesOn,
   cleanRemove,
   dayLabel,
@@ -61,24 +63,36 @@ describe("ответы и итог", () => {
   });
 
   it("меньше трёх ответов: ни средней, ни распределения, ни комментариев", () => {
-    const s = summarize([
-      { score: 1, remove: "всё" },
-      { score: 5, remove: "" },
-    ]);
+    const s = summarize({ counts: [1, 0, 0, 0, 1], remove: ["всё"] });
     expect(s).toEqual({ answered: 2, hidden: true, average: null, counts: null, remove: [] });
   });
 
   it("от трёх ответов: средняя с одним знаком, сколько раз каждая оценка, комментарии по алфавиту без пустых", () => {
-    const s = summarize([
-      { score: 4, remove: "статусы по кругу" },
-      { score: 5, remove: " " },
-      { score: 4, remove: "длинные отчёты" },
-      { score: 2, remove: "" },
-    ]);
+    const s = summarize({ counts: [0, 1, 0, 2, 1], remove: ["статусы по кругу", " ", "длинные отчёты"] });
     expect(s.hidden).toBe(false);
     expect(s.average).toBe(3.8);
     expect(s.counts).toEqual([0, 1, 0, 2, 1]);
     expect(s.remove).toEqual(["длинные отчёты", "статусы по кругу"]);
+  });
+
+  it("кто сам ответил, видит итог от четырёх ответов: свой ответ он знает", () => {
+    const box = { counts: [0, 0, 1, 1, 1], remove: ["а"] };
+    expect(summarize(box).hidden).toBe(false);
+    expect(summarize(box, { selfVoted: true }).hidden).toBe(true);
+    expect(summarize({ ...box, counts: [1, 0, 1, 1, 1] }, { selfVoted: true }).hidden).toBe(false);
+  });
+
+  it("урна: ответ прибавляет счётчик, текст встаёт в случайное место, пустой текст не пишется", () => {
+    let box = { counts: [0, 0, 0, 0, 0], remove: [] as string[] };
+    box = addToBox(box, 4, "первый", () => 0);
+    box = addToBox(box, 4, "второй", () => 0);
+    box = addToBox(box, 2, "  ", () => 0.5);
+    box = addToBox(box, 5, "третий", () => 0.99);
+    expect(box.counts).toEqual([0, 1, 0, 2, 1]);
+    expect(boxTotal(box)).toBe(4);
+    // Порядок задаёт случай, а не порядок ответов
+    expect(box.remove).toEqual(["второй", "первый", "третий"]);
+    expect(addToBox(box, 1, "x", () => 0.4).remove).toEqual(["второй", "x", "первый", "третий"]);
   });
 
   it("оценивают участники команды, кроме руководителя", () => {

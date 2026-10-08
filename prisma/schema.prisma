@@ -920,7 +920,7 @@ model Team {
   forecasts   Forecast[]
   /// Анонимная оценка встреч раз в месяц (этап 29)
   ratingVotes MeetingRatingVote[]
-  ratings     MeetingRating[]
+  ratingBoxes MeetingRatingBox[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -1530,16 +1530,19 @@ model MeetingRatingVote {
   @@map("meeting_rating_votes")
 }
 
-/// Анонимная оценка встреч команды за месяц: полезность от 1 до 5 и что убрать. Без автора и без времени
-model MeetingRating {
-  id     String @id @default(uuid())
+/// Урна с ответами о встречах команды за месяц (этап 29). Одна строка на команду и месяц: только сколько раз поставили
+/// каждую оценку и ответы «что убрать», каждый новый встаёт в случайное место. Отдельных ответов в базе нет, поэтому
+/// по ней не узнать, кто что ответил
+model MeetingRatingBox {
   teamId String
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  team   Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// Месяц вида 2026-10
   month  String
-  score  Int
-  /// Что убрать из встреч: одна-две фразы, можно пусто
-  remove String @default("")
+  /// Сколько раз поставили 1, 2, 3, 4 и 5
+  counts Int[]    @default([0, 0, 0, 0, 0])
+  /// Ответы «что убрать» в случайном порядке
+  remove String[] @default([])
 
-  @@index([teamId, month])
-  @@map("meeting_ratings")
+  @@id([teamId, month])
+  @@map("meeting_rating_boxes")
 }

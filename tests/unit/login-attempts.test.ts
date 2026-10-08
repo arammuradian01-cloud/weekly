@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { queuedKeys, serial, serialAll } from "@/lib/login/attempts";
+import { QueueBusy, queuedKeys, serial, serialAll } from "@/lib/login/attempts";
 
 // Очередь попыток входа внутри процесса (этап 29): запросы с одним ключом идут строго по одному
 
@@ -57,6 +57,43 @@ describe("очередь попыток входа", () => {
       }),
     ]);
     expect(done).toBe(3);
+    expect(queuedKeys()).toBe(0);
+  });
+
+  it("очередь не растёт без конца: сверх предела сразу «перегружен», остальные выполняются", async () => {
+    let done = 0;
+    const slow = () =>
+      serial(
+        "flood",
+        async () => {
+          await tick(2);
+          done += 1;
+        },
+        { maxPending: 3 },
+      );
+    const results = await Promise.allSettled([slow(), slow(), slow(), slow(), slow()]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+    expect(results.filter((r) => r.status === "rejected" && r.reason instanceof QueueBusy)).toHaveLength(2);
+    expect(done).toBe(3);
+    expect(queuedKeys()).toBe(0);
+  });
+
+  it("не дождался очереди: ответ «перегружен», и сам запрос потом не выполняется", async () => {
+    let ran = 0;
+    let release!: () => void;
+    const first = serial("stuck", () => new Promise<void>((r) => (release = r)));
+    const second = serial(
+      "stuck",
+      async () => {
+        ran += 1;
+      },
+      { timeoutMs: 20 },
+    );
+    await expect(second).rejects.toBeInstanceOf(QueueBusy);
+    release();
+    await first;
+    await tick(5);
+    expect(ran).toBe(0);
     expect(queuedKeys()).toBe(0);
   });
 });

@@ -10,9 +10,14 @@ const answers = (n: number) => `${n} ${plural(n, "ответ", "ответа", "
 const avg = (n: number) => n.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 function statusLine(m: RatingMonthView, raters: number): string {
-  if (m.open) return `Опрос идёт до ${m.closesLabel}, ответили ${m.answered} из ${raters}. Итог появится после закрытия`;
+  // Состав команды мог смениться: «ответили 4 из 3» не показываем
+  if (m.open) return `Опрос идёт до ${m.closesLabel}, ответили ${m.answered}${m.answered <= raters ? ` из ${raters}` : ""}. Итог появится после закрытия`;
   if (!m.answered) return "Ответов не было";
-  if (!m.summary || m.summary.hidden) return `${answers(m.answered)}: итог показывается от ${RATING_MIN} ответов`;
+  if (!m.summary || m.summary.hidden) {
+    return m.selfVoted
+      ? `${answers(m.answered)}, среди них ваш: итог показывается вам от ${RATING_MIN + 1} ответов, чтобы по своему ответу нельзя было угадать чужие`
+      : `${answers(m.answered)}: итог показывается от ${RATING_MIN} ответов`;
+  }
   return `${avg(m.summary.average!)} из 5, ${answers(m.answered)}`;
 }
 

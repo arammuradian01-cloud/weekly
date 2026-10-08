@@ -47,7 +47,8 @@ export default async function ProfilePage() {
     personal ? pushPublicKey() : Promise.resolve(""),
     pushPrefsFor(ctx.person.id),
     personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
-    feedFor(ctx.person.id),
+    // По общему логину и наблюдателю состояние ссылки не отдаём: по нему видно, когда чужой календарь забирал данные
+    personal && !observer ? feedFor(ctx.person.id) : Promise.resolve(null),
   ]);
   // Календарь сроков (этап 29): ссылка личная, по общему логину её не выдаём
   const calendarLocked = !personal
@@ -88,7 +89,7 @@ export default async function ProfilePage() {
           <>
             <p className="mt-1 text-small text-muted">
               {ctx.person.passwordHash
-                ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут.`
+                ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
                 : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${ctx.person.slug} без ссылки.`}
             </p>
             <PasswordForm login={ctx.person.slug} hasPassword={!!ctx.person.passwordHash} />

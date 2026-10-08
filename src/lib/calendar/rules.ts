@@ -7,8 +7,8 @@
 // По умолчанию в календаре только номера, слова «срок», «встреча» и ссылки. Названия задач, имена и названия команд
 // показываются, только если человек сам включил это: сервис календаря хранит всё у себя.
 
+import { createHash } from "node:crypto";
 import { toCalendar, type IsoDate } from "@/domain/dates";
-import { TOP_TEAM } from "@/domain/teams";
 import type { WeekKey } from "@/domain/types";
 import { expectingTeams, leadersOf, personDeadline, teamMeeting, type RhythmNode } from "@/lib/org/rhythm";
 import { moscowDateTime } from "@/lib/week";
@@ -51,7 +51,13 @@ export type FeedInput = {
   oneOnOnes: { id: string; pairId: string; date: IsoDate; otherName: string }[];
 };
 
-const uid = (kind: string, id: string) => `${kind}-${id}@weekly`;
+/**
+ * Ключ события. В нём отпечаток человека: срок weekly и встреча команды у разных людей разные, а календари Outlook и
+ * iCloud склеивают события с одним ключом, если на них подписаны в одной учётной записи
+ */
+export function personTag(personId: string): string {
+  return createHash("sha256").update(`weekly-calendar:${personId}`).digest("hex").slice(0, 10);
+}
 
 function at(date: IsoDate, time: string): Date {
   const [h, m] = time.split(":").map(Number);
@@ -69,6 +75,8 @@ export function meetingTeams(personId: string, nodes: FeedNode[]): FeedNode[] {
 
 export function feedEvents(input: FeedInput): CalEvent[] {
   const base = input.base.replace(/\/+$/, "");
+  const tag = personTag(input.personId);
+  const uid = (kind: string, id: string) => `${kind}-${id}-${tag}@weekly`;
   const events: (CalEvent & { sort: number })[] = [];
   const titles = input.withTitles;
 
@@ -106,7 +114,8 @@ export function feedEvents(input: FeedInput): CalEvent[] {
       const slot = teamMeeting(w.key, n, w.meetingDate);
       const date = w.meetings.get(n.id) ?? slot.date;
       const url = `${base}/weekly/meeting?week=${w.key}`;
-      const summary = titles ? `Встреча команды «${n.name}»` : n.id === TOP_TEAM ? "Встреча топ-команды" : "Встреча команды";
+      // Без названий даже топ-команда просто «команда»: по календарю не видно, кто в неё входит
+      const summary = titles ? `Встреча команды «${n.name}»` : "Встреча команды";
       const common = { uid: uid(`meeting-${n.id}`, w.key), summary: `${summary}, неделя ${number}`, description: `Повестка и решения встречи за неделю ${number}: ${url}`, url };
       if (slot.time) {
         const start = at(date, slot.time);

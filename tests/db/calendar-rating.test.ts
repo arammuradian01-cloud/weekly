@@ -12,6 +12,9 @@ import { dbDate, moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
 import { hashToken } from "@/lib/login/service";
 import type { LoginMethod } from "@/generated/prisma/enums";
+import { GET as calendarRoute } from "@/app/api/calendar/[file]/route";
+
+const fetchCalendar = (file: string) => calendarRoute(new Request(`http://localhost:3000/api/calendar/${file}`), { params: Promise.resolve({ file }) });
 
 const as = async (slug: string, via: LoginMethod = "PASSWORD", management: "OWNER" | "ADMIN" | null = null): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug, management)), via });
 const expectRule = async (p: Promise<unknown>, message: RegExp) => {
@@ -28,7 +31,7 @@ const SECRET = "Переговоры с секретным партнёром";
 async function clean() {
   await prisma.calendarFeed.deleteMany();
   await prisma.meetingRatingVote.deleteMany();
-  await prisma.meetingRating.deleteMany();
+  await prisma.meetingRatingBox.deleteMany();
   await prisma.oneOnOnePair.deleteMany();
   await prisma.task.deleteMany({ where: { number: { gt: 7700, lt: 7800 } } });
 }
@@ -86,7 +89,9 @@ describe("календарь сроков", () => {
     expect(flat).toContain(`URL:https://weekly.example/one-on-one?pair=${pair.id}`);
     expect(flat).not.toContain("Мурадян");
     expect(flat).toMatch(/SUMMARY:Срок weekly\\, неделя \d+/);
-    expect(flat).toMatch(/SUMMARY:Встреча топ-команды\\, неделя \d+/);
+    // Топ-команда без названий тоже просто «команда»: по календарю не видно, кто в неё входит
+    expect(flat).toMatch(/SUMMARY:Встреча команды\\, неделя \d+/);
+    expect(flat).not.toContain("топ-команд");
 
     const titled = (await cal.calendarFile(reva, true, "https://weekly.example")).replace(/\r\n /g, "");
     expect(titled).toContain(`SUMMARY:№${t.number} ${SECRET}`);
@@ -96,7 +101,7 @@ describe("календарь сроков", () => {
   it("ссылка по токену: новая заменяет старую, отключение гасит; названия включаются без новой ссылки", async () => {
     const reva = await as("reva");
     const first = await cal.createFeed(reva, false);
-    expect(await cal.feedByToken(first.token)).toEqual({ personId: reva.personId, withTitles: false });
+    expect(await cal.feedByToken(first.token)).toMatchObject({ personId: reva.personId, withTitles: false });
     const second = await cal.createFeed(reva, false);
     expect(await cal.feedByToken(first.token)).toBeNull();
     expect(await cal.feedByToken(second.token)).not.toBeNull();
@@ -138,11 +143,51 @@ describe("календарь сроков", () => {
     await prisma.$transaction((tx) => login.revokeOnDeactivate(tx, reva.personId));
     expect(await cal.feedByToken(token)).toBeNull();
 
+    // Смена своего пароля: прежний пароль мог кто-то узнать и создать ссылку
+    ({ token } = await cal.createFeed(reva, false));
+    await pw.changePassword(reva, "это-устройство", "", "Летний отпуск 2026!", "Летний отпуск 2026!");
+    expect(await cal.feedByToken(token)).toBeNull();
+    await prisma.person.update({ where: { slug: "reva" }, data: { passwordHash: null, passwordSetAt: null } });
+
     // Выключенный человек: ссылка не отдаёт календарь, даже если запись осталась
     ({ token } = await cal.createFeed(reva, false));
     await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
     expect(await cal.feedByToken(token)).toBeNull();
     await prisma.person.update({ where: { slug: "reva" }, data: { active: true } });
+  });
+});
+
+describe("адрес календаря без входа", () => {
+  beforeEach(clean);
+
+  it("верная ссылка: файл календаря, ответ не кэшируется; отключённая и неверная: одинаковый 404", async () => {
+    const { token } = await cal.createFeed(await as("reva"), false);
+    const ok = await fetchCalendar(`${token}.ics`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("content-type")).toBe("text/calendar; charset=utf-8");
+    expect(ok.headers.get("cache-control")).toBe("no-store");
+    expect(ok.headers.get("referrer-policy")).toBe("no-referrer");
+    expect((await ok.text()).startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
+
+    const wrong = await fetchCalendar(`${"A".repeat(43)}.ics`);
+    await cal.revokeFeed(await as("reva"));
+    const revoked = await fetchCalendar(`${token}.ics`);
+    expect(wrong.status).toBe(404);
+    expect(revoked.status).toBe(404);
+    expect(await wrong.text()).toBe(await revoked.text());
+    expect(revoked.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("перебор неверных ссылок с одного адреса упирается в лимит, верная ссылка при этом работает", async () => {
+    const { token } = await cal.createFeed(await as("loginova"), false);
+    const codes: number[] = [];
+    for (let i = 0; i < 35; i++) codes.push((await fetchCalendar(`${String(i).padStart(43, "B")}.ics`)).status);
+    // Сначала 404, после лимита на адрес только 429. Часть неверных попыток с этого адреса была в прошлом тесте
+    const first429 = codes.indexOf(429);
+    expect(first429).toBeGreaterThan(20);
+    expect(codes.slice(0, first429).every((c) => c === 404)).toBe(true);
+    expect(codes.slice(first429).every((c) => c === 429)).toBe(true);
+    expect((await fetchCalendar(`${token}.ics`)).status).toBe(200);
   });
 });
 
@@ -168,19 +213,51 @@ describe("анонимная оценка встреч", () => {
     await expectRule(rating.submitRating(await as("reva"), { teamId: TOP_TEAM, month: "2026-09", score: 5 }, oct20), /закрыта/);
     await expectRule(rating.submitRating(await as("reva"), { teamId: TOP_TEAM, month: "2026-10", score: 6 }, oct20), /от 1 до 5/);
     await expectRule(rating.submitRating(await as("reva"), { teamId: "нет-такой", month: "2026-10", score: 3 }, oct20), /участники/);
-    // Ошибки не записали ответ: строка «кто ответил» одна, оценка одна
+    // Ошибки не записали ответ: строка «кто ответил» одна, в урне один ответ
     expect(await prisma.meetingRatingVote.count()).toBe(1);
-    expect(await prisma.meetingRating.count()).toBe(1);
+    expect((await prisma.meetingRatingBox.findUniqueOrThrow({ where: { teamId_month: { teamId: TOP_TEAM, month: "2026-10" } } })).counts).toEqual([0, 0, 0, 1, 0]);
   });
 
-  it("в базе ответ не связан с человеком: ни автора, ни времени, ключи случайные", async () => {
-    await rating.submitRating(await as("reva"), { teamId: TOP_TEAM, month: "2026-10", score: 2, remove: "" }, oct20);
-    const [row] = await prisma.$queryRaw<Record<string, unknown>[]>`SELECT * FROM meeting_ratings`;
-    expect(Object.keys(row).sort()).toEqual(["id", "month", "remove", "score", "teamId"]);
+  it("две вкладки отправляют ответ одновременно: учтён один, вторая узнаёт, что ответ уже есть", async () => {
+    const reva = await as("reva");
+    const results = await Promise.allSettled([
+      rating.submitRating(reva, { teamId: TOP_TEAM, month: "2026-10", score: 5, remove: "первая вкладка" }, oct20),
+      rating.submitRating(reva, { teamId: TOP_TEAM, month: "2026-10", score: 1, remove: "вторая вкладка" }, oct20),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(String((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason)).toMatch(/уже ответили/);
+    const box = await prisma.meetingRatingBox.findUniqueOrThrow({ where: { teamId_month: { teamId: TOP_TEAM, month: "2026-10" } } });
+    expect(box.counts.reduce((a, b) => a + b, 0)).toBe(1);
+    expect(box.remove).toHaveLength(1);
+  });
+
+  it("разные люди отвечают одновременно: урна не теряет ни одного ответа", async () => {
+    const people = ["reva", "loginova", "fatyanov", "sakhibullina", "afanasyev"];
+    await Promise.all(people.map(async (slug, i) => rating.submitRating(await as(slug), { teamId: TOP_TEAM, month: "2026-10", score: (i % 5) + 1, remove: `текст ${i}` }, oct20)));
+    const box = await prisma.meetingRatingBox.findUniqueOrThrow({ where: { teamId_month: { teamId: TOP_TEAM, month: "2026-10" } } });
+    expect(box.counts).toEqual([1, 1, 1, 1, 1]);
+    expect([...box.remove].sort()).toEqual(people.map((_, i) => `текст ${i}`).sort());
+    expect(await prisma.meetingRatingVote.count()).toBe(5);
+  });
+
+  it("в базе ответ не связан с человеком: отдельных ответов нет, только урна с суммами; связать по служебным полям нельзя", async () => {
+    for (const [slug, score] of [
+      ["reva", 2],
+      ["loginova", 4],
+      ["fatyanov", 4],
+    ] as const) {
+      await rating.submitRating(await as(slug), { teamId: TOP_TEAM, month: "2026-10", score, remove: `мнение ${slug}` }, oct20);
+    }
+    const boxes = await prisma.$queryRaw<Record<string, unknown>[]>`SELECT * FROM meeting_rating_boxes`;
+    expect(boxes).toHaveLength(1);
+    expect(Object.keys(boxes[0]).sort()).toEqual(["counts", "month", "remove", "teamId"]);
+    expect(boxes[0].counts).toEqual([0, 1, 0, 2, 0]);
     const [vote] = await prisma.$queryRaw<Record<string, unknown>[]>`SELECT * FROM meeting_rating_votes`;
     expect(Object.keys(vote).sort()).toEqual(["id", "month", "personId", "teamId"]);
-    expect(String(row.id)).toMatch(/^[0-9a-f-]{36}$/);
-    expect(row.id).not.toBe(vote.id);
+    expect(String(vote.id)).toMatch(/^[0-9a-f-]{36}$/);
+    // Служебный номер транзакции у урны совпадает только с последним ответившим, а в урне сумма всех ответов
+    const linked = await prisma.$queryRaw<{ personId: string }[]>`SELECT v."personId" FROM meeting_rating_votes v JOIN meeting_rating_boxes b ON b.xmin = v.xmin`;
+    expect(linked.length).toBeLessThanOrEqual(1);
     // И журнал не знает, кто и как ответил
     expect(await prisma.auditLog.count({ where: { action: { contains: "rating" } } })).toBe(0);
   });
@@ -221,6 +298,17 @@ describe("анонимная оценка встреч", () => {
     expect(await rating.ratingResults(subject(await idOf("reva"), "LEADER"), TOP_TEAM, nov08)).toBeNull();
     expect(await rating.ratingResults(subject(await idOf("muradyan"), "OWNER", true), TOP_TEAM, nov08)).toBeNull();
     expect(await rating.ratingResults(subject(await idOf("golovkin"), "ADMIN"), TOP_TEAM, nov08)).not.toBeNull();
+  });
+
+  it("кто сам ответил и смотрит итог, видит его от четырёх ответов: по своему ответу не угадать два чужих", async () => {
+    for (const slug of ["golovkin", "reva", "loginova"]) await rating.submitRating(await as(slug), { teamId: TOP_TEAM, month: "2026-10", score: 4, remove: `от ${slug}` }, oct20);
+    const admin = (await rating.ratingResults(subject(await idOf("golovkin"), "ADMIN"), TOP_TEAM, nov08))!.months.find((m) => m.month === "2026-10")!;
+    expect(admin).toMatchObject({ answered: 3, selfVoted: true, summary: { hidden: true, remove: [] } });
+    const owner = (await rating.ratingResults(subject(await idOf("muradyan"), "OWNER"), TOP_TEAM, nov08))!.months.find((m) => m.month === "2026-10")!;
+    expect(owner).toMatchObject({ answered: 3, selfVoted: false, summary: { hidden: false, average: 4 } });
+    await rating.submitRating(await as("fatyanov"), { teamId: TOP_TEAM, month: "2026-10", score: 2 }, oct20);
+    const again = (await rating.ratingResults(subject(await idOf("golovkin"), "ADMIN"), TOP_TEAM, nov08))!.months.find((m) => m.month === "2026-10")!;
+    expect(again.summary).toMatchObject({ hidden: false, answered: 4, average: 3.5 });
   });
 
   it("напоминание на главной: в конце месяца, пока не ответили; в середине месяца нет", async () => {

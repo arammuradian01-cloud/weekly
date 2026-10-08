@@ -18,22 +18,26 @@ const TITLES_WARNING =
  * Календарь сроков (этап 29): личная ссылка для подписки. Сроки задач, срок weekly, встречи команды и один на один.
  * Ссылку видно один раз, сразу после создания: в базе хранится только её отпечаток
  */
-export function CalendarFeedSettings({ feed, locked }: { feed: FeedView; locked: string | null }) {
+export function CalendarFeedSettings({ feed, locked }: { feed: FeedView | null; locked: string | null }) {
   const run = useRunAction();
   const { notify } = usePrototype();
-  const [titles, setTitles] = useState(feed.withTitles);
+  const [titles, setTitles] = useState(feed?.withTitles ?? false);
   const [url, setUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const warnId = useId();
 
-  if (locked) return <p className="mt-2 text-body text-muted">{locked}</p>;
+  if (locked || !feed) return <p className="mt-2 text-body text-muted">{locked}</p>;
 
   const create = async () => {
     setBusy(true);
-    const made = await run(() => createCalendarAction(titles));
+    const made = await run(() => createCalendarAction(titles), "Ссылка на календарь готова");
     setBusy(false);
-    if (made) setUrl(made);
+    if (made) {
+      setUrl(made);
+      // Фокус на ссылку: её сразу можно скопировать, экранный диктор читает только строку «Ссылка готова»
+      requestAnimationFrame(() => input.current?.focus());
+    }
   };
 
   const copy = async () => {
@@ -73,8 +77,10 @@ export function CalendarFeedSettings({ feed, locked }: { feed: FeedView; locked:
   return (
     <div className="mt-4 flex flex-col gap-4">
       {url ? (
-        <div className="sv-card sv-card--soft flex flex-col gap-3 p-4" role="status">
-          <p className="text-body font-medium text-ink">Ссылка готова. Она показывается один раз</p>
+        <div className="sv-card sv-card--soft flex flex-col gap-3 p-4">
+          <p className="text-body font-medium text-ink" role="status">
+            Ссылка готова. Она показывается один раз
+          </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <input
               ref={input}
@@ -103,7 +109,7 @@ export function CalendarFeedSettings({ feed, locked }: { feed: FeedView; locked:
           </ul>
           <p className="text-small text-muted">
             Календари обновляют подписку сами: Google раз в несколько часов, остальные чаще. Не пересылайте ссылку: по ней видно ваши сроки без входа. Потеряли
-            ссылку: создайте новую, старая перестанет работать.
+            ссылку: создайте новую, старая перестанет работать. Смена пароля и «выйти везде» тоже отключают ссылку.
           </p>
         </div>
       ) : null}

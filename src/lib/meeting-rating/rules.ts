@@ -5,7 +5,10 @@
 // - итог виден руководителю команды и руководству после закрытия опроса. Пока опрос идёт, видно только число
 //   ответов: по тому, как меняется итог, можно было бы угадать, кто ответил;
 // - при ответах меньше трёх итог не показывается вовсе, комментарии тоже: иначе автора легко угадать;
-// - комментарии показываются по алфавиту, не в порядке ответов.
+// - кто ответил, записано отдельно. Сами ответы складываются в урну: одна строка на команду и месяц, где только
+//   сколько раз поставили каждую оценку и тексты в случайном порядке. Отдельного ответа в базе нет;
+// - тот, кто смотрит итог и сам ответил, видит его от четырёх ответов: свой ответ он знает;
+// - комментарии показываются по алфавиту.
 
 import type { IsoDate } from "@/domain/dates";
 import { cleanTopic } from "@/lib/one-on-one/rules";
@@ -93,7 +96,7 @@ export function validScore(value: unknown): number | null {
 
 export type RatingSummary = {
   answered: number;
-  /** Итог скрыт: ответов меньше трёх */
+  /** Итог скрыт: ответов меньше трёх (или меньше четырёх, если среди них ответ того, кто смотрит) */
   hidden: boolean;
   /** Средняя с одним знаком; null, если итог скрыт */
   average: number | null;
@@ -103,14 +106,40 @@ export type RatingSummary = {
   remove: string[];
 };
 
-export function summarize(rows: { score: number; remove: string }[]): RatingSummary {
-  const answered = rows.length;
-  if (answered < RATING_MIN) return { answered, hidden: true, average: null, counts: null, remove: [] };
-  const counts = [0, 0, 0, 0, 0];
-  for (const r of rows) counts[r.score - 1] += 1;
-  const average = Math.round((rows.reduce((s, r) => s + r.score, 0) / answered) * 10) / 10;
-  const remove = rows
-    .map((r) => r.remove.trim())
+/** Урна за месяц: сколько раз поставили каждую оценку и ответы «что убрать» */
+export type RatingBox = { counts: number[]; remove: string[] };
+
+export const EMPTY_BOX: RatingBox = { counts: [0, 0, 0, 0, 0], remove: [] };
+
+/** Сколько ответов в урне */
+export function boxTotal(box: RatingBox): number {
+  return [0, 1, 2, 3, 4].reduce((s, i) => s + Math.max(0, Number(box.counts[i] ?? 0)), 0);
+}
+
+/**
+ * Новый ответ в урну: к счётчику оценки прибавляется один, текст встаёт в случайное место списка. Так порядок
+ * текстов не выдаёт, кто ответил раньше. random: число от 0 до 1, как Math.random
+ */
+export function addToBox(box: RatingBox, score: number, remove: string, random: () => number = Math.random): RatingBox {
+  const counts = [0, 1, 2, 3, 4].map((i) => Math.max(0, Number(box.counts[i] ?? 0)));
+  counts[score - 1] += 1;
+  const list = [...box.remove];
+  const text = remove.trim();
+  if (text) list.splice(Math.min(list.length, Math.floor(random() * (list.length + 1))), 0, text);
+  return { counts, remove: list };
+}
+
+/**
+ * Итог урны. selfVoted: тот, кто смотрит, сам ответил. Свой ответ он знает, поэтому для него порог на один выше:
+ * иначе из трёх ответов неизвестными остались бы два
+ */
+export function summarize(box: RatingBox, opts: { selfVoted?: boolean } = {}): RatingSummary {
+  const counts = [0, 1, 2, 3, 4].map((i) => Math.max(0, Number(box.counts[i] ?? 0)));
+  const answered = counts.reduce((s, n) => s + n, 0);
+  if (answered < RATING_MIN + (opts.selfVoted ? 1 : 0)) return { answered, hidden: true, average: null, counts: null, remove: [] };
+  const average = Math.round((counts.reduce((s, n, i) => s + n * (i + 1), 0) / answered) * 10) / 10;
+  const remove = box.remove
+    .map((r) => r.trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, "ru"));
   return { answered, hidden: false, average, counts, remove };

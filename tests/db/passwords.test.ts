@@ -130,12 +130,14 @@ describe("вход по логину и паролю", () => {
 describe("сброс, смена и ссылки всем", () => {
   it("владелец сбрасывает пароль: старый не работает, входы и ссылки гаснут; не владелец не может", async () => {
     const { session } = await withPassword("reva");
+    // Журнал общий для всех файлов тестов: считаем только новые записи
+    const before = await prisma.auditLog.count({ where: { action: "auth.password.reset", entityId: "reva" } });
     await expectRule(pw.resetPassword({ ...(await tasks.actorFor("golovkin", "ADMIN")), via: "INVITE" }, "reva"), /только владелец/);
     await pw.resetPassword(await owner(), "reva", later(1000));
     expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).not.toBeNull();
     expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).passwordHash).toBeNull();
     expect((await pw.loginWithPassword("reva", GOOD, device, later(2000))).ok).toBe(false);
-    expect(await prisma.auditLog.count({ where: { action: "auth.password.reset", entityId: "reva" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { action: "auth.password.reset", entityId: "reva" } })).toBe(before + 1);
   });
 
   it("смена пароля в профиле: только при личном входе и с текущим паролем; другие устройства выходят", async () => {
