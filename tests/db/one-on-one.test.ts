@@ -201,6 +201,20 @@ describe("приватность событий и журнала", () => {
     expect(await oo.pairPath(await as("Рева", "TEAM"), pair.id)).toBeNull();
   });
 
+  it("собеседника выключили: история видна обоим, правки закрыты", async () => {
+    const alisaId = (await prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: "Чемоданова" } } })).id;
+    const antonovActor = await as("Антонов");
+    const alisa = await slugOf("Чемоданова");
+    await oo.addTopic(antonovActor, alisa, "Отпуск в ноябре");
+    await prisma.person.update({ where: { id: alisaId }, data: { active: false } });
+    const view = await oo.getPair(antonovActor, alisa);
+    expect(view.report.active).toBe(false);
+    expect(view.open.map((t) => t.text)).toEqual(["Отпуск в ноябре"]);
+    await expectRule(oo.addTopic(antonovActor, alisa, "Ещё тема"), /только для чтения/);
+    await expectRule(oo.closeTopic(antonovActor, view.open[0].id, "dropped"), /только для чтения/);
+    await prisma.person.update({ where: { id: alisaId }, data: { active: true } });
+  });
+
   it("в журнал текст тем и заметок не попадает", async () => {
     const rows = await prisma.auditLog.findMany({ where: { at: { gte: new Date(Date.now() - 60 * 60 * 1000) } } });
     const dump = JSON.stringify(rows, (_k, v) => (typeof v === "bigint" ? String(v) : v));

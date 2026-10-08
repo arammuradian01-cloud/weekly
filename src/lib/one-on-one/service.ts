@@ -95,7 +95,8 @@ export async function listPairs(actor: Actor): Promise<PairListItem[]> {
   // Одна строка на собеседника: заведённая пара важнее структуры (после перестановки роли берём из пары)
   const byOther = new Map<string, { managerId: string; reportId: string; existing: boolean }>();
   for (const p of existing) byOther.set(otherOf(p, actor), { ...p, existing: true });
-  for (const l of pairLinks(nodes, actor.personId)) {
+  // Наблюдатель новых встреч не заводит: у него только уже заведённые пары
+  for (const l of actor.role === "OBSERVER" ? [] : pairLinks(nodes, actor.personId)) {
     const other = l.managerId === actor.personId ? l.reportId : l.managerId;
     if (!byOther.has(other)) byOther.set(other, { ...l, existing: false });
   }
@@ -149,6 +150,12 @@ async function pairOf(db: Tx | typeof prisma, actor: Actor, pairId: string) {
 }
 
 const otherOf = (pair: { managerId: string; reportId: string }, actor: Actor) => (pair.managerId === actor.personId ? pair.reportId : pair.managerId);
+
+/** Правки в паре: оба участника включены и не наблюдатели. Иначе история только для чтения */
+async function requireWritable(tx: Tx, pair: { managerId: string; reportId: string }) {
+  const people = await tx.person.findMany({ where: { id: { in: [pair.managerId, pair.reportId] } }, select: { active: true, role: true } });
+  if (people.length < 2 || people.some((p) => !p.active || p.role === "OBSERVER")) fail("Собеседник выключен в ресурсе или стал наблюдателем: встречи с ним теперь только для чтения");
+}
 
 const topicSelect = {
   id: true,
@@ -247,6 +254,7 @@ export async function addTopic(actor: Actor, otherSlug: string, text: string, no
   if (!clean) fail("Напишите тему одной-двумя фразами");
   return prisma.$transaction(async (tx) => {
     const { pair } = await ensurePair(tx, actor, otherSlug);
+    await requireWritable(tx, pair);
     const open = await tx.oneOnOneTopic.count({ where: { pairId: pair.id, status: "OPEN" } });
     if (open >= 50) fail("В повестке уже 50 тем: закройте или снимите обсуждённые");
     const row = await tx.oneOnOneTopic.create({ data: { pairId: pair.id, authorId: actor.personId, text: clean, createdAt: now }, select: topicSelect });
@@ -260,6 +268,7 @@ async function topicOf(tx: Tx, actor: Actor, topicId: string) {
   const row = await tx.oneOnOneTopic.findUnique({ where: { id: String(topicId) }, include: { pair: true } });
   if (!row) return fail("Такой темы нет");
   await pairOf(tx, actor, row.pairId);
+  await requireWritable(tx, row.pair);
   return row;
 }
 
@@ -320,6 +329,7 @@ export async function scheduleMeeting(actor: Actor, otherSlug: string, date: str
   if (date < today) fail("Встречу назначают на сегодня или позже");
   return prisma.$transaction(async (tx) => {
     const { pair } = await ensurePair(tx, actor, otherSlug);
+    await requireWritable(tx, pair);
     // Две вкладки назначают встречу одновременно: вторая ждёт первую и переносит её, а не падает на уникальном индексе
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`one-on-one:${pair.id}`}))`;
     const planned = await tx.oneOnOne.findFirst({ where: { pairId: pair.id, status: "PLANNED" } });
@@ -338,7 +348,7 @@ export async function saveNotes(actor: Actor, meetingId: string, input: { shared
   return prisma.$transaction(async (tx) => {
     const found = await tx.oneOnOne.findUnique({ where: { id: String(meetingId) } });
     if (!found) return fail("Такой встречи нет");
-    await pairOf(tx, actor, found.pairId);
+    await requireWritable(tx, await pairOf(tx, actor, found.pairId));
     // Общие заметки правят оба: сохранение сверяется с текстом, от которого начинали, чужую правку не затирает
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`one-on-one-notes:${found.id}`}))`;
     const meeting = await tx.oneOnOne.findUniqueOrThrow({ where: { id: found.id } });
@@ -370,6 +380,7 @@ export async function completeMeeting(actor: Actor, meetingId: string, next: str
     const meeting = await tx.oneOnOne.findUnique({ where: { id: String(meetingId) } });
     if (!meeting) return fail("Такой встречи нет");
     const pair = await pairOf(tx, actor, meeting.pairId);
+    await requireWritable(tx, pair);
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`one-on-one:${pair.id}`}))`;
     const fresh = await tx.oneOnOne.findUniqueOrThrow({ where: { id: meeting.id } });
     if (fresh.status !== "PLANNED") fail("Встреча уже завершена");

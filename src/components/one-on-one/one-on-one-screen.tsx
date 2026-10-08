@@ -30,6 +30,8 @@ function moment(iso: string): string {
 export function OneOnOneScreen({ view }: { view: PairView }) {
   const run = useRunWeekly();
   const other = view.role === "manager" ? view.report : view.manager;
+  // Собеседника выключили или он стал наблюдателем: история остаётся, правки закрыты (сервер их тоже не примет)
+  const readOnly = !view.manager.active || !view.report.active;
   const [topic, setTopic] = useState("");
   const [busy, setBusy] = useState(false);
   const defaultDate = () => view.planned?.date ?? nextMeetingDate(view.history[0]?.meeting.date ?? addDays(view.today, -7), view.today);
@@ -81,7 +83,12 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="flex min-w-0 flex-col gap-6">
-        <section aria-labelledby="oo-meeting" className="sv-card sv-card--soft flex flex-col gap-3 px-5 py-4">
+        {readOnly ? (
+          <p className="rounded-lg bg-warning-soft px-4 py-3 text-small text-warning-ink" role="status">
+            {other.active ? "Вы" : other.fullName} больше не в ресурсе как участник: встречи остаются для истории, новые темы, встречи и заметки не добавить.
+          </p>
+        ) : null}
+        <section aria-labelledby="oo-meeting" className={cn("sv-card sv-card--soft flex flex-col gap-3 px-5 py-4", readOnly && "hidden")}>
           <h2 id="oo-meeting" className="text-title-sm font-semibold text-ink">
             {view.planned ? `Встреча ${formatLong(view.planned.date)}` : "Встреча не назначена"}
           </h2>
@@ -128,7 +135,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
             </h2>
             <p className="mt-1 text-small text-muted">{hint}. Незакрытые темы переходят на следующую встречу сами.</p>
           </div>
-          <div className="sv-card sv-card--soft flex flex-col gap-3 px-5 py-4">
+          <div className={cn("sv-card sv-card--soft flex flex-col gap-3 px-5 py-4", readOnly && "hidden")}>
             <TextArea label="Новая тема" id="oo-topic" rows={2} maxLength={TOPIC_MAX} value={topic} onChange={(e) => setTopic(e.target.value)} hint="Одной-двумя фразами: что обсудить или где нужна помощь" />
             <div>
               <Button onClick={add} disabled={busy || !topic.trim()}>
@@ -140,7 +147,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
           {view.open.length ? (
             <ul className="flex flex-col gap-3">
               {view.open.map((t) => (
-                <TopicCard key={t.id} topic={t} canClose={!!view.planned} onTask={() => setTaskFor(t)} />
+                <TopicCard key={t.id} topic={t} canClose={!!view.planned} onTask={() => setTaskFor(t)} readOnly={readOnly} />
               ))}
             </ul>
           ) : (
@@ -158,13 +165,13 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
             </div>
             <ul className="flex flex-col gap-3">
               {view.closedNow.map((t) => (
-                <ClosedTopic key={t.id} topic={t} />
+                <ClosedTopic key={t.id} topic={t} readOnly={readOnly} />
               ))}
             </ul>
           </section>
         ) : null}
 
-        {view.planned ? <Notes key={view.planned.id} meetingId={view.planned.id} notes={view.planned.notes} myNote={view.planned.myNote} updatedAt={view.planned.updatedAt} /> : null}
+        {view.planned && !readOnly ? <Notes key={view.planned.id} meetingId={view.planned.id} notes={view.planned.notes} myNote={view.planned.myNote} updatedAt={view.planned.updatedAt} /> : null}
 
         <section aria-labelledby="oo-history" className="flex flex-col gap-3">
           <h2 id="oo-history" className="text-title font-semibold text-ink">
@@ -190,7 +197,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
                                 Задача {t.task.number}
                               </Link>
                             ) : null}
-                            <ReopenButton topic={t} />
+                            {readOnly ? null : <ReopenButton topic={t} />}
                           </div>
                         </li>
                       ))}
@@ -249,7 +256,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
   );
 }
 
-function TopicCard({ topic: t, canClose, onTask }: { topic: TopicView; canClose: boolean; onTask: () => void }) {
+function TopicCard({ topic: t, canClose, onTask, readOnly }: { topic: TopicView; canClose: boolean; onTask: () => void; readOnly: boolean }) {
   const run = useRunWeekly();
   const [mode, setMode] = useState<"view" | "edit" | "outcome">("view");
   const [text, setText] = useState(t.text);
@@ -309,7 +316,7 @@ function TopicCard({ topic: t, canClose, onTask }: { topic: TopicView; canClose:
             </Button>
           </div>
         </div>
-      ) : mode === "view" ? (
+      ) : mode === "view" && !readOnly ? (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => setMode("outcome")} disabled={!canClose} title={canClose ? undefined : "Сначала назначьте встречу"} aria-label={`Обсудили: ${t.text}`}>
             <Check className="h-4 w-4" aria-hidden="true" />
@@ -344,7 +351,7 @@ function TopicCard({ topic: t, canClose, onTask }: { topic: TopicView; canClose:
 }
 
 /** Тема, закрытая на этой встрече: итог виден, его можно поправить, тему можно вернуть в повестку */
-function ClosedTopic({ topic: t }: { topic: TopicView }) {
+function ClosedTopic({ topic: t, readOnly }: { topic: TopicView; readOnly: boolean }) {
   const run = useRunWeekly();
   const [edit, setEdit] = useState(false);
   const [outcome, setOutcome] = useState(t.outcome ?? "");
@@ -364,7 +371,7 @@ function ClosedTopic({ topic: t }: { topic: TopicView }) {
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
-                const r = await run(() => closeTopicAction(t.id, "discussed", outcome), "Итог поправлен");
+                const r = await run(() => closeTopicAction(t.id, t.status === "dropped" ? "dropped" : "discussed", outcome), "Итог поправлен");
                 setBusy(false);
                 if (r) setEdit(false);
               }}
@@ -387,10 +394,14 @@ function ClosedTopic({ topic: t }: { topic: TopicView }) {
         <>
           {t.outcome ? <p className="whitespace-pre-wrap text-small text-ink [overflow-wrap:anywhere]">{t.outcome}</p> : null}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-small">
-            <button type="button" className="text-link hover:underline" onClick={() => setEdit(true)} aria-label={`Поправить итог: ${t.text}`}>
-              Поправить итог
-            </button>
-            <ReopenButton topic={t} />
+            {readOnly ? null : (
+              <>
+                <button type="button" className="text-link hover:underline" onClick={() => setEdit(true)} aria-label={`Поправить итог: ${t.text}`}>
+                  Поправить итог
+                </button>
+                <ReopenButton topic={t} />
+              </>
+            )}
             {t.task ? (
               <Link href={`/tasks/${t.task.number}`} className="text-link hover:underline">
                 Задача {t.task.number}
@@ -444,11 +455,13 @@ function Notes({ meetingId, notes, myNote, updatedAt }: { meetingId: string; not
   const rev = useRef(0);
   useEffect(() => {
     if (updatedAt <= base.current.at) return;
-    if (!sharedDirty) {
+    if (!sharedDirty || notes === shared) {
+      // Своих правок нет или на сервере тот же текст: берём сохранённую версию, спорить не о чем
       base.current = { notes, at: updatedAt };
       setShared(notes);
+      setSharedDirty(false);
       setNewer(null);
-    } else if (notes !== shared) setNewer(notes);
+    } else setNewer(notes);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notes, updatedAt, sharedDirty]);
   const save = async () => {
