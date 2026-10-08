@@ -414,7 +414,19 @@ export async function deleteGoal(actor: Actor, id: string): Promise<void> {
   });
 }
 
-/** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше */
+/** Личная цель другого человека из борда лидера: не руководителя команды цели и не человека задачи */
+function othersPersonal(g: { source: string; ownerId: string | null; teamId: string }, nodes: TeamNode[], people: string[]): boolean {
+  if (!g.source.startsWith("leader-board:") || !g.ownerId) return false;
+  const leader = nodes.find((n) => n.id === g.teamId)?.leaderId ?? null;
+  return g.ownerId !== leader && !people.includes(g.ownerId);
+}
+
+/** Люди задачи, чьи личные цели ей подходят: ответственный и соисполнители */
+function taskPeople(task: { ownerId: string | null; coExecutors: { personId: string }[] }): string[] {
+  return [...new Set([...(task.ownerId ? [task.ownerId] : []), ...task.coExecutors.map((c) => c.personId)])];
+}
+
+/** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше, личные цели её людей */
 export async function goalOptions(who: Who, number: number): Promise<{ id: string; label: string }[]> {
   const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
   const { scope, nodes } = await scopeFor(prisma, who);
@@ -422,12 +434,30 @@ export async function goalOptions(who: Who, number: number): Promise<{ id: strin
   if (!task || task.archivedAt || !seesTask(scope, task, who.personId)) return fail(`Задачи ${number} нет`);
   const teams = [task.teamId, ...ancestorsOf(nodes, task.teamId)];
   const quarters = [...new Set([quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))])];
+  // Личные цели ответственного и соисполнителей (этап 31): цели квартала из бордов лидеров, в любой их команде
+  const people = taskPeople(task);
   const goals = await prisma.goal.findMany({
-    where: { OR: [{ teamId: { in: teams }, quarter: { in: quarters }, result: { not: "DROPPED" } }, ...(task.goalId ? [{ id: task.goalId }] : [])] },
-    include: { team: { select: { name: true } } },
+    where: {
+      OR: [
+        { teamId: { in: teams }, quarter: { in: quarters }, result: { not: "DROPPED" } },
+        ...(people.length ? [{ ownerId: { in: people }, quarter: { in: quarters }, result: { not: "DROPPED" as const } }] : []),
+        ...(task.goalId ? [{ id: task.goalId }] : []),
+      ],
+    },
+    include: { team: { select: { name: true } }, owner: { select: { id: true, fullName: true } } },
     orderBy: [{ quarter: "desc" }, { sortOrder: "asc" }],
   });
-  return goals.map((g) => ({ id: g.id, label: `${quarterLabel(g.quarter)}, ${g.team.name}: ${g.code ? `${g.code}. ` : ""}${g.title}` }));
+  // Сначала личные цели людей задачи, потом цели команд. Личная: из борда лидера человека задачи или его цель в другой
+  // команде. Личные цели других людей из бордов лидеров не предлагаем: в команде они лежат рядом с целями команды,
+  // но это чужие цели
+  const personal = (g: (typeof goals)[number]) => !!g.ownerId && people.includes(g.ownerId) && (g.source.startsWith("leader-board:") || !teams.includes(g.teamId));
+  const offered = goals.filter((g) => g.id === task.goalId || !othersPersonal(g, nodes, people));
+  return [...offered.filter(personal), ...offered.filter((g) => !personal(g))].map((g) => ({
+    id: g.id,
+    label: personal(g)
+      ? `${quarterLabel(g.quarter)}, личная цель ${g.owner?.fullName ?? ""}: ${g.code ? `${g.code}. ` : ""}${g.title}`
+      : `${quarterLabel(g.quarter)}, ${g.team.name}: ${g.code ? `${g.code}. ` : ""}${g.title}`,
+  }));
 }
 
 /** Привязать задачу к цели или отвязать */
@@ -444,7 +474,10 @@ export async function linkTaskGoal(actor: Actor, number: number, goalId: string 
     if (goalId) {
       const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
       const nodes = await loadTeamNodes(tx);
-      if (![task.teamId, ...ancestorsOf(nodes, task.teamId)].includes(g.teamId)) fail("Задачу привязывают к цели своей команды или команды выше");
+      // Цель своей команды или команды выше, или личная цель ответственного и соисполнителей (этап 31)
+      const ownGoal = !!g.ownerId && taskPeople(task).includes(g.ownerId);
+      const inChain = [task.teamId, ...ancestorsOf(nodes, task.teamId)].includes(g.teamId);
+      if (!ownGoal && (!inChain || othersPersonal(g, nodes, taskPeople(task)))) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
       if (g.result === "DROPPED") fail("Цель снята: выберите другую");
       const quarters = [quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))];
       if (!quarters.includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
@@ -536,6 +569,12 @@ export async function planGoals(actor: Actor, input: string | string[][], opts: 
 export async function applyGoals(actor: Actor, input: string | string[][], opts: { team: string; quarter?: string | null; source?: string }): Promise<{ added: number; changed: number }> {
   const plan = await planGoals(actor, input, opts);
   if (plan.problems.length) fail(`Цели не загрузить, база не тронута. Исправьте: ${plan.problems.slice(0, 5).map((p) => `строка ${p.line}: ${p.text}`).join("; ")}`);
+  return applyPlan(actor, plan, opts.source);
+}
+
+/** Записать проверенный план одной транзакцией: новые цели, изменения, связи с целью выше (этап 31: и для бордов лидеров) */
+export async function applyPlan(actor: Actor, plan: Pick<GoalsPlan, "rows">, source?: string): Promise<{ added: number; changed: number }> {
+  const opts = { source };
   return prisma.$transaction(
     async (tx) => {
       const nodes = await loadTeamNodes(tx);

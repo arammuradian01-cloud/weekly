@@ -8,6 +8,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Plus, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
+import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
 import { usePrototype } from "@/domain/store";
@@ -47,7 +48,7 @@ const RESULT_TONE: Record<GoalResult, string> = {
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
 
-export function GoalsScreen({ view, defaultTeam, bordTabs }: { view: GoalsView; defaultTeam: string | null; bordTabs: string[] | null }) {
+export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }: { view: GoalsView; defaultTeam: string | null; bordTabs: string[] | null; leaderBoard?: boolean }) {
   const router = useRouter();
   const { notify } = usePrototype();
   const [, start] = useTransition();
@@ -145,7 +146,7 @@ export function GoalsScreen({ view, defaultTeam, bordTabs }: { view: GoalsView; 
       ) : null}
       {editing ? <GoalModal mode="edit" goal={editing} quarter={view.quarter} teams={view.creatable} defaultTeam={editing.team.id} goals={view.goals} onClose={() => setEditing(null)} run={run} /> : null}
       {marking ? <MarkModal goal={marking} onClose={() => setMarking(null)} run={run} /> : null}
-      {importing ? <ImportDrawer teams={view.creatable} defaultTeam={defaultTeam} quarter={view.quarter} bordTabs={bordTabs} onClose={() => setImporting(false)} /> : null}
+      {importing ? <ImportDrawer teams={view.creatable} defaultTeam={defaultTeam} quarter={view.quarter} bordTabs={bordTabs} leaderBoard={leaderBoard} onClose={() => setImporting(false)} /> : null}
     </div>
   );
 }
@@ -404,20 +405,64 @@ function MarkModal({ goal, onClose, run }: { goal: GoalNode; onClose: () => void
   );
 }
 
-function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { teams: { id: string; name: string }[]; defaultTeam: string | null; quarter: string; bordTabs: string[] | null; onClose: () => void }) {
+type ImportSource = "paste" | "bord" | "file";
+type AnyPlan = Omit<GoalsPlan, "rows"> & Partial<Pick<LeaderPlan, "people" | "skipped">>;
+
+/** Файл борда лидера уходит на сервер формой: в серверное действие файл больше 1 МБ не пролезает */
+async function postLeaderBoard(file: File, team: string, quarter: string, mode: "preview" | "apply"): Promise<{ ok: true; value: never } | { ok: false; error: string }> {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("team", team);
+  form.set("quarter", quarter);
+  form.set("mode", mode);
+  try {
+    const res = await fetch("/api/goals/leader-board", { method: "POST", body: form });
+    return await res.json();
+  } catch {
+    return { ok: false, error: "Нет связи с сервером: файл не отправился" };
+  }
+}
+
+function ImportDrawer({
+  teams,
+  defaultTeam,
+  quarter,
+  bordTabs,
+  leaderBoard,
+  onClose,
+}: {
+  teams: { id: string; name: string }[];
+  defaultTeam: string | null;
+  quarter: string;
+  bordTabs: string[] | null;
+  leaderBoard: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const { notify } = usePrototype();
-  const [source, setSource] = useState<"paste" | "bord">("paste");
+  const [source, setSource] = useState<ImportSource>("paste");
   const [team, setTeam] = useState(defaultTeam && teams.some((t) => t.id === defaultTeam) ? defaultTeam : (teams[0]?.id ?? ""));
   const [text, setText] = useState("");
   const [tab, setTab] = useState("");
-  const [plan, setPlan] = useState<GoalsPlan | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [plan, setPlan] = useState<AnyPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const sources: { value: ImportSource; label: string }[] = [
+    { value: "paste", label: "Вставить ячейки" },
+    ...(bordTabs ? [{ value: "bord" as const, label: "Вкладка Bord" }] : []),
+    ...(leaderBoard ? [{ value: "file" as const, label: "Файл борда лидера" }] : []),
+  ];
+  const ready = source === "paste" ? !!text.trim() : source === "bord" ? !!tab.trim() : !!file;
   const check = () =>
     start(async () => {
       setError(null);
-      const r = source === "paste" ? await previewGoalsAction(text, team, quarter) : await previewBordGoalsAction(tab, team, quarter);
+      const r =
+        source === "paste"
+          ? await previewGoalsAction(text, team, quarter)
+          : source === "bord"
+            ? await previewBordGoalsAction(tab, team, quarter)
+            : ((await postLeaderBoard(file!, team, quarter, "preview")) as { ok: true; value: LeaderPlan } | { ok: false; error: string });
       if (r.ok) setPlan(r.value);
       else {
         setPlan(null);
@@ -426,7 +471,12 @@ function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { team
     });
   const apply = () =>
     start(async () => {
-      const r = source === "paste" ? await applyGoalsAction(text, team, quarter) : await applyBordGoalsAction(tab, team, quarter);
+      const r =
+        source === "paste"
+          ? await applyGoalsAction(text, team, quarter)
+          : source === "bord"
+            ? await applyBordGoalsAction(tab, team, quarter)
+            : ((await postLeaderBoard(file!, team, quarter, "apply")) as { ok: true; value: { added: number; changed: number } } | { ok: false; error: string });
       if (!r.ok) return setError(r.error);
       notify(`Цели загружены: новых ${r.value.added}, изменено ${r.value.changed}`);
       onClose();
@@ -438,13 +488,13 @@ function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { team
       onOpenChange={(o) => !o && onClose()}
       wide
       title="Загрузить цели"
-      description="Вкладка целей из борда лидера или своя таблица. Сначала проверка: база меняется только по кнопке «Загрузить»"
+      description="Вкладка целей из борда лидера, файл борда или своя таблица. Сначала проверка: база меняется только по кнопке «Загрузить»"
       footer={
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={onClose}>
             Закрыть
           </Button>
-          <Button variant="secondary" disabled={pending || (source === "paste" ? !text.trim() : !tab.trim())} onClick={check}>
+          <Button variant="secondary" disabled={pending || !ready} onClick={check}>
             Проверить
           </Button>
           <Button disabled={!plan || plan.problems.length > 0 || pending} onClick={apply}>
@@ -454,25 +504,54 @@ function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { team
       }
     >
       <div className="flex flex-col gap-5">
-        {bordTabs ? (
+        {sources.length > 1 ? (
           <Segmented
             label="Откуда"
             value={source}
             onChange={(v) => {
               setSource(v);
               setPlan(null);
+              setError(null);
             }}
-            options={[
-              { value: "paste", label: "Вставить ячейки" },
-              { value: "bord", label: "Вкладка Bord" },
-            ]}
+            options={sources}
           />
         ) : null}
-        <SelectField label="Команда для целей без колонки «Команда»" id="gi-team" value={team} onChange={(e) => setTeam(e.target.value)} options={teams.map((t) => ({ value: t.id, label: t.name }))} />
+        <SelectField
+          label={source === "file" ? "Команда для людей, которые не состоят ни в одной команде" : "Команда для целей без колонки «Команда»"}
+          id="gi-team"
+          value={team}
+          onChange={(e) => setTeam(e.target.value)}
+          options={teams.map((t) => ({ value: t.id, label: t.name }))}
+        />
+        {source === "file" ? (
+          <p className="text-small text-muted">
+            Борд лидера в Google Таблицах: «Файл», «Скачать», «Microsoft Excel (.xlsx)». Ресурс читает только вкладки, имя которых начинается с «Цели», и в них
+            только раздел «Запланировано на {quarter.slice(-1)}Q»: цель, направление, описание, Start и «Целевые». Вкладки с зарплатами, мотивацией и оценками не
+            читаются, файл нигде не сохраняется. Цель становится личной целью владельца вкладки в команде, которой он руководит, с кодом из инициалов: «РТ-1».
+          </p>
+        ) : (
         <p className="text-small text-muted">
           Читаются колонки: № или ID, Квартал, Команда, Владелец, Цель или «Запланировано», Метрика или «Как проверяем», База или Start, Целевое значение или «Целевые», Родительская цель или «Сквозная цель», Ссылка, Итог или «Закрытие». Разделы «Запланировано на Q4 2026» задают квартал, договорённости и бэклог не читаются. Без квартала цели идут в {quarterLabel(quarter)}.
         </p>
-        {source === "paste" ? (
+        )}
+        {source === "file" ? (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="gi-file" className="sv-label">
+              Файл борда лидера
+            </label>
+            <input
+              id="gi-file"
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              className="text-body text-ink file:mr-3 file:rounded-control file:border-0 file:bg-field file:px-3 file:py-2 file:text-body file:text-ink"
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setPlan(null);
+                setError(null);
+              }}
+            />
+          </div>
+        ) : source === "paste" ? (
           <TextArea label="Ячейки из таблицы" id="gi-text" value={text} onChange={(e) => setText(e.target.value)} rows={8} hint="Выделите вкладку вместе со строкой заголовков, скопируйте и вставьте" />
         ) : (
           <div className="flex flex-col gap-1.5">
@@ -494,33 +573,61 @@ function ImportDrawer({ teams, defaultTeam, quarter, bordTabs, onClose }: { team
             <p className="text-body text-ink">
               Новых целей {plan.add.length}, изменится {plan.change.length}, без изменений {plan.same}
             </p>
+            {plan.people?.length ? (
+              <div>
+                <p className="text-small font-medium text-ink">Чьи цели</p>
+                <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-ink">
+                  {plan.people.map((p) => (
+                    <li key={p.tab}>
+                      {p.person}: целей {p.goals}, команда «{p.team}». Вкладка «{p.tab}»
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {plan.skipped?.length ? (
+              <div>
+                <p className="text-small font-medium text-ink">Не взяты</p>
+                <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-muted">
+                  {plan.skipped.map((p) => (
+                    <li key={p.tab}>
+                      «{p.tab}»: {p.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {plan.problems.length ? (
               <ul className="flex list-disc flex-col gap-0.5 rounded-lg bg-danger-soft py-3 pl-8 pr-4 text-small text-danger-ink">
                 {plan.problems.map((p, i) => (
-                  <li key={i}>
-                    Строка {p.line}: {p.text}
-                  </li>
+                  <li key={i}>{source === "file" ? p.text : `Строка ${p.line}: ${p.text}`}</li>
                 ))}
               </ul>
             ) : null}
             {plan.add.length ? (
-              <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-ink">
-                {plan.add.map((a) => (
-                  <li key={a.line}>
-                    {quarterLabel(a.quarter)}, {a.team}: {a.code ? `${a.code}. ` : ""}
-                    {a.title}
-                  </li>
-                ))}
-              </ul>
+              <div>
+                <p className="text-small font-medium text-ink">Добавятся</p>
+                <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-ink">
+                  {plan.add.map((a, i) => (
+                    <li key={i}>
+                      {quarterLabel(a.quarter)}, {a.team}: {a.code ? `${a.code}. ` : ""}
+                      {a.title}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
             {plan.change.length ? (
-              <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-ink">
-                {plan.change.map((c) => (
-                  <li key={c.line}>
-                    {c.title}: {c.changes.join("; ")}
-                  </li>
-                ))}
-              </ul>
+              <div>
+                <p className="text-small font-medium text-ink">Изменятся</p>
+                <ul className="flex list-disc flex-col gap-0.5 pl-5 text-small text-ink">
+                  {plan.change.map((c, i) => (
+                    <li key={i}>
+                      {c.title}: {c.changes.join("; ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : null}
           </div>
         ) : null}

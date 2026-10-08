@@ -8,7 +8,7 @@ import { ownerName } from "@/domain/people";
 import type { Role, Task } from "@/domain/types";
 
 export type QuickFilter = "mine" | "overdue" | "critical" | "week" | "blocked" | "stale" | "unassigned";
-export type GroupBy = "none" | "owner" | "direction" | "priority";
+export type GroupBy = "none" | "owner" | "direction" | "priority" | "goal";
 export type SortKey = "number" | "title" | "owner" | "priority" | "status" | "due" | "updated";
 export type SortDir = "asc" | "desc";
 
@@ -37,7 +37,7 @@ export type ListParams = {
 export const DEFAULT_PARAMS: ListParams = { q: "", filters: [], owner: null, direction: null, group: "owner", closed: false, archive: false, sort: null, dir: "asc" };
 
 const QUICK_KEYS = new Set<string>(QUICK_FILTERS.map((f) => f.key));
-const GROUPS = new Set<string>(["none", "owner", "direction", "priority"]);
+const GROUPS = new Set<string>(["none", "owner", "direction", "priority", "goal"]);
 const SORTS = new Set<string>(["number", "title", "owner", "priority", "status", "due", "updated"]);
 
 /** Разобрать адрес. Чужие и битые значения отбрасываются */

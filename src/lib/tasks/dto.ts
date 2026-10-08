@@ -107,6 +107,6 @@ export function toTaskDto(row: TaskRow): Task {
           },
         }
       : {}),
-    ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title } } : {}),
+    ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title, code: row.goal.code } } : {}),
   };
 }

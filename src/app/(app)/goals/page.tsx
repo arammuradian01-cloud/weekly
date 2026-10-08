@@ -26,7 +26,9 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
         title="Цели"
         description={team.id && team.id !== ALL_TEAMS ? `Цели команды «${team.name}» и команд ниже, и цели выше, на которые они работают` : "Цели департамента, команд и людей"}
       />
-      <GoalsScreen view={view} defaultTeam={team.id && team.id !== ALL_TEAMS ? team.id : (view.creatable[0]?.id ?? null)} bordTabs={bordOn ? BORD_GOAL_TABS : null} />
+      <GoalsScreen view={view} defaultTeam={team.id && team.id !== ALL_TEAMS ? team.id : (view.creatable[0]?.id ?? null)} bordTabs={bordOn ? BORD_GOAL_TABS : null}
+        leaderBoard={!!ctx.management && ctx.person.role !== "OBSERVER"}
+      />
     </>
   );
 }
