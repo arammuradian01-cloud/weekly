@@ -12,7 +12,7 @@ import { formatShort, type IsoDate } from "@/domain/dates";
 import { TaskRuleError, createTaskIn, type Actor } from "@/lib/tasks/service";
 import { dbDate, isIsoDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { loadTeamNodes } from "@/lib/org/scope";
-import { notify, quote } from "@/lib/inbox/notify";
+import { notify } from "@/lib/inbox/notify";
 import { teamAnalytics, type LeaderCard } from "@/lib/analytics/service";
 import { NOTES_MAX, OUTCOME_MAX, cleanText, cleanTopic, linkBetween, nextMeetingDate, pairLinks, pairSubject, personalLogin } from "./rules";
 
@@ -22,7 +22,8 @@ const fail = (message: string): never => {
   throw new TaskRuleError(message);
 };
 
-export type PersonBrief = { id: string; slug: PersonSlug; fullName: string; position: string | null };
+/** active: false, если человека выключили в ресурсе или он стал наблюдателем: история встреч остаётся у обоих */
+export type PersonBrief = { id: string; slug: PersonSlug; fullName: string; position: string | null; active: boolean };
 
 export type PairListItem = {
   other: PersonBrief;
@@ -55,6 +56,8 @@ export type PairView = {
   report: PersonBrief;
   planned: MeetingView | null;
   open: TopicView[];
+  /** Темы, закрытые на запланированной встрече: итог можно поправить или вернуть тему в повестку до завершения */
+  closedNow: TopicView[];
   history: { meeting: MeetingView; topics: TopicView[] }[];
   /** Цифры лидера из аналитики: та же карточка, что видит руководитель. Нет, если человек не руководит командой */
   card: LeaderCard | null;
@@ -65,8 +68,8 @@ export type PairView = {
 
 const PERSON = { id: true, slug: true, fullName: true, position: true, active: true, role: true } as const;
 
-function brief(p: { id: string; slug: string; fullName: string; position: string | null }): PersonBrief {
-  return { id: p.id, slug: p.slug as PersonSlug, fullName: p.fullName, position: p.position };
+function brief(p: { id: string; slug: string; fullName: string; position: string | null; active: boolean; role: string }): PersonBrief {
+  return { id: p.id, slug: p.slug as PersonSlug, fullName: p.fullName, position: p.position, active: p.active && p.role !== "OBSERVER" };
 }
 
 function requirePersonal(actor: Actor) {
@@ -89,17 +92,21 @@ export async function listPairs(actor: Actor): Promise<PairListItem[]> {
       },
     }),
   ]);
-  const links = pairLinks(nodes, actor.personId);
-  const keys = new Map<string, { managerId: string; reportId: string }>();
-  for (const l of links) keys.set(`${l.managerId}/${l.reportId}`, l);
-  for (const p of existing) keys.set(`${p.managerId}/${p.reportId}`, p);
-  const ids = [...new Set([...keys.values()].flatMap((k) => [k.managerId, k.reportId]))].filter((id) => id !== actor.personId);
-  const people = await prisma.person.findMany({ where: { id: { in: ids }, active: true, role: { not: "OBSERVER" } }, select: PERSON, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] });
+  // Одна строка на собеседника: заведённая пара важнее структуры (после перестановки роли берём из пары)
+  const byOther = new Map<string, { managerId: string; reportId: string; existing: boolean }>();
+  for (const p of existing) byOther.set(otherOf(p, actor), { ...p, existing: true });
+  for (const l of pairLinks(nodes, actor.personId)) {
+    const other = l.managerId === actor.personId ? l.reportId : l.managerId;
+    if (!byOther.has(other)) byOther.set(other, { ...l, existing: false });
+  }
+  const people = await prisma.person.findMany({ where: { id: { in: [...byOther.keys()] } }, select: PERSON, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] });
   const out: PairListItem[] = [];
   for (const p of people) {
-    const role: PairListItem["role"] = keys.has(`${actor.personId}/${p.id}`) ? "manager" : "report";
-    const key = role === "manager" ? `${actor.personId}/${p.id}` : `${p.id}/${actor.personId}`;
-    const pair = existing.find((e) => `${e.managerId}/${e.reportId}` === key);
+    const link = byOther.get(p.id)!;
+    // По структуре без истории: только включённые люди, не наблюдатели
+    if (!link.existing && (!p.active || p.role === "OBSERVER")) continue;
+    const role: PairListItem["role"] = link.managerId === actor.personId ? "manager" : "report";
+    const pair = existing.find((e) => e.managerId === link.managerId && e.reportId === link.reportId);
     const planned = pair?.meetings.find((m) => m.status === "PLANNED");
     const done = pair?.meetings.find((m) => m.status === "DONE");
     out.push({ other: brief(p), role, next: planned ? isoFromDbDate(planned.date) : null, openTopics: pair?._count.topics ?? 0, lastDone: done ? isoFromDbDate(done.date) : null });
@@ -111,11 +118,14 @@ export async function listPairs(actor: Actor): Promise<PairListItem[]> {
 async function resolvePair(db: Tx | typeof prisma, actor: Actor, otherSlug: string) {
   requirePersonal(actor);
   const other = await db.person.findUnique({ where: { slug: String(otherSlug) }, select: PERSON });
-  if (!other || !other.active || other.role === "OBSERVER" || other.id === actor.personId) return fail("Встречи один на один с этим человеком нет");
+  if (!other || other.id === actor.personId) return fail("Встречи один на один с этим человеком нет");
   const pair = await db.oneOnOnePair.findFirst({
     where: { OR: [{ managerId: actor.personId, reportId: other.id }, { managerId: other.id, reportId: actor.personId }] },
   });
+  // Заведённая пара остаётся у обоих: человека выключили или перевели, а история встреч нужна
   if (pair) return { pair, other, managerId: pair.managerId, reportId: pair.reportId };
+  // Новую пару заводят только включённые люди, не наблюдатели
+  if (!other.active || other.role === "OBSERVER" || actor.role === "OBSERVER") return fail("Встречи один на один с этим человеком нет");
   const link = linkBetween(await loadTeamNodes(db), actor.personId, other.id);
   if (!link) return fail("Встречи один на один бывают у руководителя и человека его команды: с этим человеком вы не в одной команде");
   return { pair: null, other, managerId: link.managerId, reportId: link.reportId };
@@ -179,7 +189,7 @@ export async function getPair(actor: Actor, otherSlug: string, now = new Date())
   const role: PairView["role"] = r.managerId === actor.personId ? "manager" : "report";
   const [card, staleDays] = await Promise.all([leaderCard(r.managerId, r.reportId, report.slug), getSetting<number>("tasks.staleDays", 14)]);
   const today = moscowToday(now);
-  if (!r.pair) return { pairId: null, role, manager: brief(manager), report: brief(report), planned: null, open: [], history: [], card, staleDays, today };
+  if (!r.pair) return { pairId: null, role, manager: brief(manager), report: brief(report), planned: null, open: [], closedNow: [], history: [], card, staleDays, today };
   const [meetings, topics] = await Promise.all([
     prisma.oneOnOne.findMany({
       where: { pairId: r.pair.id },
@@ -206,6 +216,7 @@ export async function getPair(actor: Actor, otherSlug: string, now = new Date())
     report: brief(report),
     planned: planned ? meetingView(planned) : null,
     open: topics.filter((t) => t.status === "OPEN").map((t) => topicView(t, actor.personId)),
+    closedNow: planned ? topics.filter((t) => t.status !== "OPEN" && t.meetingId === planned.id).map((t) => topicView(t, actor.personId)) : [],
     history: meetings
       .filter((m) => m.status === "DONE")
       .map((m) => ({ meeting: meetingView(m), topics: topics.filter((t) => t.meetingId === m.id && t.status !== "OPEN").map((t) => topicView(t, actor.personId)) })),
@@ -239,7 +250,8 @@ export async function addTopic(actor: Actor, otherSlug: string, text: string, no
     const open = await tx.oneOnOneTopic.count({ where: { pairId: pair.id, status: "OPEN" } });
     if (open >= 50) fail("В повестке уже 50 тем: закройте или снимите обсуждённые");
     const row = await tx.oneOnOneTopic.create({ data: { pairId: pair.id, authorId: actor.personId, text: clean, createdAt: now }, select: topicSelect });
-    await notify(tx, { kind: "ONE_ON_ONE", recipients: [otherOf(pair, actor)], actor, subject: pairSubject(pair.id), text: `Тема для встречи один на один: «${quote(clean)}»` }, now);
+    // Текст темы в событие не кладём: событие живёт отдельно и не меняется, если тему поправят или уберут
+    await notify(tx, { kind: "ONE_ON_ONE", recipients: [otherOf(pair, actor)], actor, subject: pairSubject(pair.id), text: "Новая тема в повестке встречи один на один" }, now);
     return topicView(row, actor.personId);
   });
 }
@@ -257,7 +269,7 @@ export async function editTopic(actor: Actor, topicId: string, text: string): Pr
   if (!clean) fail("Напишите тему одной-двумя фразами");
   return prisma.$transaction(async (tx) => {
     const row = await topicOf(tx, actor, topicId);
-    if (row.authorId !== actor.personId) fail("Тему правит тот, кто её поставил");
+    if (row.authorId !== actor.personId) fail("Тему правит её автор");
     if (row.status !== "OPEN") fail("Обсуждённую тему не правят: верните её в повестку");
     return topicView(await tx.oneOnOneTopic.update({ where: { id: row.id }, data: { text: clean }, select: topicSelect }), actor.personId);
   });
@@ -267,7 +279,7 @@ export async function editTopic(actor: Actor, topicId: string, text: string): Pr
 export async function deleteTopic(actor: Actor, topicId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const row = await topicOf(tx, actor, topicId);
-    if (row.authorId !== actor.personId) fail("Убрать тему может тот, кто её поставил. Можно снять её с повестки");
+    if (row.authorId !== actor.personId) fail("Убрать тему может её автор. Можно снять её с повестки");
     if (row.status !== "OPEN") fail("Обсуждённую тему не удаляют");
     await tx.oneOnOneTopic.delete({ where: { id: row.id } });
   });
@@ -287,6 +299,8 @@ export async function closeTopic(actor: Actor, topicId: string, status: "discuss
     }
     const planned = await tx.oneOnOne.findFirst({ where: { pairId: row.pairId, status: "PLANNED" }, select: { id: true } });
     if (!planned) fail("Сначала назначьте встречу: итог темы записывается к встрече");
+    // Итог поправить можно до завершения встречи; тему с прошлой встречи сначала возвращают в повестку
+    if (row.status !== "OPEN" && row.meetingId !== planned!.id) fail("Тема закрыта на прошлой встрече: сначала верните её в повестку");
     const text = outcome === undefined || outcome === null ? row.outcome : cleanText(outcome, OUTCOME_MAX) || null;
     return topicView(
       await tx.oneOnOneTopic.update({
@@ -329,7 +343,7 @@ export async function saveNotes(actor: Actor, meetingId: string, input: { shared
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`one-on-one-notes:${found.id}`}))`;
     const meeting = await tx.oneOnOne.findUniqueOrThrow({ where: { id: found.id } });
     if (input.shared !== undefined && input.base !== undefined && input.base !== meeting.notes) {
-      fail("Общие заметки за это время изменил собеседник. Скопируйте свой текст и обновите страницу");
+      fail("Общие заметки за это время поменялись у собеседника или на другом устройстве. Ваш текст остался на экране: сравните с сохранённой версией");
     }
     let notes = meeting.notes;
     let updatedAt = meeting.updatedAt;
@@ -360,9 +374,11 @@ export async function completeMeeting(actor: Actor, meetingId: string, next: str
     const fresh = await tx.oneOnOne.findUniqueOrThrow({ where: { id: meeting.id } });
     if (fresh.status !== "PLANNED") fail("Встреча уже завершена");
     const today = moscowToday(now);
-    const nextDate = next === null ? null : next === undefined || next === "" ? nextMeetingDate(isoFromDbDate(fresh.date), today) : next;
+    const nextDate = next === null ? null : next === undefined || next === "" ? nextMeetingDate(isoFromDbDate(fresh.date) > today ? today : isoFromDbDate(fresh.date), today) : next;
     if (nextDate !== null && (!isIsoDate(nextDate) || nextDate < today)) fail("Следующую встречу назначают на сегодня или позже");
-    await tx.oneOnOne.update({ where: { id: fresh.id }, data: { status: "DONE", closedAt: now, closedById: actor.personId } });
+    // Встречу провели раньше назначенного дня: в истории она стоит днём, когда прошла
+    const held = isoFromDbDate(fresh.date) > today ? today : isoFromDbDate(fresh.date);
+    await tx.oneOnOne.update({ where: { id: fresh.id }, data: { status: "DONE", closedAt: now, closedById: actor.personId, date: dbDate(held) } });
     if (!nextDate) return { next: null };
     const row = await tx.oneOnOne.create({ data: { pairId: pair.id, date: dbDate(nextDate) } });
     await notify(tx, { kind: "ONE_ON_ONE", recipients: [otherOf(pair, actor)], actor, subject: pairSubject(pair.id), text: `Встреча один на один завершена, следующая ${formatShort(nextDate)}` }, now);
@@ -389,6 +405,7 @@ export async function topicToTask(
     if (!isIsoDate(input.due) || input.due < moscowToday(now)) fail("Срок задачи не раньше сегодня");
     // Задача в команде, где эти двое встречаются: у руководителя управления в его команде, у Арама в топ-команде
     const link = linkBetween(await loadTeamNodes(tx), row.pair.managerId, row.pair.reportId);
+    if (!link) fail("Вы больше не в одной команде: поставьте задачу из раздела «Задачи» в нужной команде");
     const { task } = await createTaskIn(tx, actor, {
       title: input.title,
       outcome: input.outcome,
@@ -397,10 +414,13 @@ export async function topicToTask(
       due: input.due,
       source: "other",
       sourceNote: "Встреча один на один",
-      team: link?.teamId,
+      team: link!.teamId,
     });
     const taskRow = await tx.task.findUniqueOrThrow({ where: { number: task.number }, select: { id: true } });
-    const updated = await tx.oneOnOneTopic.update({ where: { id: row.id }, data: { taskId: taskRow.id }, select: topicSelect });
+    // Две вкладки или оба участника сразу: вторая задача откатывается вместе с транзакцией
+    const linked = await tx.oneOnOneTopic.updateMany({ where: { id: row.id, taskId: null }, data: { taskId: taskRow.id } });
+    if (!linked.count) fail("Из этой темы уже поставлена задача");
+    const updated = await tx.oneOnOneTopic.findUniqueOrThrow({ where: { id: row.id }, select: topicSelect });
     return { topic: topicView(updated, actor.personId), task: task.number };
   });
 }

@@ -53,6 +53,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "one_on_one_pairs_managerId_reportId_key" ON "
 CREATE INDEX IF NOT EXISTS "one_on_one_pairs_reportId_idx" ON "one_on_one_pairs"("reportId");
 CREATE INDEX IF NOT EXISTS "one_on_ones_pairId_date_idx" ON "one_on_ones"("pairId", "date");
 CREATE INDEX IF NOT EXISTS "one_on_one_topics_pairId_status_idx" ON "one_on_one_topics"("pairId", "status");
+CREATE INDEX IF NOT EXISTS "one_on_one_topics_meetingId_idx" ON "one_on_one_topics"("meetingId");
+CREATE INDEX IF NOT EXISTS "one_on_one_topics_taskId_idx" ON "one_on_one_topics"("taskId");
 CREATE UNIQUE INDEX IF NOT EXISTS "one_on_one_notes_meetingId_authorId_key" ON "one_on_one_notes"("meetingId", "authorId");
 -- У пары одна запланированная встреча: двойное нажатие не создаёт вторую
 CREATE UNIQUE INDEX IF NOT EXISTS "one_on_ones_one_planned" ON "one_on_ones"("pairId") WHERE "status" = 'PLANNED';

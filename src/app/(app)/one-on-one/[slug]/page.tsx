@@ -30,7 +30,13 @@ export default async function OneOnOnePairPage({ params }: { params: Promise<{ s
   }
   let view;
   try {
-    view = await getPair(await currentActor(), decodeURIComponent(slug));
+    let other = slug;
+    try {
+      other = decodeURIComponent(slug);
+    } catch {
+      // Битая ссылка с лишним «%»: ищем как есть, сервис ответит «такой встречи нет»
+    }
+    view = await getPair(await currentActor(), other);
   } catch (error) {
     if (!(error instanceof TaskRuleError)) throw error;
     return (

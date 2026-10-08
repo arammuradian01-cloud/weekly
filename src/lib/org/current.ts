@@ -63,7 +63,7 @@ export function pickCurrent(options: TeamOption[], wanted: string | undefined): 
 
 /** Чей доступ: профиль и как вошли. Общий логин без режима управления видит только топ-команду */
 export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown }): ScopeSubject {
-  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management };
+  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management, shared: ctx.via === "TEAM" };
 }
 
 export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {

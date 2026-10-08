@@ -46,10 +46,15 @@ test.beforeEach(async () => {
 });
 
 test("человек ставит тему, руководитель проводит встречу: итог, задача, заметки, завершение и перенос открытых тем", async ({ page, browser }) => {
+  // Длинный сценарий двух людей с личными входами
+  test.setTimeout(120_000);
   // Антонов ставит тему встречи со своим руководителем
   const antonov = await person(browser, page, "Антонов");
-  if (phone()) await antonov.goto("/one-on-one");
-  else await antonov.getByRole("link", { name: "Один на один" }).locator("visible=true").first().click();
+  if (phone()) {
+    // На телефоне встречи в меню профиля
+    await antonov.getByRole("button", { name: /^Профиль:/ }).click();
+    await antonov.getByRole("menuitem", { name: "Один на один" }).click();
+  } else await antonov.getByRole("link", { name: "Один на один" }).locator("visible=true").first().click();
   await expect(antonov.getByRole("heading", { name: "С руководителем" })).toBeVisible();
   await antonov.getByRole("link", { name: /Рева Тарас/ }).click();
   await expect(antonov.getByRole("heading", { name: /Один на один: Рева Тарас/ })).toBeVisible();
@@ -61,7 +66,9 @@ test("человек ставит тему, руководитель прово�
   // Рева видит тему в «Мне» и открывает встречу оттуда
   const reva = await person(browser, page, "Рева");
   await reva.goto("/me");
-  await expect(reva.getByText("Тема для встречи один на один: «Хочу обсудить нагрузку сектора на ноябрь»")).toBeVisible();
+  // В «Мне» только кто и что: текст темы туда не попадает
+  await expect(reva.getByText("Новая тема в повестке встречи один на один")).toBeVisible();
+  await expect(reva.getByText("Хочу обсудить нагрузку сектора на ноябрь")).toHaveCount(0);
   await reva.getByRole("link", { name: "Один на один: Антонов Дмитрий" }).click();
   await expect(reva.getByRole("heading", { name: /Один на один: Антонов Дмитрий/ })).toBeVisible();
   // Итог темы без встречи не записать: сначала назначить
@@ -75,6 +82,9 @@ test("человек ставит тему, руководитель прово�
   const goals = reva.getByRole("listitem", { name: "Тема: Цели сектора на квартал" });
   await goals.getByRole("button", { name: "Поставить задачу" }).click();
   const dialog = reva.getByRole("dialog", { name: "Поставить задачу из темы" });
+  // Название пишется заново: тема в задачу не копируется
+  await expect(dialog.getByLabel("Задача")).toHaveValue("");
+  await dialog.getByLabel("Задача").fill("Предложить цели сектора на квартал");
   await dialog.getByLabel("Что нужно сделать").fill("Три цели сектора с метриками и сроками");
   await dialog.getByRole("button", { name: "Поставить задачу" }).click();
   await expect(reva.getByText("Задача поставлена").first()).toBeVisible();
@@ -96,7 +106,9 @@ test("человек ставит тему, руководитель прово�
   await reva.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await reva.waitForTimeout(1000);
   await expect(reva.getByLabel("Общие заметки")).toHaveValue("Нагрузка выше плана на 20%");
-  await expect(reva.getByRole("listitem", { name: "Тема: Хочу обсудить нагрузку сектора на ноябрь" })).toHaveCount(0);
+  // Обсуждённая тема уходит из повестки в «Закрыто на этой встрече»: итог можно поправить до завершения
+  await expect(reva.getByRole("listitem", { name: "Тема: Хочу обсудить нагрузку сектора на ноябрь", exact: true })).toHaveCount(0);
+  await expect(reva.getByRole("listitem", { name: "Закрытая тема: Хочу обсудить нагрузку сектора на ноябрь" })).toBeVisible();
   await shot(reva, "meeting");
 
   // Завершить встречу: следующая через неделю, незакрытая тема остаётся в повестке

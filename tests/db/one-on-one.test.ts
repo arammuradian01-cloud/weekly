@@ -91,9 +91,10 @@ describe("повестка, встреча и заметки", () => {
     const pair = await prisma.oneOnOnePair.findFirstOrThrow();
     const ev = await prisma.inboxEvent.findFirstOrThrow({ where: { recipientId: revaActor.personId, kind: "ONE_ON_ONE" } });
     expect(ev.subject).toBe(`1on1:${pair.id}`);
-    expect(ev.text).toContain(SECRET);
-    await expectRule(oo.editTopic(revaActor, t.id, "Чужая правка"), /правит тот, кто её поставил/);
-    await expectRule(oo.deleteTopic(revaActor, t.id), /Убрать тему может тот, кто её поставил/);
+    // В событии только кто и что: текст темы в «Мне», письма и уведомления не уходит
+    expect(ev.text).toBe("Новая тема в повестке встречи один на один");
+    await expectRule(oo.editTopic(revaActor, t.id, "Чужая правка"), /правит её автор/);
+    await expectRule(oo.deleteTopic(revaActor, t.id), /Убрать тему может её автор/);
     expect((await oo.editTopic(antonovActor, t.id, `${SECRET} — уточнение`)).text).toBe(`${SECRET} - уточнение`);
     const own = await oo.addTopic(revaActor, await slugOf("Антонов"), "План на квартал");
     await oo.deleteTopic(revaActor, own.id);
@@ -134,7 +135,10 @@ describe("повестка, встреча и заметки", () => {
     const fromAntonov = (await oo.getPair(antonovActor, "reva")).planned!;
     expect(fromAntonov).toMatchObject({ notes: "Общая заметка", myNote: "Личное Антонова" });
     expect((await oo.getPair(revaActor, antonov)).planned!.myNote).toBe("Личное Ревы");
-    await expectRule(oo.saveNotes(antonovActor, planned.id, { shared: "Затираю", base: "" }), /изменил собеседник/);
+    await expectRule(oo.saveNotes(antonovActor, planned.id, { shared: "Затираю", base: "" }), /поменялись у собеседника/);
+    // Спор об общих заметках не мешает сохранить личную, если общие не трогали
+    expect((await oo.saveNotes(antonovActor, planned.id, { mine: "Личное Антонова, дополнено" })).myNote).toBe("Личное Антонова, дополнено");
+    await oo.saveNotes(antonovActor, planned.id, { mine: "Личное Антонова" });
     await expectRule(oo.saveNotes(await as("Токов"), planned.id, { mine: "Подглядываю" }), /Такой встречи один на один нет/);
   });
 
@@ -145,10 +149,16 @@ describe("повестка, встреча и заметки", () => {
     await oo.addTopic(antonovActor, "reva", "Тема, которую не успели");
     const planned = (await oo.getPair(revaActor, antonov)).planned!;
     const r = await oo.completeMeeting(antonovActor, planned.id, undefined);
-    expect(r.next?.date).toBe(addDays(planned.date, 7));
+    // Встречу провели раньше назначенного дня: в истории она стоит сегодняшним днём, следующая через неделю от него
+    const held = planned.date > today() ? today() : planned.date;
+    expect(r.next?.date).toBe(addDays(held, 7));
     await expectRule(oo.completeMeeting(revaActor, planned.id, null), /уже завершена/);
+    // Тему, закрытую на прошлой встрече, нельзя перезакрыть: сначала вернуть в повестку
+    const old = await prisma.oneOnOneTopic.findFirstOrThrow({ where: { status: "DISCUSSED" } });
+    await expectRule(oo.closeTopic(revaActor, old.id, "dropped"), /закрыта на прошлой встрече/);
     const view = await oo.getPair(revaActor, antonov);
-    expect(view.planned?.date).toBe(addDays(planned.date, 7));
+    expect(view.planned?.date).toBe(addDays(held, 7));
+    expect(view.history[0].meeting.date).toBe(held);
     expect(view.open.map((t) => t.text)).toEqual(["Тема, которую не успели"]);
     expect(view.history).toHaveLength(1);
     expect(view.history[0].topics.map((t) => [t.status, t.outcome])).toEqual([["discussed", "Договорились - вернуться в ноябре"]]);
@@ -176,8 +186,14 @@ describe("приватность событий и журнала", () => {
     const reva = await as("Рева");
     const personal = await listInbox(reva.personId);
     expect(personal.items.some((i) => i.subject.startsWith("1on1:"))).toBe(true);
-    const shared = await listInbox(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true });
+    const shared = await listInbox(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true, shared: true });
     expect(shared.items.some((i) => i.subject.startsWith("1on1:"))).toBe(false);
+    // Общий логин с режимом управления: тоже не видно, разобрать нельзя
+    const managed = await listInbox(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: false, shared: true });
+    expect(managed.items.some((i) => i.subject.startsWith("1on1:"))).toBe(false);
+    const pairRow = await prisma.oneOnOnePair.findFirstOrThrow();
+    const { markDone } = await import("@/lib/inbox/service");
+    await expectRule(markDone({ ...reva, via: "TEAM", management: "ADMIN" }, `1on1:${pairRow.id}`), /уже разобрано/);
     const pair = await prisma.oneOnOnePair.findFirstOrThrow();
     expect(await oo.pairPath(reva, pair.id)).toBe(`/one-on-one/${await slugOf("Антонов")}`);
     expect(await oo.pairPath(await as("Антонов"), pair.id)).toBe("/one-on-one/reva");
