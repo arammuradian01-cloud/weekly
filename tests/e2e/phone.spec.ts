@@ -165,8 +165,9 @@ test("уведомления в браузере: по общему логину
   await own.goto("/profile");
   const mine = own.getByTestId("push-settings");
   await expect(mine).toBeVisible();
-  // Браузер в тестах без службы уведомлений: раздел честно говорит, что можно, а настройки типов сохраняются
-  await expect(mine.getByText(/На этом устройстве уведомления выключены|Этот браузер не умеет уведомления от сайтов/)).toBeVisible({ timeout: 15_000 });
+  // Браузер в тестах без службы уведомлений: раздел честно говорит, что можно, а настройки типов сохраняются.
+  // В проверке на GitHub урезанный Chromium без окна, в нём уведомления запрещены сразу: это тоже честный ответ
+  await expect(mine.getByText(/На этом устройстве уведомления выключены|Этот браузер не умеет уведомления от сайтов|Уведомления запрещены в настройках браузера/)).toBeVisible({ timeout: 15_000 });
   const reactions = mine.getByRole("checkbox", { name: /^Реакции/ });
   await reactions.uncheck();
   await expect(reactions).not.toBeChecked();
