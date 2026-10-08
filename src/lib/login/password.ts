@@ -20,6 +20,7 @@ import { formatTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { Person, Prisma } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, INVITE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
+import { ATTEMPT_TX, BUSY_ERROR, advisoryLock, markAttemptOk, serialAll } from "./attempts";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -65,10 +66,7 @@ async function personByLogin(login: string) {
 
 type Tx = Prisma.TransactionClient;
 
-/** Замок на время транзакции: параллельные попытки по одному ключу идут по очереди */
-async function lock(tx: Tx, key: string): Promise<void> {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text`;
-}
+const lock = advisoryLock;
 
 /**
  * Ключ счётчика попыток. У известного человека один на короткое имя и почту, у незнакомого логина свой:
@@ -90,9 +88,12 @@ type Reserved = { ok: true; attemptId: bigint } | { ok: false; scope: "ip" | "lo
  * Счёт адреса обнуляет только время: удачный вход одного человека не списывает чужие неверные попытки с того же адреса
  */
 async function reserveAttempt(ip: string, key: string, personId: string | null, now: Date): Promise<Reserved> {
-  return prisma.$transaction(async (tx) => {
-    await lock(tx, `password-ip:${ip}`);
-    await lock(tx, `password-login:${key}`);
+  const ipKey = `password-ip:${ip}`;
+  const loginKey = `password-login:${key}`;
+  // Сначала очередь в процессе, потом транзакция: ждущие запросы не держат соединения базы (этап 29)
+  return serialAll([ipKey, loginKey], () => prisma.$transaction(async (tx): Promise<Reserved> => {
+    await lock(tx, ipKey);
+    await lock(tx, loginKey);
     const byIp = computeLockState(
       (await attemptsTx(tx, { ip }, now)).filter((a) => !a.blocked && !a.ok),
       now,
@@ -113,12 +114,10 @@ async function reserveAttempt(ip: string, key: string, personId: string | null, 
     }
     const row = await tx.loginAttempt.create({ data: { ip, kind: "PERSONAL", ok: false, login: key, personId, at: now }, select: { id: true } });
     return { ok: true, attemptId: row.id };
-  });
+  }, ATTEMPT_TX));
 }
 
-function markOk(db: Tx | typeof prisma, attemptId: bigint) {
-  return db.loginAttempt.update({ where: { id: attemptId }, data: { ok: true } });
-}
+const markOk = markAttemptOk;
 
 export type PasswordLogin = { ok: true; sessionId: string; personId: string } | { ok: false; error: string };
 
@@ -129,7 +128,14 @@ export type PasswordLogin = { ok: true; sessionId: string; personId: string } | 
 export async function loginWithPassword(login: string, password: string, device: DeviceInfo, now = new Date(), replaces: string | null = null): Promise<PasswordLogin> {
   const ip = device.ip ?? "unknown";
   const person = await personByLogin(login);
-  const reserved = await reserveAttempt(ip, attemptKey(person, login), person?.id ?? null, now);
+  let reserved: Reserved;
+  try {
+    reserved = await reserveAttempt(ip, attemptKey(person, login), person?.id ?? null, now);
+  } catch (error) {
+    // База не ответила вовремя: пароль не сверяется, ответ одинаковый для любого логина
+    console.error("Попытка входа не записана", error);
+    return { ok: false, error: BUSY_ERROR };
+  }
   if (!reserved.ok) {
     return {
       ok: false,

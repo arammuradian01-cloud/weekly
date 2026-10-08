@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as login from "@/lib/login/service";
 import * as pw from "@/lib/login/password";
+import { BUSY_ERROR, markAttemptOk, queuedKeys, reserveIpAttempt } from "@/lib/login/attempts";
 
 const owner = async () => ({ ...(await tasks.actorFor("muradyan", "OWNER")), via: "INVITE" as const });
 const device = { ip: "10.0.0.7", userAgent: "Mozilla/5.0 (Macintosh) Safari/605.1" };
@@ -180,6 +181,42 @@ describe("после проверки кода", () => {
     expect(generic).toHaveLength(5);
     expect(locked).toHaveLength(15);
     expect((await pw.loginWithPassword("reva", GOOD, device, later(2000))).ok).toBe(false);
+  });
+
+  it("этап 29: пачка больше числа соединений базы не падает с общей ошибкой, каждый получает понятный ответ", async () => {
+    await withPassword("reva");
+    const results = await Promise.all(
+      Array.from({ length: 40 }, (_, i) =>
+        pw.loginWithPassword(i % 2 ? "reva" : `ghost${i}`, `неверный пароль ${i}`, { ...device, ip: `10.0.7.${i % 4}` }, later(1000)),
+      ),
+    );
+    expect(results.every((r) => !r.ok)).toBe(true);
+    expect(results.filter((r) => !r.ok && r.error === BUSY_ERROR)).toHaveLength(0);
+    // К паролю Ревы доходят только 5 попыток, остальные 15 упираются в блокировку логина
+    const revaLocked = results.filter((r, i) => i % 2 === 1 && !r.ok && /к этому логину/.test(r.error));
+    expect(revaLocked).toHaveLength(15);
+    expect(await prisma.loginAttempt.count({ where: { kind: "PERSONAL" } })).toBe(40);
+    expect(queuedKeys()).toBe(0);
+  });
+
+  it("этап 29: общий вход и режим управления тоже пишут попытку до сверки: пачка с одного адреса не обходит порог", async () => {
+    for (const kind of ["TEAM", "MANAGEMENT"] as const) {
+      const ip = `10.0.8.${kind === "TEAM" ? 1 : 2}`;
+      const reserved = await Promise.all(Array.from({ length: 20 }, () => reserveIpAttempt(ip, kind, later(1000))));
+      expect(reserved.filter((r) => r.ok)).toHaveLength(5);
+      expect(reserved.filter((r) => !r.ok)).toHaveLength(15);
+      // Оставшиеся попытки считаются по очереди: 5, 4, 3, 2, 1
+      expect(reserved.flatMap((r) => (r.ok ? [r.remaining] : [])).sort().reverse()).toEqual([5, 4, 3, 2, 1]);
+      const after = await reserveIpAttempt(ip, kind, later(2000));
+      expect(after.ok).toBe(false);
+    }
+    // Верный пароль отмечает попытку успешной, счёт адреса обнуляется
+    const ok = await reserveIpAttempt("10.0.8.9", "TEAM", later(1000));
+    if (!ok.ok) throw new Error("первая попытка не должна закрываться");
+    await markAttemptOk(prisma, ok.attemptId);
+    for (let i = 0; i < 4; i++) await reserveIpAttempt("10.0.8.9", "TEAM", later(2000 + i));
+    const fifth = await reserveIpAttempt("10.0.8.9", "TEAM", later(3000));
+    expect(fifth.ok && fifth.remaining).toBe(1);
   });
 
   it("незнакомый логин закрывается так же, как настоящий: по блокировке не узнать, кто есть в ресурсе", async () => {

@@ -6,7 +6,8 @@ import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
 import { getEpochs, getSetting } from "@/lib/settings";
 import { PASSWORD_SETTING_KEYS, verifyPassword } from "@/lib/passwords";
-import { computeLockState, historySince, LOCK_MS } from "@/lib/rate-limit";
+import { LOCK_MS } from "@/lib/rate-limit";
+import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "@/lib/login/attempts";
 import { managementPasswordKind } from "@/lib/roles";
 import { MANAGEMENT_TTL_MS } from "@/lib/session";
 import { formatTime } from "@/lib/week";
@@ -24,20 +25,17 @@ import { currentActor } from "@/lib/action-runner";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { TaskRuleError } from "@/lib/tasks/service";
-import type { AttemptKind } from "@/generated/prisma/enums";
 
 export type FormState = { error?: string } | null;
 
-async function lockStateFor(ip: string, kind: AttemptKind, now: Date) {
-  const attempts = await prisma.loginAttempt.findMany({
-    where: { ip, kind, at: { gte: historySince(now) } },
-    select: { at: true, ok: true, blocked: true },
-    orderBy: { at: "asc" },
-  });
-  return computeLockState(
-    attempts.filter((a) => !a.blocked).map((a) => ({ at: a.at, ok: a.ok })),
-    now,
-  );
+/** Запись попытки под замком. База не ответила вовремя: null, пароль не сверяется */
+async function reserveOrBusy(ip: string, kind: "TEAM" | "MANAGEMENT", now: Date) {
+  try {
+    return await reserveIpAttempt(ip, kind, now);
+  } catch (error) {
+    console.error("Попытка входа не записана", error);
+    return null;
+  }
 }
 
 function failureMessage(remainingBefore: number, now: Date, wrongWhat: string): string {
@@ -61,13 +59,6 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
   if ((await getTeamLogin()) === "off") return { error: "Общий логин выключен. Войдите со своим логином и паролем" };
   const ip = await requestIp();
   const now = new Date();
-  const lock = await lockStateFor(ip, "TEAM", now);
-  if (lock.locked && lock.lockedUntil) {
-    await prisma.loginAttempt.create({ data: { ip, kind: "TEAM", ok: false, blocked: true } });
-    await writeAudit({ action: "login.blocked", ip });
-    return { error: `Слишком много неверных попыток. Вход откроется в ${formatTime(lock.lockedUntil)}` };
-  }
-
   const hash = await getSetting<string | null>(PASSWORD_SETTING_KEYS.team, null);
 
   if (!hash) {
@@ -75,13 +66,20 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     return { error: "Пароль входа ещё не задан. Владелец задаёт его на странице первичной настройки или командой npm run password -- team" };
   }
 
-  const ok = await verifyPassword(password, hash);
-  await prisma.loginAttempt.create({ data: { ip, kind: "TEAM", ok } });
+  // Попытка записывается до сверки пароля, под замком: пачка параллельных запросов не обходит порог (этап 29)
+  const reserved = await reserveOrBusy(ip, "TEAM", now);
+  if (!reserved) return { error: BUSY_ERROR };
+  if (!reserved.ok) {
+    await writeAudit({ action: "login.blocked", ip });
+    return { error: `Слишком много неверных попыток. Вход откроется в ${formatTime(reserved.until)}` };
+  }
 
+  const ok = await verifyPassword(password, hash);
   if (!ok) {
     await writeAudit({ action: "login.fail", ip });
-    return { error: failureMessage(lock.remaining, now, "Неверный логин или пароль") };
+    return { error: failureMessage(reserved.remaining, now, "Неверный логин или пароль") };
   }
+  await markAttemptOk(prisma, reserved.attemptId);
 
   // Личный вход, который был в этом браузере, заменяется общим: завершаем его и в базе, как при смене личного входа.
   // Иначе запись устройства жила бы ещё 30 дней, и уведомления прежнего человека приходили бы в этот браузер (этап 26)
@@ -129,25 +127,25 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   }
 
   const now = new Date();
-  const lock = await lockStateFor(ip, "MANAGEMENT", now);
-  if (lock.locked && lock.lockedUntil) {
-    await prisma.loginAttempt.create({ data: { ip, kind: "MANAGEMENT", ok: false, blocked: true } });
-    await writeAudit({ action: "management.blocked", ...actor });
-    return { error: `Слишком много неверных попыток. Попробовать снова можно в ${formatTime(lock.lockedUntil)}` };
-  }
-
   const kind = managementPasswordKind(ctx.managementRole);
   const hash = await getSetting<string | null>(PASSWORD_SETTING_KEYS[kind], null);
   if (!hash) {
     return { error: `Пароль режима управления ещё не задан. Владелец задаёт его командой npm run password -- ${kind}` };
   }
 
+  const reserved = await reserveOrBusy(ip, "MANAGEMENT", now);
+  if (!reserved) return { error: BUSY_ERROR };
+  if (!reserved.ok) {
+    await writeAudit({ action: "management.blocked", ...actor });
+    return { error: `Слишком много неверных попыток. Попробовать снова можно в ${formatTime(reserved.until)}` };
+  }
+
   const ok = await verifyPassword(String(formData.get("password") ?? ""), hash);
-  await prisma.loginAttempt.create({ data: { ip, kind: "MANAGEMENT", ok } });
   if (!ok) {
     await writeAudit({ action: "management.fail", ...actor });
-    return { error: failureMessage(lock.remaining, now, "Неверный пароль") };
+    return { error: failureMessage(reserved.remaining, now, "Неверный пароль") };
   }
+  await markAttemptOk(prisma, reserved.attemptId);
 
   const { managementEpoch } = await getEpochs();
   await writeSession({
