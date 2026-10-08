@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:start": "esbuild scripts/migrate-prepare.ts prisma/seed.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outbase=. --outdir=dist/start --out-extension:.js=.mjs --log-level=warning",
     "start": "next start -p ${PORT:-3000}",
     "worker": "tsx scripts/worker.ts",
     "local": "concurrently -k -n web,worker -c blue,green \"npm:start\" \"npm:worker\"",
@@ -70,6 +71,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "concurrently": "^10.0.5",
+    "esbuild": "0.28.2",
     "tailwindcss": "^4.3.3",
     "typescript": "5.9",
     "vitest": "^5.0.3"
