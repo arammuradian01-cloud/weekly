@@ -17,6 +17,7 @@ import { closedFor, expectingTeams, leadersOf, personDeadline, promotableFrom, t
 import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections } from "./rules";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
+import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
@@ -923,34 +924,77 @@ export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekK
 
 // ---------- Отчёт CEO ----------
 
-export type CeoReportView = { sections: CeoSections | null; updatedBy?: string; updatedAt?: string };
+export type CeoReportView = { sections: CeoSections | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string };
 
 export async function getCeoReport(key: WeekKey): Promise<CeoReportView> {
   const row = await prisma.week.findUnique({ where: { start: dbDate(key) }, include: { ceoReport: { include: { updatedBy: { select: { fullName: true } } } } } });
   const r = row?.ceoReport;
-  if (!r) return { sections: null };
-  return { sections: { main: r.main, risks: r.risks, next: r.next }, updatedBy: r.updatedBy?.fullName, updatedAt: r.updatedAt.toISOString() };
+  if (!r) return { sections: null, meetings: [] };
+  return { sections: { main: r.main, risks: r.risks, next: r.next }, meetings: cleanMeetings(r.meetings), updatedBy: r.updatedBy?.fullName, updatedAt: r.updatedAt.toISOString() };
 }
 
-export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSections): Promise<CeoReportView> {
+/** Встречи недели одним текстом для журнала: «Название: текст» через пустую строку */
+const meetingsText = (list: CeoMeeting[]) => list.map((m) => `${m.title || "Встреча"}: ${m.text}`).join("\n\n");
+
+/**
+ * Сохранить отчёт CEO. meetings: «Мои встречи недели» (этап 27); не передали: встречи остаются как были.
+ * expected: момент прошлого сохранения, который видел экран. Кто-то сохранил позже: ошибка, а не тихая перезапись
+ */
+export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<CeoReportView> {
   requireManagement(actor, "Отчёт CEO правят");
   const clean3 = (t: unknown) => cleanDash(String(t ?? "")).slice(0, 10000);
   return prisma.$transaction(async (tx) => {
-    const { row, info } = await weekContext(tx, key);
+    const { row } = await weekContext(tx, key);
+    // Два сохранения одного отчёта подряд: второе ждёт первое, сверка идёт по уже записанному
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${key}`}))`;
     const before = await tx.ceoReport.findUnique({ where: { weekId: row.id } });
-    const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), updatedById: actor.personId };
+    if (expected !== undefined && (before?.updatedAt.toISOString() ?? null) !== (expected ?? null)) {
+      fail("Отчёт за эту неделю уже сохранён с другого устройства или другим человеком. Скопируйте свои правки и обновите страницу, чтобы не затереть чужие");
+    }
+    // Встречи не передали (или передали не список): остаются прежние, а не стираются
+    const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
+    const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
     const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
     // Было и стало по каждому разделу, который поменялся
     const parts: [string, string | null, string][] = [
       ["главное", before?.main ?? null, data.main],
       ["риски", before?.risks ?? null, data.risks],
       ["что дальше", before?.next ?? null, data.next],
+      ["мои встречи недели", before ? meetingsText(cleanMeetings(before.meetings)) : null, meetingsText(list)],
     ];
     const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
     for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
     if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
-    return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
+    return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
   });
+}
+
+export type CeoDecision = { id: string; text: string; owner: string | null; date: IsoDate };
+
+/**
+ * Решения недели для отчёта CEO (этап 27): решения топ-команды, принятые на встрече по этой неделе, и решения без встречи
+ * после встречи прошлой недели по день встречи этой. Так решение без встречи попадает ровно в один отчёт. Отменённые не попадают
+ */
+export async function ceoDecisions(key: WeekKey): Promise<CeoDecision[]> {
+  const prevKey = shiftWeek(key, -1);
+  const [week, prev, settings] = await Promise.all([
+    prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true, meetingDate: true } }),
+    prisma.week.findUnique({ where: { start: dbDate(prevKey) }, select: { meetingDate: true } }),
+    weekSettings(),
+  ]);
+  const meeting = week ? isoFromDbDate(week.meetingDate) : meetingOf(key, settings.meeting);
+  const prevMeeting = prev ? isoFromDbDate(prev.meetingDate) : meetingOf(prevKey, settings.meeting);
+  const rows = await prisma.decision.findMany({
+    where: {
+      teamId: TOP_TEAM,
+      status: "ACTIVE",
+      OR: [...(week ? [{ meeting: { weekId: week.id } }] : []), { meetingId: null, date: { gt: dbDate(prevMeeting), lte: dbDate(meeting) } }],
+    },
+    select: { id: true, text: true, date: true, owner: { select: { fullName: true } } },
+    orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+    take: 200,
+  });
+  return rows.map((d) => ({ id: d.id, text: d.text, owner: d.owner?.fullName ?? null, date: isoFromDbDate(d.date) }));
 }
 
 /** История отчётов: недели, где отчёт сохранён или есть отметки «В отчёт CEO» */

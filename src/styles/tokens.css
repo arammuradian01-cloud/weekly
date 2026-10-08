@@ -85,7 +85,9 @@
   --color-avatar-8-bg: #E5EAF0; --color-avatar-8-text: #2F3F52;
   /* Графики */
   --color-chart-1: #0073A8;
-  --color-chart-2: #0DD149;
+  /* Своё (этап 27): второй ряд темнее фирменного зелёного #0DD149, у того контраст с белым около 2:1. Пара с chart-1
+     проверена: светлота в полосе, контраст не меньше 3:1, различима при нарушениях цветового зрения */
+  --color-chart-2: #139A43;
   --color-chart-3: #B3BAC3;
   --color-chart-grid: var(--color-border);
 }
@@ -146,7 +148,10 @@
   --color-avatar-6-bg: #1E3E3C; --color-avatar-6-text: #B5E7E3;
   --color-avatar-7-bg: #3A3833; --color-avatar-7-text: #E3DED3;
   --color-avatar-8-bg: #2C3744; --color-avatar-8-text: #D1DBE6;
-  --color-chart-1: #00AFFF;
+  /* Своё (этап 27): ряды графиков на тёмной поверхности. Шаги подобраны проверкой палитры: светлота в полосе
+     тёмной темы, контраст с поверхностью не меньше 3:1, пара различима при нарушениях цветового зрения */
+  --color-chart-1: #1A8FD0;
+  --color-chart-2: #12A845;
   --color-chart-3: #4E5764;
 }
 

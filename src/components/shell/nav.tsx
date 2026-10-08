@@ -17,6 +17,7 @@ import {
   Gavel,
   TrendingUp,
   Mail,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -32,6 +33,8 @@ export const MAIN_NAV: NavItem[] = [
   { href: "/me", label: "Мне", icon: Inbox },
   // Панель руководителя (этап 16): на телефоне встаёт на место «Команды»
   { href: "/my-teams", label: "Мои команды", shortLabel: "Команды", icon: Users, leaderOnly: true },
+  // Аналитика руководителя (этап 27): на телефоне открывается из «Моих команд»
+  { href: "/analytics", label: "Аналитика", icon: BarChart3, leaderOnly: true, desktopOnly: true },
   { href: "/weekly", label: "Weekly", icon: Newspaper },
   { href: "/tasks", label: "Задачи", icon: SquareCheck },
   // Сквозные цели (этап 17): на телефоне открываются из «Моих команд»

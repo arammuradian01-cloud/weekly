@@ -68,3 +68,29 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 
 /* Выбранный пункт списка: голубая черта слева, как активный пункт меню системы */
 .sv-mark-active { box-shadow: inset 3px 0 0 var(--color-accent); }
+
+/* Аналитика (этап 27). Графики: дополнение к components/charts. Наведение на неделю: линия-указатель, соседние
+   столбики приглушаются, подсказка дизайн-системы над графиком */
+.sv-chart__plot { position: relative; }
+.sv-chart__hit { fill: transparent; }
+.sv-chart__cross { stroke: var(--color-border-strong); stroke-width: 1; }
+.sv-chart__bar { transition: opacity var(--duration-color); }
+.sv-chart__bar.is-dim { opacity: 0.45; }
+.sv-chart__tip { position: absolute; top: 0; z-index: 5; width: max-content; max-width: min(280px, 100%); transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; }
+/* Подсказка у края графика сдвигается, поэтому стрелку не рисуем: неделю показывает линия-указатель */
+.sv-chart__tip.sv-tooltip--top::after { display: none; }
+.sv-chart__line--solo { stroke: var(--color-chart-1); }
+.sv-chart__dot--solo { stroke: var(--color-chart-1); }
+.sv-chart__legend .sv-chart__swatch-bar { background: var(--color-chart-1); }
+.sv-chart__legend .sv-chart__swatch-line { background: var(--color-chart-2); width: 14px; height: 3px; border-radius: 2px; }
+
+/* Weekly лидера по неделям: форма клетки повторяет смысл, цвет только помогает. Вовремя: залита; с опозданием:
+   залита наполовину; не сдал: пустая с красной рамкой; в отпуске: пунктир; идёт сдача: точки; не ждали: точка */
+.sv-wstrip { display: inline-flex; align-items: center; gap: 4px; }
+.sv-wstrip__cell { width: 14px; height: 14px; box-sizing: border-box; border-radius: 3px; border: 2px solid transparent; flex: none; }
+.sv-wstrip__cell--on-time { background: var(--color-success-dot); border-color: var(--color-success-dot); }
+.sv-wstrip__cell--late { border-color: var(--color-warning-dot); background: linear-gradient(to top, var(--color-warning-dot) 50%, transparent 50%); }
+.sv-wstrip__cell--missing { border-color: var(--color-danger-dot); }
+.sv-wstrip__cell--absent { border: 2px dashed var(--color-neutral-dot); }
+.sv-wstrip__cell--pending { border: 2px dotted var(--color-icon); }
+.sv-wstrip__cell--none { background: radial-gradient(circle, var(--color-neutral-dot) 0 2px, transparent 2.5px); }
