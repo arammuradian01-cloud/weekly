@@ -19,10 +19,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/overlays";
+import { markSeenAction } from "@/app/(app)/me/actions";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 
 const when = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date(iso));
+/** Фраза с точкой в конце, без двойной: «...в ноябре.» и «Почему?» остаются как есть */
+const sentence = (text: string) => (/[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 type Dialog =
   | { kind: "state"; item: InitiativeView; to: StateCode }
@@ -50,14 +53,28 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
   const longSearch = data.active.filter((i) => i.flags.longSearch).length;
   const stale = data.active.filter((i) => i.flags.stale).length;
 
-  // Переход по ссылке из «Мне» или повестки: карточка с якорем в поле зрения и подсвечена
+  // Переход по ссылке из «Мне» или повестки: карточка с якорем в поле зрения и подсвечена. Закрытая инициатива
+  // лежит в свёрнутом списке: он раскрывается
   const [target, setTarget] = useState<string | null>(null);
+  const [closedOpen, setClosedOpen] = useState(false);
   useEffect(() => {
-    const hash = decodeURIComponent(window.location.hash.slice(1));
+    let hash = "";
+    try {
+      hash = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return;
+    }
     if (!hash.startsWith("i-")) return;
     setTarget(hash);
-    document.getElementById(hash)?.scrollIntoView({ block: "center" });
+    if (data.closed.some((i) => `i-${i.id}` === hash)) setClosedOpen(true);
+    requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView({ block: "center" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Человек открыл страницу инициатив: события «Мне» о них прочитаны, письма о них уже не нужны
+  const subjects = [...data.active, ...data.closed].map((i) => `initiative:${i.id}`).join("|");
+  useEffect(() => {
+    if (subjects) markSeenAction(subjects.split("|")).catch(() => undefined);
+  }, [subjects]);
 
   const exec = async (fn: () => Promise<{ ok: boolean; error?: string } & Record<string, unknown>>, ok: string) => {
     setBusy(true);
@@ -118,20 +135,31 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
       </div>
 
       {data.closed.length ? (
-        <details className="sv-card sv-card--soft px-5 py-4">
+        <details className="sv-card sv-card--soft px-5 py-4" open={closedOpen} onToggle={(e) => setClosedOpen(e.currentTarget.open)}>
           <summary className="cursor-pointer text-body font-semibold text-ink">Закрытые инициативы ({data.closed.length})</summary>
           <ul className="mt-3 flex flex-col divide-y divide-line">
             {data.closed.map((i) => (
-              <li key={i.id} id={`i-${i.id}`} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
+              <li
+                key={i.id}
+                id={`i-${i.id}`}
+                className={cn("flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between", target === `i-${i.id}` && "rounded-control outline outline-2 outline-offset-2 outline-[var(--color-focus)]")}
+              >
                 <div className="min-w-0 [overflow-wrap:anywhere]">
                   <p className="text-body font-medium text-ink">{i.title}</p>
                   <p className="text-small text-muted">
                     {i.result ? RESULT_LABELS[i.result] : ""} {i.closedAt ? when(i.closedAt) : ""}
-                    {i.resultNote ? `: ${i.resultNote}` : ""}. Ответственный: {i.owner.fullName}
+                    {i.resultNote ? `: ${sentence(i.resultNote)}` : "."} Ответственный: {i.owner.fullName}
                   </p>
                 </div>
                 {data.canManage ? (
-                  <Button size="sm" variant="secondary" className="shrink-0 self-start" disabled={busy} onClick={() => void exec(() => reopenInitiativeAction(i.id), "Инициатива снова в работе")}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0 self-start"
+                    aria-label={`Вернуть в работу: ${i.title}`}
+                    disabled={busy}
+                    onClick={() => void exec(() => reopenInitiativeAction(i.id), "Инициатива снова в работе")}
+                  >
                     Вернуть
                   </Button>
                 ) : null}
@@ -194,7 +222,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
       {item.why ? <p className="text-small text-ink">{item.why}</p> : null}
       <div className="flex flex-col gap-1">
         <p className="text-small text-muted">{NOTE_PROMPTS[item.state]}</p>
-        <p className="text-body text-ink">{item.note || <span className="text-muted">Ответственный ещё не написал</span>}</p>
+        <p className="text-body text-ink">{item.note || <span className="text-muted">Заметки пока нет</span>}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {item.state === "searching" ? (
@@ -206,18 +234,24 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
       </div>
       {item.canUpdate ? (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={other === "doing" ? "primary" : "secondary"} disabled={busy} onClick={() => onDialog({ kind: "state", item, to: other })}>
+          <Button
+            size="sm"
+            variant={other === "doing" ? "primary" : "secondary"}
+            aria-label={`${other === "doing" ? "Уже делаем" : "Вернуть в поиск"}: ${item.title}`}
+            disabled={busy}
+            onClick={() => onDialog({ kind: "state", item, to: other })}
+          >
             {other === "doing" ? "Уже делаем" : "Вернуть в поиск"}
           </Button>
-          <Button size="sm" variant="secondary" disabled={busy} onClick={() => onDialog({ kind: "note", item })}>
+          <Button size="sm" variant="secondary" aria-label={`Обновить заметку: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "note", item })}>
             Обновить заметку
           </Button>
           {canManage ? (
             <>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDialog({ kind: "edit", item })}>
+              <Button size="sm" variant="ghost" aria-label={`Править: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "edit", item })}>
                 Править
               </Button>
-              <Button size="sm" variant="ghost" disabled={busy} onClick={() => onDialog({ kind: "close", item })}>
+              <Button size="sm" variant="ghost" aria-label={`Закрыть: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "close", item })}>
                 Закрыть
               </Button>
             </>

@@ -231,7 +231,7 @@ type Draft = {
 };
 
 /** Предложения пунктов по данным команды на неделю. Каждый пункт сформулирован вопросом */
-async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<Draft[]> {
+async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new Date()): Promise<Draft[]> {
   const team = a.node;
   const people = participantsOf(a.nodes, team);
   const prevKey = shiftWeek(key, -1);
@@ -293,8 +293,8 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate): Promise<D
     else if (overdue > OVERDUE_DAYS) drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Задача ${t.number} просрочена на ${overdue} дн.: ${t.title}. Новый срок или снимаем?` });
   }
 
-  // Крупные инициативы людей команды: долго ищут, как сделать, или давно без новостей (этап 30)
-  for (const i of await initiativesForAgenda(people)) {
+  // Крупные инициативы, которые ведёт команда: долго ищут, как сделать, или давно без новостей (этап 30)
+  for (const i of await initiativesForAgenda(team.id, now)) {
     const title = agendaTitle(i.title, i.flags);
     // Заметку пункт показывает из самой инициативы: она всегда свежая
     if (title) drafts.push({ kind: "INITIATIVE", autoKey: `initiative:${i.id}`, initiativeId: i.id, title });
@@ -330,7 +330,7 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
   const week = await ensureWeek(prisma, key);
   const { meeting } = await weekSettings();
   const date = teamMeeting(key, a.node, meetingOf(key, meeting)).date;
-  const drafts = await collectAgenda(a, key, moscowToday());
+  const drafts = await collectAgenda(a, key, moscowToday(now), now);
   const row = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`meeting:${week.id}:${teamId}`}))::text`;
     const m = await tx.meeting.upsert({

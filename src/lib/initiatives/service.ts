@@ -2,7 +2,8 @@
 //
 // - видят инициативы все, кто вошёл: это 10-15 больших дел департамента, как задачи топ-команды;
 // - заводит, правит, закрывает и возвращает владелец или администратор в режиме управления;
-// - деление шкалы и заметку меняет ответственный (и режим управления). При смене деления заметка обязательна;
+// - деление шкалы и заметку меняет ответственный при личном входе (и режим управления). По общему логину можно выбрать
+//   чужой профиль, поэтому за ответственного там не отметить. При смене деления заметка обязательна;
 // - ответственный получает событие «Мне», когда его назначили; тот, кто завёл инициативу, когда сменилось деление.
 
 import { prisma } from "@/lib/db";
@@ -44,6 +45,16 @@ export function canManage(actor: Pick<Actor, "management" | "role">): boolean {
   return !!actor.management && actor.role !== "OBSERVER";
 }
 
+/** Личный вход: по общему логину профиль выбирают сами, отметить за другого там нельзя */
+function personalOrManaged(actor: Pick<Actor, "via" | "management">): boolean {
+  return actor.via !== "TEAM" || !!actor.management;
+}
+
+/** Замок строки: два одновременных действия с одной инициативой идут по очереди */
+async function lockRow(tx: Tx, id: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM initiatives WHERE id = ${id} FOR UPDATE`;
+}
+
 export type InitiativeChangeView = { kind: string; from: StateCode | null; to: StateCode | null; note: string | null; by: string | null; at: string };
 
 export type InitiativeView = {
@@ -81,7 +92,7 @@ const include = {
   owner: { select: { id: true, slug: true, fullName: true, active: true } },
   team: { select: { id: true, name: true } },
   goal: { select: { id: true, code: true, title: true, quarter: true } },
-  changes: { orderBy: { at: "desc" as const }, take: 6, include: { by: { select: { fullName: true } } } },
+  changes: { orderBy: [{ at: "desc" as const }, { id: "desc" as const }], take: 6, include: { by: { select: { fullName: true } } } },
 } satisfies Prisma.InitiativeInclude;
 
 type Row = Prisma.InitiativeGetPayload<{ include: typeof include }>;
@@ -103,7 +114,7 @@ function toView(r: Row, actor: Actor, now: Date): InitiativeView {
     result: r.result ? RESULT_CODE[r.result] : null,
     resultNote: r.resultNote,
     closedAt: r.closedAt?.toISOString() ?? null,
-    canUpdate: r.closedAt === null && (r.ownerId === actor.personId || canManage(actor)),
+    canUpdate: r.closedAt === null && (canManage(actor) || (r.ownerId === actor.personId && personalOrManaged(actor) && actor.role !== "OBSERVER")),
     history: r.changes.map((c) => ({
       kind: c.kind,
       from: c.fromState ? STATE_CODE[c.fromState] : null,
@@ -157,7 +168,7 @@ async function resolveRefs(tx: Tx, input: InitiativeInput) {
   const title = cleanTitle(input.title) || fail("Назовите инициативу одной мыслью");
   const why = cleanWhy(input.why);
   const owner = (await tx.person.findUnique({ where: { slug: String(input.owner ?? "") } })) ?? fail("Выберите ответственного");
-  if (!owner.active) fail(`${owner.fullName} выключен в списке команды`);
+  if (!owner.active) fail("Этот человек выключен в списке команды");
   if (owner.role === "OBSERVER") fail("Наблюдатель не может отвечать за инициативу");
   const teamId = String(input.team ?? "") || TOP_TEAM;
   const team = (await tx.team.findUnique({ where: { id: teamId } })) ?? fail("Такой команды нет");
@@ -190,7 +201,7 @@ export async function createInitiative(actor: Actor, input: InitiativeInput, now
         changes: { create: { kind: "create", toState: "SEARCHING", note: note || null, byId: actor.personId, at: now } },
       },
     });
-    await notify(tx, { kind: "INITIATIVE", recipients: [ref.owner.id], actor, subject: initiativeSubject(row.id), text: `Вы ответственный за инициативу «${ref.title}»` }, now);
+    await notify(tx, { kind: "INITIATIVE", recipients: [ref.owner.id], actor, subject: initiativeSubject(row.id), text: `Инициатива «${ref.title}»: отвечаете вы` }, now);
     await audit(tx, actor, "initiative.create", row.id, ref.title, `ответственный ${ref.owner.fullName}`);
     const count = await tx.initiative.count({ where: { closedAt: null } });
     return { id: row.id, overLimit: count > SOFT_MAX };
@@ -201,7 +212,9 @@ export async function createInitiative(actor: Actor, input: InitiativeInput, now
 export async function editInitiative(actor: Actor, id: string, input: InitiativeInput, now = new Date()): Promise<void> {
   requireManage(actor, "Правка инициативы");
   await prisma.$transaction(async (tx) => {
+    await lockRow(tx, String(id));
     const cur = (await tx.initiative.findUnique({ where: { id: String(id) }, include: { owner: true } })) ?? fail("Инициативы уже нет");
+    if (cur.closedAt) fail("Инициатива закрыта: верните её, чтобы править");
     const ref = await resolveRefs(tx, input);
     await tx.initiative.update({ where: { id: cur.id }, data: { title: ref.title, why: ref.why, ownerId: ref.owner.id, teamId: ref.teamId, goalId: ref.goalId } });
     const ownerChanged = cur.ownerId !== ref.owner.id;
@@ -209,16 +222,20 @@ export async function editInitiative(actor: Actor, id: string, input: Initiative
       data: { initiativeId: cur.id, kind: ownerChanged ? "owner" : "edit", note: ownerChanged ? `Ответственный: ${ref.owner.fullName}` : null, byId: actor.personId, at: now },
     });
     if (ownerChanged) {
-      await notify(tx, { kind: "INITIATIVE", recipients: [ref.owner.id], actor, subject: initiativeSubject(cur.id), text: `Вы ответственный за инициативу «${ref.title}»` }, now);
+      await notify(tx, { kind: "INITIATIVE", recipients: [ref.owner.id], actor, subject: initiativeSubject(cur.id), text: `Инициатива «${ref.title}»: отвечаете вы` }, now);
     }
     await audit(tx, actor, "initiative.edit", cur.id, ref.title, ownerChanged ? `ответственный ${cur.owner.fullName}, теперь ${ref.owner.fullName}` : "правка");
   });
 }
 
 async function editable(tx: Tx, actor: Actor, id: string) {
+  await lockRow(tx, String(id));
   const cur = (await tx.initiative.findUnique({ where: { id: String(id) } })) ?? fail("Инициативы уже нет");
   if (cur.closedAt) fail("Инициатива закрыта: верните её, чтобы менять");
-  if (cur.ownerId !== actor.personId && !canManage(actor)) fail("Деление шкалы ставит ответственный за инициативу");
+  if (canManage(actor)) return cur;
+  if (cur.ownerId !== actor.personId) fail("Деление шкалы ставит ответственный за инициативу");
+  if (!personalOrManaged(actor)) fail("Деление шкалы и заметку меняют при личном входе: по общему логину можно выбрать чужой профиль");
+  if (actor.role === "OBSERVER") fail("Наблюдатель не может отвечать за инициативу");
   return cur;
 }
 
@@ -227,8 +244,7 @@ export async function setInitiativeState(actor: Actor, id: string, state: unknow
   if (!isStateCode(state)) fail("Такого деления шкалы нет");
   const text = cleanNote(note) || fail(state === "doing" ? "Напишите, что делаем и когда первый результат" : "Напишите, что ещё не ясно");
   await prisma.$transaction(async (tx) => {
-    // Замок строки: два одновременных нажатия не запишут две смены
-    await tx.$queryRaw`SELECT id FROM initiatives WHERE id = ${String(id)} FOR UPDATE`;
+    // editable берёт замок строки: два одновременных нажатия не запишут две смены
     const cur = await editable(tx, actor, String(id));
     const to = STATE_DB[state as StateCode];
     if (cur.state === to) fail(`Инициатива уже в делении «${STATE_LABELS[state as StateCode]}»`);
@@ -260,6 +276,7 @@ export async function closeInitiative(actor: Actor, id: string, result: unknown,
   if (!isResultCode(result)) fail("Выберите, чем закончилась инициатива");
   const text = cleanNote(note) || fail("Напишите итог одной фразой");
   await prisma.$transaction(async (tx) => {
+    await lockRow(tx, String(id));
     const cur = (await tx.initiative.findUnique({ where: { id: String(id) } })) ?? fail("Инициативы уже нет");
     if (cur.closedAt) fail("Инициатива уже закрыта");
     await tx.initiative.update({ where: { id: cur.id }, data: { result: RESULT_DB[result as ResultCode], resultNote: text, closedAt: now } });
@@ -269,23 +286,30 @@ export async function closeInitiative(actor: Actor, id: string, result: unknown,
   });
 }
 
-/** Вернуть закрытую инициативу в работу: деление остаётся прежним */
+/** Вернуть закрытую инициативу в работу: деление остаётся прежним, срок в нём считается с возврата */
 export async function reopenInitiative(actor: Actor, id: string, now = new Date()): Promise<void> {
   requireManage(actor, "Вернуть инициативу");
   await prisma.$transaction(async (tx) => {
+    await lockRow(tx, String(id));
+    // Ответственного могли выключить, пока инициатива была закрыта: она всё равно возвращается, а нового ответственного
+    // назначают через «Править» (на карточке видно «выключен»). Иначе закрытую инициативу нельзя было бы ни вернуть,
+    // ни переназначить
     const cur = (await tx.initiative.findUnique({ where: { id: String(id) } })) ?? fail("Инициативы уже нет");
     if (!cur.closedAt) fail("Инициатива и так открыта");
-    await tx.initiative.update({ where: { id: cur.id }, data: { result: null, resultNote: null, closedAt: null, noteAt: now } });
+    // Срок в делении считается заново: закрытое время в «ищем N недель» не входит
+    await tx.initiative.update({ where: { id: cur.id }, data: { result: null, resultNote: null, closedAt: null, stateSince: now, noteAt: now } });
     await tx.initiativeChange.create({ data: { initiativeId: cur.id, kind: "reopen", byId: actor.personId, at: now } });
     await audit(tx, actor, "initiative.reopen", cur.id, cur.title, "возвращена в работу");
   });
 }
 
-/** Для повестки встречи: открытые инициативы этих людей, которые долго ищут или давно без новостей */
-export async function initiativesForAgenda(ownerIds: string[], now = new Date()) {
-  if (!ownerIds.length) return [];
+/**
+ * Для повестки встречи команды: открытые инициативы, которые ведёт эта команда (поле «Команда»), если они долго ищут
+ * или давно без новостей. Одна инициатива встаёт в повестку одной встречи
+ */
+export async function initiativesForAgenda(teamId: string, now = new Date()) {
   const rows = await prisma.initiative.findMany({
-    where: { closedAt: null, ownerId: { in: ownerIds } },
+    where: { closedAt: null, teamId },
     select: { id: true, title: true, state: true, stateSince: true, note: true, noteAt: true },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });

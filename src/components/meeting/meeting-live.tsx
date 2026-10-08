@@ -419,7 +419,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
       {item.initiative ? (
         <p className="text-body text-ink">
           {item.initiative.state === "doing" ? "Уже делаем" : "Ещё ищем, как сделать"}
-          {item.initiative.note ? `: ${item.initiative.note.replace(/[.!?]+$/, "")}` : ""}.{" "}
+          {item.initiative.note ? `: ${/[.!?]$/.test(item.initiative.note.trim()) ? item.initiative.note.trim() : `${item.initiative.note.trim()}.`}` : "."}{" "}
           <Link href={`/initiatives#i-${item.initiative.id}`} className="font-medium text-blue-700 hover:underline">
             Открыть инициативу
           </Link>

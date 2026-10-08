@@ -75,10 +75,46 @@ describe("кто что может", () => {
     ]);
   });
 
+  it("по общему логину за ответственного не отметить: профиль там выбирают сами; режим управления по общему логину может", async () => {
+    const { id } = await ini.createInitiative(await owner(), { title: "Подписка ОСАГО", owner: "reva" }, t0);
+    await expectRule(ini.setInitiativeState(await as("reva", null, "TEAM"), id, "doing", "Делаем"), /личном входе/);
+    await expectRule(ini.updateInitiativeNote(await as("reva", null, "TEAM"), id, "Заметка"), /личном входе/);
+    let page = await ini.listInitiatives(await as("reva", null, "TEAM"), t0);
+    expect(page.active[0].canUpdate).toBe(false);
+    page = await ini.listInitiatives(await as("reva"), t0);
+    expect(page.active[0].canUpdate).toBe(true);
+    await ini.setInitiativeState(await as("muradyan", "OWNER", "TEAM"), id, "doing", "Делаем", later(1));
+    expect((await prisma.initiative.findUniqueOrThrow({ where: { id } })).state).toBe("DOING");
+  });
+
+  it("закрытую не правят и не переназначают; два одновременных закрытия: проходит одно", async () => {
+    const { id } = await ini.createInitiative(await owner(), { title: "Скоринг в выдаче", owner: "reva" }, t0);
+    const results = await Promise.allSettled([
+      ini.closeInitiative(await owner(), id, "done", "Запущено", later(1)),
+      ini.closeInitiative(await as("golovkin", "ADMIN"), id, "dropped", "Сняли", later(1)),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(String((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason)).toMatch(/уже закрыта/);
+    expect(await prisma.initiativeChange.count({ where: { initiativeId: id, kind: "close" } })).toBe(1);
+    await expectRule(ini.editInitiative(await owner(), id, { title: "Новое название", owner: "loginova" }), /закрыта/);
+    await expectRule(ini.updateInitiativeNote(await owner(), id, "Заметка"), /закрыта/);
+    expect(await prisma.inboxEvent.count({ where: { recipientId: await idOf("loginova"), kind: "INITIATIVE" } })).toBe(0);
+    // Возврат: срок в делении считается заново
+    await ini.reopenInitiative(await owner(), id, later(40));
+    const row = await prisma.initiative.findUniqueOrThrow({ where: { id } });
+    expect(row.stateSince.toISOString()).toBe(later(40).toISOString());
+  });
+
+  it("свои действия не приходят себе: владелец назначил себя, ответственный сменил деление своей же инициативы", async () => {
+    const { id } = await ini.createInitiative(await owner(), { title: "Своя инициатива", owner: "muradyan" }, t0);
+    await ini.setInitiativeState(await owner(), id, "doing", "Делаем", later(1));
+    expect(await prisma.inboxEvent.count({ where: { kind: "INITIATIVE", subject: `initiative:${id}` } })).toBe(0);
+  });
+
   it("события «Мне»: ответственному при назначении, заведшему при смене деления; журнал без лишнего", async () => {
     const { id } = await ini.createInitiative(await owner(), { title: "Подписка ОСАГО", owner: "reva" }, t0);
     const revaEvents = await prisma.inboxEvent.findMany({ where: { recipientId: await idOf("reva"), kind: "INITIATIVE" } });
-    expect(revaEvents.map((e) => [e.subject, e.text])).toEqual([[`initiative:${id}`, "Вы ответственный за инициативу «Подписка ОСАГО»"]]);
+    expect(revaEvents.map((e) => [e.subject, e.text])).toEqual([[`initiative:${id}`, "Инициатива «Подписка ОСАГО»: отвечаете вы"]]);
     await ini.setInitiativeState(await as("reva"), id, "doing", "Делаем пилот", later(1));
     const aram = await prisma.inboxEvent.findMany({ where: { recipientId: await idOf("muradyan"), kind: "INITIATIVE" } });
     expect(aram.map((e) => e.text)).toEqual(["Инициатива «Подписка ОСАГО»: уже делаем"]);
@@ -133,13 +169,45 @@ describe("метки и повестка", () => {
       "Инициатива «Пролонгация» без новостей 20 дн. Где она сейчас?",
     ]);
     expect(items.find((i) => i.initiative?.id === long)!.initiative).toMatchObject({ state: "searching", note: "Не ясно, кто из СК готов" });
-    // Повторная сборка не дублирует; ответственный обновил заметку: пункт остаётся, заметка свежая
+    // Обсудили «Подписку»: пункт остаётся и после пересборки, даже когда ответственный обновил заметку
+    const discussed = items.find((i) => i.initiative?.id === long)!;
+    await m.setItemDiscussed(await owner(), view.id, discussed.id, true);
+    await ini.updateInitiativeNote(await as("reva"), long, "Нашли страховую для пилота");
+    // «Пролонгацию» обновили и не обсуждали: пункт не актуален и уходит при пересборке
     await ini.updateInitiativeNote(await as("fatyanov"), stale, "Запуск в ноябре");
     const again = await m.buildAgenda(await owner(), TOP_TEAM, key);
     const after = again.items.filter((i) => i.kind === "initiative");
     expect(after.filter((i) => i.initiative?.id === long)).toHaveLength(1);
-    // Пункт без новостей больше не актуален и ещё не обсуждался: уходит при пересборке
     expect(after.some((i) => i.initiative?.id === stale)).toBe(false);
+  });
+
+  it("инициатива встаёт в повестку только той команды, что её ведёт; убранный ведущим пункт не возвращается, закрытая уходит", async () => {
+    const team = await prisma.team.create({ data: { id: "test-initiatives", name: "Тест: команда инициатив", leaderId: await idOf("reva"), members: { create: [{ personId: await idOf("loginova") }] } } });
+    try {
+      const { id } = await ini.createInitiative(await owner(), { title: "Скоринг в выдаче", owner: "reva", team: team.id }, t0);
+      const daysAgo = (d: number) => new Date(Date.now() - d * 86_400_000);
+      await prisma.initiative.update({ where: { id }, data: { stateSince: daysAgo(35), noteAt: daysAgo(35) } });
+      const key = await weekly.currentReportingKey();
+      const top = await m.buildAgenda(await owner(), TOP_TEAM, key);
+      expect(top.items.some((i) => i.initiative?.id === id)).toBe(false);
+      const own = await m.buildAgenda(await owner(), team.id, key);
+      const item = own.items.find((i) => i.initiative?.id === id)!;
+      expect(item.title).toBe("Инициатива «Скоринг в выдаче» ищет, как сделать, уже 5 недель. Что мешает начать?");
+      // Ведущий убрал пункт: при пересборке не возвращается
+      await m.removeAgendaItem(await owner(), own.id, item.id);
+      expect((await m.buildAgenda(await owner(), team.id, key)).items.some((i) => i.initiative?.id === id)).toBe(false);
+      // Закрытая инициатива удаляется из повестки, если пункт ещё не обсуждали
+      await prisma.agendaItem.deleteMany({ where: { initiativeId: id } });
+      await m.buildAgenda(await owner(), team.id, key);
+      await ini.closeInitiative(await owner(), id, "dropped", "Не окупается");
+      expect((await m.buildAgenda(await owner(), team.id, key)).items.some((i) => i.initiative?.id === id)).toBe(false);
+    } finally {
+      await prisma.agendaItem.deleteMany({ where: { initiativeId: { not: null } } });
+      await prisma.meeting.deleteMany({ where: { teamId: team.id } });
+      await prisma.initiative.deleteMany({ where: { teamId: team.id } });
+      await prisma.teamMember.deleteMany({ where: { teamId: team.id } });
+      await prisma.team.delete({ where: { id: team.id } });
+    }
   });
 
   it("предупреждение, когда открытых инициатив больше 15", async () => {
