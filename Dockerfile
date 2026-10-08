@@ -33,5 +33,8 @@ ENV NODE_ENV=production \
 
 EXPOSE 3000
 
-# При каждом запуске: миграции, недостающие стартовые данные, затем сайт
-CMD ["sh", "-c", "npx prisma migrate deploy && npx tsx prisma/seed.ts && npx next start -H 0.0.0.0 -p ${PORT}"]
+# При каждом запуске: подготовка базы (снять зависшие сессии и брошенные миграции, см. src/lib/migrate-prepare.ts),
+# миграции не дольше MIGRATE_TIMEOUT секунд (иначе выход с ошибкой и перезапуск платформой, а не молчаливое
+# ожидание блокировки), недостающие стартовые данные, затем сайт
+ENV MIGRATE_TIMEOUT=600
+CMD ["sh", "-c", "npx tsx scripts/migrate-prepare.ts && timeout -k 10 ${MIGRATE_TIMEOUT} npx prisma migrate deploy && npx tsx prisma/seed.ts && npx next start -H 0.0.0.0 -p ${PORT}"]
