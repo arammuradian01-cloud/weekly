@@ -215,7 +215,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
         <p className="text-small text-muted">
           Отвечает {item.owner.fullName}
           {item.owner.active ? "" : " (выключен)"}
-          {item.team.id !== "top" ? `, команда «${item.team.name}»` : ""}
+          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : " выключена, инициатива разбирается на встрече топ-команды"}` : ""}
           {item.goal ? `. Цель: ${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` : ""}
         </p>
       </div>

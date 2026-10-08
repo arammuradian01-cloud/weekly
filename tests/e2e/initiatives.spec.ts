@@ -82,10 +82,12 @@ test("владелец заводит инициативу, ответствен
   await expect(page.getByText(/Сделали .+: Подписка запущена у одной страховой\./)).toBeVisible();
   await shot(page, "closed");
 
-  // Ссылка из «Мне» на закрытую инициативу раскрывает список закрытых
+  // Ссылка из «Мне» на закрытую инициативу раскрывает свёрнутый список закрытых. Страница грузится заново: с главной
   const id = await page.locator("li[id^='i-']").first().getAttribute("id");
+  await page.goto("/");
   await page.goto(`/initiatives#${id}`);
   await expect(page.locator(`#${id}`)).toBeVisible();
+  await expect(page.locator(`#${id}`)).toHaveClass(/outline-2/);
   await page.getByRole("button", { name: "Вернуть в работу: Подписка ОСАГО в приложении" }).click();
   await expect(page.getByText("Инициатива снова в работе")).toBeVisible();
   await expect(page.getByRole("region", { name: /Уже делаем/ }).getByRole("article", { name: "Подписка ОСАГО в приложении" })).toBeVisible();

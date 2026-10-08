@@ -62,7 +62,7 @@ export type InitiativeView = {
   title: string;
   why: string;
   owner: { slug: string; fullName: string; active: boolean };
-  team: { id: string; name: string };
+  team: { id: string; name: string; active: boolean };
   goal: { id: string; code: string | null; title: string; quarter: string } | null;
   state: StateCode;
   stateSince: string;
@@ -90,7 +90,7 @@ export type InitiativesPage = {
 
 const include = {
   owner: { select: { id: true, slug: true, fullName: true, active: true } },
-  team: { select: { id: true, name: true } },
+  team: { select: { id: true, name: true, active: true } },
   goal: { select: { id: true, code: true, title: true, quarter: true } },
   changes: { orderBy: [{ at: "desc" as const }, { id: "desc" as const }], take: 6, include: { by: { select: { fullName: true } } } },
 } satisfies Prisma.InitiativeInclude;
@@ -309,7 +309,8 @@ export async function reopenInitiative(actor: Actor, id: string, now = new Date(
  */
 export async function initiativesForAgenda(teamId: string, now = new Date()) {
   const rows = await prisma.initiative.findMany({
-    where: { closedAt: null, teamId },
+    // Инициативы выключенной команды встают в повестку топ-команды: иначе они пропали бы из встреч совсем
+    where: { closedAt: null, OR: [{ teamId }, ...(teamId === TOP_TEAM ? [{ team: { active: false } }] : [])] },
     select: { id: true, title: true, state: true, stateSince: true, note: true, noteAt: true },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
   });

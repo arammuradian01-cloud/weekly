@@ -89,10 +89,9 @@ describe("кто что может", () => {
 
   it("закрытую не правят и не переназначают; два одновременных закрытия: проходит одно", async () => {
     const { id } = await ini.createInitiative(await owner(), { title: "Скоринг в выдаче", owner: "reva" }, t0);
-    const results = await Promise.allSettled([
-      ini.closeInitiative(await owner(), id, "done", "Запущено", later(1)),
-      ini.closeInitiative(await as("golovkin", "ADMIN"), id, "dropped", "Сняли", later(1)),
-    ]);
+    // Оба действующих лица готовы заранее: запросы действительно идут одновременно
+    const [a1, a2] = [await owner(), await as("golovkin", "ADMIN")];
+    const results = await Promise.allSettled([ini.closeInitiative(a1, id, "done", "Запущено", later(1)), ini.closeInitiative(a2, id, "dropped", "Сняли", later(1))]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
     expect(String((results.find((r) => r.status === "rejected") as PromiseRejectedResult).reason)).toMatch(/уже закрыта/);
     expect(await prisma.initiativeChange.count({ where: { initiativeId: id, kind: "close" } })).toBe(1);
@@ -196,6 +195,12 @@ describe("метки и повестка", () => {
       // Ведущий убрал пункт: при пересборке не возвращается
       await m.removeAgendaItem(await owner(), own.id, item.id);
       expect((await m.buildAgenda(await owner(), team.id, key)).items.some((i) => i.initiative?.id === id)).toBe(false);
+      // Команду выключили: её открытые инициативы переходят в повестку топ-команды, а не пропадают
+      await prisma.team.update({ where: { id: team.id }, data: { active: false } });
+      expect((await m.buildAgenda(await owner(), TOP_TEAM, key)).items.some((i) => i.initiative?.id === id)).toBe(true);
+      await prisma.team.update({ where: { id: team.id }, data: { active: true } });
+      await prisma.agendaItem.deleteMany({ where: { initiativeId: id } });
+      await prisma.meeting.deleteMany({ where: { teamId: TOP_TEAM } });
       // Закрытая инициатива удаляется из повестки, если пункт ещё не обсуждали
       await prisma.agendaItem.deleteMany({ where: { initiativeId: id } });
       await m.buildAgenda(await owner(), team.id, key);
