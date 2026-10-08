@@ -101,6 +101,7 @@ export function InlineSelect<V extends string>({
   valueLabel,
   disabled,
   align = "start",
+  ariaSubject,
 }: {
   value: V;
   options: { value: V; label: string }[];
@@ -113,13 +114,15 @@ export function InlineSelect<V extends string>({
   valueLabel?: string;
   disabled?: boolean;
   align?: "start" | "end";
+  /** Чьё значение, для экранного диктора, когда таких полей на экране несколько: «задачи 47» */
+  ariaSubject?: string;
 }) {
   const current = renderValue ?? render;
   if (disabled) return <span className="inline-flex min-h-7 items-center">{current(value)}</span>;
   return (
     <Menu.Root>
       <Menu.Trigger
-        aria-label={`${label}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
+        aria-label={`${label}${ariaSubject ? ` ${ariaSubject}` : ""}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
         className="sv-inline-edit group data-[state=open]:border-focus data-[state=open]:bg-field"
       >
         {current(value)}

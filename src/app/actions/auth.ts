@@ -83,6 +83,10 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     return { error: failureMessage(lock.remaining, now, "Неверный логин или пароль") };
   }
 
+  // Личный вход, который был в этом браузере, заменяется общим: завершаем его и в базе, как при смене личного входа.
+  // Иначе запись устройства жила бы ещё 30 дней, и уведомления прежнего человека приходили бы в этот браузер (этап 26)
+  const previous = (await readSession())?.sid ?? null;
+  if (previous) await prisma.deviceSession.updateMany({ where: { id: previous, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
   const { epoch } = await getEpochs();
   await writeSession({ epoch, via: "TEAM" });
   await writeAudit({ action: "login.success", ip, via: "TEAM" });

@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Check, CheckCircle2, Cloud, CloudOff, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
 import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { ACTIVE_DRAFTS, DRAFTS_CHANGED, dropDraftsForEntry, dropHeadlineDraft, entryDrafts, headlineDraft, isNetworkError, putHeadlineDraft, settleHeadlineDraft } from "@/lib/offline/drafts";
+import { DRAFT_SENT, flushOfflineDrafts, recentlySent, type DraftSentDetail } from "@/lib/offline/outbox";
 import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPromise } from "@/lib/weekly/promises";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
@@ -79,7 +81,13 @@ export function WeeklySubmit({
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
   const submitted = weekly.state === "submitted" || weekly.state === "late";
 
-  const [headline, setHeadline] = useState(initialReport.headline);
+  const [headline, setHeadlineState] = useState(initialReport.headline);
+  // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
+  const setHeadline = (value: string) => {
+    setHeadlineState(value);
+    if (canEdit) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
+  };
+  const [offline, setOffline] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   /** Запись, которую просят удалить: сначала окно подтверждения */
   const [confirmDelete, setConfirmDelete] = useState<WeeklyEntry | null>(null);
@@ -97,17 +105,25 @@ export function WeeklySubmit({
     setSaving(true);
     try {
       const result = await saveHeadlineAction(week.key, value);
+      setOffline(false);
       if (result.ok) {
         savedHeadline.current = value;
+        settleHeadlineDraft(me.slug, week.key, value);
         setWeekly(result.value);
         setSavedAt(nowTime());
-      } else notify(result.error, "error");
-    } catch {
-      notify("Нет связи с сервером: черновик не сохранился", "error");
+      } else {
+        // Правило не пускает: черновик не повторяем при каждом открытии
+        dropHeadlineDraft(me.slug, week.key);
+        notify(result.error, "error");
+      }
+    } catch (error) {
+      // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
+      if (isNetworkError(error)) setOffline(true);
+      else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
     } finally {
       setSaving(false);
     }
-  }, [week.key, notify]);
+  }, [week.key, notify, me.slug]);
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
@@ -185,6 +201,53 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
+  // Черновики с этого устройства (этап 26): отправляет оболочка приложения при открытии и когда возвращается связь.
+  // Здесь видно, сколько ждёт отправки за эту неделю, и дошедшие записи встают в список без перезагрузки
+  const [outbox, setOutbox] = useState(0);
+  const upsertRef = useRef(upsert);
+  upsertRef.current = upsert;
+  useEffect(() => {
+    const headlineKey = `headline:${week.key}`;
+    ACTIVE_DRAFTS.add(headlineKey);
+    // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама. Если на сервере
+    // её уже изменили на другом устройстве, черновик устарел: не возвращаем и говорим об этом
+    const kept = canEdit ? headlineDraft(me.slug, week.key) : null;
+    if (kept && kept.value !== savedHeadline.current) {
+      if (kept.base !== undefined && kept.base !== savedHeadline.current) {
+        dropHeadlineDraft(me.slug, week.key);
+        notify("Главная фраза с этого устройства не восстановлена: её уже изменили на другом устройстве", "error");
+      } else setHeadlineState(kept.value);
+    } else if (kept) settleHeadlineDraft(me.slug, week.key, kept.value);
+    const count = () => setOutbox(entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key)).length);
+    count();
+    const sentHere = (ev: Event) => {
+      const { entry } = (ev as CustomEvent<DraftSentDetail>).detail;
+      if (entry && entry.week === week.key) upsertRef.current(entry);
+    };
+    // Оболочка могла отправить черновик раньше, чем открылся этот экран: такие записи тоже показываем
+    // Запись уже есть в списке с сервера: её не трогаем, версия с сервера свежее
+    const missed = recentlySent().flatMap((d) => (d.entry && d.entry.week === week.key ? [d.entry] : []));
+    if (missed.length) setEntries((prev) => [...prev, ...missed.filter((m) => !prev.some((e) => e.id === m.id))]);
+    const back = () => {
+      setOffline(false);
+      void saveHeadline();
+    };
+    const gone = () => setOffline(true);
+    if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
+    window.addEventListener(DRAFTS_CHANGED, count);
+    window.addEventListener(DRAFT_SENT, sentHere);
+    window.addEventListener("online", back);
+    window.addEventListener("offline", gone);
+    return () => {
+      ACTIVE_DRAFTS.delete(headlineKey);
+      window.removeEventListener(DRAFTS_CHANGED, count);
+      window.removeEventListener(DRAFT_SENT, sentHere);
+      window.removeEventListener("online", back);
+      window.removeEventListener("offline", gone);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** Перенесённый план удалили или вернули: шаг обещаний показывает это без перезагрузки (этап 22) */
   const setCarried = (promiseEntryId: string, carried: { id: string; what: string } | undefined) =>
     setPromises((prev) => prev.map((p) => (p.entryId === promiseEntryId && p.review ? { ...p, review: { ...p.review, carried } } : p)));
@@ -211,6 +274,7 @@ export function WeeklySubmit({
       const carriedBy = promises.find((p) => p.review?.carried?.id === entry.id)?.entryId;
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
+      dropDraftsForEntry(me.slug, entry.id);
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
       if (carriedBy) setCarried(carriedBy, undefined);
       // Запись из факта удалили: факт снова предлагается
@@ -318,6 +382,20 @@ export function WeeklySubmit({
             <Cloud className="h-4 w-4" aria-hidden="true" />
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
           </p>
+          {canEdit && (offline || outbox > 0) ? (
+            <p role="status" className="mt-3 sv-alert sv-alert--warning inline-flex items-start gap-2 text-small">
+              <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>
+                {offline ? "Нет сети. Черновик сохраняется на этом устройстве и уйдёт на сервер, когда связь вернётся." : "Черновик с этого устройства ещё не дошёл до сервера."}
+                {outbox > 0 ? ` Ждут отправки: ${outbox}.` : ""}
+                {!offline && outbox > 0 ? (
+                  <button type="button" className="ml-1 font-semibold underline underline-offset-2" onClick={() => void flushOfflineDrafts(me.slug)}>
+                    Отправить сейчас
+                  </button>
+                ) : null}
+              </span>
+            </p>
+          ) : null}
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
             {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный */}
             <ol className="sv-steps m-0 list-none p-0">

@@ -6,6 +6,7 @@ import { SidebarBrand, Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
 import { ProfileMenu } from "@/components/shell/profile-menu";
 import { PrototypeProvider } from "@/domain/store";
+import { DeviceSync } from "@/components/pwa/device-sync";
 import { fromCalendar } from "@/domain/dates";
 import { moscowDate } from "@/lib/week";
 import { PrototypeBanner } from "@/components/prototype/banner";
@@ -144,6 +145,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <GlobalHotkeys />
     <CommandPalette management={profile.management} />
     <RequestDialogHost />
+    <DeviceSync />
     </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>

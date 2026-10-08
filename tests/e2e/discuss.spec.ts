@@ -129,14 +129,16 @@ test("письма настраиваются в профиле при личн�
   await page.context().clearCookies();
   await enterByLink(page, "reva");
   await page.goto("/profile");
-  const reactions = page.getByRole("checkbox", { name: /Реакции/ });
+  // При личном входе «Реакции» есть и в письмах, и в уведомлениях в браузере (этап 26): берём письма
+  const mail = page.locator("section", { has: page.getByRole("heading", { name: "Письма" }) });
+  const reactions = mail.getByRole("checkbox", { name: /Реакции/ });
   await expect(reactions).toBeChecked();
   await reactions.uncheck();
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  await mail.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText("Настройки писем сохранены").first()).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("checkbox", { name: /Реакции/ })).not.toBeChecked();
-  await expect(page.getByRole("checkbox", { name: /Напоминания о сдаче/ })).toBeChecked();
+  await expect(mail.getByRole("checkbox", { name: /Реакции/ })).not.toBeChecked();
+  await expect(mail.getByRole("checkbox", { name: /Напоминания о сдаче/ })).toBeChecked();
   await shot(page, "profile-mail");
   const [person] = await sql(`SELECT "mailPrefs" FROM people WHERE slug = 'reva'`);
   expect((person as { mailPrefs: Record<string, boolean> }).mailPrefs.reactions).toBe(false);

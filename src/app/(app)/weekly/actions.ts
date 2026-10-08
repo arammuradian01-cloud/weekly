@@ -40,8 +40,9 @@ async function run<T>(fn: (a: Actor) => Promise<T>): Promise<Result<T>> {
   }
 }
 
-export async function saveHeadlineAction(week: WeekKey, headline: string): Promise<Result<PersonWeekly>> {
-  return run((a) => svc.saveHeadline(a, week, String(headline ?? "")));
+/** expected: черновик с устройства (этап 26), на сервере должна быть эта фраза, иначе черновик устарел */
+export async function saveHeadlineAction(week: WeekKey, headline: string, expected?: string): Promise<Result<PersonWeekly>> {
+  return run((a) => svc.saveHeadline(a, week, String(headline ?? ""), typeof expected === "string" ? expected : undefined));
 }
 
 export async function saveEntryAction(input: svc.EntryInput): Promise<Result<WeeklyEntry>> {

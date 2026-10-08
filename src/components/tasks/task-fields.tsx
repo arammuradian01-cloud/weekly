@@ -23,7 +23,8 @@ export function useTaskPermissions(task: Task) {
   return permissions(task, useViewer());
 }
 
-export function StatusSelect({ task }: { task: Task }) {
+/** subject: чей статус для экранного диктора, когда задач на экране несколько, например «задачи 47» */
+export function StatusSelect({ task, subject }: { task: Task; subject?: string }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   // «Предложена» выставляет только система: лидер предлагает задачу, владелец или администратор её принимает
@@ -36,6 +37,7 @@ export function StatusSelect({ task }: { task: Task }) {
   return (
     <InlineSelect
       label="Статус"
+      ariaSubject={subject}
       value={task.status}
       options={options}
       disabled={task.status === "proposed" ? !can.confirm : !can.status}
@@ -45,7 +47,7 @@ export function StatusSelect({ task }: { task: Task }) {
   );
 }
 
-export function StateSelect({ task }: { task: Task }) {
+export function StateSelect({ task, subject }: { task: Task; subject?: string }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   const { data } = usePrototype();
@@ -54,6 +56,7 @@ export function StateSelect({ task }: { task: Task }) {
   return (
     <InlineSelect
       label="Состояние"
+      ariaSubject={subject}
       value={task.state}
       valueLabel={unconfirmed ? "В графике не подтверждено" : stateLabel(task.state)}
       render={(v) => <StateDot state={v} />}

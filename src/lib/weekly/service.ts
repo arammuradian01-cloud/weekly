@@ -106,6 +106,7 @@ export function toEntryDto(e: EntryRow): WeeklyEntry {
     links: Array.isArray(e.links) ? (e.links as Link[]) : [],
     ceo: e.ceo,
     taskNumber: e.tasks[0]?.number,
+    updatedAt: e.updatedAt.toISOString(),
     ...(e.factKey ? { factKey: e.factKey } : {}),
     ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
     ...(e.comments.length ? { comments: e.comments.map(commentDto) } : {}),
@@ -355,13 +356,15 @@ async function reportOf(tx: Tx, weekId: string, authorId: string) {
 }
 
 /** Главное одной фразой. Черновик сохраняется сам; после сдачи каждая правка пишется в журнал */
-export async function saveHeadline(actor: Actor, key: WeekKey, headline: string): Promise<PersonWeekly> {
+/** expected: главная фраза, с которой начат черновик с устройства (этап 26). На сервере уже другая: поверх не пишем */
+export async function saveHeadline(actor: Actor, key: WeekKey, headline: string, expected?: string): Promise<PersonWeekly> {
   const value = clean(headline);
   if (value.length > WEEKLY_LIMITS.headline) fail(`Главное: не длиннее ${WEEKLY_LIMITS.headline} знаков`);
   return prisma.$transaction(async (tx) => {
     const { row, info, reporting } = await weekContext(tx, key, actor.personId);
     canEdit(info, reporting, actor, actor.slug);
     const existing = await reportOf(tx, row.id, actor.personId);
+    if (typeof expected === "string" && clean(existing?.headline ?? "") !== clean(expected) && clean(existing?.headline ?? "") !== value) fail(HEADLINE_CONFLICT);
     const report = await tx.weeklyReport.upsert({
       where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } },
       update: { headline: value },
@@ -426,7 +429,21 @@ export type EntryInput = {
   links?: Link[];
   /** Запись из факта недели (этап 22): ставит только сервер, из экрана не приходит */
   factKey?: string;
+  /**
+   * Ключ черновика новой записи с устройства (этап 26). Повтор с тем же ключом после обрыва связи правит уже созданную
+   * запись, а не создаёт вторую
+   */
+  clientKey?: string;
+  /**
+   * Черновик с устройства начат с версии записи от этого времени (этап 26). Запись изменили позже: черновик поверх
+   * не записываем, человек узнаёт об этом
+   */
+  baseUpdatedAt?: string;
 };
+
+const CLIENT_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+export const ENTRY_CONFLICT = "Запись уже изменили на другом устройстве: черновик с этого устройства не отправлен";
+export const HEADLINE_CONFLICT = "Главную фразу уже изменили на другом устройстве: черновик с этого устройства не отправлен";
 
 /** Значение справочника по коду. Скрытое в справочнике можно оставить, если запись уже с ним, выбрать заново нельзя */
 async function dictItem(tx: Tx, kind: "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE", code: string, message: string, currentId?: string) {
@@ -477,9 +494,18 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
   const help = optional(input.help, WEEKLY_LIMITS.help, "Какая помощь нужна");
   const links = checkLinks(input.links ?? []);
 
+  const clientKey = !input.id && typeof input.clientKey === "string" && CLIENT_KEY.test(input.clientKey) ? input.clientKey : null;
+
   return prisma.$transaction(async (tx) => {
-    const existing = input.id ? await tx.weeklyEntry.findUnique({ where: { id: input.id }, include: entryInclude }) : null;
+    // Две отправки одного черновика (обрыв связи, повтор с телефона) идут по очереди: вторая правит запись первой
+    if (clientKey) await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`entry-client:${actor.personId}:${clientKey}`}))::text`;
+    const existing = input.id
+      ? await tx.weeklyEntry.findUnique({ where: { id: input.id }, include: entryInclude })
+      : clientKey
+        ? await tx.weeklyEntry.findFirst({ where: { authorId: actor.personId, clientKey }, include: entryInclude })
+        : null;
     if (input.id && !existing) fail("Запись уже удалена");
+
     const key = existing ? isoFromDbDate(existing.week.start) : input.week;
     const { row, info, reporting } = await weekContext(tx, key, existing ? existing.authorId : actor.personId);
     const author = existing ? ((existing.author?.slug as PersonSlug | undefined) ?? null) : actor.slug;
@@ -500,6 +526,23 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       help,
       links: links as unknown as Prisma.InputJsonValue,
     };
+    // Черновик с устройства начат со старой версии: если на сервере уже другой текст, поверх не пишем. Тот же текст
+    // (ответ на прошлую отправку потерялся по дороге) не конфликт
+    const base = input.baseUpdatedAt ? Date.parse(input.baseUpdatedAt) : NaN;
+    if (existing && Number.isFinite(base) && existing.updatedAt.getTime() > base) {
+      const same =
+        existing.what === what &&
+        (existing.details ?? null) === details &&
+        (existing.impact ?? null) === impact &&
+        (existing.fact ?? null) === fact &&
+        (existing.next ?? null) === next &&
+        (existing.help ?? null) === help &&
+        existing.directionId === direction.id &&
+        existing.blockId === block.id &&
+        existing.typeId === type.id &&
+        linksText(existing.links) === linksText(links);
+      if (!same) fail(ENTRY_CONFLICT);
+    }
     let saved: EntryRow;
     if (existing) {
       saved = await tx.weeklyEntry.update({ where: { id: existing.id }, data, include: entryInclude });
@@ -530,7 +573,7 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       if (input.factKey && (await tx.weeklyEntry.findFirst({ where: { weekId: row.id, authorId: actor.personId, factKey: input.factKey }, select: { id: true } }))) {
         fail("Этот факт уже в weekly");
       }
-      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count, factKey: input.factKey ?? null }, include: entryInclude });
+      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count, factKey: input.factKey ?? null, clientKey }, include: entryInclude });
       await tx.weeklyReport.upsert({
         where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } },
         update: {},

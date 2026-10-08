@@ -61,7 +61,8 @@
     "react-dom": "^19.3.0",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.7.0",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@playwright/test": "1.56",
@@ -70,6 +71,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/web-push": "^3.6.4",
     "concurrently": "^10.0.5",
     "esbuild": "0.28.2",
     "tailwindcss": "^4.3.3",

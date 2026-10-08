@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bell, Check, CheckCheck, ListPlus, Undo2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { addDays } from "@/domain/dates";
+import { addDays, formatShort } from "@/domain/dates";
 import { dictOptions } from "@/domain/dictionaries";
 import type { RequestView } from "@/domain/requests";
 import type { Result } from "@/lib/action-runner";
@@ -39,6 +39,7 @@ export function RequestActions({ request, size = "sm", onChanged }: { request: R
   const [busy, setBusy] = useState(false);
   const can = request.can;
   const n = request.number;
+  const quickDue = request.due >= data.today ? request.due : addDays(data.today, 1);
 
   const open = (d: Dialog) => {
     setError(null);
@@ -77,10 +78,17 @@ export function RequestActions({ request, size = "sm", onChanged }: { request: R
   return (
     <>
       <div className="flex flex-wrap items-center gap-1.5">
-        {can.accept ? (
-          <Button size={size} variant={accepted ? "secondary" : "primary"} onClick={() => open("accept")}>
+        {can.accept && !accepted ? (
+          // Одним нажатием к сроку автора (этап 26): из уведомления на телефоне это второе нажатие. Свой срок: «Другой срок»
+          <Button size={size} disabled={busy} onClick={() => void run(() => acceptRequestAction(n, quickDue), () => `Просьба принята, срок ${formatShort(quickDue)}`, same)}>
             <Check className="h-4 w-4" aria-hidden="true" />
-            {accepted ? "Изменить срок" : "Принять"}
+            Принять к {formatShort(quickDue)}
+          </Button>
+        ) : null}
+        {can.accept ? (
+          <Button size={size} variant={accepted ? "secondary" : "ghost"} onClick={() => open("accept")}>
+            {accepted ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
+            {accepted ? "Изменить срок" : "Другой срок"}
           </Button>
         ) : null}
         {can.done ? (

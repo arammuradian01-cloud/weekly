@@ -6,6 +6,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, Presentation, SquareCheck, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
+import { acceptRequestAction } from "@/app/(app)/requests/actions";
 import { usePrototype } from "@/domain/store";
 import { isMine, isOverdue, overdueDays } from "@/lib/tasks/rules";
 import { addDays, formatShort } from "@/domain/dates";
@@ -141,6 +142,30 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                     </Link>
                   ) : null}
                   <p className="sv-event__text mt-0.5">{item.text}</p>
+                  {item.requestQuickDue ? (
+                    // Принять просьбу прямо отсюда (этап 26): с телефона это второе нажатие после «Мне»
+                    <Button
+                      size="sm"
+                      className="mt-2"
+                      aria-label={`Принять просьбу ${item.requestNumber} к ${formatShort(item.requestQuickDue >= data.today ? item.requestQuickDue : addDays(data.today, 1))}`}
+                      disabled={busy !== null}
+                      onClick={() => {
+                        const due = item.requestQuickDue! >= data.today ? item.requestQuickDue! : addDays(data.today, 1);
+                        void act(
+                          item.subject,
+                          async () => {
+                            const r = await acceptRequestAction(item.requestNumber!, due);
+                            if (r.ok) await markDoneAction(item.subject).catch(() => undefined);
+                            return r;
+                          },
+                          `Просьба принята, срок ${formatShort(due)}`,
+                        );
+                      }}
+                    >
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                      Принять к {formatShort(item.requestQuickDue >= data.today ? item.requestQuickDue : addDays(data.today, 1))}
+                    </Button>
+                  ) : null}
                   <p className="mt-1 text-caption text-text-secondary">
                     <b className="font-semibold">{item.actorName ?? "Система"}</b>
                     {item.count > 1 ? `. Ещё событий по ${item.requestNumber ? "просьбе" : item.entryId ? "записи" : "задаче"}: ${item.count - 1}` : ""}

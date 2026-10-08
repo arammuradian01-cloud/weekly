@@ -25,7 +25,10 @@ import type { WeekKey } from "@/domain/types";
 import { readersOf, seesEntry } from "@/lib/discuss/access";
 import { inboxCount } from "@/lib/inbox/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { eventPhrase, pathOf, plural, type EventLine } from "./phrases";
 import { EVENT_DELAY_MS, EVENT_MAX_AGE_MS, PREF_LABELS, digestDue, inWorkHours, outsideWorkHours, prefOfKind, prefsOf, reminderDue, type MailPrefs } from "./schedule";
+
+export { eventPhrase, plural, type EventLine } from "./phrases";
 
 const TICK_MS = 60_000;
 const LEASE = "5 minutes";
@@ -36,55 +39,8 @@ function appUrl(): string {
 
 // ---------- Тексты ----------
 
-export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null };
-
-/** Одна строка письма о событии: кто и что, без содержимого. Без глаголов с родом: «Рева Тарас: упоминание в задаче 47» */
-export function eventPhrase(e: EventLine): string {
-  const who = e.actorName ? `${e.actorName}: ` : "";
-  const n = e.taskNumber ? ` ${e.taskNumber}` : "";
-  switch (e.kind) {
-    case "TASK_ASSIGNED":
-      return `${who}вам поручена задача${n}`;
-    case "TASK_PROPOSED":
-      return `${who}предложение задачи${n}`;
-    case "TASK_CONFIRMED":
-      return `${who}задача${n} подтверждена`;
-    case "TASK_COEXECUTOR":
-      return `${who}вы соисполнитель в задаче${n}`;
-    case "TASK_COMMENT":
-      return `${who}комментарий в задаче${n}`;
-    case "TASK_DUE":
-      return `Срок по задаче${n}`;
-    case "UPDATE_REQUEST":
-      return `${who}просьба обновить задачу${n}`;
-    case "TASK_WATCH":
-      return `${who}изменения в задаче${n}, за которой вы следите`;
-    case "MENTION":
-      return e.entryId ? `${who}упоминание в записи weekly` : `${who}упоминание в задаче${n}`;
-    case "ENTRY_COMMENT":
-      return `${who}комментарий к записи weekly`;
-    case "REACTION":
-      return e.entryId ? `${who}реакция на ${e.commentId ? "ваш комментарий к записи weekly" : "вашу запись weekly"}` : `${who}реакция на ваш комментарий в задаче${n}`;
-    case "REQUEST":
-      return `${who}просьба к вам`;
-    case "THANKS":
-      return `${who}благодарность в weekly`;
-    case "MEETING":
-      return `${who}встреча: протокол или решение`;
-    case "TASK_DEPENDENCY":
-      return `${who}изменения по связанной задаче${n}`;
-    case "REQUEST_ANSWER":
-      return `${who}изменения по просьбе`;
-    default:
-      return `${who}новое событие`;
-  }
-}
-
 function linkOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null }): string {
-  if (e.requestNumber) return `${appUrl()}/requests/${e.requestNumber}`;
-  if (e.taskNumber) return `${appUrl()}/tasks/${e.taskNumber}`;
-  if (e.entryId) return `${appUrl()}/weekly/entry/${e.entryId}`;
-  return `${appUrl()}/me`;
+  return `${appUrl()}${pathOf(e)}`;
 }
 
 const footer = () => `\n\nНастроить письма: ${appUrl()}/profile\nВ письме только кто и что. Подробности видны после входа в ресурс.`;
@@ -104,14 +60,6 @@ export function eventsMail(person: { shortName: string }, items: (EventLine & { 
   const head = night ? "Пока вас не было в ресурсе:" : "Вас ждут в ресурсе:";
   const text = `Здравствуйте, ${person.shortName}.\n\n${head}\n\n${lines.join("\n\n")}\n\nВсё, что ждёт вас: ${appUrl()}/me${footer()}`;
   return { subject, text };
-}
-
-export function plural(n: number, forms: [string, string, string]): string {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return forms[0];
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
-  return forms[2];
 }
 
 // ---------- Аренда ----------
@@ -420,7 +368,7 @@ async function digestForWeek(key: WeekKey, candidates: DigestPerson[], nodes: Te
 // ---------- Цикл ----------
 
 /** Один проход всех писем под арендой. null: проход делает другой процесс сервера */
-export async function mailTick(now = new Date()): Promise<{ events: PassResult; reminders: PassResult; digest: PassResult } | null> {
+export async function mailTick(now = new Date()): Promise<{ events: PassResult; reminders: PassResult; digest: PassResult; pushes: PassResult } | null> {
   // Проходы независимы: сбой одного не задерживает напоминания и дайджест с их узким окном
   const safe = async (what: string, fn: () => Promise<PassResult>): Promise<PassResult> => {
     try {
@@ -448,11 +396,16 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const { repeatPass } = await import("@/lib/tasks/service");
       return { sent: await repeatPass(now), skipped: 0, failed: 0 };
     });
-    return {
-      reminders: await safe("Напоминания о сдаче", () => reminderPass(now)),
-      digest: await safe("Дайджест", () => digestPass(now)),
-      events: await safe("Письма о событиях", () => eventMailPass(now)),
-    };
+    const reminders = await safe("Напоминания о сдаче", () => reminderPass(now));
+    const digest = await safe("Дайджест", () => digestPass(now));
+    const events = await safe("Письма о событиях", () => eventMailPass(now));
+    // Уведомления в браузере (этап 26) после писем: медленная служба уведомлений не задерживает напоминания и дайджест.
+    // Письмо о событии всё равно ждёт 15 минут, уведомление уходит через минуту
+    const pushes = await safe("Уведомления в браузере", async () => {
+      const { pushPass } = await import("@/lib/push/service");
+      return pushPass(now);
+    });
+    return { pushes, reminders, digest, events };
   });
 }
 

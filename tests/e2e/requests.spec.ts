@@ -58,10 +58,10 @@ test("просьба из карточки задачи: адресат прин
   await loginova.goto("/me");
   const incoming = loginova.locator("section", { has: loginova.getByRole("heading", { name: /Просьбы ко мне/ }) });
   await expect(incoming.getByRole("link", { name: /Данные по трафику ДВС/ })).toBeVisible();
-  await incoming.getByRole("button", { name: "Принять" }).click();
+  await incoming.getByRole("button", { name: "Другой срок" }).click();
   const accept = loginova.getByRole("dialog", { name: `Принять просьбу ${requestNumber}` });
   await accept.getByRole("button", { name: "Через неделю" }).click();
-  await accept.getByRole("button", { name: "Принять" }).click();
+  await accept.getByRole("button", { name: "Принять", exact: true }).click();
   await expect(loginova.getByText("Просьба принята")).toBeVisible();
   await expect(incoming.getByText("Принята")).toBeVisible();
   await shot(loginova, "me");

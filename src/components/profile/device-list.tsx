@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/overlays";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
+import { forgetThisDevice } from "@/lib/offline/sign-out";
 
 const when = (iso: string) =>
   new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
@@ -18,7 +19,7 @@ const when = (iso: string) =>
 /** Свои личные входы: устройство, способ входа, когда заходили. Выход на одном устройстве или на всех */
 export function DeviceList({ devices, current }: { devices: DeviceView[]; current: string | null }) {
   const run = useRunAction();
-  const { notify } = usePrototype();
+  const { notify, me } = usePrototype();
   const [confirmAll, setConfirmAll] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -44,6 +45,8 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
               disabled={busy}
               onClick={async () => {
                 setBusy(true);
+                // Выход на этом устройстве: черновики отправляются и стираются, уведомления сюда больше не приходят
+                if (d.id === current) await forgetThisDevice(me.slug);
                 const ok = await run(() => revokeDeviceAction(d.id));
                 setBusy(false);
                 if (ok !== null) notify("Вход на устройстве завершён");
@@ -72,6 +75,7 @@ export function DeviceList({ devices, current }: { devices: DeviceView[]; curren
             disabled={busy}
             onClick={async () => {
               setBusy(true);
+              await forgetThisDevice(me.slug);
               await run(() => revokeAllMineAction());
               setBusy(false);
               setConfirmAll(false);

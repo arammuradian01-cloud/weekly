@@ -38,6 +38,8 @@ export async function proxy(request: NextRequest) {
   return response;
 }
 
+// Без проверки входа: файлы сборки, значки и логотип, а для приложения на экране «Домой» (этап 26) описание приложения,
+// служебный обработчик и страница «Нет сети»: браузер запрашивает их без cookie, данных в них нет
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/|icons/|manifest.webmanifest|sw.js|offline.html).*)"],
 };

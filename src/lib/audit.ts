@@ -117,6 +117,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "auth.password.reset": "Личный пароль сброшен",
   "auth.invite.bulk": "Выданы ссылки всем без пароля",
   "settings.mail": "Изменены настройки писем",
+  "settings.push": "Изменены уведомления в браузере",
   "auth.invite": "Выдана ссылка для входа",
   "auth.email-link": "Ссылка для входа отправлена на почту",
   "auth.device.revoke": "Вход на устройстве завершён",

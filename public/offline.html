@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Нет сети | Weekly</title>
+    <style>
+      :root {
+        --bg: #f6f5f4;
+        --surface: #ffffff;
+        --ink: #0f1b24;
+        --muted: #5b6672;
+        --line: #e3e1de;
+        --action: #0dd149;
+        --action-ink: #002a3a;
+        color-scheme: light dark;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0e1419;
+          --surface: #171d23;
+          --ink: #eef1f4;
+          --muted: #a2adb8;
+          --line: #2a333c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.5 "Open Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      }
+      main {
+        width: 100%;
+        max-width: 420px;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 28px 24px;
+      }
+      img { width: 40px; height: auto; display: block; margin-bottom: 20px; }
+      h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; font-weight: 700; }
+      p { margin: 0 0 12px; color: var(--muted); }
+      button {
+        margin-top: 8px;
+        width: 100%;
+        min-height: 48px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--action);
+        color: var(--action-ink);
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:focus-visible { outline: 2px solid #0073a8; outline-offset: 2px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/logo/sravni_sign.svg" alt="" />
+      <h1>Нет сети</h1>
+      <p>Страница откроется, когда телефон снова будет в сети.</p>
+      <p>Черновик weekly, который вы писали, сохранён на этом устройстве и уйдёт на сервер сам, как только связь вернётся.</p>
+      <button type="button" onclick="location.reload()">Попробовать снова</button>
+    </main>
+    <script>
+      window.addEventListener("online", function () { location.reload(); });
+    </script>
+  </body>
+</html>
