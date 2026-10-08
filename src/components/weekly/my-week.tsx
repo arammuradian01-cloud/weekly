@@ -13,9 +13,10 @@ import { compactName } from "@/domain/people";
 import { diffDays, formatShort } from "@/domain/dates";
 import { isClosed, isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
-import { OverdueNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
+import { OverdueNote, WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "@/components/tasks/task-drawer";
+import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { SubmissionStrip } from "./submission-strip";
 import { AbsentBadge, substituteText } from "./absence";
 import { submittedText } from "./weekly-feed";
@@ -135,9 +136,10 @@ export function MyWeek({
                       <span className="mr-1.5 font-normal tabular-nums text-text-secondary">{t.number}</span>
                       {t.title}
                     </button>
+                    {/* Статус и состояние меняются прямо здесь (этап 26): с телефона это два нажатия с главной */}
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <StatusBadge status={t.status} />
-                      <StateDot state={t.state} />
+                      <StatusSelect task={t} />
+                      <StateSelect task={t} />
                       <span className={cn("sv-due", overdue && "!font-semibold !text-danger-ink")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                     </div>

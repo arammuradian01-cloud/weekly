@@ -13,6 +13,8 @@ import { mailConfigured } from "@/lib/mail";
 import { mailPrefsFor } from "@/lib/letters/service";
 import { MailPrefsForm } from "@/components/profile/mail-prefs";
 import { PasswordForm } from "@/components/profile/password-form";
+import { InstallApp, PushSettings } from "@/components/profile/push-settings";
+import { pushDevices, pushPrefsFor, pushPublicKey } from "@/lib/push/service";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -29,7 +31,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function ProfilePage() {
   const ctx = await requireContext();
   const observer = ctx.person.role === "OBSERVER";
-  const [devices, absences, weeks, colleagues, prefs] = await Promise.all([
+  const personal = ctx.via !== "TEAM";
+  const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList] = await Promise.all([
     ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
     observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
     absenceWeeks(),
@@ -39,6 +42,9 @@ export default async function ProfilePage() {
       select: { slug: true, fullName: true },
     }),
     mailPrefsFor(ctx.person.id),
+    personal ? pushPublicKey() : Promise.resolve(""),
+    pushPrefsFor(ctx.person.id),
+    personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
   ]);
   const mailOn = mailConfigured();
   return (
@@ -91,6 +97,15 @@ export default async function ProfilePage() {
         {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
         {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
         <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
+      </section>
+
+      <section className="mt-10 border-t border-line pt-8" aria-labelledby="phone-push">
+        <h2 id="phone-push" className="text-title font-semibold text-ink">
+          Телефон и уведомления
+        </h2>
+        <p className="mt-1 text-small text-muted">Ответить на просьбу, обновить задачу, прочитать ленту и повестку можно с телефона в два нажатия.</p>
+        <InstallApp />
+        <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />
       </section>
 
       <section className="mt-10 border-t border-line pt-8">

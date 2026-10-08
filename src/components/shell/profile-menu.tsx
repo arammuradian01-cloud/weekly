@@ -9,6 +9,7 @@ import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
+import { forgetThisDevice } from "@/lib/offline/sign-out";
 
 type Props = {
   fullName: string;
@@ -135,7 +136,16 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             </Menu.Item>
           ) : null}
 
-          <Menu.Item className={itemClass} disabled={pending} onSelect={() => startTransition(() => logout())}>
+          <Menu.Item
+            className={itemClass}
+            disabled={pending}
+            onSelect={() =>
+              startTransition(async () => {
+                await forgetThisDevice();
+                await logout();
+              })
+            }
+          >
             <LogOut className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
             Выйти
           </Menu.Item>

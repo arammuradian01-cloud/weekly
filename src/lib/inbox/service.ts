@@ -14,6 +14,8 @@ import { seesTask } from "@/lib/tasks/watch";
 import { seesEntry } from "@/lib/discuss/access";
 import type { RequestStatusCode } from "@/domain/requests";
 import { TOP_TEAM } from "@/lib/org/scope";
+import { isoFromDbDate } from "@/lib/tasks/dates";
+import type { IsoDate } from "@/domain/dates";
 
 export { notify, quote, taskSubject, type InboxInput } from "./notify";
 
@@ -33,6 +35,8 @@ export type InboxItem = {
   requestNumber: number | null;
   requestText: string | null;
   requestStatus: RequestStatusCode | null;
+  /** Срок просьбы, если её можно принять прямо из «Мне» одним нажатием (этап 26): я адресат, просьба ждёт ответа */
+  requestQuickDue: IsoDate | null;
   /** Последнее событие предмета: кто и что */
   actorName: string | null;
   kind: InboxKind;
@@ -78,7 +82,7 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
 const inboxInclude = {
   task: { select: { number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } },
   entry: { select: { id: true, what: true, authorId: true, ceo: true, promotions: { select: { byId: true } } } },
-  request: { select: { number: true, text: true, status: true, authorId: true, addresseeId: true } },
+  request: { select: { number: true, text: true, status: true, authorId: true, addresseeId: true, due: true, resultTaskId: true } },
 } satisfies Prisma.InboxEventInclude;
 
 /** Неразобранное, одна строка на предмет, свежие сверху */
@@ -110,6 +114,7 @@ export async function listInbox(personId: string, now = new Date(), viewer?: Sco
       requestNumber: r.request?.number ?? null,
       requestText: r.request?.text ?? null,
       requestStatus: r.request ? (r.request.status.toLowerCase() as RequestStatusCode) : null,
+      requestQuickDue: r.request && r.request.status === "OPEN" && r.request.addresseeId === personId && !r.request.resultTaskId ? isoFromDbDate(r.request.due) : null,
       actorName: r.actorName,
       kind: r.kind,
       text: r.text,

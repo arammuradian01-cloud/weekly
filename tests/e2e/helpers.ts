@@ -12,7 +12,7 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   // Этап 9: личные входы, ссылки и почта начинаются с чистого листа, общий логин работает
   await client.query("DELETE FROM device_sessions");
   await client.query("DELETE FROM login_links");
-  await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb, "passwordHash" = NULL, "passwordSetAt" = NULL`);
+  await client.query(`UPDATE people SET email = NULL, "mailPrefs" = '{}'::jsonb, "pushPrefs" = '{}'::jsonb, "passwordHash" = NULL, "passwordSetAt" = NULL`);
   // Этап 20: письма уходили по прошлым тестам
   await client.query("DELETE FROM mail_marks");
   // События «Мне» без предмета (решения, протоколы, благодарности) не уходят вместе с задачами и записями

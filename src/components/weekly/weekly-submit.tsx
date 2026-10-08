@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, Cloud, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { Check, CheckCircle2, Cloud, CloudOff, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
-import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { deleteEntryAction, reopenWeeklyAction, restoreEntryAction, saveEntryAction, saveHeadlineAction, submitWeeklyAction } from "@/app/(app)/weekly/actions";
+import { dropEntryDraft, entryDrafts, headlineDraft, isNetworkError, putHeadlineDraft, settleEntryDraft, settleHeadlineDraft } from "@/lib/offline/drafts";
 import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPromise } from "@/lib/weekly/promises";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
@@ -20,7 +21,7 @@ import { Modal } from "@/components/ui/overlays";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
-import { EntryForm, isLocalId } from "./entry-form";
+import { ACTIVE_DRAFTS, EntryForm, isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
 import { PromiseStep } from "./promise-step";
@@ -79,7 +80,13 @@ export function WeeklySubmit({
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
   const submitted = weekly.state === "submitted" || weekly.state === "late";
 
-  const [headline, setHeadline] = useState(initialReport.headline);
+  const [headline, setHeadlineState] = useState(initialReport.headline);
+  // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
+  const setHeadline = (value: string) => {
+    setHeadlineState(value);
+    if (canEdit) putHeadlineDraft(me.slug, week.key, value);
+  };
+  const [offline, setOffline] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   /** Запись, которую просят удалить: сначала окно подтверждения */
   const [confirmDelete, setConfirmDelete] = useState<WeeklyEntry | null>(null);
@@ -97,17 +104,21 @@ export function WeeklySubmit({
     setSaving(true);
     try {
       const result = await saveHeadlineAction(week.key, value);
+      setOffline(false);
       if (result.ok) {
         savedHeadline.current = value;
+        settleHeadlineDraft(me.slug, week.key, value);
         setWeekly(result.value);
         setSavedAt(nowTime());
       } else notify(result.error, "error");
-    } catch {
-      notify("Нет связи с сервером: черновик не сохранился", "error");
+    } catch (error) {
+      // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
+      if (isNetworkError(error)) setOffline(true);
+      else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
     } finally {
       setSaving(false);
     }
-  }, [week.key, notify]);
+  }, [week.key, notify, me.slug]);
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
@@ -185,6 +196,72 @@ export function WeeklySubmit({
     setDraftId(entry.id);
   };
 
+  // Черновики с этого устройства, которые не дошли до сервера (этап 26): уходят при открытии страницы и когда
+  // возвращается связь. Открытые в форме черновики форма отправляет сама
+  const [outbox, setOutbox] = useState(0);
+  const flushing = useRef(false);
+  const upsertRef = useRef(upsert);
+  upsertRef.current = upsert;
+  const flushOutbox = useCallback(async () => {
+    if (!canEdit || flushing.current) return;
+    const waiting = entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key));
+    setOutbox(waiting.length);
+    if (!waiting.length || (typeof navigator !== "undefined" && !navigator.onLine)) {
+      if (waiting.length) setOffline(true);
+      return;
+    }
+    flushing.current = true;
+    let left = waiting.length;
+    try {
+      for (const d of waiting) {
+        const sentAt = Date.now();
+        try {
+          const r = await saveEntryAction({ ...d.input, week: week.key, id: d.entryId ?? undefined, clientKey: d.entryId ? undefined : (d.clientKey ?? d.key) });
+          if (r.ok) {
+            settleEntryDraft(me.slug, d.key, r.value.id, sentAt);
+            upsertRef.current(r.value);
+          } else {
+            // Правило не пускает (неделя закрыта, запись удалили): повтор не поможет, черновик убираем и говорим об этом
+            dropEntryDraft(me.slug, d.key);
+            notify(`Черновик записи с этого устройства не отправлен: ${r.error}`, "error");
+          }
+          left -= 1;
+        } catch (error) {
+          if (isNetworkError(error)) {
+            setOffline(true);
+            break;
+          }
+          left -= 1;
+        }
+      }
+      if (left === 0) setOffline(false);
+    } finally {
+      flushing.current = false;
+      setOutbox(entryDrafts(me.slug, week.key).filter((d) => !ACTIVE_DRAFTS.has(d.key)).length);
+    }
+  }, [canEdit, me.slug, week.key, notify]);
+
+  useEffect(() => {
+    // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама
+    const kept = canEdit ? headlineDraft(me.slug, week.key) : null;
+    if (kept && kept.value !== savedHeadline.current) setHeadlineState(kept.value);
+    else if (kept) settleHeadlineDraft(me.slug, week.key, kept.value);
+    void flushOutbox();
+    const back = () => {
+      setOffline(false);
+      void flushOutbox();
+      void saveHeadline();
+    };
+    const gone = () => setOffline(true);
+    window.addEventListener("online", back);
+    window.addEventListener("offline", gone);
+    return () => {
+      window.removeEventListener("online", back);
+      window.removeEventListener("offline", gone);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   /** Перенесённый план удалили или вернули: шаг обещаний показывает это без перезагрузки (этап 22) */
   const setCarried = (promiseEntryId: string, carried: { id: string; what: string } | undefined) =>
     setPromises((prev) => prev.map((p) => (p.entryId === promiseEntryId && p.review ? { ...p, review: { ...p.review, carried } } : p)));
@@ -211,6 +288,7 @@ export function WeeklySubmit({
       const carriedBy = promises.find((p) => p.review?.carried?.id === entry.id)?.entryId;
       const result = await deleteEntryAction(entry.id);
       if (!result.ok) return notify(result.error, "error");
+      dropEntryDraft(me.slug, entry.id);
       setEntries((prev) => prev.filter((e) => e.id !== entry.id));
       if (carriedBy) setCarried(carriedBy, undefined);
       // Запись из факта удалили: факт снова предлагается
@@ -318,6 +396,17 @@ export function WeeklySubmit({
             <Cloud className="h-4 w-4" aria-hidden="true" />
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
           </p>
+          {canEdit && (offline || outbox > 0) ? (
+            <p role="status" className="mt-3 sv-alert sv-alert--warning inline-flex items-start gap-2 text-small">
+              <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>
+                {offline
+                  ? "Нет сети. Черновик сохраняется на этом устройстве и уйдёт на сервер, когда связь вернётся."
+                  : "Отправляю черновик с этого устройства."}
+                {outbox > 0 ? ` Ждут отправки: ${outbox}.` : ""}
+              </span>
+            </p>
+          ) : null}
           <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
             {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный */}
             <ol className="sv-steps m-0 list-none p-0">

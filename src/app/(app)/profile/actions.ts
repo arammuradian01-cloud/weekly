@@ -4,13 +4,14 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { clearSession, readSession, requireContext } from "@/lib/auth";
+import { clearSession, readSession, requestUserAgent, requireContext } from "@/lib/auth";
 import { changePassword } from "@/lib/login/password";
 import { runAction } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
 import type { WeekKey } from "@/domain/types";
 import { saveMailPrefs } from "@/lib/letters/service";
+import { removeSubscription, removeSubscriptionById, savePushPrefs, saveSubscription, sendTestPush } from "@/lib/push/service";
 
 export async function revokeDeviceAction(id: string) {
   const session = await readSession();
@@ -57,4 +58,41 @@ export async function saveMailPrefsAction(prefs: Record<string, boolean>) {
 export async function changePasswordAction(current: string, next: string, repeat: string) {
   const ctx = await requireContext();
   return runAction("Смена пароля", (a) => changePassword(a, ctx.deviceId, String(current ?? ""), String(next ?? ""), String(repeat ?? "")));
+}
+
+// ---------- Уведомления в браузере (этап 26). Только при личном входе ----------
+
+/** Включить на этом устройстве: подписка от браузера привязывается к записи устройства */
+export async function savePushSubscriptionAction(subscription: unknown) {
+  const ctx = await requireContext();
+  const ua = await requestUserAgent();
+  const result = await runAction("Уведомления в браузере", (a) => saveSubscription(a, ctx.deviceId, subscription, ua));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+/** Выключить на этом устройстве */
+export async function removePushSubscriptionAction(endpoint: string) {
+  const result = await runAction("Уведомления в браузере", (a) => removeSubscription(a, String(endpoint ?? "")));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+/** Выключить на другом своём устройстве из списка */
+export async function removePushDeviceAction(id: string) {
+  const result = await runAction("Уведомления в браузере", (a) => removeSubscriptionById(a, String(id ?? "")));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+export async function savePushPrefsAction(prefs: Record<string, boolean>) {
+  const result = await runAction("Настройки уведомлений", (a) => savePushPrefs(a, prefs));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+/** Проверка: уведомление на это устройство прямо сейчас */
+export async function testPushAction() {
+  const ctx = await requireContext();
+  return runAction("Проверка уведомлений", (a) => sendTestPush(a, ctx.deviceId));
 }

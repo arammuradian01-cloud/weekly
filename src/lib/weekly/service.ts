@@ -426,7 +426,14 @@ export type EntryInput = {
   links?: Link[];
   /** Запись из факта недели (этап 22): ставит только сервер, из экрана не приходит */
   factKey?: string;
+  /**
+   * Ключ черновика новой записи с устройства (этап 26). Повтор с тем же ключом после обрыва связи правит уже созданную
+   * запись, а не создаёт вторую
+   */
+  clientKey?: string;
 };
+
+const CLIENT_KEY = /^[A-Za-z0-9_-]{8,64}$/;
 
 /** Значение справочника по коду. Скрытое в справочнике можно оставить, если запись уже с ним, выбрать заново нельзя */
 async function dictItem(tx: Tx, kind: "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE", code: string, message: string, currentId?: string) {
@@ -477,8 +484,16 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
   const help = optional(input.help, WEEKLY_LIMITS.help, "Какая помощь нужна");
   const links = checkLinks(input.links ?? []);
 
+  const clientKey = !input.id && typeof input.clientKey === "string" && CLIENT_KEY.test(input.clientKey) ? input.clientKey : null;
+
   return prisma.$transaction(async (tx) => {
-    const existing = input.id ? await tx.weeklyEntry.findUnique({ where: { id: input.id }, include: entryInclude }) : null;
+    // Две отправки одного черновика (обрыв связи, повтор с телефона) идут по очереди: вторая правит запись первой
+    if (clientKey) await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`entry-client:${actor.personId}:${clientKey}`}))::text`;
+    const existing = input.id
+      ? await tx.weeklyEntry.findUnique({ where: { id: input.id }, include: entryInclude })
+      : clientKey
+        ? await tx.weeklyEntry.findFirst({ where: { authorId: actor.personId, clientKey }, include: entryInclude })
+        : null;
     if (input.id && !existing) fail("Запись уже удалена");
     const key = existing ? isoFromDbDate(existing.week.start) : input.week;
     const { row, info, reporting } = await weekContext(tx, key, existing ? existing.authorId : actor.personId);
@@ -530,7 +545,7 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       if (input.factKey && (await tx.weeklyEntry.findFirst({ where: { weekId: row.id, authorId: actor.personId, factKey: input.factKey }, select: { id: true } }))) {
         fail("Этот факт уже в weekly");
       }
-      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count, factKey: input.factKey ?? null }, include: entryInclude });
+      saved = await tx.weeklyEntry.create({ data: { ...data, weekId: row.id, authorId: actor.personId, sortOrder: count, factKey: input.factKey ?? null, clientKey }, include: entryInclude });
       await tx.weeklyReport.upsert({
         where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } },
         update: {},

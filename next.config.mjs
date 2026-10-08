@@ -24,6 +24,11 @@ const nextConfig = {
           { key: "Referrer-Policy", value: "same-origin" },
         ],
       },
+      {
+        // Служебный обработчик (этап 26): браузер всегда проверяет свежую версию, иначе после выкладки жил бы старый
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }],
+      },
     ];
   },
 };

@@ -140,16 +140,18 @@ model Person {
   functionalManager   Person?         @relation("PersonFunctionalManager", fields: [functionalManagerId], references: [id], onDelete: SetNull)
   /// Какие письма человек получает (этап 20): { events, mentions, reactions, reminders, digest }. Нет ключа: по умолчанию
   mailPrefs           Json            @default("{}")
+  /// Какие уведомления в браузере человек получает (этап 26): { tasks, mentions, reactions }. Нет ключа: по умолчанию
+  pushPrefs           Json            @default("{}")
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
-  reports           Person[]          @relation("PersonManager")
-  functionalReports Person[]          @relation("PersonFunctionalManager")
-  headOf            OrgUnit[]         @relation("UnitHead")
-  leads             Team[]            @relation("TeamLeader")
+  reports           Person[]            @relation("PersonManager")
+  functionalReports Person[]            @relation("PersonFunctionalManager")
+  headOf            OrgUnit[]           @relation("UnitHead")
+  leads             Team[]              @relation("TeamLeader")
   teams             TeamMember[]
-  ownedTasks        Task[]            @relation("TaskOwner")
-  createdTasks      Task[]            @relation("TaskCreator")
+  ownedTasks        Task[]              @relation("TaskOwner")
+  createdTasks      Task[]              @relation("TaskCreator")
   coTasks           TaskCoExecutor[]
   transfers         TaskTransfer[]
   taskComments      TaskComment[]
@@ -160,29 +162,30 @@ model Person {
   ceoReports        CeoReport[]
   loginLinks        LoginLink[]
   devices           DeviceSession[]
-  absences          Absence[]         @relation("AbsencePerson")
-  substitutions     Absence[]         @relation("AbsenceSubstitute")
-  inbox             InboxEvent[]      @relation("InboxRecipient")
+  pushSubscriptions PushSubscription[]
+  absences          Absence[]           @relation("AbsencePerson")
+  substitutions     Absence[]           @relation("AbsenceSubstitute")
+  inbox             InboxEvent[]        @relation("InboxRecipient")
   promotions        WeeklyPromotion[]
   teamWeekCloses    TeamWeekClose[]
   watches           TaskWatch[]
-  ownedGoals        Goal[]            @relation("GoalOwner")
-  createdGoals      Goal[]            @relation("GoalCreator")
+  ownedGoals        Goal[]              @relation("GoalOwner")
+  createdGoals      Goal[]              @relation("GoalCreator")
   entryComments     EntryComment[]
   entryWatches      EntryWatch[]
-  reactions         Reaction[]        @relation("ReactionPerson")
-  discussed         Reaction[]        @relation("ReactionDiscussedBy")
+  reactions         Reaction[]          @relation("ReactionPerson")
+  discussed         Reaction[]          @relation("ReactionDiscussedBy")
   mailMarks         MailMark[]
-  requestsMade      HelpRequest[]     @relation("RequestAuthor")
-  requestsReceived  HelpRequest[]     @relation("RequestAddressee")
-  promiseReviews    PromiseReview[]   @relation("PromiseAuthor")
+  requestsMade      HelpRequest[]       @relation("RequestAuthor")
+  requestsReceived  HelpRequest[]       @relation("RequestAddressee")
+  promiseReviews    PromiseReview[]     @relation("PromiseAuthor")
   /// Встреча 2.0 (этап 23)
-  meetingsLed       Meeting[]         @relation("MeetingLeader")
-  agendaItems       AgendaItem[]      @relation("AgendaPerson")
-  agendaDiscussed   AgendaItem[]      @relation("AgendaDiscussedBy")
-  decisionsOwned    Decision[]        @relation("DecisionOwner")
-  decisionsMade     Decision[]        @relation("DecisionCreator")
-  decisionsClosed   Decision[]        @relation("DecisionCanceller")
+  meetingsLed       Meeting[]           @relation("MeetingLeader")
+  agendaItems       AgendaItem[]        @relation("AgendaPerson")
+  agendaDiscussed   AgendaItem[]        @relation("AgendaDiscussedBy")
+  decisionsOwned    Decision[]          @relation("DecisionOwner")
+  decisionsMade     Decision[]          @relation("DecisionCreator")
+  decisionsClosed   Decision[]          @relation("DecisionCanceller")
   /// Поиск, виды и чек-листы (этап 25)
   checklistDone     TaskChecklistItem[]
   savedViews        SavedView[]
@@ -328,21 +331,21 @@ model Task {
   inboxEvents  InboxEvent[]
   watchers     TaskWatch[]
   /// Просьбы по задаче и просьбы, из которых задача сделана (этап 21)
-  requests     HelpRequest[]    @relation("RequestTask")
-  fromRequests HelpRequest[]    @relation("RequestResultTask")
+  requests     HelpRequest[]       @relation("RequestTask")
+  fromRequests HelpRequest[]       @relation("RequestResultTask")
   /// Связи задач (этап 21): какие задачи эта ждёт и какие ждут её
-  waitsFor     TaskDependency[] @relation("DependencyTask")
-  blocks       TaskDependency[] @relation("DependencyBlocker")
+  waitsFor     TaskDependency[]    @relation("DependencyTask")
+  blocks       TaskDependency[]    @relation("DependencyBlocker")
   /// Встреча 2.0 (этап 23): пункты повестки по задаче и решения, к которым она привязана
   agendaItems  AgendaItem[]
   decisions    DecisionTask[]
   /// Повтор задачи (этап 25): еженедельно или ежемесячно. Следующая создаётся при закрытии или по расписанию в день срока
   repeat       RepeatKind?
-  repeatMode   RepeatMode       @default(ON_CLOSE)
+  repeatMode   RepeatMode          @default(ON_CLOSE)
   /// Из какой задачи сделан этот повтор. Уникальность: у задачи один следующий повтор
-  repeatOfId   String?          @unique
-  repeatOf     Task?            @relation("TaskRepeat", fields: [repeatOfId], references: [id], onDelete: SetNull)
-  repeatNext   Task?            @relation("TaskRepeat")
+  repeatOfId   String?             @unique
+  repeatOf     Task?               @relation("TaskRepeat", fields: [repeatOfId], references: [id], onDelete: SetNull)
+  repeatNext   Task?               @relation("TaskRepeat")
   /// Чек-лист внутри задачи (этап 25)
   checklist    TaskChecklistItem[]
 
@@ -610,6 +613,8 @@ model WeeklyEntry {
   sortOrder   Int            @default(0)
   /// Запись сделана из факта недели (этап 22): closed:52, moved:52:2026-10-20. Факт не предлагается второй раз
   factKey     String?
+  /// Ключ черновика с устройства (этап 26): повторная отправка после обрыва связи правит ту же запись, а не создаёт вторую
+  clientKey   String?
   importBatch String?
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
@@ -702,18 +707,19 @@ model LoginLink {
 
 /// Личный вход на устройстве (этап 9): живёт 30 дней, виден в профиле, завершается «выйти везде»
 model DeviceSession {
-  id         String      @id @default(cuid())
+  id         String             @id @default(cuid())
   personId   String
-  person     Person      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  person     Person             @relation(fields: [personId], references: [id], onDelete: Cascade)
   method     LoginMethod
   userAgent  String?
   ip         String?
-  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
-  lastSeenAt DateTime    @default(now()) @db.Timestamptz(3)
-  expiresAt  DateTime    @db.Timestamptz(3)
-  revokedAt  DateTime?   @db.Timestamptz(3)
+  createdAt  DateTime           @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime           @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime           @db.Timestamptz(3)
+  revokedAt  DateTime?          @db.Timestamptz(3)
   /// Кто завершил: сам человек, владелец, выключение человека
   revokedBy  String?
+  push       PushSubscription[]
 
   @@index([personId])
   @@map("device_sessions")
@@ -803,10 +809,13 @@ model InboxEvent {
   seenAt         DateTime?     @db.Timestamptz(3)
   /// Письмо по событию ушло или не нужно (выключено в настройках, нет почты)
   mailedAt       DateTime?     @db.Timestamptz(3)
+  /// Уведомление в браузере ушло или не нужно (этап 26)
+  pushedAt       DateTime?     @db.Timestamptz(3)
 
   @@index([recipientId, doneAt])
   @@index([recipientId, subject])
   @@index([mailedAt, createdAt])
+  @@index([pushedAt, createdAt])
   @@index([entryId])
   @@index([entryCommentId])
   @@index([reactionId])
@@ -1358,4 +1367,26 @@ model DecisionTask {
 
   @@id([decisionId, taskId])
   @@map("decision_tasks")
+}
+
+/// Подписка устройства на уведомления в браузере (этап 26). Живёт, пока жив личный вход на этом устройстве
+model PushSubscription {
+  id         String        @id @default(cuid())
+  personId   String
+  person     Person        @relation(fields: [personId], references: [id], onDelete: Cascade)
+  deviceId   String
+  device     DeviceSession @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  /// Адрес службы уведомлений браузера: у каждого устройства свой
+  endpoint   String        @unique
+  p256dh     String
+  auth       String
+  /// «Chrome на Android»: чтобы человек узнал устройство в профиле
+  label      String?
+  createdAt  DateTime      @default(now()) @db.Timestamptz(3)
+  lastSentAt DateTime?     @db.Timestamptz(3)
+  /// Подряд неудачных отправок: после десяти подписка удаляется
+  failures   Int           @default(0)
+
+  @@index([personId])
+  @@map("push_subscriptions")
 }

@@ -12,6 +12,7 @@ import { openNewTask, TASK_FROM_ENTRY_EVENT } from "@/components/prototype/new-t
 import { MentionArea } from "@/components/discuss/mention-area";
 import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
+import { isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
 
 function hostOf(url: string): string {
   try {
@@ -23,6 +24,11 @@ function hostOf(url: string): string {
 
 /** Запись ещё не на сервере: такой id выдаёт экран до первого сохранения */
 export const isLocalId = (id: string) => id.startsWith("new-");
+
+/** Черновики, которые сейчас открыты в форме: фоновая отправка их не трогает, форма отправляет сама (этап 26) */
+export const ACTIVE_DRAFTS = new Set<string>();
+
+const OFFLINE_TEXT = "Нет сети: запись сохранена на этом устройстве и уйдёт на сервер, когда появится связь";
 
 /** Больше ссылок в записи не нужно: сервер оставит первые десять */
 const LINKS_MAX = 10;
@@ -64,8 +70,11 @@ export function EntryForm({
   /** Автосохранение прошло: экран обновляет список, форма остаётся открытой */
   onAutosaved?: (entry: WeeklyEntry) => void;
 }) {
-  const { notify } = usePrototype();
+  const { notify, me } = usePrototype();
   const [e, setE] = useState<WeeklyEntry>(initial);
+  // Ключ черновика на устройстве (этап 26): у записи с сервера её id, у новой случайный. Он же ключ повтора для сервера
+  const draftKey = useRef(isLocalId(initial.id) ? newDraftKey() : initial.id);
+  const [offline, setOffline] = useState(false);
   const [needHelp, setNeedHelp] = useState(!!initial.help);
   // Название по умолчанию это адрес сайта: такое название в поле не показываем, чтобы не мешало
   const [links, setLinks] = useState<LinkDraft[]>(() =>
@@ -73,7 +82,7 @@ export function EntryForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [autoState, setAutoState] = useState<"idle" | "saving" | "saved">("idle");
+  const [autoState, setAutoState] = useState<"idle" | "saving" | "saved" | "offline">("idle");
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
@@ -107,15 +116,28 @@ export function EntryForm({
     setE((prev) => ({ ...prev, [key]: value }));
   };
 
-  /** Сохранить на сервере, что есть сейчас. id новой записи запоминаем, чтобы следующее сохранение её правило */
-  const persist = async (): Promise<Result<WeeklyEntry>> => {
+  /** Сохранить на сервере, что есть сейчас. id новой записи запоминаем, чтобы следующее сохранение её правило.
+   * Нет сети: черновик остаётся на устройстве, ответ { ok: false } с пометкой offline */
+  const persist = async (): Promise<Result<WeeklyEntry> & { offline?: boolean }> => {
     if (inFlight.current) await inFlight.current.catch(() => undefined);
     const { e: cur, needHelp: nh, links: ln } = latest.current;
-    const call = saveEntryAction(toInput(cur, nh, ln));
+    const sentAt = Date.now();
+    const input = toInput(cur, nh, ln);
+    const call = saveEntryAction({ ...input, clientKey: input.id ? undefined : draftKey.current });
     inFlight.current = call;
-    const result = await call;
-    inFlight.current = null;
+    let result: Result<WeeklyEntry>;
+    try {
+      result = await call;
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      setOffline(true);
+      return { ok: false, error: OFFLINE_TEXT, offline: true };
+    } finally {
+      inFlight.current = null;
+    }
+    setOffline(false);
     if (result.ok) {
+      settleEntryDraft(me.slug, draftKey.current, result.value.id, sentAt);
       setE((prev) => ({ ...prev, id: result.value.id, taskNumber: result.value.taskNumber }));
       latest.current.e = { ...latest.current.e, id: result.value.id };
       // Упомянули того, кто запись не видит (этап 20): запись сохранилась, но упоминание до него не дошло
@@ -125,21 +147,53 @@ export function EntryForm({
     return result;
   };
 
+  // Пока форма открыта, её черновик отправляет она сама, фоновая отправка страницы его не трогает
+  useEffect(() => {
+    const key = draftKey.current;
+    ACTIVE_DRAFTS.add(key);
+    return () => {
+      ACTIVE_DRAFTS.delete(key);
+    };
+  }, []);
+
+  // Каждая правка сначала ложится в черновик на устройстве (этап 26): пропала сеть или закрыли вкладку, текст цел
+  useEffect(() => {
+    if (!dirty.current || !e.what.trim()) return;
+    const { e: cur, needHelp: nh, links: ln } = latest.current;
+    const input = toInput(cur, nh, ln);
+    const draft: DraftEntryInput = { ...input, week: String(input.week), links: input.links.map((l) => ({ title: l.title, url: l.url })) };
+    putEntryDraft(me.slug, { key: draftKey.current, entryId: input.id ?? null, clientKey: input.id ? null : draftKey.current, input: draft, savedAt: Date.now() });
+  }, [e, needHelp, links, me.slug]);
+
+  const autosave = async () => {
+    setAutoState("saving");
+    const result = await persist();
+    if (result.ok) {
+      dirty.current = false;
+      setAutoState("saved");
+      onAutosaved?.(result.value);
+    } else setAutoState(result.offline ? "offline" : "idle");
+  };
+
+  const autosaveRef = useRef(autosave);
+  autosaveRef.current = autosave;
+
+  // Связь вернулась: черновик уходит сам, без нажатий
+  useEffect(() => {
+    const back = () => {
+      if (dirty.current && latest.current.e.what.trim()) void autosaveRef.current();
+    };
+    window.addEventListener("online", back);
+    return () => window.removeEventListener("online", back);
+  }, []);
+
   // Автосохранение: через 2,5 секунды тишины после ввода, если «что произошло» уже написано
   useEffect(() => {
     if (!dirty.current) return;
     if (timer.current) clearTimeout(timer.current);
     const what = e.what.trim();
     if (!what || what.length > WEEKLY_LIMITS.what) return;
-    timer.current = setTimeout(async () => {
-      setAutoState("saving");
-      const result = await persist();
-      if (result.ok) {
-        dirty.current = false;
-        setAutoState("saved");
-        onAutosaved?.(result.value);
-      } else setAutoState("idle");
-    }, 2500);
+    timer.current = setTimeout(() => void autosave(), 2500);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
@@ -158,11 +212,15 @@ export function EntryForm({
     setError(null);
     try {
       const result = await persist();
-      if (!result.ok) return setError(result.error);
+      if (!result.ok) {
+        if (result.offline) setAutoState("offline");
+        else setError(result.error);
+        return;
+      }
       dirty.current = false;
       onSaved(result.value);
     } catch {
-      setError("Нет связи с сервером: запись не сохранилась");
+      setError("Сервер не ответил: запись сохранена на этом устройстве, попробуйте ещё раз");
     } finally {
       setBusy(false);
     }
@@ -283,8 +341,8 @@ export function EntryForm({
         </p>
       ) : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <span className="text-caption text-muted sm:mr-auto" aria-live="polite">
-          {autoState === "saving" ? "Сохраняю черновик записи" : autoState === "saved" ? "Черновик записи сохранён" : ""}
+        <span className={autoState === "offline" || offline ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"} aria-live="polite">
+          {autoState === "offline" || offline ? OFFLINE_TEXT : autoState === "saving" ? "Сохраняю черновик записи" : autoState === "saved" ? "Черновик записи сохранён" : ""}
         </span>
         <Button type="button" variant="ghost" onClick={onCancel}>
           {saved ? "Закрыть" : "Отмена"}
