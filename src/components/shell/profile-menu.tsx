@@ -8,6 +8,7 @@ import { exitManagement, logout } from "@/app/actions/auth";
 import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
+import { avatarTone } from "@/components/ui/primitives";
 
 type Props = {
   fullName: string;
@@ -26,8 +27,8 @@ function initials(fullName: string) {
   return `${(first ?? "").charAt(0)}${(last ?? "").charAt(0)}`.toUpperCase() || "?";
 }
 
-const itemClass =
-  "flex h-11 cursor-pointer select-none items-center gap-3 rounded-md px-3 text-body text-ink outline-none data-[highlighted]:bg-field";
+// Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
+const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
 export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
@@ -37,33 +38,26 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
     <Menu.Root>
       <Menu.Trigger
         className={cn(
-          "flex h-12 w-full items-center gap-3 rounded-lg px-2 text-left transition-colors",
-          dark ? "text-sidebar-text hover:bg-sidebar-hover" : "text-ink hover:bg-field",
+          "flex min-w-0 items-center gap-2.5 rounded-control text-left transition-colors",
+          dark ? "w-full flex-1 p-1 text-sidebar-text hover:bg-sidebar-hover" : "h-10 px-1 text-ink hover:bg-field",
         )}
         aria-label={`Профиль: ${fullName}`}
       >
-        <span
-          className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-caption font-semibold",
-            dark ? "bg-sidebar-active text-sidebar-text" : "bg-navy text-white",
-          )}
-        >
+        <span className={cn("sv-avatar", `sv-avatar--${avatarTone(fullName)}`)} aria-hidden="true">
           {initials(fullName)}
         </span>
-        <span className={cn("min-w-0 flex-1 leading-tight", tone === "light" && "hidden sm:block")}>
-          <span className="block truncate text-body font-semibold">{shortName}</span>
-          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-muted")}>
-            {management ? "Режим управления" : roleLabel}
-          </span>
+        <span className={cn("min-w-0 flex-1", tone === "light" && "hidden sm:block")}>
+          <span className="sv-sidebar__profile__name block">{shortName}</span>
+          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-text-secondary")}>{management ? "Режим управления" : roleLabel}</span>
         </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0", dark ? "text-sidebar-muted" : "text-muted")} aria-hidden="true" />
+        <ChevronDown className={cn("h-4 w-4 shrink-0", dark ? "text-sidebar-muted" : "text-text-secondary")} strokeWidth={1.5} aria-hidden="true" />
       </Menu.Trigger>
 
       <Menu.Portal>
         <Menu.Content
           align="end"
           sideOffset={8}
-          className="z-50 w-72 rounded-xl border border-line bg-surface p-1.5 shadow-menu"
+          className="z-50 w-72 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium"
         >
           <div className="px-3 pb-2 pt-1.5">
             <div className="text-body font-semibold text-ink">{fullName}</div>
@@ -83,7 +77,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
               {MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER").map((item) => (
                 <Menu.Item key={item.href} asChild>
                   <Link href={item.href} className={itemClass}>
-                    <item.icon className="h-5 w-5 text-muted" aria-hidden="true" />
+                    <item.icon className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
                     {item.label}
                   </Link>
                 </Menu.Item>
@@ -94,14 +88,14 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
 
           <Menu.Item asChild>
             <Link href="/profile" className={itemClass}>
-              <UserRound className="h-5 w-5 text-muted" aria-hidden="true" />
+              <UserRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
               Профиль и входы
             </Link>
           </Menu.Item>
 
           <Menu.Item asChild>
             <Link href="/help" className={itemClass}>
-              <CircleHelp className="h-5 w-5 text-muted" aria-hidden="true" />
+              <CircleHelp className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
               Как работать
             </Link>
           </Menu.Item>
@@ -110,7 +104,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           {management ? (
             <Menu.Item asChild>
               <Link href="/ui" className={itemClass}>
-                <LayoutGrid className="h-5 w-5 text-muted" aria-hidden="true" />
+                <LayoutGrid className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
                 Образец компонентов
               </Link>
             </Menu.Item>
@@ -119,7 +113,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           {personal ? null : (
             <Menu.Item asChild>
               <Link href="/choose" className={itemClass}>
-                <Users className="h-5 w-5 text-muted" aria-hidden="true" />
+                <Users className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
                 Сменить профиль
               </Link>
             </Menu.Item>
@@ -128,7 +122,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           {canManage && !management ? (
             <Menu.Item asChild>
               <Link href="/manage" className={itemClass}>
-                <KeyRound className="h-5 w-5 text-muted" aria-hidden="true" />
+                <KeyRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
                 Включить режим управления
               </Link>
             </Menu.Item>
@@ -136,13 +130,13 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
 
           {management ? (
             <Menu.Item className={itemClass} disabled={pending} onSelect={() => startTransition(() => exitManagement())}>
-              <ShieldCheck className="h-5 w-5 text-muted" aria-hidden="true" />
+              <ShieldCheck className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
               Выключить режим управления
             </Menu.Item>
           ) : null}
 
           <Menu.Item className={itemClass} disabled={pending} onSelect={() => startTransition(() => logout())}>
-            <LogOut className="h-5 w-5 text-muted" aria-hidden="true" />
+            <LogOut className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
             Выйти
           </Menu.Item>
         </Menu.Content>

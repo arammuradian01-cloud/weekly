@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "../styles/tokens.css";
+/* Компоненты дизайн-системы как есть (классы sv-*, src/styles/ds = design/ds-step-1/components): слой components,
+   поэтому утилиты Tailwind на тех же элементах сильнее. Этап 18б: экраны собираются из этих классов */
+@import "../styles/ds/components.css" layer(components);
+@import "../styles/ds-app.css" layer(components);
 
 /* Вариант dark: по атрибуту темы на html, а не по настройке системы: «как в системе» ставит тот же атрибут скриптом */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -50,6 +54,14 @@
   --color-blue-line: var(--color-accent-soft-border);
   --color-on-accent: var(--color-on-accent);
   --color-focus: var(--color-focus);
+  /* Имена ролей системы как есть (этап 18б): экраны из компонентов sv-* дополняются утилитами с теми же именами */
+  --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-accent-soft-border: var(--color-accent-soft-border);
+  --color-link: var(--color-link);
+  --color-link-hover: var(--color-link-hover);
+  --color-row-selected: var(--color-row-selected);
+  --color-row-overdue: var(--color-row-overdue);
 
   /* Статусы */
   --color-danger: var(--color-danger-dot);

@@ -1,0 +1,15 @@
+/* Копия design/ds-step-1/components (08.10.2026). Единственная правка: @container shell заменён на @media с теми же порогами:
+   оболочка ресурса во всю ширину окна, а контейнер с layout-ограничением сломал бы fixed-элементы (нижнее меню, тосты, панель выбора). */
+@import "./core/core.css";
+@import "./forms/forms.css";
+@import "./navigation/navigation.css";
+@import "./tasks/tasks.css";
+@import "./overlays/overlays.css";
+@import "./discussion/discussion.css";
+@import "./inbox/inbox.css";
+@import "./weekly/weekly.css";
+@import "./meeting/meeting.css";
+@import "./system/system.css";
+@import "./charts/charts.css";
+@import "./department/department.css";
+@import "./layout/layout.css";

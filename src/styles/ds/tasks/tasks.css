@@ -1,0 +1,157 @@
+/* Таблица задач: плотная строка 44-52 с двумя строками (название и «где сейчас»), залипающая шапка, группировка, выбор, просрочка, зелёное снаружи */
+.sv-table-wrap { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: auto; }
+.sv-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--text-body); line-height: var(--leading-body); font-variant-numeric: tabular-nums; }
+.sv-table th { position: sticky; top: 0; z-index: 2; height: 36px; padding: 0 var(--space-3); box-sizing: border-box; background: var(--color-page); color: var(--color-text-secondary); font-size: var(--text-table-head); line-height: var(--leading-table-head); font-weight: var(--font-weight-semibold); text-align: left; white-space: nowrap; border-bottom: 1px solid var(--color-border); }
+.sv-table th.is-sortable { cursor: pointer; user-select: none; }
+.sv-table th.is-sortable:hover { color: var(--color-text); }
+.sv-table th .sv-icon { vertical-align: -3px; margin-left: 2px; color: var(--color-icon); }
+.sv-table th.is-sorted .sv-icon { color: var(--color-link); }
+.sv-table th.is-num, .sv-table td.is-num { text-align: right; }
+.sv-table td { height: var(--row-dense); padding: 4px var(--space-3); box-sizing: border-box; border-bottom: 1px solid var(--color-border); vertical-align: middle; white-space: nowrap; }
+.sv-table--comfortable td { height: var(--row-comfortable); }
+.sv-table tr:last-child td { border-bottom: 0; }
+.sv-table tbody tr { transition: background-color var(--duration-color); cursor: pointer; }
+.sv-table tbody tr:hover td { background: var(--color-row-hover); }
+.sv-table tbody tr.is-selected td { background: var(--color-row-selected); }
+.sv-table tbody tr.is-overdue td { background: var(--color-row-overdue); }
+.sv-table tbody tr.is-overdue:hover td { background: var(--color-row-overdue); filter: brightness(0.98); }
+.sv-table tbody tr.is-closed td { color: var(--color-text-secondary); }
+.sv-table tbody tr.is-closed .sv-task__title { text-decoration: line-through; text-decoration-color: var(--color-border-strong); }
+.sv-table tbody tr.is-outside td:first-child { box-shadow: inset 3px 0 0 var(--color-warning-dot); }
+.sv-table tbody tr:focus-within td { background: var(--color-row-hover); }
+.sv-table tr.is-focused td { box-shadow: inset 0 0 0 2px var(--color-focus); }
+.sv-table td.is-check, .sv-table th.is-check { width: 40px; padding-right: 0; }
+.sv-table td.is-id { color: var(--color-text-secondary); width: 56px; }
+.sv-table__group td { height: 32px; background: var(--color-page); color: var(--color-text-secondary); font-size: var(--text-caption); font-weight: var(--font-weight-semibold); position: sticky; top: 36px; z-index: 1; }
+.sv-table__group td .sv-counter { margin-left: 6px; }
+.sv-task { display: flex; flex-direction: column; min-width: 0; }
+.sv-task__title { font-weight: var(--font-weight-semibold); color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; display: flex; align-items: center; gap: 6px; }
+.sv-task__title .sv-icon { color: var(--color-danger-text); flex: none; }
+.sv-task__now { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.sv-task__now--empty { color: var(--color-text-disabled); }
+.sv-cell-person { display: inline-flex; align-items: center; gap: 8px; }
+/* Правка статуса прямо в строке */
+.sv-inline-edit { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px 0 2px; margin: 0 -6px 0 -2px; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; font: inherit; color: inherit; }
+.sv-inline-edit:hover { background: var(--color-field); border-color: var(--color-border); }
+.sv-inline-edit:hover .sv-inline-edit__chev { opacity: 1; }
+.sv-inline-edit__chev { opacity: 0; color: var(--color-icon); transition: opacity var(--duration-color); }
+.sv-inline-edit:focus-visible { outline: var(--focus-outline); outline-offset: 0; }
+.sv-inline-edit.is-open { background: var(--color-field); border-color: var(--color-focus); }
+/* Скелетон строки */
+.sv-skeleton { display: inline-block; height: 12px; border-radius: 6px; background: var(--color-field); position: relative; overflow: hidden; }
+.sv-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); animation: sv-shimmer 1.4s infinite; }
+[data-theme="dark"] .sv-skeleton::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent); }
+@keyframes sv-shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .sv-skeleton::after { animation: none; } }
+.sv-skeleton--text { width: 60%; }
+.sv-skeleton--circle { border-radius: 50%; }
+.sv-skeleton--block { display: block; border-radius: var(--radius-control); }
+
+/* Панель массовых действий */
+.sv-bulk { position: sticky; bottom: var(--space-4); z-index: 10; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); margin: 0 auto; width: fit-content; max-width: 100%; box-sizing: border-box;
+  background: var(--color-brand-dark); color: #FFFFFF; border-radius: var(--radius-control-lg); box-shadow: var(--shadow-sticky); }
+[data-theme="dark"] .sv-bulk { background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); }
+.sv-bulk__count { font-weight: var(--font-weight-semibold); font-size: var(--text-body); margin-right: var(--space-2); white-space: nowrap; }
+.sv-bulk .sv-btn--outline { background: transparent; color: inherit; border-color: rgba(255,255,255,0.3); }
+.sv-bulk .sv-btn--outline:hover { background: rgba(255,255,255,0.1); }
+[data-theme="dark"] .sv-bulk .sv-btn--outline { border-color: var(--color-border-strong); }
+[data-theme="dark"] .sv-bulk .sv-btn--outline:hover { background: var(--color-field); }
+.sv-bulk .sv-icon-btn { color: inherit; }
+.sv-bulk .sv-icon-btn:hover { background: rgba(255,255,255,0.1); color: inherit; }
+
+/* Доска и вид «По статусам» */
+.sv-board { display: flex; gap: var(--space-3); align-items: flex-start; overflow-x: auto; padding-bottom: var(--space-2); }
+.sv-board__col { flex: none; width: 280px; display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2); box-sizing: border-box; background: var(--color-page); border: 1px solid var(--color-border); border-radius: var(--radius-card); min-height: 160px; }
+[data-theme="dark"] .sv-board__col { background: var(--color-surface); }
+.sv-board__col.is-over { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.sv-board__head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px; font-size: var(--text-body); font-weight: var(--font-weight-semibold); }
+.sv-board__head .sv-counter { margin-left: auto; }
+.sv-board__head .sv-badge__dot { width: 8px; height: 8px; border-radius: 50%; }
+.sv-board__empty { padding: var(--space-4); text-align: center; color: var(--color-text-disabled); font-size: var(--text-caption); border: 1px dashed var(--color-border); border-radius: var(--radius-control-lg); }
+.sv-card-task { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control-lg); cursor: grab; transition: box-shadow var(--duration-color), border-color var(--duration-color); overflow: hidden; }
+[data-theme="dark"] .sv-card-task { background: var(--color-field); }
+.sv-card-task:hover { box-shadow: var(--shadow-medium); }
+.sv-card-task:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.sv-card-task.is-dragging { box-shadow: var(--shadow-sticky); transform: rotate(1.5deg); cursor: grabbing; border-color: var(--color-accent); }
+.sv-card-task.is-placeholder { background: transparent; border: 1px dashed var(--color-accent-soft-border); box-shadow: none; }
+.sv-card-task.is-placeholder > * { visibility: hidden; }
+.sv-card-task__stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.sv-card-task__stripe--ok { background: var(--color-success-dot); }
+.sv-card-task__stripe--risk { background: var(--color-warning-dot); }
+.sv-card-task__stripe--blocked { background: var(--color-danger-dot); }
+.sv-card-task__stripe--none { background: var(--color-border); }
+.sv-card-task__top { display: flex; align-items: center; gap: 8px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-card-task__title { font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); color: var(--color-text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sv-card-task__bottom { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.sv-card-task__meta { display: inline-flex; align-items: center; gap: 8px; }
+.sv-card-task__blocker { color: var(--color-danger-text); display: inline-flex; }
+
+/* Полоса истории статусов в карточке задачи: сколько дней в каждом статусе */
+.sv-status-history { display: flex; flex-direction: column; gap: 6px; }
+.sv-status-history__bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; gap: 2px; }
+.sv-status-history__seg { min-width: 4px; }
+.sv-status-history__seg--proposed { background: var(--color-info-dot); }
+.sv-status-history__seg--progress { background: var(--color-accent); }
+.sv-status-history__seg--clarify { background: var(--color-warning-dot); }
+.sv-status-history__seg--done { background: var(--color-success-dot); }
+.sv-status-history__seg--failed { background: var(--color-danger-dot); }
+.sv-status-history__seg--cancelled { background: var(--color-neutral-dot); }
+.sv-status-history__legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-status-history__legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sv-status-history__legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sv-status-history__legend b { color: var(--color-text); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; }
+
+/* Вид «По людям»: строка на сотрудника, задачи плашками по сроку */
+.sv-people-row { display: grid; grid-template-columns: 220px 1fr; gap: var(--space-3); align-items: center; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--color-border); min-height: 52px; }
+.sv-people-row:last-child { border-bottom: 0; }
+.sv-people-row__person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.sv-people-row__name { font-weight: var(--font-weight-semibold); font-size: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-people-row__sub { font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-people-row__chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.sv-chip-task { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--color-field); color: var(--color-text); font-size: var(--text-caption); font-weight: var(--font-weight-semibold); max-width: 180px; cursor: pointer; border: 1px solid transparent; font-family: inherit; }
+.sv-chip-task span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-chip-task:hover { border-color: var(--color-border-strong); }
+.sv-chip-task--overdue { background: var(--color-danger-bg); color: var(--color-danger-text); }
+.sv-chip-task--soon { background: var(--color-warning-bg); color: var(--color-warning-text); }
+.sv-chip-task--done { color: var(--color-text-secondary); text-decoration: line-through; }
+.sv-people-row__empty { color: var(--color-text-disabled); font-size: var(--text-caption); }
+
+/* Строка срока в «Мне»: номер серый, название, справа пилюля просрочки */
+.sv-deadline { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 16px; border-bottom: 1px solid var(--color-border); color: var(--color-text); text-decoration: none; }
+.sv-deadline:last-child { border-bottom: 0; }
+.sv-deadline:hover { background: var(--color-field); text-decoration: none; color: var(--color-text); }
+.sv-deadline__num { color: var(--color-text-secondary); flex: none; font-variant-numeric: tabular-nums; }
+.sv-deadline__title { flex: 1; min-width: 0; font-weight: var(--font-weight-semibold); overflow-wrap: anywhere; }
+.sv-deadline-list { border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+@media (max-width: 767px) { .sv-deadline { flex-wrap: wrap; padding: 10px 12px; } .sv-deadline .sv-overdue { margin-left: 28px; } }
+
+/* Таблица команды: люди по строкам, цифры по колонкам, итог внизу */
+.sv-team-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; font-size: var(--text-body); }
+.sv-team-table th { text-align: right; font-weight: 400; color: var(--color-text-secondary); font-size: var(--text-caption); padding: 12px 16px; background: var(--color-page); border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+.sv-team-table th:first-child { text-align: left; }
+.sv-team-table td { padding: 12px 16px; border-bottom: 1px solid var(--color-border); text-align: right; font-variant-numeric: tabular-nums; vertical-align: middle; }
+.sv-team-table td:first-child { text-align: left; }
+.sv-team-table tbody tr:hover td { background: var(--color-field); }
+.sv-team-table tfoot td { background: var(--color-page); font-weight: var(--font-weight-semibold); border-bottom: 0; }
+.sv-team-table__name { font-weight: var(--font-weight-semibold); color: var(--color-text); text-decoration: none; display: inline-flex; gap: 8px; align-items: baseline; }
+.sv-team-table__name:hover { color: var(--color-link); }
+.sv-team-table__you { font-size: var(--text-caption); color: var(--color-text-secondary); font-weight: 400; }
+.sv-team-table__role { font-size: var(--text-caption); color: var(--color-text-secondary); margin-top: 2px; }
+.sv-team-table .is-bad { color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+.sv-team-table .is-zero { color: var(--color-text-secondary); opacity: 0.7; }
+.sv-team-table__wrap { overflow-x: auto; }
+@media (max-width: 1023px) { .sv-team-table th, .sv-team-table td { padding: 10px 12px; } .sv-team-table .col-opt { display: none; } }
+/* Телефон: карточки людей, цифры сеткой 3×2 с подписями сверху, как на стенде */
+.sv-team-cards { display: none; }
+@media (max-width: 767px) {
+  .sv-team-table__wrap { display: none; }
+  .sv-team-cards { display: block; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
+  .sv-team-card { padding: 14px 16px; border-bottom: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 12px; }
+  .sv-team-card:last-child { border-bottom: 0; }
+  .sv-team-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .sv-team-card__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 16px; }
+  .sv-team-card__cell { display: flex; flex-direction: column; gap: 2px; font-variant-numeric: tabular-nums; }
+  .sv-team-card__cell span:first-child { font-size: var(--text-caption); color: var(--color-text-secondary); line-height: var(--leading-caption); }
+  .sv-team-card__cell span:last-child { font-size: var(--text-card); }
+  .sv-team-card .is-bad { color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+}

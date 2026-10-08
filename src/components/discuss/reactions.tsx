@@ -50,7 +50,7 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
         autoFocus
         onChange={(e) => setText(e.target.value)}
         placeholder="Например: успеваем ли запустить до конца месяца?"
-        className="h-10 w-full rounded-lg border border-line bg-surface px-3 text-body text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="sv-control h-10 w-full px-3 text-body"
       />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" type="submit" variant="secondary" disabled={!text.trim() || busy}>

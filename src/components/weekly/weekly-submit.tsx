@@ -612,7 +612,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
           id={`w-${task.number}`}
           value={where}
           onChange={(e) => setWhere(e.target.value)}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-surface px-3 text-small text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 sm:h-10 sm:flex-1"
+          className="sv-control h-11 w-full min-w-0 px-3 text-small sm:h-10 sm:flex-1"
         />
         {changed ? (
           <Button size="sm" type="submit" className="h-11 sm:h-10">

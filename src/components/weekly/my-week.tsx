@@ -4,13 +4,15 @@ import Link from "next/link";
 import type { RequestView } from "@/domain/requests";
 import { NoRequests, RequestList } from "@/components/requests/request-list";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
-import { MessageSquare } from "lucide-react";
+import { CircleAlert, FileText, Hand, Inbox, MessageSquare, Presentation } from "lucide-react";
+import { Tile, Tiles } from "@/components/ui/tile";
+import { useInboxCount } from "@/components/inbox/inbox-count";
+import { plural } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { diffDays, formatShort } from "@/domain/dates";
-import { isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/domain/rules";
+import { isClosed, isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
-import { buttonClass } from "@/components/ui/button";
 import { OverdueNote, StateDot, StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "@/components/tasks/task-drawer";
@@ -23,7 +25,6 @@ import { PromiseStats } from "./promise-stats";
 
 /** Стартовый экран: мой weekly и срок, мои просроченные и срочные задачи, новые комментарии (раздел 7 ТЗ) */
 export function MyWeek({
-  deadlineText,
   timeLeft,
   late,
   weekNumber,
@@ -32,7 +33,9 @@ export function MyWeek({
   team,
   requests,
   promiseStats,
+  meetingText,
 }: {
+  /** Срок словами: показывается в заголовке страницы */
   deadlineText: string;
   timeLeft: string;
   late: boolean;
@@ -45,8 +48,11 @@ export function MyWeek({
   requests: { incoming: RequestView[]; outgoing: RequestView[] };
   /** «Обещал и сделал» за 8 недель (этап 22): видит только сам человек */
   promiseStats?: PromiseHistory;
+  /** «Встреча во вторник, 13 октября» */
+  meetingText: string;
 }) {
   const { data, me } = usePrototype();
+  const inbox = useInboxCount();
   const { open } = useOpenTask();
   const weekly = report;
   const state = report.state;
@@ -57,34 +63,47 @@ export function MyWeek({
     .sort((a, b) => (a.comment.at + a.comment.time < b.comment.at + b.comment.time ? 1 : -1));
   const submitted = state === "submitted" || state === "late";
 
+  const openMine = mine.filter((t) => !isClosed(t));
+  const overdueCount = openMine.filter((t) => isOverdue(t, data.today)).length;
+  const waiting = requests.outgoing.filter((r) => r.status === "open").length;
+  const weeklySub = weekly.absent && !submitted
+    ? `Вас нет на этой неделе, ${substituteText(weekly.absent.substitute)}`
+    : submitted
+      ? (weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан")
+      : late
+        ? "Срок прошёл"
+        : `Осталось ${timeLeft}`;
+
   return (
     <>
-      <section aria-labelledby="my-weekly" className="rounded-xl bg-field p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 id="my-weekly" className="text-title font-semibold text-ink">
-                Мой weekly за неделю {weekNumber}
-              </h2>
-              {weekly.absent && !submitted ? <AbsentBadge /> : <WeeklyBadge state={state} />}
-            </div>
-            {weekly.absent && !submitted ? (
-              <p className="mt-1.5 text-body text-muted">
-                На этой неделе вас нет, {substituteText(weekly.absent.substitute)}. Weekly не ждём, но сдать его можно, опозданием это не будет.
-              </p>
-            ) : (
-              <p className="mt-1.5 text-body text-muted">
-                {submitted
-                  ? `${weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан"}. Записей: ${entriesCount}. Правки до закрытия недели разрешены.`
-                  : `Срок: ${deadlineText}. ${late ? "Срок прошёл." : `Осталось ${timeLeft}.`}${state === "draft" ? ` В черновике записей: ${entriesCount}.` : ""}`}
-              </p>
-            )}
-          </div>
-          <Link href="/weekly/submit" className={cn(buttonClass(submitted ? "secondary" : "primary"), "shrink-0")}>
-            {submitted ? "Открыть мой weekly" : state === "draft" ? "Продолжить weekly" : "Сдать weekly"}
-          </Link>
-        </div>
-      </section>
+      {/* Плитки как на главной сайта (дизайн-система, layout/Tile.jsx) */}
+      <Tiles>
+        <Tile
+          href="/weekly/submit"
+          tone={submitted ? undefined : "primary"}
+          title={<span id="my-weekly">Мой weekly за неделю {weekNumber}</span>}
+          sub={weeklySub}
+          icon={FileText}
+          value={entriesCount}
+          unit={plural(entriesCount, "запись", "записи", "записей")}
+        >
+          {weekly.absent && !submitted ? <AbsentBadge /> : <WeeklyBadge state={state} />}
+        </Tile>
+        <Tile href="/me" title="Мне" sub="Новых событий" icon={Inbox} value={inbox} unit={inbox ? "ждут ответа или прочтения" : "всё прочитано"} />
+        <Tile
+          href="/tasks/mine"
+          title="Просрочено"
+          sub="Моих задач"
+          icon={CircleAlert}
+          iconTone={overdueCount ? "danger" : "neutral"}
+          value={overdueCount}
+          unit={`из ${openMine.length} ${plural(openMine.length, "открытой", "открытых", "открытых")}`}
+        />
+        <Tile href="/#my-waiting" title="Жду от коллег" sub="Просьбы без ответа" icon={Hand} iconTone="info" value={waiting} />
+        <Tile href="/weekly/meeting" tone="brand" wide title={meetingText} sub="Повестка, решения недели и разбор задач" icon={Presentation}>
+          <span className="text-caption opacity-80">Открыть подготовку к встрече</span>
+        </Tile>
+      </Tiles>
 
       {team ? <SubmissionStrip reports={team} className="mt-4" /> : null}
 
@@ -94,32 +113,32 @@ export function MyWeek({
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <section aria-labelledby="my-tasks">
-          <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 id="my-tasks" className="text-title font-semibold text-ink">
-              Просроченные и срочные <span className="font-normal text-muted">{urgent.length}</span>
+      <div className="sv-columns mt-8">
+        <section aria-labelledby="my-tasks" className="sv-section">
+          <div className="sv-section__head">
+            <h2 id="my-tasks" className="sv-section__title">
+              Просроченные и срочные <span className="sv-section__count">{urgent.length}</span>
             </h2>
-            <Link href="/tasks/mine" className="text-body font-medium text-blue-700 hover:underline">
+            <Link href="/tasks/mine" className="sv-section__link">
               Все мои задачи
             </Link>
           </div>
           {urgent.length === 0 ? (
             <EmptyState title="Срочного нет">Просроченных задач и задач со сроком на этой неделе нет.</EmptyState>
           ) : (
-            <ul className="divide-y divide-line rounded-xl ring-1 ring-line">
+            <ul className="sv-table-wrap divide-y divide-line">
               {urgent.map((t) => {
                 const overdue = isOverdue(t, data.today);
                 return (
-                  <li key={t.number} className={cn("px-4 py-3", overdue && "bg-danger-soft")}>
-                    <button type="button" onClick={() => open(t.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
-                      <span className="mr-1.5 font-normal tabular-nums text-muted">{t.number}</span>
+                  <li key={t.number} className={cn("px-4 py-3", overdue && "bg-[var(--color-row-overdue)]")}>
+                    <button type="button" onClick={() => open(t.number)} className="text-left text-body font-semibold leading-snug text-ink hover:text-link">
+                      <span className="mr-1.5 font-normal tabular-nums text-text-secondary">{t.number}</span>
                       {t.title}
                     </button>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
                       <StatusBadge status={t.status} />
                       <StateDot state={t.state} />
-                      <span className={cn("text-caption tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(t.due)}</span>
+                      <span className={cn("sv-due", overdue && "!font-semibold !text-danger-ink")}>срок {formatShort(t.due)}</span>
                       {overdue ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                     </div>
                   </li>
@@ -129,23 +148,25 @@ export function MyWeek({
           )}
         </section>
 
-        <section aria-labelledby="my-comments">
-          <h2 id="my-comments" className="mb-3 text-title font-semibold text-ink">
-            Новые комментарии <span className="font-normal text-muted">{comments.length}</span>
-          </h2>
+        <section aria-labelledby="my-comments" className="sv-section">
+          <div className="sv-section__head">
+            <h2 id="my-comments" className="sv-section__title">
+              Новые комментарии <span className="sv-section__count">{comments.length}</span>
+            </h2>
+          </div>
           {comments.length === 0 ? (
-            <EmptyState title="Новых комментариев нет">Здесь появятся комментарии коллег к вашим задачам.</EmptyState>
+            <EmptyState title="Новых комментариев нет" icon={MessageSquare}>Здесь появятся комментарии коллег к вашим задачам.</EmptyState>
           ) : (
             <ul className="flex flex-col gap-3">
               {comments.map(({ task, comment }) => (
-                <li key={comment.id} className="rounded-xl px-4 py-3 ring-1 ring-line">
+                <li key={comment.id} className="sv-card sv-card--soft px-4 py-3">
                   <p className="flex items-center gap-2 text-caption text-muted">
-                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                    <MessageSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
                     <span className="font-semibold text-ink">{compactName(comment.author)}</span>
                     {formatShort(comment.at)}, {comment.time}
                   </p>
                   <p className="mt-1 text-body leading-relaxed text-ink">{comment.text}</p>
-                  <button type="button" onClick={() => open(task.number)} className="mt-1 text-left text-small font-medium text-blue-700 hover:underline">
+                  <button type="button" onClick={() => open(task.number)} className="mt-1 text-left text-small font-semibold text-link hover:underline">
                     Задача {task.number}: {task.title}
                   </button>
                 </li>
@@ -155,7 +176,7 @@ export function MyWeek({
         </section>
       </div>
 
-      <div className="mt-10 grid gap-8 xl:grid-cols-2">
+      <div className="sv-columns sv-columns--even mt-8">
         <RequestList
           id="my-incoming"
           title="Просьбы ко мне"
@@ -164,7 +185,7 @@ export function MyWeek({
           total={requests.incoming.length}
           action={
             requests.incoming.length > 5 ? (
-              <Link href="/me" className="text-body font-medium text-blue-700 hover:underline">
+              <Link href="/me" className="sv-section__link">
                 Все {requests.incoming.length}
               </Link>
             ) : undefined

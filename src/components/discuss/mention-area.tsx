@@ -8,7 +8,7 @@ import { useMentionPeople } from "./mention-text";
 const same = (a: string, b: string) => a.toLowerCase().replace(/ё/g, "е") === b.toLowerCase().replace(/ё/g, "е");
 
 const control =
-  "w-full rounded-lg border border-line bg-surface px-3.5 py-2.5 text-body leading-relaxed text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-field disabled:text-muted";
+  "sv-control w-full px-3.5 py-2.5 text-body leading-relaxed";
 
 /**
  * Поле с подсказкой упоминаний (этап 20): набираете «@» и начало имени, выбираете человека стрелками и Enter

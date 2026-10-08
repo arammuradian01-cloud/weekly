@@ -2,18 +2,42 @@
 
 import { cn } from "@/lib/cn";
 
-export function Avatar({ text, size = "md", tone = "navy", className }: { text: string; size?: "sm" | "md"; tone?: "navy" | "light"; className?: string }) {
+/** Тон аватара по имени, как в дизайн-системе (Avatar.jsx toneOf): восемь спокойных подложек, одно имя всегда одного цвета */
+export function avatarTone(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
+  return (h % 8) + 1;
+}
+
+/** Аватар с инициалами (sv-avatar). name: от него цвет; без name цвет от инициалов */
+export function Avatar({
+  text,
+  name,
+  size = "md",
+  className,
+  title,
+}: {
+  text: string;
+  name?: string;
+  size?: "xs" | "sm" | "md" | "lg";
+  /** Оставлено для совместимости: цвет теперь по имени */
+  tone?: "navy" | "light";
+  className?: string;
+  title?: string;
+}) {
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-full font-semibold",
-        size === "sm" ? "h-7 w-7 text-micro" : "h-9 w-9 text-caption",
-        tone === "navy" ? "bg-navy text-white" : "bg-field text-ink ring-1 ring-line",
-        className,
-      )}
-      aria-hidden="true"
-    >
+    <span className={cn("sv-avatar", size !== "md" && `sv-avatar--${size}`, `sv-avatar--${avatarTone(name ?? text)}`, className)} title={title} aria-hidden="true">
       {text}
+    </span>
+  );
+}
+
+/** Счётчик-бейдж (sv-counter): в меню, у вкладок и фильтров. Ноль не показывается */
+export function Counter({ value, tone, className, label }: { value: number; tone?: "neutral" | "danger" | "inverse"; className?: string; label?: string }) {
+  if (!value) return null;
+  return (
+    <span className={cn("sv-counter", tone && `sv-counter--${tone}`, className)} aria-label={label}>
+      {value > 99 ? "99+" : value}
     </span>
   );
 }
@@ -40,23 +64,13 @@ export function Segmented<V extends string>({
   className?: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className={cn("inline-flex max-w-full flex-wrap rounded-lg bg-field p-1", className)}>
+    <div role="radiogroup" aria-label={label} className={cn("sv-segment max-w-full flex-wrap", className)}>
       {options.map((o) => {
         const active = o.value === value;
         return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(o.value)}
-            className={cn(
-              "inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-small transition-colors",
-              active ? "bg-surface font-semibold text-ink shadow-segment" : "text-muted hover:text-ink",
-            )}
-          >
+          <button key={o.value} type="button" role="radio" aria-checked={active} onClick={() => onChange(o.value)} className={cn("sv-segment__item", active && "is-active")}>
             {o.label}
-            {o.count !== undefined ? <span className={cn("tabular-nums", active ? "text-muted" : "text-muted/80")}>{o.count}</span> : null}
+            {o.count !== undefined ? <span className="sv-counter sv-counter--neutral">{o.count}</span> : null}
           </button>
         );
       })}
@@ -79,27 +93,16 @@ export function Chip({
   tone?: "default" | "danger";
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 text-small transition-colors",
-        active
-          ? tone === "danger"
-            ? "bg-danger-ink text-white"
-            : "bg-navy text-white"
-          : "bg-surface text-ink ring-1 ring-line hover:ring-border-strong",
-      )}
-    >
+    <button type="button" aria-pressed={active} onClick={onClick} className={cn("sv-pill shrink-0", tone === "danger" && "sv-pill--danger", active && "is-active")}>
       {children}
-      {count !== undefined ? <span className={cn("tabular-nums", active ? "text-white/75" : "text-muted")}>{count}</span> : null}
+      {count !== undefined ? (
+        <span className={cn("sv-counter", active ? (tone === "danger" ? "sv-counter--danger" : "") : "sv-counter--neutral")}>{count}</span>
+      ) : null}
     </button>
   );
 }
 
-const control =
-  "w-full rounded-lg border border-line bg-surface px-3.5 text-body text-ink placeholder:text-muted/70 hover:border-border-strong focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25 disabled:bg-field disabled:text-muted";
+const control = "sv-control w-full";
 
 export function TextArea({
   label,
@@ -110,9 +113,9 @@ export function TextArea({
   ...props
 }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; id: string; hint?: string; counter?: { value: number; max: number } }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("sv-field", className)}>
       <div className="flex items-baseline justify-between gap-3">
-        <label htmlFor={id} className="text-sm font-medium text-ink">
+        <label htmlFor={id} className="sv-label">
           {label}
         </label>
         {counter ? (
@@ -121,8 +124,8 @@ export function TextArea({
           </span>
         ) : null}
       </div>
-      <textarea id={id} className={cn(control, "min-h-24 py-2.5 leading-relaxed")} {...props} />
-      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
+      <textarea id={id} className={control} {...props} />
+      {hint ? <p className="sv-field__hint">{hint}</p> : null}
     </div>
   );
 }
@@ -136,18 +139,18 @@ export function SelectField({
   ...props
 }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; id: string; options: { value: string; label: string }[]; hint?: string }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className="text-sm font-medium text-ink">
+    <div className={cn("sv-field", className)}>
+      <label htmlFor={id} className="sv-label">
         {label}
       </label>
-      <select id={id} className={cn(control, "h-11 appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-10")} style={{ backgroundImage: CHEVRON }} {...props}>
+      <select id={id} className={control} {...props}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
-      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
+      {hint ? <p className="sv-field__hint">{hint}</p> : null}
     </div>
   );
 }
@@ -161,24 +164,22 @@ export function TextInput({
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; hint?: string; /** Подпись только для экранного диктора: поле в строке, где подпись и так ясна */ hideLabel?: boolean }) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={id} className={cn("text-sm font-medium text-ink", hideLabel && "sr-only")}>
+    <div className={cn("sv-field", className)}>
+      <label htmlFor={id} className={cn("sv-label", hideLabel && "sr-only")}>
         {label}
       </label>
-      <input id={id} className={cn(control, "h-11")} {...props} />
-      {hint ? <p className="text-caption text-muted">{hint}</p> : null}
+      <input id={id} className={control} {...props} />
+      {hint ? <p className="sv-field__hint">{hint}</p> : null}
     </div>
   );
 }
 
-const CHEVRON =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6e77' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 /** Подпись поля в карточке: что за поле и его значение */
 export function Meta({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-col gap-1", className)}>
-      <dt className="text-caption text-muted">{label}</dt>
+      <dt className="text-caption text-text-secondary">{label}</dt>
       <dd className="text-body text-ink">{children}</dd>
     </div>
   );

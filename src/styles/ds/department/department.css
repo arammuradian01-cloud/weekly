@@ -1,0 +1,71 @@
+/* Департамент */
+/* Узел дерева структуры со светофором из трёх точек */
+.sv-tree { display: flex; flex-direction: column; gap: 2px; }
+.sv-tree-node { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: center; min-height: 44px; padding: 6px 10px 6px 6px; border-radius: var(--radius-control-lg); background: var(--color-surface); border: 1px solid var(--color-border); cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; box-sizing: border-box; transition: background-color var(--duration-color), border-color var(--duration-color); }
+.sv-tree-node:hover { background: var(--color-row-hover); }
+.sv-tree-node.is-selected { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.sv-tree-node:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
+.sv-tree-node--plain { background: transparent; border-color: transparent; }
+.sv-tree-node__toggle { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; color: var(--color-icon); border-radius: 6px; }
+.sv-tree-node__toggle .sv-icon { transition: transform var(--duration) var(--ease); }
+.sv-tree-node.is-open .sv-tree-node__toggle .sv-icon { transform: rotate(90deg); }
+.sv-tree-node__body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sv-tree-node__title { display: flex; align-items: center; gap: 8px; font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); min-width: 0; }
+.sv-tree-node__title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-tree-node__level { font-size: var(--text-caption); color: var(--color-text-disabled); font-weight: 400; }
+.sv-tree-node__sub { display: flex; align-items: center; gap: 6px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); min-width: 0; }
+.sv-tree-node__sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-tree-node__sub .is-none { color: var(--color-text-disabled); }
+.sv-tree-node__side { display: flex; align-items: center; gap: 12px; }
+.sv-tree-node__count { font-size: var(--text-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv-tree-node--func { border-style: dashed; }
+.sv-tree-children { margin-left: 28px; padding-left: 10px; border-left: 1px solid var(--color-border); display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.sv-tree-children--func { border-left-style: dashed; }
+/* Светофор: weekly сдан, есть просрочки, цели в риске */
+.sv-lights { display: inline-flex; gap: 5px; align-items: center; }
+.sv-lights__dot { width: 8px; height: 8px; border-radius: 50%; box-sizing: border-box; }
+.sv-lights__dot--ok { background: var(--color-success-dot); }
+.sv-lights__dot--warn { background: var(--color-warning-dot); }
+.sv-lights__dot--bad { background: var(--color-danger-dot); }
+.sv-lights__dot--off { border: 1.5px solid var(--color-icon); }
+.sv-lights--labels { gap: 12px; }
+.sv-lights--labels span { display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+/* Строка команды в «Моих командах» */
+.sv-team-row { display: grid; grid-template-columns: 1fr repeat(5, minmax(72px, auto)) 24px; gap: 12px; align-items: center; padding: 12px var(--space-4); background: var(--color-surface); border-bottom: 1px solid var(--color-border); cursor: pointer; }
+.sv-team-row:last-child { border-bottom: 0; }
+.sv-team-row:hover { background: var(--color-row-hover); }
+.sv-team-row.is-mine { box-shadow: inset 3px 0 0 var(--color-accent); }
+.sv-team-row__main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sv-team-row__name { font-size: var(--text-body); font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.sv-team-row__lead { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.sv-team-row__stat { display: flex; flex-direction: column; align-items: flex-start; gap: 0; }
+.sv-team-row__stat b { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); font-variant-numeric: tabular-nums; color: var(--color-text); }
+.sv-team-row__stat small { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); white-space: nowrap; }
+.sv-team-row__stat.is-bad b { color: var(--color-danger-text); }
+.sv-team-row__stat.is-warn b { color: var(--color-warning-text); }
+.sv-team-row__stat.is-zero b { color: var(--color-text-disabled); }
+.sv-team-list { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; }
+.sv-team-list__head { display: grid; grid-template-columns: 1fr repeat(5, minmax(72px, auto)) 24px; gap: 12px; padding: 8px var(--space-4); background: var(--color-page); font-size: var(--text-table-head); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); border-bottom: 1px solid var(--color-border); }
+@media (max-width: 767px) { .sv-team-row, .sv-team-list__head { grid-template-columns: 1fr 24px; } .sv-team-row__stat { display: none; } .sv-team-list__head span:not(:first-child) { display: none; } }
+/* Строка человека в команде */
+.sv-person-row { display: grid; grid-template-columns: 40px 1fr repeat(4, minmax(64px, auto)) 24px; gap: 12px; align-items: center; padding: 10px var(--space-4); border-bottom: 1px solid var(--color-border); cursor: pointer; min-height: 60px; box-sizing: border-box; }
+.sv-person-row:last-child { border-bottom: 0; }
+.sv-person-row:hover { background: var(--color-row-hover); }
+.sv-person-row__name { font-size: var(--text-body); font-weight: var(--font-weight-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; }
+.sv-person-row__role { font-size: var(--text-caption); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Панель подразделения: сводка */
+.sv-unit-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.sv-unit-summary__cell { padding: 10px 12px; border-radius: var(--radius-control-lg); background: var(--color-page); display: flex; flex-direction: column; gap: 2px; }
+[data-theme="dark"] .sv-unit-summary__cell { background: var(--color-field); }
+.sv-unit-summary__cell b { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-number); line-height: var(--leading-number); font-variant-numeric: tabular-nums; }
+.sv-unit-summary__cell small { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-unit-summary__cell.is-bad b { color: var(--color-danger-text); }
+.sv-unit-summary__cell.is-warn b { color: var(--color-warning-text); }
+/* Блок «Требует внимания» */
+.sv-attention { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); overflow: hidden; }
+.sv-attention__head { display: flex; align-items: center; gap: 8px; padding: 12px var(--space-4); border-bottom: 1px solid var(--color-border); font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); }
+.sv-attention__row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 10px var(--space-4); border-bottom: 1px solid var(--color-border); min-height: 56px; box-sizing: border-box; }
+.sv-attention__row:last-child { border-bottom: 0; }
+.sv-attention__why { font-size: var(--text-caption); color: var(--color-danger-text); font-weight: var(--font-weight-semibold); }
+.sv-attention__why--stale { color: var(--color-warning-text); }
+.sv-attention__row.is-leaving { opacity: 0; transform: translateX(16px); transition: opacity var(--duration) var(--ease), transform var(--duration) var(--ease); }

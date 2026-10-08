@@ -64,7 +64,7 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
         <label className="relative block sm:w-96">
           <span className="sr-only">Поиск по решениям</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по словам" className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Поиск по словам" className="sv-control h-11 w-full pl-9 pr-3 text-body" />
         </label>
         <Segmented<Status> label="Состояние" value={status} onChange={setStatus} options={[{ value: "all", label: "Все" }, { value: "active", label: "В силе" }, { value: "cancelled", label: "Отменённые" }]} />
       </div>

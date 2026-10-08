@@ -408,7 +408,7 @@ function TaskTeam({
         id={`move-${task.number}`}
         value=""
         onChange={(e) => e.target.value && onMove(e.target.value)}
-        className="h-9 max-w-[260px] rounded-md border border-line bg-surface px-2 text-small text-blue-700 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+        className="sv-control h-9 max-w-[260px] px-2 text-small"
       >
         <option value="">Перенести в команду…</option>
         {targets.map((o) => (

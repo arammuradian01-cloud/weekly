@@ -27,23 +27,23 @@ type View = "people" | "blocks";
 export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekView, "week" | "prev" | "next" | "reportingKey">; basePath?: string }) {
   const router = useRouter();
   const go = (key: string) => router.push(`${basePath}?week=${key}`, { scroll: false });
+  // Вид по дизайн-системе (navigation/WeekSwitcher.jsx, sv-week): стрелки, номер, «отчётная», «Текущая»
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg bg-field p-1" role="group" aria-label="Выбор недели">
-      <button type="button" onClick={() => go(view.prev)} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface" aria-label="Предыдущая неделя">
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+    <div className="sv-week" role="group" aria-label="Выбор недели">
+      <button type="button" onClick={() => go(view.prev)} className="sv-icon-btn sv-icon-btn--sm" aria-label="Предыдущая неделя">
+        <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
       </button>
-      <span className="min-w-36 px-2 text-center text-small font-semibold text-ink" aria-live="polite">
-        Неделя {view.week.number}
-        {view.week.reporting ? <span className="font-normal text-muted"> отчётная</span> : null}
+      <span className="sv-week__label cursor-default hover:bg-transparent" aria-live="polite">
+        <span>Неделя {view.week.number}</span>
+        {view.week.reporting ? <span className="sv-week__dates">отчётная</span> : null}
       </span>
-      <button
-        type="button"
-        onClick={() => view.next && go(view.next)}
-        disabled={!view.next}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-ink hover:bg-surface disabled:text-line disabled:hover:bg-transparent"
-        aria-label="Следующая неделя"
-      >
-        <ChevronRight className="h-4 w-4" aria-hidden="true" />
+      {!view.week.reporting ? (
+        <button type="button" className="sv-week__now" onClick={() => go(view.reportingKey)}>
+          Текущая
+        </button>
+      ) : null}
+      <button type="button" onClick={() => view.next && go(view.next)} disabled={!view.next} className="sv-icon-btn sv-icon-btn--sm" aria-label="Следующая неделя">
+        <ChevronRight className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
       </button>
     </div>
   );

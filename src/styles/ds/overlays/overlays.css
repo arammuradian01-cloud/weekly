@@ -1,0 +1,45 @@
+/* Панели и окна */
+.sv-overlay { position: absolute; inset: 0; background: var(--color-overlay); z-index: 40; display: flex; }
+.sv-overlay--fixed { position: fixed; }
+.sv-overlay--center { align-items: center; justify-content: center; padding: var(--space-6); box-sizing: border-box; }
+.sv-overlay--right { justify-content: flex-end; }
+.sv-overlay--bottom { align-items: flex-end; }
+.sv-drawer { width: var(--drawer-width); max-width: 100%; height: 100%; display: flex; flex-direction: column; box-sizing: border-box; background: var(--color-surface); border-radius: var(--radius-panel) 0 0 var(--radius-panel); box-shadow: var(--shadow-sticky); overflow: hidden; }
+.sv-drawer__head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-5) var(--space-6) var(--space-3); border-bottom: 1px solid var(--color-border); }
+.sv-drawer__head__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-drawer__title { font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-section); line-height: var(--leading-section); color: var(--color-text); overflow-wrap: anywhere; }
+.sv-drawer__body { flex: 1; overflow: auto; padding: var(--space-4) var(--space-6); }
+.sv-drawer__foot { display: flex; gap: var(--space-2); padding: var(--space-3) var(--space-6); border-top: 1px solid var(--color-border); background: var(--color-surface); flex-wrap: wrap; }
+.sv-drawer__actions { display: flex; gap: 2px; flex: none; }
+.sv-drawer--readonly .sv-drawer__head { background: var(--color-page); }
+.sv-modal { width: 100%; max-width: 560px; max-height: 100%; display: flex; flex-direction: column; box-sizing: border-box; background: var(--color-surface); border-radius: var(--radius-panel); box-shadow: var(--shadow-medium); overflow: hidden; }
+.sv-modal--sm { max-width: 440px; }
+.sv-modal--lg { max-width: 760px; }
+.sv-modal__head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-5) var(--space-6) 0; }
+.sv-modal__title { flex: 1; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-section); line-height: var(--leading-section); }
+.sv-modal__body { padding: var(--space-4) var(--space-6); overflow: auto; font-size: var(--text-body); line-height: var(--leading-body); color: var(--color-text); }
+.sv-modal__body p { margin: 0 0 var(--space-2); }
+.sv-modal__foot { display: flex; justify-content: flex-end; gap: var(--space-2); padding: 0 var(--space-6) var(--space-5); flex-wrap: wrap; }
+.sv-modal__foot--between { justify-content: space-between; }
+.sv-confirm__icon { margin-bottom: var(--space-2); }
+/* Шторка снизу на телефоне */
+.sv-sheet { width: 100%; max-height: 92%; display: flex; flex-direction: column; box-sizing: border-box; background: var(--color-surface); border-radius: var(--radius-panel) var(--radius-panel) 0 0; box-shadow: var(--shadow-sticky); padding-bottom: env(safe-area-inset-bottom, 8px); }
+.sv-sheet__grip { width: 36px; height: 4px; border-radius: 2px; background: var(--color-border-strong); margin: 8px auto 4px; }
+.sv-sheet__head { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); }
+.sv-sheet__title { flex: 1; font-family: var(--font-heading); font-weight: var(--font-weight-heading); font-size: var(--text-card); line-height: var(--leading-card); }
+.sv-sheet__body { padding: var(--space-2) var(--space-4) var(--space-4); overflow: auto; display: flex; flex-direction: column; gap: var(--space-3); }
+.sv-sheet__body .sv-btn { min-height: var(--touch-min); }
+.sv-sheet__actions { display: flex; flex-direction: column; gap: var(--space-2); }
+.sv-sheet__row { display: flex; align-items: center; gap: var(--space-3); min-height: var(--touch-min); padding: 0 var(--space-1); border: 0; background: transparent; width: 100%; text-align: left; font: inherit; font-size: var(--text-lead); line-height: var(--leading-lead); color: var(--color-text); border-radius: var(--radius-control); cursor: pointer; }
+.sv-sheet__row:hover { background: var(--color-field); }
+.sv-sheet__row .sv-icon { color: var(--color-text-secondary); }
+.sv-sheet__row--danger, .sv-sheet__row--danger .sv-icon { color: var(--color-danger-text); }
+/* Меню и подсказка */
+.sv-tooltip { display: inline-block; max-width: 280px; padding: 6px 10px; background: var(--color-brand-dark); color: #FFFFFF; border-radius: var(--radius-control); font-size: var(--text-caption); line-height: var(--leading-caption); box-shadow: var(--shadow-small); position: relative; }
+[data-theme="dark"] .sv-tooltip { background: var(--color-field); color: var(--color-text); border: 1px solid var(--color-border); }
+.sv-tooltip--top::after { content: ""; position: absolute; left: 50%; top: 100%; margin-left: -5px; border: 5px solid transparent; border-top-color: var(--color-brand-dark); }
+[data-theme="dark"] .sv-tooltip--top::after { border-top-color: var(--color-field); }
+.sv-tooltip .sv-kbd { margin-left: 6px; background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.3); color: inherit; }
+.sv-tip-wrap { position: relative; display: inline-flex; }
+.sv-tip-wrap .sv-tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity var(--duration-color); z-index: 30; }
+.sv-tip-wrap:hover .sv-tooltip, .sv-tip-wrap:focus-within .sv-tooltip { opacity: 1; }

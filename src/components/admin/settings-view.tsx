@@ -258,7 +258,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                   autoFocus
-                  className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 text-small focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+                  className="sv-control h-10 min-w-0 flex-1 px-3 text-small"
                 />
                 <Button size="sm" type="submit" className="h-10">
                   Сохранить
@@ -323,7 +323,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
             value={adding}
             onChange={(e) => setAdding(e.target.value)}
             placeholder="Новое значение"
-            className="h-10 min-w-0 flex-1 rounded-lg border border-line px-3 text-small focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25"
+            className="sv-control h-10 min-w-0 flex-1 px-3 text-small"
           />
           <Button size="sm" variant="secondary" type="submit" className="h-10">
             <Plus className="h-4 w-4" aria-hidden="true" />

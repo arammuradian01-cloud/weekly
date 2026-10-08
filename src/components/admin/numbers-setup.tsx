@@ -203,7 +203,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
                 Найти строку отчёта
               </label>
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden="true" />
-              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="h-11 w-full rounded-lg border border-line bg-surface pl-9 pr-3 text-body text-ink placeholder:text-muted/80 focus:border-blue focus:outline-none focus:ring-3 focus:ring-blue/25" />
+              <input id="numbers-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Найти строку отчёта: OSAGO, REVENUE, Deposits" className="sv-control h-11 w-full pl-9 pr-3 text-body" />
             </div>
             {found ? (
               <ul className="mt-3 max-h-[360px] divide-y divide-line overflow-y-auto rounded-lg ring-1 ring-line" aria-label="Строки отчёта">

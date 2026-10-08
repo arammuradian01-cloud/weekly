@@ -19,7 +19,9 @@ export function TasksHeader({ title = "Задачи", description }: { title?: s
         `${open.length} ${plural(open.length, "открытая задача", "открытые задачи", "открытых задач")}, ${overdue} ${plural(overdue, "просрочена", "просрочены", "просрочено")}, ${blocked} ${plural(blocked, "заблокирована", "заблокированы", "заблокировано")}`
       }
     >
-      <NewTaskButton />
+      <div className="lg:hidden">
+        <NewTaskButton />
+      </div>
     </PageHeader>
   );
 }
