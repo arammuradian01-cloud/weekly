@@ -76,8 +76,8 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
                   value={formatPlan(t.forecast, "mln")}
                   unit="млн ₽"
                   compare={[
-                    { label: "LBE", value: formatPlan(t.lbe, "mln"), delta: delta(t.forecast, t.lbe, "mln") },
-                    { label: "Бюджет", value: formatPlan(t.budget, "mln"), delta: delta(t.forecast, t.budget, "mln") },
+                    { label: "LBE", deltaLabel: `${h.label} к LBE`, value: formatPlan(t.lbe, "mln"), delta: delta(t.forecast, t.lbe, "mln") },
+                    { label: "Бюджет", deltaLabel: `${h.label} к бюджету`, value: formatPlan(t.budget, "mln"), delta: delta(t.forecast, t.budget, "mln") },
                   ]}
                   note={t.without.length ? `Без ${t.without.join(", ")}: в LRF нет этой строки` : undefined}
                 />
@@ -178,7 +178,7 @@ function ProductsTable({
         <td className="is-num" data-label="К бюджету">
           <Delta value={delta(t.forecast, t.budget, "mln")} label={`${name} к бюджету`} />
         </td>
-        <td className="is-num" data-label="Правок">
+        <td className="is-num" data-label="Корректировок">
           {kind === "total" ? "" : adjusted || <span className="sv-datatable__muted">0</span>}
         </td>
       </tr>
@@ -236,7 +236,7 @@ function History({ view }: { view: MonthPlanView }) {
     <Module
       id="plan-history"
       title="Журнал корректировок"
-      description="Кто, когда и почему поменял драйвер. Последняя корректировка показателя действует, прежние остаются в журнале."
+      description="Все корректировки драйверов за месяц: кто, когда и почему. Действует последняя корректировка показателя, прежние остаются в журнале."
       flush
     >
       {view.history.length ? (

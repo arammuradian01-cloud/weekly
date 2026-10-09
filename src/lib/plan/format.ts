@@ -65,17 +65,22 @@ export function parsePlanInput(text: string, unit: PlanUnit): number | null {
   return unit === "pct" ? n / 100 : n;
 }
 
-/** Границы значения драйвера: защита от опечаток на порядок и от бессмыслицы */
+/**
+ * Границы значения драйвера: защита от опечаток на порядок и от бессмыслицы. Если в LBE ноль (сезонный продукт),
+ * сравнивать не с чем, и границы широкие
+ */
 export function driverBounds(unit: PlanUnit, lbe: number | null): { min: number; max: number } {
   const base = Math.abs(lbe ?? 0);
   switch (unit) {
     case "count":
-      return { min: 0, max: Math.max(base * 10, 1_000) };
+      return { min: 0, max: base > 0 ? Math.max(base * 10, 1_000) : 10_000_000 };
     case "pct":
       return { min: 0, max: Math.max(base * 5, 1) };
     case "rub":
-      return { min: 0, max: Math.max(base * 10, 1_000) };
-    case "mln":
-      return { min: -Math.max(base * 10, 10), max: Math.max(base * 10, 10) };
+      return { min: 0, max: base > 0 ? Math.max(base * 10, 1_000) : 1_000_000 };
+    case "mln": {
+      const span = base > 0 ? Math.max(base * 10, 10) : 1_000;
+      return { min: -span, max: span };
+    }
   }
 }

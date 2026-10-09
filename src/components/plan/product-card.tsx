@@ -204,7 +204,8 @@ function DriverEditor({
   const spec = productOf(product.code)!;
   const unit = UNITS[metric];
   const { notify } = usePrototype();
-  const [text, setText] = useState(() => inputValue(current, unit));
+  const initialText = inputValue(current, unit);
+  const [text, setText] = useState(initialText);
   const [reason, setReason] = useState<ForecastReasonCode>(() => defaultReason(metric));
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -223,9 +224,13 @@ function DriverEditor({
     return { one, all };
   }, [valid, parsed, product, metric, spec, input]);
 
-  const save = async (value: number | null) => {
+  /** reset: вернуть как в LBE. Иначе нужно новое значение: пустое поле не снимает корректировку */
+  const save = async (reset: boolean) => {
     setError(null);
-    if (value !== null && !valid) return setError(`Укажите значение числом${unit === "pct" ? " в процентах, например 10,5" : ""}`);
+    if (!reset && text.trim() === "") return setError("Укажите новое значение");
+    if (!reset && !valid) return setError(`Укажите значение числом${unit === "pct" ? " в процентах, например 10,5" : ""}`);
+    if (!reset && text.trim() === initialText) return setError("Значение не изменилось: введите новое");
+    const value = reset ? null : parsed;
     if (comment.trim().length < 3) return setError("Напишите, почему меняется прогноз: одной фразой");
     if (comment.trim().length > COMMENT_MAX) return setError(`Обоснование не длиннее ${COMMENT_MAX} знаков`);
     setBusy(true);
@@ -253,7 +258,7 @@ function DriverEditor({
       aria-label={`Корректировка: ${metricLabel(spec, metric)}`}
       onSubmit={(e) => {
         e.preventDefault();
-        void save(parsed);
+        void save(false);
       }}
       data-testid="plan-editor"
     >
@@ -304,7 +309,7 @@ function DriverEditor({
           Сохранить корректировку
         </Button>
         {adjusted ? (
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => void save(null)} data-testid="plan-reset">
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => void save(true)} data-testid="plan-reset">
             Вернуть как в LBE
           </Button>
         ) : null}

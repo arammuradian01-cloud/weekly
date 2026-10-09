@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS "plan_adjustments" (
 CREATE UNIQUE INDEX IF NOT EXISTS "plan_lines_month_version_product_metric_key" ON "plan_lines"("month", "version", "product", "metric");
 CREATE INDEX IF NOT EXISTS "plan_lines_month_idx" ON "plan_lines"("month");
 CREATE INDEX IF NOT EXISTS "plan_adjustments_month_product_createdAt_idx" ON "plan_adjustments"("month", "product", "createdAt");
+CREATE INDEX IF NOT EXISTS "plan_adjustments_authorId_idx" ON "plan_adjustments"("authorId");
 
 DO $$ BEGIN ALTER TABLE "plan_adjustments" ADD CONSTRAINT "plan_adjustments_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "people"("id") ON DELETE RESTRICT ON UPDATE CASCADE; EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 

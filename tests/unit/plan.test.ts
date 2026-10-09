@@ -223,3 +223,45 @@ describe("числа на экране и ввод", () => {
     expect(driverBounds("mln", 30).min).toBe(-300);
   });
 });
+
+describe("крайние случаи LRF и пересчёта", () => {
+  it("нет строк продаж в LBE: без корректировок выручка как в LBE, а не с нуля", () => {
+    const kasko = productOf("kasko")!;
+    const lbe = { rpu: 680, revenueCore: 9.5, revenue: 14.4, promoMargin: 8 };
+    const out = compute(kasko, lbe, {});
+    expect(out.revenue).toBeCloseTo(14.4, 9);
+    expect(out.units).toBeNull();
+    expect(out.promoMargin).toBeCloseTo(8, 9);
+  });
+
+  it("сезонный продукт с нулём продаж: без корректировок как в LBE, продажи добавляют выручку", () => {
+    const deposits = productOf("deposits")!;
+    const lbe = { units: 0, rpu: 150, revenueCore: 0.2, revenue: 0.3, promoMargin: 0.1, directMargin: 0.05 };
+    expect(compute(deposits, lbe, {}).revenue).toBeCloseTo(0.3, 12);
+    const up = compute(deposits, lbe, { units: 1_000 });
+    expect(up.revenue).toBeCloseTo(0.3 + 0.15, 12);
+    expect(up.directMargin).toBeCloseTo(0.05 + 0.15, 12);
+  });
+
+  it("месяц в шапке датой, прочерки и ошибки формул не названия строк", () => {
+    const serial = (Date.UTC(2026, 9, 1) - Date.UTC(1899, 11, 30)) / 86_400_000;
+    const grid = [[null, "LBE", "BUD"], [null, serial, serial]];
+    expect(findColumns(grid, OCT).columns).toEqual({ LBE: 1, BUD: 2 });
+    expect(rowLabel(["-", "PROMO MARGIN"])).toBe("PROMO MARGIN");
+    expect(rowLabel(["#REF!", "TOTAL REVENUE"])).toBe("TOTAL REVENUE");
+  });
+
+  it("нет строки продаж B2C: поиск не съезжает на выручку b2c ниже", () => {
+    const grids = lrfImitation([OCT]);
+    grids["OSAGO_KEY METRICS"] = grids["OSAGO_KEY METRICS"]!.filter((r) => rowLabel(r) !== "B2C");
+    const osago = readLrf(grids, OCT).products.find((p) => p.code === "osago")!;
+    expect(osago.missing).toContain("unitsB2c");
+  });
+
+  it("границы при нуле в LBE широкие", async () => {
+    const { driverBounds } = await import("@/lib/plan/format");
+    expect(driverBounds("count", 0).max).toBe(10_000_000);
+    expect(driverBounds("count", 400).max).toBe(4_000);
+    expect(driverBounds("mln", 0)).toEqual({ min: -1_000, max: 1_000 });
+  });
+});

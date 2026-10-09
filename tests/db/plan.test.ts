@@ -138,8 +138,9 @@ describe("корректировки драйверов", () => {
     // Свой продукт: RED у Логиновой
     await adjust(await actor.loginova(), { product: "red-travel", metric: "rpu", value: 1_000, reason: "check-kv", comment: "Страховая подняла комиссию" });
     await adjust(await actor.owner(), { product: "deposits", metric: "units", value: 60_000, reason: "traffic", comment: "Акция банка-партнёра" });
-    // Общий логин с режимом управления: у режима свой пароль, автор виден
-    await adjust({ ...(await actor.admin()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 700, reason: "check-kv", comment: "Страховая подняла вознаграждение" });
+    // Общий логин с режимом владельца: пароль владельца личный, автор виден. Пароль администраторов общий: нельзя
+    await adjust({ ...(await actor.owner()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 700, reason: "check-kv", comment: "Страховая подняла вознаграждение" });
+    await expectRule(adjust({ ...(await actor.admin()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 710, reason: "check-kv", comment: "Под общим логином" }), /личном входе/);
     const view = await plan.monthPlan(await actor.loginova(), month);
     expect(view.products.find((p) => p.code === "red-travel")!.canAdjust).toBe(true);
     expect(view.products.find((p) => p.code === "osago")!.canAdjust).toBe(false);
@@ -164,6 +165,10 @@ describe("корректировки драйверов", () => {
     await expectRule(adjust(golovkin, { metric: "crWeb", value: Number.NaN }), /числом/);
     await expectRule(adjust(golovkin, { product: "nope", metric: "crWeb", value: 0.12, seen: 0.1 }), /Нет такого продукта/);
     await expectRule(adjust(golovkin, { metric: "crWeb", value: 0.1 }), /и так как в LBE/);
+    // С точностью поля ввода: 1 500 000,3 при LBE 1 500 000 это то же значение
+    await expectRule(adjust(golovkin, { metric: "trafficWeb", value: 1_500_000.3 }), /и так как в LBE/);
+    // Эмодзи считаются одним символом, как в базе
+    await expectRule(adjust(golovkin, { metric: "crWeb", value: 0.12, comment: "👍👍" }), /почему меняется/);
     expect(await prisma.planAdjustment.count()).toBe(0);
   });
 
@@ -210,6 +215,68 @@ describe("корректировки драйверов", () => {
     const preview = await plan.previewPull(await actor.owner(), month);
     expect(preview.adjustments).toBe(1);
     expect(preview.products[0]!.revenue.before).toBe(450);
+  });
+});
+
+describe("повторная загрузка и закрытые месяцы", () => {
+  it("строка пропала из LRF: загрузить нельзя, видно какая", async () => {
+    const tab = [...plan.imitationLrf().tabs.values()].find((t) => t.title === "DEPOSITS_KEY METRICS")!;
+    const saved = tab.grid;
+    tab.grid = saved.filter((row) => row[1] !== "REVENUE PER CLICK (RUB)");
+    try {
+      const preview = await plan.previewPull(await actor.owner(), month);
+      expect(preview.ready).toBe(false);
+      expect(preview.problems).toContain("Вклады: в LRF не найдены строки: выручка на клик, руб.");
+    } finally {
+      tab.grid = saved;
+    }
+  });
+
+  it("у корректировки поменялся LBE: проверка загрузки показывает это", async () => {
+    await load();
+    await adjust(await actor.golovkin(), { metric: "trafficWeb", value: 1_600_000, reason: "traffic", comment: "Рост SEO" });
+    const tab = [...plan.imitationLrf().tabs.values()].find((t) => t.title === "OSAGO_KEY METRICS")!;
+    const row = tab.grid.find((r) => r[1] === "TOTAL OSAGO Web (MAU)")!;
+    const saved = row[3];
+    row[3] = 1_700_000;
+    try {
+      const preview = await plan.previewPull(await actor.owner(), month);
+      expect(preview.adjustments).toBe(1);
+      expect(preview.changed).toEqual([{ product: "ОСАГО", metric: "Трафик сайта, MAU", value: "1 600 000", lbeBefore: "1 500 000", lbeAfter: "1 700 000" }]);
+    } finally {
+      row[3] = saved;
+    }
+  });
+
+  it("драйвера больше нет в LBE: корректировку можно снять, но не поставить новую", async () => {
+    await load();
+    const g = await actor.golovkin();
+    await adjust(g, { metric: "rpu", value: 1_210, reason: "check-kv", comment: "Средний чек вырос" });
+    await prisma.planLine.deleteMany({ where: { month, product: "osago", metric: "rpu", version: "LBE" } });
+    await expectRule(adjust(g, { metric: "rpu", value: 1_300, seen: 1_210, reason: "check-kv", comment: "Ещё выше" }), /нет этого показателя/);
+    const view = await adjust(g, { metric: "rpu", value: null, seen: 1_210, reason: "other", comment: "Строки больше нет в LRF" });
+    expect(view.products.find((p) => p.code === "osago")!.drivers).toEqual({});
+  });
+
+  it("прошлый месяц закрыт: прогноз виден, корректировать нельзя", async () => {
+    const prev = addMonths(month, -1);
+    await plan.applyPull(await actor.owner(), prev);
+    const view = await plan.monthPlan(await actor.golovkin(), prev);
+    expect(view.closed).toBe(true);
+    expect(view.products.every((p) => !p.canAdjust)).toBe(true);
+    expect(view.adjustHint).toMatch(/закрыт/);
+    const lbe = derive(view.products.find((p) => p.code === "osago")!.lbe as Values);
+    await expectRule(plan.adjust(await actor.golovkin(), { month: prev, product: "osago", metric: "crWeb", value: 0.12, seen: lbe.crWeb ?? null, reason: "conversion", comment: "Задним числом" }), /закрыт/);
+  });
+
+  it("ссылку на источник и служебный аккаунт видят только те, кто загружает", async () => {
+    await load();
+    const leader = await plan.monthPlan(await actor.golovkin(), month);
+    expect(leader.source.sourceId).toBe("");
+    expect(leader.source.serviceEmail).toBeNull();
+    const owner = await plan.monthPlan(await actor.owner(), month);
+    expect(owner.source.sourceId).toBe(plan.LRF_MIRROR_ID);
+    expect(owner.canSource).toBe(true);
   });
 });
 

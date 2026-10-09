@@ -53,9 +53,10 @@ export function compute(spec: Pick<ProductSpec, "model">, lbe: Values, drivers: 
     const b2b = d("unitsB2b") ?? b2bL;
     const unitsL = n(L.units) ?? b2cL + b2bL;
     units = unitsL + (b2c - b2cL) + (b2b - b2bL);
-    out.unitsB2c = b2c;
+    // Нет строки в LBE: не выдумываем число на экране
+    out.unitsB2c = n(L.unitsB2c) === null ? null : b2c;
     out.unitsB2b = b2b;
-    out.units = units;
+    out.units = n(L.units) === null ? null : units;
   } else {
     units = d("units");
     out.units = units;
@@ -64,10 +65,12 @@ export function compute(spec: Pick<ProductSpec, "model">, lbe: Values, drivers: 
   const rpuL = n(L.rpu);
   const rpu = d("rpu");
   const coreL = n(L.revenueCore);
+  // Выручка от продаж: при продажах и выручке на продажу больше нуля через отношения, при нуле (сезонный продукт) через
+  // разницу произведений. Нет продаж или выручки на продажу в LBE: выручка от продаж остаётся как в LBE, а не
+  // пересчитывается с нуля
   let core: number | null = coreL;
-  if (coreL !== null && units !== null && rpu !== null) {
-    if (unitsL && rpuL) core = coreL * (units / unitsL) * (rpu / rpuL);
-    else core = (units * rpu) / 1e6;
+  if (coreL !== null && units !== null && rpu !== null && unitsL !== null && rpuL !== null) {
+    core = unitsL > 0 && rpuL > 0 ? coreL * (units / unitsL) * (rpu / rpuL) : coreL + (units * rpu - unitsL * rpuL) / 1e6;
   }
   out.revenueCore = core;
   const other = d("otherRevenue");

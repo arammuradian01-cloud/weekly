@@ -526,6 +526,7 @@ model PlanAdjustment {
   createdAt DateTime       @default(now()) @db.Timestamptz(3)
 
   @@index([month, product, createdAt])
+  @@index([authorId])
   @@map("plan_adjustments")
 }
 

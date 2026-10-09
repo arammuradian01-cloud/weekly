@@ -4,7 +4,8 @@
 // LRF «INSURANCE & INVEST: 5Y_LRF (CURRENT)»: у каждого продукта лист ключевых метрик с одинаковым деревом драйверов.
 // Трафик сайта и приложения, конверсия в продажу, продажи B2C и B2B, выручка на продажу, выручка, промо-маржа, прямая маржа.
 // Строка ищется по названию в первых колонках листа, при повторе названия (B2C встречается и в трафике, и в полисах)
-// по якорю: первое совпадение после строки-якоря
+// по якорю: первое совпадение после строки-якоря. Продажи B2C и B2B ищутся с учётом регистра: строчные b2c и b2b ниже
+// это выручка, и без строки продаж поиск не должен съехать на неё (у КАСКО, наоборот, продажи строчными)
 
 export type MetricKey =
   | "trafficWeb"
@@ -67,8 +68,8 @@ const RED_FIND: ProductSpec["find"] = {
   crWeb: { label: /^CR: WEB \(%\):?$/i, after: /^CR: end-to-end \/ B2C/i },
   crApp: { label: /^CR: APP \(%\):?$/i, after: /^CR: end-to-end \/ B2C/i },
   units: { label: re("POLICIES (units)") },
-  unitsB2c: { label: /^B2C$/i, after: re("POLICIES (units)") },
-  unitsB2b: { label: /^B2B$/i, after: re("POLICIES (units)") },
+  unitsB2c: { label: /^B2C$/, after: re("POLICIES (units)") },
+  unitsB2b: { label: /^B2B$/, after: re("POLICIES (units)") },
   rpu: { label: re("Revenue per policy (RUB)") },
   revenueCore: { label: re("REVENUE (RUB MLN)") },
   revenue: { label: re("TOTAL REVENUE") },
@@ -99,8 +100,8 @@ export const PRODUCTS: ProductSpec[] = [
       crWeb: { label: /^CR: WEB \(%\):?$/i, after: /^CR: end-to-end \/ B2C/i },
       crApp: { label: /^CR: APP \(%\):?$/i, after: /^CR: end-to-end \/ B2C/i },
       units: { label: re("POLICIES (units)") },
-      unitsB2c: { label: /^B2C$/i, after: re("POLICIES (units)") },
-      unitsB2b: { label: /^B2B$/i, after: re("POLICIES (units)") },
+      unitsB2c: { label: /^B2C$/, after: re("POLICIES (units)") },
+      unitsB2b: { label: /^B2B$/, after: re("POLICIES (units)") },
       rpu: { label: /^REVENUE PER POLICY/i },
       // Выручка от продаж с апсейлами: растёт вместе с полисами. Ретро-бонусы, медиа и прочее в прочей выручке
       revenueCore: { label: re("REVENUE: b2c + b2b (RUB MLN)") },
@@ -123,8 +124,8 @@ export const PRODUCTS: ProductSpec[] = [
       crWeb: { label: re("CR: Traffic -> Lead (%)"), after: re("Web traffic (MAU)") },
       crApp: { label: re("CR: Traffic -> Lead (%)"), after: re("App traffic (MAU)") },
       units: { label: re("Leads (units)") },
-      unitsB2c: { label: /^b2c$/i, after: re("Leads (units)") },
-      unitsB2b: { label: /^b2b$/i, after: re("Leads (units)") },
+      unitsB2c: { label: /^b2c$/, after: re("Leads (units)") },
+      unitsB2b: { label: /^b2b$/, after: re("Leads (units)") },
       rpu: { label: re("revenue per lead (rub)") },
       revenueCore: { label: /^REVENUE$/i, after: re("TOTAL REVENUE (RUB MLN)") },
       revenue: { label: re("TOTAL REVENUE CASCO") },

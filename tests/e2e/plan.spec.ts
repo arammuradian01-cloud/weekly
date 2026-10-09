@@ -61,6 +61,10 @@ test("бюджет и LBE из LRF, корректировка драйвера 
   await expect(card.getByTestId("plan-row-revenue")).toContainText("450,0");
   await card.getByTestId("plan-edit-crWeb").click();
   const editor = card.getByTestId("plan-editor");
+  // Пустое поле не снимает корректировку молча
+  await editor.getByLabel(/Новое значение/).fill("");
+  await editor.getByTestId("plan-save").click();
+  await expect(editor.getByText("Укажите новое значение")).toBeVisible();
   await editor.getByLabel(/Новое значение/).fill("12");
   const impact = editor.getByTestId("plan-impact");
   await expect(impact).toContainText("станет 405 000");

@@ -11,14 +11,14 @@ import { canEditDictionaries, canManagePeople } from "@/lib/admin/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { GoogleSheets, GoogleSheetsError, serviceAccountFromEnv } from "@/lib/sheet/google";
 import { FakeSheets } from "@/lib/sheet/fake";
-import { PROD_SHEET_ID, type Grid as SheetGrid, type SheetsClient } from "@/lib/sheet/client";
+import { PROD_SHEET_ID, colLetter, q, type Grid as SheetGrid, type SheetsClient } from "@/lib/sheet/client";
 import { serviceEmail } from "@/lib/sheet/runner";
 import { moscowToday } from "@/lib/tasks/dates";
 import { FORECAST_REASONS, addMonths, monthLabel, type ForecastReasonCode } from "@/lib/forecast/codes";
 import { lrfImitation } from "./imitation";
 import { readLrf, type Grid, type Values } from "./lrf";
 import { derive, rowsOf } from "./model";
-import { GROUPS, PRODUCTS, SHEETS, UNITS, metricLabel, productOf, type MetricKey, type ProductSpec } from "./spec";
+import { GROUPS, PRODUCTS, SHEETS, UNITS, metricLabel, productOf, type MetricKey, type PlanUnit, type ProductSpec } from "./spec";
 import { formatPlan, driverBounds } from "./format";
 import { summarize, type Drivers, type PlanInput } from "./summary";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
@@ -36,9 +36,9 @@ const fail = (message: string): never => {
 export const LRF_SHEET_ID = "1NyXreA9PYUC-CTeUmIvh_w1L7kIggCxhjpo5-f5vK7k";
 /** Таблица-связка «LRF для Weekly (только чтение, связь с LRF INSURANCE & INVEST)»: источник по умолчанию */
 export const LRF_MIRROR_ID = "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg";
-export const PLAN_LIMITS = { comment: 300, commentMin: 3, owners: 12, history: 60, rows: 1000, cols: 2000 };
+export const PLAN_LIMITS = { comment: 300, commentMin: 3, owners: 12, history: 60, rows: 1500, cols: 1500 };
 
-type Reader = Pick<SheetsClient, "getValues">;
+type Reader = Pick<SheetsClient, "getValues" | "sheets">;
 type Conn = { reader: Reader; mode: "google" | "imitation"; sourceId: string };
 
 const g = globalThis as unknown as { __planGoogle?: { id: string; email: string; client: GoogleSheets }; __planFake?: FakeSheets };
@@ -69,7 +69,7 @@ export async function planConnection(): Promise<Conn | null> {
     g.__planGoogle = { id, email: account.client_email, client: new GoogleSheets(id, account, fetch, "read") };
   }
   const client = g.__planGoogle.client;
-  return { reader: { getValues: (range) => client.getValues(range) }, mode: "google", sourceId: id };
+  return { reader: { getValues: (range) => client.getValues(range), sheets: () => client.sheets() }, mode: "google", sourceId: id };
 }
 
 function errorText(error: unknown): string {
@@ -82,23 +82,33 @@ function errorText(error: unknown): string {
   return "Google не ответил. Попробуйте ещё раз через минуту";
 }
 
-const missingTab = (error: unknown) => (error instanceof GoogleSheetsError && error.status === 400) || (error instanceof Error && /нет вкладки|not found|Unable to parse range/i.test(error.message));
-
-/** Листы LRF целиком: только значения, без форматов. Нет листа: undefined, его отметит разбор */
-async function readSheets(conn: Conn): Promise<Record<string, Grid | undefined>> {
+/**
+ * Листы LRF: только значения, без форматов. Сначала размер сетки каждого листа, потом диапазон не больше лимита, чтобы
+ * огромный лист не читался целиком. Нет листа: undefined, его отметит разбор. Лист больше лимита: заметка владельцу
+ */
+async function readSheets(conn: Conn): Promise<{ sheets: Record<string, Grid | undefined>; notes: string[] }> {
+  const infos = await conn.reader.sheets();
   const out: Record<string, Grid | undefined> = {};
+  const notes: string[] = [];
   await Promise.all(
     SHEETS.map(async (name) => {
-      try {
-        const grid = await conn.reader.getValues(`'${name.replace(/'/g, "''")}'`);
-        out[name] = grid.slice(0, PLAN_LIMITS.rows).map((row) => row.slice(0, PLAN_LIMITS.cols)) as Grid;
-      } catch (error) {
-        if (missingTab(error)) out[name] = undefined;
-        else throw error;
+      const info = infos.find((i) => i.title.toLowerCase() === name.toLowerCase());
+      if (!info) {
+        out[name] = undefined;
+        return;
       }
+      const rows = Math.min(info.rowCount ?? PLAN_LIMITS.rows, PLAN_LIMITS.rows);
+      const cols = Math.min(info.columnCount ?? PLAN_LIMITS.cols, PLAN_LIMITS.cols);
+      if ((info.rowCount ?? 0) > PLAN_LIMITS.rows || (info.columnCount ?? 0) > PLAN_LIMITS.cols) notes.push(`Лист «${name}» больше ${PLAN_LIMITS.rows} строк или колонок: читаются первые`);
+      if (rows < 1 || cols < 1) {
+        out[name] = [];
+        return;
+      }
+      const grid = await conn.reader.getValues(`${q(info.title)}!A1:${colLetter(cols)}${rows}`);
+      out[name] = grid.slice(0, PLAN_LIMITS.rows).map((row) => row.slice(0, PLAN_LIMITS.cols)) as Grid;
     }),
   );
-  return out;
+  return { sheets: out, notes };
 }
 
 function requirePull(actor: Actor) {
@@ -116,8 +126,9 @@ async function readMonth(month: string) {
   const conn = await planConnection();
   if (!conn) fail(serviceEmail() ? "Источник LRF не задан" : "Ключ служебного аккаунта Google не задан на сервере");
   let sheets: Record<string, Grid | undefined>;
+  let notes: string[];
   try {
-    sheets = await readSheets(conn!);
+    ({ sheets, notes } = await readSheets(conn!));
   } catch (error) {
     return fail(errorText(error));
   }
@@ -128,28 +139,54 @@ async function readMonth(month: string) {
   }
   const read = readLrf(sheets, month);
   const problems = [...read.problems];
+  // Без любой строки продукта пересчёт врёт, поэтому пропуск строки не даёт загрузить: строку в LRF переименовали или
+  // перенесли, и правило поиска нужно поправить
   for (const p of read.products) {
     if (p.problem) problems.push(p.problem);
-    else if (p.values.LBE.revenue == null) problems.push(`${p.label}: в LBE ${lrfLabel(month)} нет выручки`);
+    else if (p.missing.length) problems.push(`${p.label}: в LRF не найдены строки: ${p.missing.map((k) => metricLabel(productOf(p.code)!, k).toLowerCase()).join(", ")}`);
+    else if (p.values.LBE.revenue == null) problems.push(`${p.label}: в LBE за ${monthLabel(month)} нет выручки`);
   }
-  for (const gr of read.groups) if (gr.problem) problems.push(gr.problem);
-  return { read, problems: [...new Set(problems)] };
+  for (const gr of read.groups) {
+    if (gr.problem) problems.push(gr.problem);
+    else if (gr.missing.length) problems.push(`${gr.label}: в LRF не найдены строки итога группы`);
+  }
+  return { read, problems: [...new Set(problems)], notes };
 }
-
-const lrfLabel = (month: string) => monthLabel(month);
 
 /** Что будет загружено: выручка по версиям, пропущенные строки и несходящиеся цифры. Ничего не пишет */
 export async function previewPull(actor: Actor, monthInput: string): Promise<PullPreview> {
   requirePull(actor);
   const month = monthOrFail(monthInput);
-  const { read, problems } = await readMonth(month);
-  const before = await prisma.planLine.findMany({ where: { month, version: "LBE", metric: "revenue" } });
-  const beforeOf = (code: string) => before.find((l) => l.product === code)?.value ?? null;
-  const adjustments = await prisma.planAdjustment.count({ where: { month } });
+  const { read, problems, notes } = await readMonth(month);
+  const lines = await prisma.planLine.findMany({ where: { month, version: "LBE" } });
+  const beforeOf = (code: string) => lines.find((l) => l.product === code && l.metric === "revenue")?.value ?? null;
+  const adjustments = await prisma.planAdjustment.findMany({ where: { month }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+  // Корректировки хранят значение, а не сдвиг: если LBE драйвера поменялся, корректировка теперь значит другое. Показываем такие
+  const seen = new Set<string>();
+  const changed: PullPreview["changed"] = [];
+  let active = 0;
+  for (const a of adjustments) {
+    const key = `${a.product}:${a.metric}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (a.value === null) continue;
+    active += 1;
+    const spec = productOf(a.product);
+    const fresh = read.products.find((p) => p.code === a.product);
+    if (!spec || !fresh) continue;
+    const metric = a.metric as MetricKey;
+    const was = derive(Object.fromEntries(lines.filter((l) => l.product === a.product).map((l) => [l.metric, l.value])) as Values)[metric] ?? null;
+    const now = derive(fresh.values.LBE)[metric] ?? null;
+    if (was === null || now === null || Math.abs(was - now) <= 1e-9 * Math.max(1, Math.abs(was))) continue;
+    const unit = UNITS[metric];
+    changed.push({ product: spec.label, metric: metricLabel(spec, metric), value: formatPlan(a.value, unit), lbeBefore: formatPlan(was, unit), lbeAfter: formatPlan(now, unit) });
+  }
   return {
     month,
     monthLabel: monthLabel(month),
     problems,
+    notes,
+    changed,
     ready: problems.length === 0,
     products: read.products.map((p) => ({
       code: p.code,
@@ -158,7 +195,7 @@ export async function previewPull(actor: Actor, monthInput: string): Promise<Pul
       warnings: p.warnings,
       revenue: { lbe: p.values.LBE.revenue ?? null, budget: p.values.BUD.revenue ?? null, before: beforeOf(p.code) },
     })),
-    adjustments,
+    adjustments: active,
   };
 }
 
@@ -191,6 +228,8 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
     const had = await tx.planLine.count({ where: { month } });
     await tx.planLine.deleteMany({ where: { month } });
     await tx.planLine.createMany({ data });
+    // Карта «когда загружен месяц» общая на все месяцы: две загрузки разных месяцев не должны потерять друг друга
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plan.settings'))`;
     const pulled = await tx.setting.findUnique({ where: { key: "plan.pulled" } });
     const map = { ...((pulled?.value as Pulled | null) ?? {}), [month]: { at: now.toISOString(), by: actor.fullName } };
     await tx.setting.upsert({ where: { key: "plan.pulled" }, update: { value: map }, create: { key: "plan.pulled", value: map } });
@@ -221,8 +260,11 @@ async function ownersMap(): Promise<Record<string, string[]>> {
   return out;
 }
 
-/** Корректирует человек, которого видно: личный вход или режим управления (у него свой пароль). Общий логин не подходит */
-const personal = (actor: Actor) => actor.role !== "OBSERVER" && (actor.via !== "TEAM" || actor.management !== null);
+/**
+ * Корректирует человек, которого видно: личный вход или режим владельца (пароль владельца знает только он). Пароль
+ * администраторов общий, поэтому общий логин с режимом администратора не подходит: под ним можно выбрать чужой профиль
+ */
+const personal = (actor: Actor) => actor.role !== "OBSERVER" && (actor.via !== "TEAM" || actor.management === "OWNER");
 
 function canAdjust(actor: Actor, owners: string[]): boolean {
   if (!personal(actor)) return false;
@@ -287,10 +329,11 @@ async function people(slugs: string[]): Promise<Map<string, PlanPerson>> {
   return new Map(rows.map((r) => [r.slug, { slug: r.slug, name: r.fullName }]));
 }
 
-async function source(month: string): Promise<PlanSource> {
+/** Откуда и когда загружен месяц. Ссылку на таблицу и служебный аккаунт видят только те, кто загружает */
+async function source(month: string, manager: boolean): Promise<PlanSource> {
   const [id, pulled] = await Promise.all([getSetting<string | null>("plan.sourceId", LRF_MIRROR_ID), getSetting<Pulled>("plan.pulled", {})]);
   const mode: PlanSource["mode"] = !id ? "off" : imitationOn() ? "imitation" : serviceAccountFromEnv() ? "google" : "off";
-  return { sourceId: id ?? "", mode, serviceEmail: serviceEmail(), pulledAt: pulled?.[month]?.at ?? null, pulledBy: pulled?.[month]?.by ?? null };
+  return { sourceId: manager ? (id ?? "") : "", mode, serviceEmail: manager ? serviceEmail() : null, pulledAt: pulled?.[month]?.at ?? null, pulledBy: pulled?.[month]?.by ?? null };
 }
 
 /** Прогноз месяца для экрана: версии, корректировки, владельцы продуктов и история. month: из адреса страницы */
@@ -299,11 +342,13 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
   const months = monthRows.map((r) => r.month);
   const current = currentMonth(now);
   const month = isMonth(monthInput) ? monthInput : months.includes(current) ? current : (months[0] ?? current);
+  // Прошлый месяц закрыт: прогноз виден, но не меняется
+  const closed = month < current;
   const [lines, adjustments, owners, src] = await Promise.all([
     prisma.planLine.findMany({ where: { month } }),
     prisma.planAdjustment.findMany({ where: { month }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
     ownersMap(),
-    source(month),
+    source(month, canEditDictionaries(actor)),
   ]);
   const lbe = valuesBy(lines, "LBE");
   const budget = valuesBy(lines, "BUDGET");
@@ -316,7 +361,7 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     drivers: drivers.get(p.code) ?? {},
     last: last.get(p.code) ?? {},
     owners: (owners[p.code] ?? []).map((s) => names.get(s)).filter((x): x is PlanPerson => !!x),
-    canAdjust: canAdjust(actor, owners[p.code] ?? []),
+    canAdjust: !closed && canAdjust(actor, owners[p.code] ?? []),
   }));
   const groups = GROUPS.filter((gr) => lbe.has(gr.code)).map((gr) => ({ code: gr.code, lbe: lbe.get(gr.code)!, budget: budget.get(gr.code) ?? {} }));
   return {
@@ -331,7 +376,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     canOwners: canEditDictionaries(actor),
     canSource: canManagePeople(actor),
     canAdjustAny: products.some((p) => p.canAdjust),
-    adjustHint: actor.role === "OBSERVER" ? "Наблюдатель видит прогноз, но не корректирует его." : actor.via === "TEAM" && actor.management === null ? "Вы вошли под общим логином. Корректировать прогноз можно при личном входе: так видно, кто и почему поменял цифру." : null,
+    closed,
+    adjustHint: closed ? `${monthLabel(month).replace(/^./, (c) => c.toUpperCase())} закрыт: прогноз прошлого месяца не меняется.` : actor.role === "OBSERVER" ? "Наблюдатель видит прогноз, но не корректирует его." : actor.via === "TEAM" && actor.management !== "OWNER" ? "Вы вошли под общим логином. Корректировать прогноз можно при личном входе: так видно, кто и почему меняет цифру." : null,
     source: src,
   };
 }
@@ -344,6 +390,13 @@ export function planSummary(view: Pick<MonthPlanView, "products" | "groups">) {
 
 const near = (a: number | null, b: number | null) => (a === null || b === null ? a === b : Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b)));
 
+/** Совпадают ли значения с точностью поля ввода: штуки до единицы, доли до тысячной процента, рубли до копейки */
+function sameInput(unit: PlanUnit, a: number | null, b: number | null): boolean {
+  if (a === null || b === null) return a === b;
+  const step = unit === "count" ? 0.5 : unit === "pct" ? 0.000005 : unit === "rub" ? 0.005 : 0.00005;
+  return Math.abs(a - b) < step || near(a, b);
+}
+
 /** Корректировка драйвера: новое значение вместо LBE (или вернуть как в LBE), причина и обоснование */
 export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPlanView> {
   const month = monthOrFail(input?.month);
@@ -352,12 +405,15 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
   const driver = rowsOf(spec).find((r) => r.key === metric && r.kind === "driver");
   if (!driver) fail("Этот показатель пересчитывается сам: меняйте драйверы");
   const owners = (await ownersMap())[spec.code] ?? [];
-  if (!personal(actor)) fail(actor.role === "OBSERVER" ? "Наблюдатель прогноз не корректирует" : "Прогноз корректируют при личном входе: так видно, кто и почему поменял цифру");
+  if (!personal(actor)) fail(actor.role === "OBSERVER" ? "Наблюдатель прогноз не корректирует" : "Прогноз корректируют при личном входе: так видно, кто и почему меняет цифру");
+  if (month < currentMonth()) fail(`${monthLabel(month)} закрыт: прогноз прошлого месяца не меняется`);
   if (!canAdjust(actor, owners)) fail(`Прогноз продукта «${spec.label}» корректирует его команда`);
   const reason = reasonDb(String(input?.reason ?? ""));
   const comment = String(input?.comment ?? "").replace(/\s+/g, " ").trim();
-  if (comment.length < PLAN_LIMITS.commentMin) fail("Напишите, почему меняется прогноз: одной фразой");
-  if (comment.length > PLAN_LIMITS.comment) fail(`Обоснование не длиннее ${PLAN_LIMITS.comment} знаков`);
+  // Длина в символах, как считает база: эмодзи один символ
+  const length = [...comment].length;
+  if (length < PLAN_LIMITS.commentMin) fail("Напишите, почему меняется прогноз: одной фразой");
+  if (length > PLAN_LIMITS.comment) fail(`Обоснование не длиннее ${PLAN_LIMITS.comment} знаков`);
   const raw = input?.value;
   if (raw !== null && (typeof raw !== "number" || !Number.isFinite(raw))) fail("Укажите значение числом");
   const seen = typeof input?.seen === "number" && Number.isFinite(input.seen) ? input.seen : null;
@@ -370,22 +426,23 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
     if (!lines.length) fail(`Версии ${monthLabel(month)} ещё не загружены из LRF`);
     const lbe = derive(Object.fromEntries(lines.map((l) => [l.metric, l.value])) as Values);
     const base = lbe[metric] ?? null;
-    if (base === null) fail("В LBE нет этого показателя: корректировать не от чего");
     const latest = await tx.planAdjustment.findFirst({ where: { month, product: spec.code, metric }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    // Без LBE драйвера корректировать не от чего, но снять старую корректировку можно: после повторной загрузки строка
+    // могла пропасть
+    if (base === null && !(raw === null && latest?.value != null)) fail("В LBE нет этого показателя: корректировать не от чего");
     const effective = latest?.value ?? base;
     if (!near(seen, effective)) fail("Пока вы правили, прогноз уже поменяли. Обновите страницу и проверьте цифру");
+    const unit = UNITS[metric];
     let value = raw as number | null;
     if (value !== null) {
-      const unit = UNITS[metric];
       const { min, max } = driverBounds(unit, base);
       if (value < min || value > max) fail(`Значение вне разумных границ: от ${formatPlan(min, unit)} до ${formatPlan(max, unit)}. Проверьте единицы${unit === "pct" ? ": конверсия вводится в процентах" : ""}`);
-      // Значение как в LBE: это возврат к LBE
-      if (near(value, base)) value = null;
+      // Значение как в LBE с точностью ввода (1 547 218 при LBE 1 547 218,14): это возврат к LBE
+      if (sameInput(unit, value, base)) value = null;
     }
     if (value === null && (latest?.value ?? null) === null) fail("Показатель и так как в LBE");
-    if (value !== null && near(value, effective)) fail("Значение не изменилось");
+    if (value !== null && sameInput(unit, value, effective)) fail("Значение не изменилось");
     await tx.planAdjustment.create({ data: { month, product: spec.code, metric, value, previous: effective, reason, comment, authorId: actor.personId } });
-    const unit = UNITS[metric];
     await tx.auditLog.create({
       data: {
         action: "plan.adjust",
@@ -415,11 +472,15 @@ export async function setOwners(actor: Actor, productCode: string, slugs: string
   const found = await people(clean);
   const unknown = clean.filter((s) => !found.has(s));
   if (unknown.length) fail("Нет такого сотрудника или он неактивен");
-  const map = await ownersMap();
-  const before = map[spec.code] ?? [];
-  const beforeNames = await people(before);
-  map[spec.code] = clean;
   await prisma.$transaction(async (tx) => {
+    // Карта владельцев общая на все продукты: правки двух продуктов одновременно не теряют друг друга
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plan.settings'))`;
+    const saved = (await tx.setting.findUnique({ where: { key: "plan.owners" } }))?.value as Record<string, string[]> | null;
+    const map: Record<string, string[]> = {};
+    for (const p of PRODUCTS) map[p.code] = Array.isArray(saved?.[p.code]) ? saved![p.code]!.filter((x) => typeof x === "string") : p.owners;
+    const before = map[spec.code] ?? [];
+    const beforeNames = await people(before);
+    map[spec.code] = clean;
     await tx.setting.upsert({ where: { key: "plan.owners" }, update: { value: map }, create: { key: "plan.owners", value: map } });
     await tx.auditLog.create({
       data: {

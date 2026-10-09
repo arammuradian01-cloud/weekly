@@ -21,7 +21,7 @@ export function Delta({ value, better = "up", label, className }: { value: Delta
   );
 }
 
-export type StatCompare = { label: string; value: string; delta: DeltaValue | null };
+export type StatCompare = { label: string; value: string; delta: DeltaValue | null; /** Подпись изменения для экранного диктора: «Выручка к LBE» */ deltaLabel?: string };
 
 /** Плитка ключевой цифры: подпись, крупное значение с единицей, сравнение с другими версиями */
 export function StatTile({
@@ -57,7 +57,7 @@ export function StatTile({
               <dt>{c.label}</dt>
               <dd>{c.value}</dd>
               <dd>
-                <Delta value={c.delta} better={better} label={`К ${c.label.toLowerCase()}`} />
+                <Delta value={c.delta} better={better} label={c.deltaLabel ?? `${label}, изменение: ${c.label}`} />
               </dd>
             </div>
           ))}

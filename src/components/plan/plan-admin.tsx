@@ -147,6 +147,23 @@ export function PullDrawer({
                 Всё читается. Корректировок за {preview.monthLabel}: {preview.adjustments}, они останутся.
               </p>
             )}
+            {preview.notes.map((n) => (
+              <p key={n} className="text-caption text-warning-ink">
+                {n}
+              </p>
+            ))}
+            {preview.changed.length ? (
+              <div className="sv-alert sv-alert--warning" data-testid="plan-pull-changed">
+                <p className="font-semibold">У этих корректировок поменялся LBE. Корректировка хранит значение, поэтому после загрузки проверьте её смысл</p>
+                <ul className="list-disc pl-5">
+                  {preview.changed.map((c) => (
+                    <li key={`${c.product}-${c.metric}`}>
+                      {c.product}, {c.metric.toLowerCase()}: корректировка {c.value}, LBE был {c.lbeBefore}, станет {c.lbeAfter}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div className="overflow-x-auto rounded-card border border-border">
               <table className="sv-datatable sv-datatable--stack">
                 <caption className="sr-only">Выручка продуктов по версиям из LRF</caption>
@@ -212,6 +229,14 @@ export function OwnersDrawer({ open, onOpenChange, product, owners, onSaved }: {
     if (!open || people) return;
     void planPeopleAction().then((r) => (r.ok ? setPeople(r.value) : setError(r.error)));
   }, [open, people]);
+
+  // Открыли заново: несохранённый выбор не возвращается
+  useEffect(() => {
+    if (!open) return;
+    setChosen(owners.map((o) => o.slug));
+    setQuery("");
+    setError(null);
+  }, [open, owners]);
 
   const save = async () => {
     setError(null);

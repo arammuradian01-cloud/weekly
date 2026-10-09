@@ -15,6 +15,18 @@ export type ParsedSheet = { columns: Partial<Record<Version, number>>; problem: 
 
 const text = (c: Cell) => (c === null || c === undefined ? "" : String(c).replace(/ /g, " ").trim());
 
+/**
+ * Месяц из ячейки шапки: текст «Oct_2026» или дата. Дата приходит из таблицы числом дней от 30.12.1899, если ячейку
+ * когда-нибудь переведут в формат даты
+ */
+function headMonth(c: Cell): string {
+  if (typeof c === "number" && c > 30_000 && c < 80_000) {
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(c) * 86_400_000);
+    return lrfMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`).toLowerCase();
+  }
+  return text(c).toLowerCase();
+}
+
 /** Колонки версий месяца: LBE и BUD */
 export function findColumns(grid: Grid, month: string): ParsedSheet {
   const target = lrfMonth(month).toLowerCase();
@@ -23,7 +35,7 @@ export function findColumns(grid: Grid, month: string): ParsedSheet {
   for (let r = 0; r < head.length; r++) {
     const row = head[r] ?? [];
     for (let j = 0; j < row.length; j++) {
-      if (text(row[j]).toLowerCase() !== target) continue;
+      if (headMonth(row[j]) !== target) continue;
       // Версия: в одной из строк выше или ниже в той же колонке
       for (let k = 0; k < head.length; k++) {
         const v = text(head[k]?.[j]).toUpperCase();
@@ -40,7 +52,8 @@ export function rowLabel(row: Cell[] | undefined): string {
   if (!row) return "";
   for (let j = 0; j < Math.min(10, row.length); j++) {
     const c = row[j];
-    if (typeof c === "string" && c.trim() && !/^-?[\d\s.,%]+$/.test(c.trim())) return text(c).replace(/\s+/g, " ");
+    // Числа, прочерки и ошибки формул («#REF!») названием строки не бывают
+    if (typeof c === "string" && c.trim() && !/^[-\d\s.,%]+$/.test(c.trim()) && !c.trim().startsWith("#")) return text(c).replace(/\s+/g, " ");
   }
   return "";
 }

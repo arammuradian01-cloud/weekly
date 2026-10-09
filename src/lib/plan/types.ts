@@ -59,7 +59,9 @@ export type MonthPlanView = {
   canSource: boolean;
   /** Кто я: можно ли мне корректировать хоть что-то */
   canAdjustAny: boolean;
-  /** Почему нельзя корректировать: наблюдатель или общий логин. null: дело в команде продукта */
+  /** Прошлый месяц: прогноз виден, но не меняется */
+  closed: boolean;
+  /** Почему нельзя корректировать: месяц закрыт, наблюдатель или общий логин. null: дело в команде продукта */
   adjustHint: string | null;
   source: PlanSource;
 };
@@ -68,7 +70,11 @@ export type PullPreview = {
   month: string;
   monthLabel: string;
   problems: string[];
-  /** Можно ли загружать: все листы на месте и у каждого продукта есть выручка */
+  /** Заметки, которые не мешают загрузке: лист больше лимита */
+  notes: string[];
+  /** Действующие корректировки, у которых поменялся LBE драйвера: после загрузки их стоит проверить */
+  changed: { product: string; metric: string; value: string; lbeBefore: string; lbeAfter: string }[];
+  /** Можно ли загружать: все листы на месте, строки найдены и у каждого продукта есть выручка */
   ready: boolean;
   products: {
     code: string;
@@ -77,7 +83,7 @@ export type PullPreview = {
     warnings: string[];
     revenue: { lbe: number | null; budget: number | null; before: number | null };
   }[];
-  /** Корректировок месяца: останутся после загрузки */
+  /** Показателей с корректировками за месяц: останутся после загрузки */
   adjustments: number;
 };
 
