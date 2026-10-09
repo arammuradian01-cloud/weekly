@@ -22,7 +22,7 @@ import { defaultOrder, isOverdue, overdueDays, permissions } from "@/lib/tasks/r
 import { useViewer } from "./task-fields";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
-import { OverdueNote, PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
+import { GoalTag, OverdueNote, PriorityTag, StateDot, StatusBadge } from "@/components/ui/task-badges";
 import { Chip } from "@/components/ui/primitives";
 import { useTaskActions } from "./task-actions";
 import { useOpenTask } from "./task-drawer";
@@ -49,6 +49,8 @@ function CardBody({ task, today }: { task: Task; today: string }) {
         </span>
         {overdue ? <OverdueNote days={overdueDays(task, today)} /> : null}
       </p>
+      {/* Карточка сама кнопка: метка цели без ссылки */}
+      {task.goal ? <GoalTag goal={task.goal} link={false} className="mt-2" /> : null}
     </>
   );
 }

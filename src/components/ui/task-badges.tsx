@@ -1,6 +1,7 @@
 // Метки задач и weekly по разделу 7 ТЗ. Цвет никогда не единственный носитель смысла: рядом всегда слово.
 
-import { AlertCircle } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, Target } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Badge } from "./badge";
 import type { Task } from "@/domain/types";
@@ -113,4 +114,34 @@ export function LateWaits({ task, className }: { task: Pick<Task, "waitsFor" | "
   const late = lateWaits(task);
   if (!late.length) return null;
   return <span className={cn("text-caption font-medium text-danger-ink", className)}>ждёт {late.length > 1 ? "задачи" : "задачу"} {late.join(", ")} с более поздним сроком</span>;
+}
+
+/**
+ * Метка цели (этап 31): задача работает на цель квартала. Код цели, если есть («Цель РТ-1»), полное название
+ * в подсказке. link: ссылка на цель; на карточке доски, которая сама кнопка, метка без ссылки
+ */
+export function GoalTag({ goal, link = true, className }: { goal: { id: string; title: string; code?: string | null; quarter?: string }; link?: boolean; className?: string }) {
+  const label = goal.code ? `Цель ${goal.code}` : "Цель";
+  // Имя для чтения с экрана начинается с видимого текста: «Цель РТ-1: Подписка ОСАГО»
+  const name = goal.code && goal.title.startsWith(`${goal.code}. `) ? goal.title.slice(goal.code.length + 2) : goal.title;
+  const spoken = `${label}: ${name}`;
+  const content = (
+    <>
+      <Target className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+      {label}
+    </>
+  );
+  const cls = cn("sv-badge sv-badge--info inline-flex max-w-full items-center gap-1 whitespace-nowrap", className);
+  return link ? (
+    <Link href={`/goals${goal.quarter ? `?q=${goal.quarter}` : ""}#goal-${goal.id}`} className={cn(cls, "hover:underline")} title={goal.title} aria-label={spoken}>
+      {content}
+    </Link>
+  ) : (
+    <span className={cls} title={goal.title}>
+      <span className="sr-only">{spoken}. </span>
+      <span aria-hidden="true" className="inline-flex items-center gap-1">
+        {content}
+      </span>
+    </span>
+  );
 }

@@ -46,6 +46,16 @@ const QUARTER_WORDS: Record<string, number> = { i: 1, ii: 2, iii: 3, iv: 4 };
 
 const norm = (s: string) => s.replace(/\s+/g, " ").replace(/ё/g, "е").trim().toLowerCase();
 const clean = (s: string | undefined) => (s ?? "").replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
+/** Многострочный текст (описание): переносы строк остаются, пробелы внутри строки схлопываются, пустых строк не больше одной подряд */
+const cleanLines = (s: string | undefined) =>
+  (s ?? "")
+    .replace(/[—–]/g, "-")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/[^\S\n]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 
 /** «Q4 2026», «4 кв. 2026», «IV квартал 2026», «2026-Q4»: в вид «2026-Q4». null: не квартал */
 export function normalizeQuarter(text: string): string | null {
@@ -185,7 +195,7 @@ export function readGoalsTable(input: string | string[][], defaultQuarter: strin
       code,
       quarter: q,
       title: title.slice(0, 300),
-      description: get(r, "description").slice(0, 2000),
+      description: (col.description === undefined ? "" : cleanLines(r[col.description])).slice(0, 2000),
       metric: get(r, "metric").slice(0, 500),
       base: get(r, "base").slice(0, 120),
       target: get(r, "target").slice(0, 300),

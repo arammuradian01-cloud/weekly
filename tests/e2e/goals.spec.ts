@@ -82,7 +82,7 @@ test("цель департамента, цель сектора ниже и з�
   await antonov.goto(`/tasks/${task!.number}`);
   await antonov.getByRole("button", { name: "Выбрать цель" }).click();
   const [goal] = await sql("SELECT id FROM goals WHERE title = 'Новая форма расчёта на всём трафике'");
-  await antonov.getByLabel("Цель команды или команды выше").selectOption(goal!.id as string);
+  await antonov.getByLabel("Цель команды, команды выше или личная цель").selectOption(goal!.id as string);
   await expect(antonov.getByText(/Задача работает на цель/).first()).toBeVisible();
 
   // Дерево целей: прогресс у цели сектора и у цели департамента

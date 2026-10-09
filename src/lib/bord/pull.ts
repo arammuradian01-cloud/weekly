@@ -28,6 +28,7 @@ import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { IMPORT_TRANSFER_REASON, STATUS_FROM_TABLE, STATUS_TO_TABLE, whereUpdatedFrom } from "@/lib/tasks/bord-import";
 import { slugify, uniqueSlug } from "@/lib/translit";
 import { taskSubject } from "@/lib/inbox/notify";
+import { foreignGoal } from "@/lib/goals/personal";
 import { formatLong, type IsoDate } from "@/domain/dates";
 import { ALL_LEADERS, NameIndex, normName, personNameFromBord, splitOwners } from "./names";
 import { BORD_RANGE, BordFormatError, parseBordGrid, type BordRow } from "./parse";
@@ -396,6 +397,13 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         if (co) {
           await tx.taskCoExecutor.deleteMany({ where: { taskId: task.id } });
           if (co.length) await tx.taskCoExecutor.createMany({ data: co.map((personId) => ({ taskId: task.id, personId })) });
+          // Ответственного сменили в Bord: личная цель прежнего человека из борда лидера с задачи снимается (этап 31)
+          const people = [...new Set([...(data.ownerId ? [data.ownerId as string] : []), ...co])];
+          const left = await foreignGoal(tx, { goalId: task.goalId, teamId: task.teamId, people });
+          if (left) {
+            data.goalId = null;
+            changes.push(["Цель", left, "нет: это личная цель человека, которого больше нет в задаче"]);
+          }
         }
         await tx.task.update({ where: { id: task.id }, data: { ...data, ...(extra.transfer ? { transfers: { create: [extra.transfer] } } : {}) } });
         for (const [field, before, after] of changes) await audit(row.number, "task.bord", field, before, after);

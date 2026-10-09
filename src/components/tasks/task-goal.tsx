@@ -47,7 +47,7 @@ export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
       {options ? (
         options.length ? (
           <SelectField
-            label="Цель команды или команды выше"
+            label="Цель команды, команды выше или личная цель"
             id={`goal-${task.number}`}
             value={task.goal?.id ?? ""}
             disabled={busy}

@@ -15,7 +15,7 @@ import { isClosed, isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
-import { GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
+import { GoalTag, GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import type { SavedViewDto } from "@/lib/views/service";
 import { QUICK_FILTERS, DEFAULT_PARAMS, applyListParams, hasFilters, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
@@ -80,6 +80,16 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
 
   const groups = useMemo(() => {
     if (p.group === "none") return [{ key: "all", title: "", tasks: filtered }];
+    // По цели (этап 31): цели в порядке кода, задачи без цели в конце
+    if (p.group === "goal") {
+      const goals = new Map<string, NonNullable<Task["goal"]>>();
+      for (const t of filtered) if (t.goal) goals.set(t.goal.id, t.goal);
+      const ordered = [...goals.values()].sort((a, b) => a.title.localeCompare(b.title, "ru", { numeric: true }));
+      return [
+        ...ordered.map((g) => ({ key: g.id, title: `Цель ${g.title}`, tasks: filtered.filter((t) => t.goal?.id === g.id) })),
+        { key: "no-goal", title: "Без цели", tasks: filtered.filter((t) => !t.goal) },
+      ].filter((g) => g.tasks.length > 0);
+    }
     const keyOf = (t: Task) => (p.group === "owner" ? t.owner : p.group === "direction" ? t.direction : t.priority);
     // Порядок справочника, а в конце те, кого уже выключили или скрыли: их задачи не пропадают из списка
     const known =
@@ -152,6 +162,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
             options={[
               { value: "owner", label: "По ответственному" },
               { value: "direction", label: "По направлению" },
+              { value: "goal", label: "По цели" },
               { value: "priority", label: "По приоритету" },
               { value: "none", label: "Без группировки" },
             ]}
@@ -334,6 +345,7 @@ export function TaskTable({
                         {stale ? <StaleNote className="block" /> : null}
                         <LateWaits task={t} className="block" />
                         <GreenOutsideNote task={t} today={data.today} className="block" />
+                        {t.goal ? <GoalTag goal={t.goal} className="mt-1 self-start" /> : null}
                       </div>
                     </td>
                     {showOwner ? (
@@ -403,6 +415,7 @@ export function TaskTable({
                         {isStale(t, data.today) ? <StaleNote /> : null}
                         <LateWaits task={t} />
                         <GreenOutsideNote task={t} today={data.today} />
+                        {t.goal ? <GoalTag goal={t.goal} /> : null}
                       </p>
                     </div>
                   </li>
