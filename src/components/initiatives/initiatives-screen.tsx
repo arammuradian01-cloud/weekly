@@ -22,6 +22,7 @@ import { Modal } from "@/components/ui/overlays";
 import { markSeenAction } from "@/app/(app)/me/actions";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
+import { Figures } from "@/components/ui/data";
 
 const when = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date(iso));
 /** Фраза с точкой в конце, без двойной: «...в ноябре.» и «Почему?» остаются как есть */
@@ -85,17 +86,24 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Этап 36: шкала в цифрах плитками вместо фразы */}
+      {data.active.length || data.closed.length ? (
+        <Figures
+          label="Инициативы в цифрах"
+          items={[
+            { label: "Уже делаем", value: doing.length, testId: "ini-fig-doing" },
+            { label: "Ещё ищем, как сделать", value: searching.length, testId: "ini-fig-searching" },
+            { label: "Долго ищут", value: longSearch, tone: "warning", testId: "ini-fig-long" },
+            { label: "Без новостей 2 недели", value: stale, tone: "warning", testId: "ini-fig-stale" },
+            { label: "Закрыто", value: data.closed.length, testId: "ini-fig-closed" },
+          ]}
+        />
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="text-body text-ink" aria-live="polite">
-          {data.active.length ? (
-            <>
-              Уже делаем {doing.length}, ещё ищем, как сделать, {searching.length}.
-              {longSearch ? ` Долго ищут: ${longSearch}.` : ""}
-              {stale ? ` Без новостей больше двух недель: ${stale}.` : ""}
-            </>
-          ) : (
-            "Крупных инициатив пока нет."
-          )}
+        <p className="text-body text-text-secondary" aria-live="polite">
+          {data.active.length
+            ? "Две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
+            : "Крупных инициатив пока нет."}
         </p>
         {data.canManage ? (
           <Button size="sm" className="shrink-0 self-start" onClick={() => setDialog({ kind: "edit", item: null })}>

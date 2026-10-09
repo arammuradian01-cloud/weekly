@@ -46,6 +46,8 @@ export type CeoTextInput = {
   weekNumber: number;
   numbers: string[];
   forecast?: string[];
+  /** Прогноз месяца по драйверам (этап 35) */
+  monthPlan?: string[];
   promises?: string;
   main: string;
   decisions: CeoDecisionLine[];
@@ -62,6 +64,7 @@ export function ceoReportText(r: CeoTextInput): string {
     `Отчёт за неделю ${r.weekNumber}`,
     "",
     ...block("Цифры недели", r.numbers),
+    ...(r.monthPlan?.length ? block("Прогноз месяца по драйверам", r.monthPlan) : []),
     ...(r.forecast?.length ? block("Прогноз до конца месяца", r.forecast) : []),
     ...(r.promises ? block("Обещания недели", [r.promises]) : []),
     ...block("Главное за неделю", r.main.trim() ? [r.main.trim()] : []),
