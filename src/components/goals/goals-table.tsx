@@ -53,13 +53,11 @@ export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
 
-/** Ссылка на цель уже обработана: при новом показе таблицы (смена вида, поиск) страница не прыгает к ней снова */
-let handledHash = "";
-
 export function GoalsTable({
   goals,
   all,
   onReveal,
+  hashHandled,
   groupBy,
   onEdit,
   onMark,
@@ -72,6 +70,8 @@ export function GoalsTable({
   all: Map<string, GoalNode>;
   /** Цель по ссылке скрыта фильтром или поиском: сбросить их */
   onReveal: () => void;
+  /** Ссылка на цель при открытии страницы уже обработана: таблица показана снова (смена вида, поиск), прыгать не нужно */
+  hashHandled: { current: boolean };
   groupBy: GoalGroupBy;
   onEdit: (g: GoalNode) => void;
   onMark: (g: GoalNode) => void;
@@ -95,8 +95,8 @@ export function GoalsTable({
   useEffect(() => {
     const go = (initial: boolean) => {
       const hash = window.location.hash;
-      if (initial && hash === handledHash) return;
-      handledHash = hash;
+      if (initial && hashHandled.current) return;
+      hashHandled.current = true;
       let id = "";
       try {
         id = decodeURIComponent(hash.replace(/^#goal-/, ""));
@@ -117,6 +117,7 @@ export function GoalsTable({
     const onHash = () => go(false);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -405,7 +406,8 @@ function FactEditor({ goal: g, onClose, onSaved, onRefresh }: { goal: GoalNode; 
   const [busy, setBusy] = useState(false);
   const preview = goalProgress(g.base, target, fact);
   // Тот же факт можно подтвердить, когда он устарел: это снимает «без свежего факта»
-  const factChanged = g.canFact && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "" || (g.factStale && touched));
+  // Тот же факт подтверждает цифру, если его трогали или кроме него ничего не меняют
+  const factChanged = g.canFact && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "" || (g.factStale && (touched || target.trim() === (g.target ?? ""))));
   const targetChanged = g.canEdit && target.trim() !== (g.target ?? "");
   const id = `goal-${g.id}`;
 
@@ -445,7 +447,7 @@ function FactEditor({ goal: g, onClose, onSaved, onRefresh }: { goal: GoalNode; 
         {g.canFact ? <TextInput id={`${id}-fact`} label="Факт" value={fact} onChange={(e) => {
               setFact(e.target.value);
               setTouched(true);
-            }} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? `Был: ${g.fact.value}` : undefined} autoFocus /> : null}
+            }} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? (g.factStale ? "Факт старше двух недель: если цифра та же, просто сохраните" : `Был: ${g.fact.value}`) : undefined} autoFocus /> : null}
         {g.canEdit ? <TextInput id={`${id}-target`} label="Целевое значение" value={target} onChange={(e) => setTarget(e.target.value)} maxLength={300} autoComplete="off" hint={g.base ? `База: ${g.base}` : undefined} /> : null}
         {g.canFact ? <TextInput id={`${id}-note`} label="Комментарий к факту" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} autoComplete="off" placeholder="Откуда цифра или что изменилось" /> : null}
       </div>

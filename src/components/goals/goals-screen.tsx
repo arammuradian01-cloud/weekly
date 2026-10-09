@@ -4,7 +4,7 @@
 // без задач, без свежего факта. Ниже цели таблицей (группы по командам или людям, факт и целевое значение в строке)
 // или деревом от целей департамента до команд и людей. Внизу задачи без цели по командам
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
@@ -65,6 +65,8 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
+  // Ссылка на цель обрабатывается один раз за открытие страницы
+  const hashHandled = useRef(false);
   const run: Run = (fn, ok) =>
     start(async () => {
       const r = await fn();
@@ -143,6 +145,7 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
                     setFilter("all");
                     setQuery("");
                   }}
+                  hashHandled={hashHandled}
                   groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
               ) : (
                 <p className="px-5 py-6 text-body text-text-secondary">Под условия ничего не подходит: смените фильтр или поиск.</p>

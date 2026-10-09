@@ -101,8 +101,8 @@ export function goalNumbers(
   if (!t) return null;
   let f = fact ? parseGoalNumber(fact) : null;
   // Множитель написан только у части значений. Значение без множителя поднимается до него, только если как есть оно
-  // меньше опорного в тысячу раз и больше, а с множителем попадает в тысячу раз от опорного: «141» при «150 млн» это
-  // 141 млн, а «40» при «1,5 тыс» это 40, «14 625 000» при «29,25 млн» уже в рублях
+  // меньше опорного в тысячу раз и больше, а с множителем попадает в десять раз от опорного: «141» при «150 млн» это
+  // 141 млн, а «40» при «1,5 тыс» это 40, «1 200» при «1,5 млн» это 1 200, «14 625 000» при «29,25 млн» уже в рублях
   const scaled = [b, t, f].filter((x): x is GoalNumber => !!x && x.unit === "plain" && x.scale > 1);
   const scales = [...new Set(scaled.map((x) => x.scale))];
   if (scales.length === 1) {
@@ -111,7 +111,7 @@ export function goalNumbers(
     const lift = (x: GoalNumber | null) => {
       if (!x || x.unit !== "plain" || x.scale !== 1 || x.signed || x.value === 0 || ref === 0) return x;
       const v = Math.abs(x.value);
-      return v * 1000 < ref && v * k * 1000 >= ref && v * k <= ref * 1000 ? { ...x, value: x.value * k, scale: k } : x;
+      return v * 1000 < ref && v * k * 10 >= ref && v * k <= ref * 10 ? { ...x, value: x.value * k, scale: k } : x;
     };
     b = lift(b);
     t = lift(t)!;
@@ -119,8 +119,8 @@ export function goalNumbers(
   }
   const target2 = resolve(t, b);
   if (!target2) return null;
-  // Факт сдвигом («+1 п.п.») тоже от базы; если сдвиг не посчитать, факта нет
-  const fact2 = f ? resolve(f, b) : null;
+  // Факт в п.п. («+1 п.п.») это сдвиг от базы. Факт со знаком («-2 млн», «+12%») это значение: убыток или рост
+  const fact2 = f ? (f.pp ? resolve(f, b) : { ...f, signed: false }) : null;
   return { base: b, target: target2, fact: fact2 };
 }
 

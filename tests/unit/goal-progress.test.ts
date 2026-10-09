@@ -80,6 +80,15 @@ describe("второй круг проверки", () => {
     expect(goalProgress(null, "29,25 млн", "14,6")?.share).toBeCloseTo(14.6 / 29.25, 9);
   });
 
+  it("третий круг: факт со знаком это значение, большой целевой не поднимает маленький факт", () => {
+    expect(factProblem(null, "5 млн", "-2 млн")).toBeNull();
+    expect(goalProgress(null, "5 млн", "-2 млн")?.share).toBeCloseTo(-0.4, 9);
+    expect(goalProgress("2 млн", "5 млн", "-1 млн")?.share).toBeCloseTo(-1, 9);
+    expect(goalProgress(null, "15%", "+12%")?.share).toBeCloseTo(0.8, 9);
+    expect(goalProgress(null, "1,5 млн полисов", "1 200")?.share).toBeCloseTo(1200 / 1_500_000, 12);
+    expect(factProblem(null, "150 млн", "1")).toMatch(/больше чем в 1000 раз/);
+  });
+
   it("факт в п.п. это тоже сдвиг от базы", () => {
     expect(goalProgress("13%", "+2 п.п.", "+1 п.п.")?.share).toBeCloseTo(0.5, 9);
   });
