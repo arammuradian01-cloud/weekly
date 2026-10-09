@@ -118,7 +118,7 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
           />
           <Search className="pointer-events-none absolute right-3 top-[18px] h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
           {!searchOpen ? null : found.length ? (
-            <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-control border border-border bg-surface shadow-[var(--shadow-menu)]" aria-label="Найденные люди">
+            <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-control border border-border bg-surface shadow-menu" aria-label="Найденные люди">
               {found.map((f) => (
                 <li key={f.slug}>
                   <button type="button" className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-field" onMouseDown={(e) => e.preventDefault()} onClick={() => open(f.slug)}>
