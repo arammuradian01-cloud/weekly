@@ -6,7 +6,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrototype } from "@/domain/store";
-import { applyPullAction, planPeopleAction, previewPullAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
+import { applyFactsAction, applyPullAction, planPeopleAction, previewFactsAction, previewPullAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
+import type { FactsPreview } from "@/lib/plan/processes";
+import { FACT_METRICS } from "@/lib/plan/facts";
 import { addMonths, monthLabel } from "@/lib/forecast/codes";
 import { formatPlan } from "@/lib/plan/format";
 import { productOf } from "@/lib/plan/spec";
@@ -14,7 +16,7 @@ import type { PlanPerson, PullPreview } from "@/lib/plan/types";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlays";
 import { FormError } from "@/components/ui/field";
-import { SelectField, TextInput } from "@/components/ui/primitives";
+import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Delta } from "@/components/ui/data";
 import { delta } from "./plan-ui";
 
@@ -281,6 +283,140 @@ export function OwnersDrawer({ open, onOpenChange, product, owners, onSaved }: {
             </label>
           ))}
         </fieldset>
+      </div>
+    </Drawer>
+  );
+}
+
+const FACT_EXAMPLE = ["Дата\tПродукт\tПродажи\tВыручка, млн\tПромо-маржа, млн", "01.10.2026\tОСАГО\t13450\t15,8\t5,9", "01.10.2026\tКАСКО\t2100\t3,2\t1,1"].join("\n");
+
+/**
+ * Факт месяца по дням (этап 35): вставка из отчёта аналитиков в два шага, как загрузка LRF: проверить и загрузить.
+ * Тот же день продукта и показатель при повторной загрузке заменяется
+ */
+export function FactsDrawer({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const router = useRouter();
+  const { notify } = usePrototype();
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<FactsPreview | null>(null);
+  const [checked, setChecked] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"check" | "load" | null>(null);
+
+  const check = async () => {
+    setError(null);
+    setPreview(null);
+    setBusy("check");
+    const r = await previewFactsAction(text);
+    setBusy(null);
+    if (!r.ok) return setError(r.error);
+    setPreview(r.value);
+    setChecked(text);
+  };
+
+  const load = async () => {
+    setError(null);
+    setBusy("load");
+    const r = await applyFactsAction(text);
+    setBusy(null);
+    if (!r.ok) return setError(r.error);
+    notify(`Факт загружен: значений ${r.value.saved}${r.value.replaced ? `, заменено ${r.value.replaced}` : ""}`);
+    onOpenChange(false);
+    setText("");
+    setPreview(null);
+    router.refresh();
+  };
+
+  return (
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      wide
+      title="Факт по дням"
+      description="Продажи, выручка и промо-маржа продуктов за день из отчёта аналитиков. Скопируйте строки из таблицы вместе с заголовками и вставьте сюда"
+      footer={
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => void check()} loading={busy === "check"} disabled={busy !== null || !text.trim()} data-testid="plan-facts-check">
+            Проверить
+          </Button>
+          <Button onClick={() => void load()} loading={busy === "load"} disabled={busy !== null || !preview?.ready || checked !== text} data-testid="plan-facts-load">
+            Загрузить
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 py-4">
+        <TextArea
+          id="plan-facts-text"
+          label="Строки отчёта"
+          rows={8}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setPreview(null);
+          }}
+          placeholder={FACT_EXAMPLE}
+          className="font-mono"
+        />
+        <div className="flex flex-col gap-1 text-caption text-text-secondary">
+          <p>Первая строка: «Дата», «Продукт» и колонки показателей ({FACT_METRICS.map((m) => `«${m.label}»`).join(", ")}). Можно и узким видом: «Дата», «Продукт», «Показатель», «Значение».</p>
+          <p>Дата вида 01.10.2026. Продукт как в прогнозе: ОСАГО, КАСКО, Ипотечное страхование, ВЗР, Несчастный случай, Имущество, Клещ, Вклады. Деньги в миллионах; если в рублях, напишите в заголовке «Выручка, руб».</p>
+        </div>
+        <FormError message={error ?? undefined} />
+        {preview ? (
+          <div className="flex flex-col gap-3" data-testid="plan-facts-preview">
+            {preview.problems.length ? (
+              <div className="sv-alert sv-alert--danger" role="alert">
+                <div className="sv-alert__body">
+                  <p className="font-semibold">Загрузить нельзя</p>
+                  <ul className="list-disc pl-5">
+                    {preview.problems.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            ) : (
+              <p className="sv-alert sv-alert--success">
+                Строк {preview.rows}, значений {preview.values}
+                {preview.replaced ? `, из них заменят уже загруженные: ${preview.replaced}` : ""}.
+              </p>
+            )}
+            {preview.products.length ? (
+              <div className="overflow-x-auto">
+                <table className="sv-datatable sv-datatable--stack">
+                  <caption className="sr-only">Что загрузится по продуктам</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Продукт</th>
+                      <th scope="col">Дни</th>
+                      {FACT_METRICS.map((m) => (
+                        <th key={m.key} scope="col" className="is-num">
+                          {m.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.products.map((p) => (
+                      <tr key={p.code}>
+                        <td className="is-wide">{p.label}</td>
+                        <td data-label="Дни">
+                          {p.days} {p.days === 1 ? `(${p.from.split("-").reverse().join(".")})` : `(${p.from.split("-").reverse().join(".")} - ${p.to.split("-").reverse().join(".")})`}
+                        </td>
+                        {FACT_METRICS.map((m) => (
+                          <td key={m.key} className="is-num" data-label={m.label}>
+                            {p.totals[m.key] === undefined ? "нет" : formatPlan(p.totals[m.key]!, m.unit)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </Drawer>
   );

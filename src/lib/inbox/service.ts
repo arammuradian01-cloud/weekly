@@ -79,6 +79,8 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
     if (r.kind === "THANKS" || r.kind === "MEETING") return !!r.actorId && top.has(r.actorId);
     // Встречи один на один (этап 28) только при личном входе: по общему логину профиль выбирают сами
     if (r.kind === "ONE_ON_ONE") return false;
+    // Прогноз месяца (этап 35) корректируют только при личном входе: общему логину событие не к чему
+    if (r.kind === "PLAN") return false;
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;

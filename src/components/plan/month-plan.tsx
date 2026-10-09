@@ -11,13 +11,14 @@ import { productOf } from "@/lib/plan/spec";
 import { planLabel, summarize, type PlanInput, type TopSummary } from "@/lib/plan/summary";
 import type { MonthPlanView, PlanPerson } from "@/lib/plan/types";
 import { monthLabel } from "@/lib/forecast/codes";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Delta, Module, StatTile, Stats } from "@/components/ui/data";
 import { Segmented } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { HEADLINES, delta, when, type Headline } from "./plan-ui";
 import { ProductCard } from "./product-card";
-import { OwnersDrawer, PullDrawer } from "./plan-admin";
+import { FactsDrawer, OwnersDrawer, PullDrawer } from "./plan-admin";
+import { pace } from "@/lib/plan/facts";
 
 export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const router = useRouter();
@@ -26,6 +27,7 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const [selected, setSelected] = useState(() => initial.products.find((p) => p.canAdjust)?.code ?? initial.products[0]?.code ?? "");
   const [pullOpen, setPullOpen] = useState(false);
   const [ownersOpen, setOwnersOpen] = useState(false);
+  const [factsOpen, setFactsOpen] = useState(false);
 
   const input: PlanInput = useMemo(() => ({ products: view.products.map((p) => ({ code: p.code, lbe: p.lbe, budget: p.budget, drivers: p.drivers })), groups: view.groups }), [view]);
   const summary = useMemo(() => summarize(input), [input]);
@@ -38,6 +40,27 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   };
 
   const setOwners = (owners: PlanPerson[]) => setView((v) => ({ ...v, products: v.products.map((p) => (p.code === selected ? { ...p, owners } : p)) }));
+
+  // Плитка факта (этап 35): выручка с начала месяца по продуктам, где загружен факт, против прогноза тех же продуктов
+  const factTile = useMemo(() => {
+    const parts = view.products
+      .map((p) => {
+        const s = summary.products.find((x) => x.code === p.code);
+        const x = s ? pace(p.facts?.daily.revenue ?? [], view.month, s.revenue.forecast) : null;
+        return x && s ? { label: productOf(p.code)?.label ?? p.code, x, forecast: s.revenue.forecast } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+    if (!parts.length) return null;
+    const sum = (f: (p: (typeof parts)[number]) => number | null) => parts.reduce<number | null>((acc, p) => (acc === null || f(p) === null ? null : acc + f(p)!), 0);
+    return {
+      products: parts.map((p) => p.label),
+      elapsed: Math.max(...parts.map((p) => p.x.elapsed)),
+      toDate: sum((p) => p.x.toDate)!,
+      planToDate: sum((p) => p.x.planToDate),
+      runRate: sum((p) => p.x.runRate)!,
+      forecast: sum((p) => p.forecast),
+    };
+  }, [view, summary]);
 
   const pulled = view.source.pulledAt ? `Бюджет и LBE из LRF загружены ${when(view.source.pulledAt)}${view.source.pulledBy ? `, загрузка: ${view.source.pulledBy}` : ""}` : "Бюджет и LBE ещё не загружены";
 
@@ -54,11 +77,23 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
             {pulled}. {view.source.mode === "imitation" ? "Цифры из имитации LRF для проверки." : "LRF ресурс только читает."}
           </p>
         </div>
-        {view.canPull ? (
-          <Button variant="secondary" onClick={() => setPullOpen(true)} data-testid="plan-pull-open">
-            Загрузить из LRF
-          </Button>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          {view.canExport && !view.empty ? (
+            <a href={`/forecast/export?month=${view.month}`} className={buttonClass("ghost")} data-testid="plan-export" download>
+              Выгрузить в Excel
+            </a>
+          ) : null}
+          {view.canFacts ? (
+            <Button variant="secondary" onClick={() => setFactsOpen(true)} data-testid="plan-facts-open">
+              Загрузить факт
+            </Button>
+          ) : null}
+          {view.canPull ? (
+            <Button variant="secondary" onClick={() => setPullOpen(true)} data-testid="plan-pull-open">
+              Загрузить из LRF
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {view.empty ? (
@@ -83,6 +118,19 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
                 />
               );
             })}
+            {factTile ? (
+              <StatTile
+                testId="plan-stat-fact"
+                label="Выручка, факт с начала месяца"
+                value={formatPlan(factTile.toDate, "mln")}
+                unit="млн ₽"
+                compare={[
+                  { label: "Прогноз на дату", deltaLabel: "Факт к прогнозу на дату", value: formatPlan(factTile.planToDate, "mln"), delta: delta(factTile.toDate, factTile.planToDate, "mln") },
+                  { label: "Месяц при этом темпе", deltaLabel: "Темп к прогнозу месяца", value: formatPlan(factTile.runRate, "mln"), delta: delta(factTile.runRate, factTile.forecast, "mln") },
+                ]}
+                note={`По продуктам: ${factTile.products.join(", ")}. По ${factTile.elapsed} число, темп равномерный по дням`}
+              />
+            ) : null}
           </Stats>
 
           <Module
@@ -92,7 +140,7 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
             actions={<Segmented label="Показатель" value={headline} onChange={setHeadline} options={HEADLINES.map((h) => ({ value: h.key, label: h.label }))} />}
             flush
           >
-            <ProductsTable top={summary.top} productRows={summary.products} headline={headline} selected={selected} onPick={pick} total={summary.total[headline]} />
+            <ProductsTable top={summary.top} productRows={summary.products} headline={headline} selected={selected} onPick={pick} total={summary.total[headline]} waiting={new Set(view.products.filter((p) => p.review?.state === "waiting").map((p) => p.code))} />
           </Module>
 
           <div className="flex flex-col gap-3">
@@ -118,6 +166,7 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
       )}
 
       {view.canPull ? <PullDrawer open={pullOpen} onOpenChange={setPullOpen} month={view.month} serviceEmail={view.source.serviceEmail} mode={view.source.mode} sourceId={view.source.sourceId} canSource={view.canSource} /> : null}
+      {view.canFacts ? <FactsDrawer open={factsOpen} onOpenChange={setFactsOpen} /> : null}
       {view.canOwners && product ? <OwnersDrawer key={product.code} open={ownersOpen} onOpenChange={setOwnersOpen} product={product.code} owners={product.owners} onSaved={setOwners} /> : null}
     </div>
   );
@@ -130,6 +179,7 @@ function ProductsTable({
   selected,
   onPick,
   total,
+  waiting,
 }: {
   top: TopSummary[];
   productRows: ReturnType<typeof summarize>["products"];
@@ -137,6 +187,8 @@ function ProductsTable({
   selected: string;
   onPick: (code: string) => void;
   total: ReturnType<typeof summarize>["total"][Headline];
+  /** Продукты, где после загрузки LBE прогноз ещё не проверен (этап 35) */
+  waiting: Set<string>;
 }) {
   const label = HEADLINES.find((h) => h.key === headline)!.label;
   const line = (key: string, name: string, t: { budget: number | null; lbe: number | null; forecast: number | null }, adjusted: number, kind: "product" | "group" | "sub" | "total", code?: string) => {
@@ -156,9 +208,16 @@ function ProductsTable({
       >
         <td className="is-wide">
           {pickable ? (
-            <button type="button" className="text-left font-semibold text-ink hover:underline focus-visible:underline" onClick={(e) => (e.stopPropagation(), onPick(code!))} aria-pressed={code === selected}>
-              {name}
-            </button>
+            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+              <button type="button" className="text-left font-semibold text-ink hover:underline focus-visible:underline" onClick={(e) => (e.stopPropagation(), onPick(code!))} aria-pressed={code === selected}>
+                {name}
+              </button>
+              {waiting.has(code!) ? (
+                <span className="sv-tag sv-tag--risk" data-testid={`plan-waiting-${code}`}>
+                  ждёт проверки
+                </span>
+              ) : null}
+            </span>
           ) : (
             <span className={cn(kind !== "sub" && "sv-datatable__strong")}>{name}</span>
           )}

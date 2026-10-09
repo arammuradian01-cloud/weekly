@@ -154,3 +154,11 @@
   .sv-org__grid { grid-template-columns: 1fr; }
   .sv-tree-list .sv-tree-list { padding-left: var(--space-3); margin-left: 12px; }
 }
+
+/* Факт месяца по дням в карточке продукта (этап 35): три показателя рядом, на телефоне друг под другом, под ними график */
+.sv-plan-facts { display: flex; flex-direction: column; gap: var(--space-3); }
+.sv-plan-facts__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); margin: 0; }
+.sv-plan-facts__item { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); min-width: 0; }
+.sv-plan-facts__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-plan-facts__value { margin: 0; font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-bold); color: var(--color-text); font-variant-numeric: tabular-nums; }
+.sv-plan-facts__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); margin: 0; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }

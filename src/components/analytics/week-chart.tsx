@@ -22,6 +22,10 @@ export type WeekChartProps = {
   tip: (index: number) => string[];
   /** Колонки таблицы: заголовок и значение по неделе */
   columns: { label: string; value: (index: number) => string | number }[];
+  /** Не недели, а другие периоды (этап 35: дни месяца): заголовок колонки таблицы и подсказки */
+  period?: { header: string; tip: (w: ChartWeek) => string };
+  /** Подпись оси у каждого n-го периода и у последнего: у 31 дня подписи иначе слипаются */
+  labelEvery?: number;
 };
 
 /** Ширина по умолчанию до первого замера: дальше график рисуется в настоящую ширину, текст не растягивается */
@@ -40,7 +44,7 @@ export function niceMax(value: number): number {
   return 10 * pow;
 }
 
-export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns }: WeekChartProps) {
+export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1 }: WeekChartProps) {
   const [active, setActive] = useState<number | null>(null);
   // Касание пальцем: подсказка по нажатию (click), а не по началу жеста, чтобы прокрутка страницы её не дёргала
   const touch = useRef(false);
@@ -126,7 +130,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
             <caption className="sr-only">{title}</caption>
             <thead>
               <tr>
-                <th scope="col">Неделя</th>
+                <th scope="col">{period?.header ?? "Неделя"}</th>
                 {columns.map((c) => (
                   <th key={c.label} scope="col" className="is-num">
                     {c.label}
@@ -184,11 +188,13 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
                 {unit}
               </text>
             ) : null}
-            {weeks.map((w, i) => (
-              <text key={w.key} className="sv-chart__axis" x={cx(i)} y={H - 6} textAnchor="middle">
-                {w.current && slot >= 60 ? `${w.number}, идёт` : w.number}
-              </text>
-            ))}
+            {weeks.map((w, i) =>
+              i % labelEvery === 0 || i === weeks.length - 1 ? (
+                <text key={w.key} className="sv-chart__axis" x={cx(i)} y={H - 6} textAnchor="middle">
+                  {w.current && slot >= 60 ? `${w.number}, идёт` : w.number}
+                </text>
+              ) : null,
+            )}
             {/* Зона наведения шире столбика: вся колонка недели */}
             {weeks.map((w, i) => (
               <rect
@@ -207,7 +213,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
           </svg>
           {active !== null ? (
             <div ref={tipRef} className="sv-tooltip sv-tooltip--top sv-chart__tip" style={{ left: tipLeft(cx(active)) }} aria-hidden="true">
-              <b className="block">Неделя {weeks[active].number}{weeks[active].current ? ", идёт" : ""}</b>
+              <b className="block">{period ? period.tip(weeks[active]) : `Неделя ${weeks[active].number}${weeks[active].current ? ", идёт" : ""}`}</b>
               {tip(active).map((t) => (
                 <span key={t} className="block">
                   {t}
