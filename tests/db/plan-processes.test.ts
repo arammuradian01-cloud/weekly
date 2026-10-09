@@ -94,12 +94,19 @@ describe("загрузка LBE: снимок и событие командам 
     expect(sharedAdmin.items.some((i) => i.subject.startsWith("plan:"))).toBe(false);
   });
 
-  it("человек проверил или скорректировал прогноз: его событие разобрано, у остальных осталось", async () => {
+  it("событие разобрано, когда проверены все продукты человека; один продукт из восьми напоминание не снимает", async () => {
     await load();
     await proc.checkPlan(await actor.fatyanov(), month, "kasko");
     await adjust(await actor.golovkin(), "osago", "crWeb", 0.05);
-    const open = await prisma.inboxEvent.findMany({ where: { kind: "PLAN", doneAt: null }, include: { recipient: { select: { slug: true } } } });
-    expect(open.map((e) => e.recipient.slug).sort()).toEqual(["cheychenets", "loginova", "reva"]);
+    const openSlugs = async () => (await prisma.inboxEvent.findMany({ where: { kind: "PLAN", doneAt: null }, include: { recipient: { select: { slug: true } } } })).map((e) => e.recipient.slug).sort();
+    expect(await openSlugs()).toEqual(["cheychenets", "loginova", "reva"]);
+    // Рева проверил Вклады: у Чейченца проверено всё, у Ревы ещё ждёт RED
+    await proc.checkPlan(await actor.reva(), month, "deposits");
+    expect(await openSlugs()).toEqual(["loginova", "reva"]);
+    for (const code of ["red-mortgage", "red-travel", "red-accident", "red-property"]) await proc.checkPlan(await actor.loginova(), month, code);
+    expect(await openSlugs()).toEqual(["loginova", "reva"]);
+    await proc.checkPlan(await actor.reva(), month, "red-tick");
+    expect(await openSlugs()).toEqual([]);
   });
 
   it("прошлый месяц: перезагрузка без событий, проверка не просится", async () => {

@@ -101,8 +101,8 @@ function delimiterOf(line: string): Delimiter {
   return ",";
 }
 
-/** Строка CSV с кавычками: «"15,8"» остаётся одной ячейкой, «""» внутри кавычек это кавычка */
-export function splitRow(line: string, delimiter: Delimiter): string[] {
+/** Строка CSV с кавычками: «"15,8"» остаётся одной ячейкой, «""» внутри кавычек это кавычка. open: кавычка не закрыта */
+export function splitRow(line: string, delimiter: Delimiter): string[] & { open?: boolean } {
   const out: string[] = [];
   let cell = "";
   let quoted = false;
@@ -123,7 +123,7 @@ export function splitRow(line: string, delimiter: Delimiter): string[] {
     } else cell += ch;
   }
   out.push(cell);
-  return out;
+  return Object.assign(out, { open: quoted });
 }
 
 const firstDayBack = (today: string, months: number) => {
@@ -155,11 +155,13 @@ export function parseFacts(text: string, today: string): ParsedFacts {
   if (dateCol < 0 || productCol < 0 || (!long && !wide.length)) {
     return { entries, problems: ["Первая строка: заголовки «Дата», «Продукт» и «Показатель» со «Значением» или колонки «Продажи», «Выручка, млн», «Промо-маржа, млн»"], rows: lines.length - 1 };
   }
-  // Запятая-разделитель и запятая в заголовке «Выручка, млн» или в дробях «15,8» дают сдвиг колонок без ошибки. Поэтому при
-  // запятой каждая колонка заголовка должна быть понятна, а в строках не больше колонок, чем в заголовке
-  const known = (h: string, i: number) => i === dateCol || i === productCol || i === metricCol || i === valueCol || !!metricOf(h);
-  if (delimiter === "," && titles.some((h, i) => !known(h, i))) {
-    return { entries, problems: ["Заголовки через запятую не разобраны: в них есть запятая или незнакомая колонка. Скопируйте строки прямо из таблицы или разделите точкой с запятой"], rows: lines.length - 1 };
+  // Запятая-разделитель вместе с запятой в заголовке «Выручка, млн» или в дробях «15,8» сдвигает колонки без ошибки. Поэтому
+  // через запятую принимается только узкий вид из четырёх колонок: лишняя запятая в значении даёт лишнюю колонку и ошибку
+  if (delimiter === ",") {
+    const used = titles.filter((h) => h !== "").length;
+    if (!long || used !== 4 || titles.slice(0, 4).some((h) => h === "")) {
+      return { entries, problems: ["Через запятую загружается только узкий вид: «Дата», «Продукт», «Показатель», «Значение». Широкую таблицу скопируйте прямо из таблицы или разделите точкой с запятой"], rows: lines.length - 1 };
+    }
   }
   const from = firstDayBack(today, FACT_LIMITS.monthsBack);
   const seen = new Set<string>();
@@ -185,6 +187,10 @@ export function parseFacts(text: string, today: string): ParsedFacts {
   for (let r = 1; r < lines.length; r++) {
     const row = r + 1;
     const cells = split(lines[r]!);
+    if (cells.open) {
+      problems.push(`Строка ${row}: кавычка не закрыта`);
+      continue;
+    }
     if (cells.length > titles.length && cells.slice(titles.length).some((c) => c.trim() !== "")) {
       problems.push(`Строка ${row}: колонок больше, чем в заголовке. Похоже, дробь записана через запятую при разделителе-запятой`);
       continue;

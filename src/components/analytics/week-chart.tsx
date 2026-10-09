@@ -163,7 +163,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
         </div>
       ) : (
         <div ref={plot} className="sv-chart__plot" onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)} onPointerDown={(e) => (touch.current = e.pointerType !== "mouse")}>
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}. Подробности по неделям в таблице: кнопка «Таблицей»`}>
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}. Подробности ${period ? `по периодам (${period.header.toLowerCase()})` : "по неделям"} в таблице: кнопка «Таблицей»`}>
             {ticks.map((t) => (
               <g key={t}>
                 <line className="sv-chart__grid" x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} />

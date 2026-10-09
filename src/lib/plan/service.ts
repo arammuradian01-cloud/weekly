@@ -22,7 +22,7 @@ import { GROUPS, PRODUCTS, SHEETS, UNITS, metricLabel, productOf, type MetricKey
 import { formatPlan, driverBounds } from "./format";
 import { summarize, type Drivers, type PlanInput } from "./summary";
 import { notify } from "@/lib/inbox/notify";
-import { factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
+import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PullPreview } from "./types";
@@ -490,8 +490,8 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
     if (value === null && (latest?.value ?? null) === null) fail("Показатель и так как в LBE");
     if (value !== null && sameInput(unit, value, effective)) fail("Значение не изменилось");
     await tx.planAdjustment.create({ data: { month, product: spec.code, metric, value, previous: effective, reason, comment, authorId: actor.personId } });
-    // Этап 35: человек взялся за прогноз, его событие «Проверьте прогноз» разобрано
-    await tx.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
+    // Этап 35: у кого из команды продукта теперь проверено всё, событие «Проверьте прогноз» разобрано
+    await closePlanReminders(tx, month, spec.code, await ownersMap());
     await tx.auditLog.create({
       data: {
         action: "plan.adjust",

@@ -26,7 +26,9 @@ function sheet(wb: ExcelJS.Workbook, name: string, cols: Col[], rows: unknown[][
 
 /** Значение для ячейки: доли как доли (формат процента), остальное как есть */
 const cell = (v: number | null | undefined) => (v === null || v === undefined || !Number.isFinite(v) ? null : v);
-const fmtOf = (unit: PlanUnit) => (unit === "pct" ? "0.00%" : unit === "count" ? "#,##0" : unit === "rub" ? "#,##0.00" : "#,##0.0");
+/** Миллионы с необязательными знаками: 598,7 и 0,072 у мелкого продукта */
+const MLN = "#,##0.0##";
+const fmtOf = (unit: PlanUnit) => (unit === "pct" ? "0.00%" : unit === "count" ? "#,##0" : unit === "rub" ? "#,##0.00" : MLN);
 const unitName = (unit: PlanUnit) => (unit === "pct" ? "%" : unit === "count" ? "шт." : unit === "rub" ? "руб." : "млн руб.");
 
 export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Buffer; file: string; rows: number }> {
@@ -70,11 +72,11 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
       { header: "Продукт", width: 26 },
       { header: "Уровень", width: 20 },
       { header: "Показатель", width: 24 },
-      { header: "Бюджет", width: 14, fmt: "#,##0.0" },
-      { header: "LBE", width: 14, fmt: "#,##0.0" },
-      { header: "Прогноз", width: 14, fmt: "#,##0.0" },
-      { header: "Прогноз минус LBE", width: 18, fmt: "#,##0.0" },
-      { header: "Прогноз минус бюджет", width: 20, fmt: "#,##0.0" },
+      { header: "Бюджет", width: 14, fmt: MLN },
+      { header: "LBE", width: 14, fmt: MLN },
+      { header: "Прогноз", width: 14, fmt: MLN },
+      { header: "Прогноз минус LBE", width: 18, fmt: MLN },
+      { header: "Прогноз минус бюджет", width: 20, fmt: MLN },
       { header: "Корректировок", width: 14 },
     ],
     top,
@@ -155,16 +157,16 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
   );
   for (const f of facts) {
     const r = wsFacts.addRow([f.day, planLabel(f.product), FACT_METRICS.find((m) => m.key === f.metric)?.label ?? f.metric, f.value, f.loadedBy]);
-    r.getCell(4).numFmt = f.metric === "units" ? "#,##0" : "#,##0.000";
+    r.getCell(4).numFmt = f.metric === "units" ? "#,##0" : MLN;
   }
-  const paceRows: unknown[][] = [];
+  const paceRows: { fmt: string; row: unknown[] }[] = [];
   for (const p of summary.products) {
     for (const m of FACT_METRICS) {
       const daily = facts.filter((f) => f.product === p.code && f.metric === m.key).map((f) => ({ day: f.day.toISOString().slice(0, 10), value: f.value }));
       const forecast = m.key === "units" ? p.units.forecast : m.key === "revenue" ? p.revenue.forecast : p.promoMargin.forecast;
       const x = pace(daily, month, forecast);
       if (!x) continue;
-      paceRows.push([productOf(p.code)!.label, m.label, x.elapsed, x.withData, cell(x.toDate), cell(forecast), cell(x.planToDate), cell(x.execution), cell(x.runRate), cell(x.gap)]);
+      paceRows.push({ fmt: m.unit === "count" ? "#,##0" : MLN, row: [productOf(p.code)!.label, m.label, x.elapsed, x.withData, cell(x.toDate), cell(forecast), cell(x.planToDate), cell(x.execution), cell(x.runRate), cell(x.gap)] });
     }
   }
   if (paceRows.length) {
@@ -176,15 +178,20 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
         { header: "Показатель", width: 22 },
         { header: "Прошло дней", width: 12 },
         { header: "Дней с фактом", width: 14 },
-        { header: "Факт с начала месяца", width: 20, fmt: "#,##0.0" },
-        { header: "Прогноз месяца", width: 16, fmt: "#,##0.0" },
-        { header: "Прогноз на дату", width: 16, fmt: "#,##0.0" },
+        { header: "Факт с начала месяца", width: 20 },
+        { header: "Прогноз месяца", width: 16 },
+        { header: "Прогноз на дату", width: 16 },
         { header: "Выполнение на дату", width: 18, fmt: "0.0%" },
-        { header: "Месяц при этом темпе", width: 20, fmt: "#,##0.0" },
-        { header: "Темп минус прогноз", width: 18, fmt: "#,##0.0" },
+        { header: "Месяц при этом темпе", width: 20 },
+        { header: "Темп минус прогноз", width: 18 },
       ],
-      paceRows,
+      [],
     );
+    // Продажи целыми, деньги в миллионах с нужными знаками
+    for (const { fmt, row } of paceRows) {
+      const r = wsPace.addRow(row);
+      for (const c of [5, 6, 7, 9, 10]) r.getCell(c).numFmt = fmt;
+    }
     wsPace.getCell("A1").note = "Темп считается равномерно по дням месяца";
   }
 

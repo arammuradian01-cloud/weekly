@@ -15,7 +15,7 @@ import { PRODUCTS, UNITS, metricLabel, productOf, type MetricKey } from "./spec"
 import { planLabel, summarize, type Drivers, type PlanInput, type PlanSummary, type Triple } from "./summary";
 import { parseFacts, type FactMetric } from "./facts";
 import { canAdjustPlan, currentMonth, isMonth, monthPlan, ownersMap, personalPlanActor, planMonthOrFail } from "./service";
-import { lastPullAt } from "./status";
+import { closePlanReminders, lastPullAt } from "./status";
 import { TOP_TEAM } from "@/lib/org/scope";
 import type { Values } from "./lrf";
 import type { CompareMetric, CompareRow, CompareView, MonthPlanView, VersionOption } from "./types";
@@ -60,8 +60,8 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
     const check = await tx.planCheck.findFirst({ where: { month, product: spec.code, at: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { at: "desc" } });
     if (check) fail(`Прогноз уже отмечен проверенным: ${check.author.fullName}, ${stamp(check.at)}`);
     await tx.planCheck.create({ data: { month, product: spec.code, authorId: actor.personId } });
-    // Человек взялся за прогноз: его событие «Проверьте прогноз» разобрано
-    await tx.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
+    // У кого из команды продукта теперь проверено всё, событие «Проверьте прогноз» разобрано
+    await closePlanReminders(tx, month, spec.code, await ownersMap());
     await tx.auditLog.create({
       data: {
         action: "plan.check",

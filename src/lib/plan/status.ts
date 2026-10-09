@@ -2,6 +2,7 @@
 // месяца по дням. Только чтение из базы, без прав: права проверяет вызывающий
 
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { getSetting } from "@/lib/settings";
 import { FACT_METRICS, type FactMetric } from "./facts";
 import type { ProductFacts, ReviewView } from "./types";
@@ -36,6 +37,28 @@ export async function reviewsOf(month: string, since: Date | null, adjustments: 
 }
 
 export const waitingReview = (since: Date): ReviewView => ({ state: "waiting", by: null, at: null, since: since.toISOString() });
+
+/**
+ * Событие «Проверьте прогноз» разобрано у тех из команды продукта, у кого после загрузки проверены все продукты с LBE:
+ * корректировкой или отметкой, кем угодно из команды. Проверили один продукт из восьми: напоминание остаётся
+ */
+export async function closePlanReminders(tx: Prisma.TransactionClient, month: string, product: string, owners: Record<string, string[]>): Promise<void> {
+  const since = await lastPullAt(month);
+  if (!since) return;
+  const slugs = owners[product] ?? [];
+  if (!slugs.length) return;
+  const people = await tx.person.findMany({ where: { slug: { in: slugs } }, select: { id: true, slug: true } });
+  const all = [...new Set(people.flatMap((p) => Object.entries(owners).filter(([, list]) => list.includes(p.slug)).map(([code]) => code)))];
+  const loaded = new Set((await tx.planLine.findMany({ where: { month, version: "LBE", product: { in: all } }, distinct: ["product"], select: { product: true } })).map((l) => l.product));
+  const [adjusted, checked] = await Promise.all([
+    tx.planAdjustment.findMany({ where: { month, product: { in: [...loaded] }, createdAt: { gt: since } }, distinct: ["product"], select: { product: true } }),
+    tx.planCheck.findMany({ where: { month, product: { in: [...loaded] }, at: { gt: since } }, distinct: ["product"], select: { product: true } }),
+  ]);
+  const done = new Set([...adjusted, ...checked].map((x) => x.product));
+  const finished = people.filter((p) => Object.entries(owners).every(([code, list]) => !list.includes(p.slug) || !loaded.has(code) || done.has(code)));
+  if (!finished.length) return;
+  await tx.inboxEvent.updateMany({ where: { recipientId: { in: finished.map((p) => p.id) }, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
+}
 
 /** Факт месяца по дням по продуктам: дни по порядку, кто и когда загрузил последним */
 export async function factsOf(month: string): Promise<Map<string, ProductFacts>> {
