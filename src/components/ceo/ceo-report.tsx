@@ -11,6 +11,7 @@ import type { ForecastSummary } from "@/lib/forecast/types";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
 import { planBriefText, type PlanBrief } from "@/lib/plan/brief";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
+import { Figures } from "@/components/ui/data";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
@@ -227,6 +228,21 @@ export function CeoReport({
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="flex min-w-0 flex-col gap-6">
+        {/* Этап 37: из чего собран отчёт, в цифрах */}
+        <Figures
+          label="Отчёт в цифрах"
+          items={[
+            { label: "Отметок «В отчёт CEO»", value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags" },
+            { label: "Решений недели", value: decisions?.length ?? 0, testId: "ceo-fig-decisions" },
+            {
+              label: "Обещания выполнены",
+              value: promises?.total.total ? `${promiseShare(promises.total) ?? 0}%` : "нет",
+              testId: "ceo-fig-promises",
+            },
+            { label: "Благодарностей", value: thanks.length, testId: "ceo-fig-thanks" },
+            { label: "Моих встреч", value: cleanMeetings(meetings).length, testId: "ceo-fig-meetings" },
+          ]}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <WeekSwitcher view={view} basePath="/ceo-report" />
           <p className="text-small text-muted" aria-live="polite">

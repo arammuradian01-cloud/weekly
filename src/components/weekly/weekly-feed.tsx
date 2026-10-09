@@ -15,6 +15,8 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Segmented, SelectField } from "@/components/ui/primitives";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { Figures } from "@/components/ui/data";
 import { EntryItem } from "./entry-item";
 import { SubmissionStrip } from "./submission-strip";
 import { AbsentBadge, substituteText } from "./absence";
@@ -125,11 +127,25 @@ export function WeeklyFeed({
 
   return (
     <div>
-      <header className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-page font-semibold leading-tight text-ink sm:text-page-lg">Weekly</h1>
-          <p className="mt-1.5 text-body text-muted">Итоги недели команды по людям и по блокам</p>
-        </div>
+      {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели */}
+      <PageHeader
+        title="Weekly"
+        description="Итоги недели команды по людям и по блокам"
+        figures={
+          all.length ? (
+            <Figures
+              label="Неделя в цифрах"
+              items={[
+                { label: "Записей за неделю", value: all.length, testId: "weekly-fig-entries" },
+                { label: "Нужна помощь", value: all.filter((e) => e.help).length, tone: "warning", testId: "weekly-fig-help" },
+                { label: "Риски", value: all.filter((e) => e.type === "risk").length, tone: "warning", testId: "weekly-fig-risks" },
+                { label: "Результаты", value: all.filter((e) => e.type === "result").length, testId: "weekly-fig-results" },
+                { label: "В отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
+              ]}
+            />
+          ) : null
+        }
+      >
         <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <div className="col-span-2 sm:col-span-1">
             <WeekSwitcher view={data} />
@@ -150,7 +166,7 @@ export function WeeklyFeed({
           {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
           {manage ? <WeekLock week={{ ...week, closed: data.departmentClosed ?? week.closed }} /> : null}
         </div>
-      </header>
+      </PageHeader>
 
       {data.fallback ? (
         <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink">
@@ -204,11 +220,41 @@ export function WeeklyFeed({
       </div>
 
       {all.length === 0 ? (
-        <EmptyState title={`За неделю ${week.number} записей нет`} className="mt-6">
+        <EmptyState
+          title={`За неделю ${week.number} записей нет`}
+          className="mt-6"
+          action={
+            week.reporting ? (
+              <Link href="/weekly/submit" className={buttonClass("secondary", "sm")}>
+                Написать свой weekly
+              </Link>
+            ) : undefined
+          }
+        >
           {week.reporting ? "Записи появятся, как только лидеры начнут писать weekly." : "Архив хранится без ограничения срока: листайте недели назад."}
         </EmptyState>
       ) : entries.length === 0 ? (
-        <EmptyState title="Под эти фильтры записей нет" className="mt-6">
+        <EmptyState
+          title="Под эти фильтры записей нет"
+          className="mt-6"
+          action={
+            filtersOn ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setDirection("");
+                  setBlock("");
+                  setType("");
+                  setAuthor("");
+                  setHelpOnly(false);
+                }}
+              >
+                Показать все записи
+              </Button>
+            ) : undefined
+          }
+        >
           {filtersOn ? "Снимите часть фильтров." : null}
         </EmptyState>
       ) : view === "people" ? (

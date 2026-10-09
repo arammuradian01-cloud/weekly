@@ -11,6 +11,7 @@ import { formatLong } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import { WeeklySubmit } from "@/components/weekly/weekly-submit";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
+import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = { title: "Сдать weekly" };
 
@@ -30,12 +31,8 @@ export default async function SubmitWeeklyPage() {
 
   return (
     <>
-      <header className="mb-8">
-        <h1 className="text-page font-semibold leading-tight text-ink sm:text-page-lg">Weekly за неделю {mine.week.number}</h1>
-        <p className="mt-1.5 text-body text-muted">
-          {formatLong(mine.week.start)} - {formatLong(mine.week.end)}. Четыре шага на одном экране, обычно до 15 минут
-        </p>
-      </header>
+      {/* Этап 37: шапка как у остальных разделов */}
+      <PageHeader title={`Weekly за неделю ${mine.week.number}`} description={`${formatLong(mine.week.start)} - ${formatLong(mine.week.end)}. Четыре шага на одном экране, обычно до 15 минут`} />
       <Suspense>
         <WeeklySubmit
           week={mine.week}

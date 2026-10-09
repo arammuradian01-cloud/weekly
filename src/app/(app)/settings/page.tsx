@@ -10,6 +10,7 @@ import { absenceWeeks, upcomingAbsencesAll } from "@/lib/weekly/service";
 import { mailConfigured } from "@/lib/mail";
 import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
+import { Figures } from "@/components/ui/data";
 
 export const metadata: Metadata = { title: "Настройки" };
 
@@ -41,7 +42,25 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Настройки" description="Ритм недели, справочники, люди и роли. Время везде московское" />
+      <PageHeader
+        title="Настройки"
+        description="Ритм недели, справочники, люди и роли. Время везде московское"
+        figures={
+          owner && people.length ? (
+            // Этап 37: люди и входы в цифрах, только владельцу (люди и пароли видит только он)
+            <Figures
+              label="Люди и входы в цифрах"
+              items={[
+                { label: "Людей включено", value: people.filter((p) => p.active).length, testId: "set-fig-active" },
+                { label: "Выключено", value: people.filter((p) => !p.active).length, testId: "set-fig-off" },
+                ...(personal ? [{ label: "С личным паролем", value: `${personal.withPassword} из ${personal.total}`, testId: "set-fig-passwords" }] : []),
+                ...(personal ? [{ label: "Без личного пароля", value: personal.invitable, tone: "warning" as const, testId: "set-fig-invitable" }] : []),
+                { label: "Отсутствия впереди", value: Object.values(absences as Record<string, unknown[]>).filter((list) => list.length).length, testId: "set-fig-absences" },
+              ]}
+            />
+          ) : null
+        }
+      />
       <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} />
     </>
   );
