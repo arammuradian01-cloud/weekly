@@ -46,16 +46,14 @@ test("отчёт CEO, журнал, настройки и синхронизац
   const journal = page.getByTestId("journal-table");
   await expect(journal).toBeVisible();
   await expect(journal.locator("tbody tr").first()).toBeVisible();
-  // Выборка, под которую событий нет: кнопка возвращает весь журнал
-  await page.getByLabel("Тип события").selectOption({ index: 7 });
-  await page.getByLabel("Кто").selectOption("system");
-  const empty = page.getByRole("heading", { name: "Событий под эти фильтры нет" });
-  if (await empty.isVisible()) {
-    await page.getByRole("link", { name: "Сбросить фильтры" }).click();
-    await expect(page).toHaveURL(/\/journal$/);
-    await expect(journal).toBeVisible();
-  }
   await shot(page, "journal");
+  // Выборка, под которую событий нет (выключенный служебный профиль): кнопка возвращает весь журнал
+  await page.goto("/journal?who=analyst&kind=settings");
+  await expect(page.getByRole("heading", { name: "Событий под эти фильтры нет" })).toBeVisible();
+  await shot(page, "journal-empty");
+  await page.getByRole("link", { name: "Сбросить фильтры" }).click();
+  await expect(page).toHaveURL(/\/journal$/);
+  await expect(journal).toBeVisible();
 
   await page.goto("/settings");
   await expect(page.getByRole("list", { name: "Люди и входы в цифрах" })).toBeVisible();
