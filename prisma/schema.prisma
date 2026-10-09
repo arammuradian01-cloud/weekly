@@ -191,6 +191,7 @@ model Person {
   savedViews         SavedView[]
   /// Прогноз до конца месяца (этап 24)
   forecasts          Forecast[]
+  planAdjustments    PlanAdjustment[]    @relation("PlanAdjustmentAuthor")
   /// Встречи один на один (этап 28)
   oneOnOneManaged    OneOnOnePair[]      @relation("OneOnOneManager")
   oneOnOneReported   OneOnOnePair[]      @relation("OneOnOneReport")
@@ -482,6 +483,50 @@ model Forecast {
   @@unique([weekId, authorId, directionId, metric, month])
   @@index([month, directionId])
   @@map("forecasts")
+}
+
+/// Версия месяца из LRF (этап 32): бюджет и LBE, первая версия прогноза месяца
+enum PlanVersion {
+  BUDGET
+  LBE
+}
+
+/// Строка версии месяца (этап 32): продукт, показатель, значение. Снимок из LRF на дату забора, ресурс LRF только читает
+model PlanLine {
+  id       String      @id @default(cuid())
+  /// Месяц: 2026-10
+  month    String
+  version  PlanVersion
+  /// Код продукта: osago, kasko, red, red-mortgage, deposits
+  product  String
+  /// Код показателя: trafficWeb, crWeb, units, revenue, promoMargin
+  metric   String
+  value    Float?
+  pulledAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@unique([month, version, product, metric])
+  @@index([month])
+  @@map("plan_lines")
+}
+
+/// Корректировка драйвера командой (этап 32): новое значение вместо LBE, причина и обоснование. value null: вернуть как в LBE.
+/// История хранится вся, действует последняя корректировка показателя
+model PlanAdjustment {
+  id        String         @id @default(cuid())
+  month     String
+  product   String
+  metric    String
+  value     Float?
+  /// Значение показателя до корректировки: прежняя корректировка или LBE
+  previous  Float?
+  reason    ForecastReason
+  comment   String
+  authorId  String
+  author    Person         @relation("PlanAdjustmentAuthor", fields: [authorId], references: [id])
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([month, product, createdAt])
+  @@map("plan_adjustments")
 }
 
 model TaskCoExecutor {
