@@ -191,7 +191,9 @@ export function parseFacts(text: string, today: string): ParsedFacts {
       problems.push(`Строка ${row}: кавычка не закрыта`);
       continue;
     }
-    if (cells.length > titles.length && cells.slice(titles.length).some((c) => c.trim() !== "")) {
+    // При запятой значимы только четыре колонки: всё, что правее, значит запятую внутри значения
+    const limit = delimiter === "," ? 4 : titles.length;
+    if (cells.length > limit && cells.slice(limit).some((c) => c.trim() !== "")) {
       problems.push(`Строка ${row}: колонок больше, чем в заголовке. Похоже, дробь записана через запятую при разделителе-запятой`);
       continue;
     }
