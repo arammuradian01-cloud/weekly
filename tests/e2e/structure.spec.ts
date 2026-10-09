@@ -113,3 +113,43 @@ test("общий логин предлагает только людей топ-
   await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toHaveCount(0);
   await other.close();
 });
+
+test("дерево подчинённых: схема с путём наверх, вакансии, поиск и список", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await loadStructure(page);
+  await page.goto("/structure");
+  // После загрузки структуры страница открывается на дереве подчинённых
+  await expect(page.getByRole("radio", { name: "Подчинённые" })).toHaveAttribute("aria-checked", "true");
+  const tree = page.getByTestId("people-tree");
+  await expect(tree.getByTestId("person-focus")).toContainText("Мурадян Арам");
+  const [{ slug: reva }] = await sql(`SELECT slug FROM people WHERE "fullName" LIKE 'Рева Тарас%'`);
+  const [{ slug: antonov }] = await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`);
+  await tree.getByTestId(`person-${reva}`).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");
+  await expect(tree.getByRole("navigation", { name: "Путь до верха" })).toContainText("Мурадян Арам");
+  await shot(page, "people-chart");
+  await tree.getByTestId(`person-${antonov}`).click();
+  const focus = tree.getByTestId("person-focus");
+  await expect(focus).toContainText("Антонов Дмитрий");
+  await expect(focus).toContainText("PO OSAGO, Сектор автострахования");
+  await expect(focus).toContainText("Открытые вакансии в подразделении");
+  await expect(focus).toContainText("PO KASKO");
+  await expect(focus.getByRole("link", { name: "Задачи" })).toHaveAttribute("href", `/tasks?owner=${antonov}`);
+  // На уровень выше и по пути
+  await focus.getByRole("button", { name: /На уровень выше/ }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");
+  await tree.getByRole("navigation", { name: "Путь до верха" }).getByRole("button", { name: "Мурадян Арам" }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Мурадян Арам");
+  // Поиск открывает человека
+  await page.getByLabel("Найти человека").fill("Product Desi");
+  await page.getByRole("list", { name: "Найденные люди" }).getByRole("button", { name: /Чемоданова Алиса/ }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Чемоданова Алиса");
+  // Список всем деревом
+  await page.getByRole("radiogroup", { name: "Вид дерева" }).getByRole("radio", { name: "Список" }).click();
+  const list = page.getByRole("tree", { name: "Дерево подчинённых" });
+  await expect(list).toContainText("Рева Тарас");
+  await list.getByRole("button", { name: /Развернуть: Рева Тарас/ }).click();
+  await expect(list).toContainText("Антонов Дмитрий");
+  await shot(page, "people-list");
+});
