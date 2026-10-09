@@ -415,11 +415,20 @@ async function postLeaderBoard(file: File, team: string, quarter: string, mode: 
   form.set("team", team);
   form.set("quarter", quarter);
   form.set("mode", mode);
+  let res: Response;
   try {
-    const res = await fetch("/api/goals/leader-board", { method: "POST", body: form });
-    return await res.json();
+    res = await fetch("/api/goals/leader-board", { method: "POST", body: form });
   } catch {
     return { ok: false, error: "Нет связи с сервером: файл не отправился" };
+  }
+  // Вход закончился: сервер отправил на страницу входа, а не ответ
+  if (res.redirected || !(res.headers.get("content-type") ?? "").includes("application/json")) {
+    return { ok: false, error: "Вход закончился: обновите страницу, войдите и загрузите файл снова" };
+  }
+  try {
+    return await res.json();
+  } catch {
+    return { ok: false, error: "Не получилось прочитать ответ сервера. Обновите страницу и попробуйте ещё раз" };
   }
 }
 
@@ -520,14 +529,19 @@ function ImportDrawer({
           label={source === "file" ? "Команда для людей, которые не состоят ни в одной команде" : "Команда для целей без колонки «Команда»"}
           id="gi-team"
           value={team}
-          onChange={(e) => setTeam(e.target.value)}
+          onChange={(e) => {
+            // Проверка была для другой команды: загрузка только после новой проверки
+            setTeam(e.target.value);
+            setPlan(null);
+          }}
           options={teams.map((t) => ({ value: t.id, label: t.name }))}
         />
         {source === "file" ? (
           <p className="text-small text-muted">
             Борд лидера в Google Таблицах: «Файл», «Скачать», «Microsoft Excel (.xlsx)». Ресурс читает только вкладки, имя которых начинается с «Цели», и в них
-            только раздел «Запланировано на {quarter.slice(-1)}Q»: цель, направление, описание, Start и «Целевые». Вкладки с зарплатами, мотивацией и оценками не
-            читаются, файл нигде не сохраняется. Цель становится личной целью владельца вкладки в команде, которой он руководит, с кодом из инициалов: «РТ-1».
+            только раздел «Запланировано на {quarter.slice(-1)}Q»: цель, направление, описание, Start и «Целевые». Вкладки с зарплатами, мотивацией, оценками и
+            премиями не читаются, колонки оценки результата тоже, файл нигде не сохраняется. Цель становится личной целью владельца вкладки в команде, которой он
+            руководит, иначе в его команде, с кодом из инициалов: «РТ-1». Повторная загрузка обновляет цели, а не дублирует.
           </p>
         ) : (
         <p className="text-small text-muted">

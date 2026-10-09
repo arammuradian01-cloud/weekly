@@ -107,7 +107,7 @@ export type Task = {
   team: string;
   /** Цель, на которую работает задача (этап 17) */
   /** Цель задачи: title с кодом («РТ-1. Название»), code отдельно для метки в списке (этап 31) */
-  goal?: { id: string; title: string; code?: string | null };
+  goal?: { id: string; title: string; code?: string | null; quarter?: string };
   /**
    * Задача пришла в списке без текста комментариев (этап 14, большие команды): карточка дозагружает её целиком.
    * commentCount: сколько комментариев на самом деле

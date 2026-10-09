@@ -21,6 +21,7 @@ import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
 import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 import { nextRepeatDue, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "./repeat";
+import { foreignGoal, taskPeople } from "@/lib/goals/personal";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
@@ -195,6 +196,16 @@ async function mutateIn(tx: Tx, actor: Actor, number: number, plan: (row: TaskRo
   const before = snapshot(row);
   const p = await plan(row, can, tx);
   if (!p.changes.length) fail("Ничего не изменилось");
+  // Сменили ответственного или убрали соисполнителя: личная цель человека, которого больше нет в задаче, снимается
+  if (row.goalId) {
+    const ownerId = p.data.ownerId !== undefined ? (p.data.ownerId as string | null) : row.ownerId;
+    const co = await tx.taskCoExecutor.findMany({ where: { taskId: row.id }, select: { personId: true } });
+    const left = await foreignGoal(tx, { goalId: row.goalId, teamId: (p.data.teamId as string | undefined) ?? row.teamId, people: taskPeople({ ownerId, coExecutors: co }) });
+    if (left) {
+      p.data = { ...p.data, goalId: null };
+      p.changes.push({ field: "Цель", before: left, after: "нет: это личная цель человека, которого больше нет в задаче" });
+    }
+  }
   const updated = await tx.task.update({ where: { id: row.id }, data: p.data, include: taskInclude });
   await audit(tx, actor, number, p.changes);
   const undo =

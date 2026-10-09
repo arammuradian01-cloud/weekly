@@ -15,7 +15,7 @@ export const taskInclude = {
   transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true } } } },
   comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" } } } },
   links: { orderBy: { at: "asc" } },
-  goal: { select: { id: true, title: true, code: true } },
+  goal: { select: { id: true, title: true, code: true, quarter: true } },
   // Какие задачи эта ждёт (этап 21): номер, срок и закрыта ли. Названия карточка грузит отдельно, с проверкой доступа
   waitsFor: { select: { blocker: { select: { number: true, due: true, status: true, archivedAt: true } } } },
   // Чек-лист и повтор (этап 25)
@@ -107,6 +107,6 @@ export function toTaskDto(row: TaskRow): Task {
           },
         }
       : {}),
-    ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title, code: row.goal.code } } : {}),
+    ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title, code: row.goal.code, quarter: row.goal.quarter } } : {}),
   };
 }

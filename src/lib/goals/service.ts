@@ -23,6 +23,7 @@ import { NameIndex } from "@/lib/bord/names";
 import { matchPerson } from "@/lib/org/import";
 import { normName } from "@/lib/bord/names";
 import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow } from "./parse";
+import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
 
 type Tx = Prisma.TransactionClient;
 
@@ -274,6 +275,21 @@ function text(value: string | null | undefined, max: number, field: string): str
   return v;
 }
 
+/** Описание держит переносы строк: в бордах это списки «Что ожидаю: 1. ... 2. ...» */
+function lines(value: string | null | undefined, max: number, field: string): string | null {
+  const v = (value ?? "")
+    .replace(/[—–]/g, "-")
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/[^\S\n]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!v) return null;
+  if (v.length > max) fail(`${field}: не длиннее ${max} знаков`);
+  return v;
+}
+
 function link(value: string | null | undefined): string | null {
   const v = text(value, LIMITS.link, "Ссылка");
   if (v && !/^https?:\/\//i.test(v)) fail("Ссылка на борд должна начинаться с https://");
@@ -326,7 +342,7 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
         quarter,
         code,
         title,
-        description: text(input.description, LIMITS.description, "Описание"),
+        description: lines(input.description, LIMITS.description, "Описание"),
         metric: text(input.metric, LIMITS.metric, "Метрика"),
         base: text(input.base, LIMITS.base, "База"),
         target: text(input.target, LIMITS.target, "Целевое значение"),
@@ -364,7 +380,7 @@ export async function updateGoal(actor: Actor, id: string, input: GoalInput & { 
       const v = text(input.title, LIMITS.title, "Цель") ?? fail("Напишите цель одной мыслью");
       set("title", "Цель", goal.title, v, v);
     }
-    if (input.description !== undefined) set("description", "Описание", goal.description, text(input.description, LIMITS.description, "Описание"), text(input.description, LIMITS.description, "Описание"));
+    if (input.description !== undefined) set("description", "Описание", goal.description, lines(input.description, LIMITS.description, "Описание"), lines(input.description, LIMITS.description, "Описание"));
     if (input.metric !== undefined) set("metric", "Метрика", goal.metric, text(input.metric, LIMITS.metric, "Метрика"), text(input.metric, LIMITS.metric, "Метрика"));
     if (input.base !== undefined) set("base", "База", goal.base, text(input.base, LIMITS.base, "База"), text(input.base, LIMITS.base, "База"));
     if (input.target !== undefined) set("target", "Целевое значение", goal.target, text(input.target, LIMITS.target, "Целевое значение"), text(input.target, LIMITS.target, "Целевое значение"));
@@ -414,18 +430,6 @@ export async function deleteGoal(actor: Actor, id: string): Promise<void> {
   });
 }
 
-/** Личная цель другого человека из борда лидера: не руководителя команды цели и не человека задачи */
-function othersPersonal(g: { source: string; ownerId: string | null; teamId: string }, nodes: TeamNode[], people: string[]): boolean {
-  if (!g.source.startsWith("leader-board:") || !g.ownerId) return false;
-  const leader = nodes.find((n) => n.id === g.teamId)?.leaderId ?? null;
-  return g.ownerId !== leader && !people.includes(g.ownerId);
-}
-
-/** Люди задачи, чьи личные цели ей подходят: ответственный и соисполнители */
-function taskPeople(task: { ownerId: string | null; coExecutors: { personId: string }[] }): string[] {
-  return [...new Set([...(task.ownerId ? [task.ownerId] : []), ...task.coExecutors.map((c) => c.personId)])];
-}
-
 /** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше, личные цели её людей */
 export async function goalOptions(who: Who, number: number): Promise<{ id: string; label: string }[]> {
   const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
@@ -440,17 +444,16 @@ export async function goalOptions(who: Who, number: number): Promise<{ id: strin
     where: {
       OR: [
         { teamId: { in: teams }, quarter: { in: quarters }, result: { not: "DROPPED" } },
-        ...(people.length ? [{ ownerId: { in: people }, quarter: { in: quarters }, result: { not: "DROPPED" as const } }] : []),
+        ...(people.length ? [{ ownerId: { in: people }, source: { startsWith: "leader-board:" }, quarter: { in: quarters }, result: { not: "DROPPED" as const } }] : []),
         ...(task.goalId ? [{ id: task.goalId }] : []),
       ],
     },
     include: { team: { select: { name: true } }, owner: { select: { id: true, fullName: true } } },
     orderBy: [{ quarter: "desc" }, { sortOrder: "asc" }],
   });
-  // Сначала личные цели людей задачи, потом цели команд. Личная: из борда лидера человека задачи или его цель в другой
-  // команде. Личные цели других людей из бордов лидеров не предлагаем: в команде они лежат рядом с целями команды,
-  // но это чужие цели
-  const personal = (g: (typeof goals)[number]) => !!g.ownerId && people.includes(g.ownerId) && (g.source.startsWith("leader-board:") || !teams.includes(g.teamId));
+  // Сначала личные цели людей задачи из бордов лидеров, потом цели команд. Личные цели других людей из бордов не
+  // предлагаем: в команде они лежат рядом с целями команды, но это чужие цели
+  const personal = (g: (typeof goals)[number]) => fromLeaderBoard(g) && !!g.ownerId && people.includes(g.ownerId);
   const offered = goals.filter((g) => g.id === task.goalId || !othersPersonal(g, nodes, people));
   return [...offered.filter(personal), ...offered.filter((g) => !personal(g))].map((g) => ({
     id: g.id,
@@ -474,10 +477,8 @@ export async function linkTaskGoal(actor: Actor, number: number, goalId: string 
     if (goalId) {
       const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
       const nodes = await loadTeamNodes(tx);
-      // Цель своей команды или команды выше, или личная цель ответственного и соисполнителей (этап 31)
-      const ownGoal = !!g.ownerId && taskPeople(task).includes(g.ownerId);
-      const inChain = [task.teamId, ...ancestorsOf(nodes, task.teamId)].includes(g.teamId);
-      if (!ownGoal && (!inChain || othersPersonal(g, nodes, taskPeople(task)))) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
+      // Цель своей команды или команды выше, или личная цель ответственного и соисполнителей из борда (этап 31)
+      if (!goalFits(g, task, taskPeople(task), nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
       if (g.result === "DROPPED") fail("Цель снята: выберите другую");
       const quarters = [quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))];
       if (!quarters.includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
@@ -577,6 +578,8 @@ export async function applyPlan(actor: Actor, plan: Pick<GoalsPlan, "rows">, sou
   const opts = { source };
   return prisma.$transaction(
     async (tx) => {
+      // Две загрузки сразу идут по очереди: вторая видит цели, которые завела первая, и не дублирует их
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('goals.import'))`;
       const nodes = await loadTeamNodes(tx);
       const idOf = new Map<string, string>();
       let added = 0;
@@ -593,7 +596,8 @@ export async function applyPlan(actor: Actor, plan: Pick<GoalsPlan, "rows">, sou
           ...(r.ownerId ? { ownerId: r.ownerId } : {}),
           ...(r.result !== "IN_PROGRESS" ? { result: r.result as GoalResult } : {}),
         };
-        let id = r.existingId;
+        // Цель могла появиться после проверки: другая загрузка успела раньше
+        let id = r.existingId ?? (await tx.goal.findFirst({ where: r.code ? { quarter: r.quarter, teamId: r.teamId, code: r.code } : { quarter: r.quarter, teamId: r.teamId, title: r.title }, select: { id: true } }))?.id ?? null;
         if (id) {
           const before = await tx.goal.findUniqueOrThrow({ where: { id } });
           const differs = (Object.keys(data) as (keyof typeof data)[]).some((k) => (data[k] ?? null) !== ((before as Record<string, unknown>)[k] ?? null));

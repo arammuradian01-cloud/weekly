@@ -28,6 +28,7 @@ async function boardBuffer(): Promise<Buffer> {
   const salary = book.addWorksheet("INS CPO_новая");
   salary.addRow(["Сотрудник", "Заработная плата"]);
   salary.addRow(["Рева Тарас", "р.999 999"]);
+  book.addWorksheet("Цели и мотивация").addRow(["Gross Salary", "330 000"]);
   const cpo = book.addWorksheet("Цели CPO");
   for (const row of [["", "", "CPO - Рева Тарас"], [], header, ["1", "Product", "Подписка ОСАГО запущена и имеет P&L", "Проблема: рынок идёт в короткие полисы", "", "P&L к 15.12"], ["2", "Data", "Скоринг на проде", "", "", "до 15.12"], [], ["№", "Направление", "Договоренности"], ["1", "", "Не цель"]]) cpo.addRow(row);
   const tm = book.addWorksheet("Цели Telemarketing Unit");
@@ -48,14 +49,15 @@ test("цели Q4 из файла борда лидера, задача с ли�
   await page.getByRole("button", { name: "Загрузить цели" }).click();
   const drawer = page.getByRole("dialog", { name: "Загрузить цели" });
   await drawer.getByRole("radio", { name: "Файл борда лидера" }).click();
-  await expect(drawer.getByText(/Вкладки с зарплатами, мотивацией и оценками не читаются/)).toBeVisible();
+  await expect(drawer.getByText(/Вкладки с зарплатами, мотивацией, оценками и премиями не читаются/)).toBeVisible();
   // Файл передаётся содержимым: путь во временной папке браузеру в песочнице не виден
   await drawer.getByLabel("Файл борда лидера").setInputFiles({ name: "Борд лидера INS CPO.xlsx", mimeType: XLSX, buffer: await boardBuffer() });
   await drawer.getByRole("button", { name: "Проверить" }).click();
   await expect(drawer.getByText("Новых целей 2, изменится 0, без изменений 0")).toBeVisible();
   await expect(drawer.getByText(/Рева Тарас: целей 2, команда «Топ-команда». Вкладка «Цели CPO»/)).toBeVisible();
   await expect(drawer.getByText(/«Цели Telemarketing Unit»: В шапке вкладки не указан владелец/)).toBeVisible();
-  await expect(drawer.getByText(/999 999/)).toHaveCount(0);
+  await expect(drawer.getByText(/«Цели и мотивация»: Вкладка с мотивацией, оценками или оплатой: не читается/)).toBeVisible();
+  await expect(drawer.getByText(/999 999|330 000|Salary/)).toHaveCount(0);
   await shot(page, "preview");
   await drawer.getByRole("button", { name: "Загрузить", exact: true }).click();
   await expect(page.getByText("Цели загружены: новых 2, изменено 0")).toBeVisible();
@@ -76,14 +78,14 @@ test("цели Q4 из файла борда лидера, задача с ли�
 
   // В списке задач метка цели, группировка «По цели»
   await page.goto(`/tasks?q=${number}`);
-  const tag = page.getByRole("link", { name: "Цель задачи: РТ-1. Подписка ОСАГО запущена и имеет P&L" }).locator("visible=true");
+  const tag = page.getByRole("link", { name: "Цель РТ-1: Подписка ОСАГО запущена и имеет P&L" }).locator("visible=true");
   await expect(tag).toHaveText("Цель РТ-1");
   await page.getByLabel("Группировать").selectOption("goal");
   await expect(page.getByText("Цель РТ-1. Подписка ОСАГО запущена и имеет P&L").locator("visible=true").first()).toBeVisible();
   await shot(page, "tasks-tag");
   // Метка ведёт к цели
   await tag.click();
-  await expect(page).toHaveURL(/\/goals#goal-/);
+  await expect(page).toHaveURL(/\/goals\?q=\d{4}-Q\d#goal-/);
 });
 
 test("без режима управления файл борда не загрузить", async ({ page }) => {
@@ -96,6 +98,15 @@ test("без режима управления файл борда не загр
   }
   // И прямой запрос на сервер не пройдёт
   const res = await page.request.post("/api/goals/leader-board", { multipart: { file: { name: "b.xlsx", mimeType: XLSX, buffer: await boardBuffer() }, team: "top", quarter: "", mode: "apply" } });
+  expect(res.status()).toBe(403);
   expect(await res.json()).toMatchObject({ ok: false, error: expect.stringMatching(/режиме управления/) });
   expect((await sql("SELECT count(*)::int AS n FROM goals"))[0]!.n).toBe(0);
+  // Права проверяются до чтения файла: на испорченный файл тот же ответ, а не «файл не читается»
+  const junk = await page.request.post("/api/goals/leader-board", { multipart: { file: { name: "b.xlsx", mimeType: XLSX, buffer: Buffer.from("это не xlsx") }, team: "top", quarter: "", mode: "preview" } });
+  expect(await junk.json()).toMatchObject({ ok: false, error: expect.stringMatching(/режиме управления/) });
+  // Запрос с чужого сайта отклоняется, и «Origin: null» не ломает сервер
+  for (const origin of ["https://evil.example", "null"]) {
+    const other = await page.request.post("/api/goals/leader-board", { headers: { origin }, multipart: { file: { name: "b.xlsx", mimeType: XLSX, buffer: Buffer.from("x") }, team: "top", quarter: "", mode: "preview" } });
+    expect(other.status()).toBe(403);
+  }
 });

@@ -120,8 +120,11 @@ export function LateWaits({ task, className }: { task: Pick<Task, "waitsFor" | "
  * Метка цели (этап 31): задача работает на цель квартала. Код цели, если есть («Цель РТ-1»), полное название
  * в подсказке. link: ссылка на цель; на карточке доски, которая сама кнопка, метка без ссылки
  */
-export function GoalTag({ goal, link = true, className }: { goal: { id: string; title: string; code?: string | null }; link?: boolean; className?: string }) {
+export function GoalTag({ goal, link = true, className }: { goal: { id: string; title: string; code?: string | null; quarter?: string }; link?: boolean; className?: string }) {
   const label = goal.code ? `Цель ${goal.code}` : "Цель";
+  // Имя для чтения с экрана начинается с видимого текста: «Цель РТ-1: Подписка ОСАГО»
+  const name = goal.code && goal.title.startsWith(`${goal.code}. `) ? goal.title.slice(goal.code.length + 2) : goal.title;
+  const spoken = `${label}: ${name}`;
   const content = (
     <>
       <Target className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden="true" />
@@ -130,12 +133,12 @@ export function GoalTag({ goal, link = true, className }: { goal: { id: string; 
   );
   const cls = cn("sv-badge sv-badge--info inline-flex max-w-full items-center gap-1 whitespace-nowrap", className);
   return link ? (
-    <Link href={`/goals#goal-${goal.id}`} className={cn(cls, "hover:underline")} title={goal.title} aria-label={`Цель задачи: ${goal.title}`}>
+    <Link href={`/goals${goal.quarter ? `?q=${goal.quarter}` : ""}#goal-${goal.id}`} className={cn(cls, "hover:underline")} title={goal.title} aria-label={spoken}>
       {content}
     </Link>
   ) : (
     <span className={cls} title={goal.title}>
-      <span className="sr-only">Цель задачи: {goal.title}. </span>
+      <span className="sr-only">{spoken}. </span>
       <span aria-hidden="true" className="inline-flex items-center gap-1">
         {content}
       </span>
