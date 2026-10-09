@@ -80,7 +80,7 @@ export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuth
         <H id="forecast-summary" className="text-title-sm font-semibold text-ink">
           Прогноз до конца месяца
         </H>
-        <Link href="/forecast" className="text-small font-medium text-blue-700 hover:underline">
+        <Link href="/forecast?tab=week" className="text-small font-medium text-blue-700 hover:underline">
           Все прогнозы и история
         </Link>
       </div>

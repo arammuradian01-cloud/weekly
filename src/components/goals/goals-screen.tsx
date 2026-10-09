@@ -1,26 +1,25 @@
 "use client";
 
-// Страница «Цели» (этап 17): дерево целей квартала от целей департамента до команд и людей.
-// У цели прогресс по задачам и целям ниже, риск с причиной, итог квартала. Ниже доля задач без цели по командам.
+// Страница «Цели» (этап 17, таблица с фактом с этапа 33). Сверху ключевые цифры квартала: целей, в риске, достигнуто,
+// без задач, без свежего факта. Ниже цели таблицей (группы по командам или людям, факт и целевое значение в строке)
+// или деревом от целей департамента до команд и людей. Внизу задачи без цели по командам
 
-import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink, Plus, Upload } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
 import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
+import { FACT_STALE_DAYS } from "@/lib/goals/progress";
 import { usePrototype } from "@/domain/store";
 import { allPeople } from "@/domain/people";
 import { teamOf, teamPeople } from "@/domain/teams";
-import { formatShort } from "@/domain/dates";
-import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
+import { Module, StatTile, Stats } from "@/components/ui/data";
 import { EmptyState } from "@/components/empty-state";
-import { OverdueNote } from "@/components/ui/task-badges";
 import {
   applyBordGoalsAction,
   applyGoalsAction,
@@ -30,6 +29,8 @@ import {
   previewGoalsAction,
   updateGoalAction,
 } from "@/app/(app)/goals/actions";
+import { GoalsTable, type GoalGroupBy } from "./goals-table";
+import { GoalsTree } from "./goals-tree";
 
 const RESULTS: { value: GoalResult; label: string }[] = [
   { value: "IN_PROGRESS", label: "Идёт" },
@@ -38,15 +39,18 @@ const RESULTS: { value: GoalResult; label: string }[] = [
   { value: "MISSED", label: "Не достигнута" },
   { value: "DROPPED", label: "Снята" },
 ];
-const RESULT_TONE: Record<GoalResult, string> = {
-  IN_PROGRESS: "bg-blue-soft text-blue-700",
-  ACHIEVED: "bg-green-soft text-green-ink",
-  PARTIAL: "bg-warning-soft text-warning-ink",
-  MISSED: "bg-danger-soft text-danger-ink",
-  DROPPED: "bg-field text-muted",
-};
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
+type ViewMode = "table" | "tree";
+type Filter = "all" | "risk" | "stale" | "notasks" | "done";
+
+const FILTERS: { value: Filter; label: string; test: (g: GoalNode) => boolean }[] = [
+  { value: "all", label: "Все", test: () => true },
+  { value: "risk", label: "В риске", test: (g) => g.result === "IN_PROGRESS" && !!g.risk },
+  { value: "stale", label: "Без свежего факта", test: (g) => g.factStale },
+  { value: "notasks", label: "Без задач", test: (g) => g.result === "IN_PROGRESS" && g.progress.total === 0 },
+  { value: "done", label: "Достигнуты", test: (g) => g.result === "ACHIEVED" },
+];
 
 export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }: { view: GoalsView; defaultTeam: string | null; bordTabs: string[] | null; leaderBoard?: boolean }) {
   const router = useRouter();
@@ -56,7 +60,13 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
   const [editing, setEditing] = useState<GoalNode | null>(null);
   const [marking, setMarking] = useState<GoalNode | null>(null);
   const [importing, setImporting] = useState(false);
-  const byId = new Map(view.goals.map((g) => [g.id, g]));
+  const [mode, setMode] = useState<ViewMode>("table");
+  const [groupBy, setGroupBy] = useState<GoalGroupBy>("team");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
+  const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
+  // Ссылка на цель обрабатывается один раз за открытие страницы
+  const hashHandled = useRef(false);
   const run: Run = (fn, ok) =>
     start(async () => {
       const r = await fn();
@@ -66,8 +76,12 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
         router.refresh();
       }
     });
-  const atRisk = view.goals.filter((g) => g.risk).length;
-  const achieved = view.goals.filter((g) => g.result === "ACHIEVED").length;
+
+  const count = (f: Filter) => view.goals.filter(FILTERS.find((x) => x.value === f)!.test).length;
+  const q = query.trim().toLowerCase();
+  const shown = view.goals.filter(
+    (g) => FILTERS.find((x) => x.value === filter)!.test(g) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -77,7 +91,7 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
           id="goals-quarter"
           value={view.quarter}
           onChange={(e) => router.push(`/goals?q=${e.target.value}`)}
-          options={view.quarters.map((q) => ({ value: q, label: quarterLabel(q) }))}
+          options={view.quarters.map((x) => ({ value: x, label: quarterLabel(x) }))}
           className="sm:w-44"
         />
         {view.creatable.length ? (
@@ -96,14 +110,50 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
 
       {view.goals.length ? (
         <>
-          <p className="text-body text-ink">
-            Целей {view.goals.length}, в риске <span className={atRisk ? "font-semibold text-danger-ink" : ""}>{atRisk}</span>, достигнуто {achieved}
-          </p>
-          <ul className="flex flex-col gap-3" aria-label="Дерево целей">
-            {view.roots.map((id) => (
-              <GoalItem key={id} goal={byId.get(id)!} byId={byId} depth={0} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} />
-            ))}
-          </ul>
+          <Stats label={`Цели на ${quarterLabel(view.quarter)}`} className="sv-stats--compact">
+            <StatTile label="Целей" value={String(view.goals.length)} testId="goals-stat-total" note={`достигнуто ${count("done")}`} />
+            <StatTile label="В риске" value={String(count("risk"))} testId="goals-stat-risk" note="Красный статус безопасен: на риск отвечаем помощью" />
+            <StatTile label="Без свежего факта" value={String(count("stale"))} testId="goals-stat-stale" note={`Числовые цели, факт старше ${FACT_STALE_DAYS} дней или не вписан`} />
+            <StatTile label="Без задач" value={String(count("notasks"))} testId="goals-stat-notasks" note="Цель без задач не двигается" />
+          </Stats>
+
+          <Module
+            id="goals-list"
+            title={`Цели на ${quarterLabel(view.quarter)}`}
+            description="Факт вписывают владелец цели и руководитель команды кнопкой «Факт»: прогресс к целевому считается сам, когда значения числа. Строка раскрывается: описание, задачи, история факта"
+            actions={<Segmented label="Вид" value={mode} onChange={setMode} options={[{ value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
+            flush
+          >
+            {mode === "table" ? (
+            <div className="flex flex-col gap-3 border-t border-border px-5 py-3 max-sm:px-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
+                  <TextInput id="goals-search" label="Поиск цели" hideLabel placeholder="Поиск: код, цель, владелец" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
+                  <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
+                </div>
+                <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} />
+              </div>
+              <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} />
+            </div>
+            ) : null}
+            {mode === "table" ? (
+              shown.length ? (
+                <GoalsTable
+                  goals={shown}
+                  all={byId}
+                  onReveal={() => {
+                    setFilter("all");
+                    setQuery("");
+                  }}
+                  hashHandled={hashHandled}
+                  groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
+              ) : (
+                <p className="px-5 py-6 text-body text-text-secondary">Под условия ничего не подходит: смените фильтр или поиск.</p>
+              )
+            ) : (
+              <GoalsTree roots={view.roots} byId={byId} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} />
+            )}
+          </Module>
         </>
       ) : (
         <EmptyState title={`Целей на ${quarterLabel(view.quarter)} пока нет`}>
@@ -112,23 +162,43 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
       )}
 
       {view.unlinked.length ? (
-        <section aria-labelledby="unlinked" className="sv-card sv-card--soft p-4">
-          <h2 id="unlinked" className="text-title-sm font-semibold text-ink">
-            Задачи без цели
-          </h2>
-          <p className="mt-1 text-small text-muted">Открытые задачи команд, которые не работают ни на одну цель. Задачи с высоким приоритетом должны работать на цель квартала</p>
-          <ul className="mt-3 flex flex-col gap-1.5">
-            {view.unlinked.map((u) => (
-              <li key={u.team} className="flex flex-wrap items-baseline justify-between gap-x-4 text-small">
-                <span className="text-ink">{u.name}</span>
-                <span className="text-muted">
-                  без цели {u.withoutGoal} из {u.open} ({Math.round((u.withoutGoal / u.open) * 100)}%)
-                  {u.highWithoutGoal ? <span className="ml-2 font-medium text-danger-ink">с высоким приоритетом {u.highWithoutGoal}</span> : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Module id="unlinked" title="Задачи без цели" description="Открытые задачи команд, которые не работают ни на одну цель. Задачи с высоким приоритетом должны работать на цель квартала" flush>
+          <div className="overflow-x-auto">
+            <table className="sv-datatable sv-datatable--stack">
+              <caption className="sr-only">Задачи без цели по командам</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Команда</th>
+                  <th scope="col" className="is-num">
+                    Открытых задач
+                  </th>
+                  <th scope="col" className="is-num">
+                    Без цели
+                  </th>
+                  <th scope="col" className="is-num">
+                    С высоким приоритетом
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.unlinked.map((u) => (
+                  <tr key={u.team}>
+                    <td className="is-wide">{u.name}</td>
+                    <td className="is-num" data-label="Открытых задач">
+                      {u.open}
+                    </td>
+                    <td className="is-num" data-label="Без цели">
+                      {u.withoutGoal} ({Math.round((u.withoutGoal / u.open) * 100)}%)
+                    </td>
+                    <td className="is-num" data-label="С высоким приоритетом">
+                      {u.highWithoutGoal ? <span className="font-semibold text-danger-ink">{u.highWithoutGoal}</span> : <span className="sv-datatable__muted">0</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Module>
       ) : null}
 
       {creating ? (
@@ -148,132 +218,6 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
       {marking ? <MarkModal goal={marking} onClose={() => setMarking(null)} run={run} /> : null}
       {importing ? <ImportDrawer teams={view.creatable} defaultTeam={defaultTeam} quarter={view.quarter} bordTabs={bordTabs} leaderBoard={leaderBoard} onClose={() => setImporting(false)} /> : null}
     </div>
-  );
-}
-
-function Progress({ done, total }: { done: number; total: number }) {
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 w-28 overflow-hidden rounded-full bg-field" aria-hidden="true">
-        <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-caption tabular-nums text-muted">{total ? `задач закрыто ${done} из ${total}` : "задач пока нет"}</span>
-    </div>
-  );
-}
-
-function GoalItem({
-  goal: g,
-  byId,
-  depth,
-  onEdit,
-  onMark,
-  onAdd,
-  creatable,
-}: {
-  goal: GoalNode;
-  byId: Map<string, GoalNode>;
-  depth: number;
-  onEdit: (g: GoalNode) => void;
-  onMark: (g: GoalNode) => void;
-  onAdd: (g: GoalNode) => void;
-  creatable: boolean;
-}) {
-  const [open, setOpen] = useState(depth === 0);
-  const kids = g.childIds.map((id) => byId.get(id)).filter((x): x is GoalNode => !!x);
-  return (
-    <li id={`goal-${g.id}`} className={cn("sv-card sv-card--soft bg-surface", depth > 0 && "border-l-4 border-l-blue-soft")}>
-      <div className="flex flex-col gap-2 px-4 py-3">
-        <div className="flex items-start gap-2">
-          <button
-            type="button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-            aria-label={`${open ? "Свернуть" : "Развернуть"}: ${g.title}`}
-            className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-field hover:text-ink"
-          >
-            {open ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
-          </button>
-          <div className="min-w-0 flex-1">
-            <p className="text-body font-semibold leading-snug text-ink">
-              {g.code ? <span className="mr-1.5 font-normal tabular-nums text-muted">{g.code}</span> : null}
-              {g.title}
-            </p>
-            <p className="mt-0.5 text-small text-muted">
-              {g.team.name}
-              {g.owner ? `, владелец ${g.owner.fullName}` : ""}
-              {g.metric ? `, метрика: ${g.metric}` : ""}
-              {g.base || g.target ? `, ${g.base ? `база ${g.base}` : ""}${g.base && g.target ? ", " : ""}${g.target ? `цель ${g.target}` : ""}` : ""}
-            </p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1">
-              <Progress done={g.progress.done} total={g.progress.total} />
-              {g.below.total ? <span className="text-caption text-muted">целей ниже достигнуто {g.below.achieved} из {g.below.total}</span> : null}
-              {g.progress.overdue ? <span className="text-caption font-medium text-danger-ink">просрочено задач {g.progress.overdue}</span> : null}
-              {g.result !== "IN_PROGRESS" ? <span className={cn("rounded-md px-2 py-0.5 text-caption font-medium", RESULT_TONE[g.result])}>{RESULTS.find((r) => r.value === g.result)!.label}</span> : null}
-              {g.link ? (
-                <a href={g.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-caption text-blue-700 hover:underline">
-                  Борд
-                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                </a>
-              ) : null}
-            </div>
-            {g.risk ? (
-              <p className="mt-1.5 inline-flex items-start gap-1.5 text-small font-medium text-danger-ink">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />В риске: {g.risk}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        {open ? (
-          <div className="flex flex-col gap-3 pl-9">
-            {g.description ? <p className="whitespace-pre-line text-small text-ink">{g.description}</p> : null}
-            {g.tasks.length ? (
-              <ul className="flex flex-col gap-1.5">
-                {g.tasks.map((t) => (
-                  <li key={t.number} className="flex flex-wrap items-baseline gap-x-2 text-small">
-                    <Link href={`/tasks/${t.number}`} className={cn("hover:underline", t.done ? "text-muted line-through decoration-1" : "text-ink")}>
-                      <span className="mr-1 tabular-nums text-muted">{t.number}</span>
-                      {t.title}
-                    </Link>
-                    <span className="text-caption text-muted">
-                      {t.owner}, до {formatShort(t.due)}
-                    </span>
-                    {t.overdue ? <OverdueNote days={t.overdue} /> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-small text-muted">Задач у цели нет: привяжите задачи в их карточках, поле «Цель».</p>
-            )}
-            <div className="flex flex-wrap gap-x-4 gap-y-1">
-              {g.canMark ? (
-                <button type="button" className="text-small font-medium text-blue-700 hover:underline" onClick={() => onMark(g)}>
-                  Риск и итог
-                </button>
-              ) : null}
-              {g.canEdit ? (
-                <button type="button" className="text-small font-medium text-blue-700 hover:underline" onClick={() => onEdit(g)}>
-                  Изменить
-                </button>
-              ) : null}
-              {creatable ? (
-                <button type="button" className="text-small font-medium text-blue-700 hover:underline" onClick={() => onAdd(g)}>
-                  Цель ниже
-                </button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </div>
-      {open && kids.length ? (
-        <ul className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
-          {kids.map((k) => (
-            <GoalItem key={k.id} goal={k} byId={byId} depth={depth + 1} onEdit={onEdit} onMark={onMark} onAdd={onAdd} creatable={creatable} />
-          ))}
-        </ul>
-      ) : null}
-    </li>
   );
 }
 
@@ -311,9 +255,10 @@ function GoalModal({
   const people = t ? allPeople().filter((p) => p.active && teamPeople(t).includes(p.slug)) : allPeople().filter((p) => p.active);
   const [owner, setOwner] = useState(goal?.owner?.slug ?? t?.leader ?? "");
   const parents = goals.filter((g) => g.id !== goal?.id);
-  const deletable = mode === "edit" && goal && !goal.tasks.length && !goal.childIds.length;
+  // Цель с задачами, целями ниже или фактом не удаляется: её снимают итогом «Снята»
+  const deletable = mode === "edit" && goal && !goal.tasks.length && !goal.childIds.length && !goal.facts.length;
   return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title={mode === "create" ? `Новая цель на ${quarterLabel(quarter)}` : "Изменить цель"} description="Цель одной мыслью, метрика и целевое значение. Сами цифры живут в бордах и недельном отчёте">
+    <Modal open onOpenChange={(o) => !o && onClose()} title={mode === "create" ? `Новая цель на ${quarterLabel(quarter)}` : "Изменить цель"} description="Цель одной мыслью, метрика, база и целевое значение. Факт вписывается в таблице целей кнопкой «Факт»">
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
@@ -507,7 +452,7 @@ function ImportDrawer({
             Проверить
           </Button>
           <Button disabled={!plan || plan.problems.length > 0 || pending} onClick={apply}>
-            {pending ? "Подождите…" : "Загрузить"}
+            {pending ? "Подождите" : "Загрузить"}
           </Button>
         </div>
       }
