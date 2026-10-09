@@ -70,11 +70,27 @@ function column(letters: string): number {
   return n;
 }
 
-/** Сколько ячеек в объединении «A1:J1048576» */
+const LETTERS = (n: number) => {
+  let out = "";
+  for (let v = n; v > 0; v = Math.floor((v - 1) / 26)) out = String.fromCharCode(65 + ((v - 1) % 26)) + out;
+  return out;
+};
+
+/** Объединение «A1:J1048576» или «$A$1:$J$10»: границы, иначе null. Строже библиотеки чтения: лишние знаки не пропускаем */
+export function mergeRange(ref: string): { from: [number, number]; to: [number, number] } | null {
+  const m = ref.replace(/\$/g, "").match(/^([A-Za-z]{1,3})(\d{1,7})(?::([A-Za-z]{1,3})(\d{1,7}))?$/);
+  if (!m) return null;
+  const a: [number, number] = [column(m[1]!), Number(m[2])];
+  const b: [number, number] = m[3] ? [column(m[3]), Number(m[4])] : a;
+  const ok = (p: [number, number]) => p[0] >= 1 && p[0] <= 16_384 && p[1] >= 1 && p[1] <= 1_048_576;
+  if (!ok(a) || !ok(b)) return null;
+  return { from: [Math.min(a[0], b[0]), Math.min(a[1], b[1])], to: [Math.max(a[0], b[0]), Math.max(a[1], b[1])] };
+}
+
+/** Сколько ячеек в объединении «A1:J1048576». Непонятная ссылка: бесконечно много, такой лист не читаем */
 export function mergeArea(ref: string): number {
-  const m = ref.match(/^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/);
-  if (!m) return 1;
-  return (Math.abs(column(m[3]!) - column(m[1]!)) + 1) * (Math.abs(Number(m[4]) - Number(m[2])) + 1);
+  const r = mergeRange(ref);
+  return r ? (r.to[0] - r.from[0] + 1) * (r.to[1] - r.from[1] + 1) : Number.POSITIVE_INFINITY;
 }
 
 /** Листы книги: имя и путь к части архива */
@@ -94,19 +110,27 @@ function sheetsOf(workbook: string, rels: string): { name: string; path: string 
 }
 
 /**
- * Лист целей без лишнего: только ячейки, ширины колонок и объединения. Проверки данных, условное форматирование,
- * ссылки, примечания и рисунки библиотека разворачивает по каждой ячейке диапазона, для целей они не нужны
+ * Лист целей без лишнего: только ячейки и объединения. Ширины колонок, проверки данных, условное форматирование,
+ * ссылки, примечания и рисунки библиотека разворачивает по каждой ячейке диапазона, для целей они не нужны.
+ * Объединения собираются заново из разобранных границ: библиотека не видит исходных ссылок
  */
 export function slimSheet(xml: string, sheet: string): string {
   const open = xml.match(/<(\w+:)?worksheet\b[^>]*>/);
   if (!open) throw new XlsxError("not-xlsx");
   const prefix = open[1] ?? "";
   const part = (tag: string) => xml.match(new RegExp(`<${prefix}${tag}\\b[^>]*/>|<${prefix}${tag}\\b[^>]*>[\\s\\S]*?</${prefix}${tag}>`))?.[0] ?? "";
-  const merges = part("mergeCells");
+  const refs = (part("mergeCells").match(/<(\w+:)?mergeCell\b[^>]*>/g) ?? []).map((tag) => attr(tag, "ref") ?? "");
   let area = 0;
-  for (const tag of merges.match(/<(\w+:)?mergeCell\b[^>]*>/g) ?? []) area += mergeArea(attr(tag, "ref") ?? "");
-  if (area > MERGE_MAX) throw new XlsxError(`Во вкладке «${sheet}» объединено слишком много ячеек: разъедините их в копии борда`);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${open[0]}${part("cols")}${part("sheetData") || `<${prefix}sheetData/>`}${merges}</${prefix}worksheet>`;
+  const merges: string[] = [];
+  for (const ref of refs) {
+    const r = mergeRange(ref);
+    if (!r) throw new XlsxError(`Во вкладке «${sheet}» непонятное объединение ячеек: разъедините его в копии борда`);
+    area += (r.to[0] - r.from[0] + 1) * (r.to[1] - r.from[1] + 1);
+    if (area > MERGE_MAX) throw new XlsxError(`Во вкладке «${sheet}» объединено слишком много ячеек: разъедините их в копии борда`);
+    merges.push(`<${prefix}mergeCell ref="${LETTERS(r.from[0])}${r.from[1]}:${LETTERS(r.to[0])}${r.to[1]}"/>`);
+  }
+  const mergeCells = merges.length ? `<${prefix}mergeCells count="${merges.length}">${merges.join("")}</${prefix}mergeCells>` : "";
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${open[0]}${part("sheetData") || `<${prefix}sheetData/>`}${mergeCells}</${prefix}worksheet>`;
 }
 
 /**
@@ -144,8 +168,9 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
       out.file(name, EMPTY_RELS);
       continue;
     }
-    // Примечания и рисунки листов не нужны: в примечаниях бывают личные пометки
-    if (/^xl\/(comments\d*|drawings\/|threadedComments\/|persons\/)/.test(name)) continue;
+    // Примечания, рисунки, картинки, сводные таблицы и внешние ссылки не нужны: в примечаниях бывают личные пометки,
+    // а картинки и сводные таблицы только занимают память
+    if (/^xl\/(comments\d*|drawings\/|threadedComments\/|persons\/|media\/|pivotCache\/|pivotTables\/|externalLinks\/|printerSettings\/)/.test(name)) continue;
     const sheet = kept.get(name);
     const content = await readLimited(entry, PART_MAX, sheet ? `Вкладка «${sheet}»` : "Часть файла");
     total += content.length;

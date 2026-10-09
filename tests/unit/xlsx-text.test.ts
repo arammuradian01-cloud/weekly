@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { formatDate, formatNumber } from "@/lib/goals/xlsx-text";
-import { mergeArea, prepareXlsx, XlsxError } from "@/lib/goals/xlsx-safe";
+import { mergeArea, mergeRange, prepareXlsx, XlsxError } from "@/lib/goals/xlsx-safe";
 
 // Текст ячеек борда как на экране таблицы (этап 31) и подготовка файла до чтения: ненужные листы пустые,
 // огромные объединения и раздутые части отклоняются
@@ -64,6 +64,17 @@ describe("подготовка файла до чтения", () => {
   it("огромное объединение ячеек на листе целей отклоняется до чтения", async () => {
     expect(mergeArea("A1:J1048576")).toBe(10 * 1048576);
     expect(mergeArea("B3:B4")).toBe(2);
+    // Ссылки со знаком доллара разбираются, непонятные считаются бесконечными: такой лист не читаем
+    expect(mergeArea("$A$10:$J$1048576")).toBe(10 * 1048567);
+    expect(mergeArea("A10:J1048576x")).toBe(Number.POSITIVE_INFINITY);
+    expect(mergeRange("B4:A3")).toEqual({ from: [1, 3], to: [2, 4] });
+    for (const ref of ["$A$10:$J$1048576", "A10:J1048576x"]) {
+      const bad = await patchSheet(await workbook(), (xml) => xml.replace("</sheetData>", `</sheetData><mergeCells count="1"><mergeCell ref="${ref}"/></mergeCells>`));
+      await expect(prepareXlsx(bad, (name) => name.startsWith("Цели")), ref).rejects.toThrow(/объединен|объединение/);
+    }
+    // Обычное объединение доходит до чтения в разобранном виде
+    const fine = await patchSheet(await workbook(), (xml) => xml.replace("</sheetData>", '</sheetData><mergeCells count="1"><mergeCell ref="$B$3:$B$4"/></mergeCells>'));
+    expect(new TextDecoder().decode(await prepareXlsx(fine, (name) => name.startsWith("Цели")))).toMatch(/<mergeCell ref="B3:B4"\/>/);
     const bomb = await patchSheet(await workbook(), (xml) => xml.replace("</sheetData>", '</sheetData><mergeCells count="1"><mergeCell ref="A1:J1048576"/></mergeCells>'));
     await expect(prepareXlsx(bomb, (name) => name.startsWith("Цели"))).rejects.toThrow(/объединено слишком много ячеек/);
     // Много средних объединений считаются вместе
@@ -85,6 +96,19 @@ describe("подготовка файла до чтения", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
     expect(book.getWorksheet("Цели CPO")!.getCell("A1").text).toBe("CPO - Рева Тарас");
     expect(new TextDecoder().decode(safe)).not.toMatch(/dataValidation/);
+  });
+
+  it("картинки на листах не мешают: части с картинками в чтение не попадают", async () => {
+    const book = new ExcelJS.Workbook();
+    const ws = book.addWorksheet("Цели CPO");
+    ws.addRow(["CPO - Рева Тарас"]);
+    const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
+    ws.addImage(book.addImage({ buffer: png.buffer as ArrayBuffer, extension: "png" }), "B2:C3");
+    const safe = await prepareXlsx((await book.xlsx.writeBuffer()) as ArrayBuffer, (name) => name.startsWith("Цели"));
+    const read = new ExcelJS.Workbook();
+    await read.xlsx.load(safe.buffer.slice(safe.byteOffset, safe.byteOffset + safe.byteLength) as ArrayBuffer);
+    expect(read.getWorksheet("Цели CPO")!.getCell("A1").text).toBe("CPO - Рева Тарас");
+    expect((await JSZip.loadAsync(safe)).file(/^xl\/media\//)).toEqual([]);
   });
 
   it("часть архива, которая раздувается при распаковке, отклоняется по ходу распаковки", async () => {
