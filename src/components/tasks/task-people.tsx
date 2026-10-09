@@ -50,12 +50,12 @@ export function TaskPeople() {
             const blocked = mine.filter((t) => t.state === "blocked").length;
             return (
               <tr key={p.slug} data-testid={`task-people-${p.slug}`}>
-                <td className="is-wide">
+                <th scope="row" className="is-wide text-left font-normal">
                   <span className="sv-datatable__strong">{p.fullName}</span>
                   <div className="mt-1.5 h-1.5 w-full max-w-40 rounded-full bg-field" aria-hidden="true">
                     <div className={cn("h-full rounded-full", late ? "bg-danger" : "bg-blue")} style={{ width: `${(mine.length / max) * 100}%` }} />
                   </div>
-                </td>
+                </th>
                 <td className="is-num" data-label="Открыто">
                   {mine.length}
                 </td>

@@ -47,9 +47,10 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
   );
 
   const num = (n: number, alert?: boolean) => <span className={cn("tabular-nums", alert && n > 0 ? "font-semibold text-danger-ink" : n === 0 ? "text-muted" : "text-ink")}>{n}</span>;
-  const expected = reports.filter((w) => !w.optional);
-  const submitted = expected.filter((w) => w.state === "submitted" || w.state === "late").length;
   const absentNow = (w: PersonWeekly | undefined) => !!w?.absent && w.state !== "submitted" && w.state !== "late";
+  // Как на «Weekly» и в «Моих командах»: без тех, от кого weekly по желанию, и без отсутствующих, кто не сдал
+  const expected = reports.filter((w) => !w.optional && !absentNow(w));
+  const submitted = expected.filter((w) => w.state === "submitted" || w.state === "late").length;
 
   // Этап 36: ключевые цифры команды плитками и одна таблица на ноутбуке и телефоне (на телефоне строки карточками)
   return (
@@ -57,11 +58,12 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
       <Figures
         label="Команда в цифрах"
         items={[
-          { label: "В работе", value: totals.inWork, href: "/tasks", testId: "team-fig-work" },
-          { label: "Просрочено", value: totals.overdue, href: "/tasks?f=overdue", tone: "danger", testId: "team-fig-overdue" },
+          // Цифры по людям, как итог таблицы ниже: без общих задач лидеров, поэтому без ссылок на список задач
+          { label: "В работе", value: totals.inWork, testId: "team-fig-work" },
+          { label: "Просрочено", value: totals.overdue, tone: "danger", testId: "team-fig-overdue" },
           { label: "С риском", value: totals.risk, tone: "warning", testId: "team-fig-risk" },
           { label: "Закрыто за неделю", value: totals.closedWeek, testId: "team-fig-closed" },
-          { label: "Давно без обновлений", value: totals.stale, href: "/tasks?f=stale", tone: "warning", testId: "team-fig-stale" },
+          { label: "Давно без обновлений", value: totals.stale, tone: "warning", testId: "team-fig-stale" },
           { label: `Weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly" },
         ]}
       />
@@ -85,7 +87,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
               const weekly = reports.find((w) => w.author === r.person.slug);
               return (
                 <tr key={r.person.slug}>
-                  <td className="is-wide">
+                  <th scope="row" className="is-wide text-left font-normal">
                     <Link href={`/tasks/review?person=${r.person.slug}`} className="font-semibold text-ink hover:text-blue-700 hover:underline">
                       {r.person.fullName}
                     </Link>
@@ -93,14 +95,14 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                     <span className="block text-caption text-muted">
                       {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}
                     </span>
-                  </td>
+                  </th>
                   <td className="is-num" data-label="Всего">{num(r.total)}</td>
                   <td className="is-num" data-label="В работе">{num(r.inWork)}</td>
                   <td className="is-num" data-label="Просрочено">{num(r.overdue, true)}</td>
                   <td className="is-num" data-label="С риском">{num(r.risk, true)}</td>
                   <td className="is-num" data-label="Закрыто">{num(r.closedWeek)}</td>
                   <td className="is-num" data-label="Без обновлений">{num(r.stale, true)}</td>
-                  <td data-label={`Weekly ${weekNumber}`}>
+                  <td className="is-wide" data-label={`Weekly ${weekNumber}`}>
                     {absentNow(weekly) ? (
                       <>
                         <AbsentBadge />

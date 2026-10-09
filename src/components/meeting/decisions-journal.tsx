@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
-import { formatLong } from "@/domain/dates";
+import { addDays, formatLong } from "@/domain/dates";
 import type { DecisionView } from "@/domain/meeting";
 import { cancelDecisionAction, searchDecisionsAction } from "@/app/(app)/meeting/actions";
 import { Badge } from "@/components/ui/badge";
@@ -20,11 +20,17 @@ import { FormError } from "@/components/ui/field";
 
 type Status = "active" | "cancelled" | "all";
 
+/** Сколько решений отдаёт сервер за раз (listDecisions) */
+const DECISIONS_LIMIT = 200;
+
 export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { initial: DecisionView[]; teamIds?: string[]; /** Запрос из адреса: сервер уже отобрал по нему */ initialQuery?: string }) {
-  const { notify, manage, leads } = usePrototype();
+  const { notify, manage, leads, data } = usePrototype();
   const [query, setQuery] = useState(initialQuery);
   const [status, setStatus] = useState<Status>("all");
   const [items, setItems] = useState(initial);
+  // Исходный список для цифр: отмена решения меняет и его, без перезагрузки страницы
+  const [base, setBase] = useState(initial);
+  useEffect(() => setBase(initial), [initial]);
   const [cancelling, setCancelling] = useState<DecisionView | null>(null);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -54,27 +60,30 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
     const r = await cancelDecisionAction(cancelling.id, reason);
     if (!r.ok) return setError(r.error);
     setItems((prev) => prev.map((d) => (d.id === r.value.id ? r.value : d)));
+    setBase((prev) => prev.map((d) => (d.id === r.value.id ? r.value : d)));
     setCancelling(null);
     setReason("");
     setError(null);
     notify("Решение отменено");
   };
 
-  // Цифры журнала по исходному списку (команда или поиск из адреса): фильтр на экране их не меняет
-  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+  // Цифры журнала по исходному списку (команда или поиск из адреса): фильтр на экране их не меняет. Неделя по Москве:
+  // сегодня и шесть дней до него
+  const weekAgo = addDays(data.today, -6);
   return (
     <div className="flex flex-col gap-4">
-      {initial.length ? (
+      {base.length ? (
         <Figures
           label="Решения в цифрах"
           items={[
-            { label: "В силе", value: initial.filter((d) => d.status === "active").length, testId: "dec-fig-active" },
-            { label: "Отменено", value: initial.filter((d) => d.status === "cancelled").length, testId: "dec-fig-cancelled" },
-            { label: "За последние 7 дней", value: initial.filter((d) => d.date >= weekAgo).length, testId: "dec-fig-week" },
-            { label: "Без владельца", value: initial.filter((d) => d.status === "active" && !d.owner).length, tone: "warning", testId: "dec-fig-noowner" },
+            { label: "В силе", value: base.filter((d) => d.status === "active").length, testId: "dec-fig-active" },
+            { label: "Отменено", value: base.filter((d) => d.status === "cancelled").length, testId: "dec-fig-cancelled" },
+            { label: "За последние 7 дней", value: base.filter((d) => d.date >= weekAgo).length, testId: "dec-fig-week" },
+            { label: "Без владельца", value: base.filter((d) => d.status === "active" && !d.owner).length, tone: "warning", testId: "dec-fig-noowner" },
           ]}
         />
       ) : null}
+      {base.length >= DECISIONS_LIMIT ? <p className="text-caption text-text-secondary">Цифры по последним {DECISIONS_LIMIT} решениям: более ранние находит поиск.</p> : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative block sm:w-96">
           <span className="sr-only">Поиск по решениям</span>
@@ -113,9 +122,11 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
                 <th scope="col">Владелец</th>
                 <th scope="col">Задачи</th>
                 <th scope="col">Состояние</th>
-                <th scope="col">
-                  <span className="sr-only">Действия</span>
-                </th>
+                {canCancel ? (
+                  <th scope="col">
+                    <span className="sr-only">Действия</span>
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -153,13 +164,15 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
                   <td data-label="Состояние">
                     <Badge tone={d.status === "active" ? "green" : "gray"}>{d.status === "active" ? "В силе" : "Отменено"}</Badge>
                   </td>
-                  <td className="is-action">
-                    {canCancel && d.status === "active" ? (
-                      <Button size="sm" variant="ghost" onClick={() => setCancelling(d)} aria-label={`Отменить решение: ${d.text.slice(0, 60)}`}>
-                        Отменить
-                      </Button>
-                    ) : null}
-                  </td>
+                  {canCancel ? (
+                    <td className="is-action">
+                      {d.status === "active" ? (
+                        <Button size="sm" variant="ghost" onClick={() => setCancelling(d)} aria-label={`Отменить решение: ${d.text.slice(0, 60)}`}>
+                          Отменить
+                        </Button>
+                      ) : null}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

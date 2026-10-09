@@ -207,7 +207,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
           className="mt-4"
           action={
             // Этап 36: у пустого списка по фильтрам одно действие, вернуть все задачи
-            !archive && base.length > 0 ? (
+            !archive && base.length > 0 && active ? (
               <Button size="sm" variant="secondary" onClick={reset}>
                 Показать все задачи
               </Button>

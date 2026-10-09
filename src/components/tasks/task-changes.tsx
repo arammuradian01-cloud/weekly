@@ -58,8 +58,16 @@ export function TaskChanges({ since, changes }: { since: string; changes: TaskCh
                 </button>
                 <span className="sv-log__change">
                   <span className="text-muted">{c.kind === "new" ? "Новая задача" : c.field}:</span>
-                  {c.before && c.kind !== "new" ? <span className="text-muted line-through decoration-1">{c.before}</span> : null}
-                  <span className="font-semibold text-ink">{c.after}</span>
+                  {c.before && c.kind !== "new" ? (
+                    <del className="text-muted decoration-1">
+                      <span className="sr-only">было </span>
+                      {c.before}
+                    </del>
+                  ) : null}
+                  <ins className="font-semibold text-ink no-underline">
+                    {c.before && c.kind !== "new" ? <span className="sr-only">стало </span> : null}
+                    {c.after}
+                  </ins>
                 </span>
                 <span className="text-caption text-text-secondary">{c.by}</span>
               </div>

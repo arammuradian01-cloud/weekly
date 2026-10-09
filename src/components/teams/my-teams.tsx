@@ -51,7 +51,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
           { label: "Просрочено", value: sum("overdue"), tone: "danger", testId: "mt-fig-overdue" },
           { label: "Требует уточнений", value: sum("clarify"), tone: "warning", testId: "mt-fig-clarify" },
           { label: "Давно без обновлений", value: sum("stale"), tone: "warning", testId: "mt-fig-stale" },
-          { label: "Целей в риске", value: sum("goalsAtRisk"), tone: "danger", href: "/goals", testId: "mt-fig-goals" },
+          { label: "Целей в риске", value: sum("goalsAtRisk"), tone: "danger", testId: "mt-fig-goals" },
           { label: `Weekly за неделю ${panel.reportingNumber}`, value: self.weekly.expected ? `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}` : "не ждём", testId: "mt-fig-weekly" },
         ]}
       />
@@ -154,7 +154,7 @@ function TeamRow({ team: t }: { team: PanelTeam }) {
   const n = (value: number, alert?: boolean) => <span className={cn("tabular-nums", value && alert ? "font-semibold text-danger-ink" : value ? "text-ink" : "text-muted")}>{value}</span>;
   return (
     <tr data-testid={`mt-team-${t.id}`}>
-      <td className="is-wide">
+      <th scope="row" className="is-wide text-left font-normal">
         <span className="sv-datatable__name">
           <span className="sv-datatable__strong">
             {t.level === "below" ? (
@@ -171,12 +171,12 @@ function TeamRow({ team: t }: { team: PanelTeam }) {
             {t.proposed ? `, предложено задач ${t.proposed}` : ""}
           </span>
         </span>
-      </td>
-      <td data-label="Weekly">
+      </th>
+      <td className="is-wide" data-label="Weekly">
         <span className="inline-flex items-start gap-2">
           <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
           <span>
-            {t.weekly.expected === 0 ? "Weekly в команде не ждём" : `Weekly: сдали ${done} из ${t.weekly.expected}`}
+            {t.weekly.expected === 0 ? "в команде не ждём" : `сдали ${done} из ${t.weekly.expected}`}
             {t.weekly.expected ? <span className="block text-caption text-muted">{t.weekly.passed ? "срок прошёл" : deadlineText(t.weekly.deadline)}</span> : null}
           </span>
         </span>

@@ -56,7 +56,8 @@ function Deadlines() {
           </thead>
           <tbody>
             {hot.map((t) => {
-              const late = isOverdue(t, data.today);
+              // Срок прошёл и у предложенной задачи: «срок завтра» про неё было бы неправдой
+              const late = isOverdue(t, data.today) || t.due < data.today;
               return (
                 <tr key={t.number}>
                   <td className="is-wide">

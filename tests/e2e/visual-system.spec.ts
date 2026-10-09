@@ -89,8 +89,9 @@ test("мне и моя неделя: цифры ведут к разделам �
   const figures = page.getByRole("list", { name: "Мне в цифрах" });
   await expect(figures).toBeVisible();
   await expect(page.getByTestId("me-fig-events")).toBeVisible();
-  await page.getByTestId("me-fig-requests").getByRole("link").click();
-  await expect(page).toHaveURL(/#me-requests$/);
+  await page.getByTestId("me-fig-late").getByRole("link").click();
+  await expect(page).toHaveURL(/#me-deadlines$/);
+  await expect(page.getByTestId("me-deadlines")).toBeVisible();
   await shot(page, "me");
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Мой weekly за неделю/ })).toBeVisible();

@@ -98,7 +98,7 @@ export function Figures({ items, label, className }: { items: Figure[]; label: s
         return (
           <li key={f.label} className={cn("sv-figure", tone && `sv-figure--${tone}`)} data-testid={f.testId}>
             {f.href ? (
-              <Link href={f.href} className="sv-figure__link" aria-label={`${f.label}: ${f.value}${f.hint ? `. ${f.hint}` : ""}`}>
+              <Link href={f.href} className="sv-figure__link">
                 {body}
               </Link>
             ) : (
