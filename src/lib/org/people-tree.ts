@@ -3,7 +3,7 @@
 // этой ветки, владельцу и администраторам, как на странице подразделений
 
 import { prisma } from "@/lib/db";
-import type { Role } from "@/generated/prisma/enums";
+import { loadScope, type ScopeSubject } from "@/lib/org/scope";
 
 export type TreePerson = {
   slug: string;
@@ -25,7 +25,8 @@ export type TreePerson = {
   memberOf: { id: string; name: string }[];
   /** Открытые вакансии подразделений, которыми он руководит. null: не видны этому человеку */
   vacancies: string[] | null;
-  role: Role;
+  /** Задачи и цели этого человека видны смотрящему: свои, люди его команд и команд ниже, функциональные, управление */
+  work: boolean;
 };
 
 export type PeopleTree = {
@@ -40,39 +41,41 @@ export type PeopleTree = {
   loaded: boolean;
 };
 
-export async function peopleTree(viewer: { id: string; role: Role }): Promise<PeopleTree> {
-  const [people, teams, units, vacancies] = await Promise.all([
+export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
+  const [people, teams, units, vacancies, scope] = await Promise.all([
     prisma.person.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
-      select: { id: true, slug: true, fullName: true, position: true, role: true, managerId: true, functionalManagerId: true, unit: { select: { id: true, name: true, kind: true } } },
+      select: { id: true, slug: true, fullName: true, position: true, managerId: true, functionalManagerId: true, unit: { select: { name: true, active: true } } },
     }),
     prisma.team.findMany({ where: { active: true }, select: { id: true, name: true, leaderId: true, members: { select: { personId: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, headId: true, parentId: true, kind: true } }),
     prisma.vacancy.findMany({ where: { closedAt: null }, select: { unitId: true, position: true }, orderBy: { createdAt: "asc" } }),
+    loadScope(prisma, viewer),
   ]);
   const byId = new Map(people.map((p) => [p.id, p]));
   const slugOf = (id: string | null) => (id ? (byId.get(id)?.slug ?? null) : null);
 
-  // Руководитель вне активных людей или петля (А под Б, Б под А): человек встаёт в корни, чтобы его было видно
+  // Руководитель вне активных людей или петля (А под Б, Б под А): человек встаёт в корни, чтобы его было видно.
+  // Из петли выходят только её участники: кто под петлёй, остаётся под своим руководителем
   const managerOf = new Map<string, string | null>();
   let orphans = 0;
+  const upOf = (id: string) => {
+    const m = byId.get(id)?.managerId ?? null;
+    return m && m !== id && byId.has(m) ? m : null;
+  };
   for (const p of people) {
-    let m = p.managerId && byId.has(p.managerId) && p.managerId !== p.id ? p.managerId : null;
+    let m = upOf(p.id);
     if (p.managerId && !m) orphans += 1;
-    if (m) {
-      const seen = new Set([p.id]);
-      let cur: string | null = m;
-      while (cur) {
-        if (seen.has(cur)) {
-          m = null;
-          orphans += 1;
-          break;
-        }
-        seen.add(cur);
-        cur = byId.get(cur)?.managerId ?? null;
-        if (cur && !byId.has(cur)) break;
+    const seen = new Set<string>();
+    for (let cur = m; cur; cur = upOf(cur)) {
+      if (cur === p.id) {
+        m = null;
+        orphans += 1;
+        break;
       }
+      if (seen.has(cur)) break;
+      seen.add(cur);
     }
     managerOf.set(p.id, m);
   }
@@ -108,12 +111,20 @@ export async function peopleTree(viewer: { id: string; role: Role }): Promise<Pe
     for (const c of unitChildren.get(id) ?? []) mark(c, guard);
   };
   for (const u of units) if (u.headId === viewer.id) mark(u.id);
+  // Если человек руководит подразделениями в разных ветках, видны вакансии только тех, что в ветке смотрящего
   const vacanciesOf = (personId: string): string[] | null => {
     const headed = units.filter((u) => u.headId === personId);
     if (!headed.length) return [];
-    if (!allVacancies && !headed.some((u) => visibleUnits.has(u.id))) return null;
-    return vacancies.filter((v) => headed.some((u) => u.id === v.unitId)).map((v) => v.position);
+    const shown = allVacancies ? headed : headed.filter((u) => visibleUnits.has(u.id));
+    if (!shown.length) return null;
+    const ids = new Set(shown.map((u) => u.id));
+    return vacancies.filter((v) => ids.has(v.unitId)).map((v) => v.position);
   };
+
+  // Чья работа видна смотрящему: те же правила, что у задач (scope)
+  const visibleTeams = new Set(scope.visible);
+  const workPeople = new Set<string>([viewer.id, ...scope.functional, ...scope.leadPeople]);
+  for (const t of teams) if (visibleTeams.has(t.id)) [t.leaderId, ...t.members.map((m) => m.personId)].forEach((id) => id && workPeople.add(id));
 
   const depthOf = new Map<string, number>();
   const roots = order(people.filter((p) => !managerOf.get(p.id)).map((p) => p.id));
@@ -134,7 +145,8 @@ export async function peopleTree(viewer: { id: string; role: Role }): Promise<Pe
       slug: p.slug,
       fullName: p.fullName,
       position: p.position,
-      unit: p.unit?.name ?? null,
+      // Выключенное подразделение не показываем: человек мог остаться в нём со старой загрузки
+      unit: p.unit?.active ? p.unit.name : null,
       manager: slugOf(managerOf.get(p.id) ?? null),
       functional: slugOf(p.functionalManagerId),
       reports: order(reports.get(p.id) ?? []).map((id) => byId.get(id)!.slug),
@@ -143,7 +155,7 @@ export async function peopleTree(viewer: { id: string; role: Role }): Promise<Pe
       leads: teams.filter((t) => t.leaderId === p.id).map((t) => ({ id: t.id, name: t.name })),
       memberOf: teams.filter((t) => t.members.some((m) => m.personId === p.id)).map((t) => ({ id: t.id, name: t.name })),
       vacancies: vacanciesOf(p.id),
-      role: p.role,
+      work: scope.all || workPeople.has(p.id),
     };
   }
   const me = byId.get(viewer.id);

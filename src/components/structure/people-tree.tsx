@@ -5,7 +5,7 @@
 // имени и должности открывает человека на схеме
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
 import type { PeopleTree, TreePerson } from "@/lib/org/people-tree";
 import { Avatar, Segmented, TextInput } from "@/components/ui/primitives";
@@ -26,6 +26,9 @@ const plural = (n: number, one: string, few: string, many: string) => {
   return many;
 };
 
+/** Поиск без регистра и без разницы «ё» и «е», как в остальном ресурсе */
+const norm = (s: string) => s.toLowerCase().replace(/ё/g, "е");
+
 /** «4 прямых, всего 12» или «Без подчинённых» */
 export function reportsText(p: Pick<TreePerson, "reports" | "total">): string {
   if (!p.reports.length) return "Без подчинённых";
@@ -33,11 +36,23 @@ export function reportsText(p: Pick<TreePerson, "reports" | "total">): string {
   return p.total > p.reports.length ? `${direct}, всего ${p.total}` : direct;
 }
 
-export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
-  const [focus, setFocus] = useState<string | null>(tree.start);
+export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; me: string; owner?: boolean }) {
+  const [picked, setPicked] = useState<string | null>(tree.start);
   const [mode, setMode] = useState<"chart" | "list">("chart");
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
   const people = tree.people;
+  // Человек мог пропасть после обновления структуры: тогда снова с начала
+  const focus = picked && people[picked] ? picked : tree.start;
+  // После перехода к другому человеку фокус клавиатуры и экран переходят на его карточку
+  const headRef = useRef<HTMLHeadingElement>(null);
+  const moved = useRef(false);
+  useEffect(() => {
+    if (!moved.current) return;
+    moved.current = false;
+    headRef.current?.focus({ preventScroll: true });
+    headRef.current?.scrollIntoView({ block: "nearest" });
+  }, [focus, mode]);
 
   const path = useMemo(() => {
     const out: string[] = [];
@@ -51,21 +66,25 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
     return out;
   }, [focus, people]);
 
-  const q = query.trim().toLowerCase();
-  const found = q.length >= 2 ? Object.values(people).filter((p) => [p.fullName, p.position, p.unit].some((v) => v && v.toLowerCase().includes(q))).slice(0, 8) : [];
+  const q = norm(query.trim());
+  const found = q.length >= 2 ? Object.values(people).filter((p) => [p.fullName, p.position, p.unit].some((v) => v && norm(v).includes(q))).slice(0, 8) : [];
 
   if (!tree.loaded) {
     return (
       <EmptyState title="Руководители в структуре ещё не заданы">
-        Дерево строится по колонке «Руководитель» из листа структуры. Его загружает владелец ресурса на вкладке «Подразделения».
+        {owner
+          ? "Дерево строится по колонке «Руководитель» из листа структуры. Загрузите лист кнопкой «Загрузить структуру» выше."
+          : "Дерево строится по колонке «Руководитель» из листа структуры. Лист загружает владелец ресурса."}
       </EmptyState>
     );
   }
 
   const open = (slug: string) => {
-    setFocus(slug);
+    moved.current = true;
+    setPicked(slug);
     setMode("chart");
     setQuery("");
+    setSearchOpen(false);
   };
   const p = focus ? people[focus] : undefined;
   const otherRoots = tree.roots.filter((r) => r !== path[0]);
@@ -73,14 +92,37 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
   return (
     <div className="flex flex-col gap-4" data-testid="people-tree">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="relative w-full sm:max-w-sm">
-          <TextInput id="people-search" label="Найти человека" hideLabel placeholder="Найти человека: имя или должность" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} autoComplete="off" />
+        <div
+          className="relative w-full sm:max-w-sm"
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setSearchOpen(false);
+          }}
+        >
+          <TextInput
+            id="people-search"
+            label="Найти человека"
+            hideLabel
+            placeholder="Найти человека: имя или должность"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setSearchOpen(true);
+            }}
+            onFocus={() => setSearchOpen(true)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setQuery("");
+                setSearchOpen(false);
+              }
+            }}
+            autoComplete="off"
+          />
           <Search className="pointer-events-none absolute right-3 top-[18px] h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
-          {found.length ? (
+          {!searchOpen ? null : found.length ? (
             <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-control border border-border bg-surface shadow-[var(--shadow-menu)]" aria-label="Найденные люди">
               {found.map((f) => (
                 <li key={f.slug}>
-                  <button type="button" className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-field" onClick={() => open(f.slug)}>
+                  <button type="button" className="flex w-full flex-col items-start px-3 py-2 text-left hover:bg-field" onMouseDown={(e) => e.preventDefault()} onClick={() => open(f.slug)}>
                     <span className="text-body text-ink">{f.fullName}</span>
                     <span className="text-caption text-text-secondary">{[f.position, f.unit].filter(Boolean).join(", ")}</span>
                   </button>
@@ -100,14 +142,20 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
             {path.map((slug, i) => (
               <span key={slug} className="inline-flex items-center gap-1">
                 {i > 0 ? <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-                <button type="button" className="sv-org__crumb" aria-current={slug === focus ? "true" : undefined} onClick={() => slug !== focus && setFocus(slug)}>
-                  {people[slug]!.fullName}
-                </button>
+                {slug === focus ? (
+                  <span className="sv-org__crumb" aria-current="page">
+                    {people[slug]!.fullName}
+                  </span>
+                ) : (
+                  <button type="button" className="sv-org__crumb" onClick={() => open(slug)}>
+                    {people[slug]!.fullName}
+                  </button>
+                )}
               </span>
             ))}
           </nav>
 
-          <FocusCard person={p} people={people} me={me} onOpen={setFocus} />
+          <FocusCard person={p} people={people} me={me} onOpen={open} headRef={headRef} />
 
           {p.reports.length ? (
             <>
@@ -119,7 +167,7 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
                 <ul className="sv-org__grid">
                   {p.reports.map((slug) => (
                     <li key={slug}>
-                      <PersonCard person={people[slug]!} me={me} onOpen={setFocus} />
+                      <PersonCard person={people[slug]!} me={me} onOpen={open} />
                     </li>
                   ))}
                 </ul>
@@ -135,7 +183,7 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {otherRoots.slice(0, 30).map((slug) => (
                   <li key={slug}>
-                    <button type="button" className="rounded-tag bg-field px-2 py-1 text-caption text-ink hover:bg-accent-soft" onClick={() => setFocus(slug)}>
+                    <button type="button" className="rounded-tag bg-field px-2 py-1 text-caption text-ink hover:bg-accent-soft" onClick={() => open(slug)}>
                       {people[slug]!.fullName}
                     </button>
                   </li>
@@ -168,7 +216,19 @@ function PersonCard({ person: p, me, onOpen }: { person: TreePerson; me: string;
   );
 }
 
-function FocusCard({ person: p, people, me, onOpen }: { person: TreePerson; people: Record<string, TreePerson>; me: string; onOpen: (slug: string) => void }) {
+function FocusCard({
+  person: p,
+  people,
+  me,
+  onOpen,
+  headRef,
+}: {
+  person: TreePerson;
+  people: Record<string, TreePerson>;
+  me: string;
+  onOpen: (slug: string) => void;
+  headRef: React.RefObject<HTMLHeadingElement | null>;
+}) {
   const manager = p.manager ? people[p.manager] : undefined;
   const functional = p.functional ? people[p.functional] : undefined;
   return (
@@ -176,7 +236,7 @@ function FocusCard({ person: p, people, me, onOpen }: { person: TreePerson; peop
       <div className="flex items-start gap-3">
         <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="font-heading text-title-sm font-bold text-ink">
+          <h2 ref={headRef} tabIndex={-1} className="scroll-mt-24 font-heading text-title-sm font-bold text-ink [overflow-wrap:anywhere] focus:outline-none">
             {p.fullName}
             {p.slug === me ? <span className="ml-2 text-caption font-normal text-text-secondary">это вы</span> : null}
           </h2>
@@ -220,14 +280,17 @@ function FocusCard({ person: p, people, me, onOpen }: { person: TreePerson; peop
           </div>
         ) : null}
       </dl>
-      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-        <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
-          Задачи
-        </Link>
-        <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
-          Цели
-        </Link>
-      </div>
+      {p.work ? (
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
+            Задачи
+          </Link>
+          <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
+            Цели
+          </Link>
+          <span className="text-caption text-text-secondary">откроются в команде, выбранной в верхней панели</span>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -273,7 +336,7 @@ function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | n
             {p.fullName}
           </button>
           <span className="sv-tree-list__meta">
-            {[p.position, p.reports.length ? `подчинённых ${p.total}` : null].filter(Boolean).join(", ")}
+            {[p.position, p.reports.length ? `подчинённых: ${p.total}` : null].filter(Boolean).join(", ")}
           </span>
         </div>
         {p.reports.length && isOpen ? (

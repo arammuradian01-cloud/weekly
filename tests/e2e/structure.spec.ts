@@ -149,11 +149,25 @@ test("дерево подчинённых: схема с путём наверх
   // Список всем деревом
   await page.getByRole("radiogroup", { name: "Вид дерева" }).getByRole("radio", { name: "Список" }).click();
   const list = page.getByRole("list", { name: "Дерево подчинённых" });
-  await expect(list).toContainText("Рева Тарас");
+  // Список открыт до выбранного человека: ветка Ревы раскрыта, Чемоданова видна
+  await expect(list).toContainText("Чемоданова Алиса");
+  await list.getByRole("button", { name: /Свернуть: Рева Тарас/ }).click();
+  await expect(list).not.toContainText("Антонов Дмитрий");
   await list.getByRole("button", { name: /Развернуть: Рева Тарас/ }).click();
   await expect(list).toContainText("Антонов Дмитрий");
   await shot(page, "people-list");
+  // Имя в списке открывает человека на схеме
+  await list.getByRole("button", { name: "Антонов Дмитрий", exact: true }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
+
   // Ссылка «Цели» с карточки открывает цели с поиском по человеку
+  await page.goto("/goals");
+  await page.getByRole("button", { name: "Новая цель" }).click();
+  const modal = page.getByRole("dialog", { name: /Новая цель/ });
+  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
+  await modal.getByRole("button", { name: "Завести цель" }).click();
+  await expect(page.getByText("Цель заведена").first()).toBeVisible();
   await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
   await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
 });

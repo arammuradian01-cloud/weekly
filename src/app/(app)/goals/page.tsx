@@ -10,9 +10,13 @@ import { GoalsScreen } from "@/components/goals/goals-screen";
 export const metadata: Metadata = { title: "Цели" };
 
 /** Сквозные цели (этап 17): дерево целей квартала от департамента до команд и людей, прогресс и риски */
-export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ q?: string; find?: string }> }) {
+export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ q?: string | string[]; find?: string | string[] }> }) {
   const ctx = await requireContext();
-  const { q, find } = await searchParams;
+  const params = await searchParams;
+  // Повтор параметра в адресе даёт массив: берём первое значение
+  const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  const q = first(params.q);
+  const find = first(params.find);
   const subject = subjectOf(ctx);
   const team = await currentTeam(subject);
   const view = await goalsView(

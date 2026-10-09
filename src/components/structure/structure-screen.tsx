@@ -86,7 +86,7 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [] 
       </div>
 
       {tab === "people" ? (
-        <PeopleTreeView tree={tree} me={me} />
+        <PeopleTreeView tree={tree} me={me} owner={owner} />
       ) : tab === "units" ? (
         empty ? (
           <EmptyState title="Структура ещё не загружена">

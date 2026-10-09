@@ -14,6 +14,7 @@ const STRUCTURE = [
   ["Чемоданова Алиса", "Product Designer", "Управление развития продуктов", "Отдел развития продуктов", "Сектор автострахования", "Антонов Дмитрий", "", ""],
   ["Токов Никита", "Team Lead", "Управление развития продуктов", "Продуктовая аналитика", "", "Рева Тарас", "да", ""],
   ["Иванова Мария", "Аналитик", "Управление развития продуктов", "Продуктовая аналитика", "", "Токов Никита", "", ""],
+  ["Белова Анна", "Аналитик", "Управление развития продуктов", "", "", "Рева Тарас", "", ""],
   ["Вакансия", "PO KASKO", "Управление развития продуктов", "Отдел развития продуктов", "Сектор автострахования", "", "", "вакансия"],
 ]
   .map((r) => r.join("\t"))
@@ -61,11 +62,12 @@ describe("дерево подчинённых", () => {
     const antonov = await slugOf("Антонов");
     const tokov = await slugOf("Токов");
     const alisa = await slugOf("Чемоданова");
+    const belova = await slugOf("Белова");
     expect(tree.roots[0]).toBe("muradyan");
     expect(tree.people.muradyan!.reports).toContain(reva);
-    // Руководители впереди, потом по алфавиту
-    expect(tree.people[reva]!.reports).toEqual([antonov, tokov]);
-    expect(tree.people[reva]!.total).toBe(4);
+    // Руководители впереди, потом по алфавиту: Белова по алфавиту раньше Токова, но без подчинённых
+    expect(tree.people[reva]!.reports).toEqual([antonov, tokov, belova]);
+    expect(tree.people[reva]!.total).toBe(5);
     expect(tree.people[antonov]!).toMatchObject({ manager: reva, reports: [alisa], total: 1, depth: 2, position: "PO OSAGO", unit: "Сектор автострахования" });
     expect(tree.people[alisa]!.depth).toBe(3);
     expect(tree.people[antonov]!.leads.map((t) => t.name)).toContain("Сектор автострахования");
@@ -73,6 +75,21 @@ describe("дерево подчинённых", () => {
     // Начало: у меня есть подчинённые, начинаю с себя
     expect(tree.start).toBe("muradyan");
     expect((await peopleTree(await viewer(alisa))).start).toBe(antonov);
+    // Корень без подчинённых (наблюдатель вне структуры): начинает с первого корня
+    expect((await peopleTree(await viewer("ceo"))).start).toBe("muradyan");
+  });
+
+  it("чья работа видна: управление всех, специалист себя и руководителя своей команды", async () => {
+    const antonov = await slugOf("Антонов");
+    const tokov = await slugOf("Токов");
+    const alisa = await slugOf("Чемоданова");
+    const all = await peopleTree(await viewer("muradyan"));
+    expect(Object.values(all.people).every((p) => p.work)).toBe(true);
+    const mine = await peopleTree(await viewer(alisa));
+    expect(mine.people[alisa]!.work).toBe(true);
+    expect(mine.people[antonov]!.work).toBe(true);
+    expect(mine.people[tokov]!.work).toBe(false);
+    expect((await peopleTree(await viewer(antonov))).people[alisa]!.work).toBe(true);
   });
 
   it("вакансии видят руководитель ветки и управление, остальные нет", async () => {
@@ -81,8 +98,37 @@ describe("дерево подчинённых", () => {
     expect((await peopleTree(await viewer(await slugOf("Рева")))).people[antonov]!.vacancies).toEqual(["PO KASKO"]);
     expect((await peopleTree(await viewer(antonov))).people[antonov]!.vacancies).toEqual(["PO KASKO"]);
     expect((await peopleTree(await viewer(await slugOf("Токов")))).people[antonov]!.vacancies).toBeNull();
+    const alisa = await viewer(await slugOf("Чемоданова"));
+    expect((await peopleTree(alisa)).people[antonov]!.vacancies).toBeNull();
+    // Администратор без подразделений видит вакансии
+    expect((await peopleTree({ ...alisa, role: "ADMIN" })).people[antonov]!.vacancies).toEqual(["PO KASKO"]);
     // У кого нет подразделения под руководством, вакансий нет вовсе
     expect((await peopleTree(await viewer("muradyan"))).people[await slugOf("Чемоданова")]!.vacancies).toEqual([]);
+  });
+
+  it("руководитель двух подразделений в разных ветках: вакансии чужой ветки не видны", async () => {
+    const tokov = await prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: "Токов" } } });
+    const dept = await prisma.orgUnit.findFirstOrThrow({ where: { kind: "DEPARTMENT" } });
+    const other = await prisma.orgUnit.create({ data: { name: "Управление продаж", kind: "MANAGEMENT", parentId: dept.id, headId: tokov.id } });
+    await prisma.vacancy.create({ data: { unitId: other.id, position: "Аналитик продаж" } });
+    try {
+      const reva = await viewer(await slugOf("Рева"));
+      // Рева видит вакансии только «Продуктовой аналитики» (их нет), но не управления продаж
+      expect((await peopleTree(reva)).people[tokov.slug]!.vacancies).toEqual([]);
+      expect((await peopleTree(await viewer("muradyan"))).people[tokov.slug]!.vacancies).toEqual(["Аналитик продаж"]);
+    } finally {
+      await prisma.orgUnit.delete({ where: { id: other.id } });
+    }
+  });
+
+  it("выключенное подразделение у человека не показывается", async () => {
+    const antonov = await prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: "Антонов" } } });
+    await prisma.orgUnit.update({ where: { id: antonov.unitId! }, data: { active: false } });
+    try {
+      expect((await peopleTree(await viewer("muradyan"))).people[antonov.slug]!.unit).toBeNull();
+    } finally {
+      await prisma.orgUnit.update({ where: { id: antonov.unitId! }, data: { active: true } });
+    }
   });
 
   it("петля и выключенный руководитель: люди не теряются, встают в корни", async () => {
@@ -107,6 +153,25 @@ describe("дерево подчинённых", () => {
     expect(tree.people[tokov.slug]).toBeUndefined();
     expect(tree.roots).toContain(ivanova.slug);
     expect(tree.people[ivanova.slug]!.manager).toBeNull();
-    await prisma.person.update({ where: { id: tokov.id }, data: { active: true } });
+    await prisma.person.update({ where: { id: tokov.id }, data: { active: true, managerId: (await prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: "Рева" } } })).id } });
+    await prisma.person.update({ where: { id: ivanova.id }, data: { managerId: tokov.id } });
+  });
+
+  it("петля выше по дереву: из неё выходят только её участники, люди под ней остаются на месте", async () => {
+    const find = (start: string) => prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: start } } });
+    const [reva, antonov, alisa, tokov, muradyan] = await Promise.all([find("Рева"), find("Антонов"), find("Чемоданова"), find("Токов"), prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } })]);
+    // Рева под Антоновым, Антонов под Ревой; под ними Чемоданова и Токов
+    await prisma.person.update({ where: { id: reva.id }, data: { managerId: antonov.id } });
+    try {
+      const tree = await peopleTree(await viewer("muradyan"));
+      expect(tree.orphans).toBe(2);
+      expect(tree.roots).toEqual(expect.arrayContaining([reva.slug, antonov.slug]));
+      expect(tree.people[alisa.slug]!.manager).toBe(antonov.slug);
+      expect(tree.people[tokov.slug]!.manager).toBe(reva.slug);
+      expect(tree.people[tokov.slug]!.depth).toBe(1);
+      expect(tree.roots[0]).toBe("muradyan");
+    } finally {
+      await prisma.person.update({ where: { id: reva.id }, data: { managerId: muradyan.id } });
+    }
   });
 });
