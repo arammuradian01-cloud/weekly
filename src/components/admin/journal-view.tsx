@@ -130,7 +130,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
             <tbody>
               {events.map((e) => (
                 <tr key={e.id}>
-                  <td data-label="Когда" className="whitespace-nowrap tabular-nums text-muted">
+                  <td data-label="Когда" className="tabular-nums text-muted sm:whitespace-nowrap">
                     {formatShort(e.at)}
                     {e.time ? `, ${e.time}` : ""}
                   </td>

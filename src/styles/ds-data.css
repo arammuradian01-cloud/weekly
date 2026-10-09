@@ -204,8 +204,12 @@ a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline
 .sv-journal__change { white-space: normal; overflow-wrap: anywhere; }
 @media (min-width: 1024px) { .sv-journal__change { min-width: 260px; } }
 .sv-journal td { vertical-align: top; }
-/* На телефоне «Откуда» встаёт рядом с «Кто», а не отдельной строкой под текстом правки */
-@media (max-width: 639px) { .sv-journal tr { grid-auto-flow: row dense; } }
+/* На телефоне «Когда», «Кто» и «Откуда» в одном ряду сверху, объект и правка под ними во всю ширину */
+@media (max-width: 639px) {
+  .sv-journal tr { grid-auto-flow: row dense; }
+  .sv-journal td { justify-content: flex-start; }
+  .sv-journal td:first-child { grid-column: auto; }
+}
 
 
 /* Пустое состояние в строку с действием (этап 37): текст занимает место, на телефоне кнопка уходит под текст, а не
