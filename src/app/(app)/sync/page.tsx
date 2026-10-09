@@ -120,9 +120,9 @@ export default async function SyncPage() {
           <Figures
             label="Синхронизация в цифрах"
             items={[
-              // Связь выключена: время прошлого забора уже ничего не говорит
-              { label: "Задачи из Bord, последний забор", value: !bordView.connected ? "выключен" : (bordView.lastOk?.ago ?? "ещё не было"), tone: bordView.connected && bordView.error ? "danger" : undefined, testId: "sync-fig-bord" },
-              { label: "Цифры недели, последний забор", value: !numbersView.connected ? "выключен" : (numbersView.lastOk?.ago ?? "ещё не было"), tone: numbersView.connected && numbersView.error ? "danger" : undefined, testId: "sync-fig-numbers" },
+              // Связи нет (выключена или нет ключа): время прошлого забора уже ничего не говорит
+              { label: "Задачи из Bord, последний забор", value: !bordView.connected ? "не подключён" : (bordView.lastOk?.ago ?? "ещё не было"), tone: bordView.connected && bordView.error ? "danger" : undefined, testId: "sync-fig-bord" },
+              { label: "Цифры недели, последний забор", value: !numbersView.connected ? "не подключён" : (numbersView.lastOk?.ago ?? "ещё не было"), tone: numbersView.connected && numbersView.error ? "danger" : undefined, testId: "sync-fig-numbers" },
               { label: "Правок ждут выгрузки", value: view.queue.size, tone: view.connected && view.lagging ? "warning" : undefined, testId: "sync-fig-queue" },
               { label: "Задач в ресурсе", value: tasks, testId: "sync-fig-tasks" },
               { label: "Записей weekly", value: entries, testId: "sync-fig-entries" },

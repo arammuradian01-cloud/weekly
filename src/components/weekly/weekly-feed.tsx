@@ -61,7 +61,7 @@ function WeekLock({ week }: { week: WeekInfo }) {
     setBusy(false);
   };
   return (
-    <Button variant="secondary" onClick={toggle} disabled={busy} className="px-3 sm:px-5">
+    <Button variant="secondary" onClick={toggle} disabled={busy} className="col-span-2 px-3 sm:col-span-1 sm:px-5">
       {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
       {week.closed ? "Открыть неделю" : "Закрыть неделю"}
     </Button>
@@ -78,7 +78,7 @@ function TeamWeekLock({ week, team }: { week: WeekInfo; team: { id: string; name
     setBusy(false);
   };
   return (
-    <Button variant="secondary" onClick={toggle} disabled={busy} className="px-3 sm:px-5" aria-label={week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}>
+    <Button variant="secondary" onClick={toggle} disabled={busy} className="col-span-2 px-3 sm:col-span-1 sm:px-5" aria-label={week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}>
       {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
       <span className="sm:hidden">{week.closed ? "Открыть неделю" : "Закрыть неделю"}</span>
       <span className="hidden sm:inline">{week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}</span>
@@ -146,7 +146,7 @@ export function WeeklyFeed({
           ) : null
         }
       >
-        {/* В строке действий шапки: на телефоне сетка во всю ширину, дальше кнопки переносятся, а не растягивают страницу */}
+        {/* В строке действий шапки: на телефоне сетка во всю ширину, длинные подписи на всю строку, дальше кнопки переносятся */}
         <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0">
           <div className="col-span-2 sm:col-span-1">
             <WeekSwitcher view={data} />
@@ -160,7 +160,7 @@ export function WeeklyFeed({
             <span className="sm:hidden">Встреча</span>
             <span className="hidden sm:inline">Режим встречи</span>
           </Link>
-          <Link href="/weekly/submit" className={buttonClass("primary", "md", "px-3 sm:px-5")}>
+          <Link href="/weekly/submit" className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
           </Link>
