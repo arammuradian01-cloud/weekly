@@ -198,3 +198,5 @@ a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline
 /* Журнал решений (этап 36): текст решения широкой колонкой, остальное по содержимому */
 .sv-decision__text { min-width: 280px; width: 45%; white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 639px) { .sv-decision__text { min-width: 0; width: auto; } }
+/* Высокие строки с плашками задач: имя и цифры сверху, рядом с первыми плашками */
+.sv-task-people td, .sv-task-people tbody th { vertical-align: top; padding-top: var(--space-3); }

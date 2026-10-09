@@ -26,7 +26,7 @@ export function TaskPeople() {
   // Этап 36: таблица вместо карточек. Цифры по человеку в колонках, задачи плашками в последней колонке
   return (
     <div className="sv-card sv-card--soft overflow-x-auto p-0">
-      <table className="sv-datatable sv-datatable--stack" data-testid="task-people">
+      <table className="sv-datatable sv-datatable--stack sv-task-people" data-testid="task-people">
         <caption className="sr-only">Открытые задачи по людям команды</caption>
         <thead>
           <tr>
