@@ -131,4 +131,12 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "request.remind": "Напоминание о просьбе",
   "request.task": "Просьба стала задачей",
   "request.reopen": "Просьба снова открыта",
+  "goal.fact": "Факт цели",
+  "plan.pull": "Прогноз месяца: загружены бюджет и LBE",
+  "plan.adjust": "Прогноз месяца: корректировка драйвера",
+  "plan.owners": "Прогноз месяца: команда продукта",
+  "plan.source": "Прогноз месяца: источник LRF",
+  "plan.check": "Прогноз месяца: прогноз проверен",
+  "plan.facts": "Прогноз месяца: факт по дням",
+  "plan.export": "Прогноз месяца: выгрузка в Excel",
 };

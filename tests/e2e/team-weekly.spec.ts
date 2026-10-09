@@ -63,7 +63,8 @@ test("руководитель сектора включает weekly специ
   await shot(antonov, "rhythm");
   await modal.getByRole("button", { name: "Сохранить" }).click();
   await expect(antonov.getByText("Ритм команды сохранён").first()).toBeVisible();
-  await expect(antonov.getByText(/Weekly: сдали 0 из 1.*пт, 16:00/)).toBeVisible();
+  // Срок пятница 16:00 этой недели: после него в пятницу и в выходные вместо срока «срок прошёл»
+  await expect(antonov.getByText(/Weekly: сдали 0 из 1.*(пт, 16:00|срок прошёл)/)).toBeVisible();
   await shot(antonov, "structure-lights");
 
   // Специалист пишет запись: weekly от неё теперь ждут в секторе
