@@ -48,8 +48,10 @@
 .sv-datatable tbody tr:last-child td { border-bottom: 0; }
 .sv-datatable__section td { height: 32px; padding-top: 10px; padding-bottom: 4px; background: var(--color-surface); color: var(--color-text-secondary); font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); border-bottom: 1px solid var(--color-border); }
 .sv-datatable__row--total td { font-weight: var(--font-weight-semibold); background: var(--color-page); }
-/* Заголовок строки в теле таблицы (итог «Вся команда», этап 36): как ячейка, а не как шапка */
-.sv-datatable tbody th[scope="row"] { height: var(--row-comfortable); padding-top: 6px; padding-bottom: 6px; color: var(--color-text); font-size: var(--text-body); line-height: var(--leading-body); white-space: normal; border-bottom: 0; }
+/* Заголовок строки в теле таблицы (имя человека или команды, итог «Вся команда», этап 36): как ячейка, а не как шапка */
+.sv-datatable tbody th[scope="row"] { height: var(--row-comfortable); padding-top: 6px; padding-bottom: 6px; background: transparent; color: var(--color-text); font-size: var(--text-body); line-height: var(--leading-body); white-space: normal; border-bottom: 1px solid var(--color-border); }
+.sv-datatable tbody tr:last-child th { border-bottom: 0; }
+.sv-datatable__row--total th { background: var(--color-page); }
 .sv-datatable__row--sub td:first-child { padding-left: calc(var(--space-5) + var(--space-5)); color: var(--color-text-secondary); }
 .sv-datatable__row--pick { cursor: pointer; transition: background-color var(--duration-color); }
 .sv-datatable__row--pick:hover td { background: var(--color-row-hover); }
@@ -113,7 +115,7 @@
   /* Задачи по людям (этап 36): плашки задач во всю ширину карточки человека */
   .sv-datatable--stack td.sv-task-people__chips { grid-column: 1 / -1; width: auto; }
   .sv-task-people__chips ul { width: 100%; }
-  .sv-datatable--stack tbody th[scope="row"] { grid-column: 1 / -1; display: block; height: auto; padding: 0 !important; background: transparent; }
+  .sv-datatable--stack tbody th[scope="row"] { grid-column: 1 / -1; display: block; height: auto; padding: 0 !important; background: transparent; border: 0; }
   .sv-datatable--stack .sv-datatable__section { display: block; padding: var(--space-3) var(--space-4) 0; border-bottom: 0; }
   .sv-datatable--stack .sv-datatable__section td { display: block; font-size: var(--text-caption); }
   .sv-datatable--stack .sv-datatable__row--picked { background: var(--color-row-selected); box-shadow: inset 3px 0 0 var(--color-accent); }

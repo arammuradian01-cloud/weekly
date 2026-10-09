@@ -12,7 +12,8 @@ export function MeFigures({ requests, overdueRequests, events }: { requests: num
   const { data, me } = usePrototype();
   const tomorrow = addDays(data.today, 1);
   const open = data.tasks.filter((t) => !t.archived && isMine(t, me.slug, me.role) && ["in-progress", "clarify", "proposed"].includes(t.status));
-  const late = open.filter((t) => isOverdue(t, data.today)).length;
+  // Как в блоке «Сроки»: срок прошёл и у предложенной задачи
+  const late = open.filter((t) => isOverdue(t, data.today) || t.due < data.today).length;
   // Предложенная задача с прошедшим сроком не «просрочена» по правилам, но и не «сегодня или завтра»
   const soon = open.filter((t) => !isOverdue(t, data.today) && t.due >= data.today && t.due <= tomorrow).length;
   // Всё разобрано: пять нулей ничего не добавляют к пустому списку ниже
