@@ -44,15 +44,14 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
   const people = tree.people;
   // Человек мог пропасть после обновления структуры: тогда снова с начала
   const focus = picked && people[picked] ? picked : tree.start;
-  // После перехода к другому человеку фокус клавиатуры и экран переходят на его карточку
+  // После перехода к человеку (и к тому же самому) фокус клавиатуры и экран переходят на его карточку
   const headRef = useRef<HTMLHeadingElement>(null);
-  const moved = useRef(false);
+  const [jump, setJump] = useState(0);
   useEffect(() => {
-    if (!moved.current) return;
-    moved.current = false;
+    if (!jump) return;
     headRef.current?.focus({ preventScroll: true });
     headRef.current?.scrollIntoView({ block: "nearest" });
-  }, [focus, mode]);
+  }, [jump]);
 
   const path = useMemo(() => {
     const out: string[] = [];
@@ -80,7 +79,7 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
   }
 
   const open = (slug: string) => {
-    moved.current = true;
+    setJump((n) => n + 1);
     setPicked(slug);
     setMode("chart");
     setQuery("");
@@ -280,17 +279,19 @@ function FocusCard({
           </div>
         ) : null}
       </dl>
-      {p.work ? (
-        <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+      {/* Цели видны шире задач (цели выше своей команды), поэтому ссылка на цели есть у всех, на задачи только у тех,
+          чьи задачи смотрящему видны */}
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        {p.work ? (
           <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
             Задачи
           </Link>
-          <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
-            Цели
-          </Link>
-          <span className="text-caption text-text-secondary">откроются в команде, выбранной в верхней панели</span>
-        </div>
-      ) : null}
+        ) : null}
+        <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
+          Цели
+        </Link>
+        <span className="text-caption text-text-secondary">откроются в команде, выбранной в верхней панели</span>
+      </div>
     </section>
   );
 }
@@ -332,11 +333,13 @@ function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | n
           ) : (
             <span className="inline-block w-[26px]" aria-hidden="true" />
           )}
-          <button type="button" className="sv-tree-list__name" aria-current={slug === focus ? "true" : undefined} onClick={() => onOpen(slug)}>
-            {p.fullName}
-          </button>
-          <span className="sv-tree-list__meta">
-            {[p.position, p.reports.length ? `подчинённых: ${p.total}` : null].filter(Boolean).join(", ")}
+          <span className="sv-tree-list__text">
+            <button type="button" className="sv-tree-list__name" aria-current={slug === focus ? "true" : undefined} onClick={() => onOpen(slug)}>
+              {p.fullName}
+            </button>
+            <span className="sv-tree-list__meta">
+              {[p.position, p.reports.length ? `подчинённых: ${p.total}` : null].filter(Boolean).join(", ")}
+            </span>
           </span>
         </div>
         {p.reports.length && isOpen ? (

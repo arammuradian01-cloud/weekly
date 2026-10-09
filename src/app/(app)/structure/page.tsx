@@ -17,11 +17,12 @@ export const metadata: Metadata = { title: "Структура" };
 export default async function StructurePage() {
   const ctx = await requireContext();
   const owner = ctx.management?.role === "OWNER";
-  const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role }, { includeInactive: owner }), peopleTree(subjectOf(ctx))]);
+  const subject = subjectOf(ctx);
+  const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner }), peopleTree(subject)]);
   const leadsTeam = view.teams.some((t) => t.id !== TOP_TEAM && t.leader?.slug === ctx.person.slug);
   const candidates = owner || leadsTeam ? await memberCandidates(await currentActor()) : [];
   // Ритм weekly задают руководители своих команд и команд ниже (этап 15)
-  const scope = await loadScope(prisma, subjectOf(ctx));
+  const scope = await loadScope(prisma, subject);
   return (
     <>
       <PageHeader title="Структура" description="Дерево подчинённых, подразделения департамента и команды руководителей: кто с кем работает каждую неделю" />

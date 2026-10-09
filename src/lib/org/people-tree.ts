@@ -99,8 +99,9 @@ export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
     return n;
   };
 
-  // Вакансии: руководителям своей ветки подразделений, владельцу и администраторам
-  const allVacancies = viewer.role === "OWNER" || viewer.role === "ADMIN";
+  // Вакансии: руководителям своей ветки подразделений, владельцу и администраторам. Общий логин без режима управления
+  // их не видит, какой бы профиль ни выбрали (как в scope)
+  const allVacancies = !viewer.limited && (viewer.role === "OWNER" || viewer.role === "ADMIN");
   const unitChildren = new Map<string, string[]>();
   for (const u of units) if (u.parentId) unitChildren.set(u.parentId, [...(unitChildren.get(u.parentId) ?? []), u.id]);
   const visibleUnits = new Set<string>();
@@ -110,7 +111,7 @@ export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
     visibleUnits.add(id);
     for (const c of unitChildren.get(id) ?? []) mark(c, guard);
   };
-  for (const u of units) if (u.headId === viewer.id) mark(u.id);
+  if (!viewer.limited) for (const u of units) if (u.headId === viewer.id) mark(u.id);
   // Если человек руководит подразделениями в разных ветках, видны вакансии только тех, что в ветке смотрящего
   const vacanciesOf = (personId: string): string[] | null => {
     const headed = units.filter((u) => u.headId === personId);

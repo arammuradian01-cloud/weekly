@@ -140,7 +140,8 @@
 /* Тот же список деревом с отступами: для поиска и телефона */
 .sv-tree-list { list-style: none; margin: 0; padding: 0; }
 .sv-tree-list .sv-tree-list { padding-left: var(--space-5); border-left: 1px solid var(--color-border); margin-left: 13px; }
-.sv-tree-list__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0 4px; min-height: 36px; }
+.sv-tree-list__row { display: flex; align-items: flex-start; gap: 4px; min-height: 36px; padding-top: 2px; }
+.sv-tree-list__text { display: flex; flex: 1 1 0; flex-wrap: wrap; align-items: baseline; gap: 0 4px; min-width: 0; }
 .sv-tree-list__toggle { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 26px; height: 26px; border: 0; border-radius: var(--radius-tag); background: transparent; color: var(--color-text-secondary); cursor: pointer; }
 .sv-tree-list__toggle:hover { background: var(--color-field); color: var(--color-text); }
 .sv-tree-list__name { min-width: 0; overflow-wrap: anywhere; padding: 4px 6px; border: 0; border-radius: var(--radius-tag); background: transparent; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }

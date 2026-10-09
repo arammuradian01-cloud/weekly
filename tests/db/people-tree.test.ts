@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import * as svc from "@/lib/tasks/service";
 import * as org from "@/lib/org/service";
 import { peopleTree } from "@/lib/org/people-tree";
+import { structureView } from "@/lib/org/view";
 import { TOP_TEAM } from "@/lib/org/scope";
 
 const STRUCTURE = [
@@ -76,7 +77,15 @@ describe("дерево подчинённых", () => {
     expect(tree.start).toBe("muradyan");
     expect((await peopleTree(await viewer(alisa))).start).toBe(antonov);
     // Корень без подчинённых (наблюдатель вне структуры): начинает с первого корня
-    expect((await peopleTree(await viewer("ceo"))).start).toBe("muradyan");
+    await prisma.person.update({ where: { slug: "ceo" }, data: { active: true } });
+    try {
+      const forCeo = await peopleTree(await viewer("ceo"));
+      expect(forCeo.roots).toContain("ceo");
+      expect(forCeo.people.ceo!.reports).toEqual([]);
+      expect(forCeo.start).toBe("muradyan");
+    } finally {
+      await prisma.person.update({ where: { slug: "ceo" }, data: { active: false } });
+    }
   });
 
   it("чья работа видна: управление всех, специалист себя и руководителя своей команды", async () => {
@@ -102,6 +111,13 @@ describe("дерево подчинённых", () => {
     expect((await peopleTree(alisa)).people[antonov]!.vacancies).toBeNull();
     // Администратор без подразделений видит вакансии
     expect((await peopleTree({ ...alisa, role: "ADMIN" })).people[antonov]!.vacancies).toEqual(["PO KASKO"]);
+    // Общий логин без режима управления не видит вакансий, какой бы профиль ни выбрали: ни в дереве, ни в подразделениях
+    const shared = { ...(await viewer("muradyan")), limited: true };
+    expect((await peopleTree(shared)).people[antonov]!.vacancies).toBeNull();
+    expect((await peopleTree({ ...(await viewer(antonov)), limited: true })).people[antonov]!.vacancies).toBeNull();
+    const units = (await structureView(shared)).units.filter((u) => u.vacancies !== null);
+    expect(units).toEqual([]);
+    expect((await structureView(await viewer("muradyan"))).units.some((u) => u.vacancies?.includes("PO KASKO"))).toBe(true);
     // У кого нет подразделения под руководством, вакансий нет вовсе
     expect((await peopleTree(await viewer("muradyan"))).people[await slugOf("Чемоданова")]!.vacancies).toEqual([]);
   });
