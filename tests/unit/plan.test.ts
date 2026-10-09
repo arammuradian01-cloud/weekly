@@ -247,6 +247,9 @@ describe("крайние случаи LRF и пересчёта", () => {
     const serial = (Date.UTC(2026, 9, 1) - Date.UTC(1899, 11, 30)) / 86_400_000;
     const grid = [[null, "LBE", "BUD"], [null, serial, serial]];
     expect(findColumns(grid, OCT).columns).toEqual({ LBE: 1, BUD: 2 });
+    // Число в строке с названием это цифра, а не месяц: нет октября, значит нет колонки
+    const sep = [[null, "LBE", "BUD"], [null, "Sep_2026", "Sep_2026"], [null, "TOTAL OSAGO Web (MAU)", 46_300]];
+    expect(findColumns(sep, OCT).problem).toMatch(/Нет колонки/);
     expect(rowLabel(["-", "PROMO MARGIN"])).toBe("PROMO MARGIN");
     expect(rowLabel(["#REF!", "TOTAL REVENUE"])).toBe("TOTAL REVENUE");
   });

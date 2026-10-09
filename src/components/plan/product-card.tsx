@@ -231,8 +231,10 @@ function DriverEditor({
     if (!reset && !valid) return setError(`Укажите значение числом${unit === "pct" ? " в процентах, например 10,5" : ""}`);
     if (!reset && text.trim() === initialText) return setError("Значение не изменилось: введите новое");
     const value = reset ? null : parsed;
-    if (comment.trim().length < 3) return setError("Напишите, почему меняется прогноз: одной фразой");
-    if (comment.trim().length > COMMENT_MAX) return setError(`Обоснование не длиннее ${COMMENT_MAX} знаков`);
+    // Длина в символах, как на сервере и в базе: эмодзи один символ
+    const length = [...comment.trim()].length;
+    if (length < 3) return setError("Напишите, почему меняется прогноз: одной фразой");
+    if (length > COMMENT_MAX) return setError(`Обоснование не длиннее ${COMMENT_MAX} знаков`);
     setBusy(true);
     const r = await adjustPlanAction({ month, product: product.code, metric, value, seen: current, reason, comment });
     setBusy(false);
@@ -281,7 +283,7 @@ function DriverEditor({
           rows={2}
           value={comment}
           onChange={(e) => setComment(e.target.value)}
-          counter={{ value: comment.length, max: COMMENT_MAX }}
+          counter={{ value: [...comment].length, max: COMMENT_MAX }}
           placeholder="Например: с 1 октября выросла комиссия партнёра, конверсия первой недели 11%"
           className="min-w-0"
         />

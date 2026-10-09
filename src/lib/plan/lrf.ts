@@ -17,10 +17,11 @@ const text = (c: Cell) => (c === null || c === undefined ? "" : String(c).replac
 
 /**
  * Месяц из ячейки шапки: текст «Oct_2026» или дата. Дата приходит из таблицы числом дней от 30.12.1899, если ячейку
- * когда-нибудь переведут в формат даты
+ * когда-нибудь переведут в формат даты. Число считается датой только в строке шапки: у строки с цифрами есть название
+ * (трафик 46 300 не должен стать месяцем)
  */
-function headMonth(c: Cell): string {
-  if (typeof c === "number" && c > 30_000 && c < 80_000) {
+function headMonth(c: Cell, header: boolean): string {
+  if (header && typeof c === "number" && c > 30_000 && c < 80_000) {
     const d = new Date(Date.UTC(1899, 11, 30) + Math.round(c) * 86_400_000);
     return lrfMonth(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`).toLowerCase();
   }
@@ -34,8 +35,10 @@ export function findColumns(grid: Grid, month: string): ParsedSheet {
   const columns: ParsedSheet["columns"] = {};
   for (let r = 0; r < head.length; r++) {
     const row = head[r] ?? [];
+    const label = rowLabel(row);
+    const header = label === "" || /^[A-Za-z]{3}_\d{4}$/.test(label) || /^(Act|LBE|BUD)$/i.test(label);
     for (let j = 0; j < row.length; j++) {
-      if (headMonth(row[j]) !== target) continue;
+      if (headMonth(row[j], header) !== target) continue;
       // Версия: в одной из строк выше или ниже в той же колонке
       for (let k = 0; k < head.length; k++) {
         const v = text(head[k]?.[j]).toUpperCase();
