@@ -5,11 +5,11 @@
 // прогресс. Описание, задачи, история факта и действия раскрываются под строкой
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
 import type { GoalResult } from "@/generated/prisma/enums";
-import { goalProgress, progressLabel, type GoalProgress } from "@/lib/goals/progress";
+import { factProblem, goalProgress, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
 import { formatShort } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { setGoalFactAction, updateGoalAction } from "@/app/(app)/goals/actions";
@@ -42,7 +42,7 @@ export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?
   if (!progress) return <span className="text-caption text-text-secondary">нет</span>;
   const width = Math.max(0, Math.min(1, progress.share)) * 100;
   return (
-    <span className={cn("sv-meter", progress.share >= 1 && "sv-meter--done", risk && progress.share < 1 && "sv-meter--risk")}>
+    <span className={cn("sv-meter", reached(progress) && "sv-meter--done", risk && !reached(progress) && "sv-meter--risk")}>
       <span className="sv-meter__track" aria-hidden="true">
         <span className="sv-meter__fill" style={{ width: `${width}%` }} />
       </span>
@@ -55,6 +55,7 @@ type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => v
 
 export function GoalsTable({
   goals,
+  all,
   groupBy,
   onEdit,
   onMark,
@@ -63,6 +64,8 @@ export function GoalsTable({
   onChanged,
 }: {
   goals: GoalNode[];
+  /** Все цели квартала: цель выше и цели ниже показываются и при фильтре */
+  all: Map<string, GoalNode>;
   groupBy: GoalGroupBy;
   onEdit: (g: GoalNode) => void;
   onMark: (g: GoalNode) => void;
@@ -72,15 +75,28 @@ export function GoalsTable({
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
-  const byId = useMemo(() => new Map(goals.map((g) => [g.id, g])), [goals]);
+  const byId = all;
+  const allRef = useRef(all);
+  allRef.current = all;
 
-  // Ссылка с метки цели (#goal-…): раскрыть и показать строку
+  // Ссылка на цель (#goal-id, с метки цели у задачи или из списка целей ниже): раскрыть и показать строку. Один раз при
+  // открытии страницы и при каждой смене адреса, а не при каждой перерисовке
   useEffect(() => {
-    const id = decodeURIComponent(window.location.hash.replace(/^#goal-/, ""));
-    if (!id || !byId.has(id)) return;
-    setOpen(id);
-    requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
-  }, [byId]);
+    const go = () => {
+      let id = "";
+      try {
+        id = decodeURIComponent(window.location.hash.replace(/^#goal-/, ""));
+      } catch {
+        return;
+      }
+      if (!id || !allRef.current.has(id)) return;
+      setOpen(id);
+      requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
+    };
+    go();
+    window.addEventListener("hashchange", go);
+    return () => window.removeEventListener("hashchange", go);
+  }, []);
 
   const groups = useMemo(() => {
     const out = new Map<string, { key: string; label: string; goals: GoalNode[] }>();
@@ -157,15 +173,15 @@ export function GoalsTable({
                   </td>
                   <td className="is-desktop max-w-[220px] whitespace-normal text-caption text-text-secondary">{g.metric ?? ""}</td>
                   <td className="is-num" data-label="База">
-                    {g.base ?? <span className="sv-datatable__muted">нет</span>}
+                    <span className="inline-block max-w-[140px] whitespace-normal">{g.base ?? <span className="sv-datatable__muted">нет</span>}</span>
                   </td>
                   <td className="is-num" data-label="Целевое">
-                    <span className="max-w-[180px] whitespace-normal">{g.target ?? <span className="sv-datatable__muted">нет</span>}</span>
+                    <span className="inline-block max-w-[180px] whitespace-normal">{g.target ?? <span className="sv-datatable__muted">нет</span>}</span>
                   </td>
                   <td className="is-num" data-label="Факт">
                     {g.fact ? (
                       <span className="flex flex-col items-end max-sm:items-start">
-                        <span className="font-semibold text-ink">{g.fact.value}</span>
+                        <span className="inline-block max-w-[160px] whitespace-normal font-semibold text-ink">{g.fact.value}</span>
                         <span className={cn("text-caption", g.factStale ? "text-warning-ink" : "text-text-secondary")}>{dateFmt.format(new Date(g.fact.at))}</span>
                       </span>
                     ) : g.measurable && g.result === "IN_PROGRESS" ? (
@@ -189,7 +205,7 @@ export function GoalsTable({
                     </span>
                   </td>
                   <td className="is-num is-action">
-                    {(g.canMark || g.canEdit) && editing !== g.id ? (
+                    {(g.canFact || g.canEdit) && editing !== g.id ? (
                       <Button variant="soft" size="sm" onClick={() => setEditing(g.id)} aria-label={`Факт и целевое: ${g.title}`} data-testid={`goal-fact-${g.code ?? g.id}`}>
                         Факт
                       </Button>
@@ -202,6 +218,7 @@ export function GoalsTable({
                       <FactEditor
                         goal={g}
                         onClose={() => setEditing(null)}
+                        onRefresh={onChanged}
                         onSaved={() => {
                           setEditing(null);
                           onChanged();
@@ -349,7 +366,7 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
   );
 }
 
-function FactEditor({ goal: g, onClose, onSaved }: { goal: GoalNode; onClose: () => void; onSaved: () => void }) {
+function FactEditor({ goal: g, onClose, onSaved, onRefresh }: { goal: GoalNode; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
   const { notify } = usePrototype();
   const [fact, setFact] = useState(g.fact?.value ?? "");
   const [note, setNote] = useState("");
@@ -357,28 +374,34 @@ function FactEditor({ goal: g, onClose, onSaved }: { goal: GoalNode; onClose: ()
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const preview = goalProgress(g.base, target, fact);
-  const factChanged = g.canMark && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "");
+  // Тот же факт можно подтвердить, когда он устарел: это снимает «без свежего факта»
+  const factChanged = g.canFact && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "" || g.factStale);
   const targetChanged = g.canEdit && target.trim() !== (g.target ?? "");
   const id = `goal-${g.id}`;
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!factChanged && !targetChanged) return setError(g.canMark ? "Впишите новый факт" : "Целевое значение не изменилось");
+    if (!factChanged && !targetChanged) return setError(g.canFact ? "Впишите новый факт" : "Целевое значение не изменилось");
+    // Факт проверяется по новому целевому до сохранения: иначе целевое сохранится, а факт нет
+    const problem = factChanged ? factProblem(g.base, targetChanged ? target.trim() : g.target, fact.trim()) : null;
+    if (problem) return setError(problem);
     setBusy(true);
-    // Сначала целевое: факт проверяется по новым единицам целевого
+    let targetSaved = false;
     if (targetChanged) {
       const r = await updateGoalAction(g.id, { target: target.trim() || null });
       if (!r.ok) {
         setBusy(false);
         return setError(r.error);
       }
+      targetSaved = true;
     }
     if (factChanged) {
       const r = await setGoalFactAction(g.id, fact.trim(), note.trim() || null);
       if (!r.ok) {
         setBusy(false);
-        return setError(r.error);
+        if (targetSaved) onRefresh();
+        return setError(targetSaved ? `Целевое значение сохранено, факт не вписан: ${r.error}` : r.error);
       }
     }
     setBusy(false);
@@ -389,13 +412,13 @@ function FactEditor({ goal: g, onClose, onSaved }: { goal: GoalNode; onClose: ()
   return (
     <form className="flex flex-col gap-3 py-2" onSubmit={save} role="group" aria-label={`Факт и целевое: ${g.title}`} data-testid="goal-fact-editor">
       <div className="grid gap-3 sm:grid-cols-[minmax(140px,180px)_minmax(140px,200px)_1fr]">
-        {g.canMark ? <TextInput id={`${id}-fact`} label="Факт" value={fact} onChange={(e) => setFact(e.target.value)} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? `Был: ${g.fact.value}` : undefined} autoFocus /> : null}
+        {g.canFact ? <TextInput id={`${id}-fact`} label="Факт" value={fact} onChange={(e) => setFact(e.target.value)} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? `Был: ${g.fact.value}` : undefined} autoFocus /> : null}
         {g.canEdit ? <TextInput id={`${id}-target`} label="Целевое значение" value={target} onChange={(e) => setTarget(e.target.value)} maxLength={300} autoComplete="off" hint={g.base ? `База: ${g.base}` : undefined} /> : null}
-        {g.canMark ? <TextInput id={`${id}-note`} label="Комментарий к факту" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} autoComplete="off" placeholder="Откуда цифра или что изменилось" /> : null}
+        {g.canFact ? <TextInput id={`${id}-note`} label="Комментарий к факту" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} autoComplete="off" placeholder="Откуда цифра или что изменилось" /> : null}
       </div>
       <p className="flex flex-wrap items-center gap-2 text-body text-text-secondary" aria-live="polite">
         Прогресс: <Meter progress={preview} risk={!!g.risk} />
-        {!preview && g.canMark ? <span className="text-caption">считается, когда целевое и факт числа в одних единицах</span> : null}
+        {!preview && g.canFact ? <span className="text-caption">считается, когда целевое и факт числа в одних единицах</span> : null}
       </p>
       <FormError message={error ?? undefined} />
       <div className="flex flex-wrap gap-2">

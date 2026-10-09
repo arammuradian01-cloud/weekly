@@ -87,6 +87,9 @@ test("цели Q4 из файла борда лидера, задача с ли�
   // Метка ведёт к цели
   await tag.click();
   await expect(page).toHaveURL(/\/goals\?q=\d{4}-Q\d#goal-/);
+  // Строка цели раскрыта: описание и задачи цели видны сразу
+  await expect(page.getByTestId("goal-details")).toBeVisible();
+  await expect(page.getByTestId("goal-details")).toContainText(String(number));
 });
 
 test("без режима управления файл борда не загрузить", async ({ page }) => {

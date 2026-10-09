@@ -75,6 +75,41 @@ describe("факт цели", () => {
     expect((await node(ids.cr)).numeric?.share).toBeCloseTo(0.625, 9);
   });
 
+  it("общий логин: факт только в режиме управления; наблюдатель-владелец не видит кнопку", async () => {
+    const team = { ...(await svc.actorFor("reva")), via: "TEAM" as const };
+    await expectRule(goals.setGoalFact(team, ids.margin, { value: "140" }), /при личном входе/);
+    await goals.setGoalFact({ ...(await owner()), via: "TEAM" }, ids.margin, { value: "140" });
+    const limited = await goals.goalsView({ ...who(await svc.actorFor("reva")), limited: true }, { quarter: Q });
+    const g = limited.goals.find((x) => x.id === ids.margin)!;
+    expect(g.canMark).toBe(true);
+    expect(g.canFact).toBe(false);
+    // Наблюдатель, даже если цель на нём, не отмечает и не вписывает
+    await prisma.goal.update({ where: { id: ids.text }, data: { ownerId: (await prisma.person.findUniqueOrThrow({ where: { slug: "ceo" } })).id } });
+    const obs = await goals.goalsView(who(await svc.actorFor("ceo")), { quarter: Q });
+    expect(obs.goals.find((x) => x.id === ids.text)).toMatchObject({ canMark: false, canFact: false });
+  });
+
+  it("единицы и сдвиг: «141 млн» к целевому «150», «+2 п.п.» от базы, расхождение в тысячу раз", async () => {
+    const reva = await svc.actorFor("reva");
+    await goals.setGoalFact(reva, ids.margin, { value: "141 млн" });
+    expect((await node(ids.margin)).numeric?.share).toBeCloseTo(0.7, 9);
+    await expectRule(goals.setGoalFact(reva, ids.margin, { value: "141 000 000 000" }), /больше чем в 1000 раз/);
+    await goals.updateGoal(await owner(), ids.cr, { base: "13%", target: "+2 п.п." });
+    await goals.setGoalFact(reva, ids.cr, { value: "15%" });
+    expect((await node(ids.cr)).numeric?.share).toBeCloseTo(1, 9);
+  });
+
+  it("тот же факт позже подтверждает цифру и снимает «без свежего факта»", async () => {
+    const reva = await svc.actorFor("reva");
+    await goals.setGoalFact(reva, ids.margin, { value: "141" });
+    await prisma.goalFact.updateMany({ where: { goalId: ids.margin }, data: { at: new Date(Date.now() - 15 * 86_400_000) } });
+    expect((await node(ids.margin)).factStale).toBe(true);
+    await goals.setGoalFact(reva, ids.margin, { value: "141" });
+    const g = await node(ids.margin);
+    expect(g.factStale).toBe(false);
+    expect(g.facts.map((f) => f.value)).toEqual(["141", "141"]);
+  });
+
   it("текстовая цель: факт текстом, без процента и без требования свежести", async () => {
     const reva = await svc.actorFor("reva");
     let g = await node(ids.text);
@@ -104,7 +139,8 @@ describe("факт цели", () => {
     const g = await node(ids.margin);
     expect(g.numeric).toBeNull();
     expect(g.measurable).toBe(false);
-    // Удаление цели удаляет и её факты
+    // Цель с фактом сервис не удаляет: история не должна пропасть. Если цель удалить напрямую, факты уходят с ней
+    await expectRule(goals.deleteGoal(await owner(), ids.margin), /вписан факт: удалить нельзя/);
     await prisma.goal.delete({ where: { id: ids.margin } });
     expect(await prisma.goalFact.count({ where: { goalId: ids.margin } })).toBe(0);
   });

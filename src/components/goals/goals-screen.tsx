@@ -122,19 +122,21 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
             actions={<Segmented label="Вид" value={mode} onChange={setMode} options={[{ value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
             flush
           >
+            {mode === "table" ? (
             <div className="flex flex-col gap-3 border-t border-border px-5 py-3 max-sm:px-4">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
                   <TextInput id="goals-search" label="Поиск цели" hideLabel placeholder="Поиск: код, цель, владелец" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
                   <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
                 </div>
-                {mode === "table" ? <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} /> : null}
+                <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} />
               </div>
               <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} />
             </div>
+            ) : null}
             {mode === "table" ? (
               shown.length ? (
-                <GoalsTable goals={shown} groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
+                <GoalsTable goals={shown} all={byId} groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
               ) : (
                 <p className="px-5 py-6 text-body text-text-secondary">Под условия ничего не подходит: смените фильтр или поиск.</p>
               )

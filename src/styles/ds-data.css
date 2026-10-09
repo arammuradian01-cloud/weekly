@@ -85,6 +85,8 @@
 @media (max-width: 639px) {
   .sv-stats { grid-template-columns: 1fr; }
   .sv-stats--compact { grid-template-columns: 1fr 1fr; }
+  .sv-meter { flex-wrap: wrap; gap: 4px var(--space-2); }
+  .sv-meter__track { width: 56px; }
   .sv-stat { padding: var(--space-3) var(--space-4); }
   .sv-module__head { padding: var(--space-3) var(--space-4); }
   .sv-module__body { padding: 0 var(--space-4) var(--space-3); }

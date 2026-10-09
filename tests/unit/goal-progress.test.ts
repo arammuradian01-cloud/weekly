@@ -1,28 +1,75 @@
 import { describe, expect, it } from "vitest";
-import { goalProgress, parseGoalNumber, progressLabel } from "@/lib/goals/progress";
+import { factProblem, goalProgress, measurableTarget, parseGoalNumber, progressLabel, reached } from "@/lib/goals/progress";
 
 // Прогресс цели по числам (этап 33): значения вписаны текстом как в борде
 
 describe("число из текста цели", () => {
   it("числа, разряды, запятая, проценты, множители и единицы", () => {
-    expect(parseGoalNumber("29,25 млн")).toEqual({ value: 29_250_000, unit: "plain" });
-    expect(parseGoalNumber("29.25 млн")).toEqual({ value: 29_250_000, unit: "plain" });
-    expect(parseGoalNumber("1 500 000")).toEqual({ value: 1_500_000, unit: "plain" });
-    expect(parseGoalNumber("1 500 000 руб.")).toEqual({ value: 1_500_000, unit: "plain" });
-    expect(parseGoalNumber("15%")).toEqual({ value: 15, unit: "pct" });
-    expect(parseGoalNumber("+20 %")).toEqual({ value: 20, unit: "pct" });
-    expect(parseGoalNumber("12,5%")).toEqual({ value: 12.5, unit: "pct" });
-    expect(parseGoalNumber("2 п.п.")).toEqual({ value: 2, unit: "pct" });
-    expect(parseGoalNumber("до 15%")).toEqual({ value: 15, unit: "pct" });
-    expect(parseGoalNumber("20 000 полисов")).toEqual({ value: 20_000, unit: "plain" });
-    expect(parseGoalNumber("300 тыс")).toEqual({ value: 300_000, unit: "plain" });
-    expect(parseGoalNumber("-5")).toEqual({ value: -5, unit: "plain" });
+    expect(parseGoalNumber("29,25 млн")).toMatchObject({ value: 29_250_000, unit: "plain" });
+    expect(parseGoalNumber("29.25 млн")).toMatchObject({ value: 29_250_000, unit: "plain" });
+    expect(parseGoalNumber("1 500 000")).toMatchObject({ value: 1_500_000, unit: "plain" });
+    expect(parseGoalNumber("1 500 000 руб.")).toMatchObject({ value: 1_500_000, unit: "plain" });
+    expect(parseGoalNumber("15%")).toMatchObject({ value: 15, unit: "pct" });
+    expect(parseGoalNumber("+20 %")).toMatchObject({ value: 20, unit: "pct" });
+    expect(parseGoalNumber("12,5%")).toMatchObject({ value: 12.5, unit: "pct" });
+    expect(parseGoalNumber("2 п.п.")).toMatchObject({ value: 2, unit: "pct" });
+    expect(parseGoalNumber("до 15%")).toMatchObject({ value: 15, unit: "pct" });
+    expect(parseGoalNumber("20 000 полисов")).toMatchObject({ value: 20_000, unit: "plain" });
+    expect(parseGoalNumber("300 тыс")).toMatchObject({ value: 300_000, unit: "plain" });
+    expect(parseGoalNumber("-5")).toMatchObject({ value: -5, unit: "plain" });
   });
 
   it("текст, сроки, даты и диапазоны числом не читаются", () => {
-    for (const t of ["P&L к 15.12", "до 15.12", "15.12.2026", "Скоринг на проде", "10-12%", "x2", "", null, "рост в 2 раза", "ОСАГО 15%"]) {
+    for (const t of ["P&L к 15.12", "до 15.12", "15.12", "15.12.2026", "Скоринг на проде", "10-12%", "x2", "", null, "рост в 2 раза", "ОСАГО 15%", "от 10 до 12"]) {
       expect(parseGoalNumber(t), String(t)).toBeNull();
     }
+  });
+});
+
+describe("сдвиг, множители и прочерки", () => {
+  it("число с точкой и множителем не дата", () => {
+    expect(parseGoalNumber("до 1.5 млн")).toMatchObject({ value: 1_500_000 });
+    expect(parseGoalNumber("1.5")).toMatchObject({ value: 1.5 });
+  });
+
+  it("множитель только у части значений: остальные в нём же, если так ближе", () => {
+    // Целевое «150» при метрике в миллионах, факт вписали «141 млн»
+    expect(goalProgress("120", "150", "141 млн")?.share).toBeCloseTo(0.7, 9);
+    // Целевое в миллионах, факт без множителя
+    expect(goalProgress(null, "29,25 млн", "14,6")?.share).toBeCloseTo(14.6 / 29.25, 9);
+    // Факт уже в рублях
+    expect(goalProgress(null, "29,25 млн", "14 625 000")?.share).toBeCloseTo(0.5, 9);
+  });
+
+  it("целевое сдвигом от базы: п.п., процент роста, плюс к базе", () => {
+    expect(goalProgress("13%", "+2 п.п.", "15%")?.share).toBeCloseTo(1, 9);
+    expect(goalProgress("70%", "-5 п.п.", "67,5%")?.share).toBeCloseTo(0.5, 9);
+    expect(goalProgress("120", "+20%", "132")?.share).toBeCloseTo(0.5, 9);
+    expect(goalProgress("120 млн", "+30", "135 млн")?.share).toBeCloseTo(0.5, 9);
+    // Без базы сдвиг не посчитать; «+20%» при базе в процентах неясен
+    expect(measurableTarget(null, "+2 п.п.")).toBe(false);
+    expect(measurableTarget("10%", "+20%")).toBe(false);
+    // Отрицательное без п.п. это значение: убыток -10 сократить до -5
+    expect(goalProgress("-10", "-5", "-7,5")?.share).toBeCloseTo(0.5, 9);
+  });
+
+  it("прочерк или «нет» в базе: путь от нуля", () => {
+    for (const base of ["-", "—", "нет", "н/д"]) expect(goalProgress(base, "100", "40")?.share, base).toBeCloseTo(0.4, 9);
+  });
+
+  it("проверка факта: не число, другие единицы, расхождение в тысячу раз", () => {
+    expect(factProblem("120", "150", "почти")).toMatch(/впишите факт числом, например 141/);
+    expect(factProblem("20%", "24%", "22")).toMatch(/тоже в процентах/);
+    expect(factProblem("120", "150", "141%")).toMatch(/без знака процента/);
+    expect(factProblem(null, "29,25 млн", "29 250 000 000 000")).toMatch(/больше чем в 1000 раз/);
+    expect(factProblem("120", "150", "141 млн")).toBeNull();
+    expect(factProblem(null, "Скоринг на проде", "на тесте")).toBeNull();
+  });
+
+  it("округление: 99,96% это выполнено, крошечный минус это 0%", () => {
+    expect(progressLabel(goalProgress("0", "10000", "9996"))).toBe("100%");
+    expect(reached(goalProgress("0", "10000", "9996"))).toBe(true);
+    expect(progressLabel(goalProgress("0", "100000", "-0,01"))).toBe("0%");
   });
 });
 
