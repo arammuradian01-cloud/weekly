@@ -166,13 +166,15 @@ async function buildPlan(actor: Actor, tabs: Tab[], opts: { team: string; quarte
       const key = `${g.teamId}/${base}`;
       groupsOf.set(key, { teamId: g.teamId, base, size: (groupsOf.get(key)?.size ?? 0) + 1 });
     }
-    // Годится только группа с его собственной основой: чужие коды, которые переназначили на него в ресурсе, не уводят
-    // его загрузку в чужую серию
-    const before = [...groupsOf.values()].filter((x) => own(x.base)).sort((a, b) => b.size - a.size)[0];
-    const team = (before && nodes.find((n) => n.id === before.teamId)) || teamOf(nodes, person.id) || fallback;
-    const takenByOther = (b: string) => taken.has(`${team.id}/${b}`) && taken.get(`${team.id}/${b}`) !== person.id;
     // Цель из борда с его основой, которую переназначили человеку с другой основой, его серию не занимает: он её возвращает
     const reclaim = (g: (typeof existing)[number], b: string) => fromBoard(g) && own(b) && !(g.ownerId && nameOf.has(g.ownerId) && ownBases(nameOf.get(g.ownerId)!)(b));
+    // Годится только группа с его собственной основой, в которой нет целей другого человека с той же основой (тёзки по
+    // инициалам): чужие коды, переназначенные на него в ресурсе, не уводят его загрузку в чужую серию
+    const free = (x: { teamId: string; base: string }) =>
+      existing.every((g) => !(g.teamId === x.teamId && g.code?.match(CODE)?.[1] === x.base && fromBoard(g)) || g.ownerId === person.id || reclaim(g, x.base));
+    const before = [...groupsOf.values()].filter((x) => own(x.base) && free(x)).sort((a, b) => b.size - a.size)[0];
+    const team = (before && nodes.find((n) => n.id === before.teamId)) || teamOf(nodes, person.id) || fallback;
+    const takenByOther = (b: string) => taken.has(`${team.id}/${b}`) && taken.get(`${team.id}/${b}`) !== person.id;
     const clash = (b: string) =>
       takenByOther(b) || existing.some((g) => g.teamId === team.id && g.code?.match(CODE)?.[1] === b && !(g.ownerId === person.id && fromBoard(g)) && !reclaim(g, b));
     const base = before && !takenByOther(before.base) ? before.base : codeBase(person.fullName, clash);

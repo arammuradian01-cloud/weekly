@@ -92,6 +92,9 @@ const QUARTER_TITLE = (q: number) =>
   new RegExp(`^запланировано на\\s*(${q}\\s*q|q\\s*${q}|${["", "i", "ii", "iii", "iv"][q]}\\s*кв|${q}\\s*-?\\s*(й|ый)?\\s*кв)`, "i");
 const QUARTER_LABEL = (q: number) => new RegExp(`^(${q}\\s*q|q\\s*${q}|${q}\\s*-?\\s*(й|ый)?\\s*кв[а-я.]*)(\\s*'?\\d{2,4}( год)?)?$`, "i");
 const YEAR_TITLE = /^запланировано на\s*(20\d{2})\s*(г|год)/i;
+/** Ячейка шапки раздела целиком: «Запланировано», «Запланировано на 4Q», «Запланировано на 1 кв. 2027», «Запланировано
+ *  на 2027 год». Описание «Запланировано на 1 кв. 2027: пилот» шапкой не считается */
+const HEADER_CELL = /^запланировано( на\s*((([1-4]\s*-?\s*(й|ый)?\s*(q|кв\.?|квартал))|q\s*[1-4]|i{1,3}\s*кв\.?|iv\s*кв\.?)(\s*'?\d{2,4})?(\s*(г\.?|года?))?|20\d{2}\s*(г\.?|года?)))?$/i;
 
 /** Год в шапке раздела: «4 Q 2026», «4Q 2025», «4Q26». Нет года: null */
 function yearIn(cell: string): number | null {
@@ -160,10 +163,7 @@ function endsSection(row: string[], h: Header): boolean {
   if (/^\d{1,3}\.?$/.test(number)) return false;
   // Шапка следующего раздела в любой колонке: «Запланировано на 1Q», «Запланировано на 2027 год» или «Запланировано»
   // рядом с подписью квартала
-  const header = row.some((c) => {
-    const v = low(clean(c));
-    return v === "запланировано" || YEAR_TITLE.test(v) || [1, 2, 3, 4].some((q) => QUARTER_TITLE(q).test(v));
-  });
+  const header = row.some((c) => HEADER_CELL.test(low(clean(c))));
   if (header) return true;
   const cells = [number, at(h.direction), at(h.title)].filter(Boolean);
   return cells.some((c) => /^договор[её]нност/.test(c) || /^(свалка|бэклог|backlog)/.test(c));

@@ -11,7 +11,7 @@ import JSZip from "jszip";
 const PART_MAX = 20 * 1024 * 1024;
 /** Все оставленные части вместе не больше этого */
 const TOTAL_MAX = 60 * 1024 * 1024;
-/** Объединение на листе целей не больше этого числа ячеек */
+/** Все объединения листа целей вместе не больше этого числа ячеек */
 const MERGE_MAX = 100_000;
 
 const EMPTY_SHEET = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>';
@@ -94,6 +94,22 @@ function sheetsOf(workbook: string, rels: string): { name: string; path: string 
 }
 
 /**
+ * Лист целей без лишнего: только ячейки, ширины колонок и объединения. Проверки данных, условное форматирование,
+ * ссылки, примечания и рисунки библиотека разворачивает по каждой ячейке диапазона, для целей они не нужны
+ */
+export function slimSheet(xml: string, sheet: string): string {
+  const open = xml.match(/<(\w+:)?worksheet\b[^>]*>/);
+  if (!open) throw new XlsxError("not-xlsx");
+  const prefix = open[1] ?? "";
+  const part = (tag: string) => xml.match(new RegExp(`<${prefix}${tag}\\b[^>]*/>|<${prefix}${tag}\\b[^>]*>[\\s\\S]*?</${prefix}${tag}>`))?.[0] ?? "";
+  const merges = part("mergeCells");
+  let area = 0;
+  for (const tag of merges.match(/<(\w+:)?mergeCell\b[^>]*>/g) ?? []) area += mergeArea(attr(tag, "ref") ?? "");
+  if (area > MERGE_MAX) throw new XlsxError(`Во вкладке «${sheet}» объединено слишком много ячеек: разъедините их в копии борда`);
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${open[0]}${part("cols")}${part("sheetData") || `<${prefix}sheetData/>`}${merges}</${prefix}worksheet>`;
+}
+
+/**
  * Файл, который можно отдать библиотеке чтения: ненужные листы пустые, части архива в пределах, объединения на листах
  * целей разумные. keep: какие листы читать по имени
  */
@@ -112,7 +128,8 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
   const skip = new Set(sheets.filter((s) => !keep(s.name)).map((s) => s.path));
   const kept = new Map(sheets.filter((s) => keep(s.name)).map((s) => [s.path, s.name]));
   const relsOf = (path: string) => path.replace(/([^/]+)$/, "_rels/$1.rels");
-  const skipRels = new Set([...skip].map(relsOf));
+  // Связи листов (рисунки, примечания, ссылки) не нужны ни одному листу: у оставленных они тоже пустые
+  const sheetRels = new Set(sheets.map((s) => relsOf(s.path)));
 
   const out = new JSZip();
   let total = 0;
@@ -123,20 +140,17 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
       out.file(name, EMPTY_SHEET);
       continue;
     }
-    if (skipRels.has(name)) {
+    if (sheetRels.has(name)) {
       out.file(name, EMPTY_RELS);
       continue;
     }
+    // Примечания и рисунки листов не нужны: в примечаниях бывают личные пометки
+    if (/^xl\/(comments\d*|drawings\/|threadedComments\/|persons\/)/.test(name)) continue;
     const sheet = kept.get(name);
     const content = await readLimited(entry, PART_MAX, sheet ? `Вкладка «${sheet}»` : "Часть файла");
     total += content.length;
-    if (total > TOTAL_MAX) throw new XlsxError("Файл слишком большой после распаковки: удалите из копии борда лишние вкладки и скачайте снова");
-    if (sheet) {
-      for (const tag of decode(content).match(/<mergeCell\b[^>]*>/g) ?? []) {
-        if (mergeArea(attr(tag, "ref") ?? "") > MERGE_MAX) throw new XlsxError(`Во вкладке «${sheet}» объединён слишком большой диапазон ячеек: разъедините его в копии борда`);
-      }
-    }
-    out.file(name, content);
+    if (total > TOTAL_MAX) throw new XlsxError("Файл слишком большой после распаковки: удалите из копии борда лидера лишние вкладки и скачайте снова");
+    out.file(name, sheet ? slimSheet(decode(content), sheet) : content);
   }
   // Без сжатия: файл живёт только в памяти до чтения
   return out.generateAsync({ type: "uint8array", compression: "STORE" });

@@ -85,8 +85,9 @@ export async function myForecast(actor: Actor, key: WeekKey): Promise<MyForecast
   const earlier = await prisma.forecast.findMany({
     where: { authorId: actor.personId, week: { start: { lt: new Date(`${key}T00:00:00Z`), gte: new Date(`${shiftWeek(key, -8)}T00:00:00Z`) } } },
     include,
-    // Порядок внутри недели как у строк прогноза: иначе линии для переноса идут вразнобой
-    orderBy: [{ week: { start: "desc" } }, { direction: { sortOrder: "asc" } }, { metric: "asc" }, { month: "asc" }],
+    // Порядок внутри недели постоянный: иначе линии для переноса идут вразнобой. Из двух месяцев, которые переносятся
+    // в один, побеждает более поздний: его прогноз свежее
+    orderBy: [{ week: { start: "desc" } }, { direction: { sortOrder: "asc" } }, { metric: "asc" }, { month: "desc" }],
   });
   const month = monthOf(key);
   const carry: ForecastLineView[] = [];

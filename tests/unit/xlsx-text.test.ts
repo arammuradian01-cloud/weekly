@@ -23,6 +23,10 @@ describe("числа и даты как на экране", () => {
     expect(formatNumber(29.25, '0.00" млн"')).toBe("29,25 млн");
     expect(formatNumber(1500000, '#,##0 "₽"')).toBe("1 500 000 ₽");
     expect(formatNumber(1500, "[$₽-419]#,##0")).toBe("₽1 500");
+    // Запятые в конце делят на тысячу; условный формат показывает число как есть
+    expect(formatNumber(29250000, '0.0,," млн"')).toBe("29,3 млн");
+    expect(formatNumber(29250000, '#,##0,"K"')).toBe("29 250K");
+    expect(formatNumber(29250000, '[>999999]0.0,,"M";0,"K"')).toBe("29250000");
   });
 
   it("дата без часового пояса", () => {
@@ -61,9 +65,26 @@ describe("подготовка файла до чтения", () => {
     expect(mergeArea("A1:J1048576")).toBe(10 * 1048576);
     expect(mergeArea("B3:B4")).toBe(2);
     const bomb = await patchSheet(await workbook(), (xml) => xml.replace("</sheetData>", '</sheetData><mergeCells count="1"><mergeCell ref="A1:J1048576"/></mergeCells>'));
-    await expect(prepareXlsx(bomb, (name) => name.startsWith("Цели"))).rejects.toThrow(/объединён слишком большой диапазон/);
+    await expect(prepareXlsx(bomb, (name) => name.startsWith("Цели"))).rejects.toThrow(/объединено слишком много ячеек/);
+    // Много средних объединений считаются вместе
+    const many = Array.from({ length: 60 }, (_, i) => `<mergeCell ref="${String.fromCharCode(66 + (i % 20))}${10 + Math.floor(i / 20) * 100_000}:${String.fromCharCode(66 + (i % 20))}${100_008 + Math.floor(i / 20) * 100_000}"/>`).join("");
+    const sum = await patchSheet(await workbook(), (xml) => xml.replace("</sheetData>", `</sheetData><mergeCells count="60">${many}</mergeCells>`));
+    await expect(prepareXlsx(sum, (name) => name.startsWith("Цели"))).rejects.toThrow(/объединено слишком много ячеек/);
     // На листе, который не читаем, объединение не важно: лист заменяется пустым
     await expect(prepareXlsx(bomb, () => false)).resolves.toBeInstanceOf(Uint8Array);
+  });
+
+  it("проверки данных и прочее на листе целей убираются до чтения: огромный диапазон проверки не вешает сервер", async () => {
+    const validated = await patchSheet(await workbook(), (xml) =>
+      xml.replace("</sheetData>", '</sheetData><dataValidations count="1"><dataValidation type="list" sqref="A1:J1048576"><formula1>"да,нет"</formula1></dataValidation></dataValidations>'),
+    );
+    const started = Date.now();
+    const safe = await prepareXlsx(validated, (name) => name.startsWith("Цели"));
+    const book = new ExcelJS.Workbook();
+    await book.xlsx.load(safe.buffer.slice(safe.byteOffset, safe.byteOffset + safe.byteLength) as ArrayBuffer);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(book.getWorksheet("Цели CPO")!.getCell("A1").text).toBe("CPO - Рева Тарас");
+    expect(new TextDecoder().decode(safe)).not.toMatch(/dataValidation/);
   });
 
   it("часть архива, которая раздувается при распаковке, отклоняется по ходу распаковки", async () => {

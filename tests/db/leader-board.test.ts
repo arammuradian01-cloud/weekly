@@ -130,6 +130,27 @@ describe("загрузка из борда лидера", () => {
     }
   });
 
+  it("тёзка по инициалам получил цель Ревы: его загрузка не забирает серию «РТ»", async () => {
+    const romanov = await prisma.person.create({ data: { slug: "test-romanov-lb", fullName: "Романов Тимур", shortName: "Тимур", zone: "Тест" } });
+    await prisma.teamMember.create({ data: { teamId: revaTeam, personId: romanov.id } });
+    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
+    await prisma.goal.updateMany({ where: { quarter: Q, code: "РТ-2" }, data: { ownerId: romanov.id } });
+    try {
+      const tab: Tab[] = [{ name: "Цели Романов", grid: [["Романов Тимур"], ["№", "", "Запланировано на 4Q"], ["1", "", "Цель Романова"]] }];
+      const res = await applyLeaderBoard(await owner(), tab, { team: TOP_TEAM, quarter: Q });
+      expect(res.added).toBe(1);
+      const his = await prisma.goal.findFirstOrThrow({ where: { quarter: Q, title: "Цель Романова" } });
+      expect(his.code).not.toMatch(/^РТ-/);
+      // Цели Ревы на месте
+      expect((await prisma.goal.findFirstOrThrow({ where: { quarter: Q, code: "РТ-1" } })).ownerId).toBe(reva.id);
+    } finally {
+      await prisma.goal.deleteMany({ where: { quarter: Q, ownerId: romanov.id, title: "Цель Романова" } });
+      await prisma.goal.updateMany({ where: { quarter: Q, code: "РТ-2" }, data: { ownerId: reva.id } });
+      await prisma.teamMember.deleteMany({ where: { personId: romanov.id } });
+      await prisma.person.delete({ where: { id: romanov.id } });
+    }
+  });
+
   it("строка без номера, вставленная в середину борда, не сдвигает коды; описание с переносами строк переживает правку цели", async () => {
     const tab = (rows: string[][]): Tab[] => [{ name: "Цели RED Bus", grid: [["Логинова Светлана"], ["Направление", "Запланировано на 4Q", "Целевые"], ...rows] }];
     await prisma.goal.deleteMany({ where: { quarter: Q, owner: { slug: "loginova" } } });

@@ -23,15 +23,19 @@ function literal(part: string): string {
 export function formatNumber(value: number, numFmt?: string | null): string {
   const section = (numFmt ?? "").split(";")[0] ?? "";
   const plain = () => String(Number(value.toPrecision(12))).replace(".", ",");
-  if (!section || section === "General" || section === "@") return plain();
+  // Условные форматы «[>999999]0,,"M";0,"K"» выбирают раздел по значению: показываем число как есть
+  if (!section || section === "General" || section === "@" || /\[[<>=]/.test(numFmt ?? "")) return plain();
   const token = section.replace(/"[^"]*"|\[[^\]]*\]|\\./g, (m) => " ".repeat(m.length)).match(/[#0?][#0?,.]*/);
   if (!token) return plain();
-  const number = token[0];
+  const token0 = token[0];
   const before = literal(section.slice(0, token.index));
-  const after = section.slice(token.index! + number.length);
+  const after = section.slice(token.index! + token0.length);
+  // Запятые в конце числа делят на тысячу каждая: «0.0,," млн"» показывает 29 250 000 как «29,3 млн»
+  const scale = token0.match(/,+$/)?.[0].length ?? 0;
+  const number = token0.slice(0, token0.length - scale);
   const percent = section.replace(/"[^"]*"/g, "").includes("%");
   const decimals = number.match(/\.([0#?]+)/)?.[1]?.length ?? 0;
-  const v = percent ? value * 100 : value;
+  const v = (percent ? value * 100 : value) / 1000 ** scale;
   const [int, frac] = Math.abs(v).toFixed(decimals).split(".");
   const grouped = number.includes(",") ? int!.replace(/\B(?=(\d{3})+(?!\d))/g, " ") : int!;
   return `${v < 0 ? "-" : ""}${before}${grouped}${frac ? `,${frac}` : ""}${percent ? "%" : ""}${literal(after)}`.trim();
