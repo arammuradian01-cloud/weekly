@@ -7,6 +7,8 @@
      На телефоне строка таблицы становится карточкой, подписи колонок берутся из data-label. */
 
 .sv-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-3); }
+.sv-stats--compact { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.sv-stats--compact .sv-stat { gap: 4px; padding: var(--space-3) var(--space-4); }
 .sv-stat { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding: var(--space-4) var(--space-5); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
 .sv-stat__label { font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
 .sv-stat__value { font-family: var(--font-heading); font-size: var(--text-number); line-height: var(--leading-number); font-weight: var(--font-weight-heading); color: var(--color-text); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -58,6 +60,14 @@
 .sv-datatable__strong { font-weight: var(--font-weight-semibold); color: var(--color-text); }
 .sv-datatable__muted { color: var(--color-text-secondary); }
 
+/* Прогресс к цели: тонкая полоса и подпись. Полоса доходит до конца при 100%, перевыполнение видно в подписи */
+.sv-meter { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.sv-meter__track { position: relative; flex: none; width: 72px; height: 6px; border-radius: var(--radius-round); background: var(--color-field); overflow: hidden; }
+.sv-meter__fill { position: absolute; inset: 0 auto 0 0; border-radius: var(--radius-round); background: var(--color-accent); }
+.sv-meter--done .sv-meter__fill { background: var(--color-success-dot); }
+.sv-meter--risk .sv-meter__fill { background: var(--color-warning-dot); }
+.sv-meter__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
 /* Пометка у строки: кто, когда и почему поменял */
 .sv-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
 .sv-note__who { color: var(--color-text); font-weight: var(--font-weight-semibold); }
@@ -74,6 +84,7 @@
 
 @media (max-width: 639px) {
   .sv-stats { grid-template-columns: 1fr; }
+  .sv-stats--compact { grid-template-columns: 1fr 1fr; }
   .sv-stat { padding: var(--space-3) var(--space-4); }
   .sv-module__head { padding: var(--space-3) var(--space-4); }
   .sv-module__body { padding: 0 var(--space-4) var(--space-3); }

@@ -61,10 +61,11 @@ test("цели Q4 из файла борда лидера, задача с ли�
   await shot(page, "preview");
   await drawer.getByRole("button", { name: "Загрузить", exact: true }).click();
   await expect(page.getByText("Цели загружены: новых 2, изменено 0")).toBeVisible();
-  // В дереве целей: код, название, владелец и целевое значение из борда
-  const tree = page.getByRole("list", { name: "Дерево целей" });
-  await expect(tree.getByText(/^РТ-1\s*Подписка ОСАГО запущена и имеет P&L$/)).toBeVisible();
-  await expect(tree.getByText("Топ-команда, владелец Рева Тарас, цель P&L к 15.12")).toBeVisible();
+  // В таблице целей: код, название, владелец и целевое значение из борда
+  const row = page.getByTestId("goal-row-РТ-1");
+  await expect(row.getByText(/^РТ-1\s*Подписка ОСАГО запущена и имеет P&L$/)).toBeVisible();
+  await expect(row).toContainText("Рева Тарас");
+  await expect(row).toContainText("P&L к 15.12");
 
   // Задача Ревы в топ-команде: к ней можно привязать её личную цель
   const [task] = await sql(`SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t."archivedAt" IS NULL AND t.status IN ('IN_PROGRESS', 'CLARIFY') ORDER BY t.number LIMIT 1`);

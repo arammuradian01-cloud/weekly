@@ -192,6 +192,7 @@ model Person {
   /// Прогноз до конца месяца (этап 24)
   forecasts          Forecast[]
   planAdjustments    PlanAdjustment[]    @relation("PlanAdjustmentAuthor")
+  goalFacts          GoalFact[]          @relation("GoalFactAuthor")
   /// Встречи один на один (этап 28)
   oneOnOneManaged    OneOnOnePair[]      @relation("OneOnOneManager")
   oneOnOneReported   OneOnOnePair[]      @relation("OneOnOneReport")
@@ -1090,10 +1091,30 @@ model Goal {
 
   tasks       Task[]
   initiatives Initiative[]
+  facts       GoalFact[]
 
   @@index([quarter, teamId])
   @@index([parentId])
   @@map("goals")
+}
+
+/// Факт цели (этап 33): значение как его вписали («12,5%», «29 млн»), число для прогресса, комментарий, кто и когда.
+/// История хранится вся, действует последний
+model GoalFact {
+  id       String   @id @default(cuid())
+  goalId   String
+  goal     Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  value    String
+  /// Число из значения, если оно читается: для прогресса к целевому
+  number   Float?
+  note     String?
+  authorId String
+  author   Person   @relation("GoalFactAuthor", fields: [authorId], references: [id])
+  at       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([goalId, at])
+  @@index([authorId])
+  @@map("goal_facts")
 }
 
 /// Комментарий к записи weekly (этап 20): короткая ветка под записью, видна в ленте и в режиме встречи
