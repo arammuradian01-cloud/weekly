@@ -62,6 +62,8 @@ export function PlanFacts({ month, facts, summary, label }: { month: string; fac
         bars={{ label: "Факт за день", values: bars }}
         line={line}
         labelEvery={5}
+        dots={false}
+        format={(v) => formatPlan(v, chartMetric.m.unit)}
         period={{ header: "День", tip: (w) => `${w.number} число` }}
         tip={(i) => [`Факт: ${bars[i] === null ? "нет данных" : `${formatPlan(bars[i], chartMetric.m.unit)}${unitWord}`}`, ...(line ? [`Прогноз в день: ${formatPlan(line.values[i], chartMetric.m.unit)}${unitWord}`] : [])]}
         columns={[

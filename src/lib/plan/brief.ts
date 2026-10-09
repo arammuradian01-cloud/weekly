@@ -65,6 +65,12 @@ export function briefOf(view: MonthPlanView): PlanBrief {
 const pctTo = (value: number | null, base: number | null) => (value === null || base === null || base === 0 ? null : ((value - base) / Math.abs(base)) * 100);
 const pctText = (p: number | null) => (p === null ? "" : `${p > 0 ? "+" : ""}${p.toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`);
 
+/** Кто ждёт проверки одной фразой: продукты, потом люди без повторов (Рева в каждом продукте не повторяется) */
+export function waitingText(waiting: PlanBrief["waiting"]): string {
+  const people = [...new Set(waiting.flatMap((w) => w.owners))];
+  return `Ждут проверки после загрузки LBE: ${waiting.map((w) => w.product).join(", ")}${people.length ? `. Проверяют: ${people.join(", ")}` : ""}`;
+}
+
 /** Сводка текстом для копирования и письма отчёта CEO */
 export function planBriefText(b: PlanBrief): string[] {
   const line = (label: string, t: Triple) => {
@@ -76,6 +82,6 @@ export function planBriefText(b: PlanBrief): string[] {
     out.push("Корректировки команд:");
     for (const r of b.reasons) out.push(`- ${r.product}, ${r.metric.toLowerCase()}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
   }
-  if (b.waiting.length) out.push(`Ждут проверки после загрузки LBE: ${b.waiting.map((w) => `${w.product}${w.owners.length ? ` (${w.owners.join(", ")})` : ""}`).join("; ")}`);
+  if (b.waiting.length) out.push(waitingText(b.waiting));
   return out;
 }

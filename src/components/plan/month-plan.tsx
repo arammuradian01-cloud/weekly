@@ -4,7 +4,7 @@
 // прогноз против LBE и бюджета. Ниже таблица продуктов, карточка выбранного продукта с драйверами и журнал корректировок.
 // Пересчёт тот же, что на сервере (src/lib/plan/summary.ts), поэтому цифры на экране и в отчётах одинаковые
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPlan } from "@/lib/plan/format";
 import { productOf } from "@/lib/plan/spec";
@@ -23,6 +23,8 @@ import { pace } from "@/lib/plan/facts";
 export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
+  // Новые данные с сервера после обновления страницы (загружен факт, отметили проверку в другой вкладке) заменяют экран
+  useEffect(() => setView(initial), [initial]);
   const [headline, setHeadline] = useState<Headline>("revenue");
   const [selected, setSelected] = useState(() => initial.products.find((p) => p.canAdjust)?.code ?? initial.products[0]?.code ?? "");
   const [pullOpen, setPullOpen] = useState(false);

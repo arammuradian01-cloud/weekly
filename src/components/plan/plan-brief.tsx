@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { formatPlan } from "@/lib/plan/format";
-import type { PlanBrief } from "@/lib/plan/brief";
+import { waitingText, type PlanBrief } from "@/lib/plan/brief";
 import { Delta, Module, StatTile, Stats } from "@/components/ui/data";
 import { cn } from "@/lib/cn";
 import { delta, when } from "./plan-ui";
@@ -118,7 +118,7 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
       ) : null}
       {brief.waiting.length ? (
         <p className="px-5 pb-4 text-body" data-testid="plan-brief-waiting">
-          <span className="font-semibold text-ink">Ждут проверки после загрузки LBE:</span> {brief.waiting.map((w) => `${w.product}${w.owners.length ? ` (${w.owners.join(", ")})` : ""}`).join("; ")}
+          {waitingText(brief.waiting)}
         </p>
       ) : null}
     </Module>

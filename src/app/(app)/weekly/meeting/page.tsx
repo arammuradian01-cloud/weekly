@@ -34,10 +34,10 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
   // и у команд, где есть кто-то из команд продуктов
   const numbersBlock =
     (numbers && numbers.figures.length) || plan ? (
-      <>
+      <div className="mb-4 flex flex-col gap-4">
         {numbers && numbers.figures.length ? <WeekNumbersBlock numbers={numbers} compact /> : null}
         {plan ? <PlanBriefBlock brief={plan} compact headingLevel={2} /> : null}
-      </>
+      </div>
     ) : null;
   if (single && meeting) return <MeetingLive key={`${view.week.key}-${single.id}`} view={view} meeting={meeting} canLead={canLead} team={single} numbers={numbersBlock} />;
   // Повестки ещё нет: встреча идёт по ленте недели, как раньше. Руководитель может собрать повестку

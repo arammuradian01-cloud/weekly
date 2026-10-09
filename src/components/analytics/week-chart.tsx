@@ -26,6 +26,10 @@ export type WeekChartProps = {
   period?: { header: string; tip: (w: ChartWeek) => string };
   /** Подпись оси у каждого n-го периода и у последнего: у 31 дня подписи иначе слипаются */
   labelEvery?: number;
+  /** Число на шкале и в подписи последнего значения: по-русски, с запятой (этап 35) */
+  format?: (value: number) => string;
+  /** Точки на линии: у ровной линии-ориентира по 31 дню они только мешают */
+  dots?: boolean;
 };
 
 /** Ширина по умолчанию до первого замера: дальше график рисуется в настоящую ширину, текст не растягивается */
@@ -44,7 +48,7 @@ export function niceMax(value: number): number {
   return 10 * pow;
 }
 
-export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1 }: WeekChartProps) {
+export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1, format = String, dots = true }: WeekChartProps) {
   const [active, setActive] = useState<number | null>(null);
   // Касание пальцем: подсказка по нажатию (click), а не по началу жеста, чтобы прокрутка страницы её не дёргала
   const touch = useRef(false);
@@ -162,7 +166,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
               <g key={t}>
                 <line className="sv-chart__grid" x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} />
                 <text className="sv-chart__axis" x={PAD_L - 6} y={y(t) + 4} textAnchor="end">
-                  {t}
+                  {format(t)}
                   {unit}
                 </text>
               </g>
@@ -175,16 +179,16 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
             )}
             {/* Линия без столбиков: единственный ряд, цвет первого ряда */}
             {line && path ? <path className={cn("sv-chart__line", !bars && "sv-chart__line--solo")} d={path} /> : null}
-            {points.map((p, i) => (p ? <circle key={weeks[i].key} className={cn("sv-chart__dot", !bars && "sv-chart__dot--solo")} cx={p[0]} cy={p[1]} r={active === i ? 5 : 4} /> : null))}
+            {points.map((p, i) => (p && (dots || active === i) ? <circle key={weeks[i].key} className={cn("sv-chart__dot", !bars && "sv-chart__dot--solo")} cx={p[0]} cy={p[1]} r={active === i ? 5 : 4} /> : null))}
             {bars && lastBar >= 0 ? (
               <text className="sv-chart__value" x={cx(lastBar)} y={y(bars.values[lastBar]!) - 6} textAnchor="middle">
-                {bars.values[lastBar]}
+                {format(bars.values[lastBar]!)}
                 {unit}
               </text>
             ) : null}
             {line && lastLine >= 0 && !(bars && lastBar === lastLine) ? (
               <text className="sv-chart__value" x={cx(lastLine)} y={y(line.values[lastLine]!) - 8} textAnchor="middle">
-                {line.values[lastLine]}
+                {format(line.values[lastLine]!)}
                 {unit}
               </text>
             ) : null}
