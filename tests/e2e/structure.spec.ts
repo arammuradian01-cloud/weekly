@@ -136,6 +136,7 @@ test("дерево подчинённых: схема с путём наверх
   await expect(focus).toContainText("Открытые вакансии в подразделении");
   await expect(focus).toContainText("PO KASKO");
   await expect(focus.getByRole("link", { name: "Задачи" })).toHaveAttribute("href", `/tasks?owner=${antonov}`);
+  await expect(focus.getByRole("link", { name: "Цели" })).toHaveAttribute("href", `/goals?find=${encodeURIComponent("Антонов Дмитрий")}`);
   // На уровень выше и по пути
   await focus.getByRole("button", { name: /На уровень выше/ }).click();
   await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");
@@ -147,9 +148,12 @@ test("дерево подчинённых: схема с путём наверх
   await expect(tree.getByTestId("person-focus")).toContainText("Чемоданова Алиса");
   // Список всем деревом
   await page.getByRole("radiogroup", { name: "Вид дерева" }).getByRole("radio", { name: "Список" }).click();
-  const list = page.getByRole("tree", { name: "Дерево подчинённых" });
+  const list = page.getByRole("list", { name: "Дерево подчинённых" });
   await expect(list).toContainText("Рева Тарас");
   await list.getByRole("button", { name: /Развернуть: Рева Тарас/ }).click();
   await expect(list).toContainText("Антонов Дмитрий");
   await shot(page, "people-list");
+  // Ссылка «Цели» с карточки открывает цели с поиском по человеку
+  await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
+  await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
 });

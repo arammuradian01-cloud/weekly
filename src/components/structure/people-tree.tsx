@@ -74,7 +74,7 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
     <div className="flex flex-col gap-4" data-testid="people-tree">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="relative w-full sm:max-w-sm">
-          <TextInput id="people-search" label="Найти человека" hideLabel placeholder="Найти человека: имя или должность" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
+          <TextInput id="people-search" label="Найти человека" hideLabel placeholder="Найти человека: имя или должность" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setQuery("")} autoComplete="off" />
           <Search className="pointer-events-none absolute right-3 top-[18px] h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
           {found.length ? (
             <ul className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-control border border-border bg-surface shadow-[var(--shadow-menu)]" aria-label="Найденные люди">
@@ -130,7 +130,7 @@ export function PeopleTreeView({ tree, me }: { tree: PeopleTree; me: string }) {
           {otherRoots.length ? (
             <section className="mt-2" aria-label="Другие ветки">
               <p className="text-caption text-text-secondary">
-                {tree.orphans ? `Без руководителя в структуре или руководитель выключен: ${otherRoots.length}` : `Другие ветки: ${otherRoots.length}`}
+                {`Другие ветки и люди без руководителя в структуре: ${otherRoots.length}`}
               </p>
               <ul className="mt-1 flex flex-wrap gap-1.5">
                 {otherRoots.slice(0, 30).map((slug) => (
@@ -224,7 +224,7 @@ function FocusCard({ person: p, people, me, onOpen }: { person: TreePerson; peop
         <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
           Задачи
         </Link>
-        <Link href={`/goals`} className="text-body font-semibold text-link hover:underline">
+        <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
           Цели
         </Link>
       </div>
@@ -233,7 +233,7 @@ function FocusCard({ person: p, people, me, onOpen }: { person: TreePerson; peop
 }
 
 function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | null; onOpen: (slug: string) => void }) {
-  // Раскрыты верхние два уровня и путь до выбранного человека
+  // Раскрыт верхний уровень и путь до выбранного человека
   const [openSet, setOpenSet] = useState<Set<string>>(() => {
     const s = new Set<string>();
     for (const p of Object.values(tree.people)) if (p.depth < 1) s.add(p.slug);
@@ -260,10 +260,10 @@ function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | n
     const next = new Set(guard).add(slug);
     const isOpen = openSet.has(slug);
     return (
-      <li key={slug} role="treeitem" aria-expanded={p.reports.length ? isOpen : undefined} aria-selected={slug === focus}>
+      <li key={slug}>
         <div className="sv-tree-list__row">
           {p.reports.length ? (
-            <button type="button" className="sv-tree-list__toggle" onClick={() => toggle(slug)} aria-label={`${isOpen ? "Свернуть" : "Развернуть"}: ${p.fullName}`}>
+            <button type="button" className="sv-tree-list__toggle" onClick={() => toggle(slug)} aria-expanded={isOpen} aria-label={`${isOpen ? "Свернуть" : "Развернуть"}: ${p.fullName}`}>
               {isOpen ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
             </button>
           ) : (
@@ -277,7 +277,7 @@ function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | n
           </span>
         </div>
         {p.reports.length && isOpen ? (
-          <ul className="sv-tree-list" role="group">
+          <ul className="sv-tree-list">
             {p.reports.map((r) => node(r, next))}
           </ul>
         ) : null}
@@ -286,7 +286,7 @@ function TreeList({ tree, focus, onOpen }: { tree: PeopleTree; focus: string | n
   };
 
   return (
-    <ul className="sv-tree-list" role="tree" aria-label="Дерево подчинённых" data-testid="people-tree-list">
+    <ul className="sv-tree-list" aria-label="Дерево подчинённых" data-testid="people-tree-list">
       {tree.roots.map((r) => node(r, new Set()))}
     </ul>
   );

@@ -10,9 +10,9 @@ import { GoalsScreen } from "@/components/goals/goals-screen";
 export const metadata: Metadata = { title: "Цели" };
 
 /** Сквозные цели (этап 17): дерево целей квартала от департамента до команд и людей, прогресс и риски */
-export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ q?: string; find?: string }> }) {
   const ctx = await requireContext();
-  const { q } = await searchParams;
+  const { q, find } = await searchParams;
   const subject = subjectOf(ctx);
   const team = await currentTeam(subject);
   const view = await goalsView(
@@ -28,6 +28,7 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
       />
       <GoalsScreen view={view} defaultTeam={team.id && team.id !== ALL_TEAMS ? team.id : (view.creatable[0]?.id ?? null)} bordTabs={bordOn ? BORD_GOAL_TABS : null}
         leaderBoard={!!ctx.management && ctx.person.role !== "OBSERVER"}
+        initialQuery={find?.slice(0, 80) ?? ""}
       />
     </>
   );
