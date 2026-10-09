@@ -134,6 +134,20 @@ export function slimSheet(xml: string, sheet: string): string {
 }
 
 /**
+ * Оглавление книги без лишнего: только список листов и признак дат от 1904 года. Именованные диапазоны и фильтры
+ * библиотека разворачивает по каждой ячейке: фильтр на большой вкладке с сырыми данными занял бы всю память
+ */
+export function slimWorkbook(xml: string): string {
+  const open = xml.match(/<(\w+:)?workbook\b[^>]*>/);
+  if (!open) throw new XlsxError("not-xlsx");
+  const prefix = open[1] ?? "";
+  const pr = xml.match(new RegExp(`<${prefix}workbookPr\\b[^>]*/>`))?.[0] ?? "";
+  const sheets = xml.match(new RegExp(`<${prefix}sheets\\b[^>]*>[\\s\\S]*?</${prefix}sheets>`))?.[0];
+  if (!sheets) throw new XlsxError("not-xlsx");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${open[0]}${pr}${sheets}</${prefix}workbook>`;
+}
+
+/**
  * Файл, который можно отдать библиотеке чтения: ненужные листы пустые, части архива в пределах, объединения на листах
  * целей разумные. keep: какие листы читать по имени
  */
@@ -148,7 +162,8 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
   const workbookRels = zip.file("xl/_rels/workbook.xml.rels");
   if (!workbook || !workbookRels) throw new XlsxError("not-xlsx");
   const decode = (b: Uint8Array) => new TextDecoder().decode(b);
-  const sheets = sheetsOf(decode(await readLimited(workbook, PART_MAX, "Оглавление книги")), decode(await readLimited(workbookRels, PART_MAX, "Оглавление книги")));
+  const workbookXml = decode(await readLimited(workbook, PART_MAX, "Оглавление книги"));
+  const sheets = sheetsOf(workbookXml, decode(await readLimited(workbookRels, PART_MAX, "Оглавление книги")));
   const skip = new Set(sheets.filter((s) => !keep(s.name)).map((s) => s.path));
   const kept = new Map(sheets.filter((s) => keep(s.name)).map((s) => [s.path, s.name]));
   const relsOf = (path: string) => path.replace(/([^/]+)$/, "_rels/$1.rels");
@@ -162,6 +177,10 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
     const name = entry.name.startsWith("/") ? entry.name.slice(1) : entry.name;
     if (skip.has(name)) {
       out.file(name, EMPTY_SHEET);
+      continue;
+    }
+    if (name === "xl/workbook.xml") {
+      out.file(name, slimWorkbook(workbookXml));
       continue;
     }
     if (sheetRels.has(name)) {

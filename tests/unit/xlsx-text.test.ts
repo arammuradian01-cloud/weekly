@@ -98,6 +98,20 @@ describe("подготовка файла до чтения", () => {
     expect(new TextDecoder().decode(safe)).not.toMatch(/dataValidation/);
   });
 
+  it("именованные диапазоны и фильтры из оглавления книги убираются: огромный диапазон не занимает память", async () => {
+    const zip = await JSZip.loadAsync(await workbook());
+    const xml = await zip.file("xl/workbook.xml")!.async("string");
+    zip.file("xl/workbook.xml", xml.replace("</sheets>", `</sheets><definedNames><definedName name="big">'Цели CPO'!$A$1:$J$1048576</definedName><definedName name="_xlnm._FilterDatabase" localSheetId="0" hidden="1">'Зарплаты'!$A$1:$T$100000</definedName></definedNames>`));
+    const started = Date.now();
+    const safe = await prepareXlsx((await zip.generateAsync({ type: "uint8array" })).buffer as ArrayBuffer, (name) => name.startsWith("Цели"));
+    const read = new ExcelJS.Workbook();
+    await read.xlsx.load(safe.buffer.slice(safe.byteOffset, safe.byteOffset + safe.byteLength) as ArrayBuffer);
+    expect(Date.now() - started).toBeLessThan(5_000);
+    expect(read.worksheets.map((w) => w.name)).toEqual(["Зарплаты", "Цели CPO"]);
+    expect(read.getWorksheet("Цели CPO")!.getCell("A1").text).toBe("CPO - Рева Тарас");
+    expect(new TextDecoder().decode(safe)).not.toMatch(/definedName/);
+  });
+
   it("картинки на листах не мешают: части с картинками в чтение не попадают", async () => {
     const book = new ExcelJS.Workbook();
     const ws = book.addWorksheet("Цели CPO");
