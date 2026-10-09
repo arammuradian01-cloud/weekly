@@ -8,6 +8,8 @@ import { CeoReport } from "@/components/ceo/ceo-report";
 import { topAudience } from "@/lib/org/current";
 import { weekNumbers } from "@/lib/numbers/service";
 import { forecastSummary } from "@/lib/forecast/service";
+import { currentActor } from "@/lib/action-runner";
+import { planBrief, planMonthOfWeek } from "@/lib/plan/processes";
 
 export const metadata: Metadata = { title: "Отчёт CEO" };
 
@@ -20,7 +22,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
   // Личную статистику «обещал и сделал» видит только директор (этап 22): это диагностика, а не рейтинг
   const owner = ctx.management?.role === "OWNER";
   const previousKey = shiftWeek(view.week.key, -1);
-  const [saved, history, promises, stats, numbers, forecast, decisions, previous] = await Promise.all([
+  const actor = await currentActor();
+  const [saved, history, promises, stats, numbers, forecast, decisions, previous, plan] = await Promise.all([
     getCeoReport(view.week.key),
     ceoReportHistory(),
     weekPromises(view.week.key, audience.personIds),
@@ -32,6 +35,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
     // Отчёт CEO 2.0 (этап 27): решения недели и прошлый отчёт для сравнения
     ceoDecisions(view.week.key),
     getCeoReport(previousKey),
+    // Прогноз месяца по драйверам (этап 35): месяц недели, как у её номера
+    planBrief(actor, planMonthOfWeek(view.week.key)),
   ]);
   return (
     <>
@@ -46,6 +51,7 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
         stats={stats}
         numbers={numbers}
         forecast={forecast}
+        plan={plan}
         decisions={decisions}
         previous={{ number: weekNumberOf(previousKey), report: previous }}
         owner={owner}

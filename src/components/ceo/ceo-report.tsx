@@ -9,6 +9,8 @@ import { numbersText, type WeekNumbers } from "@/lib/numbers/text";
 import { forecastText } from "@/lib/forecast/codes";
 import type { ForecastSummary } from "@/lib/forecast/types";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
+import { planBriefText, type PlanBrief } from "@/lib/plan/brief";
+import { PlanBriefBlock } from "@/components/plan/plan-brief";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
@@ -75,6 +77,7 @@ export function CeoReport({
   stats,
   numbers,
   forecast,
+  plan,
   decisions = [],
   previous,
   owner = false,
@@ -88,6 +91,8 @@ export function CeoReport({
   /** Цифры недели из недельного отчёта и прогноз лидеров (этап 24) */
   numbers?: WeekNumbers;
   forecast?: ForecastSummary;
+  /** Прогноз месяца по драйверам из LRF (этап 35) */
+  plan?: PlanBrief | null;
   /** Решения топ-команды по этой неделе (этап 27) */
   decisions?: CeoDecision[];
   /** Отчёт прошлой недели для сравнения (этап 27) */
@@ -157,6 +162,7 @@ export function CeoReport({
         weekNumber: week.number,
         numbers: numbers ? numbersText(numbers) : ["Появятся после подключения недельного отчёта."],
         forecast: forecast ? forecastText(forecast) : undefined,
+        monthPlan: plan ? planBriefText(plan) : undefined,
         promises: promises?.total.total ? promiseLine(promises.total) : undefined,
         main: sections.main,
         decisions,
@@ -165,7 +171,7 @@ export function CeoReport({
         thanks: thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })),
         meetings: cleanMeetings(meetings),
       }),
-    [week.number, numbers, forecast, promises, sections, decisions, thanks, meetings],
+    [week.number, numbers, forecast, plan, promises, sections, decisions, thanks, meetings],
   );
 
   const copy = async (okText = "Текст отчёта скопирован") => {
@@ -294,6 +300,7 @@ export function CeoReport({
             <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
           </section>
         )}
+        {plan ? <PlanBriefBlock brief={plan} /> : null}
         {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
 
         <section aria-labelledby="ceo-promises" className="sv-card sv-card--soft px-5 py-4">
