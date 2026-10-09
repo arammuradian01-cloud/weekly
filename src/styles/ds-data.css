@@ -48,6 +48,8 @@
 .sv-datatable tbody tr:last-child td { border-bottom: 0; }
 .sv-datatable__section td { height: 32px; padding-top: 10px; padding-bottom: 4px; background: var(--color-surface); color: var(--color-text-secondary); font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); border-bottom: 1px solid var(--color-border); }
 .sv-datatable__row--total td { font-weight: var(--font-weight-semibold); background: var(--color-page); }
+/* Заголовок строки в теле таблицы (итог «Вся команда», этап 36): как ячейка, а не как шапка */
+.sv-datatable tbody th[scope="row"] { height: var(--row-comfortable); padding-top: 6px; padding-bottom: 6px; color: var(--color-text); font-size: var(--text-body); line-height: var(--leading-body); white-space: normal; border-bottom: 0; }
 .sv-datatable__row--sub td:first-child { padding-left: calc(var(--space-5) + var(--space-5)); color: var(--color-text-secondary); }
 .sv-datatable__row--pick { cursor: pointer; transition: background-color var(--duration-color); }
 .sv-datatable__row--pick:hover td { background: var(--color-row-hover); }
@@ -108,6 +110,10 @@
   .sv-datatable--stack td:first-child, .sv-datatable--stack td.is-wide { grid-column: 1 / -1; }
   .sv-datatable--stack td.is-action { align-items: flex-end; }
   .sv-datatable--stack td:empty, .sv-datatable--stack td.is-desktop { display: none; }
+  /* Задачи по людям (этап 36): плашки задач во всю ширину карточки человека */
+  .sv-datatable--stack td.sv-task-people__chips { grid-column: 1 / -1; width: auto; }
+  .sv-task-people__chips ul { width: 100%; }
+  .sv-datatable--stack tbody th[scope="row"] { grid-column: 1 / -1; display: block; height: auto; padding: 0 !important; background: transparent; }
   .sv-datatable--stack .sv-datatable__section { display: block; padding: var(--space-3) var(--space-4) 0; border-bottom: 0; }
   .sv-datatable--stack .sv-datatable__section td { display: block; font-size: var(--text-caption); }
   .sv-datatable--stack .sv-datatable__row--picked { background: var(--color-row-selected); box-shadow: inset 3px 0 0 var(--color-accent); }
@@ -164,3 +170,29 @@
 .sv-plan-facts__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
 .sv-plan-facts__value { margin: 0; font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-bold); color: var(--color-text); font-variant-numeric: tabular-nums; }
 .sv-plan-facts__line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-2); margin: 0; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+
+/* Ключевые цифры раздела под заголовком страницы (этап 36): число крупно, подпись мелко, плитка ведёт на отбор.
+   Оттенок у ненулевых «просрочено» и «в риске» полосой слева: смысл несёт подпись */
+.sv-figures { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
+.sv-figure { min-width: 0; }
+.sv-figure__link { display: flex; flex-direction: column; gap: 2px; height: 100%; padding: var(--space-3) var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control-lg); color: var(--color-text); text-decoration: none; }
+a.sv-figure__link { transition: border-color var(--duration-color), background-color var(--duration-color); }
+a.sv-figure__link:hover { border-color: var(--color-border-strong); background: var(--color-field); }
+a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.sv-figure__value { font-family: var(--font-heading); font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-heading); font-variant-numeric: tabular-nums; }
+.sv-figure__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-figure__hint { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-figure--danger .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-danger-dot); }
+.sv-figure--danger .sv-figure__value { color: var(--color-danger-text); }
+.sv-figure--warning .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-warning-dot); }
+.sv-figure--good .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-success-dot); }
+@media (max-width: 639px) {
+  .sv-figures { grid-template-columns: 1fr 1fr; }
+  .sv-figure__link { padding: var(--space-2) var(--space-3); }
+}
+
+/* Задачи по людям (этап 36): на ноутбуке имя узкой колонкой, плашки задач занимают остальное */
+.sv-task-people__chips { width: 55%; }
+/* Журнал решений (этап 36): текст решения широкой колонкой, остальное по содержимому */
+.sv-decision__text { min-width: 280px; width: 45%; white-space: normal; overflow-wrap: anywhere; }
+@media (max-width: 639px) { .sv-decision__text { min-width: 0; width: auto; } }

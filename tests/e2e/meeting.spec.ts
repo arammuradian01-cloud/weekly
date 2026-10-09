@@ -101,7 +101,7 @@ test("владелец собирает повестку, ведёт встре�
   await page.getByPlaceholder("Поиск по словам").fill("доступа");
   await expect(page.getByText("Доступ от СК запрашивает Тарас до пятницы")).toBeVisible();
   await page.getByPlaceholder("Поиск по словам").fill("ипотека");
-  await expect(page.getByText("Ничего не нашлось.")).toBeVisible();
+  await expect(page.getByText("Ничего не нашлось", { exact: true })).toBeVisible();
   await shot(page, "decisions");
 });
 

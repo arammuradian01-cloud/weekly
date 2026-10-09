@@ -11,7 +11,9 @@ import { formatLong } from "@/domain/dates";
 import type { DecisionView } from "@/domain/meeting";
 import { cancelDecisionAction, searchDecisionsAction } from "@/app/(app)/meeting/actions";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
+import { Figures } from "@/components/ui/data";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, TextArea } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
@@ -58,8 +60,21 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
     notify("Решение отменено");
   };
 
+  // Цифры журнала по исходному списку (команда или поиск из адреса): фильтр на экране их не меняет
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
   return (
     <div className="flex flex-col gap-4">
+      {initial.length ? (
+        <Figures
+          label="Решения в цифрах"
+          items={[
+            { label: "В силе", value: initial.filter((d) => d.status === "active").length, testId: "dec-fig-active" },
+            { label: "Отменено", value: initial.filter((d) => d.status === "cancelled").length, testId: "dec-fig-cancelled" },
+            { label: "За последние 7 дней", value: initial.filter((d) => d.date >= weekAgo).length, testId: "dec-fig-week" },
+            { label: "Без владельца", value: initial.filter((d) => d.status === "active" && !d.owner).length, tone: "warning", testId: "dec-fig-noowner" },
+          ]}
+        />
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="relative block sm:w-96">
           <span className="sr-only">Поиск по решениям</span>
@@ -69,44 +84,87 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
         <Segmented<Status> label="Состояние" value={status} onChange={setStatus} options={[{ value: "all", label: "Все" }, { value: "active", label: "В силе" }, { value: "cancelled", label: "Отменённые" }]} />
       </div>
       {items.length === 0 ? (
-        <p className="sv-card sv-card--soft px-5 py-6 text-body text-muted">{query ? "Ничего не нашлось." : "Решений пока нет. Они появляются на встрече кнопкой «Записать решение»."}</p>
+        query ? (
+          <EmptyState title="Ничего не нашлось" icon={Search}>
+            Попробуйте другое слово: поиск понимает словоформы, «страховой» найдёт и «страховая».
+          </EmptyState>
+        ) : (
+          <EmptyState
+            title="Решений пока нет"
+            action={
+              <Link href="/weekly/meeting" className={buttonClass("secondary", "sm")}>
+                Открыть встречу
+              </Link>
+            }
+          >
+            Решения появляются на встрече кнопкой «Записать решение».
+          </EmptyState>
+        )
       ) : (
-        <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
-          {items.map((d) => (
-            <li key={d.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="min-w-0">
-                <p className={d.status === "cancelled" ? "text-body text-muted line-through" : "text-body text-ink"}>{d.text}</p>
-                <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
-                  <Badge tone={d.status === "active" ? "green" : "gray"}>{d.status === "active" ? "В силе" : "Отменено"}</Badge>
-                  <span>{formatLong(d.date)}</span>
-                  {d.meeting ? (
-                    <Link href={`/weekly/meeting?week=${d.meeting.week}`} className="hover:underline">
-                      Встреча {d.meeting.team}, неделя {d.meeting.number}
-                    </Link>
-                  ) : null}
-                  {d.owner ? <span>Владелец: {compactName(d.owner)}</span> : null}
-                  {d.tasks.length ? (
-                    <span>
-                      Задачи:{" "}
-                      {d.tasks.map((t, i) => (
-                        <Link key={t.number} href={`/tasks/${t.number}`} className="tabular-nums hover:underline">
+        // Этап 36: таблица вместо сплошного текста. На телефоне строка становится карточкой
+        <div className="sv-card sv-card--soft overflow-x-auto p-0">
+          <table className="sv-datatable sv-datatable--stack" data-testid="decisions-table">
+            <caption className="sr-only">Решения встреч</caption>
+            <thead>
+              <tr>
+                <th scope="col">Решение</th>
+                <th scope="col">Дата</th>
+                <th scope="col">Встреча</th>
+                <th scope="col">Владелец</th>
+                <th scope="col">Задачи</th>
+                <th scope="col">Состояние</th>
+                <th scope="col">
+                  <span className="sr-only">Действия</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((d) => (
+                <tr key={d.id}>
+                  <td className="is-wide sv-decision__text">
+                    <span className={d.status === "cancelled" ? "text-muted line-through" : "text-ink"}>{d.text}</span>
+                    {d.cancelReason ? <span className="mt-1 block text-caption text-muted">Причина отмены: {d.cancelReason}</span> : null}
+                  </td>
+                  <td data-label="Дата" className="whitespace-nowrap">
+                    {formatLong(d.date)}
+                  </td>
+                  <td data-label="Встреча">
+                    {d.meeting ? (
+                      <Link href={`/weekly/meeting?week=${d.meeting.week}`} className="text-link hover:underline">
+                        {d.meeting.team}, неделя {d.meeting.number}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">нет</span>
+                    )}
+                  </td>
+                  <td data-label="Владелец">{d.owner ? compactName(d.owner) : <span className="text-muted">нет</span>}</td>
+                  <td data-label="Задачи">
+                    {d.tasks.length ? (
+                      d.tasks.map((t, i) => (
+                        <Link key={t.number} href={`/tasks/${t.number}`} className="tabular-nums text-link hover:underline">
                           {t.number}
                           {i < d.tasks.length - 1 ? ", " : ""}
                         </Link>
-                      ))}
-                    </span>
-                  ) : null}
-                  {d.cancelReason ? <span>Причина: {d.cancelReason}</span> : null}
-                </p>
-              </div>
-              {canCancel && d.status === "active" ? (
-                <Button size="sm" variant="ghost" onClick={() => setCancelling(d)} className="shrink-0">
-                  Отменить
-                </Button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+                      ))
+                    ) : (
+                      <span className="text-muted">нет</span>
+                    )}
+                  </td>
+                  <td data-label="Состояние">
+                    <Badge tone={d.status === "active" ? "green" : "gray"}>{d.status === "active" ? "В силе" : "Отменено"}</Badge>
+                  </td>
+                  <td className="is-action">
+                    {canCancel && d.status === "active" ? (
+                      <Button size="sm" variant="ghost" onClick={() => setCancelling(d)} aria-label={`Отменить решение: ${d.text.slice(0, 60)}`}>
+                        Отменить
+                      </Button>
+                    ) : null}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       <Modal open={cancelling !== null} onOpenChange={(o) => !o && setCancelling(null)} title="Отменить решение?" description={cancelling?.text}>
         <div className="flex flex-col gap-4">

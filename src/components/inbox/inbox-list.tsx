@@ -43,23 +43,39 @@ function Deadlines() {
           Сроки <span className="sv-section__count">{hot.length}</span>
         </h2>
       </div>
-      <ul className="sv-event-list m-0 list-none divide-y divide-line p-0">
-        {hot.map((t) => {
-          const late = isOverdue(t, data.today);
-          return (
-            <li key={t.number} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <Link href={`/tasks/${t.number}`} className="min-w-0 text-body text-ink hover:text-link">
-                <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
-              </Link>
-              {late ? (
-                <OverdueNote days={overdueDays(t, data.today)} className="self-start sm:self-auto" />
-              ) : (
-                <span className="sv-due sv-due--soon self-start sm:self-auto">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {/* Этап 36: таблица задача и срок, на телефоне строка карточкой */}
+      <div className="sv-card sv-card--soft overflow-x-auto p-0">
+        <table className="sv-datatable sv-datatable--stack" data-testid="me-deadlines">
+          <caption className="sr-only">Мои задачи: просроченные и со сроком сегодня или завтра</caption>
+          <thead>
+            <tr>
+              <th scope="col">Задача</th>
+              <th scope="col">Срок</th>
+              <th scope="col">Что со сроком</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hot.map((t) => {
+              const late = isOverdue(t, data.today);
+              return (
+                <tr key={t.number}>
+                  <td className="is-wide">
+                    <Link href={`/tasks/${t.number}`} className="text-ink hover:text-link">
+                      <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
+                    </Link>
+                  </td>
+                  <td data-label="Срок" className="whitespace-nowrap tabular-nums">
+                    {formatShort(t.due)}
+                  </td>
+                  <td data-label="Что со сроком">
+                    {late ? <OverdueNote days={overdueDays(t, data.today)} /> : <span className="sv-due sv-due--soon">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }

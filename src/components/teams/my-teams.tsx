@@ -14,11 +14,15 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { OverdueNote, StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { Figures, Module } from "@/components/ui/data";
 import { deadlineText } from "@/components/weekly/weekly-feed";
 
 export function MyTeams({ panel }: { panel: Panel }) {
+  // Задачи: своя команда плюс команды ниже (у каждой команды ниже уже вся её ветка). Weekly: своей команды
+  const self = panel.teams.find((t) => t.level !== "below") ?? panel.teams[0]!;
+  const sum = (k: "inWork" | "overdue" | "clarify" | "stale" | "goalsAtRisk") => panel.teams.reduce((acc, t) => acc + t[k], 0);
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <nav aria-label="Путь по командам" className="-mt-2">
         <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-small">
           {panel.path.map((p, i) => (
@@ -40,48 +44,98 @@ export function MyTeams({ panel }: { panel: Panel }) {
         </ol>
       </nav>
 
-      <section aria-labelledby="mt-teams">
-        <h2 id="mt-teams" className="text-title font-semibold text-ink">
-          {panel.teams.length > 1 ? "Команда и команды ниже" : "Команда"}
-        </h2>
-        <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
-          {panel.teams.map((t) => (
-            <TeamRow key={t.id} team={t} />
-          ))}
-        </ul>
-      </section>
+      <Figures
+        label={panel.teams.length > 1 ? "Команда и команды ниже в цифрах" : "Команда в цифрах"}
+        items={[
+          { label: "В работе", value: sum("inWork"), testId: "mt-fig-work" },
+          { label: "Просрочено", value: sum("overdue"), tone: "danger", testId: "mt-fig-overdue" },
+          { label: "Требует уточнений", value: sum("clarify"), tone: "warning", testId: "mt-fig-clarify" },
+          { label: "Давно без обновлений", value: sum("stale"), tone: "warning", testId: "mt-fig-stale" },
+          { label: "Целей в риске", value: sum("goalsAtRisk"), tone: "danger", href: "/goals", testId: "mt-fig-goals" },
+          { label: `Weekly за неделю ${panel.reportingNumber}`, value: self.weekly.expected ? `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}` : "не ждём", testId: "mt-fig-weekly" },
+        ]}
+      />
 
-      <section aria-labelledby="mt-attention">
-        <h2 id="mt-attention" className="text-title font-semibold text-ink">
-          Требует внимания <span className="font-normal text-muted">{panel.attention.length}</span>
-        </h2>
-        <p className="mt-1 text-small text-muted">Просроченные, заблокированные и без обновлений дольше {panel.staleDays} дней, по команде и командам ниже</p>
+      <Module
+        id="mt-teams"
+        title={panel.teams.length > 1 ? "Команда и команды ниже" : "Команда"}
+        description="По команде и командам на уровень ниже: кто руководит, сдача weekly и задачи. Название команды ниже открывает её панель."
+        flush
+      >
+        <div className="overflow-x-auto">
+          <table className="sv-datatable sv-datatable--stack" data-testid="mt-teams-table">
+            <caption className="sr-only">Команды: weekly и задачи</caption>
+            <thead>
+              <tr>
+                <th scope="col">Команда</th>
+                <th scope="col">Weekly</th>
+                <th scope="col" className="is-num">
+                  В работе
+                </th>
+                <th scope="col" className="is-num">
+                  Просрочено
+                </th>
+                <th scope="col" className="is-num">
+                  Уточнить
+                </th>
+                <th scope="col" className="is-num">
+                  Без обновлений
+                </th>
+                <th scope="col" className="is-num">
+                  Целей в риске
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {panel.teams.map((t) => (
+                <TeamRow key={t.id} team={t} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Module>
+
+      <Module
+        id="mt-attention"
+        title={
+          <>
+            Требует внимания <span className="font-normal text-muted">{panel.attention.length}</span>
+          </>
+        }
+        description={`Просроченные, заблокированные и без обновлений дольше ${panel.staleDays} дней, по команде и командам ниже`}
+        flush
+      >
         {panel.attention.length ? (
-          <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
+          <ul className="flex flex-col divide-y divide-line border-t border-border">
             {panel.attention.map((t) => (
-              <li key={t.number} className="px-4 py-3">
+              <li key={t.number} className="px-5 py-3">
                 <TaskLine task={t} showOwner />
               </li>
             ))}
           </ul>
         ) : (
-          <EmptyState title="Просрочек и застрявших задач нет" className="mt-3">
-            Здесь появятся задачи, которые просрочены, заблокированы или давно не обновлялись.
-          </EmptyState>
+          <div className="px-5 pb-4">
+            <EmptyState title="Просрочек и застрявших задач нет">Здесь появятся задачи, которые просрочены, заблокированы или давно не обновлялись.</EmptyState>
+          </div>
         )}
-      </section>
+      </Module>
 
-      <section aria-labelledby="mt-people">
-        <h2 id="mt-people" className="text-title font-semibold text-ink">
-          Люди команды <span className="font-normal text-muted">{panel.people.length}</span>
-        </h2>
-        <p className="mt-1 text-small text-muted">Weekly за неделю {panel.reportingNumber}, открытые задачи, переносы срока за 30 дней и просьбы к человеку</p>
-        <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">
+      <Module
+        id="mt-people"
+        title={
+          <>
+            Люди команды <span className="font-normal text-muted">{panel.people.length}</span>
+          </>
+        }
+        description={`Weekly за неделю ${panel.reportingNumber}, открытые задачи, переносы срока за 30 дней и просьбы к человеку. Имя раскрывает задачи человека.`}
+        flush
+      >
+        <ul className="flex flex-col divide-y divide-line border-t border-border">
           {panel.people.map((p) => (
             <PersonRow key={p.slug} person={p} />
           ))}
         </ul>
-      </section>
+      </Module>
     </div>
   );
 }
@@ -97,37 +151,52 @@ function Count({ n, label, alert }: { n: number; label: string; alert?: boolean 
 function TeamRow({ team: t }: { team: PanelTeam }) {
   const done = t.weekly.submitted + t.weekly.late;
   const tone = t.weekly.expected === 0 ? "bg-mist" : done >= t.weekly.expected ? "bg-green" : t.weekly.passed ? "bg-danger" : "bg-amber";
+  const n = (value: number, alert?: boolean) => <span className={cn("tabular-nums", value && alert ? "font-semibold text-danger-ink" : value ? "text-ink" : "text-muted")}>{value}</span>;
   return (
-    <li className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-      <div className="min-w-0">
-        <p className="text-body font-semibold text-ink">
-          {t.level === "below" ? (
-            <Link href={`/my-teams?team=${t.id}`} className="hover:underline">
-              {t.name}
-            </Link>
-          ) : (
-            t.name
-          )}
-        </p>
-        <p className="text-small text-muted">
-          {t.leader ? `Руководитель: ${t.leader.fullName}` : "Руководитель не назначен"}, людей {t.people}
-          {t.below ? `, команд ниже ${t.below}` : ""}
-        </p>
-        <p className="mt-1 inline-flex items-center gap-2 text-small text-ink">
-          <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
-          {t.weekly.expected === 0 ? "Weekly в команде не ждём" : `Weekly: сдали ${done} из ${t.weekly.expected}`}
-          {t.weekly.expected ? <span className="text-muted">({t.weekly.passed ? "срок прошёл" : deadlineText(t.weekly.deadline)})</span> : null}
-        </p>
-      </div>
-      <p className="flex flex-wrap gap-x-4 gap-y-1 text-small sm:max-w-[50%] sm:justify-end">
-        <Count n={t.inWork} label="в работе" />
-        <Count n={t.overdue} label="просрочено" alert />
-        <Count n={t.clarify} label="требует уточнений" alert />
-        <Count n={t.stale} label="давно без обновлений" alert />
-        {t.proposed ? <Count n={t.proposed} label="предложено" /> : null}
-        {t.goalsAtRisk ? <Count n={t.goalsAtRisk} label="целей в риске" alert /> : null}
-      </p>
-    </li>
+    <tr data-testid={`mt-team-${t.id}`}>
+      <td className="is-wide">
+        <span className="sv-datatable__name">
+          <span className="sv-datatable__strong">
+            {t.level === "below" ? (
+              <Link href={`/my-teams?team=${t.id}`} className="hover:underline">
+                {t.name}
+              </Link>
+            ) : (
+              t.name
+            )}
+          </span>
+          <span className="sv-datatable__hint">
+            {t.leader ? `Руководитель: ${t.leader.fullName}` : "Руководитель не назначен"}, людей {t.people}
+            {t.below ? `, команд ниже ${t.below}` : ""}
+            {t.proposed ? `, предложено задач ${t.proposed}` : ""}
+          </span>
+        </span>
+      </td>
+      <td data-label="Weekly">
+        <span className="inline-flex items-start gap-2">
+          <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
+          <span>
+            {t.weekly.expected === 0 ? "Weekly в команде не ждём" : `Weekly: сдали ${done} из ${t.weekly.expected}`}
+            {t.weekly.expected ? <span className="block text-caption text-muted">{t.weekly.passed ? "срок прошёл" : deadlineText(t.weekly.deadline)}</span> : null}
+          </span>
+        </span>
+      </td>
+      <td className="is-num" data-label="В работе">
+        {n(t.inWork)}
+      </td>
+      <td className="is-num" data-label="Просрочено">
+        {n(t.overdue, true)}
+      </td>
+      <td className="is-num" data-label="Уточнить">
+        {n(t.clarify, true)}
+      </td>
+      <td className="is-num" data-label="Без обновлений">
+        {n(t.stale, true)}
+      </td>
+      <td className="is-num" data-label="Целей в риске">
+        {n(t.goalsAtRisk, true)}
+      </td>
+    </tr>
   );
 }
 

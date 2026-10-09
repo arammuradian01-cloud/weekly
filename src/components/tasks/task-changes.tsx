@@ -46,26 +46,23 @@ export function TaskChanges({ since, changes }: { since: string; changes: TaskCh
         })}
       </div>
       {shown.length ? (
-        <ol className="flex flex-col divide-y divide-line sv-card sv-card--soft">
+        // Этап 36: журнал как у корректировок прогноза: когда слева, задача, было и стало, кто
+        <ol className="sv-log sv-card sv-card--soft" data-testid="task-changes">
           {shown.map((c) => (
-            <li key={c.id} className="flex flex-col gap-1 px-4 py-3">
-              <button type="button" onClick={() => openTask.open(c.number)} className="self-start text-left text-body font-medium text-ink hover:underline">
-                <span className="mr-1.5 font-normal tabular-nums text-muted">{c.number}</span>
-                {c.title}
-              </button>
-              <p className="text-small text-ink">
-                <span className="text-muted">{c.kind === "new" ? "Новая задача" : c.field}: </span>
-                {c.before && c.kind !== "new" ? (
-                  <>
-                    <span className="text-muted line-through decoration-1">{c.before}</span>
-                    <span className="text-muted">, теперь </span>
-                  </>
-                ) : null}
-                {c.after}
-              </p>
-              <p className="text-caption text-muted">
-                {c.by}, {when(c.at)}
-              </p>
+            <li key={c.id} className="sv-log__item">
+              <span className="sv-log__when">{when(c.at)}</span>
+              <div className="sv-log__what">
+                <button type="button" onClick={() => openTask.open(c.number)} className="sv-log__title self-start text-left hover:underline">
+                  <span className="mr-1.5 font-normal tabular-nums text-muted">{c.number}</span>
+                  {c.title}
+                </button>
+                <span className="sv-log__change">
+                  <span className="text-muted">{c.kind === "new" ? "Новая задача" : c.field}:</span>
+                  {c.before && c.kind !== "new" ? <span className="text-muted line-through decoration-1">{c.before}</span> : null}
+                  <span className="font-semibold text-ink">{c.after}</span>
+                </span>
+                <span className="text-caption text-text-secondary">{c.by}</span>
+              </div>
             </li>
           ))}
         </ol>

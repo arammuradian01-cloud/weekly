@@ -76,6 +76,41 @@ export function Stats({ children, className, label }: { children: React.ReactNod
   );
 }
 
+/**
+ * Ключевые цифры раздела под заголовком страницы (этап 36): число и подпись, ссылка на отбор. Оттенок подсказывает,
+ * что смотреть первым (просрочено, в риске), смысл несёт подпись, а не цвет
+ */
+export type Figure = { label: string; value: number | string; href?: string; tone?: "danger" | "warning" | "good"; hint?: string; testId?: string };
+
+export function Figures({ items, label, className }: { items: Figure[]; label: string; className?: string }) {
+  return (
+    <ul className={cn("sv-figures", className)} aria-label={label}>
+      {items.map((f) => {
+        const body = (
+          <>
+            <span className="sv-figure__value">{f.value}</span>
+            <span className="sv-figure__label">{f.label}</span>
+            {f.hint ? <span className="sv-figure__hint">{f.hint}</span> : null}
+          </>
+        );
+        // Оттенок только у ненулевого: ноль просроченных не тревожит
+        const tone = f.tone && f.value !== 0 && f.value !== "0" ? f.tone : null;
+        return (
+          <li key={f.label} className={cn("sv-figure", tone && `sv-figure--${tone}`)} data-testid={f.testId}>
+            {f.href ? (
+              <Link href={f.href} className="sv-figure__link" aria-label={`${f.label}: ${f.value}${f.hint ? `. ${f.hint}` : ""}`}>
+                {body}
+              </Link>
+            ) : (
+              <div className="sv-figure__link">{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export type Param = { label: string; value: React.ReactNode };
 
 /** Модуль страницы: название, пояснение, действия справа, параметры строкой и содержимое */
