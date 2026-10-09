@@ -105,7 +105,8 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
           title="Событий под эти фильтры нет"
           className="mt-4"
           action={
-            query.who || query.kind || query.source || query.period !== "30" ? (
+            // Сброс возвращает месяц: он шире недели, но не шире «всего времени», поэтому при нём сбрасывать нечего
+            query.who || query.kind || query.source || query.period === "7" ? (
               <Link href={pathname} replace scroll={false} className={buttonClass("secondary", "sm")}>
                 Сбросить фильтры
               </Link>
@@ -137,18 +138,15 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
                     {e.by === "system" ? "Система" : nameOf(e.by)}
                     {e.via ? <span className="block text-tiny text-muted">{VIA_WORD[e.via]}</span> : null}
                   </td>
-                  <td data-label="Откуда" className="text-muted sm:hidden">
-                    {SOURCE_WORD[e.source]}
-                  </td>
                   <td className="is-wide font-medium text-ink">
                     <ObjectLabel e={e} />
                   </td>
                   <td className="is-wide sv-journal__change">
                     <Change e={e} />
                   </td>
-                  <td className="text-muted max-sm:hidden">
+                  <td data-label="Откуда" className="text-muted">
                     {SOURCE_WORD[e.source]}
-                    {e.ip ? <span className="block text-tiny">{e.ip}</span> : null}
+                    {e.ip ? <span className="block text-tiny max-sm:hidden">{e.ip}</span> : null}
                   </td>
                 </tr>
               ))}

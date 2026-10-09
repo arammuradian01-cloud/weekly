@@ -146,7 +146,8 @@ export function WeeklyFeed({
           ) : null
         }
       >
-        <div className="grid shrink-0 grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+        {/* В строке действий шапки: на телефоне сетка во всю ширину, дальше кнопки переносятся, а не растягивают страницу */}
+        <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0">
           <div className="col-span-2 sm:col-span-1">
             <WeekSwitcher view={data} />
           </div>

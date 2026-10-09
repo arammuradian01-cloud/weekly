@@ -201,9 +201,10 @@ a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline
 /* Высокие строки с плашками задач: имя и цифры сверху, рядом с первыми плашками */
 .sv-task-people td, .sv-task-people tbody th { vertical-align: top; padding-top: var(--space-3); }
 /* Журнал (этап 37): «что изменилось» широкой колонкой, длинные значения переносятся */
-.sv-journal__change { min-width: 260px; white-space: normal; overflow-wrap: anywhere; }
+.sv-journal__change { white-space: normal; overflow-wrap: anywhere; }
+@media (min-width: 1024px) { .sv-journal__change { min-width: 260px; } }
 .sv-journal td { vertical-align: top; }
-@media (max-width: 639px) { .sv-journal__change { min-width: 0; } }
+
 
 /* Пустое состояние в строку с действием (этап 37): текст занимает место, на телефоне кнопка уходит под текст, а не
    сжимает заголовок до слова в строке */

@@ -54,8 +54,12 @@ export default async function SettingsPage() {
                 { label: "Людей включено", value: people.filter((p) => p.active).length, testId: "set-fig-active" },
                 { label: "Выключено", value: people.filter((p) => !p.active).length, testId: "set-fig-off" },
                 ...(personal ? [{ label: "С личным паролем", value: `${personal.withPassword} из ${personal.total}`, testId: "set-fig-passwords" }] : []),
-                ...(personal ? [{ label: "Без личного пароля", value: personal.invitable, tone: "warning" as const, testId: "set-fig-invitable" }] : []),
-                { label: "Отсутствия впереди", value: Object.values(absences as Record<string, unknown[]>).filter((list) => list.length).length, testId: "set-fig-absences" },
+                ...(personal ? [{ label: "Без личного пароля", value: personal.total - personal.withPassword, tone: "warning" as const, testId: "set-fig-invitable" }] : []),
+                {
+                  label: "Людей с отсутствием впереди",
+                  value: Object.entries(absences as Record<string, unknown[]>).filter(([slug, list]) => list.length && people.some((p) => p.slug === slug && p.active)).length,
+                  testId: "set-fig-absences",
+                },
               ]}
             />
           ) : null

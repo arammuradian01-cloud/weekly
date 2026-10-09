@@ -236,7 +236,8 @@ export function CeoReport({
             { label: "Решений недели", value: decisions?.length ?? 0, testId: "ceo-fig-decisions" },
             {
               label: "Обещания выполнены",
-              value: promises?.total.total ? `${promiseShare(promises.total) ?? 0}%` : "нет",
+              // Все обещания сняты: доли нет, а не ноль процентов
+              value: promises?.total.total && promiseShare(promises.total) !== null ? `${promiseShare(promises.total)}%` : "нет",
               testId: "ceo-fig-promises",
             },
             { label: "Благодарностей", value: thanks.length, testId: "ceo-fig-thanks" },
