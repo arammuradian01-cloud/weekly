@@ -113,3 +113,73 @@ test("общий логин предлагает только людей топ-
   await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toHaveCount(0);
   await other.close();
 });
+
+test("дерево подчинённых: схема с путём наверх, вакансии, поиск и список", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await loadStructure(page);
+  await page.goto("/structure");
+  // После загрузки структуры страница открывается на дереве подчинённых
+  await expect(page.getByRole("radio", { name: "Подчинённые" })).toHaveAttribute("aria-checked", "true");
+  const tree = page.getByTestId("people-tree");
+  await expect(tree.getByTestId("person-focus")).toContainText("Мурадян Арам");
+  const [{ slug: reva }] = await sql(`SELECT slug FROM people WHERE "fullName" LIKE 'Рева Тарас%'`);
+  const [{ slug: antonov }] = await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`);
+  await tree.getByTestId(`person-${reva}`).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");
+  await expect(tree.getByRole("navigation", { name: "Путь до верха" })).toContainText("Мурадян Арам");
+  await shot(page, "people-chart");
+  await tree.getByTestId(`person-${antonov}`).click();
+  const focus = tree.getByTestId("person-focus");
+  await expect(focus).toContainText("Антонов Дмитрий");
+  await expect(focus).toContainText("PO OSAGO, Сектор автострахования");
+  await expect(focus).toContainText("Открытые вакансии в подразделении");
+  await expect(focus).toContainText("PO KASKO");
+  await expect(focus.getByRole("link", { name: "Задачи" })).toHaveAttribute("href", `/tasks?owner=${antonov}`);
+  await expect(focus.getByRole("link", { name: "Цели" })).toHaveAttribute("href", `/goals?find=${encodeURIComponent("Антонов Дмитрий")}`);
+  // На уровень выше и по пути
+  await focus.getByRole("button", { name: /На уровень выше/ }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");
+  await tree.getByRole("navigation", { name: "Путь до верха" }).getByRole("button", { name: "Мурадян Арам" }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Мурадян Арам");
+  // Поиск открывает человека
+  await page.getByLabel("Найти человека").fill("Product Desi");
+  await page.getByRole("list", { name: "Найденные люди" }).getByRole("button", { name: /Чемоданова Алиса/ }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Чемоданова Алиса");
+  // Список всем деревом
+  await page.getByRole("radiogroup", { name: "Вид дерева" }).getByRole("radio", { name: "Список" }).click();
+  const list = page.getByRole("list", { name: "Дерево подчинённых" });
+  // Список открыт до выбранного человека: ветка Ревы раскрыта, Чемоданова видна
+  await expect(list).toContainText("Чемоданова Алиса");
+  await list.getByRole("button", { name: /Свернуть: Рева Тарас/ }).click();
+  await expect(list).not.toContainText("Антонов Дмитрий");
+  await list.getByRole("button", { name: /Развернуть: Рева Тарас/ }).click();
+  await expect(list).toContainText("Антонов Дмитрий");
+  await shot(page, "people-list");
+  // Имя в списке открывает человека на схеме
+  await list.getByRole("button", { name: "Антонов Дмитрий", exact: true }).click();
+  await expect(tree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
+
+  // Ссылка «Цели» с карточки открывает цели с поиском по человеку
+  await page.goto("/goals");
+  await page.getByRole("button", { name: "Новая цель" }).click();
+  const modal = page.getByRole("dialog", { name: /Новая цель/ });
+  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
+  await modal.getByRole("button", { name: "Завести цель" }).click();
+  await expect(page.getByText("Цель заведена").first()).toBeVisible();
+  await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
+  await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
+
+  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя
+  const other = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" });
+  const shared = await other.newPage();
+  await enter(shared, "Мурадян Арам");
+  await shared.goto("/structure");
+  const sharedTree = shared.getByTestId("people-tree");
+  await sharedTree.getByTestId(`person-${reva}`).click();
+  await sharedTree.getByTestId(`person-${antonov}`).click();
+  await expect(sharedTree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
+  await expect(sharedTree.getByTestId("person-focus")).not.toContainText("Открытые вакансии");
+  await other.close();
+});

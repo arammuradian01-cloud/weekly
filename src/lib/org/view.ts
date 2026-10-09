@@ -46,7 +46,7 @@ export type TeamView = {
 
 export type StructureView = { units: UnitView[]; teams: TeamView[]; unplaced: { slug: string; fullName: string; position: string | null; role: Role }[] };
 
-export async function structureView(viewer: { id: string; role: Role }, opts: { includeInactive?: boolean } = {}): Promise<StructureView> {
+export async function structureView(viewer: { id: string; role: Role; limited?: boolean }, opts: { includeInactive?: boolean } = {}): Promise<StructureView> {
   const [units, people, vacancies, teams, open, overdue, nodes] = await Promise.all([
     prisma.orgUnit.findMany({ where: opts.includeInactive ? {} : { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { head: { select: { slug: true, fullName: true, position: true } } } }),
     prisma.person.findMany({
@@ -74,8 +74,9 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
     const parent = u.parentId && byId.has(u.parentId) ? u.parentId : null;
     children.set(parent, [...(children.get(parent) ?? []), u]);
   }
-  // Ветки, где человек руководитель: в них он видит вакансии
-  const allVacancies = viewer.role === "OWNER" || viewer.role === "ADMIN";
+  // Ветки, где человек руководитель: в них он видит вакансии. Общий логин без режима управления не видит их никогда:
+  // профиль в нём выбирают сами, руководителем он не считается (как в scope)
+  const allVacancies = !viewer.limited && (viewer.role === "OWNER" || viewer.role === "ADMIN");
   const headed = new Set<string>();
   const ordered: { unit: (typeof units)[number]; depth: number }[] = [];
   const seen = new Set<string>();
@@ -83,7 +84,7 @@ export async function structureView(viewer: { id: string; role: Role }, opts: { 
     for (const u of children.get(parent) ?? []) {
       if (seen.has(u.id)) continue;
       seen.add(u.id);
-      const mine = underViewer || u.headId === viewer.id;
+      const mine = !viewer.limited && (underViewer || u.headId === viewer.id);
       if (mine) headed.add(u.id);
       ordered.push({ unit: u, depth });
       walk(u.id, depth + 1, mine);
