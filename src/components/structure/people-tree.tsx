@@ -232,9 +232,10 @@ function FocusCard({
   const functional = p.functional ? people[p.functional] : undefined;
   return (
     <section className="sv-org__focus" aria-label={`Карточка: ${p.fullName}`} data-testid="person-focus">
-      <div className="flex items-start gap-3">
+      {/* На узком экране кнопка «Выше» уходит под текст, чтобы не сжимать имя и должность */}
+      <div className="flex flex-wrap items-start gap-3">
         <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="lg" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-56">
           <h2 ref={headRef} tabIndex={-1} className="scroll-mt-24 font-heading text-title-sm font-bold text-ink [overflow-wrap:anywhere] focus:outline-none">
             {p.fullName}
             {p.slug === me ? <span className="ml-2 text-caption font-normal text-text-secondary">это вы</span> : null}
@@ -243,7 +244,7 @@ function FocusCard({
           <p className="mt-1 text-body text-ink">{reportsText(p)}</p>
         </div>
         {manager ? (
-          <Button variant="secondary" size="sm" onClick={() => onOpen(manager.slug)} aria-label={`На уровень выше: ${manager.fullName}`}>
+          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => onOpen(manager.slug)} aria-label={`На уровень выше: ${manager.fullName}`}>
             <ChevronUp className="h-4 w-4" aria-hidden="true" />
             Выше
           </Button>
