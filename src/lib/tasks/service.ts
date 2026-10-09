@@ -196,8 +196,9 @@ async function mutateIn(tx: Tx, actor: Actor, number: number, plan: (row: TaskRo
   const before = snapshot(row);
   const p = await plan(row, can, tx);
   if (!p.changes.length) fail("Ничего не изменилось");
-  // Сменили ответственного или убрали соисполнителя: личная цель человека, которого больше нет в задаче, снимается
-  if (row.goalId) {
+  // Сменили ответственного или убрали соисполнителя: личная цель человека, которого больше нет в задаче, снимается.
+  // Только при этих правках: смена статуса или срока цель не трогает
+  if (row.goalId && p.changes.some((c) => c.field === "Ответственный" || c.field === "Соисполнители")) {
     const ownerId = p.data.ownerId !== undefined ? (p.data.ownerId as string | null) : row.ownerId;
     const co = await tx.taskCoExecutor.findMany({ where: { taskId: row.id }, select: { personId: true } });
     const left = await foreignGoal(tx, { goalId: row.goalId, teamId: (p.data.teamId as string | undefined) ?? row.teamId, people: taskPeople({ ownerId, coExecutors: co }) });

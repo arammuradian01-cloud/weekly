@@ -50,8 +50,12 @@ const low = (s: string) => flat(s).toLowerCase().replace(/ё/g, "е");
 
 // Слово целиком: «зп», «old». \b в JavaScript не видит границ русских слов
 const word = (w: string) => new RegExp(`(^|[^а-яёa-z0-9])(${w})([^а-яёa-z0-9]|$)`);
-const PRIVATE_TAB = /мотивац|калибровк|оценк|грейд|зарплат|оклад|прем(ия|ии|ий|иальн)|бонус|компенсац|kpi|review|ревью|salary|grade|perf|bonus/;
+// Вкладка с личными данными по имени. «Бонус», «KPI» и «Performance» в имени не повод: так называют и продукты,
+// колонки об оплате ловит проверка шапки раздела
+const PRIVATE_TAB = /мотивац|калибровк|оценк|грейд|зарплат|оклад|прем(ия|ии|ий|иальн)|компенсац|review|ревью|salary|grade/;
 const MONEY = /зарплат|оклад|прем(ия|ии|ий|иальн)|бонус|компенсац|грейд|salary|bonus|grade/;
+// Колонки оценки человека: не читаются никогда, даже если в названии есть «описание» или «целевые»
+const REVIEW = /оценк|калибр|review|ревью/;
 
 /** Вкладка борда: цели, личные данные (мотивация, оценки, оплата), старая или копия, прочее */
 export type TabKind = "goals" | "private" | "old" | "other";
@@ -78,7 +82,7 @@ export function ownerOf(grid: Grid): string | null {
     const name = flat(first.includes(" - ") ? first.slice(first.lastIndexOf(" - ") + 3) : first);
     // Имя из двух-четырёх слов, без цифр и ссылок. Заголовок вроде «Борд 2026» или «Цели команды»: смотрим строку ниже
     if (!name || /\d|https?:/i.test(name) || name.split(" ").length > 4 || name.split(" ").length < 2) continue;
-    if (/^(цел[ьи]|борд|board|goals|запланировано|№)/i.test(name)) continue;
+    if (/^(цел[ьи]|борд|board|goals|запланировано|№)(\s|$)/i.test(name)) continue;
     return name;
   }
   return null;
@@ -97,7 +101,7 @@ function yearIn(cell: string): number | null {
   return short ? 2000 + Number(short[1]) : null;
 }
 
-type Header = { at: number; year: number | null; title: number; number: number; direction: number; description: number; target: number; base: number; money: boolean };
+type Header = { at: number; year: number | null; label: string; title: number; number: number; direction: number; description: number; target: number; base: number; money: boolean };
 
 /**
  * Шапка раздела квартала: «Запланировано на 4Q» или «4 Q 2026» рядом с «Запланировано». Год берётся из шапки, иначе
@@ -119,12 +123,13 @@ function findHeader(grid: Grid, quarter: number, year?: number): Header | null {
       title = cells.findIndex((c) => c === "запланировано");
       if (title < 0) continue;
     }
-    const at = (re: RegExp) => cells.findIndex((c) => re.test(c) && !MONEY.test(c));
+    const at = (re: RegExp) => cells.findIndex((c) => re.test(c) && !MONEY.test(c) && !REVIEW.test(c));
     const numberCol = cells.findIndex((c) => c === "№");
     const directionCol = at(/^направление$/);
     found.push({
       at: i,
       year: yearIn(cells[title]!) ?? (label >= 0 ? yearIn(cells[label]!) : null) ?? context,
+      label: label >= 0 ? cells[label]! : "",
       title,
       // Нет колонки «№»: номер в первой колонке, если она не колонка цели. Номером считается только число до 999
       number: numberCol >= 0 ? numberCol : title !== 0 ? 0 : -1,
@@ -149,11 +154,19 @@ function findHeader(grid: Grid, quarter: number, year?: number): Header | null {
  *  описание, которое начинается со слова «Договорённость», раздел не обрывает */
 function endsSection(row: string[], h: Header): boolean {
   const at = (col: number) => (col >= 0 ? low(clean(row[col])) : "");
-  const cells = [at(h.number), at(h.direction), at(h.title)].filter(Boolean);
-  if (cells.some((c) => c === "№")) return true;
-  // Подпись следующего квартала в шапке вида «1 Q 2027, Запланировано» стоит над направлением
-  const label = [at(h.number), at(h.direction)].some((c) => c && [1, 2, 3, 4].some((q) => QUARTER_LABEL(q).test(c)));
-  return label || cells.some((c) => /^запланировано( на|$)/.test(c) || /^договор[её]нност/.test(c) || /^(свалка|бэклог|backlog)/.test(c));
+  const number = at(h.number);
+  if (number === "№") return true;
+  // Строка с номером: это цель, даже если её название начинается со слова «Договорённости»
+  if (/^\d{1,3}\.?$/.test(number)) return false;
+  // Шапка следующего раздела в любой колонке: «Запланировано на 1Q», «Запланировано на 2027 год» или «Запланировано»
+  // рядом с подписью квартала
+  const header = row.some((c) => {
+    const v = low(clean(c));
+    return v === "запланировано" || YEAR_TITLE.test(v) || [1, 2, 3, 4].some((q) => QUARTER_TITLE(q).test(v));
+  });
+  if (header) return true;
+  const cells = [number, at(h.direction), at(h.title)].filter(Boolean);
+  return cells.some((c) => /^договор[её]нност/.test(c) || /^(свалка|бэклог|backlog)/.test(c));
 }
 
 /** Длинное название: первая фраза до 300 знаков, остальное уходит в начало описания */
@@ -195,7 +208,9 @@ export function readLeaderTab(tab: Tab, quarter: number, year?: number): LeaderT
     const numbered = Number.isFinite(n) && n > 0 && !out.goals.some((g) => g.number === n);
     const number = numbered ? n : next;
     next = Math.max(next, number) + 1;
-    const direction = header.direction === header.title ? "" : flat(get(header.direction));
+    // Подпись квартала «4 Q 2026», объединённая вниз по колонке, направлением не считается
+    const cellDirection = header.direction === header.title ? "" : flat(get(header.direction));
+    const direction = header.label && low(cellDirection) === header.label ? "" : cellDirection;
     const description = [direction ? `Направление: ${direction}.` : "", rest, get(header.description)].filter(Boolean).join("\n").slice(0, DESCRIPTION_MAX);
     out.goals.push({ number, numbered, direction, title, description, base: flat(get(header.base)).slice(0, 120), target: flat(get(header.target)).slice(0, 300) });
   }

@@ -13,7 +13,8 @@ import { matchPerson } from "@/lib/org/import";
 import { applyPlan, planGoals, type GoalsPlan } from "./service";
 import { quarterLabel, quarterOf } from "./parse";
 import { assignNumbers, codeBase, isGoalsTab, readLeaderBoard, titleKey, type Tab } from "./leader-board";
-import { formatDate, formatNumber, unpackedSize } from "./xlsx-text";
+import { formatDate, formatNumber } from "./xlsx-text";
+import { prepareXlsx, XlsxError } from "./xlsx-safe";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -21,8 +22,6 @@ const fail = (message: string): never => {
 
 /** Файл борда не больше этого. Сервер принимает запрос до 10 МБ (proxyClientMaxBodySize), с запасом на форму */
 export const LEADER_FILE_MAX = 9 * 1024 * 1024;
-/** Распакованный файл не больше этого: защита от архива, который раздувается при распаковке */
-const UNPACKED_MAX = 150 * 1024 * 1024;
 /** Читаем не дальше этих строк и колонок вкладки: раздел квартала всегда в начале листа */
 const MAX_ROWS = 3000;
 const MAX_COLS = 60;
@@ -43,15 +42,19 @@ function cellText(cell: ExcelJS.Cell): string {
 }
 
 /** Вкладки .xlsx как таблицы текста. Ячейки читаются только у вкладок целей: листы с зарплатами и мотивацией
- *  остаются нетронутыми, у них только имя */
+ *  заменяются пустыми ещё до чтения, у них остаётся только имя */
 export async function tabsFromXlsx(data: ArrayBuffer): Promise<Tab[]> {
   if (data.byteLength > LEADER_FILE_MAX) fail("Файл больше 9 МБ: удалите из копии борда лишние вкладки и скачайте снова");
-  const unpacked = unpackedSize(new Uint8Array(data));
-  if (unpacked === null) fail(NOT_XLSX);
-  if (unpacked! > UNPACKED_MAX) fail("Файл слишком большой после распаковки: удалите из копии борда лишние вкладки и скачайте снова");
+  let safe: Uint8Array;
+  try {
+    safe = await prepareXlsx(data, isGoalsTab);
+  } catch (error) {
+    if (error instanceof XlsxError) fail(error.message === "not-xlsx" ? NOT_XLSX : error.message);
+    throw error;
+  }
   const book = new ExcelJS.Workbook();
   try {
-    await book.xlsx.load(data);
+    await book.xlsx.load(safe!.buffer.slice(safe!.byteOffset, safe!.byteOffset + safe!.byteLength) as ArrayBuffer);
   } catch {
     fail(NOT_XLSX);
   }
@@ -133,6 +136,7 @@ async function buildPlan(actor: Actor, tabs: Tab[], opts: { team: string; quarte
   const index = new NameIndex(people);
   const existing = await prisma.goal.findMany({ where: { quarter }, select: { teamId: true, code: true, ownerId: true, source: true, title: true } });
   const fromBoard = (g: (typeof existing)[number]) => g.source.startsWith("leader-board:");
+  const nameOf = new Map(people.map((p) => [p.id, p.fullName]));
 
   const skipped: LeaderPlan["skipped"] = [];
   const groups: { tab: string; owner: string; person: (typeof people)[number]; team: TeamNode; grid: string[][] }[] = [];
@@ -153,7 +157,7 @@ async function buildPlan(actor: Actor, tabs: Tab[], opts: { team: string; quarte
       continue;
     }
     // Прежние цели человека из борда этого квартала: их команда и основа кода. Групп несколько (у чужой цели сменили
-    // владельца на этого человека): берём самую большую, при равенстве ту, где основа из его инициалов или фамилии
+    // владельца на этого человека): берём самую большую из подходящих, при равенстве ту, где основа из его инициалов
     const own = ownBases(person.fullName);
     const groupsOf = new Map<string, { teamId: string; base: string; size: number }>();
     for (const g of existing) {
@@ -162,11 +166,15 @@ async function buildPlan(actor: Actor, tabs: Tab[], opts: { team: string; quarte
       const key = `${g.teamId}/${base}`;
       groupsOf.set(key, { teamId: g.teamId, base, size: (groupsOf.get(key)?.size ?? 0) + 1 });
     }
-    const score = (x: { base: string; size: number }) => x.size * 10 + (own(x.base) ? 5 : 0);
-    const before = [...groupsOf.values()].sort((a, b) => score(b) - score(a))[0];
+    // Годится только группа с его собственной основой: чужие коды, которые переназначили на него в ресурсе, не уводят
+    // его загрузку в чужую серию
+    const before = [...groupsOf.values()].filter((x) => own(x.base)).sort((a, b) => b.size - a.size)[0];
     const team = (before && nodes.find((n) => n.id === before.teamId)) || teamOf(nodes, person.id) || fallback;
     const takenByOther = (b: string) => taken.has(`${team.id}/${b}`) && taken.get(`${team.id}/${b}`) !== person.id;
-    const clash = (b: string) => takenByOther(b) || existing.some((g) => g.teamId === team.id && g.code?.match(CODE)?.[1] === b && !(g.ownerId === person.id && fromBoard(g)));
+    // Цель из борда с его основой, которую переназначили человеку с другой основой, его серию не занимает: он её возвращает
+    const reclaim = (g: (typeof existing)[number], b: string) => fromBoard(g) && own(b) && !(g.ownerId && nameOf.has(g.ownerId) && ownBases(nameOf.get(g.ownerId)!)(b));
+    const clash = (b: string) =>
+      takenByOther(b) || existing.some((g) => g.teamId === team.id && g.code?.match(CODE)?.[1] === b && !(g.ownerId === person.id && fromBoard(g)) && !reclaim(g, b));
     const base = before && !takenByOther(before.base) ? before.base : codeBase(person.fullName, clash);
     taken.set(`${team.id}/${base}`, person.id);
     const previous = new Map(

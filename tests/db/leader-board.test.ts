@@ -110,6 +110,26 @@ describe("загрузка из борда лидера", () => {
     }
   });
 
+  it("цели Ревы переназначили на Логинову, вкладку Логиновой загрузили отдельно: коды Ревы не уходят к Логиновой", async () => {
+    const [reva, loginova] = await Promise.all(["reva", "loginova"].map((slug) => prisma.person.findUniqueOrThrow({ where: { slug } })));
+    await prisma.goal.updateMany({ where: { quarter: Q, code: { in: ["РТ-1", "РТ-2"] } }, data: { ownerId: loginova!.id } });
+    try {
+      const only = board().filter((t) => t.name === "Цели RED Bus");
+      const res = await applyLeaderBoard(await owner(), only, { team: TOP_TEAM, quarter: Q });
+      expect(res.added).toBe(0);
+      // Её цель осталась своей, коды Ревы не тронуты, кроме владельца, которого поменяли руками
+      const rt = await prisma.goal.findMany({ where: { quarter: Q, code: { in: ["РТ-1", "РТ-2"] } } });
+      expect(rt.map((g) => g.teamId)).toEqual([revaTeam, revaTeam]);
+      expect(rt.map((g) => g.title).sort()).toEqual(["Подписка ОСАГО запущена и имеет P&L", "Скоринг на проде"]);
+      // Следующая загрузка Ревы возвращает ей её коды и не дублирует
+      const back = await applyLeaderBoard(await owner(), board(), { team: TOP_TEAM, quarter: Q });
+      expect(back.added).toBe(0);
+      expect((await prisma.goal.findMany({ where: { quarter: Q, code: { in: ["РТ-1", "РТ-2"] } } })).every((g) => g.ownerId === reva!.id)).toBe(true);
+    } finally {
+      await prisma.goal.updateMany({ where: { quarter: Q, code: { in: ["РТ-1", "РТ-2"] } }, data: { ownerId: reva!.id } });
+    }
+  });
+
   it("строка без номера, вставленная в середину борда, не сдвигает коды; описание с переносами строк переживает правку цели", async () => {
     const tab = (rows: string[][]): Tab[] => [{ name: "Цели RED Bus", grid: [["Логинова Светлана"], ["Направление", "Запланировано на 4Q", "Целевые"], ...rows] }];
     await prisma.goal.deleteMany({ where: { quarter: Q, owner: { slug: "loginova" } } });

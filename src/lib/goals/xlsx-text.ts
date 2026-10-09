@@ -1,29 +1,4 @@
-// Текст ячеек .xlsx как на экране таблицы и проверка архива до распаковки (этап 31). Чистые функции без базы
-
-/** Сколько займёт .xlsx после распаковки, по оглавлению архива. null: не архив или архив ZIP64 */
-export function unpackedSize(data: Uint8Array): number | null {
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  let end = -1;
-  for (let i = data.length - 22; i >= Math.max(0, data.length - 22 - 65_535); i--) {
-    if (view.getUint32(i, true) === 0x06054b50) {
-      end = i;
-      break;
-    }
-  }
-  if (end < 0) return null;
-  const entries = view.getUint16(end + 10, true);
-  let at = view.getUint32(end + 16, true);
-  if (entries === 0xffff || at === 0xffffffff) return null;
-  let total = 0;
-  for (let n = 0; n < entries; n++) {
-    if (at + 46 > data.length || view.getUint32(at, true) !== 0x02014b50) return null;
-    const size = view.getUint32(at + 24, true);
-    if (size === 0xffffffff) return null;
-    total += size;
-    at += 46 + view.getUint16(at + 28, true) + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
-  }
-  return total;
-}
+// Текст ячеек .xlsx как на экране таблицы (этап 31). Чистые функции без базы
 
 const two = (n: number) => String(n).padStart(2, "0");
 
@@ -32,14 +7,32 @@ export function formatDate(value: Date): string {
   return `${two(value.getUTCDate())}.${two(value.getUTCMonth() + 1)}.${value.getUTCFullYear()}`;
 }
 
-/** Число как на экране таблицы: проценты, разряды, знаки после запятой. 0.15 с форматом «0%» станет «15%» */
+/** Подписи формата: «"млн"», «[$₽-419]», «\\р» как текст; пропуски «_)» и цвета «[Red]» убираются */
+function literal(part: string): string {
+  return part
+    .replace(/\[\$([^\]-]*)(-[^\]]*)?\]/g, "$1")
+    .replace(/\[[^\]]*\]/g, "")
+    .replace(/"([^"]*)"/g, "$1")
+    .replace(/\\(.)/g, "$1")
+    .replace(/[_*]./g, "")
+    .replace(/%/g, "");
+}
+
+/** Число как на экране таблицы: проценты, разряды, знаки после запятой, подписи вроде «млн» и «₽».
+ *  0.15 с форматом «0%» станет «15%», 29.25 с форматом «0.00" млн"» станет «29,25 млн» */
 export function formatNumber(value: number, numFmt?: string | null): string {
-  const fmt = (numFmt ?? "").replace(/"[^"]*"/g, "");
-  const percent = fmt.includes("%");
-  const decimals = fmt.match(/\.(0+)/)?.[1]?.length ?? (fmt && fmt !== "General" ? 0 : null);
+  const section = (numFmt ?? "").split(";")[0] ?? "";
+  const plain = () => String(Number(value.toPrecision(12))).replace(".", ",");
+  if (!section || section === "General" || section === "@") return plain();
+  const token = section.replace(/"[^"]*"|\[[^\]]*\]|\\./g, (m) => " ".repeat(m.length)).match(/[#0?][#0?,.]*/);
+  if (!token) return plain();
+  const number = token[0];
+  const before = literal(section.slice(0, token.index));
+  const after = section.slice(token.index! + number.length);
+  const percent = section.replace(/"[^"]*"/g, "").includes("%");
+  const decimals = number.match(/\.([0#?]+)/)?.[1]?.length ?? 0;
   const v = percent ? value * 100 : value;
-  if (decimals === null) return String(Number(v.toPrecision(12))).replace(".", ",") + (percent ? "%" : "");
   const [int, frac] = Math.abs(v).toFixed(decimals).split(".");
-  const grouped = fmt.includes(",") ? int!.replace(/\B(?=(\d{3})+(?!\d))/g, " ") : int!;
-  return `${v < 0 ? "-" : ""}${grouped}${frac ? `,${frac}` : ""}${percent ? "%" : ""}`;
+  const grouped = number.includes(",") ? int!.replace(/\B(?=(\d{3})+(?!\d))/g, " ") : int!;
+  return `${v < 0 ? "-" : ""}${before}${grouped}${frac ? `,${frac}` : ""}${percent ? "%" : ""}${literal(after)}`.trim();
 }
