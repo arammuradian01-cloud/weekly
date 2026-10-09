@@ -16,9 +16,8 @@ export type ParsedSheet = { columns: Partial<Record<Version, number>>; problem: 
 const text = (c: Cell) => (c === null || c === undefined ? "" : String(c).replace(/ /g, " ").trim());
 
 /**
- * Месяц из ячейки шапки: текст «Oct_2026» или дата. Дата приходит из таблицы числом дней от 30.12.1899, если ячейку
- * когда-нибудь переведут в формат даты. Число считается датой только в строке шапки: у строки с цифрами есть название
- * (трафик 46 300 не должен стать месяцем)
+ * Месяц из ячейки шапки: текст «Oct_2026» или дата. Дата приходит из таблицы числом дней от 30.12.1899, если часть ячеек
+ * шапки переведут в формат даты. Число считается датой только в строке шапки (трафик 46 300 не должен стать месяцем)
  */
 function headMonth(c: Cell, header: boolean): string {
   if (header && typeof c === "number" && c > 30_000 && c < 80_000) {
@@ -35,8 +34,9 @@ export function findColumns(grid: Grid, month: string): ParsedSheet {
   const columns: ParsedSheet["columns"] = {};
   for (let r = 0; r < head.length; r++) {
     const row = head[r] ?? [];
-    const label = rowLabel(row);
-    const header = label === "" || /^[A-Za-z]{3}_\d{4}$/.test(label) || /^(Act|LBE|BUD)$/i.test(label);
+    // Строка шапки: в ней есть подпись месяца «Oct_2026» или версии. Строка без таких подписей (данные, даже без
+    // названия) датами не читается: лучше «Нет колонки», чем чужой месяц
+    const header = row.some((c) => typeof c === "string" && (/^[A-Za-z]{3}_\d{4}$/.test(c.trim()) || /^(Act|LBE|BUD)$/i.test(c.trim())));
     for (let j = 0; j < row.length; j++) {
       if (headMonth(row[j], header) !== target) continue;
       // Версия: в одной из строк выше или ниже в той же колонке

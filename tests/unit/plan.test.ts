@@ -245,8 +245,10 @@ describe("крайние случаи LRF и пересчёта", () => {
 
   it("месяц в шапке датой, прочерки и ошибки формул не названия строк", () => {
     const serial = (Date.UTC(2026, 9, 1) - Date.UTC(1899, 11, 30)) / 86_400_000;
-    const grid = [[null, "LBE", "BUD"], [null, serial, serial]];
+    const grid = [[null, "LBE", "BUD", "LBE"], ["Sep_2026", serial, serial, "Nov_2026"]];
     expect(findColumns(grid, OCT).columns).toEqual({ LBE: 1, BUD: 2 });
+    // Строка данных без названия тоже не шапка
+    expect(findColumns([[null, "LBE", "BUD"], [null, "Sep_2026", "Sep_2026"], [null, 46_300, 46_310]], OCT).problem).toMatch(/Нет колонки/);
     // Число в строке с названием это цифра, а не месяц: нет октября, значит нет колонки
     const sep = [[null, "LBE", "BUD"], [null, "Sep_2026", "Sep_2026"], [null, "TOTAL OSAGO Web (MAU)", 46_300]];
     expect(findColumns(sep, OCT).problem).toMatch(/Нет колонки/);
