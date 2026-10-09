@@ -53,9 +53,13 @@ export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
 
+/** Ссылка на цель уже обработана: при новом показе таблицы (смена вида, поиск) страница не прыгает к ней снова */
+let handledHash = "";
+
 export function GoalsTable({
   goals,
   all,
+  onReveal,
   groupBy,
   onEdit,
   onMark,
@@ -66,6 +70,8 @@ export function GoalsTable({
   goals: GoalNode[];
   /** Все цели квартала: цель выше и цели ниже показываются и при фильтре */
   all: Map<string, GoalNode>;
+  /** Цель по ссылке скрыта фильтром или поиском: сбросить их */
+  onReveal: () => void;
   groupBy: GoalGroupBy;
   onEdit: (g: GoalNode) => void;
   onMark: (g: GoalNode) => void;
@@ -78,25 +84,47 @@ export function GoalsTable({
   const byId = all;
   const allRef = useRef(all);
   allRef.current = all;
+  const shownRef = useRef(new Set(goals.map((g) => g.id)));
+  shownRef.current = new Set(goals.map((g) => g.id));
+  const revealRef = useRef(onReveal);
+  revealRef.current = onReveal;
+  const pending = useRef<string | null>(null);
 
   // Ссылка на цель (#goal-id, с метки цели у задачи или из списка целей ниже): раскрыть и показать строку. Один раз при
   // открытии страницы и при каждой смене адреса, а не при каждой перерисовке
   useEffect(() => {
-    const go = () => {
+    const go = (initial: boolean) => {
+      const hash = window.location.hash;
+      if (initial && hash === handledHash) return;
+      handledHash = hash;
       let id = "";
       try {
-        id = decodeURIComponent(window.location.hash.replace(/^#goal-/, ""));
+        id = decodeURIComponent(hash.replace(/^#goal-/, ""));
       } catch {
         return;
       }
       if (!id || !allRef.current.has(id)) return;
       setOpen(id);
+      if (!shownRef.current.has(id)) {
+        // Цель скрыта фильтром: сбросить его, строка появится и покажется в следующей отрисовке
+        pending.current = id;
+        revealRef.current();
+        return;
+      }
       requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
     };
-    go();
-    window.addEventListener("hashchange", go);
-    return () => window.removeEventListener("hashchange", go);
+    go(true);
+    const onHash = () => go(false);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  useEffect(() => {
+    const id = pending.current;
+    if (!id || !goals.some((g) => g.id === id)) return;
+    pending.current = null;
+    requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
+  }, [goals]);
 
   const groups = useMemo(() => {
     const out = new Map<string, { key: string; label: string; goals: GoalNode[] }>();
@@ -369,13 +397,15 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
 function FactEditor({ goal: g, onClose, onSaved, onRefresh }: { goal: GoalNode; onClose: () => void; onSaved: () => void; onRefresh: () => void }) {
   const { notify } = usePrototype();
   const [fact, setFact] = useState(g.fact?.value ?? "");
+  // Поле факта трогали: только тогда тот же факт считается подтверждением, а не повтором при правке целевого
+  const [touched, setTouched] = useState(false);
   const [note, setNote] = useState("");
   const [target, setTarget] = useState(g.target ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const preview = goalProgress(g.base, target, fact);
   // Тот же факт можно подтвердить, когда он устарел: это снимает «без свежего факта»
-  const factChanged = g.canFact && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "" || g.factStale);
+  const factChanged = g.canFact && fact.trim() !== "" && (fact.trim() !== (g.fact?.value ?? "") || note.trim() !== "" || (g.factStale && touched));
   const targetChanged = g.canEdit && target.trim() !== (g.target ?? "");
   const id = `goal-${g.id}`;
 
@@ -412,7 +442,10 @@ function FactEditor({ goal: g, onClose, onSaved, onRefresh }: { goal: GoalNode; 
   return (
     <form className="flex flex-col gap-3 py-2" onSubmit={save} role="group" aria-label={`Факт и целевое: ${g.title}`} data-testid="goal-fact-editor">
       <div className="grid gap-3 sm:grid-cols-[minmax(140px,180px)_minmax(140px,200px)_1fr]">
-        {g.canFact ? <TextInput id={`${id}-fact`} label="Факт" value={fact} onChange={(e) => setFact(e.target.value)} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? `Был: ${g.fact.value}` : undefined} autoFocus /> : null}
+        {g.canFact ? <TextInput id={`${id}-fact`} label="Факт" value={fact} onChange={(e) => {
+              setFact(e.target.value);
+              setTouched(true);
+            }} maxLength={120} autoComplete="off" placeholder="Например, 12,5%" hint={g.fact ? `Был: ${g.fact.value}` : undefined} autoFocus /> : null}
         {g.canEdit ? <TextInput id={`${id}-target`} label="Целевое значение" value={target} onChange={(e) => setTarget(e.target.value)} maxLength={300} autoComplete="off" hint={g.base ? `База: ${g.base}` : undefined} /> : null}
         {g.canFact ? <TextInput id={`${id}-note`} label="Комментарий к факту" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} autoComplete="off" placeholder="Откуда цифра или что изменилось" /> : null}
       </div>

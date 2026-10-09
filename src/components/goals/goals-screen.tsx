@@ -136,7 +136,14 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
             ) : null}
             {mode === "table" ? (
               shown.length ? (
-                <GoalsTable goals={shown} all={byId} groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
+                <GoalsTable
+                  goals={shown}
+                  all={byId}
+                  onReveal={() => {
+                    setFilter("all");
+                    setQuery("");
+                  }}
+                  groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
               ) : (
                 <p className="px-5 py-6 text-body text-text-secondary">Под условия ничего не подходит: смените фильтр или поиск.</p>
               )
@@ -245,7 +252,8 @@ function GoalModal({
   const people = t ? allPeople().filter((p) => p.active && teamPeople(t).includes(p.slug)) : allPeople().filter((p) => p.active);
   const [owner, setOwner] = useState(goal?.owner?.slug ?? t?.leader ?? "");
   const parents = goals.filter((g) => g.id !== goal?.id);
-  const deletable = mode === "edit" && goal && !goal.tasks.length && !goal.childIds.length;
+  // Цель с задачами, целями ниже или фактом не удаляется: её снимают итогом «Снята»
+  const deletable = mode === "edit" && goal && !goal.tasks.length && !goal.childIds.length && !goal.facts.length;
   return (
     <Modal open onOpenChange={(o) => !o && onClose()} title={mode === "create" ? `Новая цель на ${quarterLabel(quarter)}` : "Изменить цель"} description="Цель одной мыслью, метрика, база и целевое значение. Факт вписывается в таблице целей кнопкой «Факт»">
       <form

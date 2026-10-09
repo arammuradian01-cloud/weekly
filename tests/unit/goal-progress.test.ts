@@ -73,6 +73,43 @@ describe("сдвиг, множители и прочерки", () => {
   });
 });
 
+describe("второй круг проверки", () => {
+  it("маленький факт при целевом в тысячах не поднимается", () => {
+    expect(goalProgress(null, "1,5 тыс полисов", "40")?.share).toBeCloseTo(40 / 1500, 9);
+    expect(goalProgress(null, "1,5 тыс полисов", "48")?.share).toBeCloseTo(48 / 1500, 9);
+    expect(goalProgress(null, "29,25 млн", "14,6")?.share).toBeCloseTo(14.6 / 29.25, 9);
+  });
+
+  it("факт в п.п. это тоже сдвиг от базы", () => {
+    expect(goalProgress("13%", "+2 п.п.", "+1 п.п.")?.share).toBeCloseTo(0.5, 9);
+  });
+
+  it("отрицательный сдвиг от положительной базы: сократить на 500 тыс", () => {
+    expect(goalProgress("3 млн", "-500 тыс", "2,8 млн")?.share).toBeCloseTo(0.4, 9);
+  });
+
+  it("десятичные с точкой, «к» перед числом, узкие пробелы", () => {
+    expect(parseGoalNumber("0.05")).toMatchObject({ value: 0.05 });
+    expect(parseGoalNumber("1.10")).toMatchObject({ value: 1.1 });
+    expect(parseGoalNumber("к 2.5 млрд")).toMatchObject({ value: 2_500_000_000 });
+    expect(parseGoalNumber("1\u202f500\u2009000")).toMatchObject({ value: 1_500_000 });
+    expect(parseGoalNumber("01.10")).toBeNull();
+  });
+
+  it("база текстом: цель числовая, факт проверяется, прогресса нет", () => {
+    expect(measurableTarget("новый продукт", "29 млн")).toBe(true);
+    expect(factProblem("новый продукт", "29 млн", "почти")).toMatch(/впишите факт числом/);
+    expect(goalProgress("новый продукт", "29 млн", "10 млн")).toBeNull();
+  });
+
+  it("зелёная полоса там же, где подпись «100%»", () => {
+    const p = goalProgress("0", "1000", "996");
+    expect(progressLabel(p)).toBe("100%");
+    expect(reached(p)).toBe(true);
+    expect(reached(goalProgress("0", "1000", "994"))).toBe(false);
+  });
+});
+
 describe("прогресс от базы к целевому", () => {
   it("рост: доля пути от базы", () => {
     const p = goalProgress("120", "150", "141");

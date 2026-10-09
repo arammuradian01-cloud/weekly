@@ -36,12 +36,13 @@ const PLACEHOLDER = /^(-|–|—|нет|н\/д|n\/a|na|нд)$/i;
  */
 export function parseGoalNumber(input: string | null | undefined): GoalNumber | null {
   if (!input) return null;
-  let t = String(input).replace(/ /g, " ").trim().toLowerCase();
+  // Любые пробелы (неразрывный, узкий) как обычный: так вставляют числа из таблиц
+  let t = String(input).replace(/[\u00a0\u2007\u2009\u202f]/g, " ").trim().toLowerCase();
   if (!t || t.length > 40) return null;
-  // Дата или срок: «15.12.2026», «15.12», «до 15.12». Число с точкой и множителем («до 1.5 млн») датой не считается
+  // Дата или срок: «15.12.2026», «15.12», «01.10», «до 15.12». День двумя цифрами: «1.10» и «0.05» это числа
   if (/\d{1,2}\.\d{1,2}\.\d{2,4}/.test(t)) return null;
-  if (/^(до|к|с|по)?\s*\d{1,2}\.(0[1-9]|1[0-2])$/.test(t)) return null;
-  t = t.replace(/^(до|не менее|не ниже|от|около|≈|~)\s+/, "");
+  if (/^((до|к|с|по)\s+)?(0[1-9]|[12]\d|3[01])\.(0[1-9]|1[0-2])$/.test(t)) return null;
+  t = t.replace(/^(до|к|не менее|не ниже|от|около|≈|~)\s+/, "");
   const m = /^([+-]?)(\d[\d ]{0,20}(?:[.,]\d{1,6})?)\s*(.*)$/.exec(t);
   if (!m) return null;
   const signed = m[1] !== "";
@@ -67,46 +68,60 @@ export function parseGoalNumber(input: string | null | undefined): GoalNumber | 
   return { value: value * scale, unit, scale, signed, pp: false };
 }
 
-/** Значения цели числами в одних множителях и целевое как абсолютное значение. null: не числа или не сопоставить */
-export function goalNumbers(base: string | null | undefined, target: string | null | undefined, fact?: string | null): { base: GoalNumber | null; target: GoalNumber; fact: GoalNumber | null } | null {
+/**
+ * Значение сдвигом от базы в абсолютное: «+2 п.п.» при 13% это 15%, «+20%» при 120 это 144, «+30» при 120 млн это
+ * 150 млн, «-500 тыс» при 3 млн это 2,5 млн. Отрицательное при отрицательной базе это значение («-5» при «-10»).
+ * Не сдвиг: как есть. Сдвиг без базы или «+20%» при базе в процентах (рост или пункты, неясно): null
+ */
+function resolve(x: GoalNumber, b: GoalNumber | null): GoalNumber | null {
+  if (!x.pp && !x.signed) return x;
+  if (!b) return null;
+  if (x.pp) return b.unit === "pct" ? { ...x, value: b.value + x.value, signed: false, pp: false } : null;
+  if (x.unit === "pct") return b.unit === "plain" ? { ...x, value: b.value * (1 + x.value / 100), unit: "plain", scale: b.scale, signed: false } : null;
+  if (b.unit !== "plain") return null;
+  if (x.value < 0 && b.value < 0) return { ...x, signed: false };
+  return { ...x, value: b.value + x.value * (x.scale === 1 ? b.scale : 1), scale: b.scale, signed: false };
+}
+
+/**
+ * Значения цели числами в одних множителях, целевое и факт абсолютными значениями. null: целевое не число.
+ * lenientBase: база текстом («новый продукт») считается отсутствующей, иначе с такой базой прогресс не считается
+ */
+export function goalNumbers(
+  base: string | null | undefined,
+  target: string | null | undefined,
+  fact?: string | null,
+  opts: { lenientBase?: boolean } = {},
+): { base: GoalNumber | null; target: GoalNumber; fact: GoalNumber | null } | null {
   const baseText = base && !PLACEHOLDER.test(base.trim()) ? base : null;
   let b = baseText ? parseGoalNumber(baseText) : null;
-  if (baseText && !b) return null;
+  if (baseText && !b && !opts.lenientBase) return null;
+  if (b && (b.pp || (b.signed && b.unit === "pct"))) b = null;
   let t = parseGoalNumber(target);
   if (!t) return null;
   let f = fact ? parseGoalNumber(fact) : null;
-  if (fact && !f) f = null;
-  // Множитель написан только у части значений: остальные в нём же
-  const scales = [...new Set([b, t, f].filter((x): x is GoalNumber => !!x && x.unit === "plain" && x.scale > 1).map((x) => x.scale))];
+  // Множитель написан только у части значений. Значение без множителя поднимается до него, только если как есть оно
+  // меньше опорного в тысячу раз и больше, а с множителем попадает в тысячу раз от опорного: «141» при «150 млн» это
+  // 141 млн, а «40» при «1,5 тыс» это 40, «14 625 000» при «29,25 млн» уже в рублях
+  const scaled = [b, t, f].filter((x): x is GoalNumber => !!x && x.unit === "plain" && x.scale > 1);
+  const scales = [...new Set(scaled.map((x) => x.scale))];
   if (scales.length === 1) {
     const k = scales[0]!;
-    // Опорное значение с множителем: значение без множителя поднимается, только если так оно ближе к опорному
-    // («141» при «150 млн» это 141 млн, а «14 625 000» при «29,25 млн» уже в рублях)
-    const ref = Math.abs([t, b, f].find((x) => !!x && x.unit === "plain" && x.scale > 1)!.value);
-    const closer = (v: number) => ref > 0 && v !== 0 && Math.abs(Math.log10((Math.abs(v) * k) / ref)) < Math.abs(Math.log10(Math.abs(v) / ref));
-    const lift = (x: GoalNumber | null) => (x && x.unit === "plain" && x.scale === 1 && !(x === t && t.signed) && closer(x.value) ? { ...x, value: x.value * k, scale: k } : x);
+    const ref = Math.abs(scaled[0]!.value);
+    const lift = (x: GoalNumber | null) => {
+      if (!x || x.unit !== "plain" || x.scale !== 1 || x.signed || x.value === 0 || ref === 0) return x;
+      const v = Math.abs(x.value);
+      return v * 1000 < ref && v * k * 1000 >= ref && v * k <= ref * 1000 ? { ...x, value: x.value * k, scale: k } : x;
+    };
     b = lift(b);
     t = lift(t)!;
     f = lift(f);
   }
-  // Сдвиг от базы: «+2 п.п.», «+20%», «+500», «-5 п.п.»
-  if (t.pp || t.signed) {
-    if (!b) return null;
-    if (t.pp) {
-      if (b.unit !== "pct") return null;
-      t = { ...t, value: b.value + t.value, unit: "pct", signed: false, pp: false };
-    } else if (t.unit === "pct" && b.unit === "plain") {
-      t = { ...t, value: b.value * (1 + t.value / 100), unit: "plain", scale: b.scale, signed: false };
-    } else if (t.unit === "plain" && b.unit === "plain") {
-      // Отрицательное без п.п. и процента это значение, а не сдвиг: «-5» при базе «-10»
-      if (t.value < 0) t = { ...t, signed: false };
-      else t = { ...t, value: b.value + t.value * (t.scale === 1 ? b.scale : 1), scale: b.scale, signed: false };
-    } else {
-      // «+20%» при базе в процентах: относительный рост или пункты, неясно
-      return null;
-    }
-  }
-  return { base: b, target: t, fact: f };
+  const target2 = resolve(t, b);
+  if (!target2) return null;
+  // Факт сдвигом («+1 п.п.») тоже от базы; если сдвиг не посчитать, факта нет
+  const fact2 = f ? resolve(f, b) : null;
+  return { base: b, target: target2, fact: fact2 };
 }
 
 export type GoalProgress = {
@@ -118,7 +133,7 @@ export type GoalProgress = {
 
 /** Целевое значение читается числом (с учётом базы для сдвига): факт ждут числом и следят за свежестью */
 export function measurableTarget(base: string | null | undefined, target: string | null | undefined): boolean {
-  return goalNumbers(base, target) !== null;
+  return goalNumbers(base, target, null, { lenientBase: true }) !== null;
 }
 
 /**
@@ -137,7 +152,7 @@ export function goalProgress(base: string | null | undefined, target: string | n
 
 /** Почему факт не подходит к целевому: не число, другие единицы, расхождение больше чем в 1000 раз. null: подходит */
 export function factProblem(base: string | null | undefined, target: string | null | undefined, fact: string): string | null {
-  const n = goalNumbers(base, target, fact);
+  const n = goalNumbers(base, target, fact, { lenientBase: true });
   if (!n) return null;
   if (!n.fact) return `Целевое значение «${target}» число: впишите факт числом, например ${n.target.unit === "pct" ? "12,5%" : "141"}`;
   if (n.fact.unit !== n.target.unit) return n.target.unit === "pct" ? "Целевое значение в процентах: впишите факт тоже в процентах" : "Целевое значение не в процентах: впишите факт без знака процента";
@@ -156,8 +171,8 @@ export function progressLabel(p: GoalProgress | null): string | null {
   return `${pct.toLocaleString("ru-RU", { maximumFractionDigits: digits }).replace(/ /g, " ")}%`;
 }
 
-/** Достигнута ли цель по числам с учётом округления подписи: 99,96% показывается как 100% и считается выполненной */
-export const reached = (p: GoalProgress | null) => !!p && p.share >= 0.9995;
+/** Достигнута ли цель по числам с учётом округления подписи: от 99,5% подпись «100%», и полоса тоже зелёная */
+export const reached = (p: GoalProgress | null) => !!p && p.share >= 0.995;
 
 /** Факт старше двух недель: пора обновить */
 export const FACT_STALE_DAYS = 14;
