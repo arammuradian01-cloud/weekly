@@ -26,6 +26,7 @@ export async function GET(request: Request) {
     field: `Прогноз месяца в Excel, ${monthLabel(view.month)}`,
     after: `строк ${rows}`,
     ip: actor.ip ?? null,
+    via: actor.via ?? null,
   });
   return new Response(new Uint8Array(buffer), {
     headers: {

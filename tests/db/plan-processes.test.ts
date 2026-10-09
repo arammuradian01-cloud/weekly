@@ -12,6 +12,7 @@ import { derive } from "@/lib/plan/model";
 import type { Values } from "@/lib/plan/lrf";
 import { moscowToday } from "@/lib/tasks/dates";
 import { TOP_TEAM } from "@/lib/org/scope";
+import { addMonths } from "@/lib/forecast/codes";
 
 const actor = {
   owner: () => tasks.actorFor("muradyan", "OWNER"),
@@ -31,6 +32,7 @@ const expectRule = async (p: Promise<unknown>, message: RegExp) => {
 const month = plan.currentMonth();
 const today = moscowToday();
 const DAY = 24 * 60 * 60 * 1000;
+const ru = (iso: string) => iso.split("-").reverse().join(".");
 
 const clean = async () => {
   await prisma.inboxEvent.deleteMany({ where: { kind: "PLAN" } });
@@ -87,6 +89,28 @@ describe("загрузка LBE: снимок и событие командам 
     // Общему логину без режима управления событие не показывается: корректируют при личном входе
     const shared = await listInbox(await personId("golovkin"), new Date(), { id: await personId("golovkin"), role: "ADMIN", limited: true, shared: true });
     expect(shared.items.some((i) => i.subject.startsWith("plan:"))).toBe(false);
+    // Общий логин с режимом администратора тоже: проверяют при личном входе
+    const sharedAdmin = await listInbox(await personId("golovkin"), new Date(), { id: await personId("golovkin"), role: "ADMIN", shared: true });
+    expect(sharedAdmin.items.some((i) => i.subject.startsWith("plan:"))).toBe(false);
+  });
+
+  it("человек проверил или скорректировал прогноз: его событие разобрано, у остальных осталось", async () => {
+    await load();
+    await proc.checkPlan(await actor.fatyanov(), month, "kasko");
+    await adjust(await actor.golovkin(), "osago", "crWeb", 0.05);
+    const open = await prisma.inboxEvent.findMany({ where: { kind: "PLAN", doneAt: null }, include: { recipient: { select: { slug: true } } } });
+    expect(open.map((e) => e.recipient.slug).sort()).toEqual(["cheychenets", "loginova", "reva"]);
+  });
+
+  it("прошлый месяц: перезагрузка без событий, проверка не просится", async () => {
+    const prev = addMonths(month, -1);
+    await plan.applyPull(await actor.owner(), prev);
+    expect(await prisma.planPull.count({ where: { month: prev } })).toBe(1);
+    expect(await prisma.inboxEvent.count({ where: { kind: "PLAN" } })).toBe(0);
+    const v = await plan.monthPlan(await actor.reva(), prev);
+    expect(v.closed).toBe(true);
+    expect(v.products.every((p) => p.review === null)).toBe(true);
+    expect(await proc.planBrief(await actor.owner(), prev)).toMatchObject({ waiting: [] });
   });
 });
 
@@ -114,6 +138,10 @@ describe("«Прогноз проверен»", () => {
     await proc.checkPlan(await actor.fatyanov(), month, "kasko");
     await expectRule(proc.checkPlan(await actor.reva(), month, "kasko"), /уже отмечен проверенным: Фатьянов Евгений/);
     await expectRule(proc.checkPlan(await actor.fatyanov(), month, "kasko"), /уже отмечен/);
+    // Проверили, потом всё же скорректировали: состояние по последнему действию
+    await prisma.planCheck.updateMany({ data: { at: new Date(Date.now() - 1000) } });
+    await adjust(await actor.reva(), "kasko", "crWeb", 0.05);
+    expect((await view()).products.find((p) => p.code === "kasko")!.review).toMatchObject({ state: "adjusted", by: "Рева Тарас" });
   });
 
   it("новая загрузка LBE снова просит проверить, прежние отметки остаются в истории", async () => {
@@ -171,9 +199,19 @@ describe("факт по дням", () => {
   });
 
   it("с ошибкой в любой строке не пишется ничего", async () => {
-    if (today < `${month}-02`) return;
-    await expectRule(proc.applyFacts(await actor.owner(), text([`${first}\tОСАГО\t100\t15\t5`, `${second}\tНет такого\t1\t1\t1`])), /Не загружено: Строка 3: продукт/);
+    const prev = addMonths(month, -1);
+    await expectRule(proc.applyFacts(await actor.owner(), text([`${ru(`${prev}-01`)}\tОСАГО\t100\t15\t5`, `${ru(`${prev}-02`)}\tНет такого\t1\t1\t1`])), /Не загружено: Строка 3: продукт/);
     expect(await prisma.planFact.count()).toBe(0);
+  });
+
+  it("больше 500 значений за раз: замена идёт частями, ничего не теряется", async () => {
+    const prev = addMonths(month, -1);
+    const products = ["ОСАГО", "КАСКО", "Ипотечное страхование", "ВЗР", "Несчастный случай", "Имущество", "Клещ", "Вклады"];
+    const rows = (bump: number) => products.flatMap((p) => Array.from({ length: 25 }, (_, d) => `${ru(`${prev}-${String(d + 1).padStart(2, "0")}`)}\t${p}\t${100 + d + bump}\t${1 + bump}\t0,5`));
+    expect(await proc.applyFacts(await actor.owner(), text(rows(0)))).toEqual({ saved: 600, replaced: 0 });
+    expect(await proc.applyFacts(await actor.owner(), text(rows(1)))).toEqual({ saved: 600, replaced: 600 });
+    expect(await prisma.planFact.count()).toBe(600);
+    expect(await prisma.planFact.count({ where: { metric: "revenue", value: 2 } })).toBe(200);
   });
 });
 
@@ -226,6 +264,12 @@ describe("сравнение версий месяца", () => {
     const atDay = (await proc.compareVersions(month, dayOption.id, "forecast"))!;
     const o = atDay.rows.find((r) => r.code === "osago")!;
     expect(o.a.revenue).not.toBeCloseTo(o.b.revenue!, 3);
+    // Возврат к LBE вчера вечером: на конец вчерашнего дня корректировки нет
+    await adjust(await actor.golovkin(), "osago", "crWeb", 0.07);
+    const reset = await prisma.planAdjustment.create({ data: { month, product: "osago", metric: "crWeb", value: null, previous: 0.05, reason: "OTHER", comment: "Вернули как в LBE", authorId: await personId("golovkin"), createdAt: new Date(Date.now() - DAY + 1000) } });
+    const afterReset = (await proc.compareVersions(month, dayOption.id, `pull:${firstPull!.id}`))!;
+    expect(afterReset.rows.find((r) => r.code === "osago")!.a.revenue).toBeCloseTo(afterReset.rows.find((r) => r.code === "osago")!.b.revenue!, 9);
+    await prisma.planAdjustment.delete({ where: { id: reset.id } });
     // Та же версия против себя даёт ноль разницы
     const same = (await proc.compareVersions(month, dayOption.id, dayOption.id))!;
     expect(same.rows.find((r) => r.code === "osago")!.a.revenue).toBeCloseTo(same.rows.find((r) => r.code === "osago")!.b.revenue!, 9);

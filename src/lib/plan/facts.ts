@@ -57,8 +57,8 @@ const head = (cell: string, words: string) => new RegExp(`^(${words})(?=$|[^a-z�
 /** Показатель по заголовку или ячейке: ключ и множитель до единиц хранения (млн руб. для денег) */
 export function metricOf(cell: string): { key: FactMetric; scale: number } | null {
   const c = norm(cell);
-  const rub = /(руб|rub|₽)/.test(c) && !/(млн|mln)/.test(c);
-  const money = rub ? 1e-6 : 1;
+  // Деньги хранятся в миллионах: «млрд» в тысячу раз больше, «тыс. руб» в тысячу раз меньше, просто рубли в миллион
+  const money = /(млрд|bln)/.test(c) ? 1000 : /(млн|mln)/.test(c) ? 1 : /(тыс|thousand|k ?rub)/.test(c) ? 1e-3 : /(руб|rub|₽)/.test(c) ? 1e-6 : 1;
   if (head(c, "продажи|полисы|лиды|клики|units|sales")) return { key: "units", scale: 1 };
   if (head(c, "выручка|revenue")) return { key: "revenue", scale: money };
   if (head(c, "промо-?маржа|промо маржа|promo[ -]?margin")) return { key: "promoMargin", scale: money };
@@ -92,10 +92,38 @@ export function numberOf(cell: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function splitter(line: string): (l: string) => string[] {
-  if (line.includes("\t")) return (l) => l.split("\t");
-  if (line.includes(";")) return (l) => l.split(";");
-  return (l) => l.split(",");
+type Delimiter = "\t" | ";" | ",";
+
+/** Разделитель по строке заголовков: табуляция (вставка из таблицы), точка с запятой, запятая */
+function delimiterOf(line: string): Delimiter {
+  if (line.includes("\t")) return "\t";
+  if (line.includes(";")) return ";";
+  return ",";
+}
+
+/** Строка CSV с кавычками: «"15,8"» остаётся одной ячейкой, «""» внутри кавычек это кавычка */
+export function splitRow(line: string, delimiter: Delimiter): string[] {
+  const out: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"' && cell.trim() === "") {
+      quoted = true;
+      cell = "";
+    } else if (ch === delimiter) {
+      out.push(cell);
+      cell = "";
+    } else cell += ch;
+  }
+  out.push(cell);
+  return out;
 }
 
 const firstDayBack = (today: string, months: number) => {
@@ -107,6 +135,7 @@ const firstDayBack = (today: string, months: number) => {
 /** Разбор вставки. today: сегодня по Москве, будущие дни не принимаются */
 export function parseFacts(text: string, today: string): ParsedFacts {
   const lines = String(text ?? "")
+    .replace(/^\uFEFF/, "")
     .replace(/\r\n?/g, "\n")
     .split("\n")
     .filter((l) => l.trim() !== "");
@@ -114,7 +143,8 @@ export function parseFacts(text: string, today: string): ParsedFacts {
   const entries: FactEntry[] = [];
   if (!lines.length) return { entries, problems: ["Вставьте строки из отчёта: первая строка с заголовками"], rows: 0 };
   if (lines.length - 1 > FACT_LIMITS.rows) return { entries, problems: [`Не больше ${FACT_LIMITS.rows} строк за раз`], rows: lines.length - 1 };
-  const split = splitter(lines[0]!);
+  const delimiter = delimiterOf(lines[0]!);
+  const split = (l: string) => splitRow(l, delimiter);
   const titles = split(lines[0]!).map((h) => norm(h));
   const dateCol = titles.findIndex((h) => head(h, "дата|день|date|day"));
   const productCol = titles.findIndex((h) => head(h, "продукт|product"));
@@ -125,14 +155,23 @@ export function parseFacts(text: string, today: string): ParsedFacts {
   if (dateCol < 0 || productCol < 0 || (!long && !wide.length)) {
     return { entries, problems: ["Первая строка: заголовки «Дата», «Продукт» и «Показатель» со «Значением» или колонки «Продажи», «Выручка, млн», «Промо-маржа, млн»"], rows: lines.length - 1 };
   }
+  // Запятая-разделитель и запятая в заголовке «Выручка, млн» или в дробях «15,8» дают сдвиг колонок без ошибки. Поэтому при
+  // запятой каждая колонка заголовка должна быть понятна, а в строках не больше колонок, чем в заголовке
+  const known = (h: string, i: number) => i === dateCol || i === productCol || i === metricCol || i === valueCol || !!metricOf(h);
+  if (delimiter === "," && titles.some((h, i) => !known(h, i))) {
+    return { entries, problems: ["Заголовки через запятую не разобраны: в них есть запятая или незнакомая колонка. Скопируйте строки прямо из таблицы или разделите точкой с запятой"], rows: lines.length - 1 };
+  }
   const from = firstDayBack(today, FACT_LIMITS.monthsBack);
   const seen = new Set<string>();
   const add = (row: number, product: string, metric: { key: FactMetric; scale: number }, day: string, raw: string) => {
     const n = numberOf(raw);
     if (n === null) return problems.push(`Строка ${row}: «${raw.trim().slice(0, 30)}» не число`);
-    const value = n * metric.scale;
+    // Перевод единиц без хвостов двоичной арифметики: 0,0059 млрд это ровно 5,9 млн
+    const value = metric.scale === 1 ? n : Math.round(n * metric.scale * 1e9) / 1e9;
     if (metric.key === "units") {
       if (value < 0) return problems.push(`Строка ${row}: продажи не могут быть меньше нуля`);
+      // «13,450» из английской таблицы читается как 13,45: продажи только целым числом
+      if (!Number.isInteger(value)) return problems.push(`Строка ${row}: продажи целым числом, без дробей и разделителя тысяч «,»`);
       if (value > FACT_LIMITS.maxUnitsPerDay) return problems.push(`Строка ${row}: слишком много продаж за день, проверьте число`);
     } else if (Math.abs(value) > FACT_LIMITS.maxMlnPerDay) {
       return problems.push(`Строка ${row}: больше ${String(FACT_LIMITS.maxMlnPerDay).replace(/\B(?=(\d{3})+(?!\d))/g, " ")} млн за день. Если это рубли, напишите в заголовке «Выручка, руб»`);
@@ -146,6 +185,10 @@ export function parseFacts(text: string, today: string): ParsedFacts {
   for (let r = 1; r < lines.length; r++) {
     const row = r + 1;
     const cells = split(lines[r]!);
+    if (cells.length > titles.length && cells.slice(titles.length).some((c) => c.trim() !== "")) {
+      problems.push(`Строка ${row}: колонок больше, чем в заголовке. Похоже, дробь записана через запятую при разделителе-запятой`);
+      continue;
+    }
     const day = dayOf(cells[dateCol] ?? "");
     if (!day) {
       problems.push(`Строка ${row}: дата не разобрана, нужен вид 07.10.2026`);

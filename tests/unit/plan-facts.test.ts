@@ -72,6 +72,32 @@ describe("разбор факта по дням", () => {
     expect(parseFacts("Дата\tПродукт\tПродажи\n01.10.2026\tОСАГО\t", today).problems).toEqual(["В строках нет значений"]);
   });
 
+  it("запятая-разделитель: заголовок с запятой и дробь через запятую не сдвигают колонки молча", () => {
+    // Заголовок «Выручка, млн» через запятую: колонки не понять
+    const shifted = parseFacts(["Дата,Продукт,Продажи,Выручка, млн,Промо-маржа, млн", "01.10.2026,ОСАГО,13450,15,8,5,9"].join("\n"), today);
+    expect(shifted.problems[0]).toMatch(/Заголовки через запятую не разобраны/);
+    expect(shifted.entries).toEqual([]);
+    // Дробь через запятую в строке: колонок больше, чем в заголовке
+    const extra = parseFacts(["Дата,Продукт,Выручка", "01.10.2026,ОСАГО,15,8"].join("\n"), today);
+    expect(extra.problems).toEqual(["Строка 2: колонок больше, чем в заголовке. Похоже, дробь записана через запятую при разделителе-запятой"]);
+    // CSV с кавычками из Excel разбирается
+    const quoted = parseFacts(['\uFEFFДата,Продукт,"Выручка, млн",Продажи', '01.10.2026,ОСАГО,"15,8",13450'].join("\n"), today);
+    expect(quoted.problems).toEqual([]);
+    expect(quoted.entries).toEqual([
+      { product: "osago", metric: "revenue", day: "2026-10-01", value: 15.8 },
+      { product: "osago", metric: "units", day: "2026-10-01", value: 13450 },
+    ]);
+  });
+
+  it("продажи целым числом; тысячи и миллиарды рублей переводятся в миллионы", () => {
+    const r = parseFacts(["Дата;Продукт;Продажи;Выручка, тыс. руб;Промо-маржа, млрд", "01.10.2026;ОСАГО;13,450;15 800;0,0059"].join("\n"), today);
+    expect(r.problems).toEqual(["Строка 2: продажи целым числом, без дробей и разделителя тысяч «,»"]);
+    expect(r.entries).toEqual([
+      { product: "osago", metric: "revenue", day: "2026-10-01", value: 15.8 },
+      { product: "osago", metric: "promoMargin", day: "2026-10-01", value: 5.9 },
+    ]);
+  });
+
   it("мелкие разборщики", () => {
     expect(dayOf("7.10.26")).toBe("2026-10-07");
     expect(dayOf("2026-02-30")).toBeNull();

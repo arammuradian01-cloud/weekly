@@ -115,9 +115,9 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
     const metric = a.metric as MetricKey;
     const unit = UNITS[metric] ?? "count";
     const lbe = view.products.find((p) => p.code === a.product);
-    return [msk(a.createdAt), spec?.label ?? a.product, spec ? metricLabel(spec, metric) : a.metric, unitName(unit), cell(lbe ? (derive(lbe.lbe)[metric] ?? null) : null), cell(a.previous), a.value === null ? "как в LBE" : a.value, REASONS[a.reason] ?? a.reason, a.comment, a.author.fullName];
+    return { unit, row: [msk(a.createdAt), spec?.label ?? a.product, spec ? metricLabel(spec, metric) : a.metric, unitName(unit), cell(lbe ? (derive(lbe.lbe)[metric] ?? null) : null), cell(a.previous), a.value === null ? "как в LBE" : a.value, REASONS[a.reason] ?? a.reason, a.comment, a.author.fullName] };
   });
-  sheet(
+  const wsAdj = sheet(
     wb,
     "Корректировки",
     [
@@ -132,22 +132,31 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
       { header: "Обоснование", width: 48 },
       { header: "Кто", width: 24 },
     ],
-    adjRows,
+    [],
   );
+  // Каждое значение в своих единицах: конверсия процентом, полисы целыми
+  for (const { unit, row } of adjRows) {
+    const r = wsAdj.addRow(row);
+    for (const c of [5, 6, 7]) r.getCell(c).numFmt = fmtOf(unit);
+  }
 
   // Факт по дням и темп к прогнозу
-  sheet(
+  const wsFacts = sheet(
     wb,
     "Факт по дням",
     [
       { header: "Дата", width: 12, fmt: "dd.mm.yyyy" },
       { header: "Продукт", width: 24 },
       { header: "Показатель", width: 22 },
-      { header: "Значение", width: 16, fmt: "#,##0.0" },
+      { header: "Значение", width: 16 },
       { header: "Загрузил", width: 24 },
     ],
-    facts.map((f) => [f.day, planLabel(f.product), FACT_METRICS.find((m) => m.key === f.metric)?.label ?? f.metric, f.value, f.loadedBy]),
+    [],
   );
+  for (const f of facts) {
+    const r = wsFacts.addRow([f.day, planLabel(f.product), FACT_METRICS.find((m) => m.key === f.metric)?.label ?? f.metric, f.value, f.loadedBy]);
+    r.getCell(4).numFmt = f.metric === "units" ? "#,##0" : "#,##0.000";
+  }
   const paceRows: unknown[][] = [];
   for (const p of summary.products) {
     for (const m of FACT_METRICS) {

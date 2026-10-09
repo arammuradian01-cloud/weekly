@@ -24,7 +24,8 @@ export function PlanFacts({ month, facts, summary, label }: { month: string; fac
   const daily = new Map((facts.daily[chartMetric.m.key] ?? []).filter((d) => d.day.startsWith(month)).map((d) => [Number(d.day.slice(8, 10)), d.value]));
   const forecast = forecastOf(summary, chartMetric.m.key);
   const perDay = forecast === null ? null : forecast / days;
-  const round = (v: number) => (chartMetric.m.unit === "count" ? Math.round(v) : Math.round(v * 10) / 10);
+  // Деньги не округляются до десятых: у мелкого продукта выручка за день меньше 0,1 млн
+  const round = (v: number) => (chartMetric.m.unit === "count" ? Math.round(v) : Math.round(v * 1e4) / 1e4);
   const weeks = Array.from({ length: days }, (_, i) => ({ key: `${month}-${String(i + 1).padStart(2, "0")}`, number: i + 1, current: false }));
   const bars = weeks.map((w) => (daily.has(w.number) ? round(daily.get(w.number)!) : null));
   const line = perDay === null ? undefined : { label: "Прогноз в день при равномерном темпе", values: weeks.map(() => round(perDay)) };
@@ -63,6 +64,7 @@ export function PlanFacts({ month, facts, summary, label }: { month: string; fac
         line={line}
         labelEvery={5}
         dots={false}
+        fractional={chartMetric.m.unit !== "count"}
         format={(v) => formatPlan(v, chartMetric.m.unit)}
         period={{ header: "День", tip: (w) => `${w.number} число` }}
         tip={(i) => [`Факт: ${bars[i] === null ? "нет данных" : `${formatPlan(bars[i], chartMetric.m.unit)}${unitWord}`}`, ...(line ? [`Прогноз в день: ${formatPlan(line.values[i], chartMetric.m.unit)}${unitWord}`] : [])]}

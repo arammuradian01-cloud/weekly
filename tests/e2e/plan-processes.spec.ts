@@ -34,10 +34,18 @@ test.beforeEach(async () => {
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);
 });
 
-async function pull(page: Page) {
+/** Месяц недели, как у отчёта CEO и встречи: месяц её четверга */
+const weekMonth = () => {
+  const d = new Date(`${thisWeek()}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 3);
+  return d.toISOString().slice(0, 7);
+};
+
+async function pull(page: Page, month?: string) {
   await page.goto("/forecast");
   await page.getByTestId("plan-pull-open").click();
   const drawer = page.getByRole("dialog", { name: "Бюджет и LBE из LRF" });
+  if (month) await drawer.getByLabel("Месяц").selectOption(month);
   await drawer.getByTestId("plan-pull-check").click();
   await expect(drawer.getByTestId("plan-pull-preview").getByText("Всё читается")).toBeVisible();
   await drawer.getByTestId("plan-pull-load").click();
@@ -119,18 +127,23 @@ test("после загрузки LBE: событие в «Мне», «Прог�
 test("прогноз месяца в отчёте CEO и на встрече топ-команды; кто ещё не проверил", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await pull(page);
+  // У недели на стыке месяцев месяц четверга может отличаться от сегодняшнего
+  await pull(page, weekMonth());
+  // Прошлый месяц закрыт: проверять его уже не просят
+  const open = weekMonth() >= moscowToday().slice(0, 7);
   await page.goto(`/ceo-report?week=${thisWeek()}`);
   const brief = page.getByTestId("plan-brief").first();
   await expect(brief).toBeVisible();
   await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
-  await expect(page.getByTestId("plan-brief-waiting")).toContainText("Ждут проверки после загрузки LBE: ОСАГО, КАСКО");
-  await expect(page.getByTestId("plan-brief-waiting")).toContainText("Проверяют: Головкин Владислав, Рева Тарас, Фатьянов Евгений");
-  await expect(page.getByTestId("plan-brief-table")).toContainText("ждёт проверки");
+  if (open) {
+    await expect(page.getByTestId("plan-brief-waiting")).toContainText("Ждут проверки после загрузки LBE: ОСАГО, КАСКО");
+    await expect(page.getByTestId("plan-brief-waiting")).toContainText("Проверяют: Головкин Владислав, Рева Тарас, Фатьянов Евгений");
+    await expect(page.getByTestId("plan-brief-table")).toContainText("ждёт проверки");
+  }
   await shot(page, "ceo");
   await page.goto(`/weekly/meeting?week=${thisWeek()}`);
   await expect(page.getByTestId("plan-brief")).toBeVisible();
-  await expect(page.getByTestId("plan-brief-waiting")).toContainText("КАСКО");
+  if (open) await expect(page.getByTestId("plan-brief-waiting")).toContainText("КАСКО");
   // На встрече сводка короткая: без таблицы продуктов
   await expect(page.getByTestId("plan-brief-table")).toHaveCount(0);
   await shot(page, "meeting");

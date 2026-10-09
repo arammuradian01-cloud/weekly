@@ -30,6 +30,8 @@ export type WeekChartProps = {
   format?: (value: number) => string;
   /** Точки на линии: у ровной линии-ориентира по 31 дню они только мешают */
   dots?: boolean;
+  /** Дробная шкала: значения меньше единицы и дробные деления */
+  fractional?: boolean;
 };
 
 /** Ширина по умолчанию до первого замера: дальше график рисуется в настоящую ширину, текст не растягивается */
@@ -40,15 +42,15 @@ const PAD_R = 8;
 const PAD_T = 18;
 const PAD_B = 24;
 
-/** Верх шкалы: 1, 2, 4, 5 или 10 на степень десяти */
-export function niceMax(value: number): number {
-  if (value <= 0) return 4;
+/** Верх шкалы: 1, 2, 4, 5 или 10 на степень десяти. fractional: шкала может быть меньше единицы (выручка мелкого продукта) */
+export function niceMax(value: number, fractional = false): number {
+  if (value <= 0) return fractional ? 1 : 4;
   const pow = 10 ** Math.floor(Math.log10(value));
-  for (const m of [1, 2, 4, 5, 10]) if (m * pow >= value) return Math.max(4, m * pow);
+  for (const m of [1, 2, 4, 5, 10]) if (m * pow >= value) return fractional ? m * pow : Math.max(4, m * pow);
   return 10 * pow;
 }
 
-export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1, format = String, dots = true }: WeekChartProps) {
+export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1, format = String, dots = true, fractional = false }: WeekChartProps) {
   const [active, setActive] = useState<number | null>(null);
   // Касание пальцем: подсказка по нажатию (click), а не по началу жеста, чтобы прокрутка страницы её не дёргала
   const touch = useRef(false);
@@ -87,13 +89,13 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
   }, [active]);
   const n = weeks.length || 1;
   const all = [...(bars?.values ?? []), ...(line?.values ?? [])].filter((v): v is number => v !== null);
-  const max = unit === "%" ? 100 : niceMax(Math.max(0, ...all));
+  const max = unit === "%" ? 100 : niceMax(Math.max(0, ...all), fractional);
   const plotH = H - PAD_T - PAD_B;
   const y = (v: number) => PAD_T + plotH * (1 - v / max);
   const slot = (W - PAD_L - PAD_R) / n;
   const cx = (i: number) => PAD_L + slot * i + slot / 2;
   const bw = Math.min(28, slot * 0.5);
-  const ticks = [0, max / 2, max].filter((t) => Number.isInteger(t));
+  const ticks = [0, max / 2, max].filter((t) => fractional || Number.isInteger(t));
   const base = y(0);
 
   // Столбик со скруглённым верхом 4 px, низ прямой: стоит на нулевой линии

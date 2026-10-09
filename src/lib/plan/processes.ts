@@ -60,6 +60,8 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
     const check = await tx.planCheck.findFirst({ where: { month, product: spec.code, at: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { at: "desc" } });
     if (check) fail(`Прогноз уже отмечен проверенным: ${check.author.fullName}, ${stamp(check.at)}`);
     await tx.planCheck.create({ data: { month, product: spec.code, authorId: actor.personId } });
+    // Человек взялся за прогноз: его событие «Проверьте прогноз» разобрано
+    await tx.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
     await tx.auditLog.create({
       data: {
         action: "plan.check",
@@ -155,7 +157,8 @@ export async function applyFacts(actor: Actor, text: string): Promise<{ saved: n
         via: actor.via ?? null,
       },
     });
-  });
+    // До 5 000 строк по три показателя: дольше обычных пяти секунд транзакции
+  }, { timeout: 30_000 });
   return { saved: parsed.entries.length, replaced: existing };
 }
 

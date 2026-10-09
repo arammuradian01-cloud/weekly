@@ -212,14 +212,11 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
   const month = monthOrFail(monthInput);
   const { read, problems } = await readMonth(month);
   if (problems.length) fail(`Не загружено: ${problems[0]}`);
-  const data: Prisma.PlanLineCreateManyInput[] = [];
-  const now = new Date();
+  const rows: Omit<Prisma.PlanLineCreateManyInput, "pulledAt">[] = [];
   for (const item of [...read.products, ...read.groups]) {
     for (const [from, version] of VERSIONS) {
       const values = item.values[from as "LBE" | "BUD"];
-      for (const [metric, value] of Object.entries(values)) {
-        data.push({ month, version, product: item.code, metric, value: value ?? null, pulledAt: now });
-      }
+      for (const [metric, value] of Object.entries(values)) rows.push({ month, version, product: item.code, metric, value: value ?? null });
     }
   }
   const revenue = (items: typeof read.products, v: "LBE" | "BUD") => items.reduce((s, p) => s + (p.values[v].revenue ?? 0), 0);
@@ -227,8 +224,15 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
   const total = (v: "LBE" | "BUD") => revenue(read.products.filter((p) => !productOf(p.code)?.group), v) + groupsRevenue(v);
   const owners = await ownersMap();
   const loaded = new Set(read.products.map((p) => p.code));
+  let lines = 0;
+  // Прошлый месяц можно перезагрузить, но проверять его уже нечего: событий командам нет
+  const notifyTeams = month >= currentMonth();
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}`}))`;
+    // Время загрузки после блокировки: корректировка, которая успела до загрузки, не считается сделанной после неё
+    const now = new Date();
+    const data: Prisma.PlanLineCreateManyInput[] = rows.map((r) => ({ ...r, pulledAt: now }));
+    lines = data.length;
     const had = await tx.planLine.count({ where: { month } });
     await tx.planLine.deleteMany({ where: { month } });
     await tx.planLine.createMany({ data });
@@ -240,7 +244,7 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
       if (!loaded.has(p.code)) continue;
       for (const slug of owners[p.code] ?? []) bySlug.set(slug, [...(bySlug.get(slug) ?? []), p.label]);
     }
-    const people = bySlug.size ? await tx.person.findMany({ where: { slug: { in: [...bySlug.keys()] }, active: true }, select: { id: true, slug: true } }) : [];
+    const people = notifyTeams && bySlug.size ? await tx.person.findMany({ where: { slug: { in: [...bySlug.keys()] }, active: true }, select: { id: true, slug: true } }) : [];
     for (const person of people) {
       const labels = bySlug.get(person.slug)!;
       await notify(
@@ -276,7 +280,7 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
       },
     });
   });
-  return { month, lines: data.length };
+  return { month, lines };
 }
 
 /** Кто корректирует продукт: владельцы из настройки или по умолчанию из справочника продуктов */
@@ -392,7 +396,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     last: last.get(p.code) ?? {},
     owners: (owners[p.code] ?? []).map((s) => names.get(s)).filter((x): x is PlanPerson => !!x),
     canAdjust: !closed && canAdjust(actor, owners[p.code] ?? []),
-    review: since ? (reviews.get(p.code) ?? waitingReview(since)) : null,
+    // Прошлый месяц закрыт: проверять нечего, «ждёт проверки» там не показываем
+    review: since && !closed ? (reviews.get(p.code) ?? waitingReview(since)) : null,
     facts: facts.get(p.code) ?? null,
   }));
   const groups = GROUPS.filter((gr) => lbe.has(gr.code)).map((gr) => ({ code: gr.code, lbe: lbe.get(gr.code)!, budget: budget.get(gr.code) ?? {} }));
@@ -485,6 +490,8 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
     if (value === null && (latest?.value ?? null) === null) fail("Показатель и так как в LBE");
     if (value !== null && sameInput(unit, value, effective)) fail("Значение не изменилось");
     await tx.planAdjustment.create({ data: { month, product: spec.code, metric, value, previous: effective, reason, comment, authorId: actor.personId } });
+    // Этап 35: человек взялся за прогноз, его событие «Проверьте прогноз» разобрано
+    await tx.inboxEvent.updateMany({ where: { recipientId: actor.personId, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
     await tx.auditLog.create({
       data: {
         action: "plan.adjust",

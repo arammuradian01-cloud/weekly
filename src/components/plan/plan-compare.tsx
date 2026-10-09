@@ -24,7 +24,7 @@ export function PlanCompare({ view }: { view: CompareView }) {
   const [metric, setMetric] = useState<CompareMetric>("revenue");
   const m = METRICS.find((x) => x.key === metric)!;
   const go = (a: string, b: string) => router.push(`/forecast?tab=compare&month=${view.month}&a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
-  const options = view.options.map((o) => ({ value: o.id, label: o.group === "Версии месяца" ? o.label : `${o.group}: ${o.label.charAt(0).toLowerCase()}${o.label.slice(1)}` }));
+  const options = view.options.map((o) => ({ value: o.id, label: o.label }));
   // Продажи есть только у продуктов: у групп и итога разные единицы, их не складываем
   const rows = view.rows.filter((r) => metric !== "units" || r.kind === "product" || r.kind === "sub");
   const unitText = m.unit === "mln" ? ", млн" : "";

@@ -48,8 +48,11 @@ export type InboxItem = {
 
 export type InboxView = { items: InboxItem[]; snoozed: number };
 
-/** События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления */
-const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { not: "ONE_ON_ONE" } } : {});
+/**
+ * События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления. Прогноз месяца
+ * (этап 35) тоже: его проверяют и корректируют при личном входе
+ */
+const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { notIn: ["ONE_ON_ONE", "PLAN"] } } : {});
 
 const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxEventWhereInput => ({
   recipientId: personId,
@@ -79,8 +82,6 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
     if (r.kind === "THANKS" || r.kind === "MEETING") return !!r.actorId && top.has(r.actorId);
     // Встречи один на один (этап 28) только при личном входе: по общему логину профиль выбирают сами
     if (r.kind === "ONE_ON_ONE") return false;
-    // Прогноз месяца (этап 35) корректируют только при личном входе: общему логину событие не к чему
-    if (r.kind === "PLAN") return false;
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;
