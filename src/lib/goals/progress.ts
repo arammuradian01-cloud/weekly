@@ -109,7 +109,8 @@ export function goalNumbers(
     const k = scales[0]!;
     const ref = Math.abs(scaled[0]!.value);
     const lift = (x: GoalNumber | null) => {
-      if (!x || x.unit !== "plain" || x.scale !== 1 || x.signed || x.value === 0 || ref === 0) return x;
+      // Целевое со знаком это сдвиг: его множитель берётся у базы при пересчёте. Факт со знаком это значение, его поднимаем
+      if (!x || x.unit !== "plain" || x.scale !== 1 || (x.signed && x === t) || x.value === 0 || ref === 0) return x;
       const v = Math.abs(x.value);
       return v * 1000 < ref && v * k * 10 >= ref && v * k <= ref * 10 ? { ...x, value: x.value * k, scale: k } : x;
     };

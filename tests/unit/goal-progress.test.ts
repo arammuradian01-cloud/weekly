@@ -87,6 +87,8 @@ describe("второй круг проверки", () => {
     expect(goalProgress(null, "15%", "+12%")?.share).toBeCloseTo(0.8, 9);
     expect(goalProgress(null, "1,5 млн полисов", "1 200")?.share).toBeCloseTo(1200 / 1_500_000, 12);
     expect(factProblem(null, "150 млн", "1")).toMatch(/больше чем в 1000 раз/);
+    // Убыток без множителя при целевом в миллионах: тоже миллионы
+    expect(goalProgress(null, "5 млн", "-3")?.share).toBeCloseTo(-0.6, 9);
   });
 
   it("факт в п.п. это тоже сдвиг от базы", () => {
