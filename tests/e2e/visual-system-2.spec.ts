@@ -28,6 +28,12 @@ test("weekly: шапка с цифрами недели, пустой фильт
   const entries = Number((await page.getByTestId("weekly-fig-entries").locator(".sv-figure__value").textContent())!.trim());
   expect(entries).toBeGreaterThan(0);
   await shot(page, "weekly");
+  // Планшет 768: кнопки шапки помещаются, прокрутки вбок нет
+  if (test.info().project.name !== "phone") {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await shot(page, "weekly-768");
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
   await page.goto("/weekly/submit");
   await expect(page.getByRole("heading", { name: /^Weekly за неделю \d+$/, level: 1 })).toBeVisible();
   await shot(page, "submit");
