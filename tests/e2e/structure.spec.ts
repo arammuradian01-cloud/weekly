@@ -170,4 +170,16 @@ test("дерево подчинённых: схема с путём наверх
   await expect(page.getByText("Цель заведена").first()).toBeVisible();
   await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
   await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
+
+  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя
+  const other = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" });
+  const shared = await other.newPage();
+  await enter(shared, "Мурадян Арам");
+  await shared.goto("/structure");
+  const sharedTree = shared.getByTestId("people-tree");
+  await sharedTree.getByTestId(`person-${reva}`).click();
+  await sharedTree.getByTestId(`person-${antonov}`).click();
+  await expect(sharedTree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
+  await expect(sharedTree.getByTestId("person-focus")).not.toContainText("Открытые вакансии");
+  await other.close();
 });
