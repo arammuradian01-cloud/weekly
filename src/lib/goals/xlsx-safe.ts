@@ -141,7 +141,9 @@ export function slimWorkbook(xml: string): string {
   const open = xml.match(/<(\w+:)?workbook\b[^>]*>/);
   if (!open) throw new XlsxError("not-xlsx");
   const prefix = open[1] ?? "";
-  const pr = xml.match(new RegExp(`<${prefix}workbookPr\\b[^>]*/>`))?.[0] ?? "";
+  const prTag = xml.match(new RegExp(`<${prefix}workbookPr\\b[^>]*>`))?.[0] ?? "";
+  const date1904 = /^(1|true)$/i.test(attr(prTag, "date1904") ?? "");
+  const pr = date1904 ? `<${prefix}workbookPr date1904="1"/>` : "";
   const sheets = xml.match(new RegExp(`<${prefix}sheets\\b[^>]*>[\\s\\S]*?</${prefix}sheets>`))?.[0];
   if (!sheets) throw new XlsxError("not-xlsx");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>${open[0]}${pr}${sheets}</${prefix}workbook>`;
@@ -189,7 +191,7 @@ export async function prepareXlsx(data: ArrayBuffer, keep: (sheet: string) => bo
     }
     // Примечания, рисунки, картинки, сводные таблицы и внешние ссылки не нужны: в примечаниях бывают личные пометки,
     // а картинки и сводные таблицы только занимают память
-    if (/^xl\/(comments\d*|drawings\/|threadedComments\/|persons\/|media\/|pivotCache\/|pivotTables\/|externalLinks\/|printerSettings\/)/.test(name)) continue;
+    if (/^xl\/(comments\d*|drawings\/|threadedComments\/|persons\/|media\/|pivotCache\/|pivotTables\/|externalLinks\/|printerSettings\/|tables\/)/.test(name)) continue;
     const sheet = kept.get(name);
     const content = await readLimited(entry, PART_MAX, sheet ? `Вкладка «${sheet}»` : "Часть файла");
     total += content.length;
