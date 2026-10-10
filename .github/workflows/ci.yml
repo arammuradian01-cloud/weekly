@@ -33,6 +33,8 @@ jobs:
       - run: npm ci
       - run: npx prisma migrate deploy
       - run: npm run typecheck
+      - name: Линтер (правила Next.js, TypeScript, хуки React, доступность)
+        run: npm run lint
       - run: npm test
       - name: Правила задач и weekly на настоящей базе
         run: npm run test:db

@@ -131,7 +131,10 @@ export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
   const roots = order(people.filter((p) => !managerOf.get(p.id)).map((p) => p.id));
   // Первым руководитель департамента: голова подразделения верхнего уровня
   const head = units.find((u) => u.kind === "DEPARTMENT" && u.headId)?.headId;
-  if (head && roots.includes(head)) roots.splice(roots.indexOf(head), 1), roots.unshift(head);
+  if (head && roots.includes(head)) {
+    roots.splice(roots.indexOf(head), 1);
+    roots.unshift(head);
+  }
   const walk = (id: string, depth: number, guard = new Set<string>()) => {
     if (guard.has(id)) return;
     guard.add(id);

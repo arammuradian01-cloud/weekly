@@ -10,7 +10,6 @@ import { buildPlanExport } from "@/lib/plan/export";
 import { listInbox } from "@/lib/inbox/service";
 import { derive } from "@/lib/plan/model";
 import type { Values } from "@/lib/plan/lrf";
-import { moscowToday } from "@/lib/tasks/dates";
 import { TOP_TEAM } from "@/lib/org/scope";
 import { addMonths } from "@/lib/forecast/codes";
 
@@ -30,7 +29,6 @@ const expectRule = async (p: Promise<unknown>, message: RegExp) => {
 };
 
 const month = plan.currentMonth();
-const today = moscowToday();
 const DAY = 24 * 60 * 60 * 1000;
 const ru = (iso: string) => iso.split("-").reverse().join(".");
 
@@ -186,7 +184,6 @@ describe("«Прогноз проверен»", () => {
 
 describe("факт по дням", () => {
   const first = `${month}-01`.split("-").reverse().join(".");
-  const second = `${month}-02`.split("-").reverse().join(".");
   const text = (rows: string[]) => ["Дата\tПродукт\tПродажи\tВыручка, млн\tПромо-маржа, млн", ...rows].join("\n");
 
   it("проверка и загрузка только в режиме управления; повторная загрузка дня заменяет значение", async () => {

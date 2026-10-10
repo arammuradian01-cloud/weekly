@@ -8,7 +8,6 @@ import type { Prisma, UnitKind } from "@/generated/prisma/client";
 import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
 import { canManagePeople } from "@/lib/admin/service";
 import { slugify, uniqueSlug } from "@/lib/translit";
-import { normName } from "@/lib/bord/names";
 import { TOP_TEAM, ancestorsOf, loadScope, loadTeamNodes, subtreeOf } from "./scope";
 import { kindOfDepth, pathKey, plannedKey, planStructure, readStructureTable, type ExistingPerson, type StructurePlan } from "./import";
 import { WEEKDAY_NAMES, isSlot, slotMoment, slotOf, slotText, type Slot } from "./rhythm";

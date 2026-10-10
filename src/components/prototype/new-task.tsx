@@ -104,7 +104,9 @@ export function GlobalHotkeys() {
       window.removeEventListener(OPEN_EVENT, onOpen);
       window.removeEventListener("keydown", onKey);
     };
-    // Выбор команды по умолчанию зависит от выбранной команды и режима управления: при их смене обработчик пересоздаётся
+    // Выбор команды по умолчанию зависит от выбранной команды и режима управления: при их смене обработчик пересоздаётся.
+    // defaultTeam создаётся заново на каждой перерисовке, поэтому в зависимостях не он, а то, от чего он зависит
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.today, me.slug, me.direction, observer, team.id, manage]);
 
   // Себе ставит каждый. Другому: режим управления и руководитель команды задачи, остальные только предлагают (этап 14)
