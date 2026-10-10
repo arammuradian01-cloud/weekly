@@ -240,7 +240,7 @@ function SortHeader({ label, k, sort, dir, onSort, className }: { label: string;
       {onSort ? (
         <button type="button" onClick={() => onSort(k)} className="inline-flex items-center gap-0.5 rounded hover:text-ink">
           {label}
-          <Icon className={cn("ml-0.5 h-3.5 w-3.5", activeSort ? "text-link" : "text-icon")} strokeWidth={1.75} aria-hidden="true" />
+          <Icon className={cn("sv-sort-icon ml-0.5 h-3.5 w-3.5", activeSort ? "text-link" : "text-icon")} strokeWidth={1.75} aria-hidden="true" />
         </button>
       ) : (
         label

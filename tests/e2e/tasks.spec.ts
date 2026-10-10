@@ -87,8 +87,17 @@ test("владелец отправляет задачу в архив и воз
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/tasks/4");
-  await page.getByRole("button", { name: "В архив" }).click();
+  // Этап 42: «В архив» в меню «Ещё действия», «Скопировать ссылку» там же
+  const more = page.getByRole("button", { name: "Ещё действия" });
+  await more.click();
+  await expect(page.getByRole("menuitem", { name: "Скопировать ссылку" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "В архив" }).click();
   await expect(page.getByText("Задача в архиве: её видит только владелец.")).toBeVisible();
   await page.getByRole("button", { name: "Вернуть из архива" }).click();
-  await expect(page.getByRole("button", { name: "В архив" })).toBeVisible();
+  await more.click();
+  await expect(page.getByRole("menuitem", { name: "В архив" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  // Поля задачи в правой панели, панель действий сверху (задача 4 закрыта: переноса срока нет, «Изменить» есть)
+  await expect(page.getByRole("complementary", { name: "Поля задачи" })).toContainText("Ответственный");
+  await expect(page.getByRole("button", { name: "Изменить", exact: true })).toBeVisible();
 });

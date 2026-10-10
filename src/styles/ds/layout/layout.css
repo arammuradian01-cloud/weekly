@@ -9,7 +9,7 @@
 /* Три ширины страниц (этап 41). Списки и таблицы: вся ширина. Чтение и форма: колонка 840 с правой панелью 320.
    Обзор: главное слева 2:1. На планшете и телефоне панели встают под основную колонку */
 .sv-page--read { max-width: 840px; }
-.sv-page--read-rail { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-6); align-items: start; }
+.sv-page--read-rail { display: grid; grid-template-columns: minmax(0, 840px) 320px; gap: var(--space-6); align-items: start; }
 .sv-page--overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
 .sv-page__rail { position: sticky; top: calc(64px + var(--space-5)); display: flex; flex-direction: column; gap: var(--space-4); }
 @media (max-width: 1023px) {

@@ -102,11 +102,17 @@ export function InlineSelect<V extends string>({
   disabled,
   align = "start",
   ariaSubject,
+  empty = false,
 }: {
   value: V;
   options: { value: V; label: string }[];
   onChange: (value: V) => void;
   render: (value: V) => React.ReactNode;
+  /**
+   * Значение не задано (этап 42): в строке таблицы оно не шумит. Без права менять не показывается вовсе, с правом
+   * появляется при наведении на строку, фокусе или открытом списке
+   */
+  empty?: boolean;
   /** Текущее значение в строке, если оно показывается иначе, чем вариант в списке (например, «не подтверждено») */
   renderValue?: (value: V) => React.ReactNode;
   label: string;
@@ -118,12 +124,12 @@ export function InlineSelect<V extends string>({
   ariaSubject?: string;
 }) {
   const current = renderValue ?? render;
-  if (disabled) return <span className="inline-flex min-h-7 items-center">{current(value)}</span>;
+  if (disabled) return empty ? null : <span className="inline-flex min-h-7 items-center">{current(value)}</span>;
   return (
     <Menu.Root>
       <Menu.Trigger
         aria-label={`${label}${ariaSubject ? ` ${ariaSubject}` : ""}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
-        className="sv-inline-edit group data-[state=open]:border-focus data-[state=open]:bg-field"
+        className={cn("sv-inline-edit group data-[state=open]:border-focus data-[state=open]:bg-field", empty && "sv-inline-edit--empty")}
       >
         {current(value)}
         <ChevronDown className="sv-inline-edit__chev h-3.5 w-3.5 group-focus-visible:opacity-100 group-data-[state=open]:opacity-100" strokeWidth={1.75} aria-hidden="true" />

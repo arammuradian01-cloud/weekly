@@ -1,7 +1,7 @@
 "use client";
 
-// Шапка раздела «Задачи». Этап 36: ключевые цифры плитками под заголовком вместо фразы, каждая ведёт на список с
-// быстрым фильтром
+// Шапка раздела «Задачи». Этап 36: ключевые цифры под заголовком, каждая ведёт на список с быстрым фильтром.
+// Этап 42: цифры строкой, а не плитками, нули не показываются: чипы быстрых фильтров ниже и так дают счёт
 
 import { usePrototype } from "@/domain/store";
 import { isClosed } from "@/domain/rules";
@@ -21,12 +21,13 @@ export function TasksHeader({ title = "Задачи", description }: { title?: s
       figures={
         <Figures
           label="Задачи в цифрах"
+          inline
           items={[
-            { label: "Открыто", value: open.length, href: "/tasks", testId: "tasks-fig-open" },
-            { label: "Просрочено", value: count("overdue"), href: "/tasks?f=overdue", tone: "danger", testId: "tasks-fig-overdue" },
-            { label: "Заблокировано", value: count("blocked"), href: "/tasks?f=blocked", tone: "warning", testId: "tasks-fig-blocked" },
-            { label: "Срок на этой неделе", value: count("week"), href: "/tasks?f=week", testId: "tasks-fig-week" },
-            { label: "Давно без обновлений", value: count("stale"), href: "/tasks?f=stale", tone: "warning", testId: "tasks-fig-stale" },
+            { label: "открыто", value: open.length, href: "/tasks", testId: "tasks-fig-open", keepZero: true },
+            { label: "просрочено", value: count("overdue"), href: "/tasks?f=overdue", tone: "danger", testId: "tasks-fig-overdue" },
+            { label: "заблокировано", value: count("blocked"), href: "/tasks?f=blocked", tone: "warning", testId: "tasks-fig-blocked" },
+            { label: "срок на этой неделе", value: count("week"), href: "/tasks?f=week", testId: "tasks-fig-week" },
+            { label: "давно без обновлений", value: count("stale"), href: "/tasks?f=stale", tone: "warning", testId: "tasks-fig-stale" },
           ]}
         />
       }

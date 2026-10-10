@@ -6,6 +6,9 @@
 .sv-table th.is-sortable:hover { color: var(--color-text); }
 .sv-table th .sv-icon { vertical-align: -3px; margin-left: 2px; color: var(--color-icon); }
 .sv-table th.is-sorted .sv-icon { color: var(--color-link); }
+/* Стрелка сортировки (этап 42) только у активной колонки, у остальных при наведении */
+.sv-table th.is-sortable .sv-sort-icon { opacity: 0; transition: opacity var(--duration-color); }
+.sv-table th.is-sortable:hover .sv-sort-icon, .sv-table th.is-sortable:focus-within .sv-sort-icon, .sv-table th.is-sorted .sv-sort-icon { opacity: 1; }
 .sv-table th.is-num, .sv-table td.is-num { text-align: right; }
 .sv-table td { height: var(--row-dense); padding: 4px var(--space-3); box-sizing: border-box; border-bottom: 1px solid var(--color-border); vertical-align: middle; white-space: nowrap; }
 .sv-table--comfortable td { height: var(--row-comfortable); }
@@ -37,6 +40,13 @@
 .sv-inline-edit__chev { opacity: 0; color: var(--color-icon); transition: opacity var(--duration-color); }
 .sv-inline-edit:focus-visible { outline: var(--focus-outline); outline-offset: 0; }
 .sv-inline-edit.is-open { background: var(--color-field); border-color: var(--color-focus); }
+/* Пустое значение (этап 42): в таблице видно только при наведении на строку, фокусе или открытом списке; на
+   телефоне и планшете не показывается, задать можно в карточке */
+.sv-inline-edit--empty { color: var(--color-text-secondary); }
+.sv-table .sv-inline-edit--empty { opacity: 0; transition: opacity var(--duration-color); }
+.sv-table tr:hover .sv-inline-edit--empty, .sv-table tr:focus-within .sv-inline-edit--empty, .sv-table .sv-inline-edit--empty:focus-visible, .sv-table .sv-inline-edit--empty[data-state="open"] { opacity: 1; }
+@media (hover: none) { .sv-table .sv-inline-edit--empty { opacity: 1; } }
+@media (max-width: 1023px) { .sv-table-wrap .sv-inline-edit--empty { display: none; } }
 /* Скелетон строки */
 .sv-skeleton { display: inline-block; height: 12px; border-radius: 6px; background: var(--color-field); position: relative; overflow: hidden; }
 .sv-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); animation: sv-shimmer 1.4s infinite; }

@@ -80,12 +80,29 @@ export function Stats({ children, className, label }: { children: React.ReactNod
  * Ключевые цифры раздела под заголовком страницы (этап 36): число и подпись, ссылка на отбор. Оттенок подсказывает,
  * что смотреть первым (просрочено, в риске), смысл несёт подпись, а не цвет
  */
-export type Figure = { label: string; value: number | string; href?: string; tone?: "danger" | "warning" | "good"; hint?: string; testId?: string };
+export type Figure = {
+  label: string;
+  value: number | string;
+  href?: string;
+  tone?: "danger" | "warning" | "good";
+  hint?: string;
+  testId?: string;
+  /** В строке цифр ноль обычно прячется; эта цифра остаётся и при нуле (например, «открыто») */
+  keepZero?: boolean;
+};
 
-export function Figures({ items, label, className }: { items: Figure[]; label: string; className?: string }) {
+const isZero = (v: number | string) => v === 0 || v === "0";
+
+/**
+ * Ключевые цифры раздела. Плитками (по умолчанию) или строкой под заголовком (inline, этап 42): в строке цифры
+ * компактные, нули не показываются, кроме отмеченных keepZero. Правило ревизии: не больше трёх заметных цифр,
+ * ноль не тревожит
+ */
+export function Figures({ items, label, className, inline = false }: { items: Figure[]; label: string; className?: string; inline?: boolean }) {
+  const shown = inline ? items.filter((f) => f.keepZero || !isZero(f.value)) : items;
   return (
-    <ul className={cn("sv-figures", className)} aria-label={label}>
-      {items.map((f) => {
+    <ul className={cn("sv-figures", inline && "sv-figures--inline", className)} aria-label={label}>
+      {shown.map((f) => {
         const body = (
           <>
             <span className="sv-figure__value">{f.value}</span>
@@ -94,7 +111,7 @@ export function Figures({ items, label, className }: { items: Figure[]; label: s
           </>
         );
         // Оттенок только у ненулевого: ноль просроченных не тревожит
-        const tone = f.tone && f.value !== 0 && f.value !== "0" ? f.tone : null;
+        const tone = f.tone && !isZero(f.value) ? f.tone : null;
         return (
           <li key={f.label} className={cn("sv-figure", tone && `sv-figure--${tone}`)} data-testid={f.testId}>
             {f.href ? (

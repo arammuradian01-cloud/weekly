@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, Pencil, History as HistoryIcon } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, MoreHorizontal, Pencil, History as HistoryIcon } from "lucide-react";
+import * as Menu from "@radix-ui/react-dropdown-menu";
 import { usePrototype } from "@/domain/store";
 import { authorName, compactName, ownerName, personOf } from "@/domain/people";
 import { directionLabel, sourceLabel } from "@/domain/dictionaries";
@@ -97,13 +98,99 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
     }
   };
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Строка управления: статус, состояние, приоритет меняются в один клик */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+  // Поля задачи: на отдельной странице в правой панели (этап 42), в боковой панели списка под «Где сейчас»
+  const fields = (
+    <dl className={cn("grid gap-x-6 gap-y-5", standalone ? "grid-cols-1" : "sm:grid-cols-2")}>
+      <Meta label="Ответственный">
+        <span className="inline-flex items-center gap-2">
+          {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" /> : null}
+          {ownerName(task.owner)}
+        </span>
+      </Meta>
+      <Meta label="Соисполнители">{task.coExecutors.length ? task.coExecutors.map((c) => compactName(c)).join(", ") : <span className="text-muted">Нет</span>}</Meta>
+      <Meta label="Срок">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="tabular-nums">{formatLong(task.due)}</span>
+          {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
+        </span>
+        {task.transfers.length ? (
+          <span className="mt-0.5 block text-caption text-muted">
+            {task.transfers[0]?.from === null ? "Исходный срок не записан" : `Исходный срок ${formatLong(task.originalDue)}`}, переносов {task.transfers.length}
+          </span>
+        ) : null}
+      </Meta>
+      <Meta label="Команда">
+        <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
+      </Meta>
+      <Meta label="Цель">
+        <TaskGoal task={task} canLink={!observer && !task.archived && (manage || leads.includes(task.team) || task.owner === me.slug || task.createdBy === me.slug)} />
+      </Meta>
+      <Meta label="Направление">{directionLabel(task.direction)}</Meta>
+      <Meta label="Источник">
+        {sourceLabel(task.source.kind)}
+        {task.source.note && task.source.note !== sourceLabel(task.source.kind) ? <span className="block text-caption text-muted">{task.source.note}</span> : null}
+      </Meta>
+      <Meta label="Ссылки на артефакты">
+        <TaskLinks task={task} />
+      </Meta>
+      <Meta label="Повтор">
+        <TaskRepeat task={task} />
+      </Meta>
+      <Meta label="Поставлена">
+        {formatLong(task.createdAt)}, {task.createdBy ? compactName(task.createdBy) : "на встрече"}
+      </Meta>
+      <Meta label="Обновлена">{formatAgo(task.updatedAt, data.today)}</Meta>
+    </dl>
+  );
+
+  const main = (
+    <div className="flex min-w-0 flex-col gap-6">
+      {/* Панель действий (этап 42): статус, состояние и приоритет в один клик слева, действия справа, остальное в «Ещё» */}
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line pb-4">
         <StatusSelect task={task} />
         <StateSelect task={task} />
         <PrioritySelect task={task} />
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          {can.due && !isClosed(task) ? (
+            <Button size="sm" variant="secondary" onClick={() => actions.transfer(task)}>
+              <CalendarClock className="h-4 w-4" aria-hidden="true" />
+              Перенести срок
+            </Button>
+          ) : null}
+          {can.edit || can.owner || can.coExecutors ? (
+            <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+              Изменить
+            </Button>
+          ) : null}
+          <Menu.Root>
+            <Menu.Trigger className="sv-icon-btn" aria-label="Ещё действия">
+              <MoreHorizontal className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium">
+                <Menu.Item onSelect={() => void copyLink()} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                  <Link2 className="h-4 w-4" aria-hidden="true" />
+                  Скопировать ссылку
+                </Menu.Item>
+                {!standalone ? (
+                  <Menu.Item asChild>
+                    <Link href={`/tasks/${task.number}`} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                      <HistoryIcon className="h-4 w-4" aria-hidden="true" />
+                      Открыть отдельной страницей
+                    </Link>
+                  </Menu.Item>
+                ) : null}
+                {can.archive && !task.archived ? (
+                  <Menu.Item onSelect={() => void runTask(() => archiveTaskAction(task.number, true), `Задача ${task.number} в архиве`)} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                    <Archive className="h-4 w-4" aria-hidden="true" />
+                    В архив
+                  </Menu.Item>
+                ) : null}
+              </Menu.Content>
+            </Menu.Portal>
+          </Menu.Root>
+        </div>
       </div>
 
       {task.status === "proposed" && can.confirm ? (
@@ -201,56 +288,15 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         <GreenOutsideNote task={task} today={data.today} className="mt-1 block" />
       </section>
 
-      <dl className="grid gap-x-6 gap-y-5 sm:grid-cols-2">
-        <Meta label="Что нужно сделать" className="sm:col-span-2">
-          <span className="whitespace-pre-line">{task.outcome}</span>
-        </Meta>
-        <Meta label="Ответственный">
-          <span className="inline-flex items-center gap-2">
-            {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" /> : null}
-            {ownerName(task.owner)}
-          </span>
-        </Meta>
-        <Meta label="Соисполнители">{task.coExecutors.length ? task.coExecutors.map((c) => compactName(c)).join(", ") : <span className="text-muted">Нет</span>}</Meta>
-        <Meta label="Срок">
-          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="tabular-nums">{formatLong(task.due)}</span>
-            {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
-          </span>
-          {task.transfers.length ? (
-            <span className="mt-0.5 block text-caption text-muted">
-              {task.transfers[0]?.from === null ? "Исходный срок не записан" : `Исходный срок ${formatLong(task.originalDue)}`}, переносов {task.transfers.length}
-            </span>
-          ) : null}
-          {can.due && !isClosed(task) ? (
-            <button type="button" onClick={() => actions.transfer(task)} className="mt-1.5 inline-flex h-9 items-center gap-1.5 rounded-md text-small font-medium text-blue-700 hover:underline">
-              <CalendarClock className="h-4 w-4" aria-hidden="true" />
-              Перенести срок
-            </button>
-          ) : null}
-        </Meta>
-        <Meta label="Команда">
-          <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
-        </Meta>
-        <Meta label="Цель">
-          <TaskGoal task={task} canLink={!observer && !task.archived && (manage || leads.includes(task.team) || task.owner === me.slug || task.createdBy === me.slug)} />
-        </Meta>
-        <Meta label="Направление">{directionLabel(task.direction)}</Meta>
-        <Meta label="Источник">
-          {sourceLabel(task.source.kind)}
-          {task.source.note && task.source.note !== sourceLabel(task.source.kind) ? <span className="block text-caption text-muted">{task.source.note}</span> : null}
-        </Meta>
-        <Meta label="Ссылки на артефакты">
-          <TaskLinks task={task} />
-        </Meta>
-        <Meta label="Повтор">
-          <TaskRepeat task={task} />
-        </Meta>
-        <Meta label="Поставлена">
-          {formatLong(task.createdAt)}, {task.createdBy ? compactName(task.createdBy) : "на встрече"}
-        </Meta>
-        <Meta label="Обновлена">{formatAgo(task.updatedAt, data.today)}</Meta>
-      </dl>
+      <section aria-labelledby={`outcome-${task.number}`}>
+        <H id={`outcome-${task.number}`} className="text-sm font-medium text-ink">
+          Что нужно сделать
+        </H>
+        <p className="mt-1 whitespace-pre-line text-body text-ink">{task.outcome}</p>
+      </section>
+
+      {/* На отдельной странице поля в правой панели, на телефоне и в боковой панели списка здесь */}
+      <div className={cn(standalone && "lg:hidden")}>{fields}</div>
 
       <TaskChecklist task={task} headingLevel={H} />
 
@@ -351,32 +397,23 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         )}
       </section>
 
-      <div className="flex flex-wrap gap-2 border-t border-line pt-4">
-        {can.edit || can.owner || can.coExecutors ? (
-          <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-            <Pencil className="h-4 w-4" aria-hidden="true" />
-            Изменить
-          </Button>
-        ) : null}
-        <Button size="sm" variant="secondary" onClick={copyLink}>
-          <Link2 className="h-4 w-4" aria-hidden="true" />
-          Скопировать ссылку
-        </Button>
-        {!standalone ? (
-          <Link href={`/tasks/${task.number}`} className="inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold text-ink hover:bg-field">
-            <HistoryIcon className="h-4 w-4" aria-hidden="true" />
-            Открыть отдельной страницей
-          </Link>
-        ) : null}
-        {can.archive && !task.archived ? (
-          <Button size="sm" variant="ghost" onClick={() => void runTask(() => archiveTaskAction(task.number, true), `Задача ${task.number} в архиве`)}>
-            <Archive className="h-4 w-4" aria-hidden="true" />
-            В архив
-          </Button>
-        ) : null}
-      </div>
-      <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
     </div>
+  );
+
+  return (
+    <>
+      {standalone ? (
+        <div className="sv-page--read-rail">
+          {main}
+          <aside className="sv-page__rail sv-card sv-card--soft hidden p-5 lg:flex" aria-label="Поля задачи">
+            {fields}
+          </aside>
+        </div>
+      ) : (
+        main
+      )}
+      <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
+    </>
   );
 }
 
