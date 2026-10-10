@@ -294,7 +294,7 @@ describe("сравнение версий месяца", () => {
     await prisma.planAdjustment.updateMany({ data: { createdAt: new Date(Date.now() - 3 * DAY) } });
     const day = new Date(Date.now() - 3 * DAY + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const cmp = (await proc.compareVersions(month, `day:${day}`, "forecast"))!;
-    expect(cmp.notes[0]).toMatch(/^Снимка загрузки LBE на конец \d{2}\.\d{2} нет: показан LBE ближайшей загрузки после этого момента$/);
+    expect(cmp.notes[0]).toMatch(/^Снимка загрузки LBE на конец \d{2}\.\d{2} нет: показан LBE ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
   });
 });
 
@@ -362,8 +362,8 @@ describe("прогноз прошлой недели в отчёте CEO (эта
 
     // Момент раньше любой загрузки: берётся LBE последней загрузки, об этом пометка
     const early = (await proc.planBrief(await actor.owner(), month, { at: new Date(Date.now() - 20 * DAY), when: "конец недели 37, 13.09" }))!;
-    expect(early.asOf!.notes[0]).toBe("Снимка загрузки LBE на конец недели 37, 13.09 нет: показан LBE ближайшей загрузки после этого момента");
-    expect(early.asOf!.notes[1]).toBe("Снимка партнёров на конец недели 37, 13.09 нет: показаны партнёры ближайшей загрузки после этого момента");
+    expect(early.asOf!.notes[0]).toMatch(/^Снимка загрузки LBE на конец недели 37, 13\.09 нет: показан LBE ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
+    expect(early.asOf!.notes[1]).toMatch(/^Снимка партнёров на конец недели 37, 13\.09 нет: показаны партнёры ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
     // Это LBE первой загрузки: выручка ОСАГО на 50 меньше, чем сейчас
     expect(o(now).revenue.lbe! - o(early).revenue.lbe!).toBeCloseTo(50, 6);
   });

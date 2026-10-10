@@ -383,7 +383,11 @@ export async function compareVersions(monthInput: string | null | undefined, aIn
     if (pull) lines = await pullOf(pull.id);
     else if (!(data.lines[0]!.pulledAt < end)) {
       if (data.pulls[0]) lines = await pullOf(data.pulls[0].id);
-      notes.push(`Снимка загрузки LBE на конец ${ddmm(day)} нет: показан LBE ближайшей загрузки после этого момента`);
+      notes.push(
+        data.pulls[0]
+          ? `Снимка загрузки LBE на конец ${ddmm(day)} нет: показан LBE ближайшей загрузки, ${stamp(data.pulls[0].at)}`
+          : `Снимка загрузки LBE на конец ${ddmm(day)} нет: показан LBE последней загрузки, ${stamp(data.lines[0]!.pulledAt)}`,
+      );
     }
     return rowsOf(summarize(inputFrom(lines, data.adjustments, end)), "forecast");
   };

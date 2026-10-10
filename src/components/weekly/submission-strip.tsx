@@ -16,10 +16,10 @@ const DOT: Record<WeeklyStateCode, string> = {
 };
 
 const WORD: Record<WeeklyStateCode, string> = {
-  submitted: "сдан",
-  late: "сдан с опозданием",
-  draft: "черновик",
-  "not-started": "не начат",
+  submitted: "weekly сдан",
+  late: "weekly сдан с опозданием",
+  draft: "черновик weekly",
+  "not-started": "weekly не начат",
 };
 
 /** Полоса сдачи: кто сдал, кто в черновике, у кого weekly не начат. Кого нет на неделе, виден серым с замещающим и в счёт не входит */

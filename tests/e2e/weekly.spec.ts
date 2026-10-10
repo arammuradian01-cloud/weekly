@@ -58,7 +58,7 @@ test("weekly человека по ссылке: отбор по автору в
   await page.locator("#f-author").selectOption("");
   await expect(page).not.toHaveURL(/author=/);
   await expect(page.getByRole("heading", { name: /Общее, без автора|Головкин Владислав/ }).first()).toBeVisible();
-  const refreshed = page.waitForResponse((r) => r.url().includes("/weekly") && r.request().headers()["rsc"] === "1");
+  const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await refreshed;
   await expect(page).not.toHaveURL(/author=/);
@@ -66,7 +66,7 @@ test("weekly человека по ссылке: отбор по автору в
   // Выбрали автора руками: адрес с ним переживает и обновление, и перезагрузку
   await page.locator("#f-author").selectOption("reva");
   await expect(page).toHaveURL(/author=reva/);
-  const again = page.waitForResponse((r) => r.url().includes("/weekly") && r.request().headers()["rsc"] === "1");
+  const again = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await again;
   await expect(page).toHaveURL(/author=reva/);

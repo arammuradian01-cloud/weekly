@@ -129,14 +129,20 @@ export function WeeklyFeed({
   const [helpOnly, setHelpOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(!!focus?.here);
   // Человек из ссылки появился в ленте (перешли в его команду кнопкой подсказки или переключателем в шапке): отбор по
-  // нему включается сам. Состояние меняется во время отрисовки, как советует React, без эффекта и лишнего прохода
+  // нему включается сам; ушли в команду, где его нет: отбор снимается и снова видна подсказка. Только переходы того же
+  // человека: выбор автора руками и запоздалый ответ обновления отбор не трогают. Состояние меняется во время отрисовки,
+  // как советует React, без эффекта и лишнего прохода
   const focusKey = focus ? `${focus.slug}:${focus.here ? "here" : "away"}` : "";
   const [seenFocus, setSeenFocus] = useState(focusKey);
   if (seenFocus !== focusKey) {
+    const [prevSlug, prevState] = seenFocus.split(":");
     setSeenFocus(focusKey);
-    if (focus?.here) {
-      setAuthorState(focus.slug);
-      setShowFilters(true);
+    if (focus && prevSlug === focus.slug) {
+      if (focus.here && prevState === "away") {
+        setAuthorState(focus.slug);
+        setShowFilters(true);
+      }
+      if (!focus.here && prevState === "here" && author === focus.slug) setAuthorState("");
     }
   }
   // Отбор по автору живёт и в адресе: ссылкой можно поделиться, а смена недели его сохраняет. Состояние истории
@@ -152,9 +158,11 @@ export function WeeklyFeed({
       // Адрес не обновился: отбор на экране всё равно работает
     }
   };
-  // Человека из ссылки может не быть среди людей выбранной команды (например, руководитель команды ниже)
+  // Человека из ссылки или выбранного автора может не быть среди людей выбранной команды (руководитель команды ниже,
+  // смена команды в шапке): список «Автор» всё равно показывает, по кому отбор, и «Все» его снимает
   const authorOptions = [...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))];
   if (focus?.here && !authorOptions.some((o) => o.value === focus.slug)) authorOptions.push({ value: focus.slug, label: focus.name });
+  if (author && !authorOptions.some((o) => o.value === author)) authorOptions.push({ value: author, label: focus?.slug === author ? focus.name : personOf(author).fullName });
 
   const all = data.entries;
   // Weekly руководителя в ленте команды выше: его записи и то, что он поднял из своей команды, как в его карточке

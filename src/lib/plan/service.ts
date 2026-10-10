@@ -456,6 +456,12 @@ async function source(month: string, manager: boolean): Promise<PlanSource> {
 /** Прогноз месяца для экрана: версии, корректировки, владельцы продуктов и история. month: из адреса страницы */
 type SnapLine = { version: PlanVersion; product: string; metric: string; value: number | null };
 
+/** «08.10, 14:20» по Москве: когда была загрузка, о которой пометка */
+const pullStamp = (d: Date) => {
+  const m = new Date(d.getTime() + 3 * 60 * 60 * 1000).toISOString();
+  return `${m.slice(8, 10)}.${m.slice(5, 7)}, ${m.slice(11, 16)}`;
+};
+
 /**
  * Строки версий месяца на момент at (этап 39): снимок последней загрузки LBE до at. Без снимка, но с текущими строками,
  * загруженными до at (загрузка до снимков этапа 35), текущие строки. Иначе LBE ближайшей загрузки после at (первой со
@@ -468,8 +474,8 @@ async function linesAt(month: string, at: Date, when: string): Promise<{ lines: 
   if (!lines.length) return { lines, pulledAt: null, note: null };
   if (lines[0]!.pulledAt < at) return { lines, pulledAt: lines[0]!.pulledAt, note: null };
   const first = await prisma.planPull.findFirst({ where: { month }, orderBy: { at: "asc" }, select: { at: true, lines: true } });
-  const note = `Снимка загрузки LBE на ${when} нет: показан LBE ближайшей загрузки после этого момента`;
-  return first ? { lines: first.lines as SnapLine[], pulledAt: first.at, note } : { lines, pulledAt: lines[0]!.pulledAt, note };
+  if (first) return { lines: first.lines as SnapLine[], pulledAt: first.at, note: `Снимка загрузки LBE на ${when} нет: показан LBE ближайшей загрузки, ${pullStamp(first.at)}` };
+  return { lines, pulledAt: lines[0]!.pulledAt, note: `Снимка загрузки LBE на ${when} нет: показан LBE последней загрузки, ${pullStamp(lines[0]!.pulledAt)}` };
 }
 
 /**

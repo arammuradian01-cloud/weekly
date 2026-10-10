@@ -339,7 +339,7 @@ describe("партнёрский канал в сравнении версий (
     await load();
     const cmp = await proc.compareVersions(month, `pull:${first!.id}`, "lbe");
     expect(cmp!.partners!.notes).toHaveLength(1);
-    expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: показаны партнёры ближайшей загрузки после этого момента$/);
+    expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: показаны партнёры ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
     expect(row(cmp, "total").a).toEqual(row(cmp, "total").b);
     // Загрузка без листов b2b снимок не пишет: партнёры в ней не менялись
     await withoutTab("B2B. CPA & WAYBACK OSAGO LRF", async () => {

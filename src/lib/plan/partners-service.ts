@@ -128,8 +128,8 @@ export async function partnerRowsAt(
   });
   if (snap) return { rows: fromSnapshot(snap.partners as PartnerSnapshotLine[]), pulledAt: snap.at, note: null };
   const first = await prisma.planPull.findFirst({ where: { month, partners: { not: Prisma.DbNull } }, orderBy: { at: "asc" }, select: { at: true, partners: true } });
-  if (first) return { rows: fromSnapshot(first.partners as PartnerSnapshotLine[]), pulledAt: first.at, note: `Снимка партнёров на ${when} нет: показаны партнёры ближайшей загрузки после этого момента` };
-  return { rows, pulledAt, note: `Снимка партнёров на ${when} нет: взяты партнёры последней загрузки` };
+  if (first) return { rows: fromSnapshot(first.partners as PartnerSnapshotLine[]), pulledAt: first.at, note: `Снимка партнёров на ${when} нет: показаны партнёры ближайшей загрузки, ${stamp(first.at)}` };
+  return { rows, pulledAt, note: `Снимка партнёров на ${when} нет: показаны партнёры последней загрузки, ${stamp(pulledAt)}` };
 }
 
 /** Проверка канала после загрузки LBE: корректировка партнёра или отметка «Прогноз проверен» позже загрузки */

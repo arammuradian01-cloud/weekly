@@ -146,7 +146,9 @@ test("weekly человека из дерева подчинённых: подс
   // Тот же переход переключателем в шапке: отбор включается сам, как и по кнопке подсказки
   const switcher = reva.locator(phone ? "#team-switcher-m" : "#team-switcher");
   await switcher.selectOption("top");
+  // Ушли в команду, где Антонова нет: отбор снимается, снова подсказка, «Автор» показывает «Все»
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
+  await expect(reva.locator("#f-author")).toHaveValue("");
   await reva.goto(`/weekly?author=${antonov}`);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
   await expect(reva.locator("#f-author")).toHaveValue("");
