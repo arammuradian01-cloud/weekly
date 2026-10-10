@@ -14,7 +14,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { mailConfigured, sendMail } from "@/lib/mail";
-import type { InboxKind } from "@/generated/prisma/enums";
 import { loadTeamNodes, TOP_TEAM, type TeamNode } from "@/lib/org/scope";
 import { closedFor, expectedOf, leadersOf, personDeadline, teamMeeting } from "@/lib/org/rhythm";
 import { currentReportingKey, ensureWeek, weekSettings } from "@/lib/weekly/service";

@@ -13,7 +13,6 @@ export const metadata: Metadata = { title: "Команда" };
 
 export default async function TeamPage() {
   const ctx = await requireContext();
-  const { person } = ctx;
   const key = await currentReportingKey();
   const team = await currentTeam(subjectOf(ctx));
   const reports = await weeklyStates(key, audienceOf(team));

@@ -10,6 +10,7 @@ import { AbsentBadge, substituteText } from "@/components/weekly/absence";
 import { ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
+import { Figures } from "@/components/ui/data";
 
 type Row = {
   person: Person;
@@ -46,49 +47,66 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
   );
 
   const num = (n: number, alert?: boolean) => <span className={cn("tabular-nums", alert && n > 0 ? "font-semibold text-danger-ink" : n === 0 ? "text-muted" : "text-ink")}>{n}</span>;
+  const absentNow = (w: PersonWeekly | undefined) => !!w?.absent && w.state !== "submitted" && w.state !== "late";
+  // Как на «Weekly» и в «Моих командах»: без тех, от кого weekly по желанию, и без отсутствующих, кто не сдал
+  const expected = reports.filter((w) => !w.optional && !absentNow(w));
+  const submitted = expected.filter((w) => w.state === "submitted" || w.state === "late").length;
 
+  // Этап 36: ключевые цифры команды плитками и одна таблица на ноутбуке и телефоне (на телефоне строки карточками)
   return (
-    <>
-      <div className="overflow-hidden sv-card sv-card--soft">
-        <table className="hidden w-full text-left text-body md:table">
+    <div className="flex flex-col gap-4">
+      <Figures
+        label="Команда в цифрах"
+        items={[
+          // Цифры по людям, как итог таблицы ниже: без общих задач лидеров, поэтому без ссылок на список задач
+          { label: "В работе", value: totals.inWork, testId: "team-fig-work" },
+          { label: "Просрочено", value: totals.overdue, tone: "danger", testId: "team-fig-overdue" },
+          { label: "С риском", value: totals.risk, tone: "warning", testId: "team-fig-risk" },
+          { label: "Закрыто за неделю", value: totals.closedWeek, testId: "team-fig-closed" },
+          { label: "Давно без обновлений", value: totals.stale, tone: "warning", testId: "team-fig-stale" },
+          { label: `Weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly" },
+        ]}
+      />
+      <div className="sv-card sv-card--soft overflow-x-auto p-0">
+        <table className="sv-datatable sv-datatable--stack" data-testid="team-summary">
           <caption className="sr-only">Задачи и weekly по каждому</caption>
-          <thead className="bg-field text-caption text-muted">
+          <thead>
             <tr>
-              <th scope="col" className="px-5 py-3 font-medium">Человек</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">Всего</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">В работе</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">Просрочено</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">С риском</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">Закрыто за неделю</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">Давно не обновлялись</th>
-              <th scope="col" className="px-5 py-3 font-medium">Weekly за неделю {weekNumber}</th>
+              <th scope="col">Человек</th>
+              <th scope="col" className="is-num">Всего</th>
+              <th scope="col" className="is-num">В работе</th>
+              <th scope="col" className="is-num">Просрочено</th>
+              <th scope="col" className="is-num">С риском</th>
+              <th scope="col" className="is-num">Закрыто за неделю</th>
+              <th scope="col" className="is-num">Давно не обновлялись</th>
+              <th scope="col">Weekly за неделю {weekNumber}</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
+          <tbody>
             {rows.map((r) => {
               const weekly = reports.find((w) => w.author === r.person.slug);
               return (
-                <tr key={r.person.slug} className="hover:bg-field/60">
-                  <td className="px-5 py-3">
+                <tr key={r.person.slug}>
+                  <th scope="row" className="is-wide text-left font-normal">
                     <Link href={`/tasks/review?person=${r.person.slug}`} className="font-semibold text-ink hover:text-blue-700 hover:underline">
                       {r.person.fullName}
                     </Link>
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
-                    <p className="text-caption text-muted">
+                    <span className="block text-caption text-muted">
                       {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}
-                    </p>
-                  </td>
-                  <td className="px-3 py-3 text-right">{num(r.total)}</td>
-                  <td className="px-3 py-3 text-right">{num(r.inWork)}</td>
-                  <td className="px-3 py-3 text-right">{num(r.overdue, true)}</td>
-                  <td className="px-3 py-3 text-right">{num(r.risk, true)}</td>
-                  <td className="px-3 py-3 text-right">{num(r.closedWeek)}</td>
-                  <td className="px-3 py-3 text-right">{num(r.stale, true)}</td>
-                  <td className="px-5 py-3">
-                    {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
+                    </span>
+                  </th>
+                  <td className="is-num" data-label="Всего">{num(r.total)}</td>
+                  <td className="is-num" data-label="В работе">{num(r.inWork)}</td>
+                  <td className="is-num" data-label="Просрочено">{num(r.overdue, true)}</td>
+                  <td className="is-num" data-label="С риском">{num(r.risk, true)}</td>
+                  <td className="is-num" data-label="Закрыто">{num(r.closedWeek)}</td>
+                  <td className="is-num" data-label="Без обновлений">{num(r.stale, true)}</td>
+                  <td className="is-wide" data-label={`Weekly ${weekNumber}`}>
+                    {absentNow(weekly) ? (
                       <>
                         <AbsentBadge />
-                        <span className="mt-1 block text-caption text-muted">{substituteText(weekly.absent.substitute)}</span>
+                        <span className="mt-1 block text-caption text-muted">{substituteText(weekly!.absent!.substitute)}</span>
                       </>
                     ) : (
                       <WeeklyOrAbove weekly={weekly} />
@@ -97,59 +115,23 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                 </tr>
               );
             })}
-          </tbody>
-          <tfoot className="border-t-2 border-line bg-field font-semibold">
-            <tr>
-              <th scope="row" className="px-5 py-3 text-left">Вся команда</th>
-              <td className="px-3 py-3 text-right tabular-nums">{totals.total}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{totals.inWork}</td>
-              <td className="px-3 py-3 text-right tabular-nums text-danger-ink">{totals.overdue}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{totals.risk}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{totals.closedWeek}</td>
-              <td className="px-3 py-3 text-right tabular-nums">{totals.stale}</td>
-              <td className="px-5 py-3" />
+            <tr className="sv-datatable__row--total">
+              <th scope="row" className="is-wide text-left">Вся команда</th>
+              <td className="is-num" data-label="Всего">{totals.total}</td>
+              <td className="is-num" data-label="В работе">{totals.inWork}</td>
+              <td className="is-num" data-label="Просрочено"><span className={cn(totals.overdue > 0 && "text-danger-ink")}>{totals.overdue}</span></td>
+              <td className="is-num" data-label="С риском">{totals.risk}</td>
+              <td className="is-num" data-label="Закрыто">{totals.closedWeek}</td>
+              <td className="is-num" data-label="Без обновлений">{totals.stale}</td>
+              <td />
             </tr>
-          </tfoot>
+          </tbody>
         </table>
-
-        <ul className="divide-y divide-line md:hidden">
-          {rows.map((r) => {
-            const weekly = reports.find((w) => w.author === r.person.slug);
-            return (
-              <li key={r.person.slug} className="px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Link href={`/tasks/review?person=${r.person.slug}`} className="text-lead font-semibold text-ink">
-                    {r.person.fullName}
-                  </Link>
-                  {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyOrAbove weekly={weekly} />}
-                </div>
-                {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? (
-                  <p className="mt-1 text-caption text-muted">Нет на неделе, {substituteText(weekly.absent.substitute)}</p>
-                ) : null}
-                <dl className="mt-2 grid grid-cols-3 gap-2 text-caption">
-                  {[
-                    ["В работе", r.inWork, false],
-                    ["Просрочено", r.overdue, true],
-                    ["С риском", r.risk, true],
-                    ["Закрыто", r.closedWeek, false],
-                    ["Без обновлений", r.stale, true],
-                    ["Всего", r.total, false],
-                  ].map(([label, n, alert]) => (
-                    <div key={label as string}>
-                      <dt className="text-muted">{label as string}</dt>
-                      <dd className="text-lead">{num(n as number, alert as boolean)}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </li>
-            );
-          })}
-        </ul>
       </div>
-      <p className="mt-4 text-small text-muted">
+      <p className="text-small text-muted">
         {data.team === TOP_TEAM ? `Общих задач для всех лидеров в работе: ${shared}. ` : ""}Имя открывает разбор задач человека.
       </p>
-    </>
+    </div>
   );
 }
 

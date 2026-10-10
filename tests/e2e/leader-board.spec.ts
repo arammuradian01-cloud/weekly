@@ -9,7 +9,6 @@ import { enter, enterManagement, resetDatabase, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
-const phone = () => test.info().project.name === "phone";
 
 async function shot(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
@@ -61,10 +60,11 @@ test("цели Q4 из файла борда лидера, задача с ли�
   await shot(page, "preview");
   await drawer.getByRole("button", { name: "Загрузить", exact: true }).click();
   await expect(page.getByText("Цели загружены: новых 2, изменено 0")).toBeVisible();
-  // В дереве целей: код, название, владелец и целевое значение из борда
-  const tree = page.getByRole("list", { name: "Дерево целей" });
-  await expect(tree.getByText(/^РТ-1\s*Подписка ОСАГО запущена и имеет P&L$/)).toBeVisible();
-  await expect(tree.getByText("Топ-команда, владелец Рева Тарас, цель P&L к 15.12")).toBeVisible();
+  // В таблице целей: код, название, владелец и целевое значение из борда
+  const row = page.getByTestId("goal-row-РТ-1");
+  await expect(row.getByText(/^РТ-1\s*Подписка ОСАГО запущена и имеет P&L$/)).toBeVisible();
+  await expect(row).toContainText("Рева Тарас");
+  await expect(row).toContainText("P&L к 15.12");
 
   // Задача Ревы в топ-команде: к ней можно привязать её личную цель
   const [task] = await sql(`SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t."archivedAt" IS NULL AND t.status IN ('IN_PROGRESS', 'CLARIFY') ORDER BY t.number LIMIT 1`);
@@ -86,6 +86,9 @@ test("цели Q4 из файла борда лидера, задача с ли�
   // Метка ведёт к цели
   await tag.click();
   await expect(page).toHaveURL(/\/goals\?q=\d{4}-Q\d#goal-/);
+  // Строка цели раскрыта: описание и задачи цели видны сразу
+  await expect(page.getByTestId("goal-details")).toBeVisible();
+  await expect(page.getByTestId("goal-details")).toContainText(String(number));
 });
 
 test("без режима управления файл борда не загрузить", async ({ page }) => {

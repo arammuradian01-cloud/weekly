@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
@@ -69,43 +69,45 @@ export function GlobalHotkeys() {
   const [repeat, setRepeat] = useState<"" | RepeatKindCode>("");
   const [error, setError] = useState<string | null>(null);
 
+  // Обработчики видят свежие команду, режим управления и список команд, а подписка на окно ставится один раз
+  const onOpen = useEffectEvent((detail: Prefill | undefined) => {
+    setWeeklyEntryId(detail?.weeklyEntryId);
+    setTitle(detail?.title ?? "");
+    setOutcome(detail?.outcome ?? "");
+    setSource(detail?.source ?? defaultSource());
+    setSourceNote(detail?.sourceNote ?? "");
+    setOwner(me.slug);
+    setDirection(me.direction);
+    setPriority("medium");
+    setDue(addDays(data.today, 7));
+    setRepeat("");
+    setTaskTeam(defaultTeam());
+    setError(null);
+    setOpen(true);
+  });
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+    if (!observer && (e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т")) {
+      e.preventDefault();
+      openNewTask();
+    }
+    if (e.key === "/") {
+      // Поиск с этапа 25 живёт в командной строке
+      e.preventDefault();
+      openCommandPalette();
+    }
+  });
+
   useEffect(() => {
-    const onOpen = (e: Event) => {
-      const detail = (e as CustomEvent).detail as Prefill | undefined;
-      setWeeklyEntryId(detail?.weeklyEntryId);
-      setTitle(detail?.title ?? "");
-      setOutcome(detail?.outcome ?? "");
-      setSource(detail?.source ?? defaultSource());
-      setSourceNote(detail?.sourceNote ?? "");
-      setOwner(me.slug);
-      setDirection(me.direction);
-      setPriority("medium");
-      setDue(addDays(data.today, 7));
-      setRepeat("");
-      setTaskTeam(defaultTeam());
-      setError(null);
-      setOpen(true);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
-      if (!observer && (e.key === "n" || e.key === "N" || e.key === "т" || e.key === "Т")) {
-        e.preventDefault();
-        openNewTask();
-      }
-      if (e.key === "/") {
-        // Поиск с этапа 25 живёт в командной строке
-        e.preventDefault();
-        openCommandPalette();
-      }
-    };
-    window.addEventListener(OPEN_EVENT, onOpen);
-    window.addEventListener("keydown", onKey);
+    const handleOpen = (e: Event) => onOpen((e as CustomEvent).detail as Prefill | undefined);
+    const handleKey = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener(OPEN_EVENT, handleOpen);
+    window.addEventListener("keydown", handleKey);
     return () => {
-      window.removeEventListener(OPEN_EVENT, onOpen);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_EVENT, handleOpen);
+      window.removeEventListener("keydown", handleKey);
     };
-    // Выбор команды по умолчанию зависит от выбранной команды и режима управления: при их смене обработчик пересоздаётся
-  }, [data.today, me.slug, me.direction, observer, team.id, manage]);
+  }, []);
 
   // Себе ставит каждый. Другому: режим управления и руководитель команды задачи, остальные только предлагают (этап 14)
   const leadsTarget = leads.includes(taskTeam);

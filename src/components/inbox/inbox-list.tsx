@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, type LucideIcon } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, TrendingUp, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
@@ -43,23 +43,40 @@ function Deadlines() {
           Сроки <span className="sv-section__count">{hot.length}</span>
         </h2>
       </div>
-      <ul className="sv-event-list m-0 list-none divide-y divide-line p-0">
-        {hot.map((t) => {
-          const late = isOverdue(t, data.today);
-          return (
-            <li key={t.number} className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <Link href={`/tasks/${t.number}`} className="min-w-0 text-body text-ink hover:text-link">
-                <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
-              </Link>
-              {late ? (
-                <OverdueNote days={overdueDays(t, data.today)} className="self-start sm:self-auto" />
-              ) : (
-                <span className="sv-due sv-due--soon self-start sm:self-auto">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {/* Этап 36: таблица задача и срок, на телефоне строка карточкой */}
+      <div className="sv-card sv-card--soft overflow-x-auto p-0">
+        <table className="sv-datatable sv-datatable--stack" data-testid="me-deadlines">
+          <caption className="sr-only">Мои задачи: просроченные и со сроком сегодня или завтра</caption>
+          <thead>
+            <tr>
+              <th scope="col">Задача</th>
+              <th scope="col">Срок</th>
+              <th scope="col">Что со сроком</th>
+            </tr>
+          </thead>
+          <tbody>
+            {hot.map((t) => {
+              // Срок прошёл и у предложенной задачи: «срок завтра» про неё было бы неправдой
+              const late = isOverdue(t, data.today) || t.due < data.today;
+              return (
+                <tr key={t.number}>
+                  <td className="is-wide">
+                    <Link href={`/tasks/${t.number}`} className="text-ink hover:text-link">
+                      <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
+                    </Link>
+                  </td>
+                  <td data-label="Срок" className="whitespace-nowrap tabular-nums">
+                    {formatShort(t.due)}
+                  </td>
+                  <td data-label="Что со сроком">
+                    {late ? <OverdueNote days={overdueDays(t, data.today)} /> : <span className="sv-due sv-due--soon">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
@@ -72,6 +89,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
+  if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -149,6 +167,10 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                   ) : item.subject.startsWith("initiative:") ? (
                     <Link href={`/initiatives#i-${encodeURIComponent(item.subject.slice(11))}`} className="sv-event__text font-semibold hover:text-link">
                       Крупная инициатива
+                    </Link>
+                  ) : item.subject.startsWith("plan:") ? (
+                    <Link href={`/forecast?month=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
+                      Прогноз месяца
                     </Link>
                   ) : null}
                   <p className="sv-event__text mt-0.5">{item.text}</p>

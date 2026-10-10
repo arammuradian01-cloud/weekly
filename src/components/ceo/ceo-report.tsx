@@ -9,6 +9,9 @@ import { numbersText, type WeekNumbers } from "@/lib/numbers/text";
 import { forecastText } from "@/lib/forecast/codes";
 import type { ForecastSummary } from "@/lib/forecast/types";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
+import { planBriefText, type PlanBrief } from "@/lib/plan/brief";
+import { PlanBriefBlock } from "@/components/plan/plan-brief";
+import { Figures } from "@/components/ui/data";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
@@ -75,6 +78,7 @@ export function CeoReport({
   stats,
   numbers,
   forecast,
+  plan,
   decisions = [],
   previous,
   owner = false,
@@ -88,6 +92,8 @@ export function CeoReport({
   /** Цифры недели из недельного отчёта и прогноз лидеров (этап 24) */
   numbers?: WeekNumbers;
   forecast?: ForecastSummary;
+  /** Прогноз месяца по драйверам из LRF (этап 35) */
+  plan?: PlanBrief | null;
   /** Решения топ-команды по этой неделе (этап 27) */
   decisions?: CeoDecision[];
   /** Отчёт прошлой недели для сравнения (этап 27) */
@@ -157,6 +163,7 @@ export function CeoReport({
         weekNumber: week.number,
         numbers: numbers ? numbersText(numbers) : ["Появятся после подключения недельного отчёта."],
         forecast: forecast ? forecastText(forecast) : undefined,
+        monthPlan: plan ? planBriefText(plan) : undefined,
         promises: promises?.total.total ? promiseLine(promises.total) : undefined,
         main: sections.main,
         decisions,
@@ -165,7 +172,7 @@ export function CeoReport({
         thanks: thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })),
         meetings: cleanMeetings(meetings),
       }),
-    [week.number, numbers, forecast, promises, sections, decisions, thanks, meetings],
+    [week.number, numbers, forecast, plan, promises, sections, decisions, thanks, meetings],
   );
 
   const copy = async (okText = "Текст отчёта скопирован") => {
@@ -221,6 +228,22 @@ export function CeoReport({
   return (
     <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div className="flex min-w-0 flex-col gap-6">
+        {/* Этап 37: из чего собран отчёт, в цифрах */}
+        <Figures
+          label="Отчёт в цифрах"
+          items={[
+            { label: "Отметок «В отчёт CEO»", value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags" },
+            { label: "Решений недели", value: decisions?.length ?? 0, testId: "ceo-fig-decisions" },
+            {
+              label: "Обещания выполнены",
+              // Все обещания сняты: доли нет, а не ноль процентов
+              value: promises?.total.total && promiseShare(promises.total) !== null ? `${promiseShare(promises.total)}%` : "нет",
+              testId: "ceo-fig-promises",
+            },
+            { label: "Благодарностей", value: thanks.length, testId: "ceo-fig-thanks" },
+            { label: "Моих встреч", value: cleanMeetings(meetings).length, testId: "ceo-fig-meetings" },
+          ]}
+        />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <WeekSwitcher view={view} basePath="/ceo-report" />
           <p className="text-small text-muted" aria-live="polite">
@@ -294,6 +317,7 @@ export function CeoReport({
             <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
           </section>
         )}
+        {plan ? <PlanBriefBlock brief={plan} /> : null}
         {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
 
         <section aria-labelledby="ceo-promises" className="sv-card sv-card--soft px-5 py-4">

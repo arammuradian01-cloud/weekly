@@ -26,13 +26,16 @@ import {
   updateUnitAction,
 } from "@/app/(app)/structure/actions";
 import { StructureImport } from "./structure-import";
+import { PeopleTreeView } from "./people-tree";
+import type { PeopleTree } from "@/lib/org/people-tree";
 import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
 import { deadlineText } from "@/components/weekly/weekly-feed";
 
 type Candidate = { slug: string; fullName: string; position: string | null };
 
-export function StructureScreen({ view, owner, me, candidates, leads = [] }: { view: StructureView; owner: boolean; me: string; candidates: Candidate[]; leads?: string[] }) {
-  const [tab, setTab] = useState<"units" | "teams">("units");
+export function StructureScreen({ view, tree, owner, me, candidates, leads = [] }: { view: StructureView; tree: PeopleTree; owner: boolean; me: string; candidates: Candidate[]; leads?: string[] }) {
+  // Дерево подчинённых первым (этап 34): так смотрят структуру чаще всего. Пока руководители не заданы, первыми подразделения
+  const [tab, setTab] = useState<"people" | "units" | "teams">(tree.loaded ? "people" : "units");
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
   const { notify } = usePrototype();
@@ -57,6 +60,7 @@ export function StructureScreen({ view, owner, me, candidates, leads = [] }: { v
           value={tab}
           onChange={setTab}
           options={[
+            { value: "people", label: "Подчинённые" },
             { value: "units", label: "Подразделения" },
             { value: "teams", label: "Команды", count: view.teams.length },
           ]}
@@ -81,7 +85,9 @@ export function StructureScreen({ view, owner, me, candidates, leads = [] }: { v
         ) : null}
       </div>
 
-      {tab === "units" ? (
+      {tab === "people" ? (
+        <PeopleTreeView tree={tree} me={me} owner={owner} />
+      ) : tab === "units" ? (
         empty ? (
           <EmptyState title="Структура ещё не загружена">
             {owner ? "Загрузите лист структуры из таблицы: кнопка «Загрузить структуру» выше." : "Её загрузит владелец ресурса. Пока работают команды из раздела «Команды»."}
