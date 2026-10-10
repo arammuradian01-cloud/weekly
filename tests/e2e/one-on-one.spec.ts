@@ -51,9 +51,9 @@ test("человек ставит тему, руководитель прово�
   // Антонов ставит тему встречи со своим руководителем
   const antonov = await person(browser, page, "Антонов");
   if (phone()) {
-    // На телефоне встречи в меню профиля
-    await antonov.getByRole("button", { name: /^Профиль:/ }).click();
-    await antonov.getByRole("menuitem", { name: "Один на один" }).click();
+    // На телефоне разделы за кнопкой «Ещё» нижнего меню (этап 41)
+    await antonov.getByRole("button", { name: "Ещё", exact: true }).click();
+    await antonov.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Один на один", exact: true }).click();
   } else await antonov.getByRole("link", { name: "Один на один" }).locator("visible=true").first().click();
   await expect(antonov.getByRole("heading", { name: "С руководителем" })).toBeVisible();
   await antonov.getByRole("link", { name: /Рева Тарас/ }).click();

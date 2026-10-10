@@ -70,7 +70,7 @@ test("лидер: неделя, weekly, задачи, команда, инстр
     ["/tasks/mine", "tasks-mine"],
     ["/tasks/board", "tasks-board"],
     ["/tasks/12", "task-12"],
-    ["/team", "team"],
+    ["/people", "team"],
     ["/help", "help"],
     ["/profile", "profile"],
     ["/nope", "not-found"],

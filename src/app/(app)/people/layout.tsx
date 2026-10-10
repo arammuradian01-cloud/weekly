@@ -11,10 +11,17 @@ export default async function PeopleLayout({ children }: { children: React.React
   const ctx = await requireContext();
   const subject = subjectOf(ctx);
   const team = await currentTeam(subject);
-  const leader = !subject.limited && (team.scope.leads.length > 0 || ctx.person.role === "OWNER" || ctx.person.role === "ADMIN");
+  // Панель руководителя: руководителям команд, владельцу и администраторам, в том числе под общим логином (как «Мои
+  // команды» раньше). Аналитика только при личном входе: под общим логином она пустая
+  const panel = team.scope.leads.length > 0 || ctx.person.role === "OWNER" || ctx.person.role === "ADMIN";
+  const analytics = panel && !subject.limited;
   return (
     <>
-      <PageHeader title="Люди" description="Кто с кем работает и что у людей в работе: команда за неделю, панель руководителя, структура и аналитика" tabs={<PeopleTabs leader={leader} />} />
+      <PageHeader
+        title="Люди"
+        description={panel ? "Кто с кем работает и что у людей в работе: команда за неделю, панель руководителя, структура и аналитика" : "Кто с кем работает: команда за неделю и структура департамента"}
+        tabs={<PeopleTabs panel={panel} analytics={analytics} />}
+      />
       {children}
     </>
   );

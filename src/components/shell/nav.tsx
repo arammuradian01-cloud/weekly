@@ -34,8 +34,6 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
-  /** Только руководителям команд, владельцу и администраторам */
-  leaderOnly?: boolean;
   /** Подпись в нижнем меню телефона, если полная не влезает */
   shortLabel?: string;
 };
@@ -83,9 +81,6 @@ export const MANAGEMENT_NAV: NavItem[] = [
 /** Четыре пункта нижнего меню телефона, пятый «Ещё» */
 const MOBILE_MAIN = ["/", "/me", "/weekly", "/tasks"];
 
-/** Прежние адреса страниц про людей (до этапа 41): остаются ради ссылок и закладок, перенаправляются */
-export const PEOPLE_REDIRECTS: Record<string, string> = { "/team": "/people", "/my-teams": "/people/leader", "/structure": "/people/structure", "/analytics": "/people/analytics" };
-
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
@@ -96,7 +91,7 @@ function countLabel(n: number) {
 }
 
 /** Пункты бокового меню группами и «Управление» (в режиме управления) */
-export function SidebarNav({ management, leader = false }: { management: "OWNER" | "ADMIN" | null; leader?: boolean }) {
+export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | null }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
   const managementItems = MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER");
@@ -125,7 +120,7 @@ export function SidebarNav({ management, leader = false }: { management: "OWNER"
       {NAV_GROUPS.map((g) => (
         <div key={g.label}>
           <div className="sv-sidebar__group">{g.label}</div>
-          <div className="sv-sidebar__nav">{g.items.filter((i) => !i.leaderOnly || leader).map(link)}</div>
+          <div className="sv-sidebar__nav">{g.items.map(link)}</div>
         </div>
       ))}
       {management ? (
@@ -143,12 +138,16 @@ export function mobileItems(): NavItem[] {
   return MOBILE_MAIN.map((href) => MAIN_NAV.find((i) => i.href === href)!);
 }
 
-export function MobileNav({ leader = false, management = null }: { leader?: boolean; management?: "OWNER" | "ADMIN" | null }) {
+export function MobileNav({ management = null }: { management?: "OWNER" | "ADMIN" | null }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
-  const [more, setMore] = useState(false);
+  // Открытое состояние привязано к адресу: смена страницы (в том числе «Назад» в браузере) закрывает панель.
+  // Состояние меняется во время отрисовки, без эффекта
+  const [more, setMoreState] = useState({ open: false, at: pathname });
+  if (more.at !== pathname) setMoreState({ open: false, at: pathname });
+  const setMore = (open: boolean) => setMoreState({ open, at: pathname });
   const rest: NavGroup[] = [
-    ...NAV_GROUPS.map((g) => ({ label: g.label, items: g.items.filter((i) => !MOBILE_MAIN.includes(i.href) && (!i.leaderOnly || leader)) })).filter((g) => g.items.length),
+    ...NAV_GROUPS.map((g) => ({ label: g.label, items: g.items.filter((i) => !MOBILE_MAIN.includes(i.href)) })).filter((g) => g.items.length),
     ...(management ? [{ label: "Управление", items: MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER") }] : []),
   ];
   const moreActive = rest.some((g) => g.items.some((i) => isActive(pathname, i.href)));
@@ -178,7 +177,7 @@ export function MobileNav({ leader = false, management = null }: { leader?: bool
             );
           })}
           <li className="contents">
-            <button type="button" onClick={() => setMore(true)} aria-haspopup="dialog" aria-expanded={more} className={cn("sv-bottom-nav__item", moreActive && "is-active")}>
+            <button type="button" onClick={() => setMore(true)} aria-haspopup="dialog" aria-expanded={more.open} className={cn("sv-bottom-nav__item", moreActive && "is-active")}>
               <span className="sv-bottom-nav__icon">
                 <Menu className="h-[22px] w-[22px]" strokeWidth={1.5} aria-hidden="true" />
               </span>
@@ -187,7 +186,7 @@ export function MobileNav({ leader = false, management = null }: { leader?: bool
           </li>
         </ul>
       </nav>
-      <Drawer open={more} onOpenChange={setMore} title="Разделы" description="Всё, что есть на ноутбуке, есть и здесь">
+      <Drawer open={more.open && more.at === pathname} onOpenChange={setMore} title="Разделы" description="Всё, что есть на ноутбуке, есть и здесь">
         <nav aria-label="Остальные разделы" className="flex flex-col gap-4">
           {rest.map((g) => (
             <div key={g.label}>

@@ -43,7 +43,7 @@ test("задачи: цифры под заголовком ведут на сп�
   await shot(page, "tasks-changes");
 });
 
-test("команда и мои команды: цифры и таблицы", async ({ page }) => {
+test("люди: команда и руководителю: цифры и таблицы", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await page.goto("/people");
   await expect(page.getByRole("list", { name: "Команда в цифрах" })).toBeVisible();

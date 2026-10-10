@@ -24,7 +24,7 @@ import {
   syncTeamsAction,
   updateTeamAction,
   updateUnitAction,
-} from "@/app/(app)/structure/actions";
+} from "@/app/(app)/people/structure/actions";
 import { StructureImport } from "./structure-import";
 import { PeopleTreeView } from "./people-tree";
 import type { PeopleTree } from "@/lib/org/people-tree";

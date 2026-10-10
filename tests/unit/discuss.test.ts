@@ -154,6 +154,10 @@ describe("какие экраны обновлять", () => {
     expect(relevant("inbox", "/me")).toBe(true);
     expect(relevant("inbox", "/tasks")).toBe(false);
     expect(relevant("weekly", "/")).toBe(true);
+    // Этап 41: страница «Люди» обновляется и по задачам, и по weekly
+    expect(relevant("tasks", "/people/leader")).toBe(true);
+    expect(relevant("weekly", "/people")).toBe(true);
+    expect(relevant("tasks", "/my-teams")).toBe(false);
   });
 });
 

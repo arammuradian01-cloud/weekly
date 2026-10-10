@@ -55,8 +55,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
   ]);
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
-  // Панель «Мои команды» (этап 16): руководителям команд, владельцу и администраторам
-  const leader = !subject.limited && (team.scope.leads.length > 0 || ctx.person.role === "OWNER" || ctx.person.role === "ADMIN");
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -92,7 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             Перейти к содержимому
           </a>
           <SidebarBrand />
-          <SidebarNav management={profile.management} leader={leader} />
+          <SidebarNav management={profile.management} />
           <div className="sv-sidebar__spacer" />
           <div className="sv-sidebar__profile">
             <ProfileMenu {...profile} tone="dark" />
@@ -140,7 +138,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
     </div>
 
-    <MobileNav leader={leader} management={profile.management} />
+    <MobileNav management={profile.management} />
     <Toaster />
     <GlobalHotkeys />
     <CommandPalette management={profile.management} />

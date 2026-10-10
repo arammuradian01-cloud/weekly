@@ -59,7 +59,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
         </nav>
         {data.options.length > 1 ? (
           // Выбор и кнопка «Показать»: стрелки в списке не открывают команду на каждом шаге
-          <Form action="/analytics" className="flex items-center gap-2 text-small text-muted">
+          <Form action="/people/analytics" className="flex items-center gap-2 text-small text-muted">
             <label htmlFor="an-team">Команда</label>
             <select id="an-team" name="team" key={data.team.id} defaultValue={data.team.id} className="sv-control min-w-0 max-w-[280px]">
               {data.options.map((o) => (
@@ -441,7 +441,7 @@ function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderC
       </p>
 
       <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-small font-medium">
-        <Link href={`/my-teams?team=${c.teams[0].id}`} className="text-link hover:underline">
+        <Link href={`/people/leader?team=${c.teams[0].id}`} className="text-link hover:underline">
           Задачи и люди
         </Link>
         {deeper ? (
