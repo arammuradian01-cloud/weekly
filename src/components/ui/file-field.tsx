@@ -26,9 +26,10 @@ export function FileField({
 }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
-      <input id={id} type="file" accept={accept} className="peer sr-only" onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
+      {/* Имя поля для читалки только подпись, без «Выбрать файл» и имени файла */}
+      <input id={id} type="file" accept={accept} className="peer sr-only" aria-labelledby={`${id}-label`} onChange={(e) => onChange(e.target.files?.[0] ?? null)} />
       <label htmlFor={id} className="flex cursor-pointer flex-col gap-1.5 rounded-lg peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue">
-        <span className="sv-label">{label}</span>
+        <span id={`${id}-label`} className="sv-label">{label}</span>
         <span className="flex min-w-0 items-center gap-3">
           <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-field px-4 text-small font-medium text-ink hover:bg-line">
             <FileUp className="h-4 w-4" aria-hidden="true" />
@@ -37,7 +38,7 @@ export function FileField({
           <span className="truncate text-small text-muted">{fileName ?? "Файл не выбран"}</span>
         </span>
       </label>
-      {hint ? <p className="text-caption text-text-secondary">{hint}</p> : null}
+      {hint ? <p className="sv-field__hint">{hint}</p> : null}
     </div>
   );
 }

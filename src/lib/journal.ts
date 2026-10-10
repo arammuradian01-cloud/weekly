@@ -67,9 +67,9 @@ const WORDS: Record<string, Record<string, string>> = {
   role: { OWNER: "владелец", ADMIN: "администратор" },
   by: { email: "подтверждение по почте" },
   via: { setup: "первичная настройка" },
-  kind: { TEAM: "общий", PERSONAL: "личный", team: "общий", personal: "личный" },
+  kind: { team: "общего входа", owner: "владельца", admin: "администраторов" },
 };
-const KEYS: Record<string, string> = { role: "роль", by: "как", via: "где", kind: "какой" };
+const KEYS: Record<string, string> = { role: "роль", by: "как", via: "где", kind: "пароль" };
 function human(v: unknown): string {
   if (Array.isArray(v)) return v.map(human).join(", ");
   if (v && typeof v === "object") {

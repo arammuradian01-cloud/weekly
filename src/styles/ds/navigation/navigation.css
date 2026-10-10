@@ -58,6 +58,9 @@
    обрезанными. Затухание снимается в конце прокрутки там, где браузер умеет анимацию по прокрутке */
 @media (max-width: 767px) {
   .sv-tabs { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  /* Пустой отступ в конце полосы: докрученная до конца последняя вкладка не попадает в зону затухания даже там, где
+     анимации по прокрутке нет */
+  .sv-tabs::after { content: ""; flex: none; width: 40px; }
   @supports (animation-timeline: scroll()) {
     .sv-tabs { animation: sv-tabs-edge linear both; animation-timeline: scroll(self x); }
     @keyframes sv-tabs-edge {

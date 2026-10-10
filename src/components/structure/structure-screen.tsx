@@ -169,7 +169,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                 <div className="min-w-0 flex-1">
                   <p className="text-body text-ink">
                     {/* Вид подразделения не повторяется, если название с него начинается: «Департамент Департамент страхования» */}
-                    {u.name.toLowerCase().startsWith(u.kindLabel.toLowerCase()) ? null : <span className="text-small text-muted">{u.kindLabel} </span>}
+                    {u.name.toLowerCase().startsWith(`${u.kindLabel.toLowerCase()} `) ? null : <span className="text-small text-muted">{u.kindLabel} </span>}
                     <span className="font-semibold">{u.name}</span>
                     {!u.active ? <span className="ml-2 text-caption text-muted">выключено</span> : null}
                   </p>

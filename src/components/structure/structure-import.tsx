@@ -42,6 +42,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
       onOpenChange(false);
       setPlan(null);
       setText("");
+      setFileName(null);
       router.refresh();
     });
 
@@ -80,8 +81,8 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
           accept=".csv,.tsv,.txt,text/csv"
           fileName={fileName}
           onChange={async (file) => {
+            setFileName(file?.name ?? null);
             if (!file) return;
-            setFileName(file.name);
             const value = await file.text();
             setText(value);
             check(value);
