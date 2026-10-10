@@ -15,11 +15,30 @@ import { planLabel, summarize, type Drivers, type PlanInput, type PlanSummary } 
 import { parseFacts, type FactMetric } from "./facts";
 import { PLAN_LIMITS, canAdjustPlan, currentMonth, isMonth, monthPlan, near, ownersMap, personalPlanActor, planMonthOrFail, planReasonDb, planReasonLabel, sameInput } from "./service";
 import { closePlanReminders, lastPullAt } from "./status";
+import { partnerRowsAt } from "./partners-service";
 import { TOP_TEAM } from "@/lib/org/scope";
 import type { Values } from "./lrf";
-import type { CompareMetric, CompareRow, CompareView, MonthPlanView, VersionOption } from "./types";
+import type { CompareMetric, CompareRow, CompareView, MonthPlanView, PartnerCompareRow, PartnerCompareView, VersionOption } from "./types";
 import { briefOf, type PlanBrief } from "./brief";
-import { PARTNER_DRIVERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_UNITS, channelLabel, derivePartner, isPartnerDriver, partnerMetricLabel, productName, type PartnerChannel, type PartnerValues } from "./partners";
+import {
+  PARTNER_CHANNELS,
+  PARTNER_DRIVERS,
+  PARTNER_LABEL,
+  PARTNER_OWNER_CODE,
+  PARTNER_PRODUCTS,
+  PARTNER_UNITS,
+  channelLabel,
+  derivePartner,
+  isPartnerDriver,
+  partnerCompareValues,
+  partnerMetricLabel,
+  productName,
+  type PartnerChannel,
+  type PartnerCompareValues,
+  type PartnerSnapshotLine,
+  type PartnerTotalInput,
+  type PartnerValues,
+} from "./partners";
 import type { PartnerAdjustInput } from "./types";
 
 export { planMonthOfWeek, planBriefText, type PlanBrief } from "./brief";
@@ -291,16 +310,22 @@ function rowsOf(summary: PlanSummary, field: Pick3): Map<string, Partial<Record<
 }
 
 async function loadVersions(month: string) {
-  const [lines, adjustments, pulls] = await Promise.all([
+  const [lines, adjustments, pulls, partnerChanges] = await Promise.all([
     prisma.planLine.findMany({ where: { month }, select: { version: true, product: true, metric: true, value: true } }),
     prisma.planAdjustment.findMany({ where: { month }, select: { product: true, metric: true, value: true, createdAt: true } }),
     prisma.planPull.findMany({ where: { month }, orderBy: { at: "asc" }, select: { id: true, at: true, byName: true } }),
+    // Дни корректировок партнёров тоже дни, когда менялся прогноз (этап 39)
+    prisma.planPartnerAdjustment.findMany({ where: { month }, select: { createdAt: true } }),
   ]);
-  return { lines, adjustments, pulls };
+  return { lines, adjustments, pulls, partnerChanges };
 }
 
 /** Какие версии месяца можно сравнить */
-export function versionOptions(month: string, data: { adjustments: AdjLike[]; pulls: { id: string; at: Date; byName: string }[] }, now = new Date()): VersionOption[] {
+export function versionOptions(
+  month: string,
+  data: { adjustments: { createdAt: Date }[]; pulls: { id: string; at: Date; byName: string }[]; partnerChanges?: { createdAt: Date }[] },
+  now = new Date(),
+): VersionOption[] {
   const today = mskDay(now);
   const out: VersionOption[] = [
     { id: "budget", label: "Бюджет", group: "Версии месяца" },
@@ -310,7 +335,7 @@ export function versionOptions(month: string, data: { adjustments: AdjLike[]; pu
   // Прежние загрузки: последняя и есть «LBE»
   for (const p of data.pulls.slice(0, -1).reverse()) out.push({ id: `pull:${p.id}`, label: `LBE загрузки ${stamp(p.at)}`, group: "Загрузки LBE" });
   // Дни, когда менялся прогноз: корректировки и загрузки. Сегодня это «Прогноз сейчас»
-  const days = new Set<string>([...data.adjustments.map((a) => mskDay(a.createdAt)), ...data.pulls.map((p) => mskDay(p.at))]);
+  const days = new Set<string>([...data.adjustments, ...(data.partnerChanges ?? [])].map((a) => mskDay(a.createdAt)).concat(data.pulls.map((p) => mskDay(p.at))));
   for (const day of [...days].filter((d) => d < today).sort().reverse()) out.push({ id: `day:${day}`, label: `Прогноз на конец ${ddmm(day)}`, group: "Прогноз на дату" });
   return out;
 }
@@ -321,6 +346,13 @@ export async function compareVersions(monthInput: string | null | undefined, aIn
   const data = await loadVersions(month);
   if (!data.lines.length) return null;
   const options = versionOptions(month, data, now);
+  // Прогноз на конец любого прошлого дня, даже если в тот день ничего не менялось (этап 39: ссылка из отчёта CEO за
+  // прошлую неделю сравнивает прогноз на её конец с прогнозом сейчас)
+  for (const id of [aInput, bInput]) {
+    const m = typeof id === "string" ? /^day:(\d{4}-\d{2}-\d{2})$/.exec(id) : null;
+    if (!m || options.some((o) => o.id === id) || m[1]! >= mskDay(now) || Number.isNaN(Date.parse(`${m[1]}T00:00:00Z`))) continue;
+    options.push({ id: id!, label: `Прогноз на конец ${ddmm(m[1]!)}`, group: "Прогноз на дату" });
+  }
   const a = options.find((o) => o.id === aInput) ?? options[0]!;
   const b = options.find((o) => o.id === bInput) ?? options.find((o) => o.id === "forecast")!;
   const notes: string[] = [];
@@ -358,7 +390,52 @@ export async function compareVersions(monthInput: string | null | undefined, aIn
     }
   }
   push("total", "Итого по продуктам", "total");
-  return { month, monthLabel: monthLabel(month), options, a, b, rows, notes: [...new Set(notes)] };
+  const partners = await comparePartners(month, data.pulls, a, b);
+  return { month, monthLabel: monthLabel(month), options, a, b, rows, notes: [...new Set(notes)], partners };
+}
+
+/**
+ * Партнёрский канал в сравнении версий (этап 39). Бюджет, LBE и прогноз сейчас из текущих партнёров; LBE прежней
+ * загрузки и прогноз на конец дня из снимка партнёров, который действовал в тот момент. Снимки пишутся с этапа 39:
+ * для более ранних моментов берутся партнёры последней загрузки, об этом пометка. null: партнёров у месяца нет
+ */
+async function comparePartners(month: string, pulls: { id: string; at: Date }[], a: VersionOption, b: VersionOption): Promise<PartnerCompareView | null> {
+  const [now, totals, adjustments] = await Promise.all([
+    partnerRowsAt(month, null),
+    prisma.planPartnerTotal.findMany({ where: { month } }),
+    prisma.planPartnerAdjustment.findMany({ where: { month }, select: { partner: true, metric: true, value: true, createdAt: true } }),
+  ]);
+  if (!now) return null;
+  const current: PartnerSnapshotLine[] = now.rows;
+  const budget: PartnerTotalInput[] = totals.map((t) => ({ product: t.product, channel: t.channel as PartnerChannel, version: t.version === "BUDGET" ? "BUD" : "LBE", revenue: t.revenue, costs: t.costs, margin: t.margin }));
+  const notes: string[] = [];
+  const stateAt = async (t: Date, inclusive: boolean, when: string): Promise<PartnerSnapshotLine[]> => {
+    const state = await partnerRowsAt(month, t, { inclusive, when });
+    if (state?.note) notes.push(state.note);
+    return state?.rows ?? current;
+  };
+  const valuesOf = async (o: VersionOption): Promise<Map<string, PartnerCompareValues>> => {
+    if (o.id === "budget" || o.id === "lbe" || o.id === "forecast") return partnerCompareValues(current, adjustments, budget, null, o.id);
+    if (o.id.startsWith("pull:")) {
+      const pull = pulls.find((p) => p.id === o.id.slice(5));
+      const lines = pull ? await stateAt(pull.at, true, `загрузку ${stamp(pull.at)}`) : current;
+      return partnerCompareValues(lines, [], budget, null, "lbe");
+    }
+    const day = o.id.slice(4);
+    const end = endOfMskDay(day);
+    return partnerCompareValues(await stateAt(end, false, `конец ${ddmm(day)}`), adjustments, budget, end, "forecast");
+  };
+  const [va, vb] = await Promise.all([valuesOf(a), valuesOf(b)]);
+  const out: PartnerCompareRow[] = [];
+  const push = (code: string, label: string, kind: PartnerCompareRow["kind"], full = label) => out.push({ code, label, full, kind, a: va.get(code) ?? {}, b: vb.get(code) ?? {} });
+  const has = (key: string) => va.has(key) || vb.has(key);
+  for (const product of PARTNER_PRODUCTS) {
+    if (!has(product)) continue;
+    push(product, productName(product), "product");
+    for (const c of PARTNER_CHANNELS) if (has(`${product}:${c.code}`)) push(`${product}:${c.code}`, c.label, "sub", `${productName(product)}, ${c.label}`);
+  }
+  push("total", "Итого по каналу", "total");
+  return { rows: out, notes: [...new Set(notes)] };
 }
 
 // ---------- Сводка для отчёта CEO и встречи ----------
@@ -367,7 +444,7 @@ export async function compareVersions(monthInput: string | null | undefined, aIn
  * Сводка на встрече команды: у топ-команды всегда, у других команд, если в ней есть кто-то из команд продуктов.
  * null: прогноза нет или команде он не нужен
  */
-export async function planForTeam(actor: Actor, teamId: string, month: string): Promise<PlanBrief | null> {
+export async function planForTeam(actor: Actor, teamId: string, month: string, asOf?: { at: Date; when: string } | null): Promise<PlanBrief | null> {
   if (teamId !== TOP_TEAM) {
     const [team, owners] = await Promise.all([
       prisma.team.findUnique({ where: { id: teamId }, select: { leader: { select: { slug: true } }, members: { select: { person: { select: { slug: true } } } } } }),
@@ -377,13 +454,28 @@ export async function planForTeam(actor: Actor, teamId: string, month: string): 
     const slugs = new Set([team.leader?.slug, ...team.members.map((m) => m.person.slug)].filter(Boolean));
     if (!Object.values(owners).some((list) => list.some((s) => slugs.has(s)))) return null;
   }
-  return planBrief(actor, month);
+  return planBrief(actor, month, asOf);
 }
 
-/** Сводка месяца для отчёта CEO и встречи. null: прогноза на этот месяц нет */
-export async function planBrief(actor: Actor, month: string): Promise<PlanBrief | null> {
+/**
+ * Сводка месяца для отчёта CEO и встречи. null: прогноза на этот месяц нет. asOf (этап 39): прогноз на прошлый момент,
+ * например на конец прошлой недели в её отчёте CEO
+ */
+export async function planBrief(actor: Actor, month: string, asOf?: { at: Date; when: string } | null): Promise<PlanBrief | null> {
   if (!isMonth(month)) return null;
-  const view = await monthPlan(actor, month);
+  const view = await monthPlan(actor, month, new Date(), asOf ?? null);
   if (view.empty || view.month !== month) return null;
   return briefOf(view);
+}
+
+/**
+ * На какой момент брать прогноз для отчёта CEO недели (этап 39). Отчётная неделя и новее: прогноз сейчас (null).
+ * Прошлые недели: конец недели, воскресенье 24:00 по Москве
+ */
+export function planAsOfWeek(weekKey: string, reportingKey: string, weekNumber: number): { at: Date; when: string } | null {
+  if (weekKey >= reportingKey) return null;
+  const monday = new Date(`${weekKey}T00:00:00Z`);
+  const at = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000 - MSK);
+  const sunday = new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return { at, when: `конец недели ${weekNumber}, ${ddmm(sunday)}` };
 }

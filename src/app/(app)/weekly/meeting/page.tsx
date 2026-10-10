@@ -12,7 +12,7 @@ import { stuckForMeeting } from "@/lib/requests/service";
 import { canLeadTeam, getMeeting } from "@/lib/meeting/service";
 import { weekNumbers } from "@/lib/numbers/service";
 import { WeekNumbersBlock } from "@/components/forecast/week-numbers";
-import { planForTeam, planMonthOfWeek } from "@/lib/plan/processes";
+import { planAsOfWeek, planForTeam, planMonthOfWeek } from "@/lib/plan/processes";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
 
 export const metadata: Metadata = { title: "Встреча" };
@@ -28,7 +28,7 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
   // ленту недели по-старому: встреча идёт в каждой команде отдельно
   const single = team.id && team.id !== ALL_TEAMS ? { id: team.id, name: team.name } : null;
   const [meeting, canLead, numbers, plan] = single
-    ? await Promise.all([getMeeting(actor, single.id, view.week.key), canLeadTeam(actor, single.id), weekNumbers(view.week.key), planForTeam(actor, single.id, planMonthOfWeek(view.week.key))])
+    ? await Promise.all([getMeeting(actor, single.id, view.week.key), canLeadTeam(actor, single.id), weekNumbers(view.week.key), planForTeam(actor, single.id, planMonthOfWeek(view.week.key), planAsOfWeek(view.week.key, view.reportingKey, view.week.number))])
     : [null, false, null, null];
   // Цифры недели (этап 24) в шапке встречи, когда они выбраны и есть за эту неделю. Прогноз месяца (этап 35): у топ-команды
   // и у команд, где есть кто-то из команд продуктов

@@ -13,6 +13,7 @@ import {
   type PartnerDrivers,
   type PartnerMetric,
   type PartnerPull,
+  type PartnerSnapshotLine,
   type PartnerTotalInput,
   type PartnerValues,
 } from "./partners";
@@ -74,6 +75,50 @@ export async function partnerLines(month: string, db: Pick<Tx, "planPartner"> = 
   return db.planPartner.findMany({ where: { month }, orderBy: { position: "asc" } });
 }
 
+/** Снимок партнёров для загрузки LBE (этап 39): из него считаются LBE прежней загрузки и прогноз на дату */
+export function partnerSnapshot(pull: PartnerPull): Prisma.InputJsonValue {
+  return pull.lines.map((l) => ({ code: l.code, label: l.label, kind: l.kind, product: l.product, channel: l.channel, lbe: l.lbe })) as Prisma.InputJsonValue;
+}
+
+export type PartnerRow = { code: string; label: string; kind: string; product: string; channel: PartnerChannel; lbe: PartnerValues };
+
+const MSK = 3 * 60 * 60 * 1000;
+const stamp = (d: Date) => {
+  const m = new Date(d.getTime() + MSK).toISOString();
+  return `${m.slice(8, 10)}.${m.slice(5, 7)}, ${m.slice(11, 16)}`;
+};
+
+/**
+ * Партнёры, которые действовали в момент t (этап 39): последняя загрузка партнёров до t (inclusive: и в сам момент).
+ * Снимки пишутся с этапа 39; если снимка нет, берутся партнёры последней загрузки, и об этом пометка. null: партнёров
+ * у месяца нет совсем
+ */
+export async function partnerRowsAt(month: string, t: Date | null, opts: { inclusive?: boolean; when?: string } = {}): Promise<{ rows: PartnerRow[]; pulledAt: Date; note: string | null } | null> {
+  const current = await partnerLines(month);
+  if (!current.length) return null;
+  const rows: PartnerRow[] = current.map((r) => ({ code: r.code, label: r.label, kind: r.kind, product: r.product, channel: r.channel as PartnerChannel, lbe: r.lbe as PartnerValues }));
+  const pulledAt = current[0]!.pulledAt;
+  if (!t) return { rows, pulledAt, note: null };
+  const before = (x: Date) => (opts.inclusive ? x <= t : x < t);
+  if (before(pulledAt)) return { rows, pulledAt, note: null };
+  const [snap] = await prisma.$queryRaw<{ id: string; at: Date }[]>`
+    SELECT id, at FROM plan_pulls WHERE month = ${month} AND partners IS NOT NULL AND (at < ${t} OR (${opts.inclusive ?? false} AND at = ${t})) ORDER BY at DESC LIMIT 1`;
+  if (snap) {
+    const pull = await prisma.planPull.findUnique({ where: { id: snap.id }, select: { partners: true } });
+    const labels = new Map(rows.map((r) => [r.code, r]));
+    const lines = ((pull?.partners as PartnerSnapshotLine[] | null) ?? []).map((l) => ({
+      code: l.code,
+      label: l.label ?? labels.get(l.code)?.label ?? "Партнёр не найден в последней загрузке",
+      kind: l.kind ?? labels.get(l.code)?.kind ?? "",
+      product: l.product,
+      channel: l.channel,
+      lbe: l.lbe,
+    }));
+    return { rows: lines, pulledAt: snap.at, note: null };
+  }
+  return { rows, pulledAt, note: `Снимка партнёров на ${opts.when ?? stamp(t)} нет: взяты партнёры последней загрузки` };
+}
+
 /** Проверка канала после загрузки LBE: корректировка партнёра или отметка «Прогноз проверен» позже загрузки */
 async function reviewOf(month: string, since: Date, adjustments: AdjRow[]): Promise<ReviewView> {
   const check = await prisma.planCheck.findFirst({ where: { month, product: PARTNER_OWNER_CODE, at: { gt: since } }, include: { author: { select: { fullName: true } } }, orderBy: { at: "desc" } });
@@ -83,14 +128,19 @@ async function reviewOf(month: string, since: Date, adjustments: AdjRow[]): Prom
   return { state: "waiting", by: null, at: null, since: since.toISOString() };
 }
 
-/** Партнёрский канал для экрана. null: партнёры месяца не загружены */
-export async function partnerView(month: string, opts: { owners: PlanPerson[]; canAdjust: boolean; since: Date | null; closed: boolean }): Promise<PartnerChannelView | null> {
-  const [rows, totals, adjustments] = await Promise.all([
-    partnerLines(month),
+/**
+ * Партнёрский канал для экрана. null: партнёры месяца не загружены. at (этап 39): канал на момент, для отчёта CEO за
+ * прошлую неделю: партнёры того момента и корректировки до него, без проверки и правки
+ */
+export async function partnerView(month: string, opts: { owners: PlanPerson[]; canAdjust: boolean; since: Date | null; closed: boolean; at?: Date | null; when?: string }): Promise<PartnerChannelView | null> {
+  const at = opts.at ?? null;
+  const [state, totals, adjustments] = await Promise.all([
+    partnerRowsAt(month, at, { when: opts.when }),
     prisma.planPartnerTotal.findMany({ where: { month } }),
-    prisma.planPartnerAdjustment.findMany({ where: { month }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
+    prisma.planPartnerAdjustment.findMany({ where: { month, ...(at ? { createdAt: { lt: at } } : {}) }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
   ]);
-  if (!rows.length) return null;
+  if (!state) return null;
+  const rows = state.rows;
   const meta = new Map(rows.map((r) => [r.code, { label: r.label, product: r.product, channel: r.channel as PartnerChannel }]));
   const drivers = new Map<string, PartnerDrivers>();
   const last = new Map<string, Partial<Record<PartnerMetric, PartnerAdjustmentView>>>();
@@ -117,12 +167,13 @@ export async function partnerView(month: string, opts: { owners: PlanPerson[]; c
     lines,
     totals: total,
     owners: opts.owners,
-    canAdjust: opts.canAdjust,
+    canAdjust: at ? false : opts.canAdjust,
     // Проверка канала считается от загрузки партнёров: если последняя загрузка LBE прошла без листов b2b, партнёры прежние,
-    // и проверять их заново не нужно
-    review: opts.since && !opts.closed ? await reviewOf(month, rows[0]!.pulledAt, adjustments) : null,
+    // и проверять их заново не нужно. На прошлый момент проверки нет
+    review: !at && opts.since && !opts.closed ? await reviewOf(month, state.pulledAt, adjustments) : null,
     // Корректировки партнёров, которых нет в последней загрузке, в журнале остаются с пометкой
     history: adjustments.slice(0, PARTNER_HISTORY).map((a) => partnerAdjustmentView(a, meta.get(a.partner))),
-    pulledAt: rows[0]!.pulledAt.toISOString(),
+    pulledAt: state.pulledAt.toISOString(),
+    ...(state.note ? { note: state.note } : {}),
   };
 }

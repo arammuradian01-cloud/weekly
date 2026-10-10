@@ -26,6 +26,11 @@ export type PlanBrief = {
   partnerReasons: PlanBrief["reasons"];
   /** Сколько ещё партнёров с действующими корректировками не попало в список */
   partnersMore: number;
+  /**
+   * Прогноз на прошлый момент (этап 39): отчёт CEO за прошлую неделю показывает прогноз на конец той недели. day:
+   * последний день, который вошёл (воскресенье), для сравнения с прогнозом сейчас. null: прогноз сейчас
+   */
+  asOf: { at: string; when: string; day: string; notes: string[] } | null;
 };
 
 export const PLAN_BRIEF_PARTNER_REASONS = 3;
@@ -89,7 +94,10 @@ export function briefOf(view: MonthPlanView): PlanBrief {
   partnerReasons.sort((x, y) => y.at.localeCompare(x.at));
   const waiting = view.products.filter((p) => p.review?.state === "waiting").map((p) => ({ product: productOf(p.code)!.label, owners: p.owners.map((o) => o.name) }));
   if (partners?.review?.state === "waiting") waiting.push({ product: PARTNER_LABEL, owners: partners.owners });
-  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners, ...partnerList(partnerReasons, activeCodes) };
+  const asOf = view.asOf
+    ? { at: view.asOf.at, when: view.asOf.when, day: new Date(new Date(view.asOf.at).getTime() - 1 + 3 * 60 * 60 * 1000).toISOString().slice(0, 10), notes: view.asOf.notes }
+    : null;
+  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners, ...partnerList(partnerReasons, activeCodes), asOf };
 }
 
 /** Самые свежие корректировки партнёров и сколько ещё партнёров с корректировками осталось за списком */
@@ -114,7 +122,8 @@ export function planBriefText(b: PlanBrief): string[] {
     const toBudget = pctText(pctTo(t.forecast, t.budget));
     return `${label}: прогноз ${formatPlan(t.forecast, "mln")} млн, LBE ${formatPlan(t.lbe, "mln")}, бюджет ${formatPlan(t.budget, "mln")}${toBudget ? `, к бюджету ${toBudget}` : ""}`;
   };
-  const out = [`${b.monthLabel.replace(/^./, (c) => c.toUpperCase())}, итог по продуктам`, line("Выручка", b.total.revenue), line("Промо-маржа", b.total.promoMargin), line("Прямая маржа", b.total.directMargin)];
+  const head = `${b.monthLabel.replace(/^./, (c) => c.toUpperCase())}, итог по продуктам${b.asOf ? ` на ${b.asOf.when}` : ""}`;
+  const out = [head, line("Выручка", b.total.revenue), line("Промо-маржа", b.total.promoMargin), line("Прямая маржа", b.total.directMargin)];
   // Партнёрский канал входит в продукты (это их полисы B2B), поэтому отдельной строкой, а не слагаемым итога
   if (b.partners) out.push(`${PARTNER_LABEL}, внутри продуктов: ${line("выручка", b.partners.revenue).replace(/^выручка: /, "выручка ")}; ${line("маржа", b.partners.margin).replace(/^маржа: /, "маржа ")}`);
   if (b.reasons.length) {
@@ -127,5 +136,6 @@ export function planBriefText(b: PlanBrief): string[] {
     if (b.partnersMore > 0) out.push(`Ещё партнёров с корректировками: ${b.partnersMore}`);
   }
   if (b.waiting.length) out.push(waitingText(b.waiting));
+  for (const n of b.asOf?.notes ?? []) out.push(n);
   return out;
 }

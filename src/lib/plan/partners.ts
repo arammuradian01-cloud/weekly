@@ -623,3 +623,49 @@ export function partnerHint(key: PartnerMetric): string {
 }
 
 export const isPartnerDriver = (lbe: PartnerValues, key: string): key is PartnerMetric => (partnerDrivers(lbe) as string[]).includes(key);
+
+// ---------- Сравнение версий месяца (этап 39) ----------
+
+/** Партнёр в снимке загрузки: из чего считаются LBE и прогноз на дату */
+export type PartnerSnapshotLine = { code: string; label?: string; kind?: string; product: string; channel: PartnerChannel; lbe: PartnerValues };
+export type PartnerAdjLike = { partner: string; metric: string; value: number | null; createdAt: Date };
+export type PartnerCompareMetric = "policies" | "revenue" | "costs" | "margin";
+export type PartnerCompareValues = Partial<Record<PartnerCompareMetric, number | null>>;
+
+/** Драйверы партнёров на момент until (null: все корректировки): последняя корректировка по показателю, пустая снимает */
+export function partnerDriversAt(adjustments: PartnerAdjLike[], until: Date | null): Map<string, PartnerDrivers> {
+  const out = new Map<string, PartnerDrivers>();
+  const seen = new Set<string>();
+  const sorted = adjustments.filter((a) => !until || a.createdAt < until).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  for (const a of sorted) {
+    const key = `${a.partner}:${a.metric}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (a.value !== null) out.set(a.partner, { ...(out.get(a.partner) ?? {}), [a.metric]: a.value });
+  }
+  return out;
+}
+
+/**
+ * Цифры канала для сравнения версий: «total», продукт и пара «продукт:канал». field: бюджет (из P&L b2b, полисов в
+ * бюджете нет), LBE или прогноз с корректировками до until
+ */
+export function partnerCompareValues(
+  lines: PartnerSnapshotLine[],
+  adjustments: PartnerAdjLike[],
+  budget: PartnerTotalInput[],
+  until: Date | null,
+  field: "budget" | "lbe" | "forecast",
+): Map<string, PartnerCompareValues> {
+  const drivers = field === "forecast" ? partnerDriversAt(adjustments, until) : new Map<string, PartnerDrivers>();
+  const sums = partnerTotals(
+    lines.map((l) => ({ product: l.product, channel: l.channel, lbe: l.lbe, drivers: drivers.get(l.code) ?? {} })),
+    field === "budget" ? budget : [],
+  );
+  const pick = (s: PartnerSum): PartnerCompareValues => ({ policies: s.policies[field], revenue: s.revenue[field], costs: s.costs[field], margin: s.margin[field] });
+  const out = new Map<string, PartnerCompareValues>();
+  out.set("total", pick(sums.total));
+  for (const [product, s] of sums.byProduct) out.set(product, pick(s));
+  for (const [pair, s] of sums.byPair) out.set(pair, pick(s));
+  return out;
+}

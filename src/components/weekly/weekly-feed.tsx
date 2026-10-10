@@ -10,6 +10,7 @@ import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
 import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
+import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Segmented, SelectField } from "@/components/ui/primitives";
@@ -25,10 +26,23 @@ import { PromoteControl, PromotedNote } from "./promote";
 
 type View = "people" | "blocks";
 
+/** Чей weekly открыли по ссылке из дерева подчинённых (этап 39) и есть ли он в ленте выбранной команды */
+export type AuthorFocus = {
+  slug: PersonSlug;
+  name: string;
+  /** Человек в ленте выбранной команды: отбор по автору включается сразу */
+  here: boolean;
+  /** Иначе самая узкая видимая команда, в ленте которой он есть, или null */
+  team: { id: string; name: string } | null;
+  /** Название выбранной команды */
+  current: string;
+};
+
 /** Переключатель недель: прошлые недели листаются без ограничения, дальше отчётной нельзя */
-export function WeekSwitcher({ view, basePath = "/weekly" }: { view: Pick<WeekView, "week" | "prev" | "next" | "reportingKey">; basePath?: string }) {
+export function WeekSwitcher({ view, basePath = "/weekly", query = "" }: { view: Pick<WeekView, "week" | "prev" | "next" | "reportingKey">; basePath?: string; query?: string }) {
   const router = useRouter();
-  const go = (key: string) => router.push(`${basePath}?week=${key}`, { scroll: false });
+  // query: что ещё сохранить при смене недели, например отбор по автору в ленте weekly
+  const go = (key: string) => router.push(`${basePath}?week=${key}${query}`, { scroll: false });
   // Вид по дизайн-системе (navigation/WeekSwitcher.jsx, sv-week): стрелки, номер, «отчётная», «Текущая»
   return (
     <div className="sv-week" role="group" aria-label="Выбор недели">
@@ -94,6 +108,7 @@ export function WeeklyFeed({
   promoteFrom = [],
   teamWeek = null,
   promoteClosed = false,
+  focus = null,
 }: {
   view: WeekView;
   myReport: PersonWeekly;
@@ -101,6 +116,8 @@ export function WeeklyFeed({
   teamWeek?: TeamWeek;
   /** Мой weekly за эту неделю закрыт: поднимать записи наверх уже нельзя */
   promoteClosed?: boolean;
+  /** Weekly человека по ссылке из дерева подчинённых (этап 39) */
+  focus?: AuthorFocus | null;
 }) {
   const { manage, teamPeople } = usePrototype();
   const week = data.week;
@@ -108,9 +125,24 @@ export function WeeklyFeed({
   const [direction, setDirection] = useState<DirectionCode | "">("");
   const [block, setBlock] = useState<BlockCode | "">("");
   const [type, setType] = useState<EntryTypeCode | "">("");
-  const [author, setAuthor] = useState<PersonSlug | "">("");
+  const [author, setAuthorState] = useState<PersonSlug | "">(focus?.here ? focus.slug : "");
   const [helpOnly, setHelpOnly] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
+  const [showFilters, setShowFilters] = useState(!!focus?.here);
+  // Отбор по автору живёт и в адресе: ссылкой можно поделиться, а смена недели его сохраняет
+  const setAuthor = (slug: PersonSlug | "") => {
+    setAuthorState(slug);
+    try {
+      const url = new URL(window.location.href);
+      if (slug) url.searchParams.set("author", slug);
+      else url.searchParams.delete("author");
+      window.history.replaceState(window.history.state, "", url);
+    } catch {
+      // Адрес не обновился: отбор на экране всё равно работает
+    }
+  };
+  // Человека из ссылки может не быть среди людей выбранной команды (например, руководитель команды ниже)
+  const authorOptions = [...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))];
+  if (focus?.here && !authorOptions.some((o) => o.value === focus.slug)) authorOptions.push({ value: focus.slug, label: focus.name });
 
   const all = data.entries;
   const entries = all.filter(
@@ -149,7 +181,7 @@ export function WeeklyFeed({
         {/* В строке действий шапки: на телефоне сетка во всю ширину, длинные подписи на всю строку, дальше кнопки переносятся */}
         <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0">
           <div className="col-span-2 sm:col-span-1">
-            <WeekSwitcher view={data} />
+            <WeekSwitcher view={data} query={author ? `&author=${encodeURIComponent(author)}` : ""} />
           </div>
           <Link href={`/forecast?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <TrendingUp className="h-4 w-4" aria-hidden="true" />
@@ -185,6 +217,16 @@ export function WeeklyFeed({
         </p>
       ) : null}
 
+      {focus && !focus.here ? (
+        <FocusElsewhere
+          focus={focus}
+          onSwitched={() => {
+            setAuthorState(focus.slug);
+            setShowFilters(true);
+          }}
+        />
+      ) : null}
+
       <SubmissionStrip reports={data.reports} />
 
       <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
@@ -211,7 +253,7 @@ export function WeeklyFeed({
           <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
           <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
           <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
-          <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))]} />
+          <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...authorOptions]} />
           <div className="col-span-2 sm:col-span-1">
             <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={all.filter((e) => e.help).length}>
               Нужна помощь
@@ -236,7 +278,7 @@ export function WeeklyFeed({
         </EmptyState>
       ) : entries.length === 0 ? (
         <EmptyState
-          title="Под эти фильтры записей нет"
+          title={author && !direction && !block && !type && !helpOnly ? `${authorLabel(author, authorOptions)}: за неделю ${week.number} записей нет` : "Под эти фильтры записей нет"}
           className="mt-6"
           action={
             filtersOn ? (
@@ -256,16 +298,52 @@ export function WeeklyFeed({
             ) : undefined
           }
         >
-          {filtersOn ? "Снимите часть фильтров." : null}
+          {author && !direction && !block && !type && !helpOnly ? "Листайте недели назад или покажите всю команду." : filtersOn ? "Снимите часть фильтров." : null}
         </EmptyState>
       ) : view === "people" ? (
         <div className="mt-6 flex flex-col gap-6">
           {helpEntries.length && !helpOnly ? <HelpBlock entries={helpEntries} /> : null}
-          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} />
+          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} only={author || undefined} />
         </div>
       ) : (
         <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} />
       )}
+    </div>
+  );
+}
+
+function authorLabel(slug: PersonSlug, options: { value: string; label: string }[]): string {
+  return options.find((o) => o.value === slug)?.label ?? personOf(slug).fullName;
+}
+
+/** Человека из ссылки нет в ленте выбранной команды: где его weekly и как туда перейти (этап 39) */
+function FocusElsewhere({ focus, onSwitched }: { focus: AuthorFocus; onSwitched: () => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const open = async () => {
+    if (!focus.team || busy) return;
+    setBusy(true);
+    setError(null);
+    const res = await setTeamAction(focus.team.id).catch(() => ({ ok: false as const, error: "Не получилось переключить команду: проверьте связь" }));
+    setBusy(false);
+    if (!res.ok) return setError(res.error);
+    onSwitched();
+    router.refresh();
+  };
+  return (
+    <div className="mb-4 sv-card sv-card--soft flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="weekly-focus-elsewhere">
+      <p className="text-body text-ink">
+        {focus.team
+          ? `${focus.name}: weekly в ленте команды «${focus.team.name}», а выбрана команда «${focus.current}».`
+          : `${focus.name}: человека нет ни в одной из видимых вам команд, weekly показывать негде.`}
+        {error ? <span className="mt-1 block text-small text-danger-ink" role="alert">{error}</span> : null}
+      </p>
+      {focus.team ? (
+        <Button size="sm" variant="secondary" onClick={open} disabled={busy} className="shrink-0">
+          Перейти в эту команду
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -296,6 +374,7 @@ function PeopleView({
   feedAuthors,
   promoteFrom,
   closed,
+  only,
 }: {
   reports: PersonWeekly[];
   entries: WeeklyEntry[];
@@ -303,6 +382,8 @@ function PeopleView({
   feedAuthors?: PersonSlug[];
   promoteFrom: PersonSlug[];
   closed: boolean;
+  /** Отбор по автору: в ленте только его карточка, без пустых карточек остальных */
+  only?: PersonSlug;
 }) {
   const { manage, teamPeople } = usePrototype();
   const run = useRunWeekly();
@@ -319,7 +400,7 @@ function PeopleView({
   const inFeed = (slug: PersonSlug) =>
     entries.some((e) => e.author === slug && ownFeed(e)) || reports.some((w) => w.author === slug && listed(w)) || (!!feedAuthors?.includes(slug) && promotedBy(slug).length > 0);
   const gone = [...new Set(entries.map((e) => e.author).filter((s): s is PersonSlug => !!s && !PEOPLE.some((p) => p.slug === s)))].map(personOf);
-  const authors = [...PEOPLE, ...gone].filter((p) => inFeed(p.slug)).sort((a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)]);
+  const authors = [...PEOPLE, ...gone].filter((p) => (!only || p.slug === only) && inFeed(p.slug)).sort((a, b) => rank[stateOf(a.slug)] - rank[stateOf(b.slug)]);
   const assignAuthor = (id: string, slug: PersonSlug) =>
     void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${personOf(slug).fullName}`);
   const common = entries.filter((e) => !e.author);

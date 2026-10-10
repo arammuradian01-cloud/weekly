@@ -25,7 +25,7 @@ import { summarize, type Drivers, type PlanInput } from "./summary";
 import { notify } from "@/lib/inbox/notify";
 import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_PNL_SHEET, PARTNER_SHEETS, PARTNER_SHEET_PREFIX, readPartners, type PartnerPull } from "./partners";
-import { partnerView, writePartners } from "./partners-service";
+import { partnerSnapshot, partnerView, writePartners } from "./partners-service";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PartnerAdjustInput, PullPreview } from "./types";
@@ -309,7 +309,16 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
     await tx.planLine.deleteMany({ where: { month } });
     await tx.planLine.createMany({ data });
     // Снимок загрузки (этап 35): строки месяца заменяются, а снимок остаётся для сравнения версий и прогноза на дату
-    await tx.planPull.create({ data: { month, at: now, byName: actor.fullName, lines: data.map((d) => ({ version: d.version, product: d.product, metric: d.metric, value: d.value ?? null })) } });
+    // С этапа 39 в снимке и партнёры, если они в этой загрузке менялись: для сравнения версий канала
+    await tx.planPull.create({
+      data: {
+        month,
+        at: now,
+        byName: actor.fullName,
+        lines: data.map((d) => ({ version: d.version, product: d.product, metric: d.metric, value: d.value ?? null })),
+        ...(withPartners ? { partners: partnerSnapshot(partners) } : {}),
+      },
+    });
     // Партнёрский канал (этап 35б): партнёры месяца заменяются, если листы b2b прочитаны без проблем; иначе прежние остаются
     if (withPartners) await writePartners(tx, month, partners, now);
     // Событие в «Мне» командам продуктов: проверить прогноз после нового LBE (сам загрузивший события не получает)
@@ -445,21 +454,38 @@ async function source(month: string, manager: boolean): Promise<PlanSource> {
 }
 
 /** Прогноз месяца для экрана: версии, корректировки, владельцы продуктов и история. month: из адреса страницы */
-export async function monthPlan(actor: Actor, monthInput?: string | null, now = new Date()): Promise<MonthPlanView> {
+/**
+ * Строки версий месяца на момент at (этап 39): снимок последней загрузки LBE до at. Снимков до at нет: текущие строки,
+ * об этом пометка
+ */
+async function linesAt(month: string, at: Date, when: string): Promise<{ lines: { version: PlanVersion; product: string; metric: string; value: number | null }[]; pulledAt: Date | null; note: string | null }> {
+  const pull = await prisma.planPull.findFirst({ where: { month, at: { lt: at } }, orderBy: { at: "desc" }, select: { at: true, lines: true } });
+  if (pull) return { lines: pull.lines as { version: PlanVersion; product: string; metric: string; value: number | null }[], pulledAt: pull.at, note: null };
+  const lines = await prisma.planLine.findMany({ where: { month } });
+  return { lines, pulledAt: lines[0]?.pulledAt ?? null, note: lines.length ? `Снимка загрузки LBE на ${when} нет: взят LBE последней загрузки` : null };
+}
+
+/**
+ * Прогноз месяца для экрана. at (этап 39): прогноз на прошлый момент для отчёта CEO за прошлую неделю: LBE загрузки,
+ * которая действовала в тот момент, и корректировки до него. Такой вид только для чтения: без проверки и правки
+ */
+export async function monthPlan(actor: Actor, monthInput?: string | null, now = new Date(), asOf?: { at: Date; when: string } | null): Promise<MonthPlanView> {
   const monthRows = await prisma.planLine.findMany({ distinct: ["month"], select: { month: true }, orderBy: { month: "desc" } });
   const months = monthRows.map((r) => r.month);
   const current = currentMonth(now);
   const month = isMonth(monthInput) ? monthInput : months.includes(current) ? current : (months[0] ?? current);
   // Прошлый месяц закрыт: прогноз виден, но не меняется
   const closed = month < current;
-  const [lines, adjustments, owners, src, since, facts] = await Promise.all([
-    prisma.planLine.findMany({ where: { month } }),
-    prisma.planAdjustment.findMany({ where: { month }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
+  const at = asOf?.at ?? null;
+  const [state, adjustments, owners, src, since, facts] = await Promise.all([
+    at ? linesAt(month, at, asOf!.when) : prisma.planLine.findMany({ where: { month } }).then((lines) => ({ lines, pulledAt: null, note: null })),
+    prisma.planAdjustment.findMany({ where: { month, ...(at ? { createdAt: { lt: at } } : {}) }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
     ownersMap(),
     source(month, canEditDictionaries(actor)),
     lastPullAt(month),
     factsOf(month),
   ]);
+  const lines = state.lines;
   const reviews = await reviewsOf(month, since, adjustments);
   const lbe = valuesBy(lines, "LBE");
   const budget = valuesBy(lines, "BUDGET");
@@ -472,9 +498,9 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     drivers: drivers.get(p.code) ?? {},
     last: last.get(p.code) ?? {},
     owners: (owners[p.code] ?? []).map((s) => names.get(s)).filter((x): x is PlanPerson => !!x),
-    canAdjust: !closed && canAdjust(actor, owners[p.code] ?? []),
-    // Прошлый месяц закрыт: проверять нечего, «ждёт проверки» там не показываем
-    review: since && !closed ? (reviews.get(p.code) ?? waitingReview(since)) : null,
+    canAdjust: !at && !closed && canAdjust(actor, owners[p.code] ?? []),
+    // Прошлый месяц закрыт: проверять нечего, «ждёт проверки» там не показываем. На прошлый момент тоже
+    review: !at && since && !closed ? (reviews.get(p.code) ?? waitingReview(since)) : null,
     facts: facts.get(p.code) ?? null,
   }));
   const groups = GROUPS.filter((gr) => lbe.has(gr.code)).map((gr) => ({ code: gr.code, lbe: lbe.get(gr.code)!, budget: budget.get(gr.code) ?? {} }));
@@ -485,6 +511,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     canAdjust: !closed && canAdjust(actor, partnerOwners),
     since,
     closed,
+    at,
+    when: asOf?.when,
   });
   return {
     month,
@@ -498,9 +526,10 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     canOwners: canEditDictionaries(actor),
     canSource: canManagePeople(actor),
     canAdjustAny: products.some((p) => p.canAdjust) || !!partners?.canAdjust,
+    asOf: at ? { at: at.toISOString(), when: asOf!.when, notes: [state.note, partners?.note].filter((n): n is string => !!n) } : null,
     closed,
     adjustHint: closed ? `${monthLabel(month).replace(/^./, (c) => c.toUpperCase())} закрыт: прогноз прошлого месяца не меняется.` : actor.role === "OBSERVER" ? "Наблюдатель видит прогноз, но не корректирует его." : actor.via === "TEAM" && actor.management !== "OWNER" ? "Вы вошли под общим логином. Корректировать прогноз можно при личном входе: так видно, кто и почему меняет цифру." : null,
-    source: src,
+    source: at && state.pulledAt ? { ...src, pulledAt: state.pulledAt.toISOString() } : src,
     canFacts: canEditDictionaries(actor),
     canExport: canExportPlan(actor, owners),
     partners,
