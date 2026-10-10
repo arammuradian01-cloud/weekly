@@ -32,6 +32,9 @@ const clean = async () => {
   await prisma.planCheck.deleteMany();
   await prisma.planFact.deleteMany();
   await prisma.planPull.deleteMany();
+  await prisma.planPartnerAdjustment.deleteMany();
+  await prisma.planPartnerTotal.deleteMany();
+  await prisma.planPartner.deleteMany();
   await prisma.planAdjustment.deleteMany();
   await prisma.planLine.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { startsWith: "plan." } } });

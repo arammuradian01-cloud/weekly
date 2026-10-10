@@ -6,6 +6,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { getSetting } from "@/lib/settings";
 import { FACT_METRICS, type FactMetric } from "./facts";
 import type { ProductFacts, ReviewView } from "./types";
+import { PARTNER_OWNER_CODE } from "./partners";
 
 /** Последняя загрузка месяца: снимок загрузки, а если снимков ещё нет (загружено до этапа 35), отметка в настройках */
 export async function lastPullAt(month: string): Promise<Date | null> {
@@ -50,11 +51,15 @@ export async function closePlanReminders(tx: Prisma.TransactionClient, month: st
   const people = await tx.person.findMany({ where: { slug: { in: slugs } }, select: { id: true, slug: true } });
   const all = [...new Set(people.flatMap((p) => Object.entries(owners).filter(([, list]) => list.includes(p.slug)).map(([code]) => code)))];
   const loaded = new Set((await tx.planLine.findMany({ where: { month, version: "LBE", product: { in: all } }, distinct: ["product"], select: { product: true } })).map((l) => l.product));
-  const [adjusted, checked] = await Promise.all([
+  // Партнёрский канал (этап 35б): загружен, если есть партнёры месяца; проверен корректировкой партнёра или отметкой
+  if (all.includes(PARTNER_OWNER_CODE) && (await tx.planPartner.count({ where: { month } }))) loaded.add(PARTNER_OWNER_CODE);
+  const [adjusted, checked, partnerAdjusted] = await Promise.all([
     tx.planAdjustment.findMany({ where: { month, product: { in: [...loaded] }, createdAt: { gt: since } }, distinct: ["product"], select: { product: true } }),
     tx.planCheck.findMany({ where: { month, product: { in: [...loaded] }, at: { gt: since } }, distinct: ["product"], select: { product: true } }),
+    loaded.has(PARTNER_OWNER_CODE) ? tx.planPartnerAdjustment.findFirst({ where: { month, createdAt: { gt: since } }, select: { id: true } }) : null,
   ]);
   const done = new Set([...adjusted, ...checked].map((x) => x.product));
+  if (partnerAdjusted) done.add(PARTNER_OWNER_CODE);
   const finished = people.filter((p) => Object.entries(owners).every(([code, list]) => !list.includes(p.slug) || !loaded.has(code) || done.has(code)));
   if (!finished.length) return;
   await tx.inboxEvent.updateMany({ where: { recipientId: { in: finished.map((p) => p.id) }, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });

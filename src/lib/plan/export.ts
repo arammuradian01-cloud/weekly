@@ -8,6 +8,8 @@ import { UNITS, metricLabel, productOf, type MetricKey, type PlanUnit } from "./
 import { planLabel, summarize } from "./summary";
 import { FACT_METRICS, pace } from "./facts";
 import type { MonthPlanView } from "./types";
+import { partnerAdjustmentView } from "./partners-service";
+import { PARTNER_UNITS, channelLabel, computePartner, derivePartner, kindLabel, partnerDrivers, partnerMetricLabel, partnerResults, productName } from "./partners";
 
 const MSK = 3 * 60 * 60 * 1000;
 const msk = (d: Date | string) => new Date(new Date(d).getTime() + MSK);
@@ -195,6 +197,67 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
     wsPace.getCell("A1").note = "Темп считается равномерно по дням месяца";
   }
 
+  // Партнёрский канал (этап 35б): каждый партнёр с драйверами и результатом, LBE и прогноз; корректировки партнёров
+  let partnerRows = 0;
+  if (view.partners) {
+    const wsP = sheet(
+      wb,
+      "Партнёрский канал",
+      [
+        { header: "Продукт", width: 22 },
+        { header: "Канал", width: 16 },
+        { header: "Тип партнёра", width: 22 },
+        { header: "Партнёр", width: 30 },
+        { header: "Показатель", width: 32 },
+        { header: "Вид", width: 12 },
+        { header: "Единицы", width: 10 },
+        { header: "LBE", width: 14 },
+        { header: "Прогноз", width: 14 },
+        { header: "Скорректирован", width: 14 },
+        { header: "Последняя корректировка: причина", width: 24 },
+        { header: "Обоснование", width: 48 },
+        { header: "Кто", width: 24 },
+      ],
+      [],
+    );
+    for (const l of view.partners.lines) {
+      const L = derivePartner(l.lbe);
+      const c = computePartner(l.lbe, l.drivers);
+      for (const [key, kind] of [...partnerDrivers(l.lbe).map((k) => [k, "драйвер"] as const), ...partnerResults(l.lbe).map((k) => [k, "результат"] as const)]) {
+        const unit = PARTNER_UNITS[key];
+        const last = kind === "драйвер" ? l.last[key] : undefined;
+        const row = wsP.addRow([productName(l.product), channelLabel(l.channel), kindLabel(l.kind), l.label, partnerMetricLabel(key, l.channel), kind, unitName(unit), cell(L[key]), cell(c[key]), kind === "драйвер" && l.drivers[key] !== undefined ? "да" : "", last?.reasonLabel ?? "", last?.comment ?? "", last?.author.name ?? ""]);
+        for (const col of [8, 9]) row.getCell(col).numFmt = fmtOf(unit);
+        partnerRows += 1;
+      }
+    }
+    const wsPA = sheet(
+      wb,
+      "Корректировки партнёров",
+      [
+        { header: "Когда", width: 18, fmt: "dd.mm.yyyy hh:mm" },
+        { header: "Партнёр", width: 30 },
+        { header: "Продукт", width: 22 },
+        { header: "Показатель", width: 32 },
+        { header: "Единицы", width: 10 },
+        { header: "Было", width: 14 },
+        { header: "Стало", width: 14 },
+        { header: "Причина", width: 22 },
+        { header: "Обоснование", width: 48 },
+        { header: "Кто", width: 24 },
+      ],
+      [],
+    );
+    // Все корректировки месяца, а не только последние на экране
+    const all = await prisma.planPartnerAdjustment.findMany({ where: { month }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+    const meta = new Map(view.partners.lines.map((l) => [l.code, { label: l.label, product: l.product, channel: l.channel }]));
+    for (const row of all) {
+      const a = partnerAdjustmentView(row, meta.get(row.partner));
+      const r = wsPA.addRow([msk(a.at), a.partnerLabel, a.product ? productName(a.product) : "", a.metricLabel, unitName(a.unit), cell(a.previous), a.value === null ? "как в LBE" : a.value, a.reasonLabel, a.comment, a.author.name]);
+      for (const col of [6, 7]) r.getCell(col).numFmt = fmtOf(a.unit);
+    }
+  }
+
   sheet(
     wb,
     "Загрузки LBE",
@@ -207,5 +270,5 @@ export async function buildPlanExport(view: MonthPlanView): Promise<{ buffer: Bu
 
   const buffer = Buffer.from(await wb.xlsx.writeBuffer());
   const file = `prognoz-${month}.xlsx`;
-  return { buffer, file, rows: top.length + adjRows.length + facts.length };
+  return { buffer, file, rows: top.length + adjRows.length + facts.length + partnerRows };
 }

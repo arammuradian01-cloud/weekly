@@ -2,7 +2,7 @@
 // корректировок и кто ещё не проверил прогноз после загрузки LBE. Без состояния: подходит и серверу, и клиенту
 
 import Link from "next/link";
-import { formatPlan } from "@/lib/plan/format";
+import { formatPlan, lcFirst } from "@/lib/plan/format";
 import { waitingText, type PlanBrief } from "@/lib/plan/brief";
 import { Delta, Module, StatTile, Stats } from "@/components/ui/data";
 import { cn } from "@/lib/cn";
@@ -47,6 +47,18 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
             );
           })}
         </Stats>
+        {brief.partners ? (
+          // Этап 35б: партнёрский канал внутри продуктов (их полисы B2B), поэтому строкой под итогом, а не слагаемым
+          <p className="mt-3 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-body" data-testid="plan-brief-partners">
+            <span className="font-semibold text-ink">Партнёрский канал, внутри продуктов:</span>
+            <span>выручка {formatPlan(brief.partners.revenue.forecast, "mln")} млн</span>
+            <Delta value={delta(brief.partners.revenue.forecast, brief.partners.revenue.lbe, "mln")} label="Выручка канала к LBE" />
+            <span className="text-text-secondary">к LBE,</span>
+            <span>маржа {formatPlan(brief.partners.margin.forecast, "mln")} млн</span>
+            <Delta value={delta(brief.partners.margin.forecast, brief.partners.margin.budget, "mln")} label="Маржа канала к бюджету" />
+            <span className="text-text-secondary">к бюджету канала</span>
+          </p>
+        ) : null}
       </div>
       {!compact ? (
         <div className="overflow-x-auto">
@@ -104,7 +116,7 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
             {brief.reasons.slice(0, compact ? 3 : undefined).map((r) => (
               <li key={`${r.product}:${r.metric}`} className="text-body">
                 <span className="font-semibold text-ink">
-                  {r.product}, {r.metric.toLowerCase()}:
+                  {r.product}, {lcFirst(r.metric)}:
                 </span>{" "}
                 {r.value} вместо {r.lbe} по LBE. {r.reason}: {r.comment}
                 <span className="text-caption text-text-secondary">

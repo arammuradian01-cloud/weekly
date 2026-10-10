@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { formatPlan } from "@/lib/plan/format";
+import { formatPlan, lcFirst } from "@/lib/plan/format";
 import { productOf } from "@/lib/plan/spec";
 import { planLabel, summarize, type PlanInput, type TopSummary } from "@/lib/plan/summary";
 import type { MonthPlanView, PlanPerson } from "@/lib/plan/types";
@@ -19,6 +19,8 @@ import { HEADLINES, delta, when, type Headline } from "./plan-ui";
 import { ProductCard } from "./product-card";
 import { FactsDrawer, OwnersDrawer, PullDrawer } from "./plan-admin";
 import { pace } from "@/lib/plan/facts";
+import { policiesDelta } from "@/lib/plan/partners";
+import { PartnerChannel } from "./partner-channel";
 
 export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const router = useRouter();
@@ -29,6 +31,8 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const [selected, setSelected] = useState(() => initial.products.find((p) => p.canAdjust)?.code ?? initial.products[0]?.code ?? "");
   const [pullOpen, setPullOpen] = useState(false);
   const [ownersOpen, setOwnersOpen] = useState(false);
+  // Команда партнёрского канала (этап 35б) меняется той же панелью, что команда продукта
+  const [partnerOwnersOpen, setPartnerOwnersOpen] = useState(false);
   const [factsOpen, setFactsOpen] = useState(false);
 
   const input: PlanInput = useMemo(() => ({ products: view.products.map((p) => ({ code: p.code, lbe: p.lbe, budget: p.budget, drivers: p.drivers })), groups: view.groups }), [view]);
@@ -42,6 +46,12 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   };
 
   const setOwners = (owners: PlanPerson[]) => setView((v) => ({ ...v, products: v.products.map((p) => (p.code === selected ? { ...p, owners } : p)) }));
+  const setPartnerOwners = (owners: PlanPerson[]) => setView((v) => (v.partners ? { ...v, partners: { ...v.partners, owners } } : v));
+  // Изменение полисов партнёров выбранного продукта к LBE: продукту предлагается учесть его в полисах B2B
+  const partner = useMemo(() => {
+    const lines = view.partners?.lines.filter((l) => l.product === selected) ?? [];
+    return lines.length ? { delta: policiesDelta(lines, selected) } : null;
+  }, [view.partners, selected]);
 
   // Плитка факта (этап 35): выручка с начала месяца по продуктам, где загружен факт, против прогноза тех же продуктов
   const factTile = useMemo(() => {
@@ -159,9 +169,12 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
                 adjustHint={view.adjustHint}
                 onSaved={setView}
                 onOwners={() => setOwnersOpen(true)}
+                partner={partner}
               />
             ) : null}
           </div>
+
+          {view.partners ? <PartnerChannel key={view.month} month={view.month} partners={view.partners} canOwners={view.canOwners} adjustHint={view.adjustHint} onSaved={setView} onOwners={() => setPartnerOwnersOpen(true)} /> : null}
 
           <History view={view} />
         </>
@@ -170,6 +183,7 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
       {view.canPull ? <PullDrawer open={pullOpen} onOpenChange={setPullOpen} month={view.month} serviceEmail={view.source.serviceEmail} mode={view.source.mode} sourceId={view.source.sourceId} canSource={view.canSource} /> : null}
       {view.canFacts ? <FactsDrawer open={factsOpen} onOpenChange={setFactsOpen} /> : null}
       {view.canOwners && product ? <OwnersDrawer key={product.code} open={ownersOpen} onOpenChange={setOwnersOpen} product={product.code} owners={product.owners} onSaved={setOwners} /> : null}
+      {view.canOwners && view.partners ? <OwnersDrawer key="b2b" open={partnerOwnersOpen} onOpenChange={setPartnerOwnersOpen} product="b2b" owners={view.partners.owners} onSaved={setPartnerOwners} /> : null}
     </div>
   );
 }
@@ -307,7 +321,7 @@ function History({ view }: { view: MonthPlanView }) {
               <span className="sv-log__when">{when(a.at)}</span>
               <div className="sv-log__what">
                 <span className="sv-log__title">
-                  {a.productLabel}, {a.metricLabel.toLowerCase()}
+                  {a.productLabel}, {lcFirst(a.metricLabel)}
                 </span>
                 <span className="sv-log__change">
                   <span>было {formatPlan(a.previous, a.unit)}</span>

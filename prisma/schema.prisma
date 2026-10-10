@@ -145,68 +145,70 @@ model Person {
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
-  reports            Person[]            @relation("PersonManager")
-  functionalReports  Person[]            @relation("PersonFunctionalManager")
-  headOf             OrgUnit[]           @relation("UnitHead")
-  leads              Team[]              @relation("TeamLeader")
-  teams              TeamMember[]
-  ownedTasks         Task[]              @relation("TaskOwner")
-  createdTasks       Task[]              @relation("TaskCreator")
-  coTasks            TaskCoExecutor[]
-  transfers          TaskTransfer[]
-  taskComments       TaskComment[]
-  taskLinks          TaskLink[]
-  weeks              Week[]
-  weeklyReports      WeeklyReport[]
-  weeklyEntries      WeeklyEntry[]
-  ceoReports         CeoReport[]
-  loginLinks         LoginLink[]
-  devices            DeviceSession[]
-  pushSubscriptions  PushSubscription[]
-  absences           Absence[]           @relation("AbsencePerson")
-  substitutions      Absence[]           @relation("AbsenceSubstitute")
-  inbox              InboxEvent[]        @relation("InboxRecipient")
-  promotions         WeeklyPromotion[]
-  teamWeekCloses     TeamWeekClose[]
-  watches            TaskWatch[]
-  ownedGoals         Goal[]              @relation("GoalOwner")
-  createdGoals       Goal[]              @relation("GoalCreator")
-  entryComments      EntryComment[]
-  entryWatches       EntryWatch[]
-  reactions          Reaction[]          @relation("ReactionPerson")
-  discussed          Reaction[]          @relation("ReactionDiscussedBy")
-  mailMarks          MailMark[]
-  requestsMade       HelpRequest[]       @relation("RequestAuthor")
-  requestsReceived   HelpRequest[]       @relation("RequestAddressee")
-  promiseReviews     PromiseReview[]     @relation("PromiseAuthor")
+  reports                Person[]                @relation("PersonManager")
+  functionalReports      Person[]                @relation("PersonFunctionalManager")
+  headOf                 OrgUnit[]               @relation("UnitHead")
+  leads                  Team[]                  @relation("TeamLeader")
+  teams                  TeamMember[]
+  ownedTasks             Task[]                  @relation("TaskOwner")
+  createdTasks           Task[]                  @relation("TaskCreator")
+  coTasks                TaskCoExecutor[]
+  transfers              TaskTransfer[]
+  taskComments           TaskComment[]
+  taskLinks              TaskLink[]
+  weeks                  Week[]
+  weeklyReports          WeeklyReport[]
+  weeklyEntries          WeeklyEntry[]
+  ceoReports             CeoReport[]
+  loginLinks             LoginLink[]
+  devices                DeviceSession[]
+  pushSubscriptions      PushSubscription[]
+  absences               Absence[]               @relation("AbsencePerson")
+  substitutions          Absence[]               @relation("AbsenceSubstitute")
+  inbox                  InboxEvent[]            @relation("InboxRecipient")
+  promotions             WeeklyPromotion[]
+  teamWeekCloses         TeamWeekClose[]
+  watches                TaskWatch[]
+  ownedGoals             Goal[]                  @relation("GoalOwner")
+  createdGoals           Goal[]                  @relation("GoalCreator")
+  entryComments          EntryComment[]
+  entryWatches           EntryWatch[]
+  reactions              Reaction[]              @relation("ReactionPerson")
+  discussed              Reaction[]              @relation("ReactionDiscussedBy")
+  mailMarks              MailMark[]
+  requestsMade           HelpRequest[]           @relation("RequestAuthor")
+  requestsReceived       HelpRequest[]           @relation("RequestAddressee")
+  promiseReviews         PromiseReview[]         @relation("PromiseAuthor")
   /// Встреча 2.0 (этап 23)
-  meetingsLed        Meeting[]           @relation("MeetingLeader")
-  agendaItems        AgendaItem[]        @relation("AgendaPerson")
-  agendaDiscussed    AgendaItem[]        @relation("AgendaDiscussedBy")
-  decisionsOwned     Decision[]          @relation("DecisionOwner")
-  decisionsMade      Decision[]          @relation("DecisionCreator")
-  decisionsClosed    Decision[]          @relation("DecisionCanceller")
+  meetingsLed            Meeting[]               @relation("MeetingLeader")
+  agendaItems            AgendaItem[]            @relation("AgendaPerson")
+  agendaDiscussed        AgendaItem[]            @relation("AgendaDiscussedBy")
+  decisionsOwned         Decision[]              @relation("DecisionOwner")
+  decisionsMade          Decision[]              @relation("DecisionCreator")
+  decisionsClosed        Decision[]              @relation("DecisionCanceller")
   /// Поиск, виды и чек-листы (этап 25)
-  checklistDone      TaskChecklistItem[]
-  savedViews         SavedView[]
+  checklistDone          TaskChecklistItem[]
+  savedViews             SavedView[]
   /// Прогноз до конца месяца (этап 24)
-  forecasts          Forecast[]
-  planAdjustments    PlanAdjustment[]    @relation("PlanAdjustmentAuthor")
-  planChecks         PlanCheck[]         @relation("PlanCheckAuthor")
-  goalFacts          GoalFact[]          @relation("GoalFactAuthor")
+  forecasts              Forecast[]
+  planAdjustments        PlanAdjustment[]        @relation("PlanAdjustmentAuthor")
+  planChecks             PlanCheck[]             @relation("PlanCheckAuthor")
+  /// Партнёрский канал в прогнозе (этап 35б)
+  planPartnerAdjustments PlanPartnerAdjustment[] @relation("PlanPartnerAdjustmentAuthor")
+  goalFacts              GoalFact[]              @relation("GoalFactAuthor")
   /// Встречи один на один (этап 28)
-  oneOnOneManaged    OneOnOnePair[]      @relation("OneOnOneManager")
-  oneOnOneReported   OneOnOnePair[]      @relation("OneOnOneReport")
-  oneOnOneTopics     OneOnOneTopic[]     @relation("OneOnOneTopicAuthor")
-  oneOnOneNotes      OneOnOneNote[]
+  oneOnOneManaged        OneOnOnePair[]          @relation("OneOnOneManager")
+  oneOnOneReported       OneOnOnePair[]          @relation("OneOnOneReport")
+  oneOnOneTopics         OneOnOneTopic[]         @relation("OneOnOneTopicAuthor")
+  oneOnOneNotes          OneOnOneNote[]
   /// Личная ссылка на календарь сроков (этап 29)
-  calendarFeed       CalendarFeed?
+  calendarFeed           CalendarFeed?
   /// Кто уже оценил встречи команды (этап 29): без связи с самой оценкой
-  meetingRatingVotes MeetingRatingVote[]
+  meetingRatingVotes     MeetingRatingVote[]
   /// Крупные инициативы (этап 30): за какие отвечает, какие завёл, чьи изменения
-  initiatives        Initiative[]        @relation("InitiativeOwner")
-  initiativesCreated Initiative[]        @relation("InitiativeCreator")
-  initiativeChanges  InitiativeChange[]
+  initiatives            Initiative[]            @relation("InitiativeOwner")
+  initiativesCreated     Initiative[]            @relation("InitiativeCreator")
+  initiativeChanges      InitiativeChange[]
 
   @@map("people")
 }
@@ -579,6 +581,68 @@ model PlanFact {
   @@unique([product, metric, day])
   @@index([month])
   @@map("plan_facts")
+}
+
+/// Партнёр партнёрского канала в месяце (этап 35б): из LRF b2b через таблицу-связку, значения LBE на дату загрузки.
+/// Бюджета по партнёру в LRF нет. Повторная загрузка месяца заменяет строки, корректировки команды канала остаются
+model PlanPartner {
+  id       String   @id @default(cuid())
+  month    String
+  /// Код партнёра: одинаковый от загрузки к загрузке
+  code     String
+  label    String
+  /// Код продукта ресурса: osago, red-mortgage
+  product  String
+  /// cpa: CPA и отказной; agents: агенты
+  channel  String
+  /// Тип партнёра как в LRF: FinancialOrganization, Retail, Agents (partnership)
+  kind     String
+  position Int
+  /// Значения LBE: ёмкость, полисы, выручка на полис, кросс, выручка, расходы, комиссия
+  lbe      Json
+  pulledAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([month, code])
+  @@index([month])
+  @@map("plan_partners")
+}
+
+/// Бюджет и LBE партнёрского канала по продукту и каналу из P&L b2b (этап 35б): выручка, расходы на партнёров, маржа
+model PlanPartnerTotal {
+  id       String      @id @default(cuid())
+  month    String
+  product  String
+  channel  String
+  version  PlanVersion
+  revenue  Float?
+  costs    Float?
+  margin   Float?
+  pulledAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@unique([month, product, channel, version])
+  @@index([month])
+  @@map("plan_partner_totals")
+}
+
+/// Корректировка драйвера партнёра командой канала (этап 35б): как у продуктов, новое значение вместо LBE, причина и
+/// обоснование. value null: вернуть как в LBE. Действует последняя корректировка показателя
+model PlanPartnerAdjustment {
+  id        String         @id @default(cuid())
+  month     String
+  /// Код партнёра из plan_partners
+  partner   String
+  metric    String
+  value     Float?
+  previous  Float?
+  reason    ForecastReason
+  comment   String
+  authorId  String
+  author    Person         @relation("PlanPartnerAdjustmentAuthor", fields: [authorId], references: [id])
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+
+  @@index([month, partner, createdAt])
+  @@index([authorId])
+  @@map("plan_partner_adjustments")
 }
 
 model TaskCoExecutor {

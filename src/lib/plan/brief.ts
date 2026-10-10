@@ -2,10 +2,11 @@
 // проверил прогноз после загрузки LBE. Чистые функции: текст отчёта собирается и на сервере, и на экране
 
 import { derive } from "./model";
-import { formatPlan } from "./format";
+import { formatPlan, lcFirst } from "./format";
 import { UNITS, metricLabel, productOf, type MetricKey } from "./spec";
 import { planLabel, summarize, type PlanSummary, type Triple } from "./summary";
 import type { MonthPlanView, ReviewView } from "./types";
+import { PARTNER_LABEL, PARTNER_UNITS, derivePartner, partnerMetricLabel, partnerTotals, productName, type PartnerMetric } from "./partners";
 
 export type PlanBriefRow = { code: string; label: string; kind: "product" | "group" | "sub"; revenue: Triple; promoMargin: Triple; adjusted: number; review: ReviewView | null; owners: string[] };
 
@@ -19,6 +20,8 @@ export type PlanBrief = {
   /** Продукты, где после загрузки LBE прогноз ещё не проверен */
   waiting: { product: string; owners: string[] }[];
   pulledAt: string | null;
+  /** Партнёрский канал (этап 35б): выручка и маржа канала, бюджет из P&L b2b. null: партнёры не загружены */
+  partners: { revenue: Triple; margin: Triple; adjusted: number; partners: number; review: ReviewView | null; owners: string[] } | null;
 };
 
 /** Месяц недели: месяц её четверга, как у номера недели */
@@ -57,9 +60,24 @@ export function briefOf(view: MonthPlanView): PlanBrief {
       reasons.push({ product: spec.label, metric: metricLabel(spec, metric), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
     }
   }
+  // Корректировки партнёров рядом с корректировками продуктов: «Партнёрский канал, Банк, ОСАГО»
+  let partners: PlanBrief["partners"] = null;
+  if (view.partners) {
+    for (const l of view.partners.lines) {
+      const L = derivePartner(l.lbe);
+      for (const [metric, a] of Object.entries(l.last) as [PartnerMetric, NonNullable<(typeof l.last)[PartnerMetric]>][]) {
+        if (a.value === null) continue;
+        const unit = PARTNER_UNITS[metric];
+        reasons.push({ product: `${PARTNER_LABEL}, ${l.label}, ${productName(l.product)}`, metric: partnerMetricLabel(metric, l.channel), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
+      }
+    }
+    const t = partnerTotals(view.partners.lines, view.partners.totals).total;
+    partners = { revenue: t.revenue, margin: t.margin, adjusted: t.adjusted, partners: t.partners, review: view.partners.review, owners: view.partners.owners.map((o) => o.name) };
+  }
   reasons.sort((x, y) => y.at.localeCompare(x.at));
   const waiting = view.products.filter((p) => p.review?.state === "waiting").map((p) => ({ product: productOf(p.code)!.label, owners: p.owners.map((o) => o.name) }));
-  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt };
+  if (partners?.review?.state === "waiting") waiting.push({ product: PARTNER_LABEL, owners: partners.owners });
+  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners };
 }
 
 const pctTo = (value: number | null, base: number | null) => (value === null || base === null || base === 0 ? null : ((value - base) / Math.abs(base)) * 100);
@@ -78,9 +96,11 @@ export function planBriefText(b: PlanBrief): string[] {
     return `${label}: прогноз ${formatPlan(t.forecast, "mln")} млн, LBE ${formatPlan(t.lbe, "mln")}, бюджет ${formatPlan(t.budget, "mln")}${toBudget ? `, к бюджету ${toBudget}` : ""}`;
   };
   const out = [`${b.monthLabel.replace(/^./, (c) => c.toUpperCase())}, итог по продуктам`, line("Выручка", b.total.revenue), line("Промо-маржа", b.total.promoMargin), line("Прямая маржа", b.total.directMargin)];
+  // Партнёрский канал входит в продукты (это их полисы B2B), поэтому отдельной строкой, а не слагаемым итога
+  if (b.partners) out.push(`${PARTNER_LABEL}, внутри продуктов: ${line("выручка", b.partners.revenue).replace(/^выручка: /, "выручка ")}; ${line("маржа", b.partners.margin).replace(/^маржа: /, "маржа ")}`);
   if (b.reasons.length) {
     out.push("Корректировки команд:");
-    for (const r of b.reasons) out.push(`- ${r.product}, ${r.metric.toLowerCase()}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
+    for (const r of b.reasons) out.push(`- ${r.product}, ${lcFirst(r.metric)}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
   }
   if (b.waiting.length) out.push(waitingText(b.waiting));
   return out;

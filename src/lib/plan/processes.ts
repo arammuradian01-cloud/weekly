@@ -10,16 +10,18 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { moscowToday } from "@/lib/tasks/dates";
 import { monthLabel } from "@/lib/forecast/codes";
 import { derive } from "./model";
-import { formatPlan } from "./format";
+import { driverBounds, formatPlan } from "./format";
 import { PRODUCTS, UNITS, metricLabel, productOf, type MetricKey } from "./spec";
 import { planLabel, summarize, type Drivers, type PlanInput, type PlanSummary, type Triple } from "./summary";
 import { parseFacts, type FactMetric } from "./facts";
-import { canAdjustPlan, currentMonth, isMonth, monthPlan, ownersMap, personalPlanActor, planMonthOrFail } from "./service";
+import { PLAN_LIMITS, canAdjustPlan, currentMonth, isMonth, monthPlan, near, ownersMap, personalPlanActor, planMonthOrFail, planReasonDb, planReasonLabel, sameInput } from "./service";
 import { closePlanReminders, lastPullAt } from "./status";
 import { TOP_TEAM } from "@/lib/org/scope";
 import type { Values } from "./lrf";
 import type { CompareMetric, CompareRow, CompareView, MonthPlanView, VersionOption } from "./types";
 import { briefOf, type PlanBrief } from "./brief";
+import { PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_UNITS, channelLabel, derivePartner, isPartnerDriver, partnerMetricLabel, productName, type PartnerChannel, type PartnerValues } from "./partners";
+import type { PartnerAdjustInput } from "./types";
 
 export { planMonthOfWeek, planBriefText, type PlanBrief } from "./brief";
 
@@ -44,18 +46,23 @@ const ddmm = (day: string) => `${day.slice(8, 10)}.${day.slice(5, 7)}`;
 /** Команда продукта отмечает, что после загрузки LBE прогноз проверен и корректировки не нужны */
 export async function checkPlan(actor: Actor, monthInput: string, productCode: string): Promise<MonthPlanView> {
   const month = planMonthOrFail(monthInput);
-  const spec = productOf(String(productCode ?? "")) ?? fail("Нет такого продукта");
+  // Партнёрский канал (этап 35б) проверяется так же, как продукт: корректировкой партнёра или отметкой
+  const partner = String(productCode ?? "") === PARTNER_OWNER_CODE;
+  const spec = partner ? { code: PARTNER_OWNER_CODE, label: PARTNER_LABEL } : (productOf(String(productCode ?? "")) ?? fail("Нет такого продукта"));
   if (!personalPlanActor(actor)) fail(actor.role === "OBSERVER" ? "Наблюдатель прогноз не проверяет" : "Прогноз отмечают проверенным при личном входе: так видно, кто проверил");
   if (month < currentMonth()) fail(`${monthLabel(month)} закрыт: прогноз прошлого месяца не меняется`);
   const owners = (await ownersMap())[spec.code] ?? [];
-  if (!canAdjustPlan(actor, owners)) fail(`Прогноз продукта «${spec.label}» проверяет его команда`);
+  if (!canAdjustPlan(actor, owners)) fail(partner ? "Прогноз партнёрского канала проверяет его команда" : `Прогноз продукта «${spec.label}» проверяет его команда`);
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${`plan:${month}`}))`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}:${spec.code}`}))`;
-    if (!(await tx.planLine.count({ where: { month, product: spec.code, version: "LBE" } }))) fail(`Версии ${monthLabel(month)} ещё не загружены из LRF`);
+    const loaded = partner ? await tx.planPartner.count({ where: { month } }) : await tx.planLine.count({ where: { month, product: spec.code, version: "LBE" } });
+    if (!loaded) fail(partner ? `Партнёры на ${monthLabel(month)} ещё не загружены из LRF b2b` : `Версии ${monthLabel(month)} ещё не загружены из LRF`);
     const since = await lastPullAt(month);
     if (!since) fail("Неизвестно, когда загружен LBE: загрузите месяц из LRF заново");
-    const adj = await tx.planAdjustment.findFirst({ where: { month, product: spec.code, createdAt: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } });
+    const adj = partner
+      ? await tx.planPartnerAdjustment.findFirst({ where: { month, createdAt: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } })
+      : await tx.planAdjustment.findFirst({ where: { month, product: spec.code, createdAt: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } });
     if (adj) fail(`После загрузки LBE прогноз уже скорректирован: ${adj.author.fullName}, ${stamp(adj.createdAt)}`);
     const check = await tx.planCheck.findFirst({ where: { month, product: spec.code, at: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { at: "desc" } });
     if (check) fail(`Прогноз уже отмечен проверенным: ${check.author.fullName}, ${stamp(check.at)}`);
@@ -73,6 +80,78 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
         field: `${spec.label}, ${monthLabel(month)}`,
         before: "ждёт проверки после загрузки LBE",
         after: "прогноз проверен, корректировки не нужны",
+        ip: actor.ip ?? null,
+        via: actor.via ?? null,
+      },
+    });
+  });
+  return monthPlan(actor, month);
+}
+
+// ---------- Партнёрский канал (этап 35б) ----------
+
+/**
+ * Корректировка драйвера партнёра командой канала: ёмкость, полисы, выручка на полис, конверсия в кросс или комиссия.
+ * Как у продуктов: новое значение вместо LBE (или вернуть как в LBE), причина и обоснование одной фразой
+ */
+export async function adjustPartner(actor: Actor, input: PartnerAdjustInput): Promise<MonthPlanView> {
+  const month = planMonthOrFail(input?.month);
+  const code = String(input?.partner ?? "");
+  const metric = String(input?.metric ?? "");
+  if (!personalPlanActor(actor)) fail(actor.role === "OBSERVER" ? "Наблюдатель прогноз не корректирует" : "Прогноз корректируют при личном входе: так видно, кто и почему меняет цифру");
+  if (month < currentMonth()) fail(`${monthLabel(month)} закрыт: прогноз прошлого месяца не меняется`);
+  const owners = (await ownersMap())[PARTNER_OWNER_CODE] ?? [];
+  if (!canAdjustPlan(actor, owners)) fail("Прогноз партнёрского канала корректирует его команда");
+  const reason = planReasonDb(String(input?.reason ?? ""));
+  const comment = String(input?.comment ?? "").replace(/\s+/g, " ").trim();
+  const length = [...comment].length;
+  if (length < PLAN_LIMITS.commentMin) fail("Напишите, почему меняется прогноз: одной фразой");
+  if (length > PLAN_LIMITS.comment) fail(`Обоснование не длиннее ${PLAN_LIMITS.comment} знаков`);
+  const raw = input?.value;
+  if (raw !== null && (typeof raw !== "number" || !Number.isFinite(raw))) fail("Укажите значение числом");
+  const seen = typeof input?.seen === "number" && Number.isFinite(input.seen) ? input.seen : null;
+
+  await prisma.$transaction(async (tx) => {
+    // Загрузка месяца ждёт, пока идут корректировки, и наоборот; корректировки одного партнёра идут по очереди
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${`plan:${month}`}))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}:b2b:${code}`}))`;
+    const line = await tx.planPartner.findUnique({ where: { month_code: { month, code } } });
+    if (!line) fail(`Партнёра нет в загрузке ${monthLabel(month)}: обновите страницу`);
+    const lbe = line!.lbe as PartnerValues;
+    if (!isPartnerDriver(lbe, metric)) fail("Этот показатель пересчитывается сам: меняйте драйверы");
+    const key = metric as Parameters<typeof partnerMetricLabel>[0];
+    const L = derivePartner(lbe);
+    const base = L[key] ?? null;
+    const latest = await tx.planPartnerAdjustment.findFirst({ where: { month, partner: code, metric }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
+    // У партнёра без продаж в LBE выручки на полис и кросса может не быть: команда задаёт их, когда партнёр начинает
+    // продавать. Без LBE и без значения сбрасывать нечего
+    if (base === null && raw === null && latest?.value == null) fail("Показатель и так как в LBE");
+    const effective = latest?.value ?? base;
+    if (!near(seen, effective)) fail("Пока вы правили, прогноз уже поменяли. Обновите страницу и проверьте цифру");
+    const unit = PARTNER_UNITS[key];
+    let value = raw as number | null;
+    if (value !== null) {
+      // Комиссия бывает выше 100% выручки (партнёр в минус), но не больше двух выручек
+      const bounds = key === "commission" ? { min: 0, max: 2 } : driverBounds(unit, base);
+      if (value < bounds.min || value > bounds.max) fail(`Значение вне разумных границ: от ${formatPlan(bounds.min, unit)} до ${formatPlan(bounds.max, unit)}. Проверьте единицы${unit === "pct" ? ": доли вводятся в процентах" : ""}`);
+      if (base !== null && sameInput(unit, value, base)) value = null;
+    }
+    if (value === null && (latest?.value ?? null) === null) fail("Показатель и так как в LBE");
+    if (value !== null && effective !== null && sameInput(unit, value, effective)) fail("Значение не изменилось");
+    await tx.planPartnerAdjustment.create({ data: { month, partner: code, metric, value, previous: effective, reason, comment, authorId: actor.personId } });
+    await closePlanReminders(tx, month, PARTNER_OWNER_CODE, await ownersMap());
+    const channel = line!.channel as PartnerChannel;
+    await tx.auditLog.create({
+      data: {
+        action: "plan.partner",
+        actorId: actor.personId,
+        actorName: actor.fullName,
+        source: "APP",
+        entity: "plan",
+        entityId: `${month}:b2b:${code}`,
+        field: `${PARTNER_LABEL}, ${channelLabel(channel)}, ${productName(line!.product)}, ${line!.label}, ${partnerMetricLabel(key, channel)}, ${monthLabel(month)}`,
+        before: formatPlan(effective, unit),
+        after: `${value === null ? `как в LBE, ${formatPlan(base, unit)}` : formatPlan(value, unit)}. ${planReasonLabel(reason)}: ${comment}`,
         ip: actor.ip ?? null,
         via: actor.via ?? null,
       },

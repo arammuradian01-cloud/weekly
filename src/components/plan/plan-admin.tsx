@@ -211,10 +211,44 @@ export function PullDrawer({
                 </tbody>
               </table>
             </div>
+            <PartnersPreview p={preview.partners} />
           </div>
         ) : null}
       </div>
     </Drawer>
+  );
+}
+
+/** Партнёрский канал в проверке загрузки (этап 35б): загрузится ли, сколько партнёров, выручка LBE и бюджет канала */
+function PartnersPreview({ p }: { p: PullPreview["partners"] }) {
+  return (
+    <div className="flex flex-col gap-2" data-testid="plan-pull-partners">
+      {!p.found ? (
+        <p className="text-caption text-text-secondary">
+          Партнёрский канал: листов LRF b2b в источнике нет, партнёры не загрузятся. Они появятся, когда листы b2b свяжут с таблицей-связкой.
+          {p.before ? ` Останутся партнёры прежней загрузки: ${p.before}.` : ""}
+        </p>
+      ) : p.ready ? (
+        <p className="sv-alert sv-alert--success">
+          Партнёрский канал: {p.lines} партнёров, выручка LBE {formatPlan(p.revenue.lbe, "mln")} млн, бюджет канала {formatPlan(p.revenue.budget, "mln")} млн.{p.before ? ` Сейчас загружено партнёров: ${p.before}, корректировки команды канала останутся.` : ""}
+        </p>
+      ) : (
+        <div className="sv-alert sv-alert--warning">
+          <p className="font-semibold">Партнёрский канал не загрузится, продукты загрузятся</p>
+          <ul className="list-disc pl-5">
+            {p.problems.map((x) => (
+              <li key={x}>{x}</li>
+            ))}
+          </ul>
+          {p.before ? <p>Останутся партнёры прежней загрузки: {p.before}.</p> : null}
+        </div>
+      )}
+      {p.warnings.map((w) => (
+        <p key={w} className="text-caption text-warning-ink">
+          {w}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -225,7 +259,8 @@ export function OwnersDrawer({ open, onOpenChange, product, owners, onSaved }: {
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const label = productOf(product)?.label ?? product;
+  const label = productOf(product)?.label ?? (product === "b2b" ? "Партнёрский канал" : product);
+  const noun = product === "b2b" ? "канала" : "продукта";
 
   useEffect(() => {
     if (!open || people) return;
@@ -246,7 +281,7 @@ export function OwnersDrawer({ open, onOpenChange, product, owners, onSaved }: {
     const r = await setPlanOwnersAction(product, chosen);
     setBusy(false);
     if (!r.ok) return setError(r.error);
-    notify(`Команда продукта «${label}» обновлена`);
+    notify(`Команда ${noun} «${label}» обновлена`);
     onSaved(r.value);
     onOpenChange(false);
   };
@@ -257,8 +292,8 @@ export function OwnersDrawer({ open, onOpenChange, product, owners, onSaved }: {
     <Drawer
       open={open}
       onOpenChange={onOpenChange}
-      title={`Команда продукта: ${label}`}
-      description="Эти люди корректируют прогноз продукта. Владелец и администраторы в режиме управления могут всегда"
+      title={product === "b2b" ? `Команда канала: ${label}` : `Команда продукта: ${label}`}
+      description={`Эти люди корректируют прогноз ${noun}. Владелец и администраторы в режиме управления могут всегда`}
       footer={
         <Button onClick={() => void save()} loading={busy} disabled={busy || !people} data-testid="plan-owners-save">
           Сохранить
