@@ -54,6 +54,19 @@
 /* Текстовые вкладки с голубым подчёркиванием */
 .sv-tabs { display: flex; gap: var(--space-5); border-bottom: 1px solid var(--color-border); overflow-x: auto; scrollbar-width: none; }
 .sv-tabs::-webkit-scrollbar { display: none; }
+/* На телефоне вкладки прокручиваются: правый край затухает, пока там есть что прокрутить, чтобы «Цифры недели» не казались
+   обрезанными. Затухание снимается в конце прокрутки там, где браузер умеет анимацию по прокрутке */
+@media (max-width: 767px) {
+  .sv-tabs { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  @supports (animation-timeline: scroll()) {
+    .sv-tabs { animation: sv-tabs-edge linear both; animation-timeline: scroll(self x); }
+    @keyframes sv-tabs-edge {
+      0% { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+      90% { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+      100% { mask-image: linear-gradient(to right, #000 100%, #000 100%); }
+    }
+  }
+}
 .sv-tabs--plain { border-bottom: 0; }
 .sv-tabs__item { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 2px; border: 0; background: transparent; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--color-text-secondary); font: inherit; font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); white-space: nowrap; cursor: pointer; transition: color var(--duration-color), border-color var(--duration-color); }
 .sv-tabs__item:hover { color: var(--color-text); }

@@ -25,6 +25,8 @@
 .sv-day__mark--meeting { background: var(--color-info-bg); color: var(--color-info-text); }
 .sv-days-events { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
 .sv-days-event { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: var(--radius-control); background: var(--color-surface); border: 1px solid var(--color-border); font-size: var(--text-caption); line-height: var(--leading-caption); }
+/* Метка «срок» и «встреча» не сжимается: иначе на телефоне остаётся «встреч» */
+.sv-days-event .sv-day__mark { flex: none; }
 .sv-days-event b { color: var(--color-text); font-weight: var(--font-weight-semibold); }
 /* Полоса сдачи «кто сдал» */
 .sv-submit-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }

@@ -180,7 +180,8 @@ export function WeeklyFeed({
   // Что сохранить при смене недели: отбор или человека из ссылки, которого ещё нет в ленте
   const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
-  const filtersOn = !!(direction || block || type || author || helpOnly);
+  const filtersCount = [direction, block, type, author, helpOnly].filter(Boolean).length;
+  const filtersOn = filtersCount > 0;
   const myState = myReport.state;
 
   return (
@@ -264,7 +265,7 @@ export function WeeklyFeed({
             aria-expanded={showFilters}
             className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field lg:hidden"
           >
-            Фильтры{filtersOn ? " включены" : ""}
+            Фильтры{filtersOn ? <span className="sv-counter" aria-label={`включено: ${filtersCount}`}>{filtersCount}</span> : null}
           </button>
         </div>
         <div className={cn("grid-cols-2 gap-3 sm:flex-wrap sm:items-end lg:flex", showFilters ? "grid sm:flex" : "hidden")}>

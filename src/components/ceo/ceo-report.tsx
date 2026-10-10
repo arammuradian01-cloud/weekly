@@ -110,6 +110,8 @@ export function CeoReport({
   // У встречи на экране свой ключ: при удалении поля не перескакивают
   const [meetings, setMeetings] = useState<Draft[]>(() => saved.meetings.map(withKey));
   const [dirty, setDirty] = useState(!saved.sections);
+  // Правил ли человек текст на этом экране: свежесобранный черновик без правок не считается «несохранёнными правками»
+  const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [compare, setCompare] = useState(false);
@@ -122,6 +124,7 @@ export function CeoReport({
   const markDirty = () => {
     rev.current += 1;
     setDirty(true);
+    setEdited(true);
   };
   /** Сохранённая версия с другого устройства или от другого человека пришла, пока здесь есть несохранённые правки */
   const [newer, setNewer] = useState<CeoReportView | null>(null);
@@ -247,7 +250,7 @@ export function CeoReport({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <WeekSwitcher view={view} basePath="/ceo-report" />
           <p className="text-small text-muted" aria-live="polite">
-            {dirty ? "Есть несохранённые правки" : savedAt.at ? `Сохранён ${moment(savedAt.at)}${savedAt.by ? `, ${savedAt.by}` : ""}` : ""}
+            {dirty && edited ? "Есть несохранённые правки" : dirty ? "Черновик собран, ещё не сохранён" : savedAt.at ? `Сохранён ${moment(savedAt.at)}${savedAt.by ? `, ${savedAt.by}` : ""}` : ""}
           </p>
         </div>
 

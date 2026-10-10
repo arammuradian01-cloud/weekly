@@ -62,7 +62,26 @@ function kindWhere(kind: JournalKind): Prisma.AuditLogWhereInput {
 
 const SOURCE_DB: Record<JournalEvent["source"], ChangeSource> = { app: "APP", sheet: "SHEET", system: "SYSTEM" };
 
-const text = (v: unknown): string | undefined => (v === null || v === undefined ? undefined : typeof v === "string" ? v : JSON.stringify(v));
+/** Служебные значения событий входа словами, а не как {"role":"OWNER"} */
+const WORDS: Record<string, Record<string, string>> = {
+  role: { OWNER: "владелец", ADMIN: "администратор" },
+  by: { email: "подтверждение по почте" },
+  via: { setup: "первичная настройка" },
+  kind: { TEAM: "общий", PERSONAL: "личный", team: "общий", personal: "личный" },
+};
+const KEYS: Record<string, string> = { role: "роль", by: "как", via: "где", kind: "какой" };
+function human(v: unknown): string {
+  if (Array.isArray(v)) return v.map(human).join(", ");
+  if (v && typeof v === "object") {
+    const parts = Object.entries(v as Record<string, unknown>).map(([k, x]) => {
+      const word = typeof x === "string" ? (WORDS[k]?.[x] ?? x) : human(x);
+      return k === "by" ? word : `${KEYS[k] ?? k}: ${word}`;
+    });
+    return parts.join(", ");
+  }
+  return typeof v === "string" ? v : JSON.stringify(v);
+}
+const text = (v: unknown): string | undefined => (v === null || v === undefined ? undefined : human(v));
 const short = (s: string, n = 60) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
 export type JournalPage = { events: JournalEvent[]; total: number; limit: number };

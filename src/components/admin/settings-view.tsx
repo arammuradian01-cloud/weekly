@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarOff, Copy, Download, EyeOff, FileUp, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { CalendarOff, Copy, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
@@ -30,6 +30,7 @@ import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { FileField } from "@/components/ui/file-field";
 import { Modal } from "@/components/ui/overlays";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
@@ -671,34 +672,7 @@ const RELOAD_WORD = "перезалить";
 type CsvFile = { name: string; text: string };
 
 function CsvField({ id, label, file, onFile }: { id: string; label: string; file: CsvFile | null; onFile: (file: CsvFile | null) => void }) {
-  // Своя кнопка вместо системной: у системной подпись на языке браузера и второе имя файла
-  return (
-    <div>
-      <input
-        id={id}
-        type="file"
-        accept=".csv,text/csv"
-        className="peer sr-only"
-        onChange={async (e) => {
-          const f = e.target.files?.[0];
-          onFile(f ? { name: f.name, text: await f.text() } : null);
-        }}
-      />
-      <label
-        htmlFor={id}
-        className="flex cursor-pointer flex-col gap-1.5 rounded-lg peer-focus-visible:outline peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-blue"
-      >
-        <span className="text-sm font-medium text-ink">{label}</span>
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-field px-4 text-small font-medium text-ink hover:bg-line">
-            <FileUp className="h-4 w-4" aria-hidden="true" />
-            Выбрать файл
-          </span>
-          <span className="truncate text-small text-muted">{file ? file.name : "Файл не выбран"}</span>
-        </span>
-      </label>
-    </div>
-  );
+  return <FileField id={id} label={label} accept=".csv,text/csv" fileName={file?.name ?? null} onChange={async (f) => onFile(f ? { name: f.name, text: await f.text() } : null)} />;
 }
 
 /**
