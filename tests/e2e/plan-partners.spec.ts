@@ -40,7 +40,7 @@ async function pull(page: Page, month?: string) {
   if (month) await drawer.getByLabel("Месяц").selectOption(month);
   await drawer.getByTestId("plan-pull-check").click();
   await expect(drawer.getByTestId("plan-pull-preview").getByText("Всё читается")).toBeVisible();
-  await expect(drawer.getByTestId("plan-pull-partners")).toContainText("Партнёрский канал: 12 партнёров");
+  await expect(drawer.getByTestId("plan-pull-partners")).toContainText("Партнёрский канал загрузится. Партнёров: 12");
   await drawer.getByTestId("plan-pull-load").click();
   await expect(page.getByText(/Бюджет и LBE на .* загружены/).first()).toBeVisible();
 }
@@ -94,7 +94,8 @@ test("руководитель канала меняет полисы партн
   await expect(productEditor.getByLabel(/Новое значение/)).toHaveValue("152000");
   await expect(productEditor.getByLabel("Почему меняется прогноз")).toHaveValue("По прогнозу партнёрского канала: +2 000 полисов к LBE");
   await productEditor.getByTestId("plan-save").click();
-  await expect(band).toContainText("Учтено в полисах B2B");
+  await expect(band).toContainText("Изменение партнёров учтено");
+  await expect(band).toContainText("Полисы B2B продукта: LBE 150 000, прогноз 152 000");
   await expect(band.getByTestId("plan-partner-apply")).toHaveCount(0);
   // Партнёров Головкин видит, но не корректирует: он не в команде канала
   await partnerRow(page, "Банк Север").getByRole("button", { name: "Подробно" }).click();

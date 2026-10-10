@@ -58,7 +58,8 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}:${spec.code}`}))`;
     const loaded = partner ? await tx.planPartner.count({ where: { month } }) : await tx.planLine.count({ where: { month, product: spec.code, version: "LBE" } });
     if (!loaded) fail(partner ? `Партнёры на ${monthLabel(month)} ещё не загружены из LRF b2b` : `Версии ${monthLabel(month)} ещё не загружены из LRF`);
-    const since = await lastPullAt(month);
+    // Канал проверяется от загрузки своих партнёров: она могла быть раньше последней загрузки LBE продуктов
+    const since = partner ? ((await tx.planPartner.findFirst({ where: { month }, select: { pulledAt: true } }))?.pulledAt ?? null) : await lastPullAt(month);
     if (!since) fail("Неизвестно, когда загружен LBE: загрузите месяц из LRF заново");
     const adj = partner
       ? await tx.planPartnerAdjustment.findFirst({ where: { month, createdAt: { gt: since! } }, include: { author: { select: { fullName: true } } }, orderBy: { createdAt: "desc" } })
@@ -114,7 +115,8 @@ export async function adjustPartner(actor: Actor, input: PartnerAdjustInput): Pr
   await prisma.$transaction(async (tx) => {
     // Загрузка месяца ждёт, пока идут корректировки, и наоборот; корректировки одного партнёра идут по очереди
     await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${`plan:${month}`}))`;
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}:b2b:${code}`}))`;
+    // Тот же ключ, что у отметки «Прогноз проверен» канала: отметка и корректировка партнёра не проходят одновременно
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}:${PARTNER_OWNER_CODE}`}))`;
     const line = await tx.planPartner.findUnique({ where: { month_code: { month, code } } });
     if (!line) fail(`Партнёра нет в загрузке ${monthLabel(month)}: обновите страницу`);
     const lbe = line!.lbe as PartnerValues;

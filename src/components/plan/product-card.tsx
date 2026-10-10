@@ -238,23 +238,27 @@ function PartnerBand({ partner, product, summary, onApply }: { partner: { delta:
   const row = summary.rows.find((r) => r.key === "unitsB2b" && r.kind === "driver");
   const d = Math.round(partner.delta);
   if (!row || row.lbe === null) return null;
+  // Предложение: LBE полисов B2B плюс изменение партнёров. Своя корректировка продукта по другой причине видна рядом,
+  // кнопка её не перезаписывает молча: команда видит обе цифры
   const proposed = row.lbe + d;
   const done = row.forecast !== null && Math.abs(row.forecast - proposed) < 0.5;
   const shift = formatPlan(Math.abs(d), "count");
+  // Партнёры вернулись к LBE, а в полисах B2B осталась прежняя корректировка «по прогнозу партнёрского канала»
+  const stale = d === 0 && row.forecast !== null && Math.abs(row.forecast - row.lbe) >= 0.5 && !!product.last.unitsB2b?.comment.startsWith("По прогнозу партнёрского канала");
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3 text-body" data-testid="plan-partner-band">
       <p className="min-w-0 text-text-secondary">
-        Партнёрский канал: {d === 0 ? "полисы партнёров по прогнозу как в LBE." : `полисы партнёров по прогнозу ${d > 0 ? "больше" : "меньше"} LBE на ${shift}.`}{" "}
-        {d === 0 ? null : done ? <span className="font-semibold text-ink">Учтено в полисах B2B.</span> : `Полисы B2B продукта с этим изменением: ${formatPlan(proposed, "count")}.`}
+        Партнёрский канал: {d === 0 ? "полисы партнёров по прогнозу как в LBE." : `полисы партнёров по прогнозу ${d > 0 ? "больше" : "меньше"} LBE на ${shift}.`} Полисы B2B продукта: LBE {formatPlan(row.lbe, "count")}, прогноз {formatPlan(row.forecast, "count")}.{" "}
+        {done ? (d === 0 ? null : <span className="font-semibold text-ink">Изменение партнёров учтено.</span>) : d !== 0 || stale ? `С изменением партнёров было бы ${formatPlan(proposed, "count")}.` : null}
       </p>
-      {d !== 0 && !done && product.canAdjust ? (
+      {!done && (d !== 0 || stale) && product.canAdjust ? (
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => onApply({ text: inputValue(proposed, "count"), reason: "partner-sk", comment: `По прогнозу партнёрского канала: ${d > 0 ? "+" : "-"}${shift} полисов к LBE` })}
+          onClick={() => onApply({ text: inputValue(proposed, "count"), reason: "partner-sk", comment: d === 0 ? "Партнёрский канал вернулся к LBE" : `По прогнозу партнёрского канала: ${d > 0 ? "+" : "-"}${shift} полисов к LBE` })}
           data-testid="plan-partner-apply"
         >
-          Учесть в полисах B2B
+          Учесть изменение партнёров
         </Button>
       ) : null}
     </div>
@@ -282,7 +286,7 @@ function DriverEditor({
   input: PlanInput;
   total: PlanSummary["total"];
   summary: ProductSummary;
-  /** Подставленные значение, причина и обоснование: «Учесть в полисах B2B» (этап 35б) */
+  /** Подставленные значение, причина и обоснование: «Учесть изменение партнёров» (этап 35б) */
   preset?: Preset | null;
   onCancel: () => void;
   onSaved: (view: MonthPlanView) => void;

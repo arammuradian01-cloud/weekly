@@ -52,7 +52,8 @@ const MEASURES: { key: Measure; label: string; unit: "mln" | "count"; better: "u
 const selling = (l: PartnerLineView) => {
   const L = derivePartner(l.lbe);
   const c = computePartner(l.lbe, l.drivers);
-  return (L.policies ?? 0) > 0 || (L.revenue ?? 0) !== 0 || (c.policies ?? 0) > 0 || (c.revenue ?? 0) !== 0;
+  const some = (x: number | null | undefined) => Math.abs(x ?? 0) > 1e-9;
+  return some(L.policies) || some(L.revenue) || some(c.policies) || some(c.revenue);
 };
 
 const defaultReason = (key: PartnerMetric): ForecastReasonCode => (key === "rpu" || key === "commission" ? "check-kv" : key === "crUpsale" ? "conversion" : "partner-sk");
@@ -127,6 +128,7 @@ export function PartnerChannel({
         { label: "Команда", value: owners },
         { label: "Партнёров", value: `${totals.total.partners}, продают ${partners.lines.filter(selling).length}` },
         { label: "Скорректировано", value: String(totals.total.adjusted) },
+        { label: "Партнёры загружены", value: when(partners.pulledAt) },
         { label: "После LBE", value: <span data-testid="partners-review">{reviewText(partners.review)}</span> },
       ]}
       flush
@@ -187,13 +189,16 @@ export function PartnerChannel({
 }
 
 function TotalsTable({ totals, products, measure }: { totals: ReturnType<typeof partnerTotals>; products: string[]; measure: (typeof MEASURES)[number] }) {
-  const line = (key: string, name: string, s: PartnerSum | undefined, kind: "product" | "sub" | "total") => {
+  const line = (key: string, name: string, s: PartnerSum | undefined, kind: "product" | "sub" | "total", context?: string) => {
     if (!s) return null;
     const t: PartnerTriple = s[measure.key];
+    // У вложенных строк «CPA и отказной» и «Агенты» для экранного диктора добавляется продукт: строки повторяются
+    const full = context ? `${context}, ${lcFirst(name)}` : name;
     return (
       <tr key={key} className={cn(kind === "sub" && "sv-datatable__row--sub", kind === "total" && "sv-datatable__row--total")} data-testid={`partners-total-${key}`}>
         <th scope="row" className="is-wide text-left font-normal">
           <span className={cn(kind !== "sub" && "sv-datatable__strong")}>{name}</span>
+          {context ? <span className="sr-only">, {context}</span> : null}
         </th>
         <td className="is-num" data-label="Бюджет">
           {measure.key === "policies" ? <span className="sv-datatable__muted">нет в P&L</span> : formatPlan(t.budget, measure.unit)}
@@ -205,10 +210,10 @@ function TotalsTable({ totals, products, measure }: { totals: ReturnType<typeof 
           {formatPlan(t.forecast, measure.unit)}
         </td>
         <td className="is-num" data-label="К LBE">
-          <Delta value={delta(t.forecast, t.lbe, measure.unit)} better={measure.better} label={`${name} к LBE`} />
+          <Delta value={delta(t.forecast, t.lbe, measure.unit)} better={measure.better} label={`${full} к LBE`} />
         </td>
         <td className="is-num" data-label="К бюджету">
-          <Delta value={delta(t.forecast, t.budget, measure.unit)} better={measure.better} label={`${name} к бюджету`} />
+          <Delta value={delta(t.forecast, t.budget, measure.unit)} better={measure.better} label={`${full} к бюджету`} />
         </td>
         <td className="is-num" data-label="Партнёров">
           <span>
@@ -252,7 +257,7 @@ function TotalsTable({ totals, products, measure }: { totals: ReturnType<typeof 
         <tbody>
           {products.flatMap((p) => [
             line(p, productName(p), totals.byProduct.get(p), "product"),
-            ...PARTNER_CHANNELS.map((c) => line(`${p}-${c.code}`, c.label, totals.byPair.get(`${p}:${c.code}`), "sub")),
+            ...PARTNER_CHANNELS.map((c) => line(`${p}-${c.code}`, c.label, totals.byPair.get(`${p}:${c.code}`), "sub", productName(p))),
           ])}
           {line("total", "Весь канал", totals.total, "total")}
         </tbody>
@@ -340,7 +345,7 @@ function PartnerTable({
                   <Delta value={delta(c.revenue, L.revenue, "mln")} label={`${l.label}: выручка к LBE`} />
                 </td>
                 <td className="is-num is-action">
-                  <Button variant="soft" size="sm" onClick={() => onOpen(l.code)} aria-expanded={isOpen} aria-controls={`partner-card-${l.code}`} data-testid={`partner-open-${l.code}`}>
+                  <Button variant="soft" size="sm" onClick={() => onOpen(l.code)} aria-expanded={isOpen} aria-controls={isOpen ? `partner-card-${l.code}` : undefined} data-testid={`partner-open-${l.code}`}>
                     {isOpen ? "Скрыть" : canAdjust ? "Драйверы" : "Подробно"}
                   </Button>
                 </td>
@@ -364,15 +369,17 @@ function PartnerCard({ line, all, month, canAdjust, onSaved }: { line: PartnerLi
   const [editing, setEditing] = useState<PartnerMetric | null>(null);
   const L = derivePartner(line.lbe);
   const c = computePartner(line.lbe, line.drivers);
+  // Пометка «скорректирован» как в списке и итогах: корректировка, равная LBE после перезагрузки, не считается
+  const active = activePartnerDrivers(line.lbe, line.drivers);
   const row = (key: PartnerMetric, driver: boolean) => {
     const unit = PARTNER_UNITS[key];
     const label = partnerMetricLabel(key, line.channel);
     const last = line.last[key];
-    const adjusted = driver && line.drivers[key] !== undefined;
+    const adjusted = driver && active[key] !== undefined;
     const isEditing = editing === key;
     return [
       <tr key={key} className={cn(adjusted && "sv-datatable__row--changed")} data-testid={`partner-row-${key}`}>
-        <td className="is-wide">
+        <th scope="row" className="is-wide text-left font-normal">
           <div className="sv-datatable__name">
             <span className={cn(!driver && "sv-datatable__strong")}>{label}</span>
             {driver ? <span className="sv-datatable__hint max-sm:hidden">{partnerHint(key)}</span> : null}
@@ -388,7 +395,7 @@ function PartnerCard({ line, all, month, canAdjust, onSaved }: { line: PartnerLi
               </span>
             ) : null}
           </div>
-        </td>
+        </th>
         <td className="is-num" data-label="LBE">
           {formatPlan(L[key], unit)}
         </td>
@@ -500,6 +507,13 @@ function PartnerEditor({ month, line, all, metric, onCancel, onSaved }: { month:
     return items;
   }, [valid, parsed, line, metric, all]);
 
+  // Доля больше 100%: не ошибка (ёмкость в LRF могла устареть), но стоит проверить
+  const overCapacity = useMemo(() => {
+    if (!valid) return false;
+    const share = computePartner(line.lbe, { ...line.drivers, [metric]: parsed! }).share;
+    return share != null && share > 1 + 1e-9;
+  }, [valid, parsed, line, metric]);
+
   const save = async (reset: boolean) => {
     setError(null);
     if (!reset && text.trim() === "") return setError("Укажите новое значение");
@@ -567,6 +581,11 @@ function PartnerEditor({ month, line, all, metric, onCancel, onSaved }: { month:
             ))}
           </dl>
         </div>
+      ) : null}
+      {overCapacity ? (
+        <p className="text-caption text-warning-ink" data-testid="partner-over-capacity">
+          Полисов через Сравни больше ёмкости партнёра: проверьте ёмкость или полисы.
+        </p>
       ) : null}
       <FormError message={error ?? undefined} />
       <div className="flex flex-wrap gap-2">

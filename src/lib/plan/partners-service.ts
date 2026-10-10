@@ -111,7 +111,9 @@ export async function partnerView(month: string, opts: { owners: PlanPerson[]; c
     totals: total,
     owners: opts.owners,
     canAdjust: opts.canAdjust,
-    review: opts.since && !opts.closed ? await reviewOf(month, opts.since, adjustments) : null,
+    // Проверка канала считается от загрузки партнёров: если последняя загрузка LBE прошла без листов b2b, партнёры прежние,
+    // и проверять их заново не нужно
+    review: opts.since && !opts.closed ? await reviewOf(month, rows[0]!.pulledAt, adjustments) : null,
     // Корректировки партнёров, которых нет в последней загрузке, в журнале остаются с пометкой
     history: adjustments.slice(0, PARTNER_HISTORY).map((a) => partnerAdjustmentView(a, meta.get(a.partner))),
     pulledAt: rows[0]!.pulledAt.toISOString(),

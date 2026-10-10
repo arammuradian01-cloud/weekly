@@ -30,11 +30,11 @@ describe("листы партнёрского канала", () => {
       "cpa osago СК Восток / отказной",
       "cpa osago Банк Юг",
       "cpa osago Сервис штрафов",
-      "cpa osago Прочие",
+      "cpa osago Прочие (CPA-сети)",
       "agents osago Агенты",
       "agents osago Агент API Один",
       "cpa red-mortgage Банк Север",
-      "cpa red-mortgage Прочие",
+      "cpa red-mortgage Прочие (веб)",
       "cpa red-travel CPA-сеть Путешествия",
       "agents red-mortgage Агенты",
       "agents red-travel Агенты",
@@ -85,20 +85,31 @@ describe("листы партнёрского канала", () => {
     expect(p.osago!.cpa!.LBE.revenue).toBeCloseTo(21.6 + 1.35 + 11.208 + 2.05, 9);
   });
 
-  it("листов партнёрского канала нет: загрузка продуктов идёт как раньше; части листов нет: проблема", () => {
+  it("листов партнёрского канала нет: загрузка продуктов идёт как раньше; части листов нет: проблема; без P&L бюджета нет", () => {
     expect(readPartners({}, OCT)).toEqual({ lines: [], totals: [], found: false, problems: [], warnings: [] });
     const sheets = partnersImitation([OCT]);
     delete sheets["B2B. AGENTS RED LRF"];
     delete sheets["B2B. PnL_b2b"];
     const r = readPartners(sheets, OCT);
     expect(r.found).toBe(true);
-    expect(r.problems).toEqual(["Нет листа «B2B. AGENTS RED LRF»", "Нет листа «B2B. PnL_b2b»: бюджета канала не будет"]);
+    expect(r.problems).toEqual(["Нет листа «B2B. AGENTS RED LRF»"]);
+    // Без бюджета канала партнёры загружаются: бюджет на следующий год в P&L b2b появляется не сразу
+    expect(r.warnings).toEqual(["Нет листа «B2B. PnL_b2b»: бюджета канала не будет"]);
+    expect(r.totals).toEqual([]);
+    // В P&L нет бюджета месяца (январь следующего года): партнёры загружаются, бюджет канала пустой
+    const later = partnersImitation([OCT]);
+    const pnl = later["B2B. PnL_b2b"] as Grid;
+    pnl[1] = pnl[1]!.map((c) => (c === "BUD" ? null : c));
+    const noBudget = readPartners(later, OCT);
+    expect(noBudget.problems).toEqual([]);
+    expect(noBudget.warnings).toEqual(["Лист «B2B. PnL_b2b»: нет колонки BUD Oct_2026, бюджета канала не будет"]);
+    expect(noBudget.lines).toHaveLength(12);
     // Листы без префикса таблицы-связки тоже читаются: источником может быть сам LRF b2b
     const plain = Object.fromEntries(Object.entries(partnersImitation([OCT])).map(([k, v]) => [k.replace("B2B. ", ""), v]));
     expect(readPartners(plain, OCT).lines).toHaveLength(12);
   });
 
-  it("суммы партнёров не сходятся с итогом листа или с P&L: предупреждение", () => {
+  it("суммы партнёров не сходятся с итогом листа или с P&L: проблема, неполный набор партнёров не загружается", () => {
     const sheets = partnersImitation([OCT]);
     const grid = sheets["B2B. CPA & WAYBACK OSAGO LRF"] as Grid;
     const total = grid.findIndex((r) => r[5] === "Sravni TOTAL REVENUE (RUB MLN)");
@@ -106,7 +117,7 @@ describe("листы партнёрского канала", () => {
     const pnl = sheets["B2B. PnL_b2b"] as Grid;
     const agents = pnl.findIndex((r, i) => i > pnl.findIndex((x) => x[4] === "AGETNS") && r[3] === "Revenue" && r[4] === "OSAGO");
     pnl[agents]![6] = 1;
-    expect(readPartners(sheets, OCT).warnings).toEqual(["Лист «CPA & WAYBACK OSAGO LRF»: выручка партнёров не сходятся с итогом листа", "Агенты, ОСАГО: выручка партнёров не сходится с P&L b2b"]);
+    expect(readPartners(sheets, OCT).problems).toEqual(["Лист «B2B. CPA & WAYBACK OSAGO LRF»: выручка партнёров не сходится с итогом листа: часть партнёров не распознана", "Агенты, ОСАГО: выручка партнёров не сходится с LBE в P&L b2b"]);
   });
 });
 
@@ -154,9 +165,28 @@ describe("пересчёт партнёра", () => {
     expect(cur.share).toBeCloseTo(0.025, 9);
   });
 
-  it("конверсия в кросс в драйверах только там, где она есть в LRF", () => {
+  it("драйверы: конверсия в кросс только там, где она есть в LRF и считается, ёмкость только там, где она есть", () => {
     expect(partnerDrivers(byName(lines, "Банк Север").lbe)).toEqual(["capacity", "policies", "rpu", "crUpsale", "commission"]);
-    expect(partnerDrivers(byName(lines, "Агенты", "red-mortgage").lbe)).toEqual(["capacity", "policies", "rpu", "commission"]);
+    // У агентов ёмкости нет: её драйвера и доли Сравни на экране нет
+    expect(partnerDrivers(byName(lines, "Агенты", "red-mortgage").lbe)).toEqual(["policies", "rpu", "commission"]);
+  });
+
+  it("пустая конверсия в кросс у продающего партнёра считается из кросс-полисов, и корректировка на неё влияет", () => {
+    const lbe = { capacity: 900, policies: 450, rpu: 950, revenueCore: 0.4275, crUpsale: null, upsalePolicies: 0, rpuUpsale: 700, upsaleRevenue: 0, revenue: 0.4275, costs: 0.3634, commission: 0.85 };
+    expect(derivePartner(lbe).crUpsale).toBe(0);
+    expect(partnerDrivers(lbe)).toContain("crUpsale");
+    const cur = computePartner(lbe, { crUpsale: 0.1 });
+    expect(cur.upsalePolicies).toBeCloseTo(45, 9);
+    expect(cur.revenue).toBeCloseTo(0.4275 + 45 * 700e-6, 9);
+    // Выручки на кросс-полис нет: конверсия в кросс ни на что бы не влияла, драйвера нет
+    expect(partnerDrivers({ ...lbe, rpuUpsale: null })).not.toContain("crUpsale");
+  });
+
+  it("полисы 0 у продающего партнёра: выручка и маржа ровно ноль, а не остаток плавающей точки", () => {
+    const north = byName(lines, "Банк Север");
+    const cur = computePartner(north.lbe, { policies: 0 });
+    expect(cur.revenue).toBe(0);
+    expect(cur.margin).toBe(0);
   });
 
   it("итоги по продукту и каналу: LBE и прогноз суммой партнёров, бюджет из P&L", () => {

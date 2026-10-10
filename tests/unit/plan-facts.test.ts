@@ -160,6 +160,7 @@ describe("сводка для отчёта CEO", () => {
       waiting: [{ product: "КАСКО", owners: ["Фатьянов Евгений", "Рева Тарас"] }],
       pulledAt: "2026-10-05T07:00:00.000Z",
       partners: null,
+      partnerReasons: [],
     };
     expect(planBriefText(brief)).toEqual([
       "Октябрь 2026, итог по продуктам",

@@ -22,7 +22,11 @@ export type PlanBrief = {
   pulledAt: string | null;
   /** Партнёрский канал (этап 35б): выручка и маржа канала, бюджет из P&L b2b. null: партнёры не загружены */
   partners: { revenue: Triple; margin: Triple; adjusted: number; partners: number; review: ReviewView | null; owners: string[] } | null;
+  /** Корректировки партнёров отдельным списком: десяток правок партнёров не вытесняет причины продуктов */
+  partnerReasons: PlanBrief["reasons"];
 };
+
+export const PLAN_BRIEF_PARTNER_REASONS = 3;
 
 /** Месяц недели: месяц её четверга, как у номера недели */
 export function planMonthOfWeek(weekKey: string): string {
@@ -62,22 +66,24 @@ export function briefOf(view: MonthPlanView): PlanBrief {
   }
   // Корректировки партнёров рядом с корректировками продуктов: «Партнёрский канал, Банк, ОСАГО»
   let partners: PlanBrief["partners"] = null;
+  const partnerReasons: PlanBrief["reasons"] = [];
   if (view.partners) {
     for (const l of view.partners.lines) {
       const L = derivePartner(l.lbe);
       for (const [metric, a] of Object.entries(l.last) as [PartnerMetric, NonNullable<(typeof l.last)[PartnerMetric]>][]) {
         if (a.value === null) continue;
         const unit = PARTNER_UNITS[metric];
-        reasons.push({ product: `${PARTNER_LABEL}, ${l.label}, ${productName(l.product)}`, metric: partnerMetricLabel(metric, l.channel), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
+        partnerReasons.push({ product: `${l.label}, ${productName(l.product)}`, metric: partnerMetricLabel(metric, l.channel), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
       }
     }
     const t = partnerTotals(view.partners.lines, view.partners.totals).total;
     partners = { revenue: t.revenue, margin: t.margin, adjusted: t.adjusted, partners: t.partners, review: view.partners.review, owners: view.partners.owners.map((o) => o.name) };
   }
   reasons.sort((x, y) => y.at.localeCompare(x.at));
+  partnerReasons.sort((x, y) => y.at.localeCompare(x.at));
   const waiting = view.products.filter((p) => p.review?.state === "waiting").map((p) => ({ product: productOf(p.code)!.label, owners: p.owners.map((o) => o.name) }));
   if (partners?.review?.state === "waiting") waiting.push({ product: PARTNER_LABEL, owners: partners.owners });
-  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners };
+  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners, partnerReasons: partnerReasons.slice(0, PLAN_BRIEF_PARTNER_REASONS) };
 }
 
 const pctTo = (value: number | null, base: number | null) => (value === null || base === null || base === 0 ? null : ((value - base) / Math.abs(base)) * 100);
@@ -101,6 +107,12 @@ export function planBriefText(b: PlanBrief): string[] {
   if (b.reasons.length) {
     out.push("Корректировки команд:");
     for (const r of b.reasons) out.push(`- ${r.product}, ${lcFirst(r.metric)}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
+  }
+  if (b.partnerReasons.length) {
+    out.push("Корректировки партнёрского канала:");
+    for (const r of b.partnerReasons) out.push(`- ${r.product}, ${lcFirst(r.metric)}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
+    const more = (b.partners?.adjusted ?? 0) - b.partnerReasons.length;
+    if (more > 0) out.push(`Ещё партнёров с корректировками: ${more}`);
   }
   if (b.waiting.length) out.push(waitingText(b.waiting));
   return out;

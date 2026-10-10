@@ -114,7 +114,26 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
           <h3 className="mb-2 text-caption font-semibold text-text-secondary">Корректировки команд</h3>
           <ul className="flex flex-col gap-2" data-testid="plan-brief-reasons">
             {brief.reasons.slice(0, compact ? 3 : undefined).map((r) => (
-              <li key={`${r.product}:${r.metric}`} className="text-body">
+              <li key={`${r.product}:${r.metric}:${r.at}`} className="text-body">
+                <span className="font-semibold text-ink">
+                  {r.product}, {lcFirst(r.metric)}:
+                </span>{" "}
+                {r.value} вместо {r.lbe} по LBE. {r.reason}: {r.comment}
+                <span className="text-caption text-text-secondary">
+                  {" "}
+                  ({r.author}, {when(r.at)})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {brief.partnerReasons.length ? (
+        <div className="px-5 pb-4">
+          <h3 className="mb-2 text-caption font-semibold text-text-secondary">Корректировки партнёрского канала</h3>
+          <ul className="flex flex-col gap-2" data-testid="plan-brief-partner-reasons">
+            {brief.partnerReasons.slice(0, compact ? 2 : undefined).map((r) => (
+              <li key={`${r.product}:${r.metric}:${r.at}`} className="text-body">
                 <span className="font-semibold text-ink">
                   {r.product}, {lcFirst(r.metric)}:
                 </span>{" "}

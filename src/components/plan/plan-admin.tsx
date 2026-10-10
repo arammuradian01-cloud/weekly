@@ -230,7 +230,7 @@ function PartnersPreview({ p }: { p: PullPreview["partners"] }) {
         </p>
       ) : p.ready ? (
         <p className="sv-alert sv-alert--success">
-          Партнёрский канал: {p.lines} партнёров, выручка LBE {formatPlan(p.revenue.lbe, "mln")} млн, бюджет канала {formatPlan(p.revenue.budget, "mln")} млн.{p.before ? ` Сейчас загружено партнёров: ${p.before}, корректировки команды канала останутся.` : ""}
+          Партнёрский канал загрузится. Партнёров: {p.lines}, выручка LBE {formatPlan(p.revenue.lbe, "mln")} млн, бюджет канала {formatPlan(p.revenue.budget, "mln")} млн.{p.before ? ` Сейчас загружено партнёров: ${p.before}, корректировки команды канала останутся.` : ""}
         </p>
       ) : (
         <div className="sv-alert sv-alert--warning">

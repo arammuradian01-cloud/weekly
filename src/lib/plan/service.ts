@@ -44,6 +44,8 @@ export const LRF_MIRROR_ID = "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg";
 /** Листы LRF b2b (этап 35б): в таблице-связке с префиксом «B2B. », в самом LRF b2b без него. Их может не быть */
 const PARTNER_SHEET_NAMES = [...PARTNER_SHEETS.map((x) => x.name), PARTNER_PNL_SHEET].flatMap((n) => [`${PARTNER_SHEET_PREFIX}${n}`, n]);
 export const PLAN_LIMITS = { comment: 300, commentMin: 3, owners: 12, history: 60, rows: 1500, cols: 1500 };
+/** Листы партнёров длиннее листов ключевых метрик: в «CPA & WAYBACK RED LRF» уже больше тысячи строк */
+const PARTNER_LIMITS = { rows: 5000, cols: 400 };
 
 type Reader = Pick<SheetsClient, "getValues" | "sheets">;
 type Conn = { reader: Reader; mode: "google" | "imitation"; sourceId: string };
@@ -96,29 +98,42 @@ function errorText(error: unknown): string {
  * Листы LRF: только значения, без форматов. Сначала размер сетки каждого листа, потом диапазон не больше лимита, чтобы
  * огромный лист не читался целиком. Нет листа: undefined, его отметит разбор. Лист больше лимита: заметка владельцу
  */
-async function readSheets(conn: Conn): Promise<{ sheets: Record<string, Grid | undefined>; notes: string[] }> {
+async function readSheets(conn: Conn): Promise<{ sheets: Record<string, Grid | undefined>; notes: string[]; partnerProblems: string[] }> {
   const infos = await conn.reader.sheets();
   const out: Record<string, Grid | undefined> = {};
   const notes: string[] = [];
-  await Promise.all(
-    [...SHEETS, ...PARTNER_SHEET_NAMES].map(async (name) => {
-      const info = infos.find((i) => i.title.toLowerCase() === name.toLowerCase());
-      if (!info) {
+  const partnerProblems: string[] = [];
+  const read = async (name: string, limit: { rows: number; cols: number }, partner: boolean) => {
+    const info = infos.find((i) => i.title.toLowerCase() === name.toLowerCase());
+    if (!info) {
+      out[name] = undefined;
+      return;
+    }
+    const rows = Math.min(info.rowCount ?? limit.rows, limit.rows);
+    const cols = Math.min(info.columnCount ?? limit.cols, limit.cols);
+    if ((info.rowCount ?? 0) > limit.rows || (info.columnCount ?? 0) > limit.cols) {
+      // Обрезанный лист партнёров дал бы неполный набор: хвостовые партнёры пропали бы вместе с корректировками
+      if (partner) partnerProblems.push(`Лист «${name}» больше ${limit.rows} строк или ${limit.cols} колонок: партнёры не загружаются, нужен больший лимит чтения`);
+      else notes.push(`Лист «${name}» больше ${limit.rows} строк или колонок: читаются первые`);
+    }
+    if (rows < 1 || cols < 1) {
+      out[name] = [];
+      return;
+    }
+    const grid = await conn.reader.getValues(`${q(info.title)}!A1:${colLetter(cols)}${rows}`);
+    out[name] = grid.slice(0, limit.rows).map((row) => row.slice(0, limit.cols)) as Grid;
+  };
+  await Promise.all([
+    ...SHEETS.map((name) => read(name, PLAN_LIMITS, false)),
+    // Листы партнёрского канала: ошибка чтения (Google ответил 429 или 5xx) не срывает загрузку продуктов
+    ...PARTNER_SHEET_NAMES.map((name) =>
+      read(name, PARTNER_LIMITS, true).catch((error: unknown) => {
         out[name] = undefined;
-        return;
-      }
-      const rows = Math.min(info.rowCount ?? PLAN_LIMITS.rows, PLAN_LIMITS.rows);
-      const cols = Math.min(info.columnCount ?? PLAN_LIMITS.cols, PLAN_LIMITS.cols);
-      if ((info.rowCount ?? 0) > PLAN_LIMITS.rows || (info.columnCount ?? 0) > PLAN_LIMITS.cols) notes.push(`Лист «${name}» больше ${PLAN_LIMITS.rows} строк или колонок: читаются первые`);
-      if (rows < 1 || cols < 1) {
-        out[name] = [];
-        return;
-      }
-      const grid = await conn.reader.getValues(`${q(info.title)}!A1:${colLetter(cols)}${rows}`);
-      out[name] = grid.slice(0, PLAN_LIMITS.rows).map((row) => row.slice(0, PLAN_LIMITS.cols)) as Grid;
-    }),
-  );
-  return { sheets: out, notes };
+        partnerProblems.push(`Лист «${name}» не прочитан: ${errorText(error)}`);
+      }),
+    ),
+  ]);
+  return { sheets: out, notes, partnerProblems };
 }
 
 function requirePull(actor: Actor) {
@@ -137,8 +152,9 @@ async function readMonth(month: string) {
   if (!conn) fail(serviceEmail() ? "Источник LRF не задан" : "Ключ служебного аккаунта Google не задан на сервере");
   let sheets: Record<string, Grid | undefined>;
   let notes: string[];
+  let partnerProblems: string[];
   try {
-    ({ sheets, notes } = await readSheets(conn!));
+    ({ sheets, notes, partnerProblems } = await readSheets(conn!));
   } catch (error) {
     return fail(errorText(error));
   }
@@ -153,6 +169,10 @@ async function readMonth(month: string) {
   // Партнёрский канал (этап 35б) не мешает загрузке продуктов: с проблемами он не загружается, и это видно в проверке
   const partners = readPartners(sheets, month);
   for (const name of PARTNER_SHEET_NAMES) if (pending(sheets[name])) partners.problems.unshift(`Лист «${name}» ещё не получил цифры из LRF b2b: откройте таблицу-связку и подождите минуту`);
+  if (partnerProblems.length) {
+    partners.found = true;
+    partners.problems.unshift(...partnerProblems);
+  }
   const problems = [...read.problems];
   // Без любой строки продукта пересчёт врёт, поэтому пропуск строки не даёт загрузить: строку в LRF переименовали или
   // перенесли, и правило поиска нужно поправить
@@ -177,6 +197,16 @@ export async function previewPull(actor: Actor, monthInput: string): Promise<Pul
   const { read, problems, notes, partners } = await readMonth(month);
   const lines = await prisma.planLine.findMany({ where: { month, version: "LBE" } });
   const partnersBefore = await prisma.planPartner.count({ where: { month } });
+  // Партнёры с корректировками, которых нет в новой загрузке: корректировки останутся в журнале без партнёра
+  if (partnersReady(partners)) {
+    const fresh = new Set(partners.lines.map((l) => l.code));
+    const adjusted = await prisma.planPartnerAdjustment.findMany({ where: { month, value: { not: null } }, distinct: ["partner"], select: { partner: true } });
+    const lost = adjusted.filter((a) => !fresh.has(a.partner));
+    if (lost.length) {
+      const names = await prisma.planPartner.findMany({ where: { month, code: { in: lost.map((a) => a.partner) } }, select: { label: true } });
+      partners.warnings.push(`Партнёров с корректировками нет в новой загрузке: ${names.map((n) => n.label).join(", ") || lost.length}. Их корректировки останутся в журнале без партнёра`);
+    }
+  }
   const beforeOf = (code: string) => lines.find((l) => l.product === code && l.metric === "revenue")?.value ?? null;
   const adjustments = await prisma.planAdjustment.findMany({ where: { month }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
   // Корректировки хранят значение, а не сдвиг: если LBE драйвера поменялся, корректировка теперь значит другое. Показываем такие
@@ -306,7 +336,7 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
         entityId: month,
         field: `Бюджет и LBE, ${monthLabel(month)}`,
         before: had ? "загружено раньше" : "не загружено",
-        after: `выручка по продуктам: LBE ${formatPlan(total("LBE"), "mln")} млн, бюджет ${formatPlan(total("BUD"), "mln")} млн${withPartners ? `; партнёрский канал: ${partners.lines.length} партнёров` : ""}`,
+        after: `выручка по продуктам: LBE ${formatPlan(total("LBE"), "mln")} млн, бюджет ${formatPlan(total("BUD"), "mln")} млн${withPartners ? `; партнёрский канал, партнёров: ${partners.lines.length}` : ""}`,
         ip: actor.ip ?? null,
         via: actor.via ?? null,
       },
@@ -561,7 +591,7 @@ export async function setOwners(actor: Actor, productCode: string, slugs: string
   const spec = ownerSpecs().find((p) => p.code === String(productCode ?? "")) ?? fail("Нет такого продукта");
   if (!Array.isArray(slugs)) fail("Список людей не разобран");
   const clean = [...new Set(slugs.map((s) => String(s ?? "").trim()).filter(Boolean))];
-  if (clean.length > PLAN_LIMITS.owners) fail(`Не больше ${PLAN_LIMITS.owners} человек на продукт`);
+  if (clean.length > PLAN_LIMITS.owners) fail(`Не больше ${PLAN_LIMITS.owners} человек в команде продукта или канала`);
   const found = await people(clean);
   const unknown = clean.filter((s) => !found.has(s));
   if (unknown.length) fail("Нет такого сотрудника или он неактивен");

@@ -85,7 +85,7 @@ describe("загрузка партнёрского канала вместе с
     const g = await view(await actor.golovkin());
     expect(g.partners!.canAdjust).toBe(false);
     const audit = await prisma.auditLog.findFirst({ where: { action: "plan.pull" }, orderBy: { at: "desc" } });
-    expect(audit!.after).toMatch(/партнёрский канал: 12 партнёров/);
+    expect(audit!.after).toMatch(/партнёрский канал, партнёров: 12/);
   });
 
   it("листов b2b в источнике нет: продукты загружаются, партнёров нет, в проверке сказано почему", async () => {
@@ -105,19 +105,34 @@ describe("загрузка партнёрского канала вместе с
     }
   });
 
-  it("листы b2b с проблемой: продукты загружаются, прежние партнёры остаются", async () => {
+  it("листы b2b с проблемой: продукты загружаются, прежние партнёры остаются и не просят проверки заново", async () => {
     await load();
     await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 22_000);
-    await withoutTab("B2B. PnL_b2b", async () => {
+    await withoutTab("B2B. AGENTS RED LRF", async () => {
       const preview = await plan.previewPull(await actor.owner(), month);
       expect(preview.ready).toBe(true);
       expect(preview.partners.ready).toBe(false);
-      expect(preview.partners.problems).toEqual(["Нет листа «B2B. PnL_b2b»: бюджета канала не будет"]);
+      expect(preview.partners.problems).toEqual(["Нет листа «B2B. AGENTS RED LRF»"]);
       expect(preview.partners.before).toBe(12);
       await load();
     });
     expect(await prisma.planPartner.count({ where: { month } })).toBe(12);
     expect((await line("Банк Север")).drivers.policies).toBe(22_000);
+    // Партнёры прежние: канал проверен корректировкой после их загрузки, событий команде канала по новой загрузке нет
+    const v = await view();
+    expect(v.partners!.review?.state).toBe("adjusted");
+    expect((await proc.planBrief(await actor.owner(), month))!.waiting.map((w) => w.product)).not.toContain("Партнёрский канал");
+  });
+
+  it("без бюджета канала в P&L партнёры загружаются, бюджет пустой", async () => {
+    await withoutTab("B2B. PnL_b2b", async () => {
+      const preview = await plan.previewPull(await actor.owner(), month);
+      expect(preview.partners).toMatchObject({ ready: true, problems: [], warnings: ["Нет листа «B2B. PnL_b2b»: бюджета канала не будет"] });
+      expect(preview.partners.revenue.budget).toBeNull();
+      await load();
+    });
+    expect(await prisma.planPartner.count({ where: { month } })).toBe(12);
+    expect(await prisma.planPartnerTotal.count({ where: { month } })).toBe(0);
   });
 
   it("повторная загрузка: коды партнёров те же, корректировки команды остаются", async () => {
@@ -208,8 +223,13 @@ describe("команда канала, проверка и сводка", () => 
     await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 22_000);
     brief = (await proc.planBrief(await actor.owner(), month))!;
     expect(brief.partners!.revenue.forecast! - brief.partners!.revenue.lbe!).toBeCloseTo(2.16, 6);
-    expect(brief.reasons[0]).toMatchObject({ product: "Партнёрский канал, Банк Север, ОСАГО", metric: "Полисы через Сравни", value: "22 000", lbe: "20 000" });
+    // Корректировки партнёров отдельным списком: причины продуктов они не вытесняют
+    expect(brief.partnerReasons[0]).toMatchObject({ product: "Банк Север, ОСАГО", metric: "Полисы через Сравни", value: "22 000", lbe: "20 000" });
+    expect(brief.reasons.some((r) => r.product.includes("Банк Север"))).toBe(false);
     expect(brief.waiting.map((w) => w.product)).not.toContain("Партнёрский канал");
-    expect(proc.planBriefText(brief).some((t) => t.startsWith("Партнёрский канал, внутри продуктов: выручка прогноз"))).toBe(true);
+    const text = proc.planBriefText(brief);
+    expect(text.some((t) => t.startsWith("Партнёрский канал, внутри продуктов: выручка прогноз"))).toBe(true);
+    expect(text).toContain("Корректировки партнёрского канала:");
+    expect(text.some((t) => t.startsWith("- Банк Север, ОСАГО, полисы через Сравни: 22 000 вместо 20 000 по LBE"))).toBe(true);
   });
 });

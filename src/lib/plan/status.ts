@@ -51,8 +51,10 @@ export async function closePlanReminders(tx: Prisma.TransactionClient, month: st
   const people = await tx.person.findMany({ where: { slug: { in: slugs } }, select: { id: true, slug: true } });
   const all = [...new Set(people.flatMap((p) => Object.entries(owners).filter(([, list]) => list.includes(p.slug)).map(([code]) => code)))];
   const loaded = new Set((await tx.planLine.findMany({ where: { month, version: "LBE", product: { in: all } }, distinct: ["product"], select: { product: true } })).map((l) => l.product));
-  // Партнёрский канал (этап 35б): загружен, если есть партнёры месяца; проверен корректировкой партнёра или отметкой
-  if (all.includes(PARTNER_OWNER_CODE) && (await tx.planPartner.count({ where: { month } }))) loaded.add(PARTNER_OWNER_CODE);
+  // Партнёрский канал (этап 35б): ждёт проверки, только если партнёры пришли последней загрузкой (тогда о нём было
+  // событие); проверен корректировкой партнёра или отметкой после этого
+  const partnersAt = all.includes(PARTNER_OWNER_CODE) ? (await tx.planPartner.findFirst({ where: { month }, select: { pulledAt: true } }))?.pulledAt : null;
+  if (partnersAt && partnersAt >= since) loaded.add(PARTNER_OWNER_CODE);
   const [adjusted, checked, partnerAdjusted] = await Promise.all([
     tx.planAdjustment.findMany({ where: { month, product: { in: [...loaded] }, createdAt: { gt: since } }, distinct: ["product"], select: { product: true } }),
     tx.planCheck.findMany({ where: { month, product: { in: [...loaded] }, at: { gt: since } }, distinct: ["product"], select: { product: true } }),

@@ -14,6 +14,7 @@
 
 import { lrfMonth } from "./spec";
 import { cellNumber, type Cell, type Grid } from "./lrf";
+import { lcFirst } from "./format";
 
 export type PartnerChannel = "cpa" | "agents";
 
@@ -167,13 +168,20 @@ function hash(s: string): string {
   return h1.toString(36).padStart(7, "0") + h2.toString(36).padStart(7, "0");
 }
 
-/** Имя партнёра на экране: заголовок «AGENTS» по-русски, остальное как в LRF */
-const displayName = (label: string) => (/^AGENTS$/i.test(label) ? "Агенты" : label);
+/**
+ * Имя партнёра на экране: заголовок «AGENTS» по-русски; «Прочие» с типом партнёров, иначе шесть «Прочих» ОСАГО не
+ * отличить в журнале и сводке; остальное как в LRF
+ */
+function displayName(label: string, kind: string): string {
+  if (/^AGENTS$/i.test(label)) return "Агенты";
+  if (/^Прочие$/i.test(label)) return `Прочие (${lcFirst(kindLabel(kind))})`;
+  return label;
+}
 
 export type SheetRead = { lines: PartnerLine[]; totals: { policies: number | null; revenue: number | null; costs: number | null }; skipped: string[] };
 
 /** Партнёры одного листа со значениями LBE месяца. col: колонка LBE месяца */
-export function readPartnerSheet(grid: Grid, channel: PartnerChannel, col: number): SheetRead {
+export function readPartnerSheet(grid: Grid, channel: PartnerChannel, col: number, used = new Map<string, number>()): SheetRead {
   const labeled: number[] = [];
   for (let i = 0; i < grid.length; i++) if (labelOf(grid[i])) labeled.push(i);
   type Block = { name: string; row: number; values: PartnerValues; seen: Set<string>; keys: { product: string; kind: string; partner: string } | null };
@@ -198,7 +206,10 @@ export function readPartnerSheet(grid: Grid, channel: PartnerChannel, col: numbe
     }
     if (keyed && !cur.keys) {
       const product = keyOf(row, KEY_COLS.product);
-      if (partnerProductCode(product)) cur.keys = { product, kind: keyOf(row, KEY_COLS.kind), partner: keyOf(row, KEY_COLS.partner) };
+      const kind = keyOf(row, KEY_COLS.kind);
+      // У обычных агентов ключ партнёра в строках разбивки («Agents», «Manager Agency»): код по имени блока, чтобы он не
+      // зависел от порядка этих строк
+      if (partnerProductCode(product)) cur.keys = { product, kind, partner: /^agents$/i.test(kind) ? "" : keyOf(row, KEY_COLS.partner) };
     }
     const find = FIND.find((f) => f.label.test(label));
     if (!find || cur.seen.has(find.metric)) continue;
@@ -207,7 +218,6 @@ export function readPartnerSheet(grid: Grid, channel: PartnerChannel, col: numbe
   }
   const lines: PartnerLine[] = [];
   const skipped = new Set<string>();
-  const used = new Map<string, number>();
   for (const b of blocks) {
     if (!b.keys) {
       // Блок с ключами неизвестного продукта (бронирование): отмечаем, если в нём есть деньги
@@ -221,7 +231,7 @@ export function readPartnerSheet(grid: Grid, channel: PartnerChannel, col: numbe
     used.set(base, n);
     lines.push({
       code: `p${hash(n > 1 ? `${base}|${n}` : base)}`,
-      label: displayName(b.name),
+      label: displayName(b.name, b.keys.kind),
       product,
       channel,
       kind: b.keys.kind,
@@ -325,34 +335,40 @@ export function readPartners(sheets: Record<string, Grid | undefined>, month: st
   const pnlGrid = partnerSheet(sheets, PARTNER_PNL_SHEET);
   if (!present.length && !pnlGrid) return { lines: [], totals: [], found: false, problems, warnings };
   const lines: PartnerLine[] = [];
+  // Повторы ключей разводятся по всем листам сразу: одинаковый код у двух партнёров уронил бы всю загрузку месяца
+  const used = new Map<string, number>();
+  const title = (name: string) => `«${PARTNER_SHEET_PREFIX}${name}»`;
   for (const s of PARTNER_SHEETS) {
     const grid = partnerSheet(sheets, s.name);
     if (!grid) {
-      problems.push(`Нет листа «${PARTNER_SHEET_PREFIX}${s.name}»`);
+      problems.push(`Нет листа ${title(s.name)}`);
       continue;
     }
     const col = monthColumn(grid, month, "LBE");
     if (col === undefined) {
-      problems.push(`Лист «${s.name}»: нет колонки LBE ${lrfMonth(month)}`);
+      problems.push(`Лист ${title(s.name)}: нет колонки LBE ${lrfMonth(month)}`);
       continue;
     }
-    const read = readPartnerSheet(grid, s.channel, col);
-    if (!read.lines.length) problems.push(`Лист «${s.name}»: не найдены партнёры`);
-    for (const raw of read.skipped) warnings.push(`Лист «${s.name}»: продукт «${raw}» не входит в прогноз, его партнёры не загружены`);
+    const read = readPartnerSheet(grid, s.channel, col, used);
+    if (!read.lines.length) problems.push(`Лист ${title(s.name)}: не найдены партнёры`);
+    for (const raw of read.skipped) warnings.push(`Лист ${title(s.name)}: продукт «${raw}» не входит в прогноз, его партнёры не загружены`);
     const sum = (m: PartnerMetric) => read.lines.reduce((acc, l) => acc + (l.lbe[m] ?? 0), 0);
+    // Сумма партнёров не сходится с итогом листа: какой-то блок не распознан. Неполный набор партнёров не загружается,
+    // иначе пропавшие партнёры потеряли бы корректировки команды
     const check = (what: string, total: number | null, m: PartnerMetric) => {
-      if (total !== null && !near(sum(m), total, 0.005)) warnings.push(`Лист «${s.name}»: ${what} партнёров не сходятся с итогом листа`);
+      if (total !== null && !near(sum(m), total, 0.005)) problems.push(`Лист ${title(s.name)}: ${what} с итогом листа: часть партнёров не распознана`);
     };
-    check("полисы", read.totals.policies, "policies");
-    check("выручка", read.totals.revenue, "revenue");
-    check("расходы", read.totals.costs, "costs");
+    check("полисы партнёров не сходятся", read.totals.policies, "policies");
+    check("выручка партнёров не сходится", read.totals.revenue, "revenue");
+    check("расходы партнёров не сходятся", read.totals.costs, "costs");
     for (const l of read.lines) lines.push({ ...l, position: lines.length });
   }
   const totals: PartnerPull["totals"] = [];
-  if (!pnlGrid) problems.push(`Нет листа «${PARTNER_SHEET_PREFIX}${PARTNER_PNL_SHEET}»: бюджета канала не будет`);
+  // Без бюджета канала партнёры загружаются: LBE партнёров есть, а бюджет в P&L b2b появляется на год вперёд не сразу
+  if (!pnlGrid) warnings.push(`Нет листа ${title(PARTNER_PNL_SHEET)}: бюджета канала не будет`);
   else {
     const cols = { LBE: monthColumn(pnlGrid, month, "LBE"), BUD: monthColumn(pnlGrid, month, "BUD") };
-    if (cols.BUD === undefined) problems.push(`Лист «${PARTNER_PNL_SHEET}»: нет колонки BUD ${lrfMonth(month)}`);
+    if (cols.BUD === undefined) warnings.push(`Лист ${title(PARTNER_PNL_SHEET)}: нет колонки BUD ${lrfMonth(month)}, бюджета канала не будет`);
     const pnl = readPnl(pnlGrid, cols);
     for (const product of PARTNER_PRODUCTS) {
       for (const ch of PARTNER_CHANNELS) {
@@ -363,7 +379,7 @@ export function readPartners(sheets: Record<string, Grid | undefined>, month: st
         const lbe = t.LBE.revenue;
         const mine = lines.filter((l) => l.product === product && l.channel === ch.code);
         if (lbe !== null && mine.length && !near(mine.reduce((a, l) => a + (l.lbe.revenue ?? 0), 0), lbe, 0.01)) {
-          warnings.push(`${ch.label}, ${productName(product)}: выручка партнёров не сходится с P&L b2b`);
+          problems.push(`${ch.label}, ${productName(product)}: выручка партнёров не сходится с LBE в P&L b2b`);
         }
       }
     }
@@ -395,6 +411,8 @@ export function derivePartner(v: PartnerValues): PartnerValues {
   out.share = cap !== null && cap > 0 && pol !== null ? pol / cap : num(v.share);
   if (num(out.commission) === null && revenue !== null && revenue > 0 && num(v.costs) !== null) out.commission = v.costs! / revenue;
   if (num(out.rpuUpsale) === null && num(v.upsalePolicies) && up !== null) out.rpuUpsale = (up * 1e6) / v.upsalePolicies!;
+  // Пустая конверсия в кросс у продающего партнёра: из кросс-полисов (обычно 0), иначе корректировка ни на что не влияет
+  if (num(out.crUpsale) === null && pol !== null && pol > 0 && num(v.upsalePolicies) !== null) out.crUpsale = v.upsalePolicies! / pol;
   out.margin = revenue !== null && num(v.costs) !== null ? revenue - v.costs! : null;
   return out;
 }
@@ -402,13 +420,23 @@ export function derivePartner(v: PartnerValues): PartnerValues {
 /** Есть ли у партнёра кросс-продажи: строки конверсии в кросс в LBE */
 export const hasUpsale = (lbe: PartnerValues) => num(lbe.crUpsale) !== null || num(lbe.upsalePolicies) !== null;
 
-/** Драйверы партнёра на экране: конверсия в кросс только там, где она есть в LRF (ОСАГО) */
+/**
+ * Драйверы партнёра на экране: только те, от которых считается результат. Ёмкость, если она есть в LRF (у агентов её
+ * нет); конверсия в кросс, если известна выручка на кросс-полис; выручка на полис, если её можно посчитать
+ */
 export function partnerDrivers(lbe: PartnerValues): PartnerMetric[] {
-  return PARTNER_DRIVERS.filter((k) => k !== "crUpsale" || hasUpsale(lbe));
+  const L = derivePartner(lbe);
+  const selling = (num(L.policies) ?? 0) > 0;
+  return PARTNER_DRIVERS.filter((k) => {
+    if (k === "capacity") return num(lbe.capacity) !== null;
+    if (k === "crUpsale") return hasUpsale(lbe) && num(L.rpuUpsale) !== null;
+    if (k === "rpu") return !selling || num(L.rpu) !== null;
+    return true;
+  });
 }
 
 export function partnerResults(lbe: PartnerValues): PartnerMetric[] {
-  return PARTNER_RESULTS.filter((k) => k !== "upsalePolicies" || hasUpsale(lbe));
+  return PARTNER_RESULTS.filter((k) => (k !== "upsalePolicies" || hasUpsale(lbe)) && (k !== "share" || num(lbe.capacity) !== null));
 }
 
 /**
@@ -459,6 +487,11 @@ export function computePartner(lbe: PartnerValues, drivers: PartnerDrivers): Par
   const costs = scale(num(L.costs), revenue, revenueL, d("commission"), num(L.commission), 1);
   out.costs = costs;
   out.margin = revenue !== null && costs !== null ? revenue - costs : null;
+  // Остаток плавающей точки после корректировки (полисы 0 дают -1e-9) показывается нулём; значения LBE не трогаются
+  for (const k of ["revenueCore", "upsalePolicies", "upsaleRevenue", "revenue", "costs", "margin"] as const) {
+    const x = out[k];
+    if (x != null && x !== L[k] && Math.abs(x) < 1e-9) out[k] = 0;
+  }
   return out;
 }
 
