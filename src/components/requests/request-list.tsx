@@ -75,7 +75,7 @@ export function RequestList({
     <section aria-labelledby={id}>
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <h2 id={id} className="text-title font-semibold text-ink">
-          {title} <span className="font-normal text-muted">{open}</span>
+          {title} {open ? <span className="font-normal text-muted">{open}</span> : null}
         </h2>
         {action}
       </div>

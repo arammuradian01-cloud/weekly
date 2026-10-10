@@ -75,25 +75,34 @@ test("инициативы и решения: цифры, таблица реш�
   await shot(page, "decisions");
 });
 
-test("мне и моя неделя: цифры ведут к разделам страницы", async ({ page }) => {
-  // У Головкина всё разобрано и сроков нет: цифр нет, пять нулей не нужны
+test("мне и моя неделя: цифры ведут к группам очереди", async ({ page }) => {
+  // У Головкина всё разобрано и сроков нет: цифр нет, нули не нужны, одна пустая очередь
   await enterByLink(page, "golovkin");
   await page.goto("/me");
   await expect(page.getByRole("heading", { name: "Всё разобрано" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Мне в цифрах" })).toHaveCount(0);
-  // У Ревы просроченные задачи: цифры видны и ведут к разделам
+  // У Ревы просроченные задачи: цифры строкой ведут к группе «Срок прошёл» (этап 44), в строке статус и перенос срока
   await page.context().clearCookies();
   await enterByLink(page, "reva");
   await page.goto("/me");
   await expect(page.getByTestId("me-fig-late")).not.toContainText(/^0/);
   const figures = page.getByRole("list", { name: "Мне в цифрах" });
   await expect(figures).toBeVisible();
-  await expect(page.getByTestId("me-fig-events")).toBeVisible();
   await page.getByTestId("me-fig-late").getByRole("link").click();
-  await expect(page).toHaveURL(/#me-deadlines$/);
-  await expect(page.getByTestId("me-deadlines")).toBeVisible();
+  await expect(page).toHaveURL(/#me-late$/);
+  const late = page.getByTestId("me-late");
+  await expect(late.getByRole("heading", { name: /Срок прошёл/ })).toBeVisible();
+  await expect(late.getByRole("button", { name: /^Статус задачи \d+/ }).first()).toBeVisible();
+  await expect(late.getByRole("button", { name: /^Перенести срок задачи \d+/ }).first()).toBeVisible();
+  // Плиток больше нет, цифры только строкой
+  await expect(page.locator(".sv-figures:not(.sv-figures--inline)")).toHaveCount(0);
   await shot(page, "me");
+  // Главная 2:1 (этап 44): «Сейчас» с одной кнопкой, «Требует внимания» одним списком, встреча справа
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Мой weekly за неделю/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Сдать weekly|Продолжить weekly|Открыть мой weekly/ })).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: /Требует внимания/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Просроченные и срочные задачи/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /открыть подготовку к встрече/ })).toBeVisible();
   await shot(page, "home");
 });

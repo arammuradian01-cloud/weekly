@@ -63,13 +63,11 @@ export default async function MyWeekPage() {
   // Встреча идёт на следующей неделе в день из настроек (по умолчанию вторник)
   const meetingSetting = await getSetting<MeetingSetting>("week.meeting", { weekday: 2 });
   const meetingDay = addDays(fromCalendar(week.start), 7 + meetingSetting.weekday - 1);
-  const state = mine.report.state;
-  const submitted = state === "submitted" || state === "late";
-
   return (
     <>
       {/* Главная по дизайн-системе (оболочка shell-sidebar): заголовок с главным действием, ниже плитки. Раздел «Моя неделя»
           назван в меню, в заголовке приветствие по имени */}
+      {/* Этап 44: кнопка «Сдать weekly» одна, в блоке «Сейчас» ниже; в шапке приветствие и срок */}
       <PageHeader
         title={`${greeting(now)}, ${person.shortName}`}
         description={
@@ -78,11 +76,7 @@ export default async function MyWeekPage() {
             {currentWeek.week !== week.week ? `. Сейчас идёт неделя ${currentWeek.week}` : ""}
           </>
         }
-      >
-        <Link href="/weekly/submit" className={buttonClass(submitted ? "secondary" : "primary")}>
-          {submitted ? "Открыть мой weekly" : state === "draft" ? "Продолжить weekly" : "Сдать weekly"}
-        </Link>
-      </PageHeader>
+      />
 
       {rating ? (
         <div className="sv-card sv-card--soft mb-6 flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">

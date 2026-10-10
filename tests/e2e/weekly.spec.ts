@@ -122,8 +122,9 @@ test("лидер сдаёт weekly в три шага, черновик живё
 
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Открыть мой weekly" })).toBeVisible();
-  // Плитка «Мой weekly» (дизайн-система): крупная цифра записей и подпись
-  await expect(page.getByRole("link", { name: /Мой weekly за неделю \d+.*1\s*запись/ })).toBeVisible();
+  // Блок «Сейчас» (этап 44): заголовок, состояние и число записей
+  const now = page.locator("section", { has: page.getByRole("heading", { name: /Мой weekly за неделю \d+/ }) });
+  await expect(now.getByText(/1\s*запись/)).toBeVisible();
 });
 
 test("удаление записи спрашивает подтверждение и отменяется кнопкой «Отменить» (этап 7)", async ({ page }) => {

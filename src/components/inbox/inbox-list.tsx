@@ -8,10 +8,8 @@ import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
 import { usePrototype } from "@/domain/store";
-import { isMine, isOverdue, overdueDays } from "@/lib/tasks/rules";
 import { addDays, formatShort } from "@/domain/dates";
 import { Button } from "@/components/ui/button";
-import { OverdueNote } from "@/components/ui/task-badges";
 import { IconCircle } from "@/components/ui/tile";
 import { EmptyState } from "@/components/empty-state";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
@@ -26,60 +24,6 @@ const when = (iso: string, today: string) => {
   if (day === addDays(today, -1)) return `вчера в ${time}`;
   return `${formatShort(day)} в ${time}`;
 };
-
-/** Сроки моих открытых задач: просрочено, сегодня, завтра. Считается из задач, событий не требует. Идёт после событий: главное в «Мне» то, что сделали другие */
-function Deadlines() {
-  const { data, me } = usePrototype();
-  const tomorrow = addDays(data.today, 1);
-  const open = data.tasks.filter((t) => !t.archived && isMine(t, me.slug, me.role) && ["in-progress", "clarify", "proposed"].includes(t.status));
-  const hot = open
-    .filter((t) => isOverdue(t, data.today) || t.due <= tomorrow)
-    .sort((a, b) => (a.due < b.due ? -1 : a.due > b.due ? 1 : a.number - b.number));
-  if (!hot.length) return null;
-  return (
-    <section aria-labelledby="me-deadlines" className="sv-section mt-8">
-      <div className="sv-section__head">
-        <h2 id="me-deadlines" className="sv-section__title">
-          Сроки <span className="sv-section__count">{hot.length}</span>
-        </h2>
-      </div>
-      {/* Этап 36: таблица задача и срок, на телефоне строка карточкой */}
-      <div className="sv-card sv-card--soft overflow-x-auto p-0">
-        <table className="sv-datatable sv-datatable--stack" data-testid="me-deadlines">
-          <caption className="sr-only">Мои задачи: просроченные и со сроком сегодня или завтра</caption>
-          <thead>
-            <tr>
-              <th scope="col">Задача</th>
-              <th scope="col">Срок</th>
-              <th scope="col">Что со сроком</th>
-            </tr>
-          </thead>
-          <tbody>
-            {hot.map((t) => {
-              // Срок прошёл и у предложенной задачи: «срок завтра» про неё было бы неправдой
-              const late = isOverdue(t, data.today) || t.due < data.today;
-              return (
-                <tr key={t.number}>
-                  <td className="is-wide">
-                    <Link href={`/tasks/${t.number}`} className="text-ink hover:text-link">
-                      <span className="mr-1 tabular-nums text-text-secondary">{t.number}</span> {t.title}
-                    </Link>
-                  </td>
-                  <td data-label="Срок" className="whitespace-nowrap tabular-nums">
-                    {formatShort(t.due)}
-                  </td>
-                  <td data-label="Что со сроком">
-                    {late ? <OverdueNote days={overdueDays(t, data.today)} /> : <span className="sv-due sv-due--soon">{t.due === data.today ? "срок сегодня" : "срок завтра"}</span>}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
 
 // Иконка события на круге, как в дизайн-системе (inbox/EventRow.jsx): по предмету события
 function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info" | "success" | "warning" | "neutral" } {
@@ -97,8 +41,11 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   return { icon: SquareCheck, tone: "accent" };
 }
 
-/** События «Мне»: одна строка на задачу, свежие сверху */
-export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: number }) {
+/**
+ * События «Мне»: одна строка на задачу, свежие сверху. Этап 44: группа «Прочитать» в общей очереди; когда событий
+ * нет, короткое «Всё разобрано», остальные группы очереди выше
+ */
+export function InboxEvents({ items, snoozed }: { items: InboxItem[]; snoozed: number }) {
   const run = useRunAction();
   const { data } = usePrototype();
   const [busy, setBusy] = useState<string | null>(null);
@@ -115,11 +62,10 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
   };
 
   return (
-    <div>
-      <section aria-labelledby="me-events">
-        <div className="sv-section__head mb-3">
-          <h2 id="me-events" className="sv-section__title">
-            События <span className="sv-section__count">{items.length}</span>
+      <section aria-labelledby="me-read" className="sv-section !mt-0">
+        <div className="sv-section__head">
+          <h2 id="me-read" className="sv-section__title">
+            Прочитать <span className="sv-section__count">{items.length}</span>
           </h2>
           {items.length > 1 ? (
             <Button size="sm" variant="ghost" className="ml-auto" disabled={busy !== null} onClick={() => void act("*", () => markAllDoneAction(), "Всё разобрано")}>
@@ -246,13 +192,9 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
             })}
           </ul>
         ) : (
-          <EmptyState title="Всё разобрано">
-            Здесь появится то, что ждёт вас: задачи, которые вам поставили или передали, ответы на ваши просьбы, комментарии к вашим задачам и записям weekly, упоминания, реакции, переносы сроков.
-          </EmptyState>
+          <EmptyState title="Всё разобрано">Новых событий нет: комментарии, упоминания, реакции и переносы сроков появятся здесь.</EmptyState>
         )}
         {snoozed ? <p className="mt-3 text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}
       </section>
-      <Deadlines />
-    </div>
   );
 }
