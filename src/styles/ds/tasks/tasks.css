@@ -50,7 +50,7 @@
 @media (max-width: 1023px) { .sv-task-rows .sv-inline-edit--empty { display: none; } }
 /* Пустое значение действием «Состояние» с плюсом (этап 43): где значение задают, а не читают */
 .sv-inline-edit--set { padding-left: 6px; gap: 4px; margin-left: -6px; border-style: dashed; border-color: var(--color-border-strong); color: var(--color-text-secondary); font-size: var(--text-caption); font-weight: var(--font-weight-semibold); }
-.sv-inline-edit--set:hover { color: var(--color-text); border-style: solid; }
+.sv-inline-edit--set:hover { color: var(--color-text); border-style: solid; border-color: var(--color-border-strong); }
 /* Скелетон строки */
 .sv-skeleton { display: inline-block; height: 12px; border-radius: 6px; background: var(--color-field); position: relative; overflow: hidden; }
 .sv-skeleton::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent); animation: sv-shimmer 1.4s infinite; }

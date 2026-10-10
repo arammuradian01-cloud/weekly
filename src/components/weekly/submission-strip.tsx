@@ -42,12 +42,13 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
           <div className="sv-submit-bar__fill" style={{ width: `${percent}%` }} />
         </div>
       </div>
-      {/* Этап 43: у сдавших только аватар с зелёной точкой и имя, слово подсказкой и для экранного диктора;
-          слово видно у тех, кто не сдал или кого нет на неделе: это и есть, на кого смотреть */}
+      {/* Этап 43: у сдавших вовремя только аватар с зелёной точкой и имя, слово подсказкой и для экранного диктора;
+          слово видно у опоздавших, у тех, кто не сдал, и у кого нет на неделе: это и есть, на кого смотреть */}
       <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
         {states.map(({ person, state, absent, optional }) => {
           const away = absent && state !== "submitted" && state !== "late";
-          const sentNow = state === "submitted" || state === "late";
+          // Слово спрятано только у сдавших вовремя: опоздание, черновик и «не начат» видны словом, не одной точкой
+          const sentNow = state === "submitted";
           const word = away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`;
           return (
             <li key={person.slug} className={cn("inline-flex items-center gap-2 text-small", (away || state === "not-started") && "opacity-70")} title={`${person.shortName}: ${word}`}>

@@ -54,8 +54,8 @@
 .sv-entry__line--fact .sv-entry__text { font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold); }
 .sv-entry__line--fact .sv-entry__line__icon { color: var(--color-link); }
 .sv-entry__line--next .sv-entry__line__icon { color: var(--color-success-text); }
-/* Низ записи: поставленные реакции слева, действия иконками справа, слово подсказкой при наведении */
 .sv-entry__foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: 4px; border-top: 1px solid var(--color-border); margin-top: 2px; }
+/* Действия иконками в низу записи ленты (этап 43): реакция и обсуждение справа, слово подсказкой при наведении */
 .sv-entry__acts { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; }
 .sv-entry__act { display: inline-flex; align-items: center; gap: 4px; height: 32px; min-width: 32px; padding: 0 6px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text-secondary); font: inherit; font-size: var(--text-caption); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color var(--duration-color), color var(--duration-color); }
 .sv-entry__act:hover { background: var(--color-field); color: var(--color-text); }

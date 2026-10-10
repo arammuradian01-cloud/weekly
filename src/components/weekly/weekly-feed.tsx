@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { formatLong } from "@/domain/dates";
+import { formatLong, plural } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
@@ -128,6 +128,8 @@ export function WeeklyFeed({
   const [author, setAuthorState] = useState<PersonSlug | "">(focus?.here ? focus.slug : "");
   const [helpOnly, setHelpOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(!!focus?.here);
+  const filtersButton = useRef<HTMLButtonElement>(null);
+  const filtersId = `weekly-filters-${week.key}`;
   // Человек из ссылки появился в ленте (перешли в его команду кнопкой подсказки или переключателем в шапке): отбор по
   // нему включается сам; ушли в команду, где его нет: отбор снимается и снова видна подсказка. Только переходы того же
   // человека: выбор автора руками и запоздалый ответ обновления отбор не трогают. Состояние меняется во время отрисовки,
@@ -181,6 +183,8 @@ export function WeeklyFeed({
   const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
   const helpEntriesAll = all.filter((e) => e.help).length;
+  const risks = all.filter((e) => e.type === "risk").length;
+  const results = all.filter((e) => e.type === "result").length;
   const filtersOn = !!(direction || block || type || author || helpOnly);
   // Что включено в раскрывающихся фильтрах: число на кнопке и чипы, когда списки свёрнуты
   const active = [
@@ -206,10 +210,10 @@ export function WeeklyFeed({
               inline
               max={3}
               items={[
-                { label: "записей за неделю", value: all.length, testId: "weekly-fig-entries", keepZero: true },
-                { label: "нужна помощь", value: helpEntriesAll, tone: "warning", testId: "weekly-fig-help" },
-                { label: "риски", value: all.filter((e) => e.type === "risk").length, tone: "warning", testId: "weekly-fig-risks" },
-                { label: "результаты", value: all.filter((e) => e.type === "result").length, testId: "weekly-fig-results" },
+                { label: `${plural(all.length, "запись", "записи", "записей")} за неделю`, value: all.length, testId: "weekly-fig-entries", keepZero: true },
+                { label: plural(helpEntriesAll, "просьба о помощи", "просьбы о помощи", "просьб о помощи"), value: helpEntriesAll, tone: "warning", testId: "weekly-fig-help" },
+                { label: plural(risks, "риск", "риска", "рисков"), value: risks, tone: "warning", testId: "weekly-fig-risks" },
+                { label: plural(results, "результат", "результата", "результатов"), value: results, testId: "weekly-fig-results" },
                 { label: "в отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
               ]}
             />
@@ -272,13 +276,15 @@ export function WeeklyFeed({
           ]}
         />
         {/* Ноль на чипе не показывается: правило строки цифр */}
-        <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={helpEntriesAll || undefined}>
+        <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={helpEntriesAll || undefined} disabled={!helpEntriesAll && !helpOnly}>
           Нужна помощь
         </Chip>
         <button
+          ref={filtersButton}
           type="button"
           onClick={() => setShowFilters((v) => !v)}
           aria-expanded={showFilters}
+          aria-controls={filtersId}
           aria-label={selected > 0 ? `Фильтры, включено: ${selected}` : "Фильтры"}
           className={cn("inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field", showFilters && "bg-accent-soft")}
         >
@@ -287,19 +293,28 @@ export function WeeklyFeed({
           <Counter value={selected} />
         </button>
         {!showFilters && active.length ? (
-          <ul className="flex flex-wrap items-center gap-2" aria-label="Включённые фильтры">
+          <ul className="flex min-w-0 max-w-full flex-wrap items-center gap-2" aria-label="Включённые фильтры">
             {active.map((f) => (
-              <li key={f.label}>
-                <button type="button" onClick={f.clear} className="sv-pill is-active" aria-label={`Снять фильтр: ${f.label} ${f.value}`}>
-                  <span className="font-normal">{f.label}:</span> {f.value}
-                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+              <li key={f.label} className="min-w-0 max-w-full">
+                <button
+                  type="button"
+                  onClick={() => {
+                    f.clear();
+                    // Чип исчезает вместе с фокусом: возвращаем его на кнопку «Фильтры», а не в начало страницы
+                    filtersButton.current?.focus();
+                  }}
+                  className="sv-pill is-active max-w-full"
+                  aria-label={`${f.label}: ${f.value}, снять фильтр`}
+                >
+                  <span className="font-normal">{f.label}:</span> <span className="truncate">{f.value}</span>
+                  <X className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                 </button>
               </li>
             ))}
           </ul>
         ) : null}
       </div>
-      <div className={cn("mt-3 grid-cols-2 gap-3 sm:flex-wrap sm:items-end", showFilters ? "grid sm:flex" : "hidden")}>
+      <div id={filtersId} className={cn("mt-3 grid-cols-2 gap-3 sm:flex-wrap sm:items-end", showFilters ? "grid sm:flex" : "hidden")}>
         <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
         <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
         <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
@@ -463,7 +478,7 @@ function PeopleView({
           <ul className="flex flex-col divide-y divide-line">
             {common.map((e) => (
               <li key={e.id} className="flex flex-col gap-3 px-5 py-4">
-                <EntryItem entry={e} />
+                <EntryItem entry={e} compact />
                 {manage ? (
                   <SelectField
                     label="Автор"
@@ -512,7 +527,7 @@ function PeopleView({
               <ul className="flex flex-col divide-y divide-line">
                 {own.map((e) => (
                   <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
-                    <EntryItem entry={e} />
+                    <EntryItem entry={e} compact />
                     <PromotedNote entry={e} />
                     <PromoteControl entry={e} promoteFrom={promoteFrom} closed={closed} />
                   </li>
@@ -531,7 +546,7 @@ function PeopleView({
                     const note = e.promoted?.find((x) => x.by === p.slug)?.note;
                     return (
                       <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
-                        <EntryItem entry={e} showAuthor />
+                        <EntryItem entry={e} showAuthor compact />
                         {note ? (
                           <p className="text-body text-ink">
                             <span className="text-muted">От себя: </span>
@@ -569,7 +584,7 @@ function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; 
             <ul className="flex flex-col divide-y divide-line">
               {list.map((e) => (
                 <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
-                  <EntryItem entry={e} showAuthor />
+                  <EntryItem entry={e} showAuthor compact />
                   <PromotedNote entry={e} />
                   <PromoteControl entry={e} promoteFrom={promoteFrom} closed={closed} />
                 </li>

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { setCeoFlagAction } from "@/app/(app)/weekly/actions";
 import { useRunWeekly } from "./use-weekly";
-import { CornerDownRight, ExternalLink, HandHelping, Hash, Star, TrendingUp } from "lucide-react";
+import { Coins, CornerDownRight, ExternalLink, HandHelping, Hash, Star } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/domain/dictionaries";
 import { authorName } from "@/domain/people";
@@ -70,6 +70,7 @@ export function EntryItem({
   demo,
   discussion = true,
   card = false,
+  compact = false,
 }: {
   entry: WeeklyEntry;
   showAuthor?: boolean;
@@ -79,6 +80,8 @@ export function EntryItem({
   discussion?: boolean | "open";
   /** Отдельной карточкой (страница записи, образец). В ленте запись идёт строкой внутри карточки человека */
   card?: boolean;
+  /** Компактно (этап 43): лента и сдача weekly. Подписи полей иконками, реакция и обсуждение иконками */
+  compact?: boolean;
 }) {
   const { manage, notify } = usePrototype();
   const run = useRunWeekly();
@@ -91,7 +94,7 @@ export function EntryItem({
     if (!saved) setCeo(ceo);
   };
   const textSize = large ? "!text-title" : "";
-  const labels = !!large || discussion === "open";
+  const labels = !compact || !!large || discussion === "open";
   return (
     <article className={cn("sv-entry", !card && "!gap-1.5 !rounded-none !border-0 !bg-transparent !p-0", card && large && "!p-6")}>
       <div className="sv-entry__head">
@@ -115,7 +118,7 @@ export function EntryItem({
         )
       ) : null}
       {entry.impact ? (
-        <Line icon={TrendingUp} label="Влияние на бизнес" labels={labels}>
+        <Line icon={Coins} label="Влияние на бизнес" labels={labels}>
           <p className={cn("sv-entry__text", textSize)}>{entry.impact}</p>
         </Line>
       ) : null}
@@ -159,7 +162,7 @@ export function EntryItem({
           ) : null}
         </div>
       ) : null}
-      {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} /> : null}
+      {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} compact={compact && !large && discussion !== "open"} /> : null}
     </article>
   );
 }

@@ -73,7 +73,7 @@ function ReactionMenu({ reactions, me, disabled, onPick, icon = false }: { react
       <Menu.Trigger
         className={icon ? "sv-entry__act" : "sv-reaction sv-reaction--discuss"}
         aria-label="Поставить реакцию"
-        title={icon ? "Реакция" : undefined}
+        title={icon ? "Поставить реакцию" : undefined}
         disabled={disabled}
       >
         <SmilePlus className={icon ? undefined : "h-3.5 w-3.5"} strokeWidth={1.75} aria-hidden="true" />
@@ -152,33 +152,36 @@ export function ReactionBar({
   };
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Реакции">
-        {REACTIONS.map(({ code, label, Icon }) => {
-          const list = reactions.filter((r) => r.kind === code);
-          const mine = list.some((r) => r.by === me);
-          if ((readOnly || compact) && !list.length) return null;
-          return (
-            <button
-              key={code}
-              type="button"
-              disabled={readOnly || busy !== null}
-              aria-pressed={mine}
-              title={list.length ? `${label}: ${whoText(list)}` : label}
-              onClick={() => void press(code)}
-              className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-              {label}
-              {list.length ? <span className="sv-reaction__count">{list.length}</span> : null}
-            </button>
-          );
-        })}
-        {compact || trailing ? (
-          <span className="sv-entry__acts">
-            {compact && !readOnly ? <ReactionMenu icon reactions={reactions} me={me} disabled={busy !== null} onPick={(code) => void press(code)} /> : null}
-            {trailing}
-          </span>
-        ) : null}
+      {/* Группа реакций слева (чипы и меню), обсуждение (trailing) справа вне группы: это не реакция */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className={cn("flex flex-wrap items-center gap-1.5", compact && "min-w-0 flex-1")} role="group" aria-label="Реакции">
+          {REACTIONS.map(({ code, label, Icon }) => {
+            const list = reactions.filter((r) => r.kind === code);
+            const mine = list.some((r) => r.by === me);
+            if ((readOnly || compact) && !list.length) return null;
+            return (
+              <button
+                key={code}
+                type="button"
+                disabled={readOnly || busy !== null}
+                aria-pressed={mine}
+                title={list.length ? `${label}: ${whoText(list)}` : label}
+                onClick={() => void press(code)}
+                className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
+              >
+                <Icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+                {label}
+                {list.length ? <span className="sv-reaction__count">{list.length}</span> : null}
+              </button>
+            );
+          })}
+          {compact && !readOnly ? (
+            <span className="sv-entry__acts">
+              <ReactionMenu icon reactions={reactions} me={me} disabled={busy !== null} onPick={(code) => void press(code)} />
+            </span>
+          ) : null}
+        </div>
+        {trailing}
       </div>
       {asking ? (
         <QuestionForm

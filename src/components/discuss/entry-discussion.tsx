@@ -17,7 +17,7 @@ import { ReactionBar } from "./reactions";
  * Обсуждение под записью weekly (этап 20): реакции и короткая ветка комментариев. Ветка свёрнута, пока в ней
  * ничего нет или пока её не откроют; на странице записи открыта сразу
  */
-export function EntryDiscussion({ entry, large, open: openInitially }: { entry: WeeklyEntry; large?: boolean; open?: boolean }) {
+export function EntryDiscussion({ entry, large, open: openInitially, compact = false }: { entry: WeeklyEntry; large?: boolean; open?: boolean; /** Лента (этап 43): действия иконками */ compact?: boolean }) {
   const { me, manage, observer, notify, leads } = usePrototype();
   const router = useRouter();
   const [comments, setComments] = useState<Comment[]>(entry.comments ?? []);
@@ -78,11 +78,12 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
 
   // В ленте (этап 43) действия иконками в правом нижнем углу записи: реакция и обсуждение с числом ответов, слово
   // подсказкой при наведении. Крупно и на странице записи кнопки со словами, как раньше
-  const compact = !large && !openInitially;
+  const threadId = `entry-thread-${entry.id}`;
   const discussButton = compact ? (
     <button
       type="button"
       aria-expanded={open}
+      aria-controls={open ? threadId : undefined}
       aria-label={count ? `Обсуждение: ${count}` : "Обсудить"}
       title={count ? `Обсуждение: ${count}` : "Обсудить"}
       onClick={() => setOpen(!open)}
@@ -118,6 +119,7 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
             <button
               type="button"
               aria-expanded={open}
+              aria-controls={open ? threadId : undefined}
               onClick={() => setOpen(!open)}
               className="inline-flex min-h-8 items-center gap-1.5 rounded-md text-small font-medium text-ink hover:underline"
             >
@@ -127,7 +129,7 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
             </button>
           )}
           {open ? (
-            <div className="mt-3 flex flex-col gap-4">
+            <div id={threadId} className={cn("flex flex-col gap-4", !compact && "mt-3")}>
               <CommentList
                 idPrefix={`entry-${entry.id}`}
                 comments={comments}

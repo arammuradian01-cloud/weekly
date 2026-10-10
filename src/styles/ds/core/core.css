@@ -171,9 +171,11 @@
 /* Тег: направление, тип записи, «В отчёт CEO», «Нужна помощь» */
 .sv-tag { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 var(--space-2); border-radius: var(--radius-tag);
   background: var(--color-field); color: var(--color-text-secondary); font-size: var(--text-caption); line-height: var(--leading-caption); white-space: nowrap; }
-/* «В отчёте CEO» (этап 43): звезда на светлом голубом, а не тёмная плашка, которая терялась среди текста */
-.sv-tag--ceo { background: var(--color-accent-soft); color: var(--color-link); border: 1px solid var(--color-accent-soft-border); font-weight: var(--font-weight-semibold); }
-[data-theme="dark"] .sv-tag--ceo { color: var(--color-accent); }
+/* «В отчёте CEO» (этап 43): белая плашка с тёмной рамкой и жёлтой звездой. Палитра своя, не как у типов записи
+   (событие голубое, риск жёлтый, результат зелёный) и не тёмная заливка, которая терялась среди текста */
+.sv-tag--ceo { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-brand-dark); font-weight: var(--font-weight-semibold); }
+.sv-tag--ceo svg { color: var(--color-warning-dot); }
+[data-theme="dark"] .sv-tag--ceo { border-color: var(--color-border-strong); }
 .sv-tag--help { background: var(--color-info-bg); color: var(--color-info-text); font-weight: var(--font-weight-semibold); }
 .sv-tag--result { background: var(--color-success-bg); color: var(--color-success-text); }
 .sv-tag--event { background: var(--color-accent-soft); color: var(--color-link); }
