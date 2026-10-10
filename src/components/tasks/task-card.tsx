@@ -143,14 +143,19 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
     </dl>
   );
 
-  const main = (
-    <div className="flex min-w-0 flex-col gap-6">
+  // Верх карточки: панель действий, предупреждения, «Где сейчас» и «Что нужно сделать». Поля задачи идут после него,
+  // низ: чек-лист, запросы, ожидания, переносы, комментарии. На отдельной странице поля уходят в правую панель
+  // через CSS-области, а не вторым экземпляром в DOM: иначе двоятся id полей и подписи select
+  const top = (
+    <>
       {/* Панель действий (этап 42): статус, состояние и приоритет в один клик слева, действия справа, остальное в «Ещё» */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line pb-4">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line pb-4 sm:gap-x-5">
         <StatusSelect task={task} />
         <StateSelect task={task} />
         <PrioritySelect task={task} />
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+        {/* На телефоне кнопки второй строкой, а «Ещё» остаётся в первой справа: два ряда предсказуемой формы.
+            В DOM порядок прежний: выборы, кнопки, «Ещё» */}
+        <div className="order-last flex basis-full flex-wrap items-center gap-2 sm:order-none sm:ml-auto sm:basis-auto">
           {can.due && !isClosed(task) ? (
             <Button size="sm" variant="secondary" onClick={() => actions.transfer(task)}>
               <CalendarClock className="h-4 w-4" aria-hidden="true" />
@@ -163,8 +168,10 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
               Изменить
             </Button>
           ) : null}
+        </div>
+        <div className="ml-auto sm:ml-0">
           <Menu.Root>
-            <Menu.Trigger className="sv-icon-btn" aria-label="Ещё действия">
+            <Menu.Trigger className="sv-icon-btn sv-icon-btn--sm" aria-label="Ещё действия" title="Ещё действия">
               <MoreHorizontal className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
             </Menu.Trigger>
             <Menu.Portal>
@@ -294,10 +301,11 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
         </H>
         <p className="mt-1 whitespace-pre-line text-body text-ink">{task.outcome}</p>
       </section>
+    </>
+  );
 
-      {/* На отдельной странице поля в правой панели, на телефоне и в боковой панели списка здесь */}
-      <div className={cn(standalone && "lg:hidden")}>{fields}</div>
-
+  const bottom = (
+    <>
       <TaskChecklist task={task} headingLevel={H} />
 
       <TaskExtrasBlock task={task} headingLevel={H} />
@@ -396,21 +404,25 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
           </ol>
         )}
       </section>
-
-    </div>
+    </>
   );
 
   return (
     <>
       {standalone ? (
-        <div className="sv-page--read-rail">
-          {main}
-          <aside className="sv-page__rail sv-card sv-card--soft hidden p-5 lg:flex" aria-label="Поля задачи">
+        <div className="sv-page--read-rail sv-page--split">
+          <div className="sv-page__top flex min-w-0 flex-col gap-6">{top}</div>
+          <aside className="sv-page__rail sv-card sv-card--soft p-5" aria-label="Поля задачи">
             {fields}
           </aside>
+          <div className="sv-page__bottom flex min-w-0 flex-col gap-6">{bottom}</div>
         </div>
       ) : (
-        main
+        <div className="flex min-w-0 flex-col gap-6">
+          {top}
+          {fields}
+          {bottom}
+        </div>
       )}
       <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
     </>

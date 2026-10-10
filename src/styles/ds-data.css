@@ -199,6 +199,9 @@ a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline
 .sv-figures--inline .sv-figure--danger .sv-figure__label { color: var(--color-danger-text); }
 .sv-figures--inline .sv-figure--warning .sv-figure__link { background: var(--color-warning-bg); border-color: transparent; }
 .sv-figures--inline .sv-figure--warning .sv-figure__label { color: var(--color-warning-text); }
+/* У цветных чипов фон задан отдельно и перебивает общее наведение, поэтому отклик на наведение свой */
+.sv-figures--inline .sv-figure--danger a.sv-figure__link:hover, .sv-figures--inline .sv-figure--warning a.sv-figure__link:hover, .sv-figures--inline .sv-figure--good a.sv-figure__link:hover { filter: brightness(0.96); border-color: transparent; }
+[data-theme="dark"] .sv-figures--inline .sv-figure--danger a.sv-figure__link:hover, [data-theme="dark"] .sv-figures--inline .sv-figure--warning a.sv-figure__link:hover, [data-theme="dark"] .sv-figures--inline .sv-figure--good a.sv-figure__link:hover { filter: brightness(1.15); }
 .sv-figure--danger .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-danger-dot); }
 .sv-figure--danger .sv-figure__value { color: var(--color-danger-text); }
 .sv-figure--warning .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-warning-dot); }

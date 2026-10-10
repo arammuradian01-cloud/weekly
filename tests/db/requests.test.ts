@@ -232,7 +232,9 @@ describe("списки и встреча", () => {
     const offer = await newTask(await actors.loginova(), "Сверить отчёт по ДВС", "reva");
     await prisma.task.update({ where: { number: offer.number }, data: { createdAt: new Date(t0.getTime() - 4 * 86_400_000) } });
 
-    const now = later(3 * 24);
+    // Через двое суток: свежая просьба без ответа не больше 2 рабочих дней в любой день недели (через трое суток с
+    // воскресенья по вторник набегало 3 рабочих дня, и тест падал), принятая уже просрочена
+    const now = later(2 * 24);
     const { requests, proposals } = await req.stuckForMeeting(await actors.owner(), [TOP_TEAM], now);
     expect(requests.map((r) => r.number).sort()).toEqual([stale.number, accepted.number].sort());
     expect(requests.every((r) => r.stuck)).toBe(true);

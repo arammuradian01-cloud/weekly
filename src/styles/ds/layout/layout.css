@@ -11,10 +11,18 @@
 .sv-page--read { max-width: 840px; }
 .sv-page--read-rail { display: grid; grid-template-columns: minmax(0, 840px) 320px; gap: var(--space-6); align-items: start; }
 .sv-page--overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
-.sv-page__rail { position: sticky; top: calc(64px + var(--space-5)); display: flex; flex-direction: column; gap: var(--space-4); }
+/* Панель липкая, но не выше окна: длинная панель прокручивается внутри себя, а не прячет нижние поля за краем */
+.sv-page__rail { position: sticky; top: calc(64px + var(--space-5)); display: flex; flex-direction: column; gap: var(--space-4); max-height: calc(100dvh - 64px - var(--space-5) - var(--space-4)); overflow-y: auto; overscroll-behavior: contain; }
+/* Чтение с панелью в три области: верх основной колонки, панель, низ. Содержимое панели рендерится один раз,
+   на ноутбуке оно справа вдоль обеих частей, на планшете и телефоне встаёт между ними */
+.sv-page--split { grid-template-areas: "top rail" "bottom rail"; grid-template-rows: auto 1fr; }
+.sv-page--split .sv-page__top { grid-area: top; }
+.sv-page--split .sv-page__bottom { grid-area: bottom; }
+.sv-page--split .sv-page__rail { grid-area: rail; }
 @media (max-width: 1023px) {
   .sv-page--read-rail, .sv-page--overview { grid-template-columns: minmax(0, 1fr); }
-  .sv-page__rail { position: static; }
+  .sv-page--split { grid-template-areas: "top" "rail" "bottom"; grid-template-rows: auto; }
+  .sv-page__rail { position: static; max-height: none; overflow: visible; }
 }
 .sv-shell__bottom { display: none; }
 .sv-shell__header { display: none; }

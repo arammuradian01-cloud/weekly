@@ -1,7 +1,8 @@
 "use client";
 
 // Шапка раздела «Задачи». Этап 36: ключевые цифры под заголовком, каждая ведёт на список с быстрым фильтром.
-// Этап 42: цифры строкой, а не плитками, нули не показываются: чипы быстрых фильтров ниже и так дают счёт
+// Этап 42: цифры строкой, а не плитками, нули не показываются, в строке не больше трёх: чипы быстрых фильтров ниже
+// и так дают счёт по каждому отбору
 
 import { usePrototype } from "@/domain/store";
 import { isClosed } from "@/domain/rules";
@@ -22,6 +23,7 @@ export function TasksHeader({ title = "Задачи", description }: { title?: s
         <Figures
           label="Задачи в цифрах"
           inline
+          max={3}
           items={[
             { label: "открыто", value: open.length, href: "/tasks", testId: "tasks-fig-open", keepZero: true },
             { label: "просрочено", value: count("overdue"), href: "/tasks?f=overdue", tone: "danger", testId: "tasks-fig-overdue" },

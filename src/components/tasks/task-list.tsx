@@ -390,7 +390,7 @@ export function TaskTable({
       </div>
 
       {/* Телефон и планшет: строки в одну колонку */}
-      <div className="sv-table-wrap lg:hidden">
+      <div className="sv-table-wrap sv-task-rows lg:hidden">
         {groups.map((g) => (
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (

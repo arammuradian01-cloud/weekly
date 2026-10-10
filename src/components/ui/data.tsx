@@ -93,13 +93,22 @@ export type Figure = {
 
 const isZero = (v: number | string) => v === 0 || v === "0";
 
+// Что важнее показать, когда цифр больше, чем влезает: keepZero всегда, потом тревожные по оттенку, потом остальные
+const TONE_RANK = { danger: 0, warning: 1, good: 2 } as const;
+const rank = (f: Figure) => (f.keepZero ? -1 : f.tone && !isZero(f.value) ? TONE_RANK[f.tone] : 3);
+
 /**
  * Ключевые цифры раздела. Плитками (по умолчанию) или строкой под заголовком (inline, этап 42): в строке цифры
  * компактные, нули не показываются, кроме отмеченных keepZero. Правило ревизии: не больше трёх заметных цифр,
- * ноль не тревожит
+ * ноль не тревожит. max ограничивает строку: остаются самые важные по оттенку, порядок исходный
  */
-export function Figures({ items, label, className, inline = false }: { items: Figure[]; label: string; className?: string; inline?: boolean }) {
-  const shown = inline ? items.filter((f) => f.keepZero || !isZero(f.value)) : items;
+export function Figures({ items, label, className, inline = false, max }: { items: Figure[]; label: string; className?: string; inline?: boolean; max?: number }) {
+  let shown = inline ? items.filter((f) => f.keepZero || !isZero(f.value)) : items;
+  if (inline && max && shown.length > max) {
+    const keep = new Set([...shown].sort((a, b) => rank(a) - rank(b)).slice(0, max));
+    shown = shown.filter((f) => keep.has(f));
+  }
+  if (inline && !shown.length) return null;
   return (
     <ul className={cn("sv-figures", inline && "sv-figures--inline", className)} aria-label={label}>
       {shown.map((f) => {
