@@ -20,7 +20,7 @@ import { TOP_TEAM } from "@/lib/org/scope";
 import type { Values } from "./lrf";
 import type { CompareMetric, CompareRow, CompareView, MonthPlanView, VersionOption } from "./types";
 import { briefOf, type PlanBrief } from "./brief";
-import { PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_UNITS, channelLabel, derivePartner, isPartnerDriver, partnerMetricLabel, productName, type PartnerChannel, type PartnerValues } from "./partners";
+import { PARTNER_DRIVERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_UNITS, channelLabel, derivePartner, isPartnerDriver, partnerMetricLabel, productName, type PartnerChannel, type PartnerValues } from "./partners";
 import type { PartnerAdjustInput } from "./types";
 
 export { planMonthOfWeek, planBriefText, type PlanBrief } from "./brief";
@@ -120,11 +120,14 @@ export async function adjustPartner(actor: Actor, input: PartnerAdjustInput): Pr
     const line = await tx.planPartner.findUnique({ where: { month_code: { month, code } } });
     if (!line) fail(`Партнёра нет в загрузке ${monthLabel(month)}: обновите страницу`);
     const lbe = line!.lbe as PartnerValues;
-    if (!isPartnerDriver(lbe, metric)) fail("Этот показатель пересчитывается сам: меняйте драйверы");
+    const latest = (PARTNER_DRIVERS as string[]).includes(metric) ? await tx.planPartnerAdjustment.findFirst({ where: { month, partner: code, metric }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }) : null;
+    // Драйвер, который после перезагрузки пропал из LBE (ёмкость у агентов), не меняется, но прежнюю корректировку можно
+    // снять: она ни на что не влияет, а в журнале остаётся
+    const orphanReset = raw === null && latest?.value != null && !isPartnerDriver(lbe, metric);
+    if (!isPartnerDriver(lbe, metric) && !orphanReset) fail((PARTNER_DRIVERS as string[]).includes(metric) ? "Этого показателя нет в LBE партнёра: менять нечего" : "Этот показатель пересчитывается сам: меняйте драйверы");
     const key = metric as Parameters<typeof partnerMetricLabel>[0];
     const L = derivePartner(lbe);
     const base = L[key] ?? null;
-    const latest = await tx.planPartnerAdjustment.findFirst({ where: { month, partner: code, metric }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
     // У партнёра без продаж в LBE выручки на полис и кросса может не быть: команда задаёт их, когда партнёр начинает
     // продавать. Без LBE и без значения сбрасывать нечего
     if (base === null && raw === null && latest?.value == null) fail("Показатель и так как в LBE");

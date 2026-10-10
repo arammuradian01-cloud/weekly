@@ -195,10 +195,38 @@ describe("корректировка драйвера партнёра", () => {
     await expectRule(adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 21_000, { comment: "ок" }), /одной фразой/);
     await expectRule(adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 21_000, { reason: "нет такой" }), /причину/);
     // Конверсии в кросс у ипотеки нет в LRF: это не драйвер
-    await expectRule(adjustPartner(await actor.sakhibullina(), "Агенты", "crUpsale", 0.1, { product: "red-mortgage", seen: null }), /пересчитывается сам/);
+    await expectRule(adjustPartner(await actor.sakhibullina(), "Агенты", "crUpsale", 0.1, { product: "red-mortgage", seen: null }), /нет в LBE партнёра/);
     await expectRule(proc.adjustPartner(await actor.sakhibullina(), { month, partner: "нет-такого", metric: "policies", value: 1, seen: null, reason: "partner-sk", comment: "Партнёр подтвердил объём" }), /Партнёра нет в загрузке/);
     await expectRule(proc.adjustPartner(await actor.sakhibullina(), { month: addMonths(month, -1), partner: "x", metric: "policies", value: 1, seen: null, reason: "partner-sk", comment: "Партнёр подтвердил объём" }), /закрыт/);
     expect(await prisma.planPartnerAdjustment.count()).toBe(0);
+  });
+});
+
+describe("корректировки, которые перестали действовать", () => {
+  it("драйвер пропал из LBE (ёмкость у агентов): корректировка не влияет и не считается, но её можно снять", async () => {
+    await load();
+    const agents = await line("Агенты");
+    await prisma.planPartnerAdjustment.create({ data: { month, partner: agents.code, metric: "capacity", value: 60_000, previous: null, reason: "PARTNER_SK", comment: "Старая правка ёмкости", authorId: (await prisma.person.findUniqueOrThrow({ where: { slug: "sakhibullina" } })).id } });
+    const v = await view();
+    const l = v.partners!.lines.find((x) => x.code === agents.code)!;
+    expect(l.drivers).toEqual({ capacity: 60_000 });
+    expect((await proc.planBrief(await actor.owner(), month))!.partnerReasons).toEqual([]);
+    await expectRule(adjustPartner(await actor.sakhibullina(), "Агенты", "capacity", 70_000, { seen: 60_000 }), /нет в LBE партнёра/);
+    await adjustPartner(await actor.sakhibullina(), "Агенты", "capacity", null, { seen: 60_000, comment: "Снять старую правку ёмкости" });
+    expect((await line("Агенты")).drivers).toEqual({});
+  });
+
+  it("в сводке три свежие корректировки партнёров и число остальных партнёров с корректировками", async () => {
+    await load();
+    const who = await actor.sakhibullina();
+    await adjustPartner(who, "Сервис штрафов", "rpu", 900);
+    await adjustPartner(who, "Банк Север", "policies", 22_000);
+    await adjustPartner(who, "Банк Север", "commission", 0.75);
+    await adjustPartner(who, "Агент API Один", "policies", 6_000);
+    const brief = (await proc.planBrief(await actor.owner(), month))!;
+    expect(brief.partnerReasons.map((r) => r.product)).toEqual(["Агент API Один, ОСАГО", "Банк Север, ОСАГО", "Банк Север, ОСАГО"]);
+    expect(brief.partnersMore).toBe(1);
+    expect(proc.planBriefText(brief)).toContain("Ещё партнёров с корректировками: 1");
   });
 });
 

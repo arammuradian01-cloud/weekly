@@ -316,6 +316,8 @@ export type PartnerPull = {
   totals: { product: string; channel: PartnerChannel; version: "LBE" | "BUD"; revenue: number | null; costs: number | null; margin: number | null }[];
   /** Листы партнёрского канала есть в источнике: без них загрузка продуктов идёт как раньше */
   found: boolean;
+  /** Лист P&L b2b прочитан: без него прежний бюджет канала остаётся */
+  pnl?: boolean;
   problems: string[];
   warnings: string[];
 };
@@ -379,12 +381,13 @@ export function readPartners(sheets: Record<string, Grid | undefined>, month: st
         const lbe = t.LBE.revenue;
         const mine = lines.filter((l) => l.product === product && l.channel === ch.code);
         if (lbe !== null && mine.length && !near(mine.reduce((a, l) => a + (l.lbe.revenue ?? 0), 0), lbe, 0.01)) {
-          problems.push(`${ch.label}, ${productName(product)}: выручка партнёров не сходится с LBE в P&L b2b`);
+          // Партнёров проверяет сверка с итогом листа; здесь расходится сам P&L (ручная поправка финансов), это не мешает
+          warnings.push(`${ch.label}, ${productName(product)}: выручка партнёров не сходится с LBE в P&L b2b`);
         }
       }
     }
   }
-  return { lines, totals, found: true, problems, warnings };
+  return { lines, totals, found: true, problems, warnings, pnl: !!pnlGrid };
 }
 
 const PRODUCT_NAMES: Record<string, string> = {
@@ -452,9 +455,12 @@ export function partnerResults(lbe: PartnerValues): PartnerMetric[] {
  */
 export function computePartner(lbe: PartnerValues, drivers: PartnerDrivers): PartnerValues {
   const L = derivePartner(lbe);
-  const d = (k: PartnerMetric) => (drivers[k] !== undefined && Number.isFinite(drivers[k]) ? drivers[k]! : num(L[k]));
+  // Действуют только текущие драйверы: корректировка показателя, который после перезагрузки пропал из LBE (ёмкость у
+  // агентов), ни на что не влияет
+  const allowed = new Set(partnerDrivers(lbe));
+  const d = (k: PartnerMetric) => (allowed.has(k) && drivers[k] !== undefined && Number.isFinite(drivers[k]) ? drivers[k]! : num(L[k]));
   const out: PartnerValues = { ...L };
-  for (const k of partnerDrivers(lbe)) out[k] = d(k);
+  for (const k of allowed) out[k] = d(k);
   const pol = d("policies");
   const polL = num(L.policies);
   const cap = d("capacity");
@@ -490,7 +496,7 @@ export function computePartner(lbe: PartnerValues, drivers: PartnerDrivers): Par
   // Остаток плавающей точки после корректировки (полисы 0 дают -1e-9) показывается нулём; значения LBE не трогаются
   for (const k of ["revenueCore", "upsalePolicies", "upsaleRevenue", "revenue", "costs", "margin"] as const) {
     const x = out[k];
-    if (x != null && x !== L[k] && Math.abs(x) < 1e-9) out[k] = 0;
+    if (x != null && x !== L[k] && Math.abs(x) < 1e-9 * Math.max(1, Math.abs(L[k] ?? 0))) out[k] = 0;
   }
   return out;
 }
@@ -498,8 +504,10 @@ export function computePartner(lbe: PartnerValues, drivers: PartnerDrivers): Par
 /** Корректировка действует, если отличается от LBE */
 export function activePartnerDrivers(lbe: PartnerValues, drivers: PartnerDrivers): PartnerDrivers {
   const L = derivePartner(lbe);
+  const allowed = new Set(partnerDrivers(lbe));
   const out: PartnerDrivers = {};
   for (const [k, v] of Object.entries(drivers) as [PartnerMetric, number][]) {
+    if (!allowed.has(k)) continue;
     const base = num(L[k]);
     if (base === null || Math.abs(v - base) > 1e-9 * Math.max(1, Math.abs(base))) out[k] = v;
   }

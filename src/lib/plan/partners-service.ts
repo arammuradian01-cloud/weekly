@@ -52,6 +52,13 @@ export function partnerAdjustmentView(a: AdjRow, meta: LineMeta | undefined): Pa
 /** Записать партнёров и бюджет канала месяца из загрузки: прежние строки месяца заменяются */
 export async function writePartners(tx: Tx, month: string, pull: PartnerPull, now: Date): Promise<number> {
   await tx.planPartner.deleteMany({ where: { month } });
+  // Без листа P&L прежний бюджет канала остаётся: лист могли временно переименовать
+  if (pull.pnl === false) {
+    await tx.planPartner.createMany({
+      data: pull.lines.map((l) => ({ month, code: l.code, label: l.label, product: l.product, channel: l.channel, kind: l.kind, position: l.position, lbe: l.lbe as Prisma.InputJsonValue, pulledAt: now })),
+    });
+    return pull.lines.length;
+  }
   await tx.planPartnerTotal.deleteMany({ where: { month } });
   await tx.planPartner.createMany({
     data: pull.lines.map((l) => ({ month, code: l.code, label: l.label, product: l.product, channel: l.channel, kind: l.kind, position: l.position, lbe: l.lbe as Prisma.InputJsonValue, pulledAt: now })),

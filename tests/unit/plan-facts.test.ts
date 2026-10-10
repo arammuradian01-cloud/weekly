@@ -161,6 +161,7 @@ describe("сводка для отчёта CEO", () => {
       pulledAt: "2026-10-05T07:00:00.000Z",
       partners: null,
       partnerReasons: [],
+      partnersMore: 0,
     };
     expect(planBriefText(brief)).toEqual([
       "Октябрь 2026, итог по продуктам",

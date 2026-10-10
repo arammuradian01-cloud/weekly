@@ -432,8 +432,32 @@ function PartnerCard({ line, all, month, canAdjust, onSaved }: { line: PartnerLi
       ) : null,
     ];
   };
+  // Корректировки показателей, которых после перезагрузки нет в LBE (ёмкость у агентов): не действуют, их можно снять
+  const orphans = (Object.keys(line.drivers) as PartnerMetric[]).filter((k) => !partnerDrivers(line.lbe).includes(k));
+  const { notify } = usePrototype();
+  const [dropping, setDropping] = useState<PartnerMetric | null>(null);
+  const drop = async (key: PartnerMetric) => {
+    setDropping(key);
+    const r = await adjustPartnerAction({ month, partner: line.code, metric: key, value: null, seen: line.drivers[key] ?? null, reason: "other", comment: "Показателя нет в LBE партнёра, корректировка снята" });
+    setDropping(null);
+    if (!r.ok) return notify(r.error, "error");
+    notify(`${line.label}: корректировка снята`);
+    onSaved(r.value);
+  };
   return (
     <div className="flex flex-col gap-2 py-2" data-testid="partner-card">
+      {orphans.map((k) => (
+        <p key={k} className="flex flex-wrap items-center gap-2 text-caption text-warning-ink" data-testid={`partner-orphan-${k}`}>
+          <span>
+            Корректировка «{partnerMetricLabel(k, line.channel)}» не действует: этого показателя нет в LBE партнёра.
+          </span>
+          {canAdjust ? (
+            <Button variant="ghost" size="sm" onClick={() => void drop(k)} loading={dropping === k} disabled={dropping !== null}>
+              Снять корректировку
+            </Button>
+          ) : null}
+        </p>
+      ))}
       <table className="sv-datatable sv-datatable--stack">
         <caption className="sr-only">{line.label}: драйверы и результат, LBE и прогноз</caption>
         <thead>

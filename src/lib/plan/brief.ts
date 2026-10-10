@@ -6,7 +6,7 @@ import { formatPlan, lcFirst } from "./format";
 import { UNITS, metricLabel, productOf, type MetricKey } from "./spec";
 import { planLabel, summarize, type PlanSummary, type Triple } from "./summary";
 import type { MonthPlanView, ReviewView } from "./types";
-import { PARTNER_LABEL, PARTNER_UNITS, derivePartner, partnerMetricLabel, partnerTotals, productName, type PartnerMetric } from "./partners";
+import { PARTNER_LABEL, PARTNER_UNITS, activePartnerDrivers, derivePartner, partnerMetricLabel, partnerTotals, productName, type PartnerMetric } from "./partners";
 
 export type PlanBriefRow = { code: string; label: string; kind: "product" | "group" | "sub"; revenue: Triple; promoMargin: Triple; adjusted: number; review: ReviewView | null; owners: string[] };
 
@@ -24,6 +24,8 @@ export type PlanBrief = {
   partners: { revenue: Triple; margin: Triple; adjusted: number; partners: number; review: ReviewView | null; owners: string[] } | null;
   /** Корректировки партнёров отдельным списком: десяток правок партнёров не вытесняет причины продуктов */
   partnerReasons: PlanBrief["reasons"];
+  /** Сколько ещё партнёров с действующими корректировками не попало в список */
+  partnersMore: number;
 };
 
 export const PLAN_BRIEF_PARTNER_REASONS = 3;
@@ -66,14 +68,18 @@ export function briefOf(view: MonthPlanView): PlanBrief {
   }
   // Корректировки партнёров рядом с корректировками продуктов: «Партнёрский канал, Банк, ОСАГО»
   let partners: PlanBrief["partners"] = null;
-  const partnerReasons: PlanBrief["reasons"] = [];
+  const partnerReasons: (PlanBrief["reasons"][number] & { code: string })[] = [];
+  const activeCodes = new Set<string>();
   if (view.partners) {
     for (const l of view.partners.lines) {
       const L = derivePartner(l.lbe);
+      // Только действующие корректировки: равная LBE после перезагрузки или драйвер, которого нет в LBE, не в счёт
+      const active = activePartnerDrivers(l.lbe, l.drivers);
+      if (Object.keys(active).length) activeCodes.add(l.code);
       for (const [metric, a] of Object.entries(l.last) as [PartnerMetric, NonNullable<(typeof l.last)[PartnerMetric]>][]) {
-        if (a.value === null) continue;
+        if (a.value === null || active[metric] === undefined) continue;
         const unit = PARTNER_UNITS[metric];
-        partnerReasons.push({ product: `${l.label}, ${productName(l.product)}`, metric: partnerMetricLabel(metric, l.channel), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
+        partnerReasons.push({ code: l.code, product: `${l.label}, ${productName(l.product)}`, metric: partnerMetricLabel(metric, l.channel), value: formatPlan(a.value, unit), lbe: formatPlan(L[metric] ?? null, unit), reason: a.reasonLabel, comment: a.comment, author: a.author.name, at: a.at });
       }
     }
     const t = partnerTotals(view.partners.lines, view.partners.totals).total;
@@ -83,7 +89,14 @@ export function briefOf(view: MonthPlanView): PlanBrief {
   partnerReasons.sort((x, y) => y.at.localeCompare(x.at));
   const waiting = view.products.filter((p) => p.review?.state === "waiting").map((p) => ({ product: productOf(p.code)!.label, owners: p.owners.map((o) => o.name) }));
   if (partners?.review?.state === "waiting") waiting.push({ product: PARTNER_LABEL, owners: partners.owners });
-  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners, partnerReasons: partnerReasons.slice(0, PLAN_BRIEF_PARTNER_REASONS) };
+  return { month: view.month, monthLabel: view.monthLabel, total: summary.total, rows, reasons: reasons.slice(0, PLAN_BRIEF_REASONS), waiting, pulledAt: view.source.pulledAt, partners, ...partnerList(partnerReasons, activeCodes) };
+}
+
+/** Самые свежие корректировки партнёров и сколько ещё партнёров с корректировками осталось за списком */
+function partnerList(all: (PlanBrief["reasons"][number] & { code: string })[], active: Set<string>): Pick<PlanBrief, "partnerReasons" | "partnersMore"> {
+  const shown = all.slice(0, PLAN_BRIEF_PARTNER_REASONS);
+  const codes = new Set(shown.map((r) => r.code));
+  return { partnerReasons: shown.map(({ code: _code, ...r }) => r), partnersMore: [...active].filter((c) => !codes.has(c)).length };
 }
 
 const pctTo = (value: number | null, base: number | null) => (value === null || base === null || base === 0 ? null : ((value - base) / Math.abs(base)) * 100);
@@ -111,8 +124,7 @@ export function planBriefText(b: PlanBrief): string[] {
   if (b.partnerReasons.length) {
     out.push("Корректировки партнёрского канала:");
     for (const r of b.partnerReasons) out.push(`- ${r.product}, ${lcFirst(r.metric)}: ${r.value} вместо ${r.lbe} по LBE. ${r.reason}: ${r.comment} (${r.author})`);
-    const more = (b.partners?.adjusted ?? 0) - b.partnerReasons.length;
-    if (more > 0) out.push(`Ещё партнёров с корректировками: ${more}`);
+    if (b.partnersMore > 0) out.push(`Ещё партнёров с корректировками: ${b.partnersMore}`);
   }
   if (b.waiting.length) out.push(waitingText(b.waiting));
   return out;

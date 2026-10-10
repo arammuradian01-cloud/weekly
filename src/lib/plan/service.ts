@@ -109,18 +109,21 @@ async function readSheets(conn: Conn): Promise<{ sheets: Record<string, Grid | u
       out[name] = undefined;
       return;
     }
-    const rows = Math.min(info.rowCount ?? limit.rows, limit.rows);
-    const cols = Math.min(info.columnCount ?? limit.cols, limit.cols);
-    if ((info.rowCount ?? 0) > limit.rows || (info.columnCount ?? 0) > limit.cols) {
-      // Обрезанный лист партнёров дал бы неполный набор: хвостовые партнёры пропали бы вместе с корректировками
-      if (partner) partnerProblems.push(`Лист «${name}» больше ${limit.rows} строк или ${limit.cols} колонок: партнёры не загружаются, нужен больший лимит чтения`);
-      else notes.push(`Лист «${name}» больше ${limit.rows} строк или колонок: читаются первые`);
-    }
+    // Листы партнёров читаются на строку и колонку больше лимита: блокирует не размер сетки, а данные за лимитом
+    const extra = partner ? 1 : 0;
+    const rows = Math.min(info.rowCount ?? limit.rows, limit.rows + extra);
+    const cols = Math.min(info.columnCount ?? limit.cols, limit.cols + extra);
+    if (!partner && ((info.rowCount ?? 0) > limit.rows || (info.columnCount ?? 0) > limit.cols)) notes.push(`Лист «${name}» больше ${limit.rows} строк или колонок: читаются первые`);
     if (rows < 1 || cols < 1) {
       out[name] = [];
       return;
     }
     const grid = await conn.reader.getValues(`${q(info.title)}!A1:${colLetter(cols)}${rows}`);
+    const filled = (c: unknown) => c !== null && c !== undefined && String(c).trim() !== "";
+    // Обрезанный лист партнёров дал бы неполный набор: хвостовые партнёры пропали бы вместе с корректировками
+    if (partner && (grid.slice(limit.rows).some((r) => r.some(filled)) || grid.some((r) => r.slice(limit.cols).some(filled)))) {
+      partnerProblems.push(`Лист «${name}» больше ${limit.rows} строк или ${limit.cols} колонок с данными: партнёры не загружаются, нужен больший лимит чтения`);
+    }
     out[name] = grid.slice(0, limit.rows).map((row) => row.slice(0, limit.cols)) as Grid;
   };
   await Promise.all([
@@ -198,13 +201,22 @@ export async function previewPull(actor: Actor, monthInput: string): Promise<Pul
   const lines = await prisma.planLine.findMany({ where: { month, version: "LBE" } });
   const partnersBefore = await prisma.planPartner.count({ where: { month } });
   // Партнёры с корректировками, которых нет в новой загрузке: корректировки останутся в журнале без партнёра
+  // Считаются только партнёры текущей загрузки с действующей последней корректировкой хотя бы одного показателя
   if (partnersReady(partners)) {
     const fresh = new Set(partners.lines.map((l) => l.code));
-    const adjusted = await prisma.planPartnerAdjustment.findMany({ where: { month, value: { not: null } }, distinct: ["partner"], select: { partner: true } });
-    const lost = adjusted.filter((a) => !fresh.has(a.partner));
-    if (lost.length) {
-      const names = await prisma.planPartner.findMany({ where: { month, code: { in: lost.map((a) => a.partner) } }, select: { label: true } });
-      partners.warnings.push(`Партнёров с корректировками нет в новой загрузке: ${names.map((n) => n.label).join(", ") || lost.length}. Их корректировки останутся в журнале без партнёра`);
+    const gone = (await prisma.planPartner.findMany({ where: { month }, select: { code: true, label: true } })).filter((p) => !fresh.has(p.code));
+    if (gone.length) {
+      const history = await prisma.planPartnerAdjustment.findMany({ where: { month, partner: { in: gone.map((p) => p.code) } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], select: { partner: true, metric: true, value: true } });
+      const seenKey = new Set<string>();
+      const lost = new Set<string>();
+      for (const a of history) {
+        const k = `${a.partner}:${a.metric}`;
+        if (seenKey.has(k)) continue;
+        seenKey.add(k);
+        if (a.value !== null) lost.add(a.partner);
+      }
+      const names = gone.filter((p) => lost.has(p.code)).map((p) => p.label);
+      if (names.length) partners.warnings.push(`Партнёров с корректировками нет в новой загрузке: ${names.join(", ")}. Их корректировки останутся в журнале без партнёра`);
     }
   }
   const beforeOf = (code: string) => lines.find((l) => l.product === code && l.metric === "revenue")?.value ?? null;

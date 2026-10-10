@@ -109,7 +109,7 @@ describe("листы партнёрского канала", () => {
     expect(readPartners(plain, OCT).lines).toHaveLength(12);
   });
 
-  it("суммы партнёров не сходятся с итогом листа или с P&L: проблема, неполный набор партнёров не загружается", () => {
+  it("сумма партнёров не сходится с итогом листа: проблема, неполный набор не загружается; с P&L: предупреждение", () => {
     const sheets = partnersImitation([OCT]);
     const grid = sheets["B2B. CPA & WAYBACK OSAGO LRF"] as Grid;
     const total = grid.findIndex((r) => r[5] === "Sravni TOTAL REVENUE (RUB MLN)");
@@ -117,7 +117,10 @@ describe("листы партнёрского канала", () => {
     const pnl = sheets["B2B. PnL_b2b"] as Grid;
     const agents = pnl.findIndex((r, i) => i > pnl.findIndex((x) => x[4] === "AGETNS") && r[3] === "Revenue" && r[4] === "OSAGO");
     pnl[agents]![6] = 1;
-    expect(readPartners(sheets, OCT).problems).toEqual(["Лист «B2B. CPA & WAYBACK OSAGO LRF»: выручка партнёров не сходится с итогом листа: часть партнёров не распознана", "Агенты, ОСАГО: выручка партнёров не сходится с LBE в P&L b2b"]);
+    const r = readPartners(sheets, OCT);
+    expect(r.problems).toEqual(["Лист «B2B. CPA & WAYBACK OSAGO LRF»: выручка партнёров не сходится с итогом листа: часть партнёров не распознана"]);
+    // Расхождение с P&L значит ручную поправку в самом P&L: партнёры при этом проверены сверкой с итогом листа
+    expect(r.warnings).toEqual(["Агенты, ОСАГО: выручка партнёров не сходится с LBE в P&L b2b"]);
   });
 });
 
