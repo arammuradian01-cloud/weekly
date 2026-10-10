@@ -639,7 +639,7 @@ function CardSummary({ view }: { view: PairView }) {
         ))}
       </dl>
       {view.role === "manager" && c.teams[0] ? (
-        <Link href={`/analytics?team=${c.teams[0].id}`} className="text-small font-medium text-link hover:underline">
+        <Link href={`/people/analytics?team=${c.teams[0].id}`} className="text-small font-medium text-link hover:underline">
           Аналитика команды
         </Link>
       ) : null}

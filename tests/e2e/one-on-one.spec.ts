@@ -137,7 +137,7 @@ test("по общему логину встречи закрыты, руково
   await expect(page.getByText("Встречи один на один открываются только при личном входе")).toBeVisible();
 
   const reva = await person(browser, page, "Рева");
-  await reva.goto("/analytics");
+  await reva.goto("/people/analytics");
   const card = reva.getByRole("main").getByRole("listitem", { name: "Карточка: Антонов Дмитрий" });
   await card.getByRole("link", { name: "Один на один" }).click();
   await expect(reva.getByRole("heading", { name: /Один на один: Антонов Дмитрий/ })).toBeVisible();

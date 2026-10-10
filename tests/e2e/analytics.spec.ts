@@ -58,15 +58,16 @@ test.describe("аналитика руководителя", () => {
 
   test("руководитель открывает аналитику своей команды: задачи сейчас, графики, таблица, карточки лидеров и спуск вниз", async ({ page, browser }) => {
     const reva = await person(browser, page, "Рева");
+    // Этап 41: аналитика вкладкой страницы «Люди». На телефоне «Люди» за «Ещё»
     if (phone()) {
-      // На телефоне аналитика открывается из «Моих команд»
-      await reva.goto("/my-teams");
-      await reva.getByRole("link", { name: "Аналитика", exact: true }).click();
+      await reva.getByRole("button", { name: "Ещё" }).click();
+      await reva.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Люди" }).click();
     } else {
-      await reva.getByRole("link", { name: "Аналитика" }).locator("visible=true").first().click();
+      await reva.getByRole("link", { name: "Люди" }).locator("visible=true").first().click();
     }
-    await expect(reva).toHaveURL(/\/analytics/);
-    await expect(reva.getByRole("heading", { name: "Аналитика", level: 1 })).toBeVisible();
+    await reva.getByTestId("people-tab-analytics").click();
+    await expect(reva).toHaveURL(/\/people\/analytics/);
+    await expect(reva.getByRole("heading", { name: "Люди", level: 1 })).toBeVisible();
     const main = reva.getByRole("main");
     await expect(main.getByText("Управление развития продуктов", { exact: true }).first()).toBeVisible();
 
@@ -106,12 +107,12 @@ test.describe("аналитика руководителя", () => {
     await shot(reva, "team");
 
     // Топ-команду руководитель управления не открывает: показывается своя
-    await reva.goto("/analytics?team=top");
+    await reva.goto("/people/analytics?team=top");
     await expect(main.locator('[aria-current="page"]').getByText("Управление развития продуктов")).toBeVisible();
 
     // Спуск в сектор: команд ниже нет
     await antonov.getByRole("link", { name: "Задачи и люди" }).click();
-    await expect(reva).toHaveURL(/\/my-teams\?team=/);
+    await expect(reva).toHaveURL(/\/people\/leader\?team=/);
     await reva.goBack();
     const [sector] = await sql(`SELECT t.id FROM teams t JOIN people p ON p.id = t."leaderId" WHERE p."fullName" LIKE 'Антонов%'`);
     const before = reva.url();
@@ -120,7 +121,7 @@ test.describe("аналитика руководителя", () => {
     await reva.waitForTimeout(300);
     expect(reva.url()).toBe(before);
     await reva.getByRole("button", { name: "Показать" }).click();
-    await expect(reva).toHaveURL(new RegExp(`/analytics\\?team=${sector!.id}`));
+    await expect(reva).toHaveURL(new RegExp(`/people/analytics\\?team=${sector!.id}`));
     await expect(reva.getByText("Ниже этой команды других команд нет.")).toBeVisible();
     await shot(reva, "sector");
     await reva.close();
@@ -128,8 +129,10 @@ test.describe("аналитика руководителя", () => {
 
   test("сотрудник без команды: пункта меню нет, страница объясняет, кому открыта аналитика", async ({ page, browser }) => {
     const ivanova = await person(browser, page, "Иванова");
-    await expect(ivanova.getByRole("link", { name: "Аналитика" })).toHaveCount(0);
+    await expect(ivanova.getByTestId("people-tab-analytics")).toHaveCount(0);
     await ivanova.goto("/analytics");
+    // Прежний адрес перенаправляет на страницу «Люди»
+    await expect(ivanova).toHaveURL(/\/people\/analytics$/);
     await expect(ivanova.getByText("Аналитика открыта руководителям команд")).toBeVisible();
     await ivanova.close();
   });

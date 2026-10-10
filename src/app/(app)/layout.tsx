@@ -140,7 +140,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
     </div>
 
-    <MobileNav leader={leader} />
+    <MobileNav leader={leader} management={profile.management} />
     <Toaster />
     <GlobalHotkeys />
     <CommandPalette management={profile.management} />

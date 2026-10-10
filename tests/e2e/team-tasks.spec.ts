@@ -61,8 +61,15 @@ test("руководитель видит просрочку сектора в �
 
   // Рева открывает панель из меню: своя команда, сектор ниже, просрочка в «Требует внимания»
   const reva = await person(browser, page, "Рева");
-  await reva.getByRole("link", { name: "Мои команды" }).locator("visible=true").first().click();
-  await expect(reva).toHaveURL(/\/my-teams$/);
+  // Этап 41: панель руководителя вкладкой «Руководителю» на странице «Люди». На телефоне «Люди» за «Ещё»
+  if (test.info().project.name === "phone") {
+    await reva.getByRole("button", { name: "Ещё" }).click();
+    await reva.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Люди" }).click();
+  } else {
+    await reva.getByRole("link", { name: "Люди" }).locator("visible=true").first().click();
+  }
+  await reva.getByTestId("people-tab-leader").click();
+  await expect(reva).toHaveURL(/\/people\/leader$/);
   await expect(reva.getByRole("main").getByText("Управление развития продуктов", { exact: true }).first()).toBeVisible();
   await expect(reva.getByRole("link", { name: "Сектор автострахования" })).toBeVisible();
   const attention = reva.getByRole("main").locator("section", { has: reva.getByRole("heading", { name: /Требует внимания/ }) });
@@ -74,7 +81,7 @@ test("руководитель видит просрочку сектора в �
 
   // Спуск в сектор: люди сектора и их задачи
   await reva.getByRole("link", { name: "Сектор автострахования" }).click();
-  await expect(reva).toHaveURL(/\/my-teams\?team=/);
+  await expect(reva).toHaveURL(/\/people\/leader\?team=/);
   await reva.getByRole("button", { name: "Показать задачи: Чемоданова Алиса" }).click();
   await expect(reva.getByRole("main").getByText("Обновить калькулятор ОСАГО").first()).toBeVisible();
   await shot(reva, "panel-sector");

@@ -111,7 +111,7 @@ test("оценка встреч: участник отвечает аноним�
   const ctx = await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone", hasTouch: test.info().project.name === "phone" });
   const owner = await ctx.newPage();
   await enterByLink(owner, "muradyan");
-  await owner.goto("/analytics");
+  await owner.goto("/people/analytics");
   const panel = owner.getByRole("region", { name: "Встречи глазами команды" });
   await panel.scrollIntoViewIfNeeded();
   await expect(panel.getByText(/Опрос идёт до \d+ \S+, ответили 1 из \d+/)).toBeVisible();

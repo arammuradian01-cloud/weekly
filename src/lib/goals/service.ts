@@ -579,7 +579,7 @@ export async function planGoals(actor: Actor, input: string | string[][], opts: 
   for (const r of rows) {
     const team = r.team ? teamByName.get(normName(r.team)) : nodes.find((n) => n.id === opts.team);
     if (!team) {
-      out.problems.push({ line: r.line, text: `Команда «${r.team}» не найдена: напишите, как на странице «Структура»` });
+      out.problems.push({ line: r.line, text: `Команда «${r.team}» не найдена: напишите, как на вкладке «Структура»` });
       continue;
     }
     if (!canEditTeam(who, scope, team.id)) {

@@ -42,7 +42,7 @@ test("отсутствие на отчётной неделе: weekly не жд�
   const counted = await strip.getByText(/Сдали \d+ из \d+/).textContent();
   const people = await strip.getByRole("listitem").count();
   expect(Number(counted!.match(/из (\d+)/)![1])).toBe(people - 1);
-  await page.goto("/team");
+  await page.goto("/people");
   await expect(page.getByText("Нет на неделе").filter({ visible: true }).first()).toBeVisible();
 
   const reva = await browser.newPage({ viewport: page.viewportSize() ?? undefined });

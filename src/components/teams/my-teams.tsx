@@ -1,6 +1,6 @@
 "use client";
 
-// Панель «Мои команды» (этап 16): своя команда и команды на уровень ниже, люди выбранной команды,
+// Вкладка «Руководителю» страницы «Люди» (панель руководителя, этап 16; с этапа 41 вкладкой): своя команда и команды на уровень ниже, люди выбранной команды,
 // задачи, которые требуют внимания, и «Попросить обновить». Переход вниз: из команды в команду ниже, оттуда к человеку.
 
 import Link from "next/link";
@@ -35,7 +35,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
               ) : !p.link ? (
                 <span className="text-muted">{p.name}</span>
               ) : (
-                <Link href={`/my-teams?team=${p.id}`} className="text-blue-700 hover:underline">
+                <Link href={`/people/leader?team=${p.id}`} className="text-blue-700 hover:underline">
                   {p.name}
                 </Link>
               )}
@@ -158,7 +158,7 @@ function TeamRow({ team: t }: { team: PanelTeam }) {
         <span className="sv-datatable__name">
           <span className="sv-datatable__strong">
             {t.level === "below" ? (
-              <Link href={`/my-teams?team=${t.id}`} className="hover:underline">
+              <Link href={`/people/leader?team=${t.id}`} className="hover:underline">
                 {t.name}
               </Link>
             ) : (

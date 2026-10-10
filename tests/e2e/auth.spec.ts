@@ -85,7 +85,7 @@ test("лидер входит, выбирает себя и видит свою 
   await page.goto("/journal");
   await expect(page).toHaveURL(/\/$/);
 
-  await page.goto("/team");
+  await page.goto("/people");
   await expect(page.getByText("Мурадян Арам").filter({ visible: true }).first()).toBeVisible();
   await shot(page, "05-team");
 });
