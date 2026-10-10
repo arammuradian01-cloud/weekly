@@ -97,17 +97,21 @@ const isZero = (v: number | string) => v === 0 || v === "0";
 const TONE_RANK = { danger: 0, warning: 1, good: 2 } as const;
 const rank = (f: Figure) => (f.keepZero ? -1 : f.tone && !isZero(f.value) ? TONE_RANK[f.tone] : 3);
 
+/** Какие цифры остаются в строке: без нулей (кроме keepZero), не больше max самых важных, в исходном порядке */
+export function pickFigures(items: Figure[], max?: number): Figure[] {
+  const shown = items.filter((f) => f.keepZero || !isZero(f.value));
+  if (!max || shown.length <= max) return shown;
+  const keep = new Set([...shown].sort((a, b) => rank(a) - rank(b)).slice(0, max));
+  return shown.filter((f) => keep.has(f));
+}
+
 /**
  * Ключевые цифры раздела. Плитками (по умолчанию) или строкой под заголовком (inline, этап 42): в строке цифры
  * компактные, нули не показываются, кроме отмеченных keepZero. Правило ревизии: не больше трёх заметных цифр,
  * ноль не тревожит. max ограничивает строку: остаются самые важные по оттенку, порядок исходный
  */
 export function Figures({ items, label, className, inline = false, max }: { items: Figure[]; label: string; className?: string; inline?: boolean; max?: number }) {
-  let shown = inline ? items.filter((f) => f.keepZero || !isZero(f.value)) : items;
-  if (inline && max && shown.length > max) {
-    const keep = new Set([...shown].sort((a, b) => rank(a) - rank(b)).slice(0, max));
-    shown = shown.filter((f) => keep.has(f));
-  }
+  const shown = inline ? pickFigures(items, max) : items;
   if (inline && !shown.length) return null;
   return (
     <ul className={cn("sv-figures", inline && "sv-figures--inline", className)} aria-label={label}>

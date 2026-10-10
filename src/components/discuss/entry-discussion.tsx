@@ -76,15 +76,33 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
   // Автор записи вопрос о своей работе не снимает
   const canMark = (r: ReactionView) => manage || r.by === me.slug || (leads.length > 0 && entry.author !== me.slug);
 
+  // В ленте (этап 43) действия иконками в правом нижнем углу записи: реакция и обсуждение с числом ответов, слово
+  // подсказкой при наведении. Крупно и на странице записи кнопки со словами, как раньше
+  const compact = !large && !openInitially;
+  const discussButton = compact ? (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-label={count ? `Обсуждение: ${count}` : "Обсудить"}
+      title={count ? `Обсуждение: ${count}` : "Обсудить"}
+      onClick={() => setOpen(!open)}
+      className="sv-entry__act"
+    >
+      <MessageSquare strokeWidth={1.75} aria-hidden="true" />
+      {count ? <span aria-hidden="true">{count}</span> : null}
+    </button>
+  ) : null;
+
   return (
-    <div className={cn("mt-2 flex flex-col gap-3 border-t border-line/70 pt-2.5", large && "gap-4")}>
+    <div className={cn("mt-2 flex flex-col gap-3 border-t border-line/70 pt-1.5", large && "gap-4 pt-2.5")}>
       <ReactionBar
         id={`entry-${entry.id}`}
         reactions={reactions}
         me={me.slug}
         readOnly={readOnly}
         large={large}
-        compact={!large && !openInitially}
+        compact={compact}
+        trailing={discussButton}
         onToggle={(code, q) => react({ entryId: entry.id }, code, q)}
         canMarkDiscussed={canMark}
         onDiscussed={async (id, discussed) => {
@@ -94,65 +112,69 @@ export function EntryDiscussion({ entry, large, open: openInitially }: { entry: 
           return true;
         }}
       />
-      <div>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen(!open)}
-          className="inline-flex min-h-8 items-center gap-1.5 rounded-md text-small font-medium text-ink hover:underline"
-        >
-          <MessageSquare className="h-4 w-4" aria-hidden="true" />
-          {count ? `Обсуждение: ${count}` : "Обсудить"}
-          <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
-        </button>
-        {open ? (
-          <div className="mt-3 flex flex-col gap-4">
-            <CommentList
-              idPrefix={`entry-${entry.id}`}
-              comments={comments}
-              me={me.slug}
-              manage={manage}
-              readOnly={readOnly}
-              onEdit={async (id, value) => {
-                const r = await call(() => editEntryCommentAction(id, value));
-                if (r?.comment) setComments((list) => list.map((c) => (c.id === id ? r.comment! : c)));
-                return afterComment(r, "Комментарий изменён");
-              }}
-              onDelete={async (id) => {
-                const r = await call(() => deleteEntryCommentAction(id));
-                if (r) setComments((list) => list.filter((c) => c.id !== id));
-                return afterComment(r, "Комментарий удалён");
-              }}
-              onReact={(id, code, q) => react({ entryCommentId: id }, code, q)}
-            />
-            {readOnly ? null : (
-              <form
-                className="flex flex-col gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  void send();
+      {compact && !open ? null : (
+        <div>
+          {compact ? null : (
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-md text-small font-medium text-ink hover:underline"
+            >
+              <MessageSquare className="h-4 w-4" aria-hidden="true" />
+              {count ? `Обсуждение: ${count}` : "Обсудить"}
+              <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} aria-hidden="true" />
+            </button>
+          )}
+          {open ? (
+            <div className="mt-3 flex flex-col gap-4">
+              <CommentList
+                idPrefix={`entry-${entry.id}`}
+                comments={comments}
+                me={me.slug}
+                manage={manage}
+                readOnly={readOnly}
+                onEdit={async (id, value) => {
+                  const r = await call(() => editEntryCommentAction(id, value));
+                  if (r?.comment) setComments((list) => list.map((c) => (c.id === id ? r.comment! : c)));
+                  return afterComment(r, "Комментарий изменён");
                 }}
-              >
-                <MentionArea
-                  id={`entry-comment-${entry.id}`}
-                  label="Комментарий к записи"
-                  value={text}
-                  onChange={setText}
-                  maxLength={2000}
-                  hint="Чтобы позвать коллегу, наберите @ и начало имени"
-                  onSubmit={() => void send()}
-                />
-                <div>
-                  <Button size="sm" type="submit" variant="secondary" disabled={!text.trim() || sending}>
-                    <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                    Отправить
-                  </Button>
-                </div>
-              </form>
-            )}
-          </div>
-        ) : null}
-      </div>
+                onDelete={async (id) => {
+                  const r = await call(() => deleteEntryCommentAction(id));
+                  if (r) setComments((list) => list.filter((c) => c.id !== id));
+                  return afterComment(r, "Комментарий удалён");
+                }}
+                onReact={(id, code, q) => react({ entryCommentId: id }, code, q)}
+              />
+              {readOnly ? null : (
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void send();
+                  }}
+                >
+                  <MentionArea
+                    id={`entry-comment-${entry.id}`}
+                    label="Комментарий к записи"
+                    value={text}
+                    onChange={setText}
+                    maxLength={2000}
+                    hint="Чтобы позвать коллегу, наберите @ и начало имени"
+                    onSubmit={() => void send()}
+                  />
+                  <div>
+                    <Button size="sm" type="submit" variant="secondary" disabled={!text.trim() || sending}>
+                      <MessageSquare className="h-4 w-4" aria-hidden="true" />
+                      Отправить
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }

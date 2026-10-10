@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, TrendingUp } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
@@ -180,13 +180,22 @@ export function WeeklyFeed({
   // Что сохранить при смене недели: отбор или человека из ссылки, которого ещё нет в ленте
   const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
-  const filtersCount = [direction, block, type, author, helpOnly].filter(Boolean).length;
-  const filtersOn = filtersCount > 0;
+  const helpEntriesAll = all.filter((e) => e.help).length;
+  const filtersOn = !!(direction || block || type || author || helpOnly);
+  // Что включено в раскрывающихся фильтрах: число на кнопке и чипы, когда списки свёрнуты
+  const active = [
+    direction ? { label: "Направление", value: DIRECTIONS.find((d) => d.code === direction)?.label ?? direction, clear: () => setDirection("") } : null,
+    block ? { label: "Блок", value: blockLabel(block), clear: () => setBlock("") } : null,
+    type ? { label: "Тип", value: ENTRY_TYPES.find((t) => t.code === type)?.label ?? type, clear: () => setType("") } : null,
+    author ? { label: "Автор", value: authorLabel(author, authorOptions), clear: () => setAuthor("") } : null,
+  ].filter((f): f is NonNullable<typeof f> => !!f);
+  const selected = active.length;
   const myState = myReport.state;
 
   return (
     <div>
-      {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели */}
+      {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели. Этап 43: строкой, не больше трёх,
+          нули не показываются: «нужна помощь» и «риски» важнее «результатов» и «в отчёт CEO» */}
       <PageHeader
         title="Weekly"
         description="Итоги недели команды по людям и по блокам"
@@ -194,12 +203,14 @@ export function WeeklyFeed({
           all.length ? (
             <Figures
               label="Неделя в цифрах"
+              inline
+              max={3}
               items={[
-                { label: "Записей за неделю", value: all.length, testId: "weekly-fig-entries" },
-                { label: "Нужна помощь", value: all.filter((e) => e.help).length, tone: "warning", testId: "weekly-fig-help" },
-                { label: "Риски", value: all.filter((e) => e.type === "risk").length, tone: "warning", testId: "weekly-fig-risks" },
-                { label: "Результаты", value: all.filter((e) => e.type === "result").length, testId: "weekly-fig-results" },
-                { label: "В отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
+                { label: "записей за неделю", value: all.length, testId: "weekly-fig-entries", keepZero: true },
+                { label: "нужна помощь", value: helpEntriesAll, tone: "warning", testId: "weekly-fig-help" },
+                { label: "риски", value: all.filter((e) => e.type === "risk").length, tone: "warning", testId: "weekly-fig-risks" },
+                { label: "результаты", value: all.filter((e) => e.type === "result").length, testId: "weekly-fig-results" },
+                { label: "в отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
               ]}
             />
           ) : null
@@ -248,8 +259,9 @@ export function WeeklyFeed({
 
       <SubmissionStrip reports={data.reports} />
 
-      <div className="mt-6 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex items-center justify-between gap-3">
+      {/* Этап 43: вид ленты, «Нужна помощь» и кнопка «Фильтры» в одной строке; четыре списка фильтров раскрываются
+          по кнопке и на ноутбуке тоже, включённые фильтры видны чипами, чип снимает фильтр */}
+      <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2">
         <Segmented
           label="Вид ленты"
           value={view}
@@ -259,28 +271,39 @@ export function WeeklyFeed({
             { value: "blocks", label: "По блокам" },
           ]}
         />
-          <button
-            type="button"
-            onClick={() => setShowFilters((v) => !v)}
-            aria-expanded={showFilters}
-            aria-label={filtersOn ? `Фильтры, включено: ${filtersCount}` : "Фильтры"}
-            className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field lg:hidden"
-          >
-            Фильтры
-            <Counter value={filtersCount} />
-          </button>
-        </div>
-        <div className={cn("grid-cols-2 gap-3 sm:flex-wrap sm:items-end lg:flex", showFilters ? "grid sm:flex" : "hidden")}>
-          <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
-          <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
-          <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
-          <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...authorOptions]} />
-          <div className="col-span-2 sm:col-span-1">
-            <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={all.filter((e) => e.help).length}>
-              Нужна помощь
-            </Chip>
-          </div>
-        </div>
+        {/* Ноль на чипе не показывается: правило строки цифр */}
+        <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={helpEntriesAll || undefined}>
+          Нужна помощь
+        </Chip>
+        <button
+          type="button"
+          onClick={() => setShowFilters((v) => !v)}
+          aria-expanded={showFilters}
+          aria-label={selected > 0 ? `Фильтры, включено: ${selected}` : "Фильтры"}
+          className={cn("inline-flex h-10 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field", showFilters && "bg-accent-soft")}
+        >
+          <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+          Фильтры
+          <Counter value={selected} />
+        </button>
+        {!showFilters && active.length ? (
+          <ul className="flex flex-wrap items-center gap-2" aria-label="Включённые фильтры">
+            {active.map((f) => (
+              <li key={f.label}>
+                <button type="button" onClick={f.clear} className="sv-pill is-active" aria-label={`Снять фильтр: ${f.label} ${f.value}`}>
+                  <span className="font-normal">{f.label}:</span> {f.value}
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+      <div className={cn("mt-3 grid-cols-2 gap-3 sm:flex-wrap sm:items-end", showFilters ? "grid sm:flex" : "hidden")}>
+        <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
+        <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
+        <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
+        <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...authorOptions]} />
       </div>
 
       {all.length === 0 ? (

@@ -104,6 +104,21 @@ export function Chip({
 
 const control = "sv-control w-full";
 
+/**
+ * Счётчик знаков у поля (этап 43): молчит, пока места много, появляется, когда осталось меньше 20 знаков, и краснеет,
+ * когда лимит превышен. Раньше «38 из 150» стоял у каждого поля заметнее самого поля
+ */
+export function CharCounter({ counter }: { counter?: { value: number; max: number } }) {
+  if (!counter) return null;
+  const left = counter.max - counter.value;
+  if (left >= 20) return null;
+  return (
+    <span className={cn("text-caption tabular-nums", left < 0 ? "text-danger-ink" : "text-muted")} aria-live="polite">
+      {left < 0 ? `лишних ${-left}` : `осталось ${left}`}
+    </span>
+  );
+}
+
 export function TextArea({
   label,
   id,
@@ -118,11 +133,7 @@ export function TextArea({
         <label htmlFor={id} className="sv-label">
           {label}
         </label>
-        {counter ? (
-          <span className={cn("text-caption tabular-nums", counter.value > counter.max ? "text-danger-ink" : "text-muted")}>
-            {counter.value} из {counter.max}
-          </span>
-        ) : null}
+        <CharCounter counter={counter} />
       </div>
       <textarea id={id} className={control} {...props} />
       {hint ? <p className="sv-field__hint">{hint}</p> : null}
