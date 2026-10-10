@@ -77,6 +77,9 @@ test("чек-лист ведётся в карточке, повтор созд�
   await expect(page.getByText("Пункт добавлен").first()).toBeVisible();
   await page.getByLabel("Новый пункт").fill("Согласовать с СК");
   await page.getByRole("button", { name: "Добавить пункт" }).click();
+  // Второй пункт сохранён: иначе ответ на его добавление перерисует список и снимет отметку (гонка на медленной машине)
+  await expect(page.getByRole("checkbox", { name: "Согласовать с СК" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Чек-лист 0 из 2/ })).toBeVisible();
   await page.getByRole("checkbox", { name: "Собрать цифры" }).check();
   await expect(page.getByRole("heading", { name: /Чек-лист 1 из 2/ })).toBeVisible();
 

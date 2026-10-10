@@ -14,7 +14,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import { isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
+import { isoFromDbDate, moscowIso, moscowToday } from "@/lib/tasks/dates";
 import { diffDays } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import { ancestorsOf, loadScope, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
@@ -24,6 +24,7 @@ import { matchPerson } from "@/lib/org/import";
 import { normName } from "@/lib/bord/names";
 import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow } from "./parse";
 import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
+import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
 
 type Tx = Prisma.TransactionClient;
 
@@ -31,11 +32,16 @@ const fail = (message: string): never => {
   throw new TaskRuleError(message);
 };
 
-const LIMITS = { title: 300, description: 2000, metric: 500, base: 120, target: 300, risk: 300, code: 20, link: 500, file: 1_000_000 };
+const LIMITS = { title: 300, description: 2000, metric: 500, base: 120, target: 300, risk: 300, code: 20, link: 500, file: 1_000_000, fact: 120, factNote: 300 };
+/** Сколько прежних фактов показывать у цели */
+const FACT_HISTORY = 6;
 export const RESULT_LABELS: Record<GoalResult, string> = { IN_PROGRESS: "Идёт", ACHIEVED: "Достигнута", PARTIAL: "Частично", MISSED: "Не достигнута", DROPPED: "Снята" };
 const QUARTER = /^\d{4}-Q[1-4]$/;
 
 export type GoalTask = { number: number; title: string; status: string; owner: string; due: string; overdue: number; done: boolean };
+
+/** Факт цели (этап 33): значение как вписали, комментарий, кто и когда */
+export type GoalFactView = { id: string; value: string; note: string | null; by: string; at: string };
 
 export type GoalNode = {
   id: string;
@@ -63,8 +69,19 @@ export type GoalNode = {
   below: { achieved: number; total: number };
   /** Задачи самой цели, только видимые человеку */
   tasks: GoalTask[];
+  /** Последний факт и прежние, новые сверху (этап 33) */
+  fact: GoalFactView | null;
+  facts: GoalFactView[];
+  /** Прогресс от базы к целевому по факту, если все значения читаются числами */
+  numeric: GoalProgress | null;
+  /** Целевое значение число: факт ждут числом и следят за свежестью */
+  measurable: boolean;
+  /** Факта нет или он старше двух недель, а цель идёт */
+  factStale: boolean;
   canEdit: boolean;
   canMark: boolean;
+  /** Вписать факт: как отметка, но не под общим логином */
+  canFact: boolean;
 };
 
 export type GoalsView = {
@@ -119,6 +136,7 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
         select: { number: true, title: true, status: true, due: true, teamId: true, ownerId: true, createdById: true, owner: { select: { fullName: true } }, coExecutors: { select: { personId: true } } },
         orderBy: { due: "asc" },
       },
+      facts: { orderBy: [{ at: "desc" }, { id: "desc" }], take: FACT_HISTORY, include: { author: { select: { fullName: true } } } },
     },
   });
   const byId = new Map(all.map((g) => [g.id, g]));
@@ -187,6 +205,10 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
     .filter((g) => shown.has(g.id))
     .map((g) => {
       const r = roll(g.id);
+      const facts: GoalFactView[] = g.facts.map((f) => ({ id: f.id, value: f.value, note: f.note, by: f.author.fullName, at: f.at.toISOString() }));
+      const fact = facts[0] ?? null;
+      const measurable = measurableTarget(g.base, g.target);
+      const age = fact ? diffDays(moscowIso(new Date(fact.at)), today) : null;
       return {
         id: g.id,
         quarter: g.quarter,
@@ -219,8 +241,15 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
             overdue: (t.status === "IN_PROGRESS" || t.status === "CLARIFY") ? Math.max(0, diffDays(isoFromDbDate(t.due), today)) : 0,
             done: t.status === "DONE",
           })),
+        fact,
+        facts,
+        numeric: goalProgress(g.base, g.target, fact?.value),
+        measurable,
+        factStale: g.result === "IN_PROGRESS" && measurable && (age === null || age > FACT_STALE_DAYS),
         canEdit: canEditTeam(who, scope, g.teamId),
-        canMark: canEditTeam(who, scope, g.teamId) || (!!g.owner && g.owner.id === who.personId),
+        canMark: canEditTeam(who, scope, g.teamId) || (!!g.owner && g.owner.id === who.personId && who.role !== "OBSERVER"),
+        // Факт вписывают при личном входе или в режиме управления: под общим логином можно выбрать чужой профиль
+        canFact: (canEditTeam(who, scope, g.teamId) || (!!g.owner && g.owner.id === who.personId && who.role !== "OBSERVER")) && !who.limited,
       };
     });
   const roots = goals.filter((g) => !g.parentId || !shown.has(g.parentId)).map((g) => g.id);
@@ -418,13 +447,41 @@ export async function updateGoal(actor: Actor, id: string, input: GoalInput & { 
   });
 }
 
+/**
+ * Факт цели (этап 33): вписывают владелец цели и руководитель её команды (те же, кто отмечает риск и итог). Значение
+ * как в борде («12,5%», «29 млн»), комментарий по желанию. Если целевое значение число, факт тоже должен читаться числом
+ * в тех же единицах: иначе прогресс не посчитать
+ */
+export async function setGoalFact(actor: Actor, id: string, input: { value: string; note?: string | null }): Promise<GoalFactView> {
+  const value = text(input?.value, LIMITS.fact, "Факт") ?? fail("Впишите факт: число или короткий текст");
+  const note = text(input?.note ?? null, LIMITS.factNote, "Комментарий к факту");
+  return prisma.$transaction(async (tx) => {
+    const goal = (await tx.goal.findUnique({ where: { id } })) ?? fail("Цели уже нет");
+    const { scope } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
+    const who = { personId: actor.personId, role: actor.role, management: actor.management };
+    const marker = canEditTeam(who, scope, goal.teamId) || (goal.ownerId === actor.personId && actor.role !== "OBSERVER");
+    if (!marker) fail("Факт цели вписывают её владелец и руководитель команды");
+    if (actor.via === "TEAM" && !actor.management) fail("Факт вписывают при личном входе: так видно, кто вписал цифру");
+    const problem = factProblem(goal.base, goal.target, value);
+    if (problem) fail(problem);
+    // Тот же факт тем же днём это повтор нажатия. Позже тот же факт подтверждает цифру и снимает «без свежего факта»
+    const last = await tx.goalFact.findFirst({ where: { goalId: id }, orderBy: [{ at: "desc" }, { id: "desc" }] });
+    if (last && last.value === value && (last.note ?? null) === note && Date.now() - last.at.getTime() < 12 * 3_600_000) fail("Такой факт уже вписан");
+    const number = goalNumbers(goal.base, goal.target, value)?.fact?.value ?? null;
+    const fact = await tx.goalFact.create({ data: { goalId: id, value, number, note, authorId: actor.personId }, include: { author: { select: { fullName: true } } } });
+    await audit(tx, actor, id, "Факт", last?.value ?? null, note ? `${value}. ${note}` : value, "goal.fact");
+    return { id: fact.id, value: fact.value, note: fact.note, by: fact.author.fullName, at: fact.at.toISOString() };
+  });
+}
+
 /** Удалить можно только пустую цель: без задач и целей ниже. Иначе цель снимают итогом «Снята» */
 export async function deleteGoal(actor: Actor, id: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
-    const goal = (await tx.goal.findUnique({ where: { id }, include: { _count: { select: { tasks: true, children: true } } } })) ?? fail("Цели уже нет");
+    const goal = (await tx.goal.findUnique({ where: { id }, include: { _count: { select: { tasks: true, children: true, facts: true } } } })) ?? fail("Цели уже нет");
     const { scope } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     if (!canEditTeam({ personId: actor.personId, role: actor.role, management: actor.management }, scope, goal.teamId)) fail("Цель удаляет руководитель её команды или режим управления");
     if (goal._count.tasks || goal._count.children) fail("У цели есть задачи или цели ниже: удалить нельзя, поставьте итог «Снята»");
+    if (goal._count.facts) fail("У цели вписан факт: удалить нельзя, чтобы не потерять историю. Поставьте итог «Снята»");
     await tx.goal.delete({ where: { id } });
     await audit(tx, actor, id, "Цель удалена", goal.title, null, "goal.delete");
   });

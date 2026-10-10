@@ -101,60 +101,57 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
       </p>
 
       {events.length === 0 ? (
-        <EmptyState title="Событий под эти фильтры нет" className="mt-4" />
+        <EmptyState
+          title="Событий под эти фильтры нет"
+          className="mt-4"
+          action={
+            // Сброс возвращает месяц: он шире недели, но не шире «всего времени», поэтому при нём сбрасывать нечего
+            query.who || query.kind || query.source || query.period === "7" ? (
+              <Link href={pathname} replace scroll={false} className={buttonClass("secondary", "sm")}>
+                Сбросить фильтры
+              </Link>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className={cn("mt-4 overflow-hidden sv-card sv-card--soft transition-opacity", pending && "opacity-60")}>
-          <table className="hidden w-full text-left text-small md:table">
+        // Этап 37: одна таблица на ноутбуке и телефоне, на телефоне строка события становится карточкой
+        <div className={cn("mt-4 overflow-x-auto sv-card sv-card--soft p-0 transition-opacity", pending && "opacity-60")}>
+          <table className="sv-datatable sv-datatable--stack sv-journal" data-testid="journal-table">
             <caption className="sr-only">Журнал изменений</caption>
-            <thead className="bg-field text-caption text-muted">
+            <thead>
               <tr>
-                <th scope="col" className="px-4 py-2.5 font-medium">Когда</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">Кто</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">Объект</th>
-                <th scope="col" className="px-3 py-2.5 font-medium">Что изменилось</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Откуда</th>
+                <th scope="col">Когда</th>
+                <th scope="col">Кто</th>
+                <th scope="col">Объект</th>
+                <th scope="col">Что изменилось</th>
+                <th scope="col">Откуда</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-line">
+            <tbody>
               {events.map((e) => (
-                <tr key={e.id} className="align-top">
-                  <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted">
+                <tr key={e.id}>
+                  <td data-label="Когда" className="tabular-nums text-muted sm:whitespace-nowrap">
                     {formatShort(e.at)}
                     {e.time ? `, ${e.time}` : ""}
                   </td>
-                  <td className="whitespace-nowrap px-3 py-3 text-ink">
-                    {nameOf(e.by)}
+                  <td data-label="Кто" className="text-ink">
+                    {e.by === "system" ? "Система" : nameOf(e.by)}
                     {e.via ? <span className="block text-tiny text-muted">{VIA_WORD[e.via]}</span> : null}
                   </td>
-                  <td className="px-3 py-3 text-ink">
+                  <td className="is-wide font-medium text-ink">
                     <ObjectLabel e={e} />
                   </td>
-                  <td className="px-3 py-3">
+                  <td className="is-wide sv-journal__change">
                     <Change e={e} />
                   </td>
-                  <td className="px-4 py-3 text-muted">
+                  <td data-label="Откуда" className="text-muted">
                     {SOURCE_WORD[e.source]}
-                    {e.ip ? <span className="block text-tiny">{e.ip}</span> : null}
+                    {e.ip ? <span className="block text-tiny max-sm:hidden">{e.ip}</span> : null}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <ul className="divide-y divide-line md:hidden">
-            {events.map((e) => (
-              <li key={e.id} className="px-4 py-3 text-small">
-                <p className="text-caption text-muted">
-                  {formatShort(e.at)}
-                  {e.time ? `, ${e.time}` : ""}, {e.by === "system" ? "система" : nameOf(e.by)}
-                  {e.via ? ` (${VIA_WORD[e.via]})` : ""}, {SOURCE_WORD[e.source]}
-                </p>
-                <p className="mt-0.5 font-medium text-ink">
-                  <ObjectLabel e={e} />
-                </p>
-                <Change e={e} />
-              </li>
-            ))}
-          </ul>
         </div>
       )}
       {total > events.length ? (

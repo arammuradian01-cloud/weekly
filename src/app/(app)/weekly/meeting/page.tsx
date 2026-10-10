@@ -12,6 +12,8 @@ import { stuckForMeeting } from "@/lib/requests/service";
 import { canLeadTeam, getMeeting } from "@/lib/meeting/service";
 import { weekNumbers } from "@/lib/numbers/service";
 import { WeekNumbersBlock } from "@/components/forecast/week-numbers";
+import { planForTeam, planMonthOfWeek } from "@/lib/plan/processes";
+import { PlanBriefBlock } from "@/components/plan/plan-brief";
 
 export const metadata: Metadata = { title: "Встреча" };
 
@@ -25,9 +27,18 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
   // Встреча 2.0 (этап 23): у одной команды свой объект встречи с повесткой и решениями. «Все команды» показывают
   // ленту недели по-старому: встреча идёт в каждой команде отдельно
   const single = team.id && team.id !== ALL_TEAMS ? { id: team.id, name: team.name } : null;
-  const [meeting, canLead, numbers] = single ? await Promise.all([getMeeting(actor, single.id, view.week.key), canLeadTeam(actor, single.id), weekNumbers(view.week.key)]) : [null, false, null];
-  // Цифры недели (этап 24) в шапке встречи, когда они выбраны и есть за эту неделю
-  const numbersBlock = numbers && numbers.figures.length ? <WeekNumbersBlock numbers={numbers} compact /> : null;
+  const [meeting, canLead, numbers, plan] = single
+    ? await Promise.all([getMeeting(actor, single.id, view.week.key), canLeadTeam(actor, single.id), weekNumbers(view.week.key), planForTeam(actor, single.id, planMonthOfWeek(view.week.key))])
+    : [null, false, null, null];
+  // Цифры недели (этап 24) в шапке встречи, когда они выбраны и есть за эту неделю. Прогноз месяца (этап 35): у топ-команды
+  // и у команд, где есть кто-то из команд продуктов
+  const numbersBlock =
+    (numbers && numbers.figures.length) || plan ? (
+      <div className="mb-4 flex flex-col gap-4">
+        {numbers && numbers.figures.length ? <WeekNumbersBlock numbers={numbers} compact /> : null}
+        {plan ? <PlanBriefBlock brief={plan} compact headingLevel={2} /> : null}
+      </div>
+    ) : null;
   if (single && meeting) return <MeetingLive key={`${view.week.key}-${single.id}`} view={view} meeting={meeting} canLead={canLead} team={single} numbers={numbersBlock} />;
   // Повестки ещё нет: встреча идёт по ленте недели, как раньше. Руководитель может собрать повестку
   const [questions, stuck] = await Promise.all([

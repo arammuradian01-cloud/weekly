@@ -23,38 +23,67 @@ export function TaskPeople() {
   const people = [...teamPeople, ...extra];
   if (!people.length) return <EmptyState title="В команде пока нет людей">Состав команды задаётся на странице «Структура».</EmptyState>;
   const max = Math.max(1, ...people.map((p) => open.filter((t) => t.owner === p.slug).length));
+  // Этап 36: таблица вместо карточек. Цифры по человеку в колонках, задачи плашками в последней колонке
   return (
-    <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
-      {people.map((p) => {
-        const mine = open.filter((t) => t.owner === p.slug).sort((a, b) => a.due.localeCompare(b.due));
-        const late = mine.filter((t) => isOverdue(t, data.today)).length;
-        return (
-          <li key={p.slug} className="flex flex-col gap-2 px-4 py-3 lg:flex-row lg:items-start lg:gap-6">
-            <div className="lg:w-56 lg:shrink-0">
-              <p className="text-body font-semibold text-ink">{p.fullName}</p>
-              <p className="text-small text-muted">
-                открытых {mine.length}
-                {late ? <span className="text-danger-ink">, просрочено {late}</span> : null}
-              </p>
-              <div className="mt-1.5 h-1.5 w-full max-w-40 rounded-full bg-field" aria-hidden="true">
-                <div className={cn("h-full rounded-full", late ? "bg-danger" : "bg-blue")} style={{ width: `${(mine.length / max) * 100}%` }} />
-              </div>
-            </div>
-            {mine.length ? (
-              <ul className="flex flex-wrap gap-2">
-                {mine.map((t) => (
-                  <li key={t.number}>
-                    <Chip task={t} today={data.today} onOpen={() => openTask.open(t.number)} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-small text-muted">Открытых задач нет</p>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+    <div className="sv-card sv-card--soft overflow-x-auto p-0">
+      <table className="sv-datatable sv-datatable--stack sv-task-people" data-testid="task-people">
+        <caption className="sr-only">Открытые задачи по людям команды</caption>
+        <thead>
+          <tr>
+            <th scope="col">Человек</th>
+            <th scope="col" className="is-num">
+              Открыто
+            </th>
+            <th scope="col" className="is-num">
+              Просрочено
+            </th>
+            <th scope="col" className="is-num">
+              Заблокировано
+            </th>
+            <th scope="col">Задачи по сроку</th>
+          </tr>
+        </thead>
+        <tbody>
+          {people.map((p) => {
+            const mine = open.filter((t) => t.owner === p.slug).sort((a, b) => a.due.localeCompare(b.due));
+            const late = mine.filter((t) => isOverdue(t, data.today)).length;
+            const blocked = mine.filter((t) => t.state === "blocked").length;
+            return (
+              <tr key={p.slug} data-testid={`task-people-${p.slug}`}>
+                <th scope="row" className="is-wide text-left font-normal">
+                  <span className="sv-datatable__strong">{p.fullName}</span>
+                  <div className="mt-1.5 h-1.5 w-full max-w-40 rounded-full bg-field" aria-hidden="true">
+                    <div className={cn("h-full rounded-full", late ? "bg-danger" : "bg-blue")} style={{ width: `${(mine.length / max) * 100}%` }} />
+                  </div>
+                </th>
+                <td className="is-num" data-label="Открыто">
+                  {mine.length}
+                </td>
+                <td className="is-num" data-label="Просрочено">
+                  {late ? <span className="font-semibold text-danger-ink">{late}</span> : <span className="sv-datatable__muted">0</span>}
+                </td>
+                <td className="is-num" data-label="Заблокировано">
+                  {blocked || <span className="sv-datatable__muted">0</span>}
+                </td>
+                <td className="sv-task-people__chips" data-label="Задачи">
+                  {mine.length ? (
+                    <ul className="flex flex-wrap gap-2">
+                      {mine.map((t) => (
+                        <li key={t.number}>
+                          <Chip task={t} today={data.today} onOpen={() => openTask.open(t.number)} />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-small text-muted">Открытых задач нет</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
