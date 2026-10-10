@@ -3,7 +3,8 @@
 // этой ветки, владельцу и администраторам, как на странице подразделений
 
 import { prisma } from "@/lib/db";
-import { loadScope, type ScopeSubject } from "@/lib/org/scope";
+import { loadTeamNodes, scopeOf, type ScopeSubject } from "@/lib/org/scope";
+import { teamOptions, weeklyPeople } from "@/lib/org/audience";
 
 export type TreePerson = {
   slug: string;
@@ -27,6 +28,8 @@ export type TreePerson = {
   vacancies: string[] | null;
   /** Задачи и цели этого человека видны смотрящему: свои, люди его команд и команд ниже, функциональные, управление */
   work: boolean;
+  /** Weekly этого человека есть в ленте одной из видимых смотрящему команд (этап 39): ссылка «Weekly» не в тупик */
+  weekly: boolean;
 };
 
 export type PeopleTree = {
@@ -42,7 +45,7 @@ export type PeopleTree = {
 };
 
 export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
-  const [people, teams, units, vacancies, scope] = await Promise.all([
+  const [people, teams, units, vacancies, nodes, functional] = await Promise.all([
     prisma.person.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
@@ -51,8 +54,11 @@ export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
     prisma.team.findMany({ where: { active: true }, select: { id: true, name: true, leaderId: true, members: { select: { personId: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, headId: true, parentId: true, kind: true } }),
     prisma.vacancy.findMany({ where: { closedAt: null }, select: { unitId: true, position: true }, orderBy: { createdAt: "asc" } }),
-    loadScope(prisma, viewer),
+    loadTeamNodes(prisma),
+    prisma.person.findMany({ where: { functionalManagerId: viewer.id }, select: { id: true } }),
   ]);
+  const scope = scopeOf(nodes, viewer, functional.map((p) => p.id));
+  const weeklySet = weeklyPeople({ options: teamOptions(nodes, scope, viewer.id), nodes, scope }, viewer.id);
   const byId = new Map(people.map((p) => [p.id, p]));
   const slugOf = (id: string | null) => (id ? (byId.get(id)?.slug ?? null) : null);
 
@@ -160,6 +166,7 @@ export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
       memberOf: teams.filter((t) => t.members.some((m) => m.personId === p.id)).map((t) => ({ id: t.id, name: t.name })),
       vacancies: vacanciesOf(p.id),
       work: scope.all || workPeople.has(p.id),
+      weekly: weeklySet.has(p.id),
     };
   }
   const me = byId.get(viewer.id);

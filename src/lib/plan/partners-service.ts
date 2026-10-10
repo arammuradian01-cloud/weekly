@@ -3,7 +3,7 @@
 // команды канала остаются: код партнёра от загрузки к загрузке тот же
 
 import { prisma } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { FORECAST_REASONS, type ForecastReasonCode } from "@/lib/forecast/codes";
 import {
   PARTNER_OWNER_CODE,
@@ -90,33 +90,46 @@ const stamp = (d: Date) => {
 
 /**
  * Партнёры, которые действовали в момент t (этап 39): последняя загрузка партнёров до t (inclusive: и в сам момент).
- * Снимки пишутся с этапа 39; если снимка нет, берутся партнёры последней загрузки, и об этом пометка. null: партнёров
- * у месяца нет совсем
+ * Снимка до момента нет: партнёры ближайшей загрузки после него (первой со снимком). Снимков нет совсем (загрузки до
+ * этапа 39): партнёры последней загрузки. В обоих случаях пометка. null: партнёров у месяца нет. current: уже прочитанные
+ * текущие партнёры, чтобы не читать их ещё раз
  */
-export async function partnerRowsAt(month: string, t: Date | null, opts: { inclusive?: boolean; when?: string } = {}): Promise<{ rows: PartnerRow[]; pulledAt: Date; note: string | null } | null> {
-  const current = await partnerLines(month);
-  if (!current.length) return null;
-  const rows: PartnerRow[] = current.map((r) => ({ code: r.code, label: r.label, kind: r.kind, product: r.product, channel: r.channel as PartnerChannel, lbe: r.lbe as PartnerValues }));
-  const pulledAt = current[0]!.pulledAt;
+export async function partnerRowsAt(
+  month: string,
+  t: Date | null,
+  opts: { inclusive?: boolean; when?: string; current?: PartnerRow[] | null; pulledAt?: Date } = {},
+): Promise<{ rows: PartnerRow[]; pulledAt: Date; note: string | null } | null> {
+  let rows = opts.current ?? null;
+  let pulledAt = opts.pulledAt ?? null;
+  if (!rows || !pulledAt) {
+    const current = await partnerLines(month);
+    if (!current.length) return null;
+    rows = current.map((r) => ({ code: r.code, label: r.label, kind: r.kind, product: r.product, channel: r.channel as PartnerChannel, lbe: r.lbe as PartnerValues }));
+    pulledAt = current[0]!.pulledAt;
+  }
+  if (!rows.length) return null;
   if (!t) return { rows, pulledAt, note: null };
-  const before = (x: Date) => (opts.inclusive ? x <= t : x < t);
-  if (before(pulledAt)) return { rows, pulledAt, note: null };
-  const [snap] = await prisma.$queryRaw<{ id: string; at: Date }[]>`
-    SELECT id, at FROM plan_pulls WHERE month = ${month} AND partners IS NOT NULL AND (at < ${t} OR (${opts.inclusive ?? false} AND at = ${t})) ORDER BY at DESC LIMIT 1`;
-  if (snap) {
-    const pull = await prisma.planPull.findUnique({ where: { id: snap.id }, select: { partners: true } });
-    const labels = new Map(rows.map((r) => [r.code, r]));
-    const lines = ((pull?.partners as PartnerSnapshotLine[] | null) ?? []).map((l) => ({
+  if (opts.inclusive ? pulledAt <= t : pulledAt < t) return { rows, pulledAt, note: null };
+  const when = opts.when ?? stamp(t);
+  const known = new Map(rows.map((r) => [r.code, r]));
+  const fromSnapshot = (lines: PartnerSnapshotLine[]): PartnerRow[] =>
+    lines.map((l) => ({
       code: l.code,
-      label: l.label ?? labels.get(l.code)?.label ?? "Партнёр не найден в последней загрузке",
-      kind: l.kind ?? labels.get(l.code)?.kind ?? "",
+      label: l.label ?? known.get(l.code)?.label ?? "Партнёр не найден в последней загрузке",
+      kind: l.kind ?? known.get(l.code)?.kind ?? "",
       product: l.product,
       channel: l.channel,
       lbe: l.lbe,
     }));
-    return { rows: lines, pulledAt: snap.at, note: null };
-  }
-  return { rows, pulledAt, note: `Снимка партнёров на ${opts.when ?? stamp(t)} нет: взяты партнёры последней загрузки` };
+  const snap = await prisma.planPull.findFirst({
+    where: { month, partners: { not: Prisma.DbNull }, at: opts.inclusive ? { lte: t } : { lt: t } },
+    orderBy: { at: "desc" },
+    select: { at: true, partners: true },
+  });
+  if (snap) return { rows: fromSnapshot(snap.partners as PartnerSnapshotLine[]), pulledAt: snap.at, note: null };
+  const first = await prisma.planPull.findFirst({ where: { month, partners: { not: Prisma.DbNull } }, orderBy: { at: "asc" }, select: { at: true, partners: true } });
+  if (first) return { rows: fromSnapshot(first.partners as PartnerSnapshotLine[]), pulledAt: first.at, note: `Снимка партнёров на ${when} нет: показаны партнёры ближайшей загрузки после этого момента` };
+  return { rows, pulledAt, note: `Снимка партнёров на ${when} нет: взяты партнёры последней загрузки` };
 }
 
 /** Проверка канала после загрузки LBE: корректировка партнёра или отметка «Прогноз проверен» позже загрузки */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { audienceOf, feedTeamFor, type CurrentTeam, type TeamOption } from "@/lib/org/audience";
+import { audienceOf, feedTeamFor, weeklyPeople, type CurrentTeam, type TeamOption } from "@/lib/org/audience";
 import { ALL_TEAMS, TOP_TEAM } from "@/domain/teams";
 import type { TeamNode } from "@/lib/org/scope";
 
@@ -49,6 +49,26 @@ describe("feedTeamFor", () => {
   it("из нескольких подходящих команд берётся самая узкая", () => {
     // Алиса в ленте сектора (участник). Управление её не включает: участник сектора не участник управления
     expect(feedTeamFor(current(TOP_TEAM), "alisa")).toEqual({ here: false, team: { id: "sector", name: "Сектор автострахования" } });
+  });
+
+  it("человек в двух лентах: та, что ждёт его weekly, важнее; потом более глубокая в общем дереве", () => {
+    // Борис специалист: участник управления и проектной команды под сектором
+    const two = [...nodes.map((n) => (n.id === "upr" ? { ...n, members: [...n.members, "boris"] } : n)), node("project", "Проект", "alisa", "sector", ["boris"], 2)];
+    const opts: TeamOption[] = two.map((n) => ({ id: n.id, name: n.name, depth: 0, relation: "all" }));
+    // Управление ждёт weekly специалистов, проект только показывает записи Бориса: побеждает управление, хотя оно выше
+    const asked = two.map((n) => (n.id === "upr" ? { ...n, rhythm: { ...n.rhythm, specialists: true } } : n));
+    expect(feedTeamFor({ ...current(TOP_TEAM, opts), nodes: asked }, "boris")).toEqual({ here: false, team: { id: "upr", name: "Управление развития продуктов" } });
+    // Нигде не ждут: более глубокая команда по общему дереву, хотя отступ в списке у всех одинаковый
+    expect(feedTeamFor({ ...current(TOP_TEAM, opts), nodes: two }, "boris")).toEqual({ here: false, team: { id: "project", name: "Проект" } });
+  });
+
+  it("люди с видимым weekly: участники и те, от кого ждут weekly, во всех видимых командах", () => {
+    expect([...weeklyPeople(current(TOP_TEAM), "aram")].sort()).toEqual(["alisa", "antonov", "aram", "reva"]);
+    const onlySector = options.filter((o) => o.id === "sector");
+    // Алиса видит только сектор: руководитель сектора пишет weekly в управление, его в этом списке нет
+    expect([...weeklyPeople(current("sector", onlySector), "alisa")]).toEqual(["alisa"]);
+    // Без команд: только сам человек
+    expect([...weeklyPeople(current(null, []), "me")]).toEqual(["me"]);
   });
 
   it("все мои команды включают всех из видимых команд", () => {

@@ -294,7 +294,7 @@ describe("сравнение версий месяца", () => {
     await prisma.planAdjustment.updateMany({ data: { createdAt: new Date(Date.now() - 3 * DAY) } });
     const day = new Date(Date.now() - 3 * DAY + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const cmp = (await proc.compareVersions(month, `day:${day}`, "forecast"))!;
-    expect(cmp.notes[0]).toMatch(/Снимков загрузки LBE до \d{2}\.\d{2} нет/);
+    expect(cmp.notes[0]).toMatch(/^Снимка загрузки LBE на конец \d{2}\.\d{2} нет: показан LBE ближайшей загрузки после этого момента$/);
   });
 });
 
@@ -362,18 +362,13 @@ describe("прогноз прошлой недели в отчёте CEO (эта
 
     // Момент раньше любой загрузки: берётся LBE последней загрузки, об этом пометка
     const early = (await proc.planBrief(await actor.owner(), month, { at: new Date(Date.now() - 20 * DAY), when: "конец недели 37, 13.09" }))!;
-    expect(early.asOf!.notes[0]).toBe("Снимка загрузки LBE на конец недели 37, 13.09 нет: взят LBE последней загрузки");
-    expect(early.asOf!.notes[1]).toBe("Снимка партнёров на конец недели 37, 13.09 нет: взяты партнёры последней загрузки");
+    expect(early.asOf!.notes[0]).toBe("Снимка загрузки LBE на конец недели 37, 13.09 нет: показан LBE ближайшей загрузки после этого момента");
+    expect(early.asOf!.notes[1]).toBe("Снимка партнёров на конец недели 37, 13.09 нет: показаны партнёры ближайшей загрузки после этого момента");
+    // Это LBE первой загрузки: выручка ОСАГО на 50 меньше, чем сейчас
+    expect(o(now).revenue.lbe! - o(early).revenue.lbe!).toBeCloseTo(50, 6);
   });
 
-  it("какой момент берёт отчёт недели и сравнение с прогнозом на любой прошлый день", async () => {
-    expect(proc.planAsOfWeek("2026-10-05", "2026-10-05", 41)).toBeNull();
-    expect(proc.planAsOfWeek("2026-10-12", "2026-10-05", 42)).toBeNull();
-    const asOf = proc.planAsOfWeek("2026-09-28", "2026-10-05", 40)!;
-    // Воскресенье 04.10, 24:00 по Москве
-    expect(asOf.at.toISOString()).toBe("2026-10-04T21:00:00.000Z");
-    expect(asOf.when).toBe("конец недели 40, 04.10");
-
+  it("сравнение с прогнозом на любой прошлый день", async () => {
     await load();
     // День без изменений тоже можно сравнить: его версия добавляется в список
     const quiet = new Date(Date.now() - 4 * DAY + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -383,6 +378,10 @@ describe("прогноз прошлой недели в отчёте CEO (эта
     const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
     expect((await proc.compareVersions(month, `day:${today}`, "forecast"))!.a.id).toBe("budget");
     expect((await proc.compareVersions(month, "day:2026-13-45", "forecast"))!.a.id).toBe("budget");
+    expect((await proc.compareVersions(month, "day:2026-02-30", "forecast"))!.a.id).toBe("budget");
+    // Добавленный день стоит среди дней по порядку, новые сверху
+    const days = cmp.options.filter((o) => o.group === "Прогноз на дату").map((o) => o.id);
+    expect(days).toEqual([...days].sort().reverse());
   });
 });
 

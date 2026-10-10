@@ -1,7 +1,7 @@
 // Этап 35: факт месяца по дням (разбор вставки из отчёта аналитиков, темп к прогнозу), месяц недели и текст сводки
 import { describe, expect, it } from "vitest";
 import { dayOf, daysInMonth, metricOf, numberOf, pace, parseFacts, productCode } from "@/lib/plan/facts";
-import { planBriefText, planMonthOfWeek, type PlanBrief } from "@/lib/plan/brief";
+import { planAsOfWeek, planBriefText, planMonthOfWeek, type PlanBrief } from "@/lib/plan/brief";
 
 const today = "2026-10-09";
 
@@ -143,6 +143,17 @@ describe("темп к прогнозу", () => {
 });
 
 describe("сводка для отчёта CEO", () => {
+  it("прогноз для отчёта недели: сейчас у отчётной и новее, на конец недели у прошлых (этап 39)", () => {
+    expect(planAsOfWeek("2026-10-05", "2026-10-05", 41)).toBeNull();
+    expect(planAsOfWeek("2026-10-12", "2026-10-05", 42)).toBeNull();
+    const asOf = planAsOfWeek("2026-09-28", "2026-10-05", 40)!;
+    // Воскресенье 04.10, 24:00 по Москве
+    expect(asOf.at.toISOString()).toBe("2026-10-04T21:00:00.000Z");
+    expect(asOf.when).toBe("конец недели 40, 04.10");
+    // Неделя на стыке месяцев и лет
+    expect(planAsOfWeek("2026-12-28", "2027-01-04", 53)!.when).toBe("конец недели 53, 03.01");
+  });
+
   it("месяц недели по её четвергу", () => {
     expect(planMonthOfWeek("2026-09-28")).toBe("2026-10");
     expect(planMonthOfWeek("2026-09-21")).toBe("2026-09");

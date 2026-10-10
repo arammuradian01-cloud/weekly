@@ -128,14 +128,26 @@ export function WeeklyFeed({
   const [author, setAuthorState] = useState<PersonSlug | "">(focus?.here ? focus.slug : "");
   const [helpOnly, setHelpOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(!!focus?.here);
-  // Отбор по автору живёт и в адресе: ссылкой можно поделиться, а смена недели его сохраняет
+  // Человек из ссылки появился в ленте (перешли в его команду кнопкой подсказки или переключателем в шапке): отбор по
+  // нему включается сам. Состояние меняется во время отрисовки, как советует React, без эффекта и лишнего прохода
+  const focusKey = focus ? `${focus.slug}:${focus.here ? "here" : "away"}` : "";
+  const [seenFocus, setSeenFocus] = useState(focusKey);
+  if (seenFocus !== focusKey) {
+    setSeenFocus(focusKey);
+    if (focus?.here) {
+      setAuthorState(focus.slug);
+      setShowFilters(true);
+    }
+  }
+  // Отбор по автору живёт и в адресе: ссылкой можно поделиться, а смена недели его сохраняет. Состояние истории
+  // null: Next перенесёт свои поля и запомнит новый адрес, иначе живое обновление вернёт старый
   const setAuthor = (slug: PersonSlug | "") => {
     setAuthorState(slug);
     try {
       const url = new URL(window.location.href);
       if (slug) url.searchParams.set("author", slug);
       else url.searchParams.delete("author");
-      window.history.replaceState(window.history.state, "", url);
+      window.history.replaceState(null, "", url);
     } catch {
       // Адрес не обновился: отбор на экране всё равно работает
     }
@@ -145,14 +157,20 @@ export function WeeklyFeed({
   if (focus?.here && !authorOptions.some((o) => o.value === focus.slug)) authorOptions.push({ value: focus.slug, label: focus.name });
 
   const all = data.entries;
+  // Weekly руководителя в ленте команды выше: его записи и то, что он поднял из своей команды, как в его карточке
+  const ofAuthor = (e: WeeklyEntry) => e.author === author || ((data.authors?.includes(author as PersonSlug) ?? true) && !!e.promoted?.some((p) => p.by === author));
   const entries = all.filter(
     (e) =>
       (!direction || e.direction === direction) &&
       (!block || e.block === block) &&
       (!type || e.type === type) &&
-      (!author || e.author === author) &&
+      (!author || ofAuthor(e)) &&
       (!helpOnly || !!e.help),
   );
+  // Подсказка про человека из ссылки, пока отбор не перевели на другого
+  const showElsewhere = !!focus && !focus.here && (!author || author === focus.slug);
+  // Что сохранить при смене недели: отбор или человека из ссылки, которого ещё нет в ленте
+  const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
   const filtersOn = !!(direction || block || type || author || helpOnly);
   const myState = myReport.state;
@@ -181,7 +199,7 @@ export function WeeklyFeed({
         {/* В строке действий шапки: на телефоне сетка во всю ширину, длинные подписи на всю строку, дальше кнопки переносятся */}
         <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0">
           <div className="col-span-2 sm:col-span-1">
-            <WeekSwitcher view={data} query={author ? `&author=${encodeURIComponent(author)}` : ""} />
+            <WeekSwitcher view={data} query={keepQuery} />
           </div>
           <Link href={`/forecast?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <TrendingUp className="h-4 w-4" aria-hidden="true" />
@@ -204,7 +222,7 @@ export function WeeklyFeed({
       {data.fallback ? (
         <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink">
           За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
-          <Link href={`/weekly?week=${data.reportingKey}`} className="font-medium text-blue-700 hover:underline">
+          <Link href={`/weekly?week=${data.reportingKey}${keepQuery}`} className="font-medium text-blue-700 hover:underline">
             Открыть неделю {data.reportingNumber}
           </Link>
         </p>
@@ -217,15 +235,7 @@ export function WeeklyFeed({
         </p>
       ) : null}
 
-      {focus && !focus.here ? (
-        <FocusElsewhere
-          focus={focus}
-          onSwitched={() => {
-            setAuthorState(focus.slug);
-            setShowFilters(true);
-          }}
-        />
-      ) : null}
+      {showElsewhere ? <FocusElsewhere focus={focus!} /> : null}
 
       <SubmissionStrip reports={data.reports} />
 
@@ -317,7 +327,7 @@ function authorLabel(slug: PersonSlug, options: { value: string; label: string }
 }
 
 /** Человека из ссылки нет в ленте выбранной команды: где его weekly и как туда перейти (этап 39) */
-function FocusElsewhere({ focus, onSwitched }: { focus: AuthorFocus; onSwitched: () => void }) {
+function FocusElsewhere({ focus }: { focus: AuthorFocus }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -328,7 +338,7 @@ function FocusElsewhere({ focus, onSwitched }: { focus: AuthorFocus; onSwitched:
     const res = await setTeamAction(focus.team.id).catch(() => ({ ok: false as const, error: "Не получилось переключить команду: проверьте связь" }));
     setBusy(false);
     if (!res.ok) return setError(res.error);
-    onSwitched();
+    // Как у переключателя в шапке: после смены команды страница перечитывается, отбор включится сам
     router.refresh();
   };
   return (
@@ -390,7 +400,7 @@ function PeopleView({
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
   const reportOf = (slug: PersonSlug) => reports.find((w) => w.author === slug);
   const stateOf = (slug: PersonSlug) => reportOf(slug)?.state ?? "not-started";
-  // Сначала сдавшие, потом черновики, в конце те, кто не начинал
+  // Сначала сдавшие, потом черновики, в конце те, у кого weekly не начат
   // Записи тех, кого уже выключили, остаются в ленте прошлых недель
   // Свои записи ленты: авторы из команды. Записи, которые пришли наверх, видны у того, кто их поднял (этап 15)
   const ownFeed = (e: WeeklyEntry) => !feedAuthors || (!!e.author && feedAuthors.includes(e.author));
@@ -458,7 +468,7 @@ function PeopleView({
               ) : weekly?.absent ? (
                 <p className="mt-2 text-body text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p>
               ) : reporting ? (
-                <p className="mt-2 text-body text-muted">{state === "not-started" ? "Ещё не начинал" : "Главная фраза пока не написана"}</p>
+                <p className="mt-2 text-body text-muted">{state === "not-started" ? "Weekly ещё не начат" : "Главная фраза пока не написана"}</p>
               ) : null}
               {weekly?.thanks ? (
                 <p className="mt-1.5 text-body text-ink">{weekly.thanks}</p>

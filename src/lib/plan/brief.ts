@@ -42,6 +42,18 @@ export function planMonthOfWeek(weekKey: string): string {
   return d.toISOString().slice(0, 7);
 }
 
+/**
+ * На какой момент брать прогноз для отчёта CEO недели (этап 39). Отчётная неделя и новее: прогноз сейчас (null).
+ * Прошлые недели: конец недели, воскресенье 24:00 по Москве
+ */
+export function planAsOfWeek(weekKey: string, reportingKey: string, weekNumber: number): { at: Date; when: string } | null {
+  if (weekKey >= reportingKey) return null;
+  const monday = new Date(`${weekKey}T00:00:00Z`);
+  const at = new Date(monday.getTime() + 7 * 24 * 60 * 60 * 1000 - 3 * 60 * 60 * 1000);
+  const sunday = new Date(monday.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return { at, when: `конец недели ${weekNumber}, ${sunday.slice(8, 10)}.${sunday.slice(5, 7)}` };
+}
+
 export const PLAN_BRIEF_REASONS = 6;
 
 export function briefOf(view: MonthPlanView): PlanBrief {

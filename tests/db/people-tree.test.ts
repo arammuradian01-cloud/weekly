@@ -101,6 +101,24 @@ describe("дерево подчинённых", () => {
     expect((await peopleTree(await viewer(antonov))).people[alisa]!.work).toBe(true);
   });
 
+  it("ссылка на weekly только у тех, кто есть в лентах видимых команд (этап 39)", async () => {
+    const reva = await slugOf("Рева");
+    const antonov = await slugOf("Антонов");
+    const alisa = await slugOf("Чемоданова");
+    // Рева видит своё управление и сектор ниже: Антонов в ленте управления, Алиса в ленте сектора
+    const forReva = await peopleTree(await viewer(reva));
+    expect(forReva.people[antonov]!.weekly).toBe(true);
+    expect(forReva.people[alisa]!.weekly).toBe(true);
+    // Алиса видит только сектор: weekly руководителя сектора в ленте управления, ей не видной, поэтому ссылки нет
+    const forAlisa = await peopleTree(await viewer(alisa));
+    expect(forAlisa.people[antonov]!.work).toBe(true);
+    expect(forAlisa.people[antonov]!.weekly).toBe(false);
+    expect(forAlisa.people[alisa]!.weekly).toBe(true);
+    // Владелец видит все команды: ссылка у всех, кто есть хоть в одной ленте
+    const forOwner = await peopleTree(await viewer("muradyan"));
+    expect(forOwner.people[antonov]!.weekly).toBe(true);
+  });
+
   it("вакансии видят руководитель ветки и управление, остальные нет", async () => {
     const antonov = await slugOf("Антонов");
     expect((await peopleTree(await viewer("muradyan"))).people[antonov]!.vacancies).toEqual(["PO KASKO"]);

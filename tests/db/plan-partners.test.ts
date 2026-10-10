@@ -332,14 +332,14 @@ describe("партнёрский канал в сравнении версий (
     expect(atDay!.partners!.notes).toEqual([]);
   });
 
-  it("загрузка до снимков партнёров: берутся партнёры последней загрузки, об этом пометка; без партнёров таблицы нет", async () => {
+  it("загрузка без снимка партнёров: берутся партнёры ближайшей загрузки после неё, об этом пометка; без партнёров таблицы нет", async () => {
     await load();
     const [first] = await prisma.planPull.findMany();
     await prisma.$executeRaw`UPDATE plan_pulls SET partners = NULL, at = ${new Date(Date.now() - 2 * DAY)} WHERE id = ${first!.id}`;
     await load();
     const cmp = await proc.compareVersions(month, `pull:${first!.id}`, "lbe");
     expect(cmp!.partners!.notes).toHaveLength(1);
-    expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: взяты партнёры последней загрузки$/);
+    expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: показаны партнёры ближайшей загрузки после этого момента$/);
     expect(row(cmp, "total").a).toEqual(row(cmp, "total").b);
     // Загрузка без листов b2b снимок не пишет: партнёры в ней не менялись
     await withoutTab("B2B. CPA & WAYBACK OSAGO LRF", async () => {

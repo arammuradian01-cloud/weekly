@@ -454,15 +454,22 @@ async function source(month: string, manager: boolean): Promise<PlanSource> {
 }
 
 /** Прогноз месяца для экрана: версии, корректировки, владельцы продуктов и история. month: из адреса страницы */
+type SnapLine = { version: PlanVersion; product: string; metric: string; value: number | null };
+
 /**
- * Строки версий месяца на момент at (этап 39): снимок последней загрузки LBE до at. Снимков до at нет: текущие строки,
- * об этом пометка
+ * Строки версий месяца на момент at (этап 39): снимок последней загрузки LBE до at. Без снимка, но с текущими строками,
+ * загруженными до at (загрузка до снимков этапа 35), текущие строки. Иначе LBE ближайшей загрузки после at (первой со
+ * снимком), об этом пометка
  */
-async function linesAt(month: string, at: Date, when: string): Promise<{ lines: { version: PlanVersion; product: string; metric: string; value: number | null }[]; pulledAt: Date | null; note: string | null }> {
+async function linesAt(month: string, at: Date, when: string): Promise<{ lines: SnapLine[]; pulledAt: Date | null; note: string | null }> {
   const pull = await prisma.planPull.findFirst({ where: { month, at: { lt: at } }, orderBy: { at: "desc" }, select: { at: true, lines: true } });
-  if (pull) return { lines: pull.lines as { version: PlanVersion; product: string; metric: string; value: number | null }[], pulledAt: pull.at, note: null };
+  if (pull) return { lines: pull.lines as SnapLine[], pulledAt: pull.at, note: null };
   const lines = await prisma.planLine.findMany({ where: { month } });
-  return { lines, pulledAt: lines[0]?.pulledAt ?? null, note: lines.length ? `Снимка загрузки LBE на ${when} нет: взят LBE последней загрузки` : null };
+  if (!lines.length) return { lines, pulledAt: null, note: null };
+  if (lines[0]!.pulledAt < at) return { lines, pulledAt: lines[0]!.pulledAt, note: null };
+  const first = await prisma.planPull.findFirst({ where: { month }, orderBy: { at: "asc" }, select: { at: true, lines: true } });
+  const note = `Снимка загрузки LBE на ${when} нет: показан LBE ближайшей загрузки после этого момента`;
+  return first ? { lines: first.lines as SnapLine[], pulledAt: first.at, note } : { lines, pulledAt: lines[0]!.pulledAt, note };
 }
 
 /**
@@ -486,7 +493,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     factsOf(month),
   ]);
   const lines = state.lines;
-  const reviews = await reviewsOf(month, since, adjustments);
+  // На прошлый момент проверки нет: и считать её незачем
+  const reviews = at ? new Map() : await reviewsOf(month, since, adjustments);
   const lbe = valuesBy(lines, "LBE");
   const budget = valuesBy(lines, "BUDGET");
   const { drivers, last } = driversOf(adjustments);

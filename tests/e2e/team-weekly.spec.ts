@@ -109,6 +109,10 @@ test("руководитель сектора включает weekly специ
   // Рева может поднять её дальше, в топ-команду
   await expect(reva.getByRole("button", { name: "Наверх" })).toBeVisible();
   await shot(reva, "upper-feed");
+  // Этап 39: weekly Антонова по отбору полный: и то, что он поднял из сектора
+  await reva.goto(`/weekly?author=${(await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`))[0]!.slug}`);
+  await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
+  await expect(reva.getByText("Согласовали макет формы расчёта ОСАГО")).toBeVisible();
   await reva.close();
 });
 
@@ -138,5 +142,16 @@ test("weekly человека из дерева подчинённых: подс
   await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
   await expect(reva).toHaveURL(new RegExp(`author=${antonov}`));
   await shot(reva, "focus-switched");
+
+  // Тот же переход переключателем в шапке: отбор включается сам, как и по кнопке подсказки
+  const switcher = reva.locator(phone ? "#team-switcher-m" : "#team-switcher");
+  await switcher.selectOption("top");
+  await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
+  await reva.goto(`/weekly?author=${antonov}`);
+  await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
+  await expect(reva.locator("#f-author")).toHaveValue("");
+  await switcher.selectOption(revaTeam);
+  await expect(reva.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
+  await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
   await reva.close();
 });

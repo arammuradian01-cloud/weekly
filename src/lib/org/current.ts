@@ -6,29 +6,18 @@ import "server-only";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import type { Role } from "@/generated/prisma/enums";
-import { TOP_TEAM, loadTeamNodes, orderTeams, scopeOf, teamPeopleIds, type Scope, type ScopeSubject, type TeamNode } from "./scope";
+import { TOP_TEAM, loadTeamNodes, orderTeams, scopeOf, teamPeopleIds, type ScopeSubject } from "./scope";
 
 export { orderTeams };
 
 import { ALL_TEAMS } from "@/domain/teams";
 import type { WeekAudience } from "@/lib/weekly/service";
-import type { CurrentTeam, TeamOption } from "./audience";
+import { teamOptions, type CurrentTeam, type TeamOption } from "./audience";
 
-export { audienceOf, feedTeamFor, type CurrentTeam, type TeamOption } from "./audience";
+export { audienceOf, feedTeamFor, teamOptions, type CurrentTeam, type TeamOption } from "./audience";
 
 export const TEAM_COOKIE = "team";
 export { ALL_TEAMS };
-
-export function teamOptions(nodes: TeamNode[], scope: Scope, personId: string): TeamOption[] {
-  const visible = new Set(scope.visible);
-  const ordered = orderTeams(nodes.filter((n) => n.active && visible.has(n.id)));
-  return ordered.map(({ node, depth }) => ({
-    id: node.id,
-    name: node.name,
-    depth,
-    relation: node.leaderId === personId ? "leader" : node.members.includes(personId) ? "member" : scope.all ? "all" : "below",
-  }));
-}
 
 export function pickCurrent(options: TeamOption[], wanted: string | undefined): string | null {
   if (wanted === ALL_TEAMS && options.length > 1) return ALL_TEAMS;

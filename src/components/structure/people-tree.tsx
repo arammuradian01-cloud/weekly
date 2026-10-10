@@ -280,17 +280,17 @@ function FocusCard({
           </div>
         ) : null}
       </dl>
-      {/* Цели видны шире задач (цели выше своей команды), поэтому ссылка на цели есть у всех, на задачи и weekly
-          только у тех, чьи задачи смотрящему видны */}
+      {/* Цели видны шире задач (цели выше своей команды), поэтому ссылка на цели есть у всех, на задачи только у тех,
+          чьи задачи смотрящему видны, на weekly у тех, кто есть в лентах видимых команд */}
       <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         {p.work ? (
           <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
             Задачи
           </Link>
         ) : null}
-        {/* Этап 39: weekly человека, видимость та же, что у задач. Если его нет в ленте выбранной команды, лента
-            подскажет, в какой команде он есть */}
-        {p.work ? (
+        {/* Этап 39: weekly человека, если он есть в ленте одной из видимых команд. Если его нет в ленте выбранной команды,
+            лента подскажет, в какой команде он есть */}
+        {p.weekly ? (
           <Link href={`/weekly?author=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
             Weekly
           </Link>
