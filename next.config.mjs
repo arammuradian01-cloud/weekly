@@ -12,6 +12,16 @@ const nextConfig = {
   agentRules: false,
   experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
   serverExternalPackages: ["pg", "pg-boss", "nodemailer"],
+  // Прежние адреса страниц про людей (до этапа 41): постоянное перенаправление на страницу «Люди» до отрисовки,
+  // параметры адреса (?team=) переносятся сами
+  async redirects() {
+    return [
+      { source: "/team", destination: "/people", permanent: true },
+      { source: "/my-teams", destination: "/people/leader", permanent: true },
+      { source: "/structure", destination: "/people/structure", permanent: true },
+      { source: "/analytics", destination: "/people/analytics", permanent: true },
+    ];
+  },
   async headers() {
     return [
       {

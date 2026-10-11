@@ -24,8 +24,9 @@ test("владелец заводит инициативу, ответствен
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   if (phone()) {
-    await page.getByRole("button", { name: /^Профиль:/ }).click();
-    await page.getByRole("menuitem", { name: "Инициативы" }).click();
+    // На телефоне разделы за кнопкой «Ещё» нижнего меню (этап 41)
+    await page.getByRole("button", { name: "Ещё", exact: true }).click();
+    await page.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Инициативы", exact: true }).click();
   } else await page.getByRole("link", { name: "Инициативы" }).locator("visible=true").first().click();
   await expect(page.getByRole("heading", { name: "Крупные инициативы", level: 1 })).toBeVisible();
   await expect(page.getByText("Крупных инициатив пока нет.")).toBeVisible();

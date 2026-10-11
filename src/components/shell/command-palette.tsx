@@ -144,12 +144,13 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/decisions", "Решения", Gavel, "журнал решений"],
       ["/forecast", "Прогноз месяца", TrendingUp, "прогноз месяца LBE бюджет драйверы корректировка LRF"],
       ["/forecast?tab=week", "Цифры недели", TrendingUp, "цифры недели прогноз лидеров"],
-      ["/my-teams", "Мои команды", LayoutDashboard, "панель руководителя"],
-      ["/analytics", "Аналитика", BarChart3, "панель директора weekly просрочка переносы просьбы лидеры"],
+      ["/people/leader", "Люди, вкладка «Руководителю»", LayoutDashboard, "панель руководителя мои команды"],
+      ["/people/analytics", "Люди, вкладка «Аналитика»", BarChart3, "панель директора weekly просрочка переносы просьбы лидеры"],
       ["/one-on-one", "Один на один", Users, "встреча один на один 1:1 повестка руководитель"],
       ["/meeting-rating", "Оценка встреч", Users, "оценка встреч анонимно опрос полезность что убрать"],
       ["/initiatives", "Инициативы", Target, "крупные инициативы шкала готовности ищем делаем проекты"],
-      ["/team", "Команда", Users, "люди состав"],
+      ["/people", "Люди, вкладка «Команда»", Users, "команда люди состав"],
+      ["/people/structure", "Люди, вкладка «Структура»", Users, "структура дерево подчинённых подразделения команды"],
     ];
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
     if (management) {

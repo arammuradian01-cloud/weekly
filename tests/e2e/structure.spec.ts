@@ -29,7 +29,7 @@ async function shot(page: Page, name: string) {
 }
 
 async function loadStructure(page: Page) {
-  await page.goto("/structure");
+  await page.goto("/people/structure");
   await page.getByRole("button", { name: "Загрузить структуру" }).click();
   const drawer = page.getByRole("dialog", { name: "Загрузить структуру" });
   await drawer.getByLabel("Или вставьте ячейки из таблицы").fill(STRUCTURE);
@@ -84,8 +84,8 @@ test("владелец загружает структуру, команды п�
   await enterByLink(lead, antonov);
   await lead.goto("/tasks");
   await expect(lead.getByRole("main").getByText("Макет формы расчёта").locator("visible=true").first()).toBeVisible();
-  await lead.goto("/team");
-  await expect(lead.getByRole("heading", { name: "Команда: Сектор автострахования" })).toBeVisible();
+  await lead.goto("/people");
+  await expect(lead.getByRole("heading", { name: "Сектор автострахования", level: 2 })).toBeVisible();
   await expect(lead.getByRole("main").getByText("Чемоданова Алиса").locator("visible=true").first()).toBeVisible();
   await shot(lead, "lead-team");
   const [topTask] = await sql("SELECT number FROM tasks WHERE \"teamId\" = 'top' ORDER BY number LIMIT 1");
@@ -118,7 +118,7 @@ test("дерево подчинённых: схема с путём наверх
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await loadStructure(page);
-  await page.goto("/structure");
+  await page.goto("/people/structure");
   // После загрузки структуры страница открывается на дереве подчинённых
   await expect(page.getByRole("radio", { name: "Подчинённые" })).toHaveAttribute("aria-checked", "true");
   const tree = page.getByTestId("people-tree");
@@ -177,7 +177,7 @@ test("дерево подчинённых: схема с путём наверх
   const other = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" });
   const shared = await other.newPage();
   await enter(shared, "Мурадян Арам");
-  await shared.goto("/structure");
+  await shared.goto("/people/structure");
   const sharedTree = shared.getByTestId("people-tree");
   await sharedTree.getByTestId(`person-${reva}`).click();
   await sharedTree.getByTestId(`person-${antonov}`).click();

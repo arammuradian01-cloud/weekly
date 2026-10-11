@@ -11,7 +11,7 @@ import { Drawer } from "@/components/ui/overlays";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
-import { applyStructureAction, previewStructureAction } from "@/app/(app)/structure/actions";
+import { applyStructureAction, previewStructureAction } from "@/app/(app)/people/structure/actions";
 
 export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [text, setText] = useState("");

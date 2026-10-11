@@ -21,7 +21,7 @@ export function TaskPeople() {
   // Люди команды по порядку, потом ответственные задач команды не из её состава
   const extra = [...new Set(open.map((t) => t.owner as PersonSlug).filter((s) => !teamPeople.some((p) => p.slug === s)))].map(personOf);
   const people = [...teamPeople, ...extra];
-  if (!people.length) return <EmptyState title="В команде пока нет людей">Состав команды задаётся на странице «Структура».</EmptyState>;
+  if (!people.length) return <EmptyState title="В команде пока нет людей">Состав команды задаётся на вкладке «Структура» страницы «Люди».</EmptyState>;
   const max = Math.max(1, ...people.map((p) => open.filter((t) => t.owner === p.slug).length));
   // Этап 36: таблица вместо карточек. Цифры по человеку в колонках, задачи плашками в последней колонке
   return (

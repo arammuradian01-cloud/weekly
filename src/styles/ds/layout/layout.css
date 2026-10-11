@@ -6,6 +6,16 @@
 .sv-shell__top { grid-column: 2; }
 .sv-shell__main { grid-column: 2; min-width: 0; padding: var(--space-5) var(--content-pad) var(--space-10); }
 .sv-shell__content { max-width: var(--content-max); margin: 0 auto; }
+/* Три ширины страниц (этап 41). Списки и таблицы: вся ширина. Чтение и форма: колонка 840 с правой панелью 320.
+   Обзор: главное слева 2:1. На планшете и телефоне панели встают под основную колонку */
+.sv-page--read { max-width: 840px; }
+.sv-page--read-rail { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-6); align-items: start; }
+.sv-page--overview { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+.sv-page__rail { position: sticky; top: calc(64px + var(--space-5)); display: flex; flex-direction: column; gap: var(--space-4); }
+@media (max-width: 1023px) {
+  .sv-page--read-rail, .sv-page--overview { grid-template-columns: minmax(0, 1fr); }
+  .sv-page__rail { position: static; }
+}
 .sv-shell__bottom { display: none; }
 .sv-shell__header { display: none; }
 /* Вариант «шапка как на сайте»: без бокового меню */

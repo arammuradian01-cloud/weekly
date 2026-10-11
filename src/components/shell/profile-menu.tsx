@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, MessagesSquare, Rocket, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
-import { MANAGEMENT_NAV } from "./nav";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
@@ -75,38 +74,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           </div>
           <Menu.Separator className="my-1 h-px bg-line" />
 
-          {management ? (
-            <div className="lg:hidden">
-              {MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER").map((item) => (
-                <Menu.Item key={item.href} asChild>
-                  <Link href={item.href} className={itemClass}>
-                    <item.icon className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
-                    {item.label}
-                  </Link>
-                </Menu.Item>
-              ))}
-              <Menu.Separator className="my-1 h-px bg-line" />
-            </div>
-          ) : null}
-
-          {personal ? (
-            // Встречи один на один (этап 28): на телефоне в нижнем меню места нет, открываются отсюда
-            <Menu.Item asChild>
-              <Link href="/one-on-one" className={cn(itemClass, "lg:hidden")}>
-                <MessagesSquare className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
-                Один на один
-              </Link>
-            </Menu.Item>
-          ) : null}
-
-          {/* Крупные инициативы (этап 30): на телефоне в нижнем меню места нет */}
-          <Menu.Item asChild>
-            <Link href="/initiatives" className={cn(itemClass, "lg:hidden")}>
-              <Rocket className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
-              Инициативы
-            </Link>
-          </Menu.Item>
-
+          {/* Разделы «Управление», «Один на один» и «Инициативы» на телефоне за кнопкой «Ещё» нижнего меню (этап 41) */}
           <Menu.Item asChild>
             <Link href="/profile" className={itemClass}>
               <UserRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />

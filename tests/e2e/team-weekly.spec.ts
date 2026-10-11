@@ -49,7 +49,7 @@ test("руководитель сектора включает weekly специ
 
   // Ритм сектора: свой срок в пятницу и weekly специалистов
   const antonov = await person(browser, page, "Антонов");
-  await antonov.goto("/structure");
+  await antonov.goto("/people/structure");
   await antonov.getByRole("radio", { name: /Команды/ }).click();
   await antonov.getByRole("button", { name: "Показать участников: Сектор автострахования" }).click();
   await expect(antonov.getByText("Weekly в этой команде не ждём")).toBeVisible();
@@ -121,7 +121,7 @@ test("weekly человека из дерева подчинённых: подс
   const reva = await person(browser, page, "Рева");
   const [{ slug: antonov }] = await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`);
   const revaTeam = (await sql("SELECT id FROM teams WHERE name = 'Управление развития продуктов'"))[0]!.id as string;
-  await reva.goto("/structure");
+  await reva.goto("/people/structure");
   const tree = reva.getByTestId("people-tree");
   await tree.getByTestId(`person-${antonov}`).click();
   await expect(tree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");

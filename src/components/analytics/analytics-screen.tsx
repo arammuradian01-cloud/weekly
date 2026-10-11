@@ -1,6 +1,6 @@
 "use client";
 
-// Панель «Аналитика» (этап 27, модуль М12). Данные приходят с сервера одним объектом, здесь только показ:
+// Вкладка «Аналитика» страницы «Люди» (этап 27, модуль М12; с этапа 41 вкладкой). Данные приходят с сервера одним объектом, здесь только показ:
 // выбор команды, «Сейчас», weekly и задачи по неделям, просьбы, цели квартала и карточки лидеров без рейтинга.
 
 import Link from "next/link";
@@ -47,7 +47,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
                     {p.name}
                   </span>
                 ) : p.link ? (
-                  <Link href={`/analytics?team=${p.id}`} className="text-link hover:underline">
+                  <Link href={`/people/analytics?team=${p.id}`} className="text-link hover:underline">
                     {p.name}
                   </Link>
                 ) : (
@@ -59,7 +59,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
         </nav>
         {data.options.length > 1 ? (
           // Выбор и кнопка «Показать»: стрелки в списке не открывают команду на каждом шаге
-          <Form action="/analytics" className="flex items-center gap-2 text-small text-muted">
+          <Form action="/people/analytics" className="flex items-center gap-2 text-small text-muted">
             <label htmlFor="an-team">Команда</label>
             <select id="an-team" name="team" key={data.team.id} defaultValue={data.team.id} className="sv-control min-w-0 max-w-[280px]">
               {data.options.map((o) => (
@@ -80,8 +80,8 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
           <h2 id="an-now" className="text-title font-semibold text-ink">
             Задачи сейчас
           </h2>
-          <Link href={`/my-teams?team=${data.team.id}`} className="text-small font-medium text-link hover:underline">
-            Задачи и люди в «Моих командах»
+          <Link href={`/people/leader?team=${data.team.id}`} className="text-small font-medium text-link hover:underline">
+            Задачи и люди на вкладке «Руководителю»
           </Link>
         </div>
         <NowTiles now={data.now} staleDays={data.staleDays} />
@@ -222,9 +222,9 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
           </>
         ) : (
           <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">
-            Ниже этой команды других команд нет. Люди команды и их задачи на странице{" "}
-            <Link href={`/my-teams?team=${data.team.id}`} className="font-medium text-link hover:underline">
-              «Мои команды»
+            Ниже этой команды других команд нет. Люди команды и их задачи на вкладке{" "}
+            <Link href={`/people/leader?team=${data.team.id}`} className="font-medium text-link hover:underline">
+              «Руководителю»
             </Link>
             .
           </p>
@@ -371,7 +371,7 @@ function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderC
             <span key={t.id}>
               {i ? ", " : ""}
               {t.below ? (
-                <Link href={`/analytics?team=${t.id}`} className="text-link hover:underline">
+                <Link href={`/people/analytics?team=${t.id}`} className="text-link hover:underline">
                   {t.name}
                 </Link>
               ) : (
@@ -441,11 +441,11 @@ function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderC
       </p>
 
       <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 text-small font-medium">
-        <Link href={`/my-teams?team=${c.teams[0].id}`} className="text-link hover:underline">
+        <Link href={`/people/leader?team=${c.teams[0].id}`} className="text-link hover:underline">
           Задачи и люди
         </Link>
         {deeper ? (
-          <Link href={`/analytics?team=${deeper.id}`} className="text-link hover:underline">
+          <Link href={`/people/analytics?team=${deeper.id}`} className="text-link hover:underline">
             Аналитика команды
           </Link>
         ) : null}

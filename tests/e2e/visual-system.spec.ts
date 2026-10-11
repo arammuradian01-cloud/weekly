@@ -43,9 +43,9 @@ test("задачи: цифры под заголовком ведут на сп�
   await shot(page, "tasks-changes");
 });
 
-test("команда и мои команды: цифры и таблицы", async ({ page }) => {
+test("люди: команда и руководителю: цифры и таблицы", async ({ page }) => {
   await enter(page, "Мурадян Арам");
-  await page.goto("/team");
+  await page.goto("/people");
   await expect(page.getByRole("list", { name: "Команда в цифрах" })).toBeVisible();
   await expect(page.getByTestId("team-fig-weekly")).toContainText(/\d+ из \d+/);
   const table = page.getByTestId("team-summary");
@@ -53,7 +53,7 @@ test("команда и мои команды: цифры и таблицы", as
   await expect(table.getByRole("link", { name: "Рева Тарас" })).toBeVisible();
   await shot(page, "team");
 
-  await page.goto("/my-teams");
+  await page.goto("/people/leader");
   await expect(page.getByRole("list", { name: /в цифрах/ })).toBeVisible();
   await expect(page.getByTestId("mt-teams-table")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Требует внимания/ })).toBeVisible();
