@@ -250,3 +250,21 @@ a.sv-figure__link:focus-visible, button.sv-figure__link:focus-visible { outline:
 @media (max-width: 639px) {
   .sv-empty--compact .sv-empty__action { flex-basis: 100%; margin: 0; }
 }
+
+/* Строка состояний (этап 48): подпись мелко над значением, точка оттенка, элементы в строку с переносом */
+.sv-statusline { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); margin: 0; }
+.sv-statusline__item { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 100%; }
+.sv-statusline__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-statusline__value { margin: 0; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); color: var(--color-text); overflow-wrap: anywhere; }
+.sv-statusline__dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-dot); }
+.sv-statusline__dot--ok { background: var(--color-success-dot); }
+.sv-statusline__dot--warning { background: var(--color-warning-dot); }
+.sv-statusline__dot--danger { background: var(--color-danger-dot); }
+.sv-statusline__item--danger .sv-statusline__value { color: var(--color-danger-text); }
+.sv-statusline__item--warning .sv-statusline__value { color: var(--color-warning-text); }
+.sv-statusline__item--muted .sv-statusline__value { color: var(--color-text-secondary); font-weight: var(--font-weight-medium); }
+.sv-statusline__hint { margin: 0; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-statusline__link { display: inline-flex; align-items: center; gap: 8px; min-width: 0; color: inherit; text-decoration: none; border-radius: var(--radius-control); }
+.sv-statusline__link:hover { color: var(--color-link); text-decoration: underline; }
+.sv-statusline__link:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+@media (max-width: 639px) { .sv-statusline { gap: var(--space-2) var(--space-4); } }

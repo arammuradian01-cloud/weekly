@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, CircleDashed, CloudUpload, Copy, ExternalLink, RotateCcw, ScanSearch, TriangleAlert, XCircle } from "lucide-react";
+import { StatusLine } from "@/components/ui/data";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
@@ -52,7 +53,7 @@ function ToneIcon({ tone }: { tone: Tone }) {
 }
 
 /** Страница синхронизации для владельца: забор задач из Bord, затем таблица для просмотра: подключение, последняя выгрузка, очередь, сверка, история (раздел 5 ТЗ) */
-export function SyncStatus({ view }: { view: SyncView }) {
+export function SyncStatus({ view, tab = "bord" }: { view: SyncView; /** Этап 48: связи вкладками */ tab?: "bord" | "numbers" | "mirror" }) {
   const router = useRouter();
   const run = useRunAction();
   const { notify } = usePrototype();
@@ -85,10 +86,11 @@ export function SyncStatus({ view }: { view: SyncView }) {
         </p>
       ) : null}
 
-      <BordPull view={view.bord} />
+      {tab === "bord" ? <BordPull view={view.bord} /> : null}
 
-      <NumbersSetup view={view.numbers} />
+      {tab === "numbers" ? <NumbersSetup view={view.numbers} /> : null}
 
+      {tab === "mirror" ? (
       <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
       <div>
         <h2 id="sync-mirror" className="text-title font-semibold text-ink">
@@ -102,7 +104,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
         </p>
       </div>
 
-      {view.connected ? <Tiles view={view} /> : null}
+      {view.connected ? <MirrorStatus view={view} /> : null}
 
       {view.error ? (
         <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
@@ -192,6 +194,7 @@ export function SyncStatus({ view }: { view: SyncView }) {
         )}
       </section>
       </section>
+      ) : null}
 
       <Modal
         open={confirm}
@@ -217,39 +220,36 @@ export function SyncStatus({ view }: { view: SyncView }) {
   );
 }
 
-function Tiles({ view }: { view: SyncView }) {
+/** Этап 48: выгрузка, очередь и сверка одной строкой вместо трёх плиток */
+function MirrorStatus({ view }: { view: SyncView }) {
   const fresh = view.lastPush && !view.lagging && !view.error;
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      <div className={cn("rounded-xl px-5 py-4", fresh ? "bg-green-soft" : view.lagging ? "bg-warning-soft" : "bg-field")}>
-        <p className={cn("inline-flex items-center gap-2 text-small font-medium", fresh ? "text-green-ink" : view.lagging ? "text-warning-ink" : "text-muted")}>
-          {fresh ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" /> : view.lagging ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : null}
-          Последняя выгрузка
-        </p>
-        <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastPush ? view.lastPush.ago : "ещё не было"}</p>
-        <p className="text-caption text-muted">{view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд"}</p>
-      </div>
-      <div className={cn("rounded-xl px-5 py-4", view.lagging ? "bg-warning-soft" : "bg-field")}>
-        <p className={cn("text-small font-medium", view.lagging ? "text-warning-ink" : "text-muted")}>Очередь отправки</p>
-        <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.queue.size}</p>
-        <p className="text-caption text-muted">
-          {view.queue.size === 0
-            ? "Всё выгружено. Пакет уходит раз в 30 секунд"
-            : view.queue.waitingMin
-              ? `Самая старая правка ждёт ${view.queue.waitingMin} мин`
-              : "Уйдёт в ближайшие 30 секунд"}
-        </p>
-      </div>
-      <div className="sv-card sv-card--soft px-5 py-4">
-        <p className="text-small font-medium text-muted">Сверка с таблицей</p>
-        <p className={cn("mt-1 text-headline-sm font-semibold leading-tight", view.reconcile?.tone === "warn" ? "text-warning-ink" : view.reconcile?.tone === "error" ? "text-danger-ink" : "text-ink")}>
-          {view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было"}
-        </p>
-        <p className="mt-1 text-caption text-muted">
-          {view.reconcile ? `${view.reconcile.at}. ` : ""}Следующая: {view.nextReconcile}
-        </p>
-      </div>
-    </div>
+    <StatusLine
+      label="Состояние таблицы для просмотра"
+      items={[
+        {
+          label: "Последняя выгрузка",
+          value: view.lastPush ? view.lastPush.ago : "ещё не было",
+          hint: view.lastPush ? view.lastPush.at : "Начнётся в течение 30 секунд",
+          tone: fresh ? "ok" : view.lagging ? "warning" : "muted",
+          testId: "mirror-status-push",
+        },
+        {
+          label: "Очередь отправки",
+          value: view.queue.size,
+          hint: view.queue.size === 0 ? "Всё выгружено. Пакет уходит раз в 30 секунд" : view.queue.waitingMin ? `Самая старая правка ждёт ${view.queue.waitingMin} мин` : "Уйдёт в ближайшие 30 секунд",
+          tone: view.lagging ? "warning" : view.queue.size === 0 ? "ok" : undefined,
+          testId: "mirror-status-queue",
+        },
+        {
+          label: "Сверка с таблицей",
+          value: view.reconcile ? (view.reconcile.tone === "error" ? "не прошла" : view.reconcile.text) : "ещё не было",
+          hint: `${view.reconcile ? `${view.reconcile.at}. ` : ""}Следующая: ${view.nextReconcile}`,
+          tone: view.reconcile?.tone === "warn" ? "warning" : view.reconcile?.tone === "error" ? "danger" : view.reconcile ? "ok" : "muted",
+          testId: "mirror-status-reconcile",
+        },
+      ]}
+    />
   );
 }
 

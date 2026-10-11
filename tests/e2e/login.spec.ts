@@ -58,7 +58,7 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva.getByText("Это устройство")).toBeVisible();
   await reva.goto("/choose");
   await expect(reva).toHaveURL(/\/$/);
-  await reva.goto("/profile");
+  await reva.goto("/profile?tab=login");
   await expect(reva.getByRole("heading", { name: "Пароль" })).toBeVisible();
   await shot(reva, "profile");
 

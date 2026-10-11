@@ -8,7 +8,7 @@ test.beforeEach(async () => {
 
 test("лидер отмечает отпуск с замещающим у себя в профиле и снимает отметку", async ({ page }) => {
   await enter(page, "Рева Тарас");
-  await page.goto("/profile");
+  await page.goto("/profile?tab=absences");
   await expect(page.getByRole("heading", { name: "Нет на неделе" })).toBeVisible();
   // Себе только недели, срок сдачи которых ещё впереди
   await expect(page.getByLabel("Неделя")).toHaveValue(/\d{4}-\d{2}-\d{2}/);

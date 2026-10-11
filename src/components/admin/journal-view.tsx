@@ -1,10 +1,12 @@
 "use client";
 
-import { useTransition } from "react";
+import { Fragment, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { compactName } from "@/domain/people";
-import { formatShort } from "@/domain/dates";
+import { formatAgo, formatLong, formatShort } from "@/domain/dates";
+import type { IsoDate } from "@/domain/dates";
+import { WEEKDAYS } from "@/lib/admin/labels";
 import type { JournalEvent } from "@/domain/types";
 import type { JournalPage, JournalQuery } from "@/lib/journal";
 import { SelectField } from "@/components/ui/primitives";
@@ -45,7 +47,15 @@ const plural = (n: number) => {
  * Общий журнал с фильтрами: человек, период, тип события, источник (раздел 6 ТЗ).
  * Фильтры записываются в адрес, выборку собирает сервер; «Показать ещё» добавляет следующую сотню
  */
-export function JournalView({ page, people, query }: { page: JournalPage; people: { slug: string; fullName: string; active: boolean }[]; query: JournalQuery }) {
+/** Заголовок дня в журнале (этап 48): «Сегодня, 11 октября», «Вчера, 10 октября», «9 октября, четверг» */
+function dayLabel(iso: IsoDate, today: IsoDate): string {
+  const ago = formatAgo(iso, today);
+  if (ago === "сегодня" || ago === "вчера") return `${ago.charAt(0).toUpperCase()}${ago.slice(1)}, ${formatLong(iso)}`;
+  const day = new Date(`${iso}T00:00:00Z`).getUTCDay() || 7;
+  return `${formatLong(iso)}, ${WEEKDAYS[day - 1]}`;
+}
+
+export function JournalView({ page, people, query, today }: { page: JournalPage; people: { slug: string; fullName: string; active: boolean }[]; query: JournalQuery; /** Сегодня по Москве: для подписей «Сегодня» и «Вчера» */ today: IsoDate }) {
   const router = useRouter();
   const pathname = usePathname();
   const [pending, start] = useTransition();
@@ -128,11 +138,17 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
               </tr>
             </thead>
             <tbody>
-              {events.map((e) => (
-                <tr key={e.id}>
+              {events.map((e, i) => (
+                <Fragment key={e.id}>
+                  {/* Этап 48: события группами по дню, в строке только время */}
+                  {i === 0 || events[i - 1]!.at !== e.at ? (
+                    <tr className="sv-datatable__section" data-testid="journal-day">
+                      <td colSpan={5}>{dayLabel(e.at, today)}</td>
+                    </tr>
+                  ) : null}
+                <tr>
                   <td data-label="Когда" className="tabular-nums text-muted sm:whitespace-nowrap">
-                    {formatShort(e.at)}
-                    {e.time ? `, ${e.time}` : ""}
+                    {e.time || formatShort(e.at)}
                   </td>
                   <td data-label="Кто" className="text-ink">
                     {e.by === "system" ? "Система" : nameOf(e.by)}
@@ -149,6 +165,7 @@ export function JournalView({ page, people, query }: { page: JournalPage; people
                     {e.ip ? <span className="block text-tiny max-sm:hidden">{e.ip}</span> : null}
                   </td>
                 </tr>
+                </Fragment>
               ))}
             </tbody>
           </table>

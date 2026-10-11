@@ -5,6 +5,7 @@ import { ROLE_LABELS } from "@/lib/roles";
 import { listDevices } from "@/lib/login/service";
 import { LOGIN_METHOD_LABELS } from "@/lib/login/labels";
 import { PageHeader } from "@/components/page-header";
+import { PageTabs } from "@/components/ui/data";
 import { DeviceList } from "@/components/profile/device-list";
 import { Absences } from "@/components/profile/absences";
 import { absenceWeeks, upcomingAbsences } from "@/lib/weekly/service";
@@ -29,11 +30,17 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-/** Профиль (этап 9): кто я, как вошёл, где ещё открыт мой вход */
-export default async function ProfilePage() {
+const TABS = ["profile", "login", "mail", "absences"] as const;
+type ProfileTab = (typeof TABS)[number];
+
+/** Профиль (этап 9): кто я, как вошёл, где ещё открыт мой вход. Этап 48: четыре вкладки вместо одной длинной страницы */
+export default async function ProfilePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const ctx = await requireContext();
   const observer = ctx.person.role === "OBSERVER";
   const personal = ctx.via !== "TEAM";
+  const sp = await searchParams;
+  const requested = TABS.find((t) => t === sp.tab) ?? "profile";
+  const tab: ProfileTab = requested === "absences" && observer ? "profile" : requested;
   const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed] = await Promise.all([
     ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
     observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
@@ -57,89 +64,108 @@ export default async function ProfilePage() {
       ? "У наблюдателя нет своих сроков и встреч."
       : null;
   const mailOn = mailConfigured();
+  const tabs = [
+    { href: "/profile", label: "Профиль", active: tab === "profile", testId: "profile-tab-profile" },
+    { href: "/profile?tab=login", label: "Вход и пароль", active: tab === "login", testId: "profile-tab-login" },
+    { href: "/profile?tab=mail", label: "Письма и уведомления", active: tab === "mail", testId: "profile-tab-mail" },
+    ...(observer ? [] : [{ href: "/profile?tab=absences", label: "Отсутствия", active: tab === "absences", testId: "profile-tab-absences" }]),
+  ];
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Профиль" description="Роль, зону и почту меняет владелец ресурса в настройках" />
-      <dl className="flex flex-col gap-3">
-        <Row label="Имя">{ctx.person.fullName}</Row>
-        <Row label="Роль">{ROLE_LABELS[ctx.person.role]}</Row>
-        <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
-        <Row label="Логин">{ctx.person.slug}</Row>
-        <Row label="Почта">{ctx.person.email ?? "не указана"}</Row>
-        <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
-      </dl>
+      <PageHeader title="Профиль" description="Роль, зону и почту меняет владелец ресурса в настройках" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
 
-      {observer ? null : (
-        <section className="mt-10 border-t border-line pt-8">
-          <h2 className="text-title font-semibold text-ink">Нет на неделе</h2>
+      {tab === "profile" ? (
+        <>
+          <dl className="flex flex-col gap-3">
+            <Row label="Имя">{ctx.person.fullName}</Row>
+            <Row label="Роль">{ROLE_LABELS[ctx.person.role]}</Row>
+            <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
+            <Row label="Логин">{ctx.person.slug}</Row>
+            <Row label="Почта">{ctx.person.email ?? "не указана"}</Row>
+            <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
+          </dl>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="calendar-feed">
+            <h2 id="calendar-feed" className="text-title font-semibold text-ink">
+              Календарь сроков
+            </h2>
+            <p className="mt-1 text-small text-muted">
+              Сроки ваших задач, срок weekly, встречи команды и один на один в вашем календаре: Google, Яндекс, Outlook или на телефоне. Календарь только показывает,
+              менять сроки по-прежнему в ресурсе.
+            </p>
+            <CalendarFeedSettings feed={feed} locked={calendarLocked} />
+          </section>
+        </>
+      ) : null}
+
+      {tab === "absences" && !observer ? (
+        <section aria-labelledby="absences-head">
+          <h2 id="absences-head" className="text-title font-semibold text-ink">Нет на неделе</h2>
           <p className="mt-1 text-small text-muted">
             Отпуск, больничный, командировка. Weekly за эту неделю не ждём, в счёт «сдали N из M» вы не входите, на встрече видно, кто замещает.
           </p>
           <Absences absences={absences} weeks={weeks} people={colleagues.map((p) => ({ value: p.slug, label: p.fullName }))} />
         </section>
-      )}
+      ) : null}
 
-      <section className="mt-10 border-t border-line pt-8">
-        <h2 className="text-title font-semibold text-ink">Пароль</h2>
-        {ctx.via === "TEAM" ? (
-          <p className="mt-2 text-body text-muted">
-            Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {ctx.person.slug}.
-          </p>
-        ) : (
-          <>
+      {tab === "login" ? (
+        <>
+          <section aria-labelledby="password-head">
+            <h2 id="password-head" className="text-title font-semibold text-ink">Пароль</h2>
+            {ctx.via === "TEAM" ? (
+              <p className="mt-2 text-body text-muted">
+                Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {ctx.person.slug}.
+              </p>
+            ) : (
+              <>
+                <p className="mt-1 text-small text-muted">
+                  {ctx.person.passwordHash
+                    ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
+                    : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${ctx.person.slug} без ссылки.`}
+                </p>
+                <PasswordForm login={ctx.person.slug} hasPassword={!!ctx.person.passwordHash} />
+              </>
+            )}
+          </section>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="devices-head">
+            <h2 id="devices-head" className="text-title font-semibold text-ink">Где открыт ваш вход</h2>
+            {ctx.via === "TEAM" ? (
+              <p className="mt-2 text-body text-muted">
+                Вы вошли по общему логину и выбрали себя из списка. Личный вход по ссылке выдаёт владелец ресурса: с ним журнал записывает именно вас, а здесь появится список
+                ваших устройств.
+              </p>
+            ) : (
+              <DeviceList devices={devices} current={ctx.deviceId} />
+            )}
+          </section>
+        </>
+      ) : null}
+
+      {tab === "mail" ? (
+        <>
+          <section aria-labelledby="mail-head">
+            <h2 id="mail-head" className="text-title font-semibold text-ink">Письма</h2>
             <p className="mt-1 text-small text-muted">
-              {ctx.person.passwordHash
-                ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
-                : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${ctx.person.slug} без ссылки.`}
+              {mailOn
+                ? `Приходят на ${ctx.person.email ?? "почту из карточки"}: о том, что ждёт вас и что вы не увидели в ресурсе за 15 минут. Вне рабочего времени, с 20:00 до 9:00 и в выходные, письма копятся до утра. В письме только кто и что, подробности после входа.`
+                : "Почта ресурса ещё не настроена: письма начнут приходить, когда владелец подключит почтовый сервер. Настройки ниже уже сохраняются."}
             </p>
-            <PasswordForm login={ctx.person.slug} hasPassword={!!ctx.person.passwordHash} />
-          </>
-        )}
-      </section>
+            {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
+            {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
+            <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
+          </section>
 
-      <section className="mt-10 border-t border-line pt-8">
-        <h2 className="text-title font-semibold text-ink">Письма</h2>
-        <p className="mt-1 text-small text-muted">
-          {mailOn
-            ? `Приходят на ${ctx.person.email ?? "почту из карточки"}: о том, что ждёт вас и что вы не увидели в ресурсе за 15 минут. Вне рабочего времени, с 20:00 до 9:00 и в выходные, письма копятся до утра. В письме только кто и что, подробности после входа.`
-            : "Почта ресурса ещё не настроена: письма начнут приходить, когда владелец подключит почтовый сервер. Настройки ниже уже сохраняются."}
-        </p>
-        {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
-        {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
-        <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
-      </section>
-
-      <section className="mt-10 border-t border-line pt-8" aria-labelledby="phone-push">
-        <h2 id="phone-push" className="text-title font-semibold text-ink">
-          Телефон и уведомления
-        </h2>
-        <p className="mt-1 text-small text-muted">Ответить на просьбу, обновить задачу, прочитать ленту и повестку можно с телефона в два нажатия.</p>
-        <InstallApp />
-        <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />
-      </section>
-
-      <section className="mt-10 border-t border-line pt-8" aria-labelledby="calendar-feed">
-        <h2 id="calendar-feed" className="text-title font-semibold text-ink">
-          Календарь сроков
-        </h2>
-        <p className="mt-1 text-small text-muted">
-          Сроки ваших задач, срок weekly, встречи команды и один на один в вашем календаре: Google, Яндекс, Outlook или на телефоне. Календарь только показывает,
-          менять сроки по-прежнему в ресурсе.
-        </p>
-        <CalendarFeedSettings feed={feed} locked={calendarLocked} />
-      </section>
-
-      <section className="mt-10 border-t border-line pt-8">
-        <h2 className="text-title font-semibold text-ink">Где открыт ваш вход</h2>
-        {ctx.via === "TEAM" ? (
-          <p className="mt-2 text-body text-muted">
-            Вы вошли по общему логину и выбрали себя из списка. Личный вход по ссылке выдаёт владелец ресурса: с ним журнал записывает именно вас, а здесь появится список
-            ваших устройств.
-          </p>
-        ) : (
-          <DeviceList devices={devices} current={ctx.deviceId} />
-        )}
-      </section>
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="phone-push">
+            <h2 id="phone-push" className="text-title font-semibold text-ink">
+              Телефон и уведомления
+            </h2>
+            <p className="mt-1 text-small text-muted">Ответить на просьбу, обновить задачу, прочитать ленту и повестку можно с телефона в два нажатия.</p>
+            <InstallApp />
+            <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

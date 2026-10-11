@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
 import { Modal } from "@/components/ui/overlays";
+import { Toc, type TocItem } from "@/components/ui/toc";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 
@@ -57,15 +58,25 @@ const plural = (n: number, one: string, few: string, many: string) => {
   return d === 1 && t !== 11 ? one : d >= 2 && d <= 4 && (t < 12 || t > 14) ? few : many;
 };
 
-function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+/** Раздел настроек: заголовок с якорем для оглавления (этап 48), пояснение, содержимое во всю ширину колонки */
+function Section({ id, title, description, children }: { id?: string; title: string; description?: string; children: React.ReactNode }) {
   return (
-    <section className="grid gap-4 border-t border-line py-8 first:border-t-0 first:pt-0 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
-      <div>
+    <section id={id} aria-label={title} className="sv-toc-section border-t border-line py-8 first:border-t-0 first:pt-0">
+      <div className="max-w-[72ch]">
         <h2 className="text-title font-semibold text-ink">{title}</h2>
         {description ? <p className="mt-1 text-small text-muted">{description}</p> : null}
       </div>
-      <div className="min-w-0">{children}</div>
+      <div className="mt-5 min-w-0">{children}</div>
     </section>
+  );
+}
+
+/** Несколько коротких разделов под одним пунктом оглавления */
+function Group({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <div id={id} className="sv-toc-section">
+      {children}
+    </div>
   );
 }
 
@@ -102,10 +113,24 @@ export function SettingsView({
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
 }) {
+  // Оглавление (этап 48): только те разделы, которые человек видит
+  const toc: TocItem[] = [
+    { id: "rhythm", label: "Ритм недели" },
+    { id: "dicts", label: "Справочники" },
+    ...(owner
+      ? [
+          { id: "people", label: "Люди и роли" },
+          { id: "login", label: "Вход и пароли" },
+          { id: "stand", label: banner === "test" ? "Стенд и данные" : "Плашка и данные" },
+        ]
+      : []),
+  ];
   return (
-    <div>
-      <RhythmSection initial={rhythm} />
-      <Section title="Справочники" description="Значения списков в weekly и задачах. Скрытое значение пропадает из выбора, но остаётся в старых записях">
+    <div className="sv-page--toc">
+      <Toc items={toc} label="Разделы настроек" />
+      <div className="min-w-0">
+        <RhythmSection initial={rhythm} />
+        <Section id="dicts" title="Справочники" description="Значения списков в weekly и задачах. Скрытое значение пропадает из выбора, но остаётся в старых записях">
         <div className="grid gap-6 xl:grid-cols-2">
           {KINDS.map((kind) => (
             <DictList key={kind} kind={kind} items={dicts[kind]} />
@@ -133,9 +158,10 @@ export function SettingsView({
         <>
           <PeopleSection people={people} me={me} absences={absences} weeks={weeks} />
 
-          <LoginSection login={login} />
+          <Group id="login">
+            <LoginSection login={login} />
 
-          <Section title="Пароли" description="Задаются на странице первичной настройки или командой на сервере. В интерфейсе их не видно">
+            <Section title="Пароли" description="Задаются на странице первичной настройки или командой на сервере. В интерфейсе их не видно">
             <ul className="flex flex-col gap-2 text-body">
               {passwords.map((p) => (
                 <li key={p.title} className="flex flex-wrap items-center gap-3">
@@ -155,12 +181,14 @@ export function SettingsView({
               </p>
             ) : null}
           </Section>
+          </Group>
 
-          <BannerSection initial={banner} />
+          <Group id="stand">
+            <BannerSection initial={banner} />
 
-          {banner === "test" ? <ReloadSection /> : null}
+            {banner === "test" ? <ReloadSection /> : null}
 
-          <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
+            <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
             <p className="text-body text-ink">
               Ссылка на таблицу, очередь и история выгрузок на странице{" "}
               <a href="/sync" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -177,10 +205,12 @@ export function SettingsView({
             </a>
             <p className="mt-3 text-small text-muted">Один файл: задачи с переносами и комментариями, weekly, недели, отчёты CEO, люди, справочники и журнал. Выгрузка попадает в журнал.</p>
           </Section>
+          </Group>
         </>
       ) : (
         <p className="border-t border-line pt-6 text-small text-muted">Люди, роли, пароли и выгрузка данных открываются паролем владельца.</p>
       )}
+      </div>
     </div>
   );
 }
@@ -198,7 +228,7 @@ function RhythmSection({ initial }: { initial: Rhythm }) {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const times = timeOptions.some((t) => t.value === form.deadlineTime) ? timeOptions : [...timeOptions, { value: form.deadlineTime, label: form.deadlineTime }];
   return (
-    <Section title="Ритм недели" description="Срок сдачи, встреча и порог «давно не обновлялась». Новый срок действует для недель, срок которых ещё не прошёл">
+    <Section id="rhythm" title="Ритм недели" description="Срок сдачи, встреча и порог «давно не обновлялась». Новый срок действует для недель, срок которых ещё не прошёл">
       <form
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
         onSubmit={async (e) => {
@@ -390,7 +420,7 @@ function PeopleSection({
   };
 
   return (
-    <Section title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
+    <Section id="people" title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
       <ul className="divide-y divide-line sv-card sv-card--soft">
         {people.map((p) => (
           <li key={p.slug} className="px-4 py-3">
