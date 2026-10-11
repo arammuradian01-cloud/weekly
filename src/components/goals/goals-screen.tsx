@@ -18,6 +18,7 @@ import { teamOf, teamPeople } from "@/domain/teams";
 import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
+import { FileField } from "@/components/ui/file-field";
 import { Module, StatTile, Stats } from "@/components/ui/data";
 import { EmptyState } from "@/components/empty-state";
 import {
@@ -507,22 +508,17 @@ function ImportDrawer({
         </p>
         )}
         {source === "file" ? (
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="gi-file" className="sv-label">
-              Файл борда лидера
-            </label>
-            <input
-              id="gi-file"
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              className="text-body text-ink file:mr-3 file:rounded-control file:border-0 file:bg-field file:px-3 file:py-2 file:text-body file:text-ink"
-              onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
-                setPlan(null);
-                setError(null);
-              }}
-            />
-          </div>
+          <FileField
+            id="gi-file"
+            label="Файл борда лидера"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            fileName={file?.name ?? null}
+            onChange={(f) => {
+              setFile(f);
+              setPlan(null);
+              setError(null);
+            }}
+          />
         ) : source === "paste" ? (
           <TextArea label="Ячейки из таблицы" id="gi-text" value={text} onChange={(e) => setText(e.target.value)} rows={8} hint="Выделите вкладку вместе со строкой заголовков, скопируйте и вставьте" />
         ) : (

@@ -124,9 +124,9 @@ export function PullDrawer({
           {mode === "google" && serviceEmail ? <p>Если не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на таблицу-связку.</p> : null}
         </div>
         {canSource ? (
-          <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <TextInput id="plan-source" label="Другая таблица-источник" placeholder="Ссылка на Google-таблицу" value={link} onChange={(e) => setLink(e.target.value)} autoComplete="off" className="min-w-0 flex-1" />
-            <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy || !link.trim()}>
+            <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy || !link.trim()} className="sm:shrink-0">
               Сменить источник
             </Button>
           </div>

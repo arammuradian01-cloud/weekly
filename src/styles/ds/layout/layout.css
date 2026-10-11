@@ -133,7 +133,14 @@
 .sv-tile--brand .sv-tile__value small, .sv-tile--primary .sv-tile__value small { color: inherit; opacity: 0.75; }
 .sv-tile__foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
 .sv-tile .sv-icon-circle { flex: none; }
-@media (max-width: 767px) { .sv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); } .sv-tile { min-height: 120px; padding: var(--space-3); border-radius: var(--radius-card); } .sv-tile--wide { grid-column: span 2; } }
+@media (max-width: 767px) {
+  .sv-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .sv-tile { min-height: 120px; padding: var(--space-3); border-radius: var(--radius-card); }
+  .sv-tile--wide { grid-column: span 2; }
+  /* Узкая плитка: заголовок помельче и круг поменьше, чтобы слово вроде «Просрочено» не ломалось посередине */
+  .sv-tile__title { font-size: var(--text-body); line-height: var(--leading-body); }
+  .sv-tile .sv-icon-circle { --circle-size: 32px; --circle-icon: 16px; }
+}
 
 /* Блок раздела страницы: заголовок, ссылка «Все», содержимое */
 .sv-section { display: flex; flex-direction: column; gap: var(--space-3); }

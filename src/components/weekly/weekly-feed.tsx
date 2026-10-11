@@ -13,7 +13,7 @@ import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction }
 import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
-import { Chip, Segmented, SelectField } from "@/components/ui/primitives";
+import { Chip, Counter, Segmented, SelectField } from "@/components/ui/primitives";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -180,7 +180,8 @@ export function WeeklyFeed({
   // Что сохранить при смене недели: отбор или человека из ссылки, которого ещё нет в ленте
   const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
-  const filtersOn = !!(direction || block || type || author || helpOnly);
+  const filtersCount = [direction, block, type, author, helpOnly].filter(Boolean).length;
+  const filtersOn = filtersCount > 0;
   const myState = myReport.state;
 
   return (
@@ -262,9 +263,11 @@ export function WeeklyFeed({
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
+            aria-label={filtersOn ? `Фильтры, включено: ${filtersCount}` : "Фильтры"}
             className="inline-flex h-11 items-center gap-1.5 rounded-lg px-3 text-body font-medium text-blue-700 hover:bg-field lg:hidden"
           >
-            Фильтры{filtersOn ? " включены" : ""}
+            Фильтры
+            <Counter value={filtersCount} />
           </button>
         </div>
         <div className={cn("grid-cols-2 gap-3 sm:flex-wrap sm:items-end lg:flex", showFilters ? "grid sm:flex" : "hidden")}>

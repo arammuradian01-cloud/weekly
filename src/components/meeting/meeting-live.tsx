@@ -239,7 +239,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
                   Повестка: {meeting.items.length} пунктов, обсуждено {discussedCount}
                 </summary>
                 <div className="px-4 pb-4">
-                  <Agenda meeting={meeting} current={current} onSelect={go} canLead={canLead} busy={busy} run={run} discussed={discussedCount} />
+                  <Agenda meeting={meeting} current={current} onSelect={go} canLead={canLead} busy={busy} run={run} discussed={discussedCount} summary={false} />
                 </div>
               </details>
               <div className="hidden lg:block">
@@ -296,13 +296,16 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
   );
 }
 
-function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed }: { meeting: MeetingView; current: string; onSelect: (id: string) => void; canLead: boolean; busy: boolean; run: Run; discussed: number }) {
+function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, summary = true }: { meeting: MeetingView; current: string; onSelect: (id: string) => void; canLead: boolean; busy: boolean; run: Run; discussed: number; summary?: boolean }) {
   const blocks = AGENDA_BLOCKS.map((b) => ({ ...b, items: meeting.items.filter((i) => blockOf(i.kind) === b.code) })).filter((b) => b.items.length);
   return (
     <nav aria-label="Повестка" className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
-      <p className="text-caption text-muted">
-        Повестка: {meeting.items.length} пунктов, обсуждено {discussed}
-      </p>
+      {/* На телефоне та же строка уже в заголовке свёрнутой повестки */}
+      {summary ? (
+        <p className="text-caption text-muted">
+          Повестка: {meeting.items.length} пунктов, обсуждено {discussed}
+        </p>
+      ) : null}
       {blocks.map((b) => (
         <div key={b.code}>
           <p className="mb-1 text-caption font-semibold text-muted">{b.label}</p>

@@ -10,10 +10,12 @@ import { usePrototype } from "@/domain/store";
 import { Drawer } from "@/components/ui/overlays";
 import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/primitives";
+import { FileField } from "@/components/ui/file-field";
 import { applyStructureAction, previewStructureAction } from "@/app/(app)/structure/actions";
 
 export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [text, setText] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
   const [plan, setPlan] = useState<StructurePlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -40,6 +42,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
       onOpenChange(false);
       setPlan(null);
       setText("");
+      setFileName(null);
       router.refresh();
     });
 
@@ -72,21 +75,19 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
             Остальные колонки, в том числе кадровые, ресурс не читает и не хранит.
           </p>
         </div>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-ink">Файл CSV</span>
-          <input
-            type="file"
-            accept=".csv,.tsv,.txt,text/csv"
-            className="text-small"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              const value = await file.text();
-              setText(value);
-              check(value);
-            }}
-          />
-        </label>
+        <FileField
+          id="structure-file"
+          label="Файл CSV"
+          accept=".csv,.tsv,.txt,text/csv"
+          fileName={fileName}
+          onChange={async (file) => {
+            setFileName(file?.name ?? null);
+            if (!file) return;
+            const value = await file.text();
+            setText(value);
+            check(value);
+          }}
+        />
         <TextArea label="Или вставьте ячейки из таблицы" id="structure-paste" value={text} onChange={(e) => setText(e.target.value)} rows={6} hint="Выделите лист вместе со строкой заголовков, скопируйте и вставьте сюда" />
         {error ? (
           <p role="alert" className="sv-alert sv-alert--danger">

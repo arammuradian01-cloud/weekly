@@ -7,10 +7,11 @@ import { cn } from "@/lib/cn";
 export type CircleTone = "neutral" | "accent" | "success" | "warning" | "danger" | "info";
 
 export function IconCircle({ icon: Icon, tone = "accent", size = 40, className }: { icon: LucideIcon; tone?: CircleTone; size?: number; className?: string }) {
-  const iconSize = size >= 56 ? 26 : size >= 40 ? 20 : 16;
+  // Размер классом, а не встроенным стилем: на телефоне плитка уменьшает круг своим правилом
+  const sizeClass = size >= 56 ? "sv-icon-circle--lg" : size >= 40 ? "" : "sv-icon-circle--sm";
   return (
-    <span className={cn("sv-icon-circle", `sv-icon-circle--${tone}`, className)} style={{ width: size, height: size }} aria-hidden="true">
-      <Icon style={{ width: iconSize, height: iconSize }} strokeWidth={1.5} />
+    <span className={cn("sv-icon-circle", `sv-icon-circle--${tone}`, sizeClass, className)} aria-hidden="true">
+      <Icon className="sv-icon-circle__icon" strokeWidth={1.5} />
     </span>
   );
 }

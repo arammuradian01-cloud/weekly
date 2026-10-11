@@ -45,7 +45,8 @@ test("владелец собирает повестку, ведёт встре�
   await expect(page.getByText(/^Повестка: \d+ пунктов/).filter({ visible: true }).first()).toBeVisible();
   await openAgenda(page);
   const nav = page.getByRole("navigation", { name: "Повестка" });
-  await expect(nav.getByText(/Повестка: \d+ пунктов/)).toBeVisible();
+  // На телефоне строка «Повестка: N пунктов» одна, в заголовке свёрнутой повестки (этап 40); на ноутбуке она внутри повестки
+  if (test.info().project.name !== "phone") await expect(nav.getByText(/Повестка: \d+ пунктов/)).toBeVisible();
   const [{ title }] = await sql(`SELECT title FROM tasks WHERE number = 28`);
   await expect(nav.getByRole("button", { name: new RegExp(`^Задача 28 заблокирована: ${title.slice(0, 20)}`) })).toBeVisible();
 
