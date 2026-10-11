@@ -57,7 +57,9 @@ const adjustPartner = async (who: tasks.Actor, label: string, metric: string, va
 /** Убрать вкладку из имитации на время теста и вернуть обратно */
 const withoutTab = async (title: string, fn: () => Promise<void>) => {
   const fake = plan.imitationLrf();
-  const tab = fake.tabs.get(title)!;
+  const tab = fake.tabs.get(title);
+  // Иначе опечатка в имени листа ничего не уберёт, тест пройдёт зря, а имитация испортится для соседних тестов
+  if (!tab) throw new Error(`Вкладки «${title}» в имитации нет`);
   fake.tabs.delete(title);
   try {
     await fn();
@@ -108,11 +110,11 @@ describe("загрузка партнёрского канала вместе с
   it("листы b2b с проблемой: продукты загружаются, прежние партнёры остаются и не просят проверки заново", async () => {
     await load();
     await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 22_000);
-    await withoutTab("B2B. AGENTS RED LRF", async () => {
+    await withoutTab("B2B. AGENTS: RED LRF", async () => {
       const preview = await plan.previewPull(await actor.owner(), month);
       expect(preview.ready).toBe(true);
       expect(preview.partners.ready).toBe(false);
-      expect(preview.partners.problems).toEqual(["Нет листа «B2B. AGENTS RED LRF»"]);
+      expect(preview.partners.problems).toEqual(["Нет листа «B2B. AGENTS: RED LRF»"]);
       expect(preview.partners.before).toBe(12);
       await load();
     });
@@ -342,7 +344,7 @@ describe("партнёрский канал в сравнении версий (
     expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: показаны партнёры ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
     expect(row(cmp, "total").a).toEqual(row(cmp, "total").b);
     // Загрузка без листов b2b снимок не пишет: партнёры в ней не менялись
-    await withoutTab("B2B. CPA & WAYBACK OSAGO LRF", async () => {
+    await withoutTab("B2B. CPA & WAYBACK: OSAGO LRF", async () => {
       await load();
     });
     const last = await prisma.planPull.findFirst({ orderBy: { at: "desc" } });

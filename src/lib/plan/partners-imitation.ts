@@ -3,6 +3,7 @@
 // Партнёры и цифры выдуманы, но согласованы: суммы партнёров дают итог листа и LBE в P&L b2b
 
 import { lrfMonth } from "./spec";
+import { PARTNER_PNL_SHEET, PARTNER_SHEETS, PARTNER_SHEET_PREFIX } from "./partners";
 import type { Grid } from "./lrf";
 
 type P = {
@@ -237,13 +238,24 @@ function pnl(months: string[]): Grid {
   return grid;
 }
 
-/** Листы партнёрского канала с префиксом таблицы-связки */
+/** Чем заполняется каждый лист канала. Ключ это имя листа из PARTNER_SHEETS: если список поменяют, а здесь забудут,
+    имитация упадёт с понятной ошибкой, а не выдаст чужие цифры под чужим именем */
+const FILL: Record<string, (months: string[]) => Grid> = {
+  "CPA & WAYBACK: OSAGO LRF": osagoCpa,
+  "AGENTS: OSAGO LRF": osagoAgents,
+  "CPA & WAYBACK: RED LRF": (months) => red(months, RED_CPA, false),
+  "AGENTS: RED LRF": (months) => red(months, RED_AGENTS, true),
+};
+
+/** Листы партнёрского канала с префиксом таблицы-связки. Имена берём из списка листов, чтобы имитация и чтение
+    настоящего LRF не разъезжались: в LRF они называются с двоеточием («CPA & WAYBACK: OSAGO LRF») */
 export function partnersImitation(months: string[]): Record<string, Grid> {
-  return {
-    "B2B. CPA & WAYBACK OSAGO LRF": osagoCpa(months),
-    "B2B. AGENTS OSAGO LRF": osagoAgents(months),
-    "B2B. CPA & WAYBACK RED LRF": red(months, RED_CPA, false),
-    "B2B. AGENTS RED LRF": red(months, RED_AGENTS, true),
-    "B2B. PnL_b2b": pnl(months),
-  };
+  const sheets: Record<string, Grid> = {};
+  for (const { name } of PARTNER_SHEETS) {
+    const fill = FILL[name];
+    if (!fill) throw new Error(`Нет имитации листа «${name}»`);
+    sheets[PARTNER_SHEET_PREFIX + name] = fill(months);
+  }
+  sheets[PARTNER_SHEET_PREFIX + PARTNER_PNL_SHEET] = pnl(months);
+  return sheets;
 }
