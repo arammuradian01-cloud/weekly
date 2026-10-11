@@ -93,8 +93,8 @@ test("бюджет и LBE из LRF, корректировка драйвера 
   const rows = await sql(`SELECT value, previous, reason::text AS reason FROM plan_adjustments`);
   expect(rows).toEqual([{ value: 0.12, previous: 0.1, reason: "CONVERSION" }]);
 
-  // Продукт другой команды: только просмотр
-  await page.getByRole("radiogroup", { name: "Продукт" }).getByRole("radio", { name: "Вклады" }).click();
+  // Продукт другой команды: только просмотр. Этап 46: карточка раскрывается под строкой таблицы по клику на продукт
+  await page.getByTestId("plan-top-deposits").getByRole("button", { name: "Вклады" }).click();
   await expect(page.locator("#plan-product-deposits").getByText(/корректирует его команда/)).toBeVisible();
   await expect(page.locator("#plan-product-deposits").getByRole("button", { name: /Изменить/ })).toHaveCount(0);
 

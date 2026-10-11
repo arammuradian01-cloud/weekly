@@ -5,6 +5,7 @@
 // Пересчёт тот же, что на сервере (src/lib/plan/summary.ts), поэтому цифры на экране и в отчётах одинаковые
 
 import { useEffect, useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { formatPlan, lcFirst } from "@/lib/plan/format";
 import { productOf } from "@/lib/plan/spec";
@@ -22,7 +23,7 @@ import { pace } from "@/lib/plan/facts";
 import { policiesDelta } from "@/lib/plan/partners";
 import { PartnerChannel } from "./partner-channel";
 
-export function MonthPlan({ initial }: { initial: MonthPlanView }) {
+export function MonthPlan({ initial, section = "products" }: { initial: MonthPlanView; /** Вкладка: продукты или партнёрский канал (этап 46) */ section?: "products" | "partners" }) {
   const router = useRouter();
   const [view, setView] = useState(initial);
   // Новые данные с сервера после обновления страницы (загружен факт, отметили проверку в другой вкладке) заменяют экран
@@ -40,9 +41,11 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
   const product = view.products.find((p) => p.code === selected);
   const productSummary = summary.products.find((p) => p.code === selected);
 
+  // Таблица продуктов как навигация (этап 46): клик по строке раскрывает драйверы прямо под ней, повторный клик сворачивает
   const pick = (code: string) => {
+    if (code === selected) return setSelected("");
     setSelected(code);
-    requestAnimationFrame(() => document.getElementById(`plan-product-${code}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    requestAnimationFrame(() => document.getElementById(`plan-product-${code}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
   const setOwners = (owners: PlanPerson[]) => setView((v) => ({ ...v, products: v.products.map((p) => (p.code === selected ? { ...p, owners } : p)) }));
@@ -80,11 +83,15 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
     <div className="flex flex-col gap-6" data-testid="month-plan">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-1">
-          {view.months.length > 1 ? (
-            <Segmented label="Месяц прогноза" value={view.month} onChange={(m) => router.push(`/forecast?month=${m}`)} options={view.months.slice(0, 6).map((m) => ({ value: m, label: monthLabel(m) }))} />
-          ) : (
-            <p className="font-heading text-title-sm font-bold text-ink first-letter:uppercase">{view.monthLabel}</p>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            {view.months.length > 1 ? (
+              <Segmented label="Месяц прогноза" value={view.month} onChange={(m) => router.push(`/forecast?month=${m}${section === "partners" ? "&tab=partners" : ""}`)} options={view.months.slice(0, 6).map((m) => ({ value: m, label: monthLabel(m) }))} />
+            ) : (
+              <p className="font-heading text-title-sm font-bold text-ink first-letter:uppercase">{view.monthLabel}</p>
+            )}
+            {/* Показатель один на страницу (этап 46): раньше переключатель повторялся у таблицы и у карточек */}
+            {!view.empty && section === "products" ? <Segmented label="Показатель" value={headline} onChange={setHeadline} options={HEADLINES.map((h) => ({ value: h.key, label: h.label }))} /> : null}
+          </div>
           <p className="text-caption text-text-secondary" data-testid="plan-source">
             {pulled}. {view.source.mode === "imitation" ? "Цифры из имитации LRF для проверки." : "LRF ресурс только читает."}
           </p>
@@ -110,6 +117,12 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
 
       {view.empty ? (
         <Module title={`Прогноз на ${view.monthLabel} ещё не начат`} description={view.canPull ? "Загрузите бюджет и LBE месяца из LRF: после этого команды продуктов смогут корректировать драйверы." : "Бюджет и LBE месяца загружает владелец ресурса после того, как LBE заполнен в LRF. Тогда здесь появятся продукты и драйверы."} />
+      ) : section === "partners" ? (
+        view.partners ? (
+          <PartnerChannel key={view.month} month={view.month} partners={view.partners} canOwners={view.canOwners} adjustHint={view.adjustHint} onSaved={setView} onOwners={() => setPartnerOwnersOpen(true)} />
+        ) : (
+          <Module title="Партнёрский канал не загружен" description="Партнёры по продуктам приходят вместе с бюджетом и LBE из LRF. После загрузки здесь появятся партнёры, их полисы и комиссия." />
+        )
       ) : (
         <>
           <Stats label="Итог по продуктам">
@@ -148,33 +161,36 @@ export function MonthPlan({ initial }: { initial: MonthPlanView }) {
           <Module
             id="plan-products"
             title="По продуктам"
-            description="Прогноз после корректировок команды против LBE и бюджета. Нажмите на продукт, чтобы открыть его драйверы."
-            actions={<Segmented label="Показатель" value={headline} onChange={setHeadline} options={HEADLINES.map((h) => ({ value: h.key, label: h.label }))} />}
+            description="Прогноз после корректировок команды против LBE и бюджета. Нажмите на продукт: его драйверы раскроются под строкой."
             flush
           >
-            <ProductsTable top={summary.top} productRows={summary.products} headline={headline} selected={selected} onPick={pick} total={summary.total[headline]} waiting={new Set(view.products.filter((p) => p.review?.state === "waiting").map((p) => p.code))} />
+            <ProductsTable
+              top={summary.top}
+              productRows={summary.products}
+              headline={headline}
+              selected={selected}
+              onPick={pick}
+              total={summary.total[headline]}
+              reviews={new Map(view.products.map((p) => [p.code, p.review?.state ?? null]))}
+              expanded={
+                product && productSummary ? (
+                  <ProductCard
+                    key={`${product.code}:${view.month}`}
+                    month={view.month}
+                    product={product}
+                    summary={productSummary}
+                    input={input}
+                    total={summary.total}
+                    canOwners={view.canOwners}
+                    adjustHint={view.adjustHint}
+                    onSaved={setView}
+                    onOwners={() => setOwnersOpen(true)}
+                    partner={partner}
+                  />
+                ) : null
+              }
+            />
           </Module>
-
-          <div className="flex flex-col gap-3">
-            <Segmented label="Продукт" value={selected} onChange={pick} options={view.products.map((p) => ({ value: p.code, label: productOf(p.code)?.label ?? p.code }))} className="self-start" />
-            {product && productSummary ? (
-              <ProductCard
-                key={`${product.code}:${view.month}`}
-                month={view.month}
-                product={product}
-                summary={productSummary}
-                input={input}
-                total={summary.total}
-                canOwners={view.canOwners}
-                adjustHint={view.adjustHint}
-                onSaved={setView}
-                onOwners={() => setOwnersOpen(true)}
-                partner={partner}
-              />
-            ) : null}
-          </div>
-
-          {view.partners ? <PartnerChannel key={view.month} month={view.month} partners={view.partners} canOwners={view.canOwners} adjustHint={view.adjustHint} onSaved={setView} onOwners={() => setPartnerOwnersOpen(true)} /> : null}
 
           <History view={view} />
         </>
@@ -195,7 +211,8 @@ function ProductsTable({
   selected,
   onPick,
   total,
-  waiting,
+  reviews,
+  expanded,
 }: {
   top: TopSummary[];
   productRows: ReturnType<typeof summarize>["products"];
@@ -203,19 +220,23 @@ function ProductsTable({
   selected: string;
   onPick: (code: string) => void;
   total: ReturnType<typeof summarize>["total"][Headline];
-  /** Продукты, где после загрузки LBE прогноз ещё не проверен (этап 35) */
-  waiting: Set<string>;
+  /** Проверка после загрузки LBE по продуктам (этап 35): «ждёт проверки» меткой в своей колонке «После LBE» */
+  reviews: Map<string, "waiting" | "adjusted" | "checked" | null>;
+  /** Карточка выбранного продукта: раскрывается под его строкой (этап 46) */
+  expanded: React.ReactNode;
 }) {
   const label = HEADLINES.find((h) => h.key === headline)!.label;
   const line = (key: string, name: string, t: { budget: number | null; lbe: number | null; forecast: number | null }, adjusted: number, kind: "product" | "group" | "sub" | "total", code?: string) => {
     const pickable = code !== undefined;
+    const open = pickable && code === selected;
     const changed = t.forecast !== null && t.lbe !== null && Math.abs(t.forecast - t.lbe) > 1e-9;
-    return (
+    const review = pickable ? reviews.get(code!) ?? null : null;
+    const rows = [
       <tr
         key={key}
         className={cn(
           pickable && "sv-datatable__row--pick",
-          pickable && code === selected && "sv-datatable__row--picked",
+          open && "sv-datatable__row--picked",
           kind === "sub" && "sv-datatable__row--sub",
           kind === "total" && "sv-datatable__row--total",
         )}
@@ -224,16 +245,16 @@ function ProductsTable({
       >
         <td className="is-wide">
           {pickable ? (
-            <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-              <button type="button" className="text-left font-semibold text-ink hover:underline focus-visible:underline" onClick={(e) => (e.stopPropagation(), onPick(code!))} aria-pressed={code === selected}>
-                {name}
-              </button>
-              {waiting.has(code!) ? (
-                <span className="sv-tag sv-tag--risk" data-testid={`plan-waiting-${code}`}>
-                  ждёт проверки
-                </span>
-              ) : null}
-            </span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 text-left font-semibold text-ink hover:underline focus-visible:underline"
+              onClick={(e) => (e.stopPropagation(), onPick(code!))}
+              aria-expanded={open}
+              aria-controls={open ? `plan-product-${code}` : undefined}
+            >
+              <ChevronDown className={cn("h-4 w-4 shrink-0 text-icon transition-transform", open && "rotate-180")} strokeWidth={1.75} aria-hidden="true" />
+              {name}
+            </button>
           ) : (
             <span className={cn(kind !== "sub" && "sv-datatable__strong")}>{name}</span>
           )}
@@ -256,8 +277,29 @@ function ProductsTable({
         <td className="is-num" data-label="Корректировок">
           {kind === "total" ? "" : adjusted || <span className="sv-datatable__muted">0</span>}
         </td>
-      </tr>
-    );
+        <td data-label="После LBE">
+          {review === "waiting" ? (
+            <span className="sv-tag sv-tag--risk" data-testid={`plan-waiting-${code}`}>
+              ждёт проверки
+            </span>
+          ) : review === "adjusted" ? (
+            <span className="text-caption text-text-secondary">скорректирован</span>
+          ) : review === "checked" ? (
+            <span className="text-caption text-text-secondary">проверен</span>
+          ) : null}
+        </td>
+      </tr>,
+    ];
+    if (open && expanded) {
+      rows.push(
+        <tr key={`${key}-card`} className="sv-datatable__row--expanded">
+          <td colSpan={8} className="is-wide">
+            {expanded}
+          </td>
+        </tr>,
+      );
+    }
+    return rows;
   };
   return (
     <div className="overflow-x-auto">
@@ -284,15 +326,16 @@ function ProductsTable({
             <th scope="col" className="is-num">
               Корректировок
             </th>
+            <th scope="col">После LBE</th>
           </tr>
         </thead>
         <tbody>
           {top.flatMap((t) =>
             t.kind === "product"
-              ? [line(t.code, t.label, t[headline], t.adjusted, "product", t.code)]
+              ? line(t.code, t.label, t[headline], t.adjusted, "product", t.code)
               : [
-                  line(t.code, t.label, t[headline], t.adjusted, "group"),
-                  ...t.parts.map((code) => {
+                  ...line(t.code, t.label, t[headline], t.adjusted, "group"),
+                  ...t.parts.flatMap((code) => {
                     const p = productRows.find((x) => x.code === code)!;
                     return line(code, planLabel(code), p[headline], p.adjusted, "sub", code);
                   }),

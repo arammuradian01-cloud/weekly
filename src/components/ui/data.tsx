@@ -84,6 +84,8 @@ export type Figure = {
   label: string;
   value: number | string;
   href?: string;
+  /** Отбор на этом же экране (этап 46): цифра кнопкой, а не ссылкой */
+  onClick?: () => void;
   tone?: "danger" | "warning" | "good";
   hint?: string;
   testId?: string;
@@ -126,11 +128,15 @@ export function Figures({ items, label, className, inline = false, max }: { item
         // Оттенок только у ненулевого: ноль просроченных не тревожит
         const tone = f.tone && !isZero(f.value) ? f.tone : null;
         return (
-          <li key={f.label} className={cn("sv-figure", tone && `sv-figure--${tone}`)} data-testid={f.testId}>
+          <li key={f.label} className={cn("sv-figure", tone && `sv-figure--${tone}`)} data-testid={f.testId} title={inline ? f.hint : undefined}>
             {f.href ? (
               <Link href={f.href} className="sv-figure__link">
                 {body}
               </Link>
+            ) : f.onClick ? (
+              <button type="button" onClick={f.onClick} className="sv-figure__link">
+                {body}
+              </button>
             ) : (
               <div className="sv-figure__link">{body}</div>
             )}

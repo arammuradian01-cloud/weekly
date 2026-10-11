@@ -11,6 +11,8 @@ import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
 import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
+import { plural } from "@/domain/dates";
+import Link from "next/link";
 import { FACT_STALE_DAYS } from "@/lib/goals/progress";
 import { usePrototype } from "@/domain/store";
 import { allPeople } from "@/domain/people";
@@ -19,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
-import { Module, StatTile, Stats } from "@/components/ui/data";
+import { Figures, Module } from "@/components/ui/data";
 import { EmptyState } from "@/components/empty-state";
 import {
   applyBordGoalsAction,
@@ -92,6 +94,12 @@ export function GoalsScreen({
     });
 
   const count = (f: Filter) => view.goals.filter(FILTERS.find((x) => x.value === f)!.test).length;
+  // Цифра в шапке включает отбор в таблице и ведёт к ней
+  const show = (f: Filter) => {
+    setFilter(f);
+    setMode("table");
+    requestAnimationFrame(() => document.getElementById("goals-list")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   const q = query.trim().toLowerCase();
   const shown = view.goals.filter(
     (g) => FILTERS.find((x) => x.value === filter)!.test(g) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
@@ -124,12 +132,18 @@ export function GoalsScreen({
 
       {view.goals.length ? (
         <>
-          <Stats label={`Цели на ${quarterLabel(view.quarter)}`} className="sv-stats--compact">
-            <StatTile label="Целей" value={String(view.goals.length)} testId="goals-stat-total" note={`достигнуто ${count("done")}`} />
-            <StatTile label="В риске" value={String(count("risk"))} testId="goals-stat-risk" note="Красный статус безопасен: на риск отвечаем помощью" />
-            <StatTile label="Без свежего факта" value={String(count("stale"))} testId="goals-stat-stale" note={`Числовые цели, факт старше ${FACT_STALE_DAYS} дней или не вписан`} />
-            <StatTile label="Без задач" value={String(count("notasks"))} testId="goals-stat-notasks" note="Цель без задач не двигается" />
-          </Stats>
+          {/* Этап 46: цифры строкой вместо четырёх плиток, нули спрятаны, цифра включает отбор в таблице */}
+          <Figures
+            label={`Цели на ${quarterLabel(view.quarter)} в цифрах`}
+            inline
+            max={3}
+            items={[
+              { label: `${plural(view.goals.length, "цель", "цели", "целей")}, достигнуто ${count("done")}`, value: view.goals.length, keepZero: true, testId: "goals-stat-total", onClick: () => show("all") },
+              { label: "в риске", value: count("risk"), tone: "danger", testId: "goals-stat-risk", hint: "Красный статус безопасен: на риск отвечаем помощью", onClick: () => show("risk") },
+              { label: "без свежего факта", value: count("stale"), tone: "warning", testId: "goals-stat-stale", hint: `Числовые цели, факт старше ${FACT_STALE_DAYS} дней или не вписан`, onClick: () => show("stale") },
+              { label: "без задач", value: count("notasks"), tone: "warning", testId: "goals-stat-notasks", hint: "Цель без задач не двигается", onClick: () => show("notasks") },
+            ]}
+          />
 
           <Module
             id="goals-list"
@@ -176,43 +190,17 @@ export function GoalsScreen({
       )}
 
       {view.unlinked.length ? (
-        <Module id="unlinked" title="Задачи без цели" description="Открытые задачи команд, которые не работают ни на одну цель. Задачи с высоким приоритетом должны работать на цель квартала" flush>
-          <div className="overflow-x-auto">
-            <table className="sv-datatable sv-datatable--stack">
-              <caption className="sr-only">Задачи без цели по командам</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Команда</th>
-                  <th scope="col" className="is-num">
-                    Открытых задач
-                  </th>
-                  <th scope="col" className="is-num">
-                    Без цели
-                  </th>
-                  <th scope="col" className="is-num">
-                    С высоким приоритетом
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.unlinked.map((u) => (
-                  <tr key={u.team}>
-                    <td className="is-wide">{u.name}</td>
-                    <td className="is-num" data-label="Открытых задач">
-                      {u.open}
-                    </td>
-                    <td className="is-num" data-label="Без цели">
-                      {u.withoutGoal} ({Math.round((u.withoutGoal / u.open) * 100)}%)
-                    </td>
-                    <td className="is-num" data-label="С высоким приоритетом">
-                      {u.highWithoutGoal ? <span className="font-semibold text-danger-ink">{u.highWithoutGoal}</span> : <span className="sv-datatable__muted">0</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Module>
+        // Этап 46: одной фразой со ссылкой вместо таблицы из одной-двух строк
+        <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink" id="unlinked" data-testid="goals-unlinked">
+          <span className="font-semibold">Задачи без цели:</span>{" "}
+          {view.unlinked
+            .map((u) => `${u.name} ${u.withoutGoal} из ${u.open} ${plural(u.open, "открытой", "открытых", "открытых")}${u.highWithoutGoal ? `, с высоким приоритетом ${u.highWithoutGoal}` : ""}`)
+            .join("; ")}
+          . Задачи с высоким приоритетом должны работать на цель квартала: привяжите цель в карточке задачи.{" "}
+          <Link href="/tasks?group=goal" className="font-semibold text-link hover:underline">
+            Задачи по целям
+          </Link>
+        </p>
       ) : null}
 
       {creating ? (

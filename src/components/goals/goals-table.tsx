@@ -38,7 +38,8 @@ export function goalStatus(g: Pick<GoalNode, "result" | "risk">): { label: strin
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "short" });
 const fullFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
-export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?: boolean }) {
+/** Полоса прогресса цели: процент и, если есть, «141 из 160» (этап 46: полоса шире, подпись с цифрами) */
+export function Meter({ progress, risk, detail }: { progress: GoalProgress | null; risk?: boolean; detail?: string | null }) {
   if (!progress) return <span className="text-caption text-text-secondary">нет</span>;
   const width = Math.max(0, Math.min(1, progress.share)) * 100;
   return (
@@ -46,9 +47,17 @@ export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?
       <span className="sv-meter__track" aria-hidden="true">
         <span className="sv-meter__fill" style={{ width: `${width}%` }} />
       </span>
-      <span className="sv-meter__label">{progressLabel(progress)}</span>
+      <span className="sv-meter__text">
+        <span className="sv-meter__label">{progressLabel(progress)}</span>
+        {detail ? <span className="sv-meter__detail">{detail}</span> : null}
+      </span>
     </span>
   );
+}
+
+/** «141 из 160»: факт и целевое словами, когда оба заданы */
+export function meterDetail(g: { fact: { value: string } | null; target: string | null }): string | null {
+  return g.fact && g.target ? `${g.fact.value} из ${g.target}` : null;
 }
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
@@ -220,7 +229,7 @@ export function GoalsTable({
                     )}
                   </td>
                   <td data-label="Прогресс">
-                    <Meter progress={g.numeric} risk={!!g.risk} />
+                    <Meter progress={g.numeric} risk={!!g.risk} detail={meterDetail(g)} />
                   </td>
                   <td data-label="Статус">
                     <Badge tone={status.tone} dot>
@@ -259,7 +268,7 @@ export function GoalsTable({
                 isOpen ? (
                   <tr key={`${g.id}-open`}>
                     <td colSpan={COLS} className="is-wide">
-                      <GoalDetails goal={g} byId={byId} onEdit={onEdit} onMark={onMark} onAdd={onAdd} creatable={creatable} />
+                      <GoalDetails goal={g} byId={byId} onEdit={onEdit} onMark={onMark} onAdd={onAdd} creatable={creatable} groupBy={groupBy} />
                     </td>
                   </tr>
                 ) : null,
@@ -272,7 +281,7 @@ export function GoalsTable({
   );
 }
 
-function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal: GoalNode; byId: Map<string, GoalNode>; onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; creatable: boolean }) {
+function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable, groupBy }: { goal: GoalNode; byId: Map<string, GoalNode>; onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; creatable: boolean; groupBy: GoalGroupBy }) {
   const kids = g.childIds.map((id) => byId.get(id)).filter((x): x is GoalNode => !!x);
   return (
     <div className="grid gap-5 py-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" data-testid="goal-details">
@@ -282,27 +291,24 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />В риске: {g.risk}
           </p>
         ) : null}
+        {/* Этап 46: в раскрытии только то, чего нет в колонках. Команда или владелец (в строке виден один из них по
+            группировке), метрика только на телефоне (на ноутбуке она колонкой), счёт целей ниже в заголовке списка */}
         <dl className="grid gap-x-6 gap-y-2 text-body sm:grid-cols-2">
-          <div>
-            <dt className="text-caption text-text-secondary">Команда</dt>
-            <dd className="text-ink">{g.team.name}</dd>
-          </div>
-          <div>
-            <dt className="text-caption text-text-secondary">Владелец</dt>
-            <dd className="text-ink">{g.owner?.fullName ?? "Руководитель команды"}</dd>
-          </div>
+          {groupBy === "team" ? (
+            <div>
+              <dt className="text-caption text-text-secondary">Команда</dt>
+              <dd className="text-ink">{g.team.name}</dd>
+            </div>
+          ) : (
+            <div>
+              <dt className="text-caption text-text-secondary">Владелец</dt>
+              <dd className="text-ink">{g.owner?.fullName ?? "Руководитель команды"}</dd>
+            </div>
+          )}
           {g.metric ? (
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 lg:hidden">
               <dt className="text-caption text-text-secondary">Метрика: как проверяем</dt>
               <dd className="whitespace-pre-line text-ink">{g.metric}</dd>
-            </div>
-          ) : null}
-          {g.below.total ? (
-            <div>
-              <dt className="text-caption text-text-secondary">Цели ниже</dt>
-              <dd className="text-ink">
-                достигнуто {g.below.achieved} из {g.below.total}
-              </dd>
             </div>
           ) : null}
         </dl>
@@ -314,7 +320,7 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
         ) : null}
         {kids.length ? (
           <div>
-            <p className="text-caption text-text-secondary">Цели ниже</p>
+            <p className="text-caption text-text-secondary">Цели ниже{g.below.total ? `: достигнуто ${g.below.achieved} из ${g.below.total}` : ""}</p>
             <ul className="flex flex-col gap-1 text-body">
               {kids.map((k) => (
                 <li key={k.id}>

@@ -52,6 +52,9 @@ test("руководитель канала меняет полисы партн
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await pull(page);
+  // Этап 46: партнёрский канал своей вкладкой
+  await page.goto("/forecast?tab=partners");
+  await expect(page.getByTestId("tab-partners")).toHaveAttribute("aria-current", "page");
   const section = page.locator("#plan-partners");
   await expect(section.getByRole("heading", { name: "Партнёрский канал", level: 2 })).toBeVisible();
   await expect(section.getByTestId("partners-stat-revenue")).toContainText("млн");
@@ -63,7 +66,7 @@ test("руководитель канала меняет полисы партн
   await enterByLink(page, "sakhibullina");
   await page.goto("/me");
   await expect(page.getByText(/Проверьте прогноз: Партнёрский канал/)).toBeVisible();
-  await page.goto("/forecast");
+  await page.goto("/forecast?tab=partners");
   const row = partnerRow(page, "Банк Север");
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("20 000");
@@ -109,7 +112,7 @@ test("отборы и поиск партнёров, партнёры без п�
   await pull(page);
   await page.context().clearCookies();
   await enterByLink(page, "afanasyev");
-  await page.goto("/forecast");
+  await page.goto("/forecast?tab=partners");
   const table = page.getByTestId("partners-table");
   // Банк Юг ещё не продаёт: по умолчанию свёрнут, кнопка показывает таких партнёров
   await expect(table.getByText("Банк Юг")).toHaveCount(0);
