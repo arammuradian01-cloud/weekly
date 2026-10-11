@@ -101,7 +101,7 @@ export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuth
         </Link>
       </div>
       {!summary.lines.length ? (
-        <p className="mt-1 text-body text-muted">На этой неделе прогноз никто не обновил.</p>
+        <p className="mt-1 text-body text-muted">На этой неделе прогноз никто не обновил: лидеры обновляют его на странице «Прогноз», вкладка «Неделя».</p>
       ) : (
         <div className="mt-3 overflow-x-auto">
           <table className="w-full min-w-[560px] text-left text-small">

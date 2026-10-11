@@ -122,10 +122,13 @@ export function GoalsScreen({
               <Upload className="h-4 w-4" aria-hidden="true" />
               Загрузить цели
             </Button>
-            <Button size="sm" onClick={() => setCreating({})}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Новая цель
-            </Button>
+            {/* На пустой странице первую цель заводят из пустого состояния: одно действие на экран (этап 49) */}
+            {view.goals.length ? (
+              <Button size="sm" onClick={() => setCreating({})}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Новая цель
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -184,8 +187,18 @@ export function GoalsScreen({
           </Module>
         </>
       ) : (
-        <EmptyState title={`Целей на ${quarterLabel(view.quarter)} пока нет`}>
-          {view.creatable.length ? "Заведите цель кнопкой «Новая цель» или загрузите вкладку целей из борда." : "Цели заводят руководители команд и владелец."}
+        <EmptyState
+          title={`Целей на ${quarterLabel(view.quarter)} пока нет`}
+          action={
+            view.creatable.length ? (
+              <Button size="sm" onClick={() => setCreating({})}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Новая цель
+              </Button>
+            ) : undefined
+          }
+        >
+          {view.creatable.length ? "Заведите первую цель здесь или загрузите вкладку целей из борда кнопкой «Загрузить цели»." : "Цели заводят руководители команд и владелец: они появятся здесь, как только их запишут."}
         </EmptyState>
       )}
 

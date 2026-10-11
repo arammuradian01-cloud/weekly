@@ -15,7 +15,7 @@
 .sv-tree-node__level { font-size: var(--text-caption); color: var(--color-text-disabled); font-weight: 400; }
 .sv-tree-node__sub { display: flex; align-items: center; gap: 6px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); min-width: 0; }
 .sv-tree-node__sub > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sv-tree-node__sub .is-none { color: var(--color-text-disabled); }
+.sv-tree-node__sub .is-none { color: var(--color-text-secondary); }
 .sv-tree-node__side { display: flex; align-items: center; gap: 12px; }
 .sv-tree-node__count { font-size: var(--text-caption); color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sv-tree-node--func { border-style: dashed; }

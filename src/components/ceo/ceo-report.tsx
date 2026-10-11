@@ -520,7 +520,7 @@ export function CeoReport({
         </Collapsible>
         <Collapsible id="ceo-history" title="История отчётов" hint={historyHint} testId="ceo-history-block" flush={history.length > 0}>
           {history.length === 0 ? (
-            <p className="text-small text-muted">Пока ни одного отчёта.</p>
+            <p className="text-small text-muted">Пока ни одного отчёта: список появится после первого сохранения.</p>
           ) : (
             <ul className="divide-y divide-line">
               {history.map((h) => (

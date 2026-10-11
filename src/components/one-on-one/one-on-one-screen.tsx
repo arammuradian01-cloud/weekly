@@ -224,7 +224,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
               ))}
             </ul>
           ) : (
-            <p className="text-small text-muted">Завершённых встреч пока нет.</p>
+            <p className="text-small text-muted">Завершённых встреч пока нет: они появятся здесь после «Завершить встречу».</p>
           )}
         </section>
       </div>
