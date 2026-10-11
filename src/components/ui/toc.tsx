@@ -45,6 +45,8 @@ export function Toc({ items, label = "Разделы страницы", classNam
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       window.cancelAnimationFrame(frame);
+      // Иначе после повторного монтирования (Strict Mode в dev) кадр считается запланированным и подсветка замирает
+      ticking.current = false;
     };
   }, [ids]);
   return (

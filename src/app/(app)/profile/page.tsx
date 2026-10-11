@@ -145,6 +145,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         </>
       ) : null}
 
+      {/* prefs и pushPrefs всегда есть на вкладке писем (функции отдают значения по умолчанию): условие только сужает тип */}
       {tab === "mail" && prefs && pushPrefs ? (
         <>
           <section aria-labelledby="mail-head">

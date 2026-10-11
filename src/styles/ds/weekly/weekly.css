@@ -34,7 +34,6 @@
 .sv-submit-bar__text span { color: var(--color-text-secondary); font-weight: 400; }
 .sv-submit-bar__people { display: flex; gap: 6px; flex-wrap: wrap; }
 .sv-submit-bar__person { position: relative; display: inline-flex; }
-.sv-submit-bar__person.is-pending .sv-avatar { opacity: 0.5; }
 .sv-submit-bar__track { flex: 1; min-width: 80px; height: 6px; border-radius: 3px; background: var(--color-border); overflow: hidden; }
 .sv-submit-bar__fill { height: 100%; background: var(--color-success-dot); border-radius: 3px; transition: width var(--duration) var(--ease); }
 /* Карточка записи */

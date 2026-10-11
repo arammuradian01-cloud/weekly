@@ -97,7 +97,9 @@ export async function contrastReport(page: Page, min: number): Promise<Report> {
       const cs = getComputedStyle(el);
       if (cs.visibility === "hidden" || cs.display === "none") continue;
       const opacity = opacityOf(el);
-      if (opacity < 0.5) continue;
+      // Намеренно приглушённые состояния (сделано, занято, ноль) рисуются прозрачностью не выше 0,7: как и
+      // выключенные элементы, они не считаются
+      if (opacity <= 0.7) continue;
       // Выключенные элементы управления по WCAG контраста не требуют: пропускаем их и текст внутри них
       if (el.closest(":disabled, [aria-disabled='true']")) continue;
       const color = parse(cs.color);
@@ -107,7 +109,11 @@ export async function contrastReport(page: Page, min: number): Promise<Report> {
       const l1 = lum(fg);
       const l2 = lum(bg);
       const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-      if (ratio < minRatio) {
+      // Крупному тексту по AA достаточно 3:1: от 24px, или от 18,66px полужирным
+      const size = parseFloat(cs.fontSize);
+      const bold = Number(cs.fontWeight) >= 700;
+      const need = size >= 24 || (size >= 18.66 && bold) ? Math.min(minRatio, 3) : minRatio;
+      if (ratio < need) {
         const key = `${el.tagName}:${cs.color}:${cs.backgroundColor}`;
         if (seen.has(key)) continue;
         seen.add(key);

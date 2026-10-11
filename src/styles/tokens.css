@@ -130,7 +130,7 @@
   --color-warning-bg: #503F26;
   --color-warning-dot: #FF9500;
   --color-danger-text: #F1B2B2;     /* 6,3:1 */
-  --color-danger-bg: #402626;       /* темнее, чтобы вторичный текст на строке просрочки держал 4,5:1 (этап 50) */
+  --color-danger-bg: #402626;       /* своё (этап 50): темнее, чтобы вторичный текст на строке просрочки держал 4,5:1 */
   --color-danger-dot: #F28B8B;      /* своё */
   --color-danger-hover: #F6C7C7;
   --color-info-text: #CECBFF;       /* 7,8:1 */
