@@ -8,6 +8,7 @@ import { personalLogin } from "@/lib/one-on-one/rules";
 import { formatShort } from "@/domain/dates";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
+import { Figures } from "@/components/ui/data";
 
 export const metadata: Metadata = { title: "Один на один" };
 
@@ -15,7 +16,8 @@ export const metadata: Metadata = { title: "Один на один" };
 export default async function OneOnOnePage({ searchParams }: { searchParams: Promise<{ pair?: string }> }) {
   const ctx = await requireContext();
   const { pair } = await searchParams;
-  const header = <PageHeader title="Один на один" description="Встречи руководителя и человека его команды: повестку ставит человек, незакрытые темы переходят на следующую встречу" />;
+  const description = "Встречи руководителя и человека его команды: повестку ставит человек, незакрытые темы переходят на следующую встречу";
+  const header = <PageHeader title="Один на один" description={description} />;
   if (!personalLogin(ctx.via)) {
     return (
       <>
@@ -52,7 +54,24 @@ export default async function OneOnOnePage({ searchParams }: { searchParams: Pro
   );
   return (
     <>
-      {header}
+      <PageHeader
+        title="Один на один"
+        description={description}
+        figures={
+          pairs.length ? (
+            // Этап 37: встречи в цифрах
+            <Figures
+              label="Встречи в цифрах"
+              items={[
+                { label: "Собеседников", value: pairs.length, testId: "oo-fig-pairs" },
+                { label: "Следующая встреча назначена", value: pairs.filter((p) => p.next).length, testId: "oo-fig-next" },
+                { label: "Без назначенной встречи", value: pairs.filter((p) => !p.next).length, tone: "warning", testId: "oo-fig-nonext" },
+                { label: "Тем в повестке", value: pairs.reduce((s, p) => s + p.openTopics, 0), testId: "oo-fig-topics" },
+              ]}
+            />
+          ) : null
+        }
+      />
       {pair ? <p className="mb-4 text-small text-muted">Ссылка ведёт на встречу, которой у вас нет. Ниже ваши встречи.</p> : null}
       {pairs.length ? (
         <div className="flex flex-col gap-8">

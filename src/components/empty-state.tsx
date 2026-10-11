@@ -31,7 +31,7 @@ export function EmptyState({
   return (
     <div className={cn("sv-empty sv-card--soft border border-dashed border-line bg-surface", !centered && "sv-empty--compact", className)}>
       <IconCircle icon={icon} tone={tone} size={centered ? 56 : 40} />
-      <div className="min-w-0">
+      <div className="sv-empty__body min-w-0">
         <h3 className="sv-empty__title">{title}</h3>
         {children ? <div className="sv-empty__text">{children}</div> : null}
         {stage ? <p className="mt-1 text-caption text-text-secondary">{stage}</p> : null}
