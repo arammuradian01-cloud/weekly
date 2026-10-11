@@ -51,12 +51,15 @@ export function MyTeams({ panel }: { panel: Panel }) {
         inline
         max={3}
         items={[
-          { label: "в работе", value: sum("inWork"), testId: "mt-fig-work", keepZero: true },
-          { label: "просрочено", value: sum("overdue"), tone: "danger", testId: "mt-fig-overdue" },
-          { label: plural(sum("goalsAtRisk"), "цель в риске", "цели в риске", "целей в риске"), value: sum("goalsAtRisk"), tone: "danger", testId: "mt-fig-goals" },
-          { label: plural(sum("clarify"), "требует уточнений", "требуют уточнений", "требуют уточнений"), value: sum("clarify"), tone: "warning", testId: "mt-fig-clarify" },
-          { label: "давно без обновлений", value: sum("stale"), tone: "warning", testId: "mt-fig-stale" },
-          { label: `weekly за неделю ${panel.reportingNumber}`, value: self.weekly.expected ? `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}` : "не ждём", href: "/weekly", testId: "mt-fig-weekly" },
+          { label: "в работе", value: sum("inWork"), href: "#mt-people", testId: "mt-fig-work", keepZero: true },
+          { label: "просрочено", value: sum("overdue"), href: "#mt-attention", tone: "danger", testId: "mt-fig-overdue" },
+          { label: plural(sum("goalsAtRisk"), "цель в риске", "цели в риске", "целей в риске"), value: sum("goalsAtRisk"), href: "/goals", tone: "danger", testId: "mt-fig-goals" },
+          { label: plural(sum("clarify"), "требует уточнений", "требуют уточнений", "требуют уточнений"), value: sum("clarify"), href: "#mt-people", tone: "warning", testId: "mt-fig-clarify" },
+          { label: "давно без обновлений", value: sum("stale"), href: "#mt-attention", tone: "warning", testId: "mt-fig-stale" },
+          // Weekly от команды не ждут (сдают руководители выше): чипа нет, в таблице ниже это написано словами
+          ...(self.weekly.expected
+            ? [{ label: `сдали weekly за неделю ${panel.reportingNumber}`, value: `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}`, href: "/weekly", testId: "mt-fig-weekly", keepZero: true }]
+            : []),
         ]}
       />
 
@@ -249,6 +252,7 @@ function PersonRow({ person: p }: { person: PanelPerson }) {
   return (
     <li className="px-4 py-3">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-1">
         <button
           type="button"
           onClick={() => setOpen(!open)}
@@ -266,6 +270,7 @@ function PersonRow({ person: p }: { person: PanelPerson }) {
           </span>
         </button>
         <PersonCardButton slug={p.slug} name={p.fullName} />
+        </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-6 text-small sm:justify-end sm:pl-0">
           {w.absent && w.state !== "submitted" && w.state !== "late" ? (
             <span className="text-muted">нет на неделе</span>

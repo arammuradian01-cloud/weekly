@@ -158,9 +158,28 @@ test("дерево подчинённых: схема с путём наверх
   await list.getByRole("button", { name: /Развернуть: Рева Тарас/ }).click();
   await expect(list).toContainText("Антонов Дмитрий");
   await shot(page, "people-list");
+
   // Имя в списке открывает человека на схеме
   await list.getByRole("button", { name: "Антонов Дмитрий", exact: true }).click();
   await expect(tree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
+  // Этап 45: карточка человека одна на все вкладки. Из таблицы команды открывается панелью, «В структуре» ведёт
+  // в дерево на этом человеке, панель закрывается сама
+  await page.goto("/people");
+  await page.getByTestId("team-summary").getByRole("button", { name: /^Рева Тарас/ }).click();
+  const card = page.getByRole("dialog", { name: "Рева Тарас" });
+  await expect(card.getByText("Руководитель", { exact: true })).toBeVisible();
+  await expect(card.getByText("Мурадян Арам")).toBeVisible();
+  await card.getByRole("link", { name: "В структуре" }).click();
+  await expect(page).toHaveURL(new RegExp(`/people/structure\\?person=${reva}$`));
+  await expect(page.getByRole("dialog", { name: "Рева Тарас" })).toHaveCount(0);
+  await expect(page.getByTestId("person-focus")).toContainText("Рева Тарас");
+  // Другие ветки свёрнуты, раскрываются по клику
+  const otherRoots = page.getByTestId("other-roots");
+  if (await otherRoots.count()) {
+    await expect(otherRoots.getByRole("list", { name: "Другие ветки" })).toBeHidden();
+    await otherRoots.locator("summary").click();
+    await expect(otherRoots.getByRole("list", { name: "Другие ветки" })).toBeVisible();
+  }
 
   // Ссылка «Цели» с карточки открывает цели с поиском по человеку
   await page.goto("/goals");

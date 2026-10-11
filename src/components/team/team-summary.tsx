@@ -67,7 +67,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
           { label: "с риском", value: totals.risk, tone: "warning", testId: "team-fig-risk" },
           { label: "давно без обновлений", value: totals.stale, tone: "warning", testId: "team-fig-stale" },
           { label: "закрыто за неделю", value: totals.closedWeek, testId: "team-fig-closed" },
-          { label: `weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly", keepZero: true },
+          ...(expected.length ? [{ label: `сдали weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly", keepZero: true }] : []),
         ]}
       />
       <div className="sv-card sv-card--soft overflow-x-auto p-0">
@@ -92,7 +92,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
                 <tr key={r.person.slug}>
                   <th scope="row" className="is-wide text-left font-normal">
                     {/* Этап 45: имя открывает карточку человека, общую со структурой; разбор задач по ссылке из неё */}
-                    <PersonName slug={r.person.slug} name={r.person.fullName} className="font-semibold text-ink" />
+                    <PersonName slug={r.person.slug} name={r.person.fullName} className="font-semibold text-ink" fallbackHref={`/tasks/review?person=${r.person.slug}`} />
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <span className="block text-caption text-muted">
                       {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}

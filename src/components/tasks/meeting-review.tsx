@@ -25,7 +25,11 @@ export function MeetingReview() {
   const leader = teamOf(team.id)?.leader;
   const order = [...teamPeople.filter((p) => p.slug !== leader && p.role !== "OWNER").map((p) => p.slug), ...gone];
   const params = useSearchParams();
-  const [index, setIndex] = useState(() => Math.max(0, order.indexOf(params.get("person") as PersonSlug)));
+  const wanted = params.get("person") as PersonSlug | null;
+  // Человека из адреса нет в очереди выбранной команды (владелец, руководитель команды, другая команда): говорим об
+  // этом словами, а не молча открываем первого
+  const missing = !!wanted && order.length > 0 && !order.includes(wanted);
+  const [index, setIndex] = useState(() => Math.max(0, order.indexOf(wanted as PersonSlug)));
   if (!order.length) return <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">В команде пока некого разбирать: добавьте участников на вкладке «Структура» страницы «Люди».</p>;
   // После переключения команды очередь короче: остаёмся в её пределах
   const current = Math.min(index, order.length - 1);
@@ -45,6 +49,12 @@ export function MeetingReview() {
 
   return (
     <div>
+      {missing ? (
+        <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink" role="status">
+          {personOf(wanted!).fullName}: в очереди разбора выбранной команды его нет (руководителя команды и владельца не разбирают, люди других команд разбираются в своей). Показан первый
+          в очереди.
+        </p>
+      ) : null}
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <ol className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" aria-label="Очередь лидеров">
           {order.map((s, i) => {

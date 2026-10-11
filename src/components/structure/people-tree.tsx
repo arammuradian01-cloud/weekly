@@ -148,7 +148,7 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
                 <ul className="sv-org__grid">
                   {p.reports.map((slug) => (
                     <li key={slug}>
-                      <PersonCard person={people[slug]!} me={me} onOpen={open} />
+                      <TreePersonButton person={people[slug]!} me={me} onOpen={open} />
                     </li>
                   ))}
                 </ul>
@@ -156,8 +156,8 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
             </>
           ) : null}
 
+          {/* Этап 45: другие ветки свёрнуты по умолчанию, чтобы не отвлекать от выбранной */}
           {otherRoots.length ? (
-            // Этап 45: свёрнуты по умолчанию, чтобы не отвлекать от выбранной ветки
             <details className="mt-2 text-caption text-text-secondary" data-testid="other-roots">
               <summary className="cursor-pointer rounded-tag py-1 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
                 {`Другие ветки и люди без руководителя в структуре: ${otherRoots.length}`}
@@ -181,7 +181,7 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
   );
 }
 
-function PersonCard({ person: p, me, onOpen }: { person: TreePerson; me: string; onOpen: (slug: string) => void }) {
+function TreePersonButton({ person: p, me, onOpen }: { person: TreePerson; me: string; onOpen: (slug: string) => void }) {
   return (
     <button type="button" className={cn("sv-person", p.reports.length > 0 && "sv-person--lead")} onClick={() => onOpen(p.slug)} aria-label={`${p.fullName}${p.position ? `, ${p.position}` : ""}. ${reportsText(p)}`} data-testid={`person-${p.slug}`}>
       <Avatar text={initialsOf(p.fullName)} name={p.fullName} />

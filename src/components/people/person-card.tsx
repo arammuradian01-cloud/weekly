@@ -6,9 +6,11 @@
 
 import Link from "next/link";
 import { createContext, useContext, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ChevronUp, UserRound } from "lucide-react";
 import type { PeopleTree, TreePerson } from "@/lib/org/people-tree";
 import { plural } from "@/domain/dates";
+import { usePrototype } from "@/domain/store";
 import { Avatar } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlays";
@@ -28,7 +30,8 @@ export function reportsText(p: Pick<TreePerson, "reports" | "total">): string {
 
 /**
  * Тело карточки: имя, должность, подчинённые, руководитель и команды, ссылки. onOpen: перейти к другому человеку
- * (в дереве). headRef и тёмная рамка только в дереве, где карточка в центре схемы
+ * (в дереве и в панели). headRef только в дереве, где карточка в центре схемы. compact: в выдвижной панели, имя
+ * уже в её заголовке
  */
 export function PersonDetails({
   person: p,
@@ -37,17 +40,22 @@ export function PersonDetails({
   onOpen,
   headRef,
   compact = false,
+  structureLink = true,
 }: {
   person: TreePerson;
   people: Record<string, TreePerson>;
   me: string;
   onOpen?: (slug: string) => void;
   headRef?: React.RefObject<HTMLHeadingElement | null>;
-  /** В выдвижной панели: имя уже в заголовке панели, здесь без него */
   compact?: boolean;
+  /** Ссылка «В структуре»: только из панели и только когда дерево загружено */
+  structureLink?: boolean;
 }) {
+  const { teamPeople } = usePrototype();
   const manager = p.manager ? people[p.manager] : undefined;
   const functional = p.functional ? people[p.functional] : undefined;
+  // Разбор задач на встрече идёт по очереди выбранной в шапке команды: ссылка только для её участников
+  const inCurrentTeam = teamPeople.some((t) => t.slug === p.slug);
   const personLink = (slug: string, name: string) =>
     onOpen ? (
       <button type="button" className="text-link hover:underline" onClick={() => onOpen(slug)}>
@@ -58,7 +66,13 @@ export function PersonDetails({
     );
   return (
     <>
-      {compact ? null : (
+      {compact ? (
+        <p className="text-body text-ink">
+          {[p.position, p.unit].filter(Boolean).join(", ") || "Должность не указана"}
+          {p.slug === me ? <span className="ml-2 text-caption text-text-secondary">это вы</span> : null}
+          <span className="block text-text-secondary">{reportsText(p)}</span>
+        </p>
+      ) : (
         <div className="flex flex-wrap items-start gap-3">
           <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="lg" />
           <div className="min-w-0 flex-1 basis-56">
@@ -77,12 +91,6 @@ export function PersonDetails({
           ) : null}
         </div>
       )}
-      {compact ? (
-        <p className="text-body text-ink">
-          {[p.position, p.unit].filter(Boolean).join(", ") || "Должность не указана"}
-          <span className="block text-text-secondary">{reportsText(p)}</span>
-        </p>
-      ) : null}
       <dl className={cn("grid gap-x-6 gap-y-2 text-body sm:grid-cols-2", compact ? "mt-4" : "mt-3 border-t border-border pt-3")}>
         <div>
           <dt className="text-caption text-text-secondary">Руководитель</dt>
@@ -121,9 +129,9 @@ export function PersonDetails({
             Задачи
           </Link>
         ) : null}
-        {p.work ? (
+        {p.work && compact && inCurrentTeam ? (
           <Link href={`/tasks/review?person=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
-            Разбор задач
+            Разбор на встрече
           </Link>
         ) : null}
         {p.weekly ? (
@@ -134,7 +142,7 @@ export function PersonDetails({
         <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
           Цели
         </Link>
-        {compact ? (
+        {compact && structureLink ? (
           <Link href={`/people/structure?person=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
             В структуре
           </Link>
@@ -155,26 +163,48 @@ export function usePersonCard(): PersonCardApi | null {
 
 export function PersonCardProvider({ tree, me, children }: { tree: PeopleTree; me: string; children: React.ReactNode }) {
   const [slug, setSlug] = useState<string | null>(null);
+  // Переход по ссылке из карточки на другую вкладку «Люди» (например, «В структуре»): layout не перемонтируется,
+  // поэтому панель закрывается по смене адреса. Состояние меняется во время отрисовки, без эффекта
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  const route = `${pathname}?${search}`;
+  const [seenRoute, setSeenRoute] = useState(route);
+  if (seenRoute !== route) {
+    setSeenRoute(route);
+    setSlug(null);
+  }
   const person = slug ? tree.people[slug] : undefined;
   const api: PersonCardApi = { open: setSlug, has: (s) => !!tree.people[s] };
   return (
     <PersonCardContext.Provider value={api}>
       {children}
       <Drawer open={!!person} onOpenChange={(o) => !o && setSlug(null)} title={person?.fullName ?? ""} description="Карточка человека">
-        {person ? <PersonDetails person={person} people={tree.people} me={me} compact /> : null}
+        {person ? <PersonDetails person={person} people={tree.people} me={me} onOpen={setSlug} compact structureLink={tree.loaded} /> : null}
       </Drawer>
     </PersonCardContext.Provider>
   );
 }
 
-/** Имя человека, открывающее карточку. Если дерево не загружено или человека в нём нет, просто текст */
-export function PersonName({ slug, name, className }: { slug: string; name: string; className?: string }) {
+/**
+ * Имя человека, открывающее карточку. Человека нет в дереве (выключен или дерево пустое): ссылка fallbackHref, если
+ * дана, иначе просто текст
+ */
+export function PersonName({ slug, name, className, fallbackHref }: { slug: string; name: string; className?: string; fallbackHref?: string }) {
   const card = usePersonCard();
-  if (!card || !card.has(slug)) return <span className={className}>{name}</span>;
+  if (!card || !card.has(slug)) {
+    return fallbackHref ? (
+      <Link href={fallbackHref} className={cn("hover:text-link hover:underline", className)}>
+        {name}
+      </Link>
+    ) : (
+      <span className={className}>{name}</span>
+    );
+  }
   return (
-    <button type="button" onClick={() => card.open(slug)} className={cn("inline-flex items-center gap-1.5 text-left hover:text-link hover:underline", className)} aria-label={`Карточка: ${name}`}>
+    <button type="button" onClick={() => card.open(slug)} className={cn("inline-flex items-center gap-1.5 text-left hover:text-link hover:underline", className)}>
       {name}
       <UserRound className="h-3.5 w-3.5 shrink-0 text-icon" strokeWidth={1.75} aria-hidden="true" />
+      <span className="sr-only">, карточка</span>
     </button>
   );
 }
@@ -184,7 +214,7 @@ export function PersonCardButton({ slug, name }: { slug: string; name: string })
   const card = usePersonCard();
   if (!card || !card.has(slug)) return null;
   return (
-    <button type="button" onClick={() => card.open(slug)} className="sv-icon-btn sv-icon-btn--xs" aria-label={`Карточка: ${name}`} title="Карточка человека">
+    <button type="button" onClick={() => card.open(slug)} className="sv-icon-btn sv-icon-btn--xs shrink-0" aria-label={`Карточка: ${name}`} title="Карточка человека">
       <UserRound className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
     </button>
   );

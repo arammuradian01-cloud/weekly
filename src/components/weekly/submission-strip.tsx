@@ -6,6 +6,7 @@ import type { WeeklyStateCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
 import { substituteText } from "./absence";
 import { avatarTone } from "@/components/ui/primitives";
+import { initialsOf } from "@/components/people/person-card";
 
 // Точка состояния на аватаре, как в дизайн-системе (weekly/SubmissionBar.jsx)
 const DOT: Record<WeeklyStateCode, string> = {
@@ -64,9 +65,4 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
       </ul>
     </section>
   );
-}
-
-function initialsOf(fullName: string) {
-  const [last, first] = fullName.split(" ");
-  return `${(first ?? "").charAt(0)}${(last ?? "").charAt(0)}`.toUpperCase();
 }
