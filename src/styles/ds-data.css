@@ -189,6 +189,19 @@ a.sv-figure__link:focus-visible { outline: 2px solid var(--color-focus); outline
 .sv-figure__value { font-family: var(--font-heading); font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-heading); font-variant-numeric: tabular-nums; }
 .sv-figure__label { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
 .sv-figure__hint { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+/* Строка цифр (этап 42): компактные пары «число и подпись» под заголовком, без плиток */
+.sv-figures--inline { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.sv-figures--inline .sv-figure__link { flex-direction: row; align-items: baseline; gap: 6px; height: auto; min-height: 32px; padding: 4px 12px; border-radius: var(--radius-control); background: var(--color-surface); }
+.sv-figures--inline .sv-figure__value { font-size: var(--text-body); line-height: var(--leading-body); }
+.sv-figures--inline .sv-figure__hint { display: none; }
+.sv-figures--inline .sv-figure--danger .sv-figure__link, .sv-figures--inline .sv-figure--warning .sv-figure__link, .sv-figures--inline .sv-figure--good .sv-figure__link { box-shadow: none; }
+.sv-figures--inline .sv-figure--danger .sv-figure__link { background: var(--color-danger-bg); border-color: transparent; }
+.sv-figures--inline .sv-figure--danger .sv-figure__label { color: var(--color-danger-text); }
+.sv-figures--inline .sv-figure--warning .sv-figure__link { background: var(--color-warning-bg); border-color: transparent; }
+.sv-figures--inline .sv-figure--warning .sv-figure__label { color: var(--color-warning-text); }
+/* У цветных чипов фон задан отдельно и перебивает общее наведение, поэтому отклик на наведение свой */
+.sv-figures--inline .sv-figure--danger a.sv-figure__link:hover, .sv-figures--inline .sv-figure--warning a.sv-figure__link:hover, .sv-figures--inline .sv-figure--good a.sv-figure__link:hover { filter: brightness(0.96); border-color: transparent; }
+[data-theme="dark"] .sv-figures--inline .sv-figure--danger a.sv-figure__link:hover, [data-theme="dark"] .sv-figures--inline .sv-figure--warning a.sv-figure__link:hover, [data-theme="dark"] .sv-figures--inline .sv-figure--good a.sv-figure__link:hover { filter: brightness(1.15); }
 .sv-figure--danger .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-danger-dot); }
 .sv-figure--danger .sv-figure__value { color: var(--color-danger-text); }
 .sv-figure--warning .sv-figure__link { box-shadow: inset 3px 0 0 var(--color-warning-dot); }

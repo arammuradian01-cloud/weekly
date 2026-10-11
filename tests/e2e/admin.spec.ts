@@ -122,7 +122,9 @@ test("архив: владелец видит задачи в архиве и в
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/tasks/13");
-  await page.getByRole("button", { name: "В архив" }).first().click();
+  // Этап 42: «В архив» в меню «Ещё действия» панели задачи
+  await page.getByRole("button", { name: "Ещё действия" }).first().click();
+  await page.getByRole("menuitem", { name: "В архив" }).click();
   await expect(page.getByText("Задача 13 в архиве").first()).toBeVisible();
   await page.goto("/tasks");
   await page.getByLabel(/^Архив \(1\)/).check();

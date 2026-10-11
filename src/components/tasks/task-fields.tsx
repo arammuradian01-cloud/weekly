@@ -58,6 +58,7 @@ export function StateSelect({ task, subject }: { task: Task; subject?: string })
       label="Состояние"
       ariaSubject={subject}
       value={task.state}
+      empty={task.state === "unset"}
       valueLabel={unconfirmed ? "В графике не подтверждено" : stateLabel(task.state)}
       render={(v) => <StateDot state={v} />}
       renderValue={(v) => (unconfirmed && v === "on-track" ? <StateDot state="unset" label="В графике не подтверждено" /> : <StateDot state={v} />)}
@@ -75,6 +76,7 @@ export function PrioritySelect({ task }: { task: Task }) {
     <InlineSelect
       label="Приоритет"
       value={task.priority}
+      empty={task.priority === "unset"}
       valueLabel={priorityOf(task.priority).label}
       options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))}
       disabled={!can.priority}
