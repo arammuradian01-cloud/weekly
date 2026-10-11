@@ -62,6 +62,7 @@ test("цель департамента, цель сектора ниже и з�
   const antonov = await person(browser, page, "Антонов");
   await antonov.goto("/goals");
   await expect(antonov.getByRole("main").getByText("Маржа департамента 150 млн")).toBeVisible();
+  await antonov.getByRole("button", { name: "Развернуть: Маржа департамента 150 млн" }).click();
   await antonov.getByRole("button", { name: "Цель ниже" }).click();
   modal = antonov.getByRole("dialog", { name: /Новая цель/ });
   await expect(modal.getByLabel("Команда")).toHaveValue((await sql("SELECT id FROM teams WHERE name = 'Сектор автострахования'"))[0]!.id as string);
@@ -87,9 +88,86 @@ test("цель департамента, цель сектора ниже и з�
 
   // Дерево целей: прогресс у цели сектора и у цели департамента
   await antonov.goto("/goals");
-  await expect(antonov.getByText("задач закрыто 0 из 1").first()).toBeVisible();
+  await expect(antonov.getByText("закрыто 0 из 1").first()).toBeVisible();
   await antonov.getByRole("button", { name: "Развернуть: Новая форма расчёта на всём трафике" }).click();
   await expect(antonov.getByRole("main").getByText("Выкатить форму на весь трафик")).toBeVisible();
   await shot(antonov, "tree");
   await antonov.close();
+});
+
+test("факт и целевое значение в таблице целей: прогресс, история, фильтры, группы и дерево", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/goals");
+  await page.getByRole("button", { name: "Новая цель" }).click();
+  const modal = page.getByRole("dialog", { name: /Новая цель/ });
+  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
+  await modal.getByLabel("Номер").fill("D1");
+  await modal.getByLabel("Метрика").fill("Промо-маржа за квартал, млн");
+  await modal.getByLabel("База").fill("120");
+  await modal.getByLabel("Целевое значение").fill("150");
+  await modal.getByRole("button", { name: "Завести цель" }).click();
+  await expect(page.getByText("Цель заведена").first()).toBeVisible();
+
+  // Числовая цель без факта: в счётчике «Без свежего факта» и в строке «не вписан»
+  const row = page.getByTestId("goal-row-D1");
+  await expect(row).toContainText("не вписан");
+  await expect(page.getByTestId("goals-stat-stale").locator(".sv-stat__value")).toHaveText("1");
+  await shot(page, "table-empty-fact");
+
+  // Факт в строке: прогресс виден до сохранения
+  await page.getByTestId("goal-fact-D1").click();
+  const editor = page.getByTestId("goal-fact-editor");
+  await editor.getByLabel("Факт", { exact: true }).fill("141");
+  await editor.getByLabel("Комментарий к факту").fill("По LRF за сентябрь");
+  await expect(editor).toContainText("70%");
+  await shot(page, "fact-editor");
+  await editor.getByTestId("goal-fact-save").click();
+  await expect(page.getByText("Факт вписан").first()).toBeVisible();
+  await expect(row).toContainText("141");
+  await expect(row).toContainText("70%");
+  await expect(page.getByTestId("goals-stat-stale").locator(".sv-stat__value")).toHaveText("0");
+
+  // Текст в числовой цели не проходит
+  await page.getByTestId("goal-fact-D1").click();
+  await editor.getByLabel("Факт", { exact: true }).fill("почти");
+  await editor.getByTestId("goal-fact-save").click();
+  await expect(editor.getByText(/впишите факт числом/)).toBeVisible();
+  // Целевое значение меняется там же: прогресс пересчитан
+  await editor.getByLabel("Факт", { exact: true }).fill("141");
+  await editor.getByLabel("Целевое значение").fill("160");
+  await expect(editor).toContainText("53%");
+  await editor.getByTestId("goal-fact-save").click();
+  await expect(page.getByText("Целевое значение сохранено").first()).toBeVisible();
+  await expect(row).toContainText("160");
+  await expect(row).toContainText("53%");
+
+  // Раскрытая строка: метрика, история факта, действия
+  await page.getByRole("button", { name: "Развернуть: Маржа департамента 150 млн" }).click();
+  const details = page.getByTestId("goal-details");
+  await expect(details).toContainText("Промо-маржа за квартал, млн");
+  await expect(page.getByTestId("goal-facts")).toContainText("По LRF за сентябрь");
+  await expect(details.getByRole("button", { name: "Риск и итог" })).toBeVisible();
+  await shot(page, "table-open");
+
+  // Фильтр и группы
+  await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Без свежего факта/ }).click();
+  await expect(page.getByText("Под условия ничего не подходит")).toBeVisible();
+  await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: "Все" }).click();
+  await page.getByRole("radiogroup", { name: "Группы" }).getByRole("radio", { name: "По людям" }).click();
+  await expect(page.getByTestId("goals-table")).toContainText(/целей 1/);
+  await page.getByLabel("Поиск цели").fill("нет такой");
+  await expect(page.getByText("Под условия ничего не подходит")).toBeVisible();
+  await page.getByLabel("Поиск цели").fill("D1");
+  await expect(row).toBeVisible();
+
+  // Дерево целей с фактом и прогрессом
+  await page.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Дерево" }).click();
+  const tree = page.getByRole("list", { name: "Дерево целей" });
+  await expect(tree).toContainText("факт 141");
+  await expect(tree).toContainText("53%");
+  await shot(page, "tree-fact");
+  const [{ n }] = await sql(`SELECT count(*)::int AS n FROM goal_facts`);
+  expect(n).toBe(1);
 });

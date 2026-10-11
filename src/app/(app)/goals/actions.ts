@@ -21,6 +21,11 @@ export async function updateGoalAction(id: string, input: goals.GoalInput & { at
   return done(await runAction("Правка цели", (a) => goals.updateGoal(a, String(id), input)));
 }
 
+/** Факт цели (этап 33) */
+export async function setGoalFactAction(id: string, value: string, note: string | null): Promise<Result<goals.GoalFactView>> {
+  return done(await runAction("Факт цели", (a) => goals.setGoalFact(a, String(id), { value: String(value ?? ""), note: note === null ? null : String(note ?? "") })));
+}
+
 export async function deleteGoalAction(id: string): Promise<Result<void>> {
   return done(await runAction("Удаление цели", (a) => goals.deleteGoal(a, String(id))));
 }
