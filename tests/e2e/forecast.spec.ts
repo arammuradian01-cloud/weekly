@@ -59,6 +59,9 @@ test("цифры недели из отчёта и прогноз лидера �
 
   // Отчёт CEO: цифры и прогноз в тексте
   await page.goto("/ceo-report?week=2026-10-05");
+  // Этап 47: цифры недели и прогноз в отчёте свёрнуты, раскрываются по заголовку
+  await page.getByTestId("ceo-numbers-block").locator("summary").click();
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   await expect(page.getByRole("region", { name: "Цифры недели" }).getByText("512 000")).toBeVisible();
   await expect(page.getByRole("region", { name: "Прогноз до конца месяца" }).getByText("440 млн")).toBeVisible();
   await shot(page, "ceo");

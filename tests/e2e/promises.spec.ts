@@ -112,8 +112,10 @@ test("владелец видит долю выполненных обещани
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto(`/ceo-report?week=${key}`);
-  const block = page.locator("section").filter({ has: page.getByRole("heading", { name: "Обещания недели" }) });
+  // Этап 47: обещания сворачиваемым блоком, итог в заголовке, по людям таблицей внутри
+  const block = page.getByTestId("ceo-promises-block");
   await expect(block.getByText(/^Сделано \d+ из \d+ \(\d+%\)/).first()).toBeVisible();
-  await expect(block.getByRole("listitem").filter({ hasText: "Тарас Р." })).toContainText(/Сделано \d+ из \d+/);
+  await block.locator("summary").click();
+  await expect(block.getByRole("row").filter({ hasText: "Тарас Р." })).toContainText(/Сделано \d+ из \d+/);
   await shot(page, "ceo-promises");
 });

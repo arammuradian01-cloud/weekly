@@ -12,6 +12,7 @@ import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/we
 import { planBriefText, type PlanBrief } from "@/lib/plan/brief";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
 import { Figures } from "@/components/ui/data";
+import { Collapsible } from "@/components/ui/collapsible";
 import { directionLabel } from "@/domain/dictionaries";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
@@ -228,132 +229,31 @@ export function CeoReport({
     return `${n} ${plural(n, "предложение", "предложения", "предложений")}`;
   };
 
-  return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="flex min-w-0 flex-col gap-6">
-        {/* Этап 37: из чего собран отчёт, в цифрах */}
-        <Figures
-          label="Отчёт в цифрах"
-          items={[
-            { label: "Отметок «В отчёт CEO»", value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags" },
-            { label: "Решений недели", value: decisions?.length ?? 0, testId: "ceo-fig-decisions" },
-            {
-              label: "Обещания выполнены",
-              // Все обещания сняты: доли нет, а не ноль процентов
-              value: promises?.total.total && promiseShare(promises.total) !== null ? `${promiseShare(promises.total)}%` : "нет",
-              testId: "ceo-fig-promises",
-            },
-            { label: "Благодарностей", value: thanks.length, testId: "ceo-fig-thanks" },
-            { label: "Моих встреч", value: cleanMeetings(meetings).length, testId: "ceo-fig-meetings" },
-          ]}
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <WeekSwitcher view={view} basePath="/ceo-report" />
-          <p className="text-small text-muted" aria-live="polite">
-            {dirty && edited ? "Есть несохранённые правки" : dirty ? "Черновик собран, ещё не сохранён" : savedAt.at ? `Сохранён ${moment(savedAt.at)}${savedAt.by ? `, ${savedAt.by}` : ""}` : ""}
-          </p>
-        </div>
+  // Этап 47: редактор слева в колонке 840 в порядке письма, справа панель с сохранением и действиями, цифрами и историей.
+  // Цифры недели, прогноз и обещания сворачиваемыми блоками под редактором во всю ширину колонки: их таблицы в панель
+  // 320 не помещаются; в текст письма они попадают и так
+  const status = dirty && edited ? "Есть несохранённые правки" : dirty ? "Черновик собран, ещё не сохранён" : savedAt.at ? `Сохранён ${moment(savedAt.at)}${savedAt.by ? `, ${savedAt.by}` : ""}` : "";
+  const promiseHint = promises?.total.total ? promiseLine(promises.total) : "Обещаний на эту неделю не было";
 
-        <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
-          <p className="text-body text-ink">
-            {flaggedCount ? `Записей с отметкой «В отчёт CEO»: ${flaggedCount}.` : "Отметок «В отчёт CEO» за эту неделю нет."} Отметки ставятся в{" "}
-            <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
-              ленте weekly
-            </Link>
-            .
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" variant="secondary" onClick={() => setConfirm(true)}>
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-              Собрать заново
-            </Button>
-            {previous ? (
-              <Button size="sm" variant="secondary" onClick={() => setCompare((c) => !c)}>
-                <Columns2 className="h-4 w-4" aria-hidden="true" />
-                {compare ? "Скрыть прошлую неделю" : "Сравнить с прошлой неделей"}
-              </Button>
-            ) : null}
-            <Button size="sm" variant="secondary" onClick={() => void copy()}>
-              <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
-              Скопировать текст
-            </Button>
-            <a
-              href={mailHref}
-              className={buttonClass("secondary", "sm")}
-              onClick={(e) => {
-                if (fullHref) return;
-                // Письмо с подсказкой «вставьте текст» открываем только после того, как текст правда в буфере
-                e.preventDefault();
-                void copy("Текст длинный: он скопирован, вставьте его в письмо").then((ok) => {
-                  if (ok) window.location.href = mailHref;
-                });
-              }}
-            >
-              <Mail className="h-4 w-4" aria-hidden="true" />
-              Открыть письмом
-            </a>
-            <Button size="sm" onClick={save} disabled={busy || !dirty}>
-              <Save className="h-4 w-4" aria-hidden="true" />
-              {busy ? "Сохраняю…" : "Сохранить"}
+  return (
+    <div className="sv-page--read-rail">
+      <div className="flex min-w-0 flex-col gap-6">
+        <WeekSwitcher view={view} basePath="/ceo-report" />
+
+        {newer ? (
+          <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status">
+            <p>
+              Отчёт за эту неделю сохранён на другом устройстве или другим человеком{newer.updatedBy ? ` (${newer.updatedBy})` : ""}. Ваши правки ещё не сохранены: скопируйте их, если они нужны.
+            </p>
+            <Button size="sm" variant="secondary" className="shrink-0" onClick={() => adopt(newer)}>
+              Показать сохранённую версию
             </Button>
           </div>
-          {newer ? (
-            <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status">
-              <p>
-                Отчёт за эту неделю сохранён на другом устройстве или другим человеком{newer.updatedBy ? ` (${newer.updatedBy})` : ""}. Ваши правки ещё не сохранены: скопируйте их, если они нужны.
-              </p>
-              <Button size="sm" variant="secondary" className="shrink-0" onClick={() => adopt(newer)}>
-                Показать сохранённую версию
-              </Button>
-            </div>
-          ) : null}
-          {compare && previous && !prev?.sections ? (
-            <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p>
-          ) : null}
-        </div>
-
-        {numbers ? (
-          <WeekNumbersBlock numbers={numbers} manage={owner} />
-        ) : (
-          <section aria-labelledby="ceo-numbers" className="sv-card sv-card--soft border border-dashed border-line px-5 py-4">
-            <h2 id="ceo-numbers" className="text-title-sm font-semibold text-ink">Цифры недели</h2>
-            <p className="mt-1 text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
-          </section>
-        )}
-        {plan ? <PlanBriefBlock brief={plan} /> : null}
-        {forecast ? <ForecastSummaryBlock summary={forecast} /> : null}
-
-        <section aria-labelledby="ceo-promises" className="sv-card sv-card--soft px-5 py-4">
-          <h2 id="ceo-promises" className="text-title-sm font-semibold text-ink">Обещания недели</h2>
-          {promises?.total.total ? (
-            <>
-              <p className="mt-1 text-body text-ink">{promiseLine(promises.total)}</p>
-              <ul className="mt-3 flex flex-col gap-1">
-                {promises.people.map((p) => {
-                  const longer = statsLine(stats?.find((h) => h.slug === p.slug));
-                  return (
-                    <li key={p.slug} className="flex flex-col text-small sm:flex-row sm:gap-2">
-                      <span className="font-medium text-ink sm:w-40 sm:shrink-0">{compactName(p.slug)}</span>
-                      <span className="text-muted">
-                        {promiseLine(p.summary)}
-                        {longer ? `. ${longer.charAt(0).toUpperCase()}${longer.slice(1)}` : ""}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-              {promises.snapshotAt ? <p className="mt-3 text-caption text-muted">Снимок на момент закрытия недели, {moment(promises.snapshotAt)}: правки задач после закрытия его не меняют.</p> : null}
-              <p className="mt-3 text-caption text-muted">
-                Планы из прошлого weekly и задачи со сроком на этой неделе. Итог плана ставит лидер при сдаче weekly, итог задачи это её статус. Доля считается от обещаний с итогом, снятые не считаются.
-              </p>
-            </>
-          ) : (
-            <p className="mt-1 text-body text-muted">Обещаний на эту неделю не было: в прошлом weekly нет планов, задач со сроком на неделе нет.</p>
-          )}
-        </section>
+        ) : null}
+        {compare && previous && !prev?.sections ? <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p> : null}
 
         <div className="flex flex-col gap-2">
-          <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={6} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />
+          <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={8} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />
           {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.main} /> : null}
         </div>
 
@@ -383,11 +283,11 @@ export function CeoReport({
         </section>
 
         <div className="flex flex-col gap-2">
-          <TextArea label="Риски" id="ceo-risks" value={sections.risks} onChange={(e) => set("risks", e.target.value)} rows={4} />
+          <TextArea label="Риски" id="ceo-risks" value={sections.risks} onChange={(e) => set("risks", e.target.value)} rows={5} />
           {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.risks} /> : null}
         </div>
         <div className="flex flex-col gap-2">
-          <TextArea label="Что дальше" id="ceo-next" value={sections.next} onChange={(e) => set("next", e.target.value)} rows={4} />
+          <TextArea label="Что дальше" id="ceo-next" value={sections.next} onChange={(e) => set("next", e.target.value)} rows={5} />
           {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.next} /> : null}
         </div>
 
@@ -480,27 +380,148 @@ export function CeoReport({
             </div>
           ) : null}
         </section>
+
+        {/* Справочные блоки свёрнуты: в текст письма они попадают сами, редактору нужны изредка */}
+        <Collapsible id="ceo-numbers-block" title="Цифры недели" hint={numbers?.ready ? `Из недельного отчёта, неделя с ${formatShort(numbers.week)}` : "Появятся после подключения недельного отчёта"} testId="ceo-numbers-block">
+          {numbers ? (
+            <WeekNumbersBlock numbers={numbers} manage={owner} headingLevel="h3" />
+          ) : (
+            <p className="text-body text-muted">Появятся после подключения недельного отчёта. Руками факт никто не вводит.</p>
+          )}
+        </Collapsible>
+        {plan || forecast ? (
+          <Collapsible id="ceo-plan-block" title="Прогноз" hint={plan ? `${plan.monthLabel}${plan.asOf ? `, на ${plan.asOf.when}` : ""}: итог по продуктам против LBE и бюджета` : "Прогноз лидеров до конца месяца"} testId="ceo-plan-block">
+            <div className="flex flex-col gap-4">
+              {plan ? <PlanBriefBlock brief={plan} headingLevel={3} /> : null}
+              {forecast ? <ForecastSummaryBlock summary={forecast} headingLevel="h3" /> : null}
+            </div>
+          </Collapsible>
+        ) : null}
+        <Collapsible id="ceo-promises" title="Обещания недели" hint={promiseHint} testId="ceo-promises-block">
+          {promises?.total.total ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="sv-datatable sv-datatable--stack" data-testid="ceo-promises-table">
+                  <caption className="sr-only">Обещания недели по людям</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Человек</th>
+                      <th scope="col">Сделано</th>
+                      <th scope="col">За 8 недель</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {promises.people.map((p) => {
+                      const longer = statsLine(stats?.find((h) => h.slug === p.slug));
+                      return (
+                        <tr key={p.slug}>
+                          <th scope="row" className="is-wide text-left font-normal">
+                            <span className="font-semibold text-ink">{compactName(p.slug)}</span>
+                          </th>
+                          <td data-label="Сделано">{promiseLine(p.summary)}</td>
+                          <td data-label="За 8 недель" className="text-muted">
+                            {longer ? longer.replace(/^за 8 недель: /, "") : ""}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {promises.snapshotAt ? <p className="mt-3 text-caption text-muted">Снимок на момент закрытия недели, {moment(promises.snapshotAt)}: правки задач после закрытия его не меняют.</p> : null}
+              <p className="mt-3 text-caption text-muted">
+                Планы из прошлого weekly и задачи со сроком на этой неделе. Итог плана ставит лидер при сдаче weekly, итог задачи это её статус. Доля считается от обещаний с итогом, снятые не считаются.
+              </p>
+            </>
+          ) : (
+            <p className="text-body text-muted">Обещаний на эту неделю не было: в прошлом weekly нет планов, задач со сроком на неделе нет.</p>
+          )}
+        </Collapsible>
       </div>
 
-      <aside aria-labelledby="ceo-history">
-        <h2 id="ceo-history" className="mb-3 text-title-sm font-semibold text-ink">История отчётов</h2>
-        {history.length === 0 ? (
-          <p className="text-small text-muted">Пока ни одного отчёта.</p>
-        ) : (
-          <ul className="divide-y divide-line sv-card sv-card--soft">
-            {history.map((h) => (
-              <li key={h.key}>
-                <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-3 hover:bg-field aria-[current=page]:bg-field">
-                  <p className="text-body font-medium text-ink">Неделя {h.number}</p>
-                  <p className="text-caption text-muted">
-                    {h.savedAt ? `Сохранён ${moment(h.savedAt)}${h.savedBy ? `, ${h.savedBy}` : ""}` : "Не сохранялся"}. Отметок: {h.flagged}, встреча {h.meeting}
-                  </p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-3 text-caption text-muted">Отчёт видят только владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.</p>
+      <aside className="sv-page__rail" aria-label="Сохранение, действия и история отчёта">
+        <div className="flex flex-col gap-3 sv-card sv-card--soft p-4">
+          <p className="text-small text-muted" aria-live="polite">
+            {status}
+          </p>
+          <Button onClick={save} disabled={busy || !dirty} className="w-full">
+            <Save className="h-4 w-4" aria-hidden="true" />
+            {busy ? "Сохраняю…" : "Сохранить"}
+          </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setConfirm(true)}>
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+              Собрать заново
+            </Button>
+            {previous ? (
+              <Button size="sm" variant="secondary" onClick={() => setCompare((c) => !c)} aria-pressed={compare}>
+                <Columns2 className="h-4 w-4" aria-hidden="true" />
+                {compare ? "Скрыть прошлую неделю" : "Сравнить с прошлой неделей"}
+              </Button>
+            ) : null}
+            <Button size="sm" variant="secondary" onClick={() => void copy()}>
+              <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
+              Скопировать текст
+            </Button>
+            <a
+              href={mailHref}
+              className={buttonClass("secondary", "sm")}
+              onClick={(e) => {
+                if (fullHref) return;
+                // Письмо с подсказкой «вставьте текст» открываем только после того, как текст правда в буфере
+                e.preventDefault();
+                void copy("Текст длинный: он скопирован, вставьте его в письмо").then((ok) => {
+                  if (ok) window.location.href = mailHref;
+                });
+              }}
+            >
+              <Mail className="h-4 w-4" aria-hidden="true" />
+              Открыть письмом
+            </a>
+          </div>
+          <p className="text-caption text-muted">
+            {flaggedCount ? `Записей с отметкой «В отчёт CEO»: ${flaggedCount}.` : "Отметок «В отчёт CEO» за эту неделю нет."} Отметки ставятся в{" "}
+            <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
+              ленте weekly
+            </Link>
+            .
+          </p>
+        </div>
+
+        {/* Этап 37: из чего собран отчёт, в цифрах. Этап 47: строкой, не больше трёх, нули спрятаны */}
+        <Figures
+          label="Отчёт в цифрах"
+          inline
+          max={3}
+          items={[
+            { label: plural(flaggedCount, "отметка «В отчёт CEO»", "отметки «В отчёт CEO»", "отметок «В отчёт CEO»"), value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags", keepZero: true },
+            { label: plural(decisions.length, "решение недели", "решения недели", "решений недели"), value: decisions.length, href: "/decisions", testId: "ceo-fig-decisions" },
+            { label: "обещаний выполнено", value: promises?.total.total && promiseShare(promises.total) !== null ? `${promiseShare(promises.total)}%` : 0, href: "#ceo-promises", testId: "ceo-fig-promises" },
+            { label: plural(thanks.length, "благодарность", "благодарности", "благодарностей"), value: thanks.length, href: "#ceo-thanks", testId: "ceo-fig-thanks" },
+            { label: plural(cleanMeetings(meetings).length, "моя встреча", "мои встречи", "моих встреч"), value: cleanMeetings(meetings).length, href: "#ceo-meetings", testId: "ceo-fig-meetings" },
+          ]}
+        />
+
+        <section aria-labelledby="ceo-history">
+          <h2 id="ceo-history" className="mb-2 text-body font-semibold text-ink">История отчётов</h2>
+          {history.length === 0 ? (
+            <p className="text-small text-muted">Пока ни одного отчёта.</p>
+          ) : (
+            <ul className="divide-y divide-line sv-card sv-card--soft">
+              {history.map((h) => (
+                <li key={h.key}>
+                  <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-4 py-2.5 hover:bg-field aria-[current=page]:bg-field">
+                    <p className="text-body font-medium text-ink">Неделя {h.number}</p>
+                    <p className="text-caption text-muted">
+                      {h.savedAt ? `Сохранён ${moment(h.savedAt)}${h.savedBy ? `, ${h.savedBy}` : ""}` : "Не сохранялся"}. Отметок: {h.flagged}, встреча {h.meeting}
+                    </p>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-caption text-muted">Отчёт видят только владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.</p>
+        </section>
       </aside>
 
       <Modal open={confirm} onOpenChange={setConfirm} title="Собрать отчёт заново?" description="Главное, риски и что дальше соберутся заново из записей с отметкой «В отчёт CEO». Ваши правки в этих трёх разделах пропадут. Встречи недели останутся как есть.">
