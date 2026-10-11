@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, ClipboardCopy, Link2, ListPlus, Maximize2, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName, personOf } from "@/domain/people";
+import { isClosed } from "@/domain/rules";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { AGENDA_BLOCKS, AGENDA_KIND_LABELS, blockOf, timerText, type AgendaItemView, type DecisionView, type MeetingView } from "@/domain/meeting";
@@ -164,7 +165,8 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog']")) return;
+      // Стрелки внутри полей, меню, окон и переключателей (например, «Комментарии или история» в карточке задачи) не листают встречу
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog'], [role='radiogroup'], [role='tablist']")) return;
       if (busy) return;
       if (e.key === "ArrowRight" || e.key === "PageDown") step(1);
       if (e.key === "ArrowLeft" || e.key === "PageUp") step(-1);
@@ -366,16 +368,9 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
             {groups ? (
               <div className="flex flex-col gap-1">
                 {groups.map((g) => (
-                  <details key={g.owner} open={g.open} className="sv-agenda-group" data-testid={`agenda-group-${g.owner || "none"}`}>
-                    <summary className="sv-agenda-group__head">
-                      <span className="min-w-0 truncate">{ownerName(g.owner)}</span>
-                      <span className="shrink-0 text-caption text-muted">
-                        {g.list.length} {plural(g.list.length, "поручение", "поручения", "поручений")}
-                        {g.done ? `, обсуждено ${g.done}` : ""}
-                      </span>
-                    </summary>
+                  <AgendaGroup key={g.owner} owner={g.owner} name={ownerName(g.owner)} hasCurrent={g.open} current={current} count={g.list.length} done={g.done}>
                     <ol className="flex flex-col gap-1 pl-2">{g.list.map(row)}</ol>
-                  </details>
+                  </AgendaGroup>
                 ))}
               </div>
             ) : (
@@ -396,6 +391,27 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
   );
 }
 
+/** Группа поручений одного человека в повестке. Открывается сама, когда текущий пункт попадает внутрь, даже если её
+    до этого свернули руками; свернуть обратно можно в любой момент */
+function AgendaGroup({ owner, name, hasCurrent, current, count, done, children }: { owner: string; name: string; hasCurrent: boolean; current: string; count: number; done: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (hasCurrent && ref.current) ref.current.open = true;
+  }, [hasCurrent, current]);
+  return (
+    <details ref={ref} open={hasCurrent} className="sv-agenda-group" data-testid={`agenda-group-${owner || "none"}`}>
+      <summary className="sv-agenda-group__head">
+        <span className="min-w-0 truncate">{name}</span>
+        <span className="shrink-0 text-caption text-muted">
+          {count} {plural(count, "поручение", "поручения", "поручений")}
+          {done ? `, обсуждено ${done}` : ""}
+        </span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed }: { view: WeekView; meeting: MeetingView; item: AgendaItemView; canLead: boolean; busy: boolean; run: Run; projector: boolean; elapsed: number }) {
   const { data } = usePrototype();
   const { open } = useOpenTask();
@@ -406,6 +422,20 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
   const followUp = item.kind === "follow-up" && !!task && !projector;
   const h1 = cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm");
   const overTime = item.kind === "person" && elapsed >= meeting.timerMinutes * 60;
+  const leadActions =
+    canLead && meeting.status !== "done" ? (
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant={item.discussed ? "secondary" : "primary"} onClick={() => void run(() => setItemDiscussedAction(meeting.id, item.id, !item.discussed))} disabled={busy}>
+          <Check className="h-4 w-4" aria-hidden="true" />
+          {item.discussed ? "Снять «обсуждено»" : "Обсуждено"}
+        </Button>
+        <DecisionButton key={item.id} meeting={meeting} itemId={item.id} run={run} busy={busy} taskNumber={item.task?.number} />
+        <Button size="sm" variant="secondary" onClick={() => openNewTask({ source: "meeting", sourceNote: `Встреча, неделя ${meeting.weekNumber}`, title: item.kind === "manual" ? item.title.replace(/\?$/, "").slice(0, 120) : "" })}>
+          <ListPlus className="h-4 w-4" aria-hidden="true" />
+          Поставить задачу
+        </Button>
+      </div>
+    ) : null;
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -427,7 +457,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
               <span className="mr-2 font-normal tabular-nums text-muted">{task.number}</span>
               {task.title}
             </h2>
-            <p className="mt-1 text-body text-muted">{item.title.replace(/^Поручение \d+( закрыто)?: .*?\. /, "")}</p>
+            <p className="mt-1 text-body text-muted">{isClosed(task) ? "Принимаем итог?" : "Где оно сейчас?"}</p>
           </>
         ) : (
           <h2 className={cn(h1, "mt-1 max-w-[40ch]")}>{item.title}</h2>
@@ -435,9 +465,12 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
         {item.note ? <p className={cn("mt-2 max-w-[70ch] text-ink", projector ? "text-headline" : "text-body")}>{item.note}</p> : null}
       </div>
 
+      {/* У поручения действия ведущего над карточкой: «Обсуждено» и решение под рукой, а не под полями задачи */}
+      {followUp ? leadActions : null}
+
       {followUp ? (
         <div className="sv-card sv-card--soft p-5" data-testid="agenda-task-card">
-          <TaskCard key={`${task.number}-${task.where}`} task={task} />
+          <TaskCard key={task.number} task={task} brief />
         </div>
       ) : task ? (
         <div className="sv-card sv-card--soft px-4 py-3">
@@ -492,19 +525,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
 
       <DecisionList decisions={item.decisions} compact />
 
-      {canLead && meeting.status !== "done" ? (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={item.discussed ? "secondary" : "primary"} onClick={() => void run(() => setItemDiscussedAction(meeting.id, item.id, !item.discussed))} disabled={busy}>
-            <Check className="h-4 w-4" aria-hidden="true" />
-            {item.discussed ? "Снять «обсуждено»" : "Обсуждено"}
-          </Button>
-          <DecisionButton key={item.id} meeting={meeting} itemId={item.id} run={run} busy={busy} taskNumber={item.task?.number} />
-          <Button size="sm" variant="secondary" onClick={() => openNewTask({ source: "meeting", sourceNote: `Встреча, неделя ${meeting.weekNumber}`, title: item.kind === "manual" ? item.title.replace(/\?$/, "").slice(0, 120) : "" })}>
-            <ListPlus className="h-4 w-4" aria-hidden="true" />
-            Поставить задачу
-          </Button>
-        </div>
-      ) : null}
+      {!followUp ? leadActions : null}
     </div>
   );
 }

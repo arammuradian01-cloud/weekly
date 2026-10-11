@@ -185,6 +185,8 @@ test("отчёт CEO за прошлую неделю: прогноз на её 
   await sql(`UPDATE plan_pulls SET at = $1`, [new Date(`${week}T09:00:00Z`)]);
   await sql(`UPDATE plan_partners SET "pulledAt" = $1`, [new Date(`${week}T09:00:00Z`)]);
   await page.reload();
+  // После перезагрузки блок прогноза снова свёрнут
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   await expect(brief).not.toContainText("Снимка загрузки LBE");
   await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
   await shot(page, "ceo-past-week");

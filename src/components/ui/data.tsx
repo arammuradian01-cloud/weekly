@@ -161,6 +161,7 @@ export function Module({
   id,
   className,
   headingLevel = 2,
+  flat = false,
 }: {
   title: React.ReactNode;
   description?: React.ReactNode;
@@ -173,11 +174,13 @@ export function Module({
   id?: string;
   className?: string;
   headingLevel?: 2 | 3;
+  /** Без своей рамки: модуль лежит внутри другой карточки или сворачиваемого блока (этап 47) */
+  flat?: boolean;
 }) {
   const H = headingLevel === 2 ? "h2" : "h3";
   const headingId = id ? `${id}-title` : undefined;
   return (
-    <section className={cn("sv-module", className)} id={id} aria-labelledby={headingId}>
+    <section className={cn("sv-module", flat && "sv-module--flat", className)} id={id} aria-labelledby={headingId}>
       <div className="sv-module__head">
         <div className="sv-module__titles">
           <H className="sv-module__title" id={headingId}>

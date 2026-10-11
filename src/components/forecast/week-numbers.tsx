@@ -26,7 +26,21 @@ function Spark({ points }: { points: (number | null)[] }) {
   );
 }
 
-export function WeekNumbersBlock({ numbers, compact = false, manage = false, headingLevel: H = "h2" }: { numbers: WeekNumbers; compact?: boolean; /** Владелец видит ссылку на настройку */ manage?: boolean; headingLevel?: "h2" | "h3" }) {
+export function WeekNumbersBlock({
+  numbers,
+  compact = false,
+  manage = false,
+  headingLevel: H = "h2",
+  embedded = false,
+}: {
+  numbers: WeekNumbers;
+  compact?: boolean;
+  /** Владелец видит ссылку на настройку */
+  manage?: boolean;
+  headingLevel?: "h2" | "h3";
+  /** Внутри сворачиваемого блока (этап 47): заголовок и подпись даёт блок, рамки нет; область остаётся именованной */
+  embedded?: boolean;
+}) {
   const setup = manage ? (
     <Link href="/sync" className="font-medium text-blue-700 hover:underline">
       Синхронизация
@@ -35,23 +49,25 @@ export function WeekNumbersBlock({ numbers, compact = false, manage = false, hea
     "владелец на странице «Синхронизация»"
   );
   return (
-    <section aria-labelledby="week-numbers" className={cn("rounded-xl px-5 py-4", numbers.ready ? "ring-1 ring-line" : "border border-dashed border-line")}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <H id="week-numbers" className="text-title-sm font-semibold text-ink">
-          Цифры недели
-        </H>
-        {numbers.ready ? <span className="text-caption text-muted">из недельного отчёта, неделя с {formatShort(numbers.week)}</span> : null}
-      </div>
+    <section aria-labelledby={embedded ? undefined : "week-numbers"} aria-label={embedded ? "Цифры недели" : undefined} className={cn(!embedded && "rounded-xl px-5 py-4", !embedded && (numbers.ready ? "ring-1 ring-line" : "border border-dashed border-line"))}>
+      {!embedded ? (
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <H id="week-numbers" className="text-title-sm font-semibold text-ink">
+            Цифры недели
+          </H>
+          {numbers.ready ? <span className="text-caption text-muted">из недельного отчёта, неделя с {formatShort(numbers.week)}</span> : null}
+        </div>
+      ) : null}
       {!numbers.connected ? (
-        <p className="mt-1 text-body text-muted">Недельный отчёт не подключён. Цифры появятся, когда {setup} укажет ссылку на него. Руками факт никто не вводит.</p>
+        <p className={cn("text-body text-muted", !embedded && "mt-1")}>Недельный отчёт не подключён. Цифры появятся, когда {setup} укажет ссылку на него. Руками факт никто не вводит.</p>
       ) : !numbers.figures.length ? (
-        <p className="mt-1 text-body text-muted">Отчёт подключён, но цифры ещё не выбраны: {setup} отмечает строки отчёта.</p>
+        <p className={cn("text-body text-muted", !embedded && "mt-1")}>Отчёт подключён, но цифры ещё не выбраны: {setup} отмечает строки отчёта.</p>
       ) : !numbers.ready ? (
-        <p className="mt-1 text-body text-muted">
+        <p className={cn("text-body text-muted", !embedded && "mt-1")}>
           За неделю с {formatShort(numbers.week)} цифр в отчёте ещё нет{numbers.latestWeek ? `, последняя заполненная неделя с ${formatShort(numbers.latestWeek)}` : ""}. Аналитик ставит их к понедельнику 18:00.
         </p>
       ) : (
-        <dl className={cn("mt-3 grid gap-x-6 gap-y-3", compact ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4")}>
+        <dl className={cn("grid gap-x-6 gap-y-3", !embedded && "mt-3", compact ? "sm:grid-cols-2 lg:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4")}>
           {numbers.figures.map((f) => (
             <div key={f.key} className="flex items-start justify-between gap-3 rounded-lg bg-field px-3.5 py-2.5">
               <div className="min-w-0">
@@ -73,9 +89,9 @@ export function WeekNumbersBlock({ numbers, compact = false, manage = false, hea
 }
 
 /** Сводка прогноза недели по направлениям: бюджет, прогноз, отклонения, причина */
-export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuthor = true, compact = false }: { summary: ForecastSummary; headingLevel?: "h2" | "h3"; showAuthor?: boolean; compact?: boolean }) {
+export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuthor = true, compact = false, embedded = false }: { summary: ForecastSummary; headingLevel?: "h2" | "h3"; showAuthor?: boolean; compact?: boolean; /** Внутри сворачиваемого блока: без своей рамки (этап 47) */ embedded?: boolean }) {
   return (
-    <section aria-labelledby="forecast-summary" className="sv-card sv-card--soft px-5 py-4">
+    <section aria-labelledby="forecast-summary" className={cn("px-5 py-4", !embedded && "sv-card sv-card--soft")}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <H id="forecast-summary" className="text-title-sm font-semibold text-ink">
           Прогноз до конца месяца

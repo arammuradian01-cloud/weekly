@@ -7,7 +7,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { usePrototype } from "@/domain/store";
 import { authorName, compactName, ownerName, personOf } from "@/domain/people";
 import { directionLabel, sourceLabel } from "@/domain/dictionaries";
-import { formatAgo, formatLong, formatShort } from "@/domain/dates";
+import { formatAgo, formatLong, formatShort, plural } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { HistoryItem, Task } from "@/domain/types";
 import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
@@ -18,6 +18,7 @@ import { teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
 import { Button } from "@/components/ui/button";
+import { Collapsible } from "@/components/ui/collapsible";
 import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
 import { GreenOutsideNote, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from "./task-fields";
@@ -35,7 +36,17 @@ function personInitials(slug: string) {
   return `${first!.charAt(0)}${last!.charAt(0)}`;
 }
 
-export function TaskCard({ task: listed, standalone }: { task: Task; standalone?: boolean }) {
+export function TaskCard({
+  task: listed,
+  standalone,
+  brief,
+}: {
+  task: Task;
+  standalone?: boolean;
+  /** На встрече (этап 47): панель действий и «Где сейчас» сразу, поля и комментарии свёрнуты; просмотр не отмечается,
+      потому что карточку открыл ведущий, а не сам человек */
+  brief?: boolean;
+}) {
   const { data, me, addComment, runTask, notify, team, leads, manage, observer } = usePrototype();
   // В списке задача могла прийти без текста комментариев: дозагружаем её целиком (этап 14)
   const [loaded, setLoaded] = useState<Task | null>(null);
@@ -54,8 +65,9 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
   const can = useTaskPermissions(task);
   // Задачу открыли: события «Мне» по ней просмотрены, письмо о них не нужно (этап 20)
   useEffect(() => {
+    if (brief) return;
     markSeenAction([`task:${listed.number}`]).catch(() => undefined);
-  }, [listed.number, listed.updatedAt]);
+  }, [listed.number, listed.updatedAt, brief]);
   const [where, setWhere] = useState(task.where);
   const [comment, setComment] = useState("");
   const [sending, setSending] = useState(false);
@@ -84,6 +96,7 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
   }, [tab, task.number, task.updatedAt, task.comments.length]);
   const overdue = isOverdue(task, data.today);
   const stale = isStale(task, data.today);
+  const commentCount = task.partial ? task.commentCount : task.comments.length;
   const whereChanged = where.trim() !== task.where;
   // На отдельной странице заголовок задачи h1, в боковой панели h2: подзаголовки на уровень ниже
   const H = standalone ? "h2" : "h3";
@@ -416,6 +429,22 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
             {fields}
           </aside>
           <div className="sv-page__bottom flex min-w-0 flex-col gap-6">{bottom}</div>
+        </div>
+      ) : brief ? (
+        <div className="flex min-w-0 flex-col gap-6" data-testid="task-brief">
+          {top}
+          <Collapsible
+            id={`task-more-${task.number}`}
+            headingLevel={3}
+            title="Поля, чек-лист и комментарии"
+            hint={`${ownerName(task.owner)}, срок ${formatLong(task.due)}${commentCount ? `, ${plural(commentCount, "комментарий", "комментария", "комментариев")}` : ""}`}
+            testId={`task-more-${task.number}`}
+          >
+            <div className="flex min-w-0 flex-col gap-6">
+              {fields}
+              {bottom}
+            </div>
+          </Collapsible>
         </div>
       ) : (
         <div className="flex min-w-0 flex-col gap-6">

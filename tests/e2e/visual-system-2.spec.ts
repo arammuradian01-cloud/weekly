@@ -45,7 +45,8 @@ test("отчёт CEO, журнал, настройки и синхронизац
   await page.goto("/ceo-report");
   const ceo = page.getByRole("list", { name: "Отчёт в цифрах" });
   await expect(ceo).toBeVisible();
-  await expect(page.getByTestId("ceo-fig-flags")).toContainText("Отметок «В отчёт CEO»");
+  // Этап 47: цифры строкой, подпись склоняется: «12 отметок «В отчёт CEO»»
+  await expect(page.getByTestId("ceo-fig-flags")).toContainText(/отмет(ка|ки|ок) «В отчёт CEO»/);
   await shot(page, "ceo");
 
   await page.goto("/journal");
