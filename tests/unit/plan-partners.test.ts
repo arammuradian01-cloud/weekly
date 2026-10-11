@@ -6,6 +6,7 @@ import {
   computePartner,
   derivePartner,
   monthColumn,
+  PARTNER_SHEET_PREFIX,
   partnerCompareValues,
   partnerDrivers,
   partnerDriversAt,
@@ -68,7 +69,7 @@ describe("листы партнёрского канала", () => {
     const nov = byName(read([OCT, "2026-11"], "2026-11").lines, "Банк Север");
     expect(nov.lbe.policies).toBeCloseTo(22_000, 6);
     expect(nov.code).toBe(byName(read().lines, "Банк Север").code);
-    const grid = partnersImitation([OCT])["B2B. CPA & WAYBACK OSAGO LRF"]!;
+    const grid = partnersImitation([OCT])["B2B. CPA & WAYBACK: OSAGO LRF"]!;
     expect(monthColumn(grid, OCT, "LBE")).toBe(8);
     // Факт за октябрь в колонке ACT не берётся за LBE
     expect(monthColumn(grid, OCT, "BUD")).toBeUndefined();
@@ -90,11 +91,11 @@ describe("листы партнёрского канала", () => {
   it("листов партнёрского канала нет: загрузка продуктов идёт как раньше; части листов нет: проблема; без P&L бюджета нет", () => {
     expect(readPartners({}, OCT)).toEqual({ lines: [], totals: [], found: false, problems: [], warnings: [] });
     const sheets = partnersImitation([OCT]);
-    delete sheets["B2B. AGENTS RED LRF"];
+    delete sheets["B2B. AGENTS: RED LRF"];
     delete sheets["B2B. PnL_b2b"];
     const r = readPartners(sheets, OCT);
     expect(r.found).toBe(true);
-    expect(r.problems).toEqual(["Нет листа «B2B. AGENTS RED LRF»"]);
+    expect(r.problems).toEqual(["Нет листа «B2B. AGENTS: RED LRF»"]);
     // Без бюджета канала партнёры загружаются: бюджет на следующий год в P&L b2b появляется не сразу
     expect(r.warnings).toEqual(["Нет листа «B2B. PnL_b2b»: бюджета канала не будет"]);
     expect(r.totals).toEqual([]);
@@ -107,20 +108,20 @@ describe("листы партнёрского канала", () => {
     expect(noBudget.warnings).toEqual(["Лист «B2B. PnL_b2b»: нет колонки BUD Oct_2026, бюджета канала не будет"]);
     expect(noBudget.lines).toHaveLength(12);
     // Листы без префикса таблицы-связки тоже читаются: источником может быть сам LRF b2b
-    const plain = Object.fromEntries(Object.entries(partnersImitation([OCT])).map(([k, v]) => [k.replace("B2B. ", ""), v]));
+    const plain = Object.fromEntries(Object.entries(partnersImitation([OCT])).map(([k, v]) => [k.replace(PARTNER_SHEET_PREFIX, ""), v]));
     expect(readPartners(plain, OCT).lines).toHaveLength(12);
   });
 
   it("сумма партнёров не сходится с итогом листа: проблема, неполный набор не загружается; с P&L: предупреждение", () => {
     const sheets = partnersImitation([OCT]);
-    const grid = sheets["B2B. CPA & WAYBACK OSAGO LRF"] as Grid;
+    const grid = sheets["B2B. CPA & WAYBACK: OSAGO LRF"] as Grid;
     const total = grid.findIndex((r) => r[5] === "Sravni TOTAL REVENUE (RUB MLN)");
     grid[total]![8] = 999;
     const pnl = sheets["B2B. PnL_b2b"] as Grid;
     const agents = pnl.findIndex((r, i) => i > pnl.findIndex((x) => x[4] === "AGETNS") && r[3] === "Revenue" && r[4] === "OSAGO");
     pnl[agents]![6] = 1;
     const r = readPartners(sheets, OCT);
-    expect(r.problems).toEqual(["Лист «B2B. CPA & WAYBACK OSAGO LRF»: выручка партнёров не сходится с итогом листа: часть партнёров не распознана"]);
+    expect(r.problems).toEqual(["Лист «B2B. CPA & WAYBACK: OSAGO LRF»: выручка партнёров не сходится с итогом листа: часть партнёров не распознана"]);
     // Расхождение с P&L значит ручную поправку в самом P&L: партнёры при этом проверены сверкой с итогом листа
     expect(r.warnings).toEqual(["Агенты, ОСАГО: выручка партнёров не сходится с LBE в P&L b2b"]);
   });
