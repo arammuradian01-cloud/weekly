@@ -167,6 +167,8 @@ export function PrototypeProvider({
     [router],
   );
 
+  // Справочник людей меняется на месте (registry), его версия и есть сигнал пересчитать список
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const teamPeople = useMemo(() => peopleOf(team.people), [team.people, registry.version]);
   const data = useMemo<AppData>(
     () => ({
@@ -180,7 +182,7 @@ export function PrototypeProvider({
           ? tasks
           : tasks.filter((t) => t.team === team.id || (team.id !== TOP_TEAM && t.status === "proposed" && t.owner !== "all" && team.people.includes(t.owner))),
     }),
-    [today, tasks, team.id],
+    [today, tasks, team.id, team.people],
   );
 
   const store = useMemo<Store>(() => {

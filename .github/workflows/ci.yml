@@ -5,6 +5,20 @@ on:
   pull_request:
 
 jobs:
+  # Линтер отдельно и без базы: ответ быстрее, а тесты в соседней задаче идут, даже если линтер упал
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Исправленные находки, которые остались в eslint-suppressions.json, всплывут как изменение файла
+      - name: Линтер (правила Next.js, TypeScript, хуки React, базовые правила доступности)
+        run: npx eslint . --max-warnings 0 --prune-suppressions && git diff --exit-code eslint-suppressions.json
+
   test:
     runs-on: ubuntu-latest
     services:

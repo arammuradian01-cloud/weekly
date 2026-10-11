@@ -9,7 +9,6 @@ import { enter, enterManagement, resetDatabase, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
-const phone = () => test.info().project.name === "phone";
 
 async function shot(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
