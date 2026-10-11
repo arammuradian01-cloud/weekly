@@ -8,7 +8,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, MessageSquareMore } from "lucide-react";
 import type { Panel, PanelPerson, PanelTask, PanelTeam } from "@/lib/org/panel";
 import { usePrototype } from "@/domain/store";
-import { formatShort } from "@/domain/dates";
+import { formatShort, plural } from "@/domain/dates";
 import { requestUpdateAction } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { OverdueNote, StatusBadge, WeeklyBadge } from "@/components/ui/task-badg
 import { EmptyState } from "@/components/empty-state";
 import { Figures, Module } from "@/components/ui/data";
 import { deadlineText } from "@/components/weekly/weekly-feed";
+import { PersonCardButton } from "@/components/people/person-card";
 
 export function MyTeams({ panel }: { panel: Panel }) {
   // Задачи: своя команда плюс команды ниже (у каждой команды ниже уже вся её ветка). Weekly: своей команды
@@ -44,15 +45,18 @@ export function MyTeams({ panel }: { panel: Panel }) {
         </ol>
       </nav>
 
+      {/* Этап 45: цифры строкой, не больше трёх, нули спрятаны; те же числа есть в таблице ниже по каждой команде */}
       <Figures
         label={panel.teams.length > 1 ? "Команда и команды ниже в цифрах" : "Команда в цифрах"}
+        inline
+        max={3}
         items={[
-          { label: "В работе", value: sum("inWork"), testId: "mt-fig-work" },
-          { label: "Просрочено", value: sum("overdue"), tone: "danger", testId: "mt-fig-overdue" },
-          { label: "Требует уточнений", value: sum("clarify"), tone: "warning", testId: "mt-fig-clarify" },
-          { label: "Давно без обновлений", value: sum("stale"), tone: "warning", testId: "mt-fig-stale" },
-          { label: "Целей в риске", value: sum("goalsAtRisk"), tone: "danger", testId: "mt-fig-goals" },
-          { label: `Weekly за неделю ${panel.reportingNumber}`, value: self.weekly.expected ? `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}` : "не ждём", testId: "mt-fig-weekly" },
+          { label: "в работе", value: sum("inWork"), testId: "mt-fig-work", keepZero: true },
+          { label: "просрочено", value: sum("overdue"), tone: "danger", testId: "mt-fig-overdue" },
+          { label: plural(sum("goalsAtRisk"), "цель в риске", "цели в риске", "целей в риске"), value: sum("goalsAtRisk"), tone: "danger", testId: "mt-fig-goals" },
+          { label: plural(sum("clarify"), "требует уточнений", "требуют уточнений", "требуют уточнений"), value: sum("clarify"), tone: "warning", testId: "mt-fig-clarify" },
+          { label: "давно без обновлений", value: sum("stale"), tone: "warning", testId: "mt-fig-stale" },
+          { label: `weekly за неделю ${panel.reportingNumber}`, value: self.weekly.expected ? `${self.weekly.submitted + self.weekly.late} из ${self.weekly.expected}` : "не ждём", href: "/weekly", testId: "mt-fig-weekly" },
         ]}
       />
 
@@ -261,6 +265,7 @@ function PersonRow({ person: p }: { person: PanelPerson }) {
             {p.position ? <span className="block text-small text-muted">{p.position}</span> : null}
           </span>
         </button>
+        <PersonCardButton slug={p.slug} name={p.fullName} />
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pl-6 text-small sm:justify-end sm:pl-0">
           {w.absent && w.state !== "submitted" && w.state !== "late" ? (
             <span className="text-muted">нет на неделе</span>

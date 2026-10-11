@@ -33,7 +33,7 @@ import { deadlineText } from "@/components/weekly/weekly-feed";
 
 type Candidate = { slug: string; fullName: string; position: string | null };
 
-export function StructureScreen({ view, tree, owner, me, candidates, leads = [] }: { view: StructureView; tree: PeopleTree; owner: boolean; me: string; candidates: Candidate[]; leads?: string[] }) {
+export function StructureScreen({ view, tree, owner, me, candidates, leads = [], focus = null }: { view: StructureView; tree: PeopleTree; owner: boolean; me: string; candidates: Candidate[]; leads?: string[]; /** Человек из адреса: дерево открывается на нём (этап 45) */ focus?: string | null }) {
   // Дерево подчинённых первым (этап 34): так смотрят структуру чаще всего. Пока руководители не заданы, первыми подразделения
   const [tab, setTab] = useState<"people" | "units" | "teams">(tree.loaded ? "people" : "units");
   const [importing, setImporting] = useState(false);
@@ -86,7 +86,7 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [] 
       </div>
 
       {tab === "people" ? (
-        <PeopleTreeView tree={tree} me={me} owner={owner} />
+        <PeopleTreeView key={focus ?? "start"} tree={tree} me={me} owner={owner} start={focus} />
       ) : tab === "units" ? (
         empty ? (
           <EmptyState title="Структура ещё не загружена">
