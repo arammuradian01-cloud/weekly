@@ -4,6 +4,8 @@
    поэтому утилиты Tailwind на тех же элементах сильнее. Этап 18б: экраны собираются из этих классов */
 @import "../styles/ds/components.css" layer(components);
 @import "../styles/ds-app.css" layer(components);
+/* Цифры и таблицы данных: плитки метрик, изменения, модули и таблицы (этап 32) */
+@import "../styles/ds-data.css" layer(components);
 
 /* Вариант dark: по атрибуту темы на html, а не по настройке системы: «как в системе» ставит тот же атрибут скриптом */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));

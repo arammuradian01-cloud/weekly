@@ -31,9 +31,21 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const closed = isClosed(task);
-  // Отметка ставится сразу, ответ сервера её подтверждает или возвращает назад
+  // Отметка ставится сразу, ответ сервера её подтверждает или возвращает назад. Пришла задача с сервера по другой
+  // причине (добавили пункт): снимаются только отметки, которые сервер уже подтвердил, ждущие остаются
   const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
-  useEffect(() => setOptimistic({}), [task.updatedAt, task.checklist]);
+  useEffect(
+    () =>
+      setOptimistic((prev) => {
+        const next: Record<string, boolean> = {};
+        for (const [id, done] of Object.entries(prev)) {
+          const item = (task.checklist ?? []).find((c) => c.id === id);
+          if (item && item.done !== done) next[id] = done;
+        }
+        return next;
+      }),
+    [task.updatedAt, task.checklist],
+  );
   const items = (task.checklist ?? []).map((c) => (c.id in optimistic ? { ...c, done: optimistic[c.id]! } : c));
   const progress = checklistProgress({ checklist: items });
   const canEdit = can.where && !observer && !task.archived && !closed;
@@ -75,7 +87,12 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
                   const done = e.target.checked;
                   setOptimistic((prev) => ({ ...prev, [c.id]: done }));
                   void runTask(() => toggleChecklistItemAction(task.number, c.id, done), done ? "Пункт отмечен" : "Отметка снята").then((ok) => {
-                    if (!ok) setOptimistic((prev) => ({ ...prev, [c.id]: !done }));
+                    if (!ok)
+                      setOptimistic((prev) => {
+                        const next = { ...prev };
+                        delete next[c.id];
+                        return next;
+                      });
                   });
                 }}
                 className="mt-2 h-4 w-4 shrink-0 accent-blue-700"
