@@ -52,7 +52,20 @@ const FILTERS: { value: Filter; label: string; test: (g: GoalNode) => boolean }[
   { value: "done", label: "Достигнуты", test: (g) => g.result === "ACHIEVED" },
 ];
 
-export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }: { view: GoalsView; defaultTeam: string | null; bordTabs: string[] | null; leaderBoard?: boolean }) {
+export function GoalsScreen({
+  view,
+  defaultTeam,
+  bordTabs,
+  leaderBoard = false,
+  initialQuery = "",
+}: {
+  view: GoalsView;
+  defaultTeam: string | null;
+  bordTabs: string[] | null;
+  leaderBoard?: boolean;
+  /** Поиск с первого открытия: ссылка «Цели» из дерева подчинённых */
+  initialQuery?: string;
+}) {
   const router = useRouter();
   const { notify } = usePrototype();
   const [, start] = useTransition();
@@ -63,7 +76,7 @@ export function GoalsScreen({ view, defaultTeam, bordTabs, leaderBoard = false }
   const [mode, setMode] = useState<ViewMode>("table");
   const [groupBy, setGroupBy] = useState<GoalGroupBy>("team");
   const [filter, setFilter] = useState<Filter>("all");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
   // Ссылка на цель обрабатывается один раз за открытие страницы
   const hashHandled = useRef(false);
