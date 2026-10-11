@@ -17,6 +17,7 @@ import { cn } from "@/lib/cn";
 import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
 import { GoalTag, GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import type { SavedViewDto } from "@/lib/views/service";
 import { QUICK_FILTERS, DEFAULT_PARAMS, applyListParams, hasFilters, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
 import { PrioritySelect, StateSelect, StatusSelect } from "./task-fields";
@@ -201,7 +202,18 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
         <p className="mt-3 sv-card sv-card--soft px-5 py-3 text-body text-ink">Задачи в архиве. Откройте задачу и нажмите «Вернуть из архива», она снова появится в списке.</p>
       ) : null}
       {filtered.length === 0 ? (
-        <EmptyState title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"} className="mt-4">
+        <EmptyState
+          title={archive ? "В архиве пусто" : base.length === 0 ? "В команде пока нет задач" : "Под эти фильтры задач нет"}
+          className="mt-4"
+          action={
+            // Этап 36: у пустого списка по фильтрам одно действие, вернуть все задачи
+            !archive && base.length > 0 && active ? (
+              <Button size="sm" variant="secondary" onClick={reset}>
+                Показать все задачи
+              </Button>
+            ) : undefined
+          }
+        >
           {archive
             ? "Сюда попадают задачи, которые владелец отправил в архив."
             : base.length === 0

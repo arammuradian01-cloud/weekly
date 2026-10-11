@@ -167,7 +167,8 @@ export function MyWeek({
                     <span className="font-semibold text-ink">{compactName(comment.author)}</span>
                     {formatShort(comment.at)}, {comment.time}
                   </p>
-                  <p className="mt-1 text-body leading-relaxed text-ink">{comment.text}</p>
+                  {/* Этап 36: длинный комментарий не превращает главную в стену текста, целиком он в карточке задачи */}
+                  <p className="mt-1 line-clamp-3 text-body leading-relaxed text-ink [overflow-wrap:anywhere]">{comment.text}</p>
                   <button type="button" onClick={() => open(task.number)} className="mt-1 text-left text-small font-semibold text-link hover:underline">
                     Задача {task.number}: {task.title}
                   </button>

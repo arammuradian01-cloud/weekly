@@ -10,6 +10,7 @@ export function PageHeader({
   children,
   badge,
   tabs,
+  figures,
   className,
 }: {
   title: React.ReactNode;
@@ -20,6 +21,8 @@ export function PageHeader({
   badge?: React.ReactNode;
   /** Вкладки под заголовком */
   tabs?: React.ReactNode;
+  /** Ключевые цифры раздела под заголовком (этап 36): Figures */
+  figures?: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -34,6 +37,7 @@ export function PageHeader({
         </div>
         {children ? <div className="sv-page-head__actions">{children}</div> : null}
       </div>
+      {figures}
       {tabs}
     </header>
   );
