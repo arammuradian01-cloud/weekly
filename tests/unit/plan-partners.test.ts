@@ -6,7 +6,9 @@ import {
   computePartner,
   derivePartner,
   monthColumn,
+  partnerCompareValues,
   partnerDrivers,
+  partnerDriversAt,
   partnerTotals,
   policiesDelta,
   readPartners,
@@ -207,5 +209,49 @@ describe("пересчёт партнёра", () => {
     expect(t.total.partners).toBe(12);
     expect(policiesDelta(input, "osago")).toBeCloseTo(2_000, 9);
     expect(policiesDelta(input, "red-mortgage")).toBe(0);
+  });
+});
+
+describe("сравнение версий месяца по партнёрскому каналу (этап 39)", () => {
+  const day = (iso: string) => new Date(iso);
+  it("драйверы на момент: последняя корректировка до момента, пустая снимает", () => {
+    const adj = [
+      { partner: "a", metric: "policies", value: 100, createdAt: day("2026-10-02T10:00:00Z") },
+      { partner: "a", metric: "policies", value: 150, createdAt: day("2026-10-05T10:00:00Z") },
+      { partner: "a", metric: "commission", value: 0.2, createdAt: day("2026-10-03T10:00:00Z") },
+      { partner: "a", metric: "commission", value: null, createdAt: day("2026-10-06T10:00:00Z") },
+      { partner: "b", metric: "rpu", value: 900, createdAt: day("2026-10-07T10:00:00Z") },
+    ];
+    expect(partnerDriversAt(adj, day("2026-10-04T00:00:00Z"))).toEqual(new Map([["a", { policies: 100, commission: 0.2 }]]));
+    expect(partnerDriversAt(adj, day("2026-10-06T23:00:00Z"))).toEqual(new Map([["a", { policies: 150 }]]));
+    expect(partnerDriversAt(adj, null)).toEqual(new Map([["a", { policies: 150 }], ["b", { rpu: 900 }]]));
+    // Ровно в момент корректировки она ещё не действует: граница «до конца дня» не включает начало следующего
+    expect(partnerDriversAt(adj, day("2026-10-02T10:00:00Z"))).toEqual(new Map());
+  });
+
+  it("бюджет из P&L, LBE и прогноз по продукту, паре и итогу; без корректировок прогноз равен LBE", () => {
+    const r = read();
+    const lines = r.lines.map((l) => ({ code: l.code, product: l.product, channel: l.channel, lbe: l.lbe }));
+    const lbe = partnerCompareValues(lines, [], r.totals, null, "lbe");
+    const forecast = partnerCompareValues(lines, [], r.totals, null, "forecast");
+    const budget = partnerCompareValues(lines, [], r.totals, null, "budget");
+    expect(forecast.get("total")).toEqual(lbe.get("total"));
+    expect(lbe.get("osago")!.revenue).toBeCloseTo(lbe.get("osago:cpa")!.revenue! + lbe.get("osago:agents")!.revenue!, 9);
+    // В бюджете канала полисов нет
+    expect(budget.get("total")!.policies).toBeNull();
+    expect(budget.get("total")!.revenue).toBeCloseTo(41 + 2.12 + 18 + 3.2, 6);
+
+    // Корректировка полисов одного партнёра меняет прогноз его пары, продукта и итога, LBE не меняет
+    const sever = byName(r.lines, "Банк Север");
+    const polL = derivePartner(sever.lbe).policies!;
+    const adj = [{ partner: sever.code, metric: "policies", value: polL * 2, createdAt: day("2026-10-05T10:00:00Z") }];
+    const after = partnerCompareValues(lines, adj, r.totals, null, "forecast");
+    const dRev = computePartner(sever.lbe, { policies: polL * 2 }).revenue! - derivePartner(sever.lbe).revenue!;
+    expect(after.get("osago:cpa")!.revenue! - lbe.get("osago:cpa")!.revenue!).toBeCloseTo(dRev, 9);
+    expect(after.get("total")!.revenue! - lbe.get("total")!.revenue!).toBeCloseTo(dRev, 9);
+    expect(after.get("total")!.policies! - lbe.get("total")!.policies!).toBeCloseTo(polL, 9);
+    expect(after.get("osago:agents")).toEqual(lbe.get("osago:agents"));
+    // До корректировки прогноз на дату ещё равен LBE
+    expect(partnerCompareValues(lines, adj, r.totals, day("2026-10-05T00:00:00Z"), "forecast").get("total")).toEqual(lbe.get("total"));
   });
 });

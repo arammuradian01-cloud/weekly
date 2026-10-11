@@ -19,16 +19,32 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
     <Module
       id="plan-brief"
       headingLevel={headingLevel}
-      title={`Прогноз месяца: ${brief.monthLabel}`}
-      description="Итог по продуктам после корректировок команд против LBE и бюджета."
+      title={brief.asOf ? `Прогноз месяца: ${brief.monthLabel}, на ${brief.asOf.when}` : `Прогноз месяца: ${brief.monthLabel}`}
+      description={
+        brief.asOf
+          ? "Так прогноз выглядел на конец недели: LBE загрузки, которая тогда действовала, и корректировки команд до этого момента."
+          : "Итог по продуктам после корректировок команд против LBE и бюджета."
+      }
       actions={
-        <Link href={`/forecast?month=${brief.month}`} className="text-body font-semibold text-link hover:underline">
-          Открыть прогноз
-        </Link>
+        brief.asOf ? (
+          // Этап 39: прогноз прошлой недели рядом с прогнозом сейчас, в сравнении версий
+          <Link href={`/forecast?tab=compare&month=${brief.month}&a=day:${brief.asOf.day}&b=forecast`} className="text-body font-semibold text-link hover:underline">
+            Сравнить с прогнозом сейчас
+          </Link>
+        ) : (
+          <Link href={`/forecast?month=${brief.month}`} className="text-body font-semibold text-link hover:underline">
+            Открыть прогноз
+          </Link>
+        )
       }
       flush
     >
       <div className="px-5 pb-4" data-testid="plan-brief">
+        {brief.asOf?.notes.map((n) => (
+          <p key={n} className="mb-3 text-caption text-text-secondary">
+            {n}
+          </p>
+        ))}
         <Stats label="Итог по продуктам" className={cn(compact && "sv-stats--compact")}>
           {HEAD.map((h) => {
             const t = brief.total[h.key];
@@ -76,7 +92,7 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
                 <th scope="col" className="is-num">
                   К бюджету
                 </th>
-                <th scope="col">После LBE</th>
+                {brief.asOf ? null : <th scope="col">После LBE</th>}
               </tr>
             </thead>
             <tbody>
@@ -94,6 +110,7 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
                   <td className="is-num" data-label="К бюджету">
                     <Delta value={delta(r.revenue.forecast, r.revenue.budget, "mln")} label={`${r.label} к бюджету`} />
                   </td>
+                  {brief.asOf ? null : (
                   <td data-label="После LBE">
                     {r.review ? (
                       r.review.state === "waiting" ? (
@@ -103,6 +120,7 @@ export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { b
                       )
                     ) : null}
                   </td>
+                  )}
                 </tr>
               ))}
             </tbody>

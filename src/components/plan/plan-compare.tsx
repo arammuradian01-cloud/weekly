@@ -6,7 +6,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatPlan } from "@/lib/plan/format";
-import type { CompareMetric, CompareView } from "@/lib/plan/types";
+import type { CompareMetric, CompareView, PartnerCompareView } from "@/lib/plan/types";
+import type { PartnerCompareMetric } from "@/lib/plan/partners";
 import { Delta, Module } from "@/components/ui/data";
 import { Segmented, SelectField } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
@@ -17,6 +18,13 @@ const METRICS: { key: CompareMetric; label: string; unit: "mln" | "count" }[] = 
   { key: "promoMargin", label: "Промо-маржа", unit: "mln" },
   { key: "directMargin", label: "Прямая маржа", unit: "mln" },
   { key: "units", label: "Продажи", unit: "count" },
+];
+
+const PARTNER_METRICS: { key: PartnerCompareMetric; label: string; unit: "mln" | "count" }[] = [
+  { key: "revenue", label: "Выручка", unit: "mln" },
+  { key: "costs", label: "Расходы на партнёров", unit: "mln" },
+  { key: "margin", label: "Маржа", unit: "mln" },
+  { key: "policies", label: "Полисы", unit: "count" },
 ];
 
 export function PlanCompare({ view }: { view: CompareView }) {
@@ -92,6 +100,73 @@ export function PlanCompare({ view }: { view: CompareView }) {
           </table>
         </div>
       </Module>
+      {view.partners ? <PartnerCompare view={view} partners={view.partners} /> : null}
     </div>
+  );
+}
+
+/** Партнёрский канал в сравнении версий (этап 39): отдельной таблицей, потому что его цифры уже внутри продуктов */
+function PartnerCompare({ view, partners }: { view: CompareView; partners: PartnerCompareView }) {
+  const [metric, setMetric] = useState<PartnerCompareMetric>("revenue");
+  const m = PARTNER_METRICS.find((x) => x.key === metric)!;
+  const unitText = m.unit === "mln" ? ", млн" : "";
+  return (
+    <Module
+      title="Партнёрский канал"
+      description="Цифры канала уже входят в продукты выше. Бюджет канала из P&L b2b, полисов в нём нет."
+      actions={<Segmented label="Показатель канала" value={metric} onChange={setMetric} options={PARTNER_METRICS.map((x) => ({ value: x.key, label: x.label }))} />}
+      flush
+    >
+      {partners.notes.map((n) => (
+        <p key={n} className="px-5 pb-3 text-caption text-text-secondary">
+          {n}
+        </p>
+      ))}
+      <div className="overflow-x-auto">
+        <table className="sv-datatable sv-datatable--stack" data-testid="plan-compare-partners">
+          <caption className="sr-only">
+            Партнёрский канал, {m.label.toLowerCase()}: {view.a.label} и {view.b.label}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Продукт и канал</th>
+              <th scope="col" className="is-num">
+                {view.a.label}
+                {unitText}
+              </th>
+              <th scope="col" className="is-num">
+                {view.b.label}
+                {unitText}
+              </th>
+              <th scope="col" className="is-num">
+                Б минус А
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {partners.rows.map((r) => {
+              const a = r.a[metric] ?? null;
+              const b = r.b[metric] ?? null;
+              return (
+                <tr key={r.code} className={cn(r.kind === "sub" && "sv-datatable__row--sub", r.kind === "total" && "sv-datatable__row--total")} data-testid={`plan-compare-partner-${r.code}`}>
+                  <td className="is-wide">
+                    <span className={cn(r.kind !== "sub" && "sv-datatable__strong")}>{r.label}</span>
+                  </td>
+                  <td className="is-num" data-label="Версия А">
+                    {formatPlan(a, m.unit)}
+                  </td>
+                  <td className="is-num" data-label="Версия Б">
+                    {formatPlan(b, m.unit)}
+                  </td>
+                  <td className="is-num" data-label="Б минус А">
+                    <Delta value={delta(b, a, m.unit)} label={`${r.full}: Б минус А`} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Module>
   );
 }

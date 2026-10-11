@@ -152,6 +152,52 @@ test("прогноз месяца в отчёте CEO и на встрече т�
   await shot(page, "meeting");
 });
 
+test("отчёт CEO за прошлую неделю: прогноз на её конец и сравнение с прогнозом сейчас вместе с партнёрским каналом", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  // Неделя до отчётной: её ключ из переключателя недель отчёта
+  await page.goto("/ceo-report");
+  await page.getByRole("button", { name: "Предыдущая неделя" }).click();
+  await expect(page).toHaveURL(/week=\d{4}-\d{2}-\d{2}/);
+  const week = new URL(page.url()).searchParams.get("week")!;
+  const thursday = new Date(`${week}T00:00:00Z`);
+  thursday.setUTCDate(thursday.getUTCDate() + 3);
+  const month = thursday.toISOString().slice(0, 7);
+  const sunday = new Date(`${week}T00:00:00Z`);
+  sunday.setUTCDate(sunday.getUTCDate() + 6);
+  const sundayKey = sunday.toISOString().slice(0, 10);
+  await pull(page, month);
+
+  // Загрузка сегодня, а неделя закончилась раньше: снимка на её конец нет, это видно
+  await page.goto(`/ceo-report?week=${week}`);
+  const brief = page.locator("#plan-brief");
+  await expect(brief.getByRole("heading", { name: new RegExp(`на конец недели \\d+, ${ru(sundayKey).slice(0, 5).replace(".", "\\.")}$`) })).toBeVisible();
+  await expect(brief).toContainText("Снимка загрузки LBE на конец недели");
+  // Проверки на прошлый момент нет
+  await expect(page.getByTestId("plan-brief-waiting")).toHaveCount(0);
+
+  // Загрузка была до конца той недели: прогноз из её снимка, без пометки
+  await sql(`UPDATE plan_pulls SET at = $1`, [new Date(`${week}T09:00:00Z`)]);
+  await sql(`UPDATE plan_partners SET "pulledAt" = $1`, [new Date(`${week}T09:00:00Z`)]);
+  await page.reload();
+  await expect(brief).not.toContainText("Снимка загрузки LBE");
+  await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
+  await shot(page, "ceo-past-week");
+
+  // Сравнение с прогнозом сейчас: версия на конец воскресенья, ниже партнёрский канал отдельной таблицей
+  await brief.getByRole("link", { name: "Сравнить с прогнозом сейчас" }).click();
+  const compare = page.getByTestId("plan-compare");
+  await expect(compare.getByLabel("Версия А")).toHaveValue(`day:${sundayKey}`);
+  await expect(compare.getByLabel("Версия Б")).toHaveValue("forecast");
+  const partners = page.getByTestId("plan-compare-partners");
+  await expect(partners).toBeVisible();
+  await expect(page.getByTestId("plan-compare-partner-osago:cpa")).toContainText("CPA и отказной");
+  await expect(page.getByTestId("plan-compare-partner-total")).toContainText("Итого по каналу");
+  await page.getByRole("radiogroup", { name: "Показатель канала" }).getByRole("radio", { name: "Полисы" }).click();
+  await expect(page.getByTestId("plan-compare-partner-total")).not.toContainText("нет");
+  await shot(page, "compare-partners");
+});
+
 test("общий логин и человек не из команд продуктов: прогноз виден, выгрузки и проверки нет", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");

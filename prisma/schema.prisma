@@ -537,13 +537,15 @@ model PlanAdjustment {
 /// Снимок загрузки версий месяца из LRF (этап 35): бюджет и LBE на дату загрузки. Нужен для сравнения версий и прогноза
 /// на прошлую дату: строки plan_lines хранят только последнюю загрузку
 model PlanPull {
-  id     String   @id @default(cuid())
-  month  String
-  at     DateTime @default(now()) @db.Timestamptz(3)
+  id       String   @id @default(cuid())
+  month    String
+  at       DateTime @default(now()) @db.Timestamptz(3)
   /// Кто загрузил: имя на момент загрузки
-  byName String
+  byName   String
   /// Строки загрузки: [{ version, product, metric, value }]
-  lines  Json
+  lines    Json
+  /// Снимок партнёрского канала (этап 39): [{ code, product, channel, lbe }]. Пусто: партнёры в этой загрузке не менялись
+  partners Json?
 
   @@index([month, at])
   @@map("plan_pulls")

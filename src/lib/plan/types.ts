@@ -5,7 +5,7 @@ import type { Values } from "./lrf";
 import type { MetricKey, PlanUnit } from "./spec";
 import type { Drivers } from "./summary";
 import type { FactMetric } from "./facts";
-import type { PartnerChannel, PartnerDrivers, PartnerMetric, PartnerTotalInput, PartnerUnit, PartnerValues } from "./partners";
+import type { PartnerChannel, PartnerCompareValues, PartnerDrivers, PartnerMetric, PartnerTotalInput, PartnerUnit, PartnerValues } from "./partners";
 
 export type PlanPerson = { slug: string; name: string };
 
@@ -91,6 +91,8 @@ export type PartnerChannelView = {
   review: ReviewView | null;
   history: PartnerAdjustmentView[];
   pulledAt: string;
+  /** Канал на прошлый момент без снимка партнёров (этап 39): взяты партнёры последней загрузки */
+  note?: string;
 };
 
 export type PlanSource = {
@@ -127,6 +129,8 @@ export type MonthPlanView = {
   canExport: boolean;
   /** Партнёрский канал: null, пока листы LRF b2b не загружены */
   partners: PartnerChannelView | null;
+  /** Прогноз на прошлый момент (этап 39, отчёт CEO за прошлую неделю): когда и пометки, если снимка не было */
+  asOf?: { at: string; when: string; notes: string[] } | null;
 };
 
 export type VersionOption = { id: string; label: string; group: "Версии месяца" | "Загрузки LBE" | "Прогноз на дату" };
@@ -151,7 +155,21 @@ export type CompareView = {
   rows: CompareRow[];
   /** Пояснение: например, у ранних дат нет снимка LBE и берётся текущий */
   notes: string[];
+  /** Партнёрский канал (этап 39): его цифры уже внутри продуктов, поэтому отдельной таблицей. null: партнёров нет */
+  partners: PartnerCompareView | null;
 };
+
+export type PartnerCompareRow = {
+  code: string;
+  label: string;
+  /** Полное название для подписей: у строки канала вместе с продуктом */
+  full: string;
+  kind: "product" | "sub" | "total";
+  a: PartnerCompareValues;
+  b: PartnerCompareValues;
+};
+
+export type PartnerCompareView = { rows: PartnerCompareRow[]; notes: string[] };
 
 export type PullPreview = {
   month: string;

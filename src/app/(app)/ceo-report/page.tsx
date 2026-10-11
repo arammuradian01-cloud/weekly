@@ -9,7 +9,7 @@ import { topAudience } from "@/lib/org/current";
 import { weekNumbers } from "@/lib/numbers/service";
 import { forecastSummary } from "@/lib/forecast/service";
 import { currentActor } from "@/lib/action-runner";
-import { planBrief, planMonthOfWeek } from "@/lib/plan/processes";
+import { planAsOfWeek, planBrief, planMonthOfWeek } from "@/lib/plan/processes";
 
 export const metadata: Metadata = { title: "Отчёт CEO" };
 
@@ -35,8 +35,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
     // Отчёт CEO 2.0 (этап 27): решения недели и прошлый отчёт для сравнения
     ceoDecisions(view.week.key),
     getCeoReport(previousKey),
-    // Прогноз месяца по драйверам (этап 35): месяц недели, как у её номера
-    planBrief(actor, planMonthOfWeek(view.week.key)),
+    // Прогноз месяца по драйверам (этап 35): месяц недели, как у её номера. Прошлая неделя (этап 39): прогноз на её конец
+    planBrief(actor, planMonthOfWeek(view.week.key), planAsOfWeek(view.week.key, view.reportingKey, view.week.number)),
   ]);
   return (
     <>

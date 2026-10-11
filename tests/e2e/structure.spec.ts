@@ -137,6 +137,8 @@ test("дерево подчинённых: схема с путём наверх
   await expect(focus).toContainText("PO KASKO");
   await expect(focus.getByRole("link", { name: "Задачи" })).toHaveAttribute("href", `/tasks?owner=${antonov}`);
   await expect(focus.getByRole("link", { name: "Цели" })).toHaveAttribute("href", `/goals?find=${encodeURIComponent("Антонов Дмитрий")}`);
+  // Этап 39: weekly человека, видимость как у задач
+  await expect(focus.getByRole("link", { name: "Weekly" })).toHaveAttribute("href", `/weekly?author=${antonov}`);
   // На уровень выше и по пути
   await focus.getByRole("button", { name: /На уровень выше/ }).click();
   await expect(tree.getByTestId("person-focus")).toContainText("Рева Тарас");

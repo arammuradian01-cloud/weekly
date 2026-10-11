@@ -294,7 +294,7 @@ describe("сравнение версий месяца", () => {
     await prisma.planAdjustment.updateMany({ data: { createdAt: new Date(Date.now() - 3 * DAY) } });
     const day = new Date(Date.now() - 3 * DAY + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const cmp = (await proc.compareVersions(month, `day:${day}`, "forecast"))!;
-    expect(cmp.notes[0]).toMatch(/Снимков загрузки LBE до \d{2}\.\d{2} нет/);
+    expect(cmp.notes[0]).toMatch(/^Снимка загрузки LBE на конец \d{2}\.\d{2} нет: показан LBE ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
   });
 });
 
@@ -326,6 +326,62 @@ describe("сводка для отчёта CEO и встречи", () => {
     const kasko = await prisma.team.create({ data: { name: "Тест этапа 35: КАСКО", leaderId: await personId("sakhibullina"), members: { create: [{ personId: await personId("fatyanov") }] } } });
     expect(await proc.planForTeam(await actor.owner(), kasko.id, month)).not.toBeNull();
     expect(await proc.planForTeam(await actor.owner(), "нет-такой", month)).toBeNull();
+  });
+});
+
+describe("прогноз прошлой недели в отчёте CEO (этап 39)", () => {
+  it("на конец прошлой недели: LBE загрузки того момента и корректировки до него, без проверки", async () => {
+    await load();
+    // Первая загрузка неделю назад, выручка ОСАГО в ней на 50 меньше; вторая загрузка сейчас
+    const [first] = await prisma.planPull.findMany();
+    const lines = (first!.lines as { version: string; product: string; metric: string; value: number | null }[]).map((l) => (l.version === "LBE" && l.product === "osago" && l.metric === "revenue" ? { ...l, value: (l.value ?? 0) - 50 } : l));
+    await prisma.planPull.update({ where: { id: first!.id }, data: { at: new Date(Date.now() - 7 * DAY), lines } });
+    await prisma.planPartner.updateMany({ data: { pulledAt: new Date(Date.now() - 7 * DAY) } });
+    await load();
+    // Корректировка пять дней назад и корректировка сегодня
+    await adjust(await actor.golovkin(), "osago", "crWeb", 0.05);
+    await prisma.planAdjustment.updateMany({ data: { createdAt: new Date(Date.now() - 5 * DAY) } });
+    await adjust(await actor.fatyanov(), "kasko", "crWeb", 0.04);
+
+    const at = new Date(Date.now() - 3 * DAY);
+    const past = (await proc.planBrief(await actor.owner(), month, { at, when: "конец недели 40, 04.10" }))!;
+    const now = (await proc.planBrief(await actor.owner(), month))!;
+    expect(past.asOf).toMatchObject({ at: at.toISOString(), when: "конец недели 40, 04.10", notes: [] });
+    expect(now.asOf).toBeNull();
+    // Только корректировка ОСАГО пятидневной давности; проверки на прошлый момент нет
+    expect(past.reasons.map((r) => r.product)).toEqual(["ОСАГО"]);
+    expect(past.waiting).toEqual([]);
+    expect(past.rows.every((r) => r.review === null)).toBe(true);
+    // LBE первой загрузки: выручка ОСАГО по LBE на 50 меньше, чем сейчас
+    const o = (b: typeof past) => b.rows.find((r) => r.code === "osago")!;
+    expect(o(now).revenue.lbe! - o(past).revenue.lbe!).toBeCloseTo(50, 6);
+    // КАСКО на прошлый момент без сегодняшней корректировки: прогноз равен LBE
+    const k = past.rows.find((r) => r.code === "kasko")!;
+    expect(k.revenue.forecast).toBeCloseTo(k.revenue.lbe!, 9);
+    expect(proc.planBriefText(past)[0]).toMatch(/итог по продуктам на конец недели 40, 04\.10$/);
+
+    // Момент раньше любой загрузки: берётся LBE последней загрузки, об этом пометка
+    const early = (await proc.planBrief(await actor.owner(), month, { at: new Date(Date.now() - 20 * DAY), when: "конец недели 37, 13.09" }))!;
+    expect(early.asOf!.notes[0]).toMatch(/^Снимка загрузки LBE на конец недели 37, 13\.09 нет: показан LBE ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
+    expect(early.asOf!.notes[1]).toMatch(/^Снимка партнёров на конец недели 37, 13\.09 нет: показаны партнёры ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
+    // Это LBE первой загрузки: выручка ОСАГО на 50 меньше, чем сейчас
+    expect(o(now).revenue.lbe! - o(early).revenue.lbe!).toBeCloseTo(50, 6);
+  });
+
+  it("сравнение с прогнозом на любой прошлый день", async () => {
+    await load();
+    // День без изменений тоже можно сравнить: его версия добавляется в список
+    const quiet = new Date(Date.now() - 4 * DAY + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const cmp = (await proc.compareVersions(month, `day:${quiet}`, "forecast"))!;
+    expect(cmp.a).toMatchObject({ id: `day:${quiet}`, group: "Прогноз на дату" });
+    // Сегодня и будущее нет: это «Прогноз сейчас»; кривой день тоже нет
+    const today = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    expect((await proc.compareVersions(month, `day:${today}`, "forecast"))!.a.id).toBe("budget");
+    expect((await proc.compareVersions(month, "day:2026-13-45", "forecast"))!.a.id).toBe("budget");
+    expect((await proc.compareVersions(month, "day:2026-02-30", "forecast"))!.a.id).toBe("budget");
+    // Добавленный день стоит среди дней по порядку, новые сверху
+    const days = cmp.options.filter((o) => o.group === "Прогноз на дату").map((o) => o.id);
+    expect(days).toEqual([...days].sort().reverse());
   });
 });
 

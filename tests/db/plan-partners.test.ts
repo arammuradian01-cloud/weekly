@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as plan from "@/lib/plan/service";
 import * as proc from "@/lib/plan/processes";
-import { derivePartner, type PartnerValues } from "@/lib/plan/partners";
+import { computePartner, derivePartner, partnerTotals, type PartnerSnapshotLine, type PartnerValues } from "@/lib/plan/partners";
 import { addMonths } from "@/lib/forecast/codes";
 
 const actor = {
@@ -259,5 +259,95 @@ describe("команда канала, проверка и сводка", () => 
     expect(text.some((t) => t.startsWith("Партнёрский канал, внутри продуктов: выручка прогноз"))).toBe(true);
     expect(text).toContain("Корректировки партнёрского канала:");
     expect(text.some((t) => t.startsWith("- Банк Север, ОСАГО, полисы через Сравни: 22 000 вместо 20 000 по LBE"))).toBe(true);
+  });
+});
+
+describe("партнёрский канал в сравнении версий (этап 39)", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const mskDay = (t: number) => new Date(t + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const row = (cmp: Awaited<ReturnType<typeof proc.compareVersions>>, code: string) => cmp!.partners!.rows.find((r) => r.code === code)!;
+
+  it("загрузка пишет снимок партнёров; бюджет, LBE и прогноз сейчас как на экране канала", async () => {
+    await load();
+    const [pull] = await prisma.planPull.findMany();
+    expect(pull!.partners as unknown[]).toHaveLength(12);
+    await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 22_000);
+    const cmp = await proc.compareVersions(month, "lbe", "forecast");
+    expect(cmp!.partners!.rows.map((r) => `${r.kind} ${r.code}`)).toEqual([
+      "product osago",
+      "sub osago:cpa",
+      "sub osago:agents",
+      "product red-mortgage",
+      "sub red-mortgage:cpa",
+      "sub red-mortgage:agents",
+      "product red-travel",
+      "sub red-travel:cpa",
+      "sub red-travel:agents",
+      "total total",
+    ]);
+    expect(row(cmp, "osago:cpa").full).toBe("ОСАГО, CPA и отказной");
+    const v = (await view()).partners!;
+    const t = partnerTotals(v.lines, v.totals);
+    expect(row(cmp, "total").a.revenue).toBeCloseTo(t.total.revenue.lbe!, 9);
+    expect(row(cmp, "total").b.revenue).toBeCloseTo(t.total.revenue.forecast!, 9);
+    expect(row(cmp, "total").b.margin).toBeCloseTo(t.total.margin.forecast!, 9);
+    expect(row(cmp, "osago:agents").a).toEqual(row(cmp, "osago:agents").b);
+    expect(cmp!.partners!.notes).toEqual([]);
+    const budget = await proc.compareVersions(month, "budget", "forecast");
+    expect(row(budget, "total").a.revenue).toBeCloseTo(t.total.revenue.budget!, 9);
+    expect(row(budget, "total").a.policies).toBeNull();
+  });
+
+  it("LBE прежней загрузки и прогноз на конец прошлого дня по снимку партнёров того момента", async () => {
+    await load();
+    const sever = await line("Банк Север");
+    // Первая загрузка была позавчера, и выручка Банка Север в ней вдвое меньше
+    const [first] = await prisma.planPull.findMany();
+    const snap = (first!.partners as PartnerSnapshotLine[]).map((l) => (l.code === sever.code ? { ...l, lbe: { ...l.lbe, revenue: (l.lbe.revenue ?? 0) / 2, revenueCore: null } } : l));
+    await prisma.planPull.update({ where: { id: first!.id }, data: { at: new Date(Date.now() - 2 * DAY), partners: snap } });
+    await load();
+    // Корректировка полисов вчера и ещё одна сегодня
+    await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 22_000);
+    await prisma.planPartnerAdjustment.updateMany({ data: { createdAt: new Date(Date.now() - DAY) } });
+    await adjustPartner(await actor.sakhibullina(), "Банк Север", "policies", 30_000);
+
+    // LBE первой загрузки против последней: разница в половину выручки Банка Север
+    const base = (await proc.compareVersions(month, "lbe", "forecast"))!;
+    const pullOption = base.options.find((o) => o.id === `pull:${first!.id}`)!;
+    const byPull = await proc.compareVersions(month, pullOption.id, "lbe");
+    const half = (sever.lbe.revenue ?? 0) / 2;
+    expect(row(byPull, "osago:cpa").b.revenue! - row(byPull, "osago:cpa").a.revenue!).toBeCloseTo(half, 9);
+    expect(row(byPull, "total").b.revenue! - row(byPull, "total").a.revenue!).toBeCloseTo(half, 9);
+    expect(row(byPull, "osago:agents").a).toEqual(row(byPull, "osago:agents").b);
+
+    // День корректировки партнёра есть в списке «Прогноз на дату», хотя продукты в тот день не меняли
+    const yesterday = mskDay(Date.now() - DAY);
+    const dayOption = base.options.find((o) => o.id === `day:${yesterday}`)!;
+    expect(dayOption.group).toBe("Прогноз на дату");
+    // На конец вчерашнего дня: снимок первой загрузки и вчерашняя корректировка, без сегодняшней
+    const atDay = await proc.compareVersions(month, pullOption.id, dayOption.id);
+    const snapLbe = snap.find((l) => l.code === sever.code)!.lbe;
+    const expected = computePartner(snapLbe, { policies: 22_000 }).revenue! - derivePartner(snapLbe).revenue!;
+    expect(row(atDay, "osago:cpa").b.revenue! - row(atDay, "osago:cpa").a.revenue!).toBeCloseTo(expected, 9);
+    expect(atDay!.partners!.notes).toEqual([]);
+  });
+
+  it("загрузка без снимка партнёров: берутся партнёры ближайшей загрузки после неё, об этом пометка; без партнёров таблицы нет", async () => {
+    await load();
+    const [first] = await prisma.planPull.findMany();
+    await prisma.$executeRaw`UPDATE plan_pulls SET partners = NULL, at = ${new Date(Date.now() - 2 * DAY)} WHERE id = ${first!.id}`;
+    await load();
+    const cmp = await proc.compareVersions(month, `pull:${first!.id}`, "lbe");
+    expect(cmp!.partners!.notes).toHaveLength(1);
+    expect(cmp!.partners!.notes[0]).toMatch(/^Снимка партнёров на загрузку \d{2}\.\d{2}, \d{2}:\d{2} нет: показаны партнёры ближайшей загрузки, \d{2}\.\d{2}, \d{2}:\d{2}$/);
+    expect(row(cmp, "total").a).toEqual(row(cmp, "total").b);
+    // Загрузка без листов b2b снимок не пишет: партнёры в ней не менялись
+    await withoutTab("B2B. CPA & WAYBACK OSAGO LRF", async () => {
+      await load();
+    });
+    const last = await prisma.planPull.findFirst({ orderBy: { at: "desc" } });
+    expect(last!.partners).toBeNull();
+    await prisma.planPartner.deleteMany();
+    expect((await proc.compareVersions(month, "lbe", "forecast"))!.partners).toBeNull();
   });
 });

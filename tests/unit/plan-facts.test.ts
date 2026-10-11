@@ -1,7 +1,7 @@
 // Этап 35: факт месяца по дням (разбор вставки из отчёта аналитиков, темп к прогнозу), месяц недели и текст сводки
 import { describe, expect, it } from "vitest";
 import { dayOf, daysInMonth, metricOf, numberOf, pace, parseFacts, productCode } from "@/lib/plan/facts";
-import { planBriefText, planMonthOfWeek, type PlanBrief } from "@/lib/plan/brief";
+import { planAsOfWeek, planBriefText, planMonthOfWeek, type PlanBrief } from "@/lib/plan/brief";
 
 const today = "2026-10-09";
 
@@ -143,6 +143,17 @@ describe("темп к прогнозу", () => {
 });
 
 describe("сводка для отчёта CEO", () => {
+  it("прогноз для отчёта недели: сейчас у отчётной и новее, на конец недели у прошлых (этап 39)", () => {
+    expect(planAsOfWeek("2026-10-05", "2026-10-05", 41)).toBeNull();
+    expect(planAsOfWeek("2026-10-12", "2026-10-05", 42)).toBeNull();
+    const asOf = planAsOfWeek("2026-09-28", "2026-10-05", 40)!;
+    // Воскресенье 04.10, 24:00 по Москве
+    expect(asOf.at.toISOString()).toBe("2026-10-04T21:00:00.000Z");
+    expect(asOf.when).toBe("конец недели 40, 04.10");
+    // Неделя на стыке месяцев и лет
+    expect(planAsOfWeek("2026-12-28", "2027-01-04", 53)!.when).toBe("конец недели 53, 03.01");
+  });
+
   it("месяц недели по её четвергу", () => {
     expect(planMonthOfWeek("2026-09-28")).toBe("2026-10");
     expect(planMonthOfWeek("2026-09-21")).toBe("2026-09");
@@ -162,6 +173,7 @@ describe("сводка для отчёта CEO", () => {
       partners: null,
       partnerReasons: [],
       partnersMore: 0,
+      asOf: null,
     };
     expect(planBriefText(brief)).toEqual([
       "Октябрь 2026, итог по продуктам",
@@ -175,5 +187,9 @@ describe("сводка для отчёта CEO", () => {
     // Этап 35б: партнёрский канал отдельной строкой после итога, он внутри продуктов
     const withPartners = planBriefText({ ...brief, partners: { revenue: t(200, 196.3, 193.9), margin: t(20, 20.3, 10.6), adjusted: 1, partners: 83, review: null, owners: [] } });
     expect(withPartners[4]).toBe("Партнёрский канал, внутри продуктов: выручка прогноз 200,0 млн, LBE 196,3, бюджет 193,9, к бюджету +3,1%; маржа прогноз 20,00 млн, LBE 20,30, бюджет 10,60, к бюджету +88,7%");
+    // Этап 39: отчёт за прошлую неделю с прогнозом на конец той недели и пометкой, если снимка не было
+    const past = planBriefText({ ...brief, waiting: [], asOf: { at: "2026-10-04T21:00:00.000Z", when: "конец недели 40, 04.10", day: "2026-10-04", notes: ["Снимка загрузки LBE на конец недели 40, 04.10 нет: взят LBE последней загрузки"] } });
+    expect(past[0]).toBe("Октябрь 2026, итог по продуктам на конец недели 40, 04.10");
+    expect(past[past.length - 1]).toBe("Снимка загрузки LBE на конец недели 40, 04.10 нет: взят LBE последней загрузки");
   });
 });

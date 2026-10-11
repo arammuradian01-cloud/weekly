@@ -36,6 +36,58 @@ test("лента weekly: последняя разобранная неделя 
   await shot(page, "feed-38");
 });
 
+test("weekly человека по ссылке: отбор по автору в адресе, смена недели его сохраняет", async ({ page }) => {
+  await enter(page, "Головкин Владислав");
+  await page.goto("/weekly?author=reva");
+  // Отбор включён и виден сразу, на телефоне тоже: фильтры раскрыты
+  await expect(page.locator("#f-author")).toBeVisible();
+  await expect(page.locator("#f-author")).toHaveValue("reva");
+  await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
+  // Только карточка Ревы: ни общих записей, ни пустых карточек остальных
+  await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Головкин Владислав" })).toHaveCount(0);
+  await expect(page.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
+  await shot(page, "author-focus");
+
+  // Смена недели сохраняет отбор
+  await page.getByRole("button", { name: "Предыдущая неделя" }).click();
+  await expect(page).toHaveURL(/week=2026-09-14&author=reva/);
+  await expect(page.locator("#f-author")).toHaveValue("reva");
+
+  // Сняли отбор: адрес без автора, лента целиком. Живое обновление экрана старый адрес не возвращает
+  await page.locator("#f-author").selectOption("");
+  await expect(page).not.toHaveURL(/author=/);
+  await expect(page.getByRole("heading", { name: /Общее, без автора|Головкин Владислав/ }).first()).toBeVisible();
+  const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await refreshed;
+  await expect(page).not.toHaveURL(/author=/);
+  await expect(page.locator("#f-author")).toHaveValue("");
+  // Выбрали автора руками: адрес с ним переживает и обновление, и перезагрузку
+  await page.locator("#f-author").selectOption("reva");
+  await expect(page).toHaveURL(/author=reva/);
+  const again = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await again;
+  await expect(page).toHaveURL(/author=reva/);
+  await page.reload();
+  await expect(page.locator("#f-author")).toHaveValue("reva");
+  await page.locator("#f-author").selectOption("");
+
+  // Автор из адреса без записей за неделю: понятная пустая лента с выходом
+  await page.goto("/weekly?week=2026-09-14&author=afanasyev");
+  await expect(page.locator("#f-author")).toHaveValue("afanasyev");
+  await expect(page.getByText("Афанасьев Павел: за неделю 38 записей нет")).toBeVisible();
+  await page.getByRole("button", { name: "Показать все записи" }).click();
+  await expect(page).not.toHaveURL(/author=/);
+  await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
+
+  // Неизвестный человек в адресе: обычная лента без отбора
+  await page.goto("/weekly?author=nobody-here");
+  await expect(page.locator("#f-author")).toHaveValue("");
+  await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toBeVisible();
+});
+
 test("лидер сдаёт weekly в три шага, черновик живёт на сервере", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   await page.getByRole("link", { name: "Сдать weekly" }).click();
