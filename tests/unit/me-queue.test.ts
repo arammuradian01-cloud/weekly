@@ -1,6 +1,6 @@
 // Этап 44: очередь «Мне» по срочности. Задачи делятся на «срок прошёл» и «сегодня или завтра», просьбы на четыре группы
 import { describe, expect, it } from "vitest";
-import { hotTasks, splitRequests } from "@/components/inbox/me-tasks";
+import { hotTasks, meFigureLabels, splitRequests, withoutRequestEvents } from "@/components/inbox/me-tasks";
 import type { RequestView } from "@/domain/requests";
 import type { Task } from "@/domain/types";
 
@@ -92,5 +92,24 @@ describe("просьбы ко мне по группам", () => {
     expect(groups.later.map((r) => r.number)).toEqual([5]);
     // Каждая просьба ровно в одной группе
     expect([...groups.late, ...groups.soon, ...groups.answer, ...groups.later]).toHaveLength(incoming.length);
+  });
+});
+
+describe("строка цифр и события", () => {
+  it("подписи согласуются с числом", () => {
+    expect(meFigureLabels({ late: 13, soon: 1, answer: 2, events: 5 })).toEqual({ late: "просрочено", soon: "срок сегодня или завтра", answer: "просьбы ждут ответа", events: "событий" });
+    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).soon).toBe("срока сегодня или завтра");
+    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).answer).toBe("просьба ждёт ответа");
+    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).events).toBe("событие");
+  });
+  it("событие о просьбе, которая уже в очереди, не показывается второй раз", () => {
+    const items = [{ requestNumber: 7 }, { requestNumber: null }, { requestNumber: 9 }];
+    expect(withoutRequestEvents(items, [{ number: 7 }])).toEqual([{ requestNumber: null }, { requestNumber: 9 }]);
+    expect(withoutRequestEvents(items, [])).toHaveLength(3);
+  });
+  it("принятая просьба со вчерашним сроком попадает в «срок прошёл» и без отметки сервера", () => {
+    const groups = splitRequests([request({ number: 1, status: "accepted", acceptedDue: "2026-10-10", overdue: false })], today);
+    expect(groups.late.map((r) => r.number)).toEqual([1]);
+    expect(groups.soon).toEqual([]);
   });
 });

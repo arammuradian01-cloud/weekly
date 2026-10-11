@@ -6,8 +6,7 @@
 import type { RequestView } from "@/domain/requests";
 import { usePrototype } from "@/domain/store";
 import { Figures } from "@/components/ui/data";
-import { hotTasks, splitRequests } from "./me-tasks";
-import { meFigureLabels } from "./me-queue";
+import { hotTasks, meFigureLabels, splitRequests } from "./me-tasks";
 
 export function MeFigures({ incoming, events }: { incoming: RequestView[]; events: number }) {
   const { data, me } = usePrototype();

@@ -2,7 +2,7 @@
 // срочности. Считаются на экране, событий не требуют. Одни функции для строки цифр и для очереди, чтобы числа и строки
 // совпадали. Без React и серверных модулей, чтобы покрывались юнит-тестами
 
-import { addDays } from "@/domain/dates";
+import { addDays, plural } from "@/domain/dates";
 import { isMine, isOverdue } from "@/domain/rules";
 import { currentDue, type RequestView } from "@/domain/requests";
 import type { Person, Task } from "@/domain/types";
@@ -23,10 +23,28 @@ export function hotTasks(data: Pick<AppData, "tasks" | "today">, me: Pick<Person
 /** Просьбы ко мне по срочности: срок прошёл, принятые на сегодня или завтра, без ответа, принятые на потом */
 export function splitRequests(incoming: RequestView[], today: string) {
   const tomorrow = addDays(today, 1);
-  const late = incoming.filter((r) => r.overdue);
-  const soon = incoming.filter((r) => !r.overdue && r.status === "accepted" && currentDue(r) <= tomorrow);
+  // Срок прошёл по оценке сервера или по дате на экране: страница могла быть открыта до полуночи
+  const isLate = (r: RequestView) => r.overdue || currentDue(r) < today;
+  const late = incoming.filter(isLate);
+  const soon = incoming.filter((r) => !isLate(r) && r.status === "accepted" && currentDue(r) <= tomorrow);
   // Открытая просьба ждёт ответа и при близком сроке: действие одно, ответить
-  const answer = incoming.filter((r) => !r.overdue && r.status === "open");
-  const later = incoming.filter((r) => !r.overdue && r.status === "accepted" && currentDue(r) > tomorrow);
+  const answer = incoming.filter((r) => !isLate(r) && r.status === "open");
+  const later = incoming.filter((r) => !isLate(r) && r.status === "accepted" && currentDue(r) > tomorrow);
   return { late, soon, answer, later };
+}
+
+/** События без тех, что дублируют просьбу, уже показанную в очереди своей строкой */
+export function withoutRequestEvents<T extends { requestNumber: number | null }>(items: T[], incoming: Pick<RequestView, "number">[]): T[] {
+  const shown = new Set(incoming.map((r) => r.number));
+  return items.filter((i) => !i.requestNumber || !shown.has(i.requestNumber));
+}
+
+/** Подписи строки цифр «Мне», согласованные с числом */
+export function meFigureLabels(n: { late: number; soon: number; answer: number; events: number }) {
+  return {
+    late: "просрочено",
+    soon: plural(n.soon, "срок сегодня или завтра", "срока сегодня или завтра", "сроков сегодня или завтра"),
+    answer: plural(n.answer, "просьба ждёт ответа", "просьбы ждут ответа", "просьб ждут ответа"),
+    events: plural(n.events, "событие", "события", "событий"),
+  };
 }

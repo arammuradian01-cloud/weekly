@@ -25,6 +25,8 @@ import { shiftWeek } from "@/lib/weekly/weeks";
 import { addDays, formatLong, fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
+import { listInbox } from "@/lib/inbox/service";
+import { withoutRequestEvents } from "@/components/inbox/me-tasks";
 import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
 
@@ -42,7 +44,7 @@ export default async function MyWeekPage() {
   const weekKey = fromCalendar(week.start);
   const current = management ? await currentTeam(subjectOf(ctx)) : null;
   const actor = await currentActor();
-  const [mine, team, requests, stats, rating] = await Promise.all([
+  const [mine, team, requests, stats, rating, inbox] = await Promise.all([
     getMyWeekly(person.id, weekKey),
     current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
     myRequests(actor, now),
@@ -51,7 +53,10 @@ export default async function MyWeekPage() {
     subjectOf(ctx).limited ? Promise.resolve([]) : promiseHistory([person.id], shiftWeek(weekKey, -1)),
     // Анонимная оценка встреч (этап 29): напоминание в конце месяца и в первые дни следующего
     ratingPrompt(actor, now),
+    // События для «Требует внимания» (этап 44): без просьб, которые и так в списке своей строкой
+    listInbox(person.id, now, subjectOf(ctx)),
   ]);
+  const events = withoutRequestEvents(inbox.items, requests.incoming).length;
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
@@ -65,9 +70,8 @@ export default async function MyWeekPage() {
   const meetingDay = addDays(fromCalendar(week.start), 7 + meetingSetting.weekday - 1);
   return (
     <>
-      {/* Главная по дизайн-системе (оболочка shell-sidebar): заголовок с главным действием, ниже плитки. Раздел «Моя неделя»
-          назван в меню, в заголовке приветствие по имени */}
-      {/* Этап 44: кнопка «Сдать weekly» одна, в блоке «Сейчас» ниже; в шапке приветствие и срок */}
+      {/* Раздел «Моя неделя» назван в меню, в заголовке приветствие по имени и срок сдачи. Этап 44: кнопка «Сдать
+          weekly» одна, в блоке «Сейчас» ниже, в шапке её нет */}
       <PageHeader
         title={`${greeting(now)}, ${person.shortName}`}
         description={
@@ -99,6 +103,7 @@ export default async function MyWeekPage() {
           entriesCount={mine.entries.length}
           team={team}
           requests={requests}
+          events={events}
           promiseStats={stats[0]}
           meetingText={`Встреча ${WEEKDAYS_ACCUSATIVE[meetingSetting.weekday - 1]}, ${formatLong(meetingDay)}`}
         />

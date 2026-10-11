@@ -1,6 +1,6 @@
 "use client";
 
-// Списки просьб (этап 21): «Просьбы ко мне» в «Мне» и «Жду от коллег» на «Моей неделе».
+// Строки и списки просьб (этап 21): очередь «Мне» и «Просьбы без ответа» на главной (этап 44), «Жду от коллег».
 
 import Link from "next/link";
 import { compactName } from "@/domain/people";
@@ -20,7 +20,10 @@ export function RequestRow({ request, mode }: { request: RequestView; mode: "inc
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <Link href={`/requests/${r.number}`} className="text-body font-semibold leading-snug text-ink hover:text-blue-700 hover:underline">
-            <span className="mr-1.5 font-normal tabular-nums text-muted">{r.number}</span>
+            {/* «Просьба N», а не голый номер: в очереди «Мне» строки просьб стоят рядом со строками задач (этап 44) */}
+            <span className="mr-1.5 font-normal text-muted">
+              Просьба <span className="tabular-nums">{r.number}</span>
+            </span>
             {r.text}
           </Link>
         </div>

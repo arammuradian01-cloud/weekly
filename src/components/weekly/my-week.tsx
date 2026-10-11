@@ -6,12 +6,12 @@ import { NoRequests, RequestList, RequestRow } from "@/components/requests/reque
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { CalendarClock, FileText, Hand, Inbox, MessageSquare, PenLine, Presentation } from "lucide-react";
 import { IconCircle } from "@/components/ui/tile";
-import { useInboxCount } from "@/components/inbox/inbox-count";
+import { hotTasks } from "@/components/inbox/me-tasks";
 import { plural } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { diffDays, formatShort } from "@/domain/dates";
-import { isDueThisWeek, isMine, isOverdue, myTasksOrder, overdueDays } from "@/domain/rules";
+import { isMine, isOverdue, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { buttonClass } from "@/components/ui/button";
 import { OverdueNote, WeeklyBadge } from "@/components/ui/task-badges";
@@ -38,6 +38,7 @@ export function MyWeek({
   entriesCount,
   team,
   requests,
+  events,
   promiseStats,
   meetingText,
 }: {
@@ -52,24 +53,27 @@ export function MyWeek({
   team: PersonWeekly[] | null;
   /** Просьбы ко мне и «Жду от коллег» (этап 21) */
   requests: { incoming: RequestView[]; outgoing: RequestView[] };
+  /** Новые события в «Мне» без просьб, которые уже в списке (этап 44) */
+  events: number;
   /** «Обещал и сделал» за 8 недель (этап 22): видит только сам человек */
   promiseStats?: PromiseHistory;
   /** «Встреча во вторник, 13 октября» */
   meetingText: string;
 }) {
   const { data, me } = usePrototype();
-  const inbox = useInboxCount();
   const { open } = useOpenTask();
   const weekly = report;
   const state = report.state;
   const mine = data.tasks.filter((t) => isMine(t, me.slug, me.role) && !t.archived);
-  const urgent = myTasksOrder(mine.filter((t) => isOverdue(t, data.today) || isDueThisWeek(t, data.today)), data.today);
+  // Одно правило с «Мне»: просроченные и срок сегодня или завтра. Срок на этой неделе: по ссылке «Все мои задачи»
+  const hot = hotTasks(data, me);
+  const urgent = [...hot.late, ...hot.soon];
   const comments = mine
     .flatMap((t) => t.comments.filter((c) => c.author !== me.slug && diffDays(c.at, data.today) <= 7).map((c) => ({ task: t, comment: c })))
     .sort((a, b) => (a.comment.at + a.comment.time < b.comment.at + b.comment.time ? 1 : -1));
   const submitted = state === "submitted" || state === "late";
   const answer = requests.incoming.filter((r) => r.status === "open");
-  const attention = urgent.length + answer.length + inbox;
+  const attention = urgent.length + answer.length + events;
   const weeklySub = weekly.absent && !submitted
     ? `На этой неделе вас нет, ${substituteText(weekly.absent.substitute)}`
     : submitted
@@ -154,17 +158,17 @@ export function MyWeek({
                     ))}
                   </ul>
                   {answer.length > 5 ? (
-                    <Link href="/me#me-answer" className="mt-2 inline-block text-small font-semibold text-link hover:underline">
+                    <Link href="/me" className="mt-2 inline-block text-small font-semibold text-link hover:underline">
                       Ещё {answer.length - 5} в «Мне»
                     </Link>
                   ) : null}
                 </AttentionGroup>
               ) : null}
-              {inbox ? (
-                <AttentionGroup id="my-events" title="Новые события" count={inbox} icon={Inbox} tone="accent">
+              {events ? (
+                <AttentionGroup id="my-events" title="Новые события" count={events} icon={Inbox} tone="accent">
                   <Link href="/me#me-read" className="sv-card sv-card--soft flex items-center justify-between gap-3 px-4 py-3 text-body text-ink hover:bg-row-hover">
                     <span>
-                      {inbox} {plural(inbox, "событие ждёт", "события ждут", "событий ждут")} прочтения: комментарии, упоминания, реакции, переносы сроков
+                      {events} {plural(events, "событие ждёт", "события ждут", "событий ждут")} прочтения: комментарии, упоминания, реакции, переносы сроков
                     </span>
                     <span className="shrink-0 font-semibold text-link">Открыть</span>
                   </Link>
@@ -175,7 +179,7 @@ export function MyWeek({
         </section>
       </div>
 
-      <aside className="flex min-w-0 flex-col gap-6" aria-label="Встреча, обещания и просьбы">
+      <aside className="flex min-w-0 flex-col gap-6" aria-label="Встреча, обещания, просьбы и комментарии">
         {/* Встреча: дата, что внутри, кнопка подготовки */}
         <section aria-labelledby="my-meeting" className="sv-card sv-card--soft p-5">
           <div className="flex items-start gap-3">
@@ -184,10 +188,10 @@ export function MyWeek({
               <h2 id="my-meeting" className="text-title-sm font-semibold text-ink">
                 {meetingText}
               </h2>
-              <p className="mt-1 text-body text-text-secondary">Повестка, решения недели и разбор задач</p>
+              <p id="my-meeting-sub" className="mt-1 text-body text-text-secondary">Повестка, решения недели и разбор задач</p>
             </div>
           </div>
-          <Link href="/weekly/meeting" className={cn(buttonClass("secondary", "sm"), "mt-4 w-full")} aria-label="Повестка, решения недели и разбор задач: открыть подготовку к встрече">
+          <Link href="/weekly/meeting" className={cn(buttonClass("secondary", "sm"), "mt-4 w-full")} aria-describedby="my-meeting-sub">
             Открыть подготовку к встрече
           </Link>
         </section>
@@ -228,6 +232,14 @@ export function MyWeek({
                   </button>
                 </li>
               ))}
+              {comments.length > 5 ? (
+                <li className="text-small text-muted">
+                  Ещё {comments.length - 5}: целиком в карточках задач,{" "}
+                  <Link href="/tasks/mine" className="font-semibold text-link hover:underline">
+                    мои задачи
+                  </Link>
+                </li>
+              ) : null}
             </ul>
           )}
         </section>

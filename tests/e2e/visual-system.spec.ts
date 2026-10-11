@@ -103,6 +103,6 @@ test("мне и моя неделя: цифры ведут к группам о�
   await expect(page.getByRole("link", { name: /Сдать weekly|Продолжить weekly|Открыть мой weekly/ })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: /Требует внимания/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Просроченные и срочные задачи/ })).toBeVisible();
-  await expect(page.getByRole("link", { name: /открыть подготовку к встрече/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Открыть подготовку к встрече" })).toBeVisible();
   await shot(page, "home");
 });

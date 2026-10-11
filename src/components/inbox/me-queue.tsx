@@ -9,7 +9,7 @@ import { CalendarClock } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import type { RequestView } from "@/domain/requests";
 import { usePrototype } from "@/domain/store";
-import { formatShort, plural } from "@/domain/dates";
+import { formatShort } from "@/domain/dates";
 import { isOverdue, overdueDays } from "@/domain/rules";
 import type { Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
@@ -18,7 +18,6 @@ import { EmptyState } from "@/components/empty-state";
 import { StateSelect, StatusSelect, useTaskPermissions } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { RequestRow } from "@/components/requests/request-list";
-import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { InboxEvents } from "./inbox-list";
 import { hotTasks, splitRequests } from "./me-tasks";
 
@@ -33,7 +32,7 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
   if (empty) {
     return (
       <div>
-        <EmptyState title="Всё разобрано" action={<AskColleagueButton size="sm" />}>
+        <EmptyState title="Всё разобрано">
           Здесь появится то, что ждёт вас: просьбы коллег, задачи, которые вам поставили или передали, комментарии и упоминания, реакции, переносы сроков, ваши просроченные задачи и
           задачи со сроком сегодня или завтра.
         </EmptyState>
@@ -71,7 +70,7 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
           ))}
         </Group>
       ) : null}
-      <InboxEvents items={items} snoozed={snoozed} />
+      {items.length ? <InboxEvents items={items} /> : null}
       {req.later.length ? (
         <Group id="me-later" title="Принятые, срок позже" count={req.later.length} hint="Просьбы, которые вы приняли: автор видит их в «Жду от коллег»">
           {req.later.map((r) => (
@@ -79,13 +78,14 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
           ))}
         </Group>
       ) : null}
+      {snoozed ? <p className="text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}
     </div>
   );
 }
 
 function Group({ id, title, count, tone, hint, testId, children }: { id: string; title: string; count: number; tone?: "danger" | "warning"; hint?: string; testId?: string; children: React.ReactNode }) {
   return (
-    <section aria-labelledby={id} className="sv-section !mt-0" data-testid={testId}>
+    <section aria-labelledby={id} className="sv-section !mt-0 scroll-mt-24" data-testid={testId}>
       <div className="sv-section__head">
         <h2 id={id} className={cn("sv-section__title", tone === "danger" && "text-danger-ink", tone === "warning" && "text-warning-ink")}>
           {title} <span className="sv-section__count">{count}</span>
@@ -134,12 +134,3 @@ function TaskRow({ task }: { task: Task }) {
   );
 }
 
-/** Подписи строки цифр «Мне» */
-export function meFigureLabels(n: { late: number; soon: number; answer: number; events: number }) {
-  return {
-    late: "просрочено",
-    soon: plural(n.soon, "срок сегодня или завтра", "срока сегодня или завтра", "сроков сегодня или завтра"),
-    answer: plural(n.answer, "просьба ждёт ответа", "просьбы ждут ответа", "просьб ждут ответа"),
-    events: plural(n.events, "событие", "события", "событий"),
-  };
-}
