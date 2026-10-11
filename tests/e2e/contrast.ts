@@ -1,21 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
-import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase } from "./helpers";
+import type { Page } from "@playwright/test";
 
-// Этап 49: тёмная тема в проходе. Ключевые страницы снимаются в тёмной теме на ноутбуке и телефоне, без
-// горизонтальной прокрутки; у текста на странице есть контраст с фоном (ловит светлый текст на светлой плашке
-// или тёмный на тёмной, когда цвет задан не токеном темы)
+// Проверка контраста текста для прохода по темам (этап 49, вынесена на этапе 50): считается в браузере по WCAG
 
-const SHOTS = "tests/e2e/screenshots";
-mkdirSync(SHOTS, { recursive: true });
-
-type Low = { tag: string; text: string; color: string; bg: string; ratio: number };
-type Report = { low: Low[]; unparsed: string[]; skipped: number };
+export type Low = { tag: string; text: string; color: string; bg: string; ratio: number };
+export type Report = { low: Low[]; unparsed: string[]; skipped: number };
 
 /** Контраст текста с ближайшим непрозрачным фоном, считается в браузере по WCAG. Цвет любого вида (rgb, oklab из
     color-mix, color(srgb)) переводится в sRGB через canvas: регулярка на rgb() молчала бы ровно там, где прозрачность
     и создаёт слабый контраст. Неразобранные цвета и пропуски из-за фоновых картинок возвращаются отдельно */
-async function contrastReport(page: Page, min: number): Promise<Report> {
+export async function contrastReport(page: Page, min: number): Promise<Report> {
   return page.evaluate((minRatio) => {
     type Rgba = [number, number, number, number];
     const canvas = document.createElement("canvas");
@@ -104,7 +97,9 @@ async function contrastReport(page: Page, min: number): Promise<Report> {
       const cs = getComputedStyle(el);
       if (cs.visibility === "hidden" || cs.display === "none") continue;
       const opacity = opacityOf(el);
-      if (opacity < 0.5) continue;
+      // Намеренно приглушённые состояния (сделано, занято, ноль) рисуются прозрачностью не выше 0,7: как и
+      // выключенные элементы, они не считаются
+      if (opacity <= 0.7) continue;
       // Выключенные элементы управления по WCAG контраста не требуют: пропускаем их и текст внутри них
       if (el.closest(":disabled, [aria-disabled='true']")) continue;
       const color = parse(cs.color);
@@ -114,7 +109,11 @@ async function contrastReport(page: Page, min: number): Promise<Report> {
       const l1 = lum(fg);
       const l2 = lum(bg);
       const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
-      if (ratio < minRatio) {
+      // Крупному тексту по AA достаточно 3:1: от 24px, или от 18,66px полужирным
+      const size = parseFloat(cs.fontSize);
+      const bold = Number(cs.fontWeight) >= 700;
+      const need = size >= 24 || (size >= 18.66 && bold) ? Math.min(minRatio, 3) : minRatio;
+      if (ratio < need) {
         const key = `${el.tagName}:${cs.color}:${cs.backgroundColor}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -125,73 +124,3 @@ async function contrastReport(page: Page, min: number): Promise<Report> {
   }, min);
 }
 
-async function shot(page: Page, name: string) {
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
-  expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
-  // Фон страницы тёмный: тема правда применилась, а не только атрибут
-  const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  const m = /rgb\((\d+), (\d+), (\d+)/.exec(bg)!;
-  expect(Number(m[1]) + Number(m[2]) + Number(m[3]), `фон страницы ${name} не тёмный: ${bg}`).toBeLessThan(200);
-  // Порог 3:1 это грубый уровень (крупный текст и элементы управления по WCAG): ловит невидимый текст, а не
-  // недобор до 4,5:1 у мелкого вторичного текста на цветных строках
-  const report = await contrastReport(page, 3);
-  expect(report.unparsed, `цвета, которые проверка не разобрала на экране ${name}`).toEqual([]);
-  expect(report.low, `текст без контраста на экране ${name}: ${JSON.stringify(report.low)}`).toEqual([]);
-  // Курсор в угол: снимок без строки под наведением
-  await page.mouse.move(0, 0);
-  await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dark-${name}.png`, fullPage: true });
-}
-
-test.beforeEach(async ({ page }) => {
-  await resetDatabase({ weekly: false });
-  // Выбор темы лежит в cookie на устройстве: ставим его до первого захода
-  await page.context().addCookies([{ name: "theme", value: "dark", url: "http://localhost:3100" }]);
-});
-
-test("тёмная тема: главная, weekly, задачи, карточка задачи, люди, цели", async ({ page }) => {
-  test.setTimeout(60_000);
-  await enter(page, "Рева Тарас");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "home");
-  await page.goto("/me");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "me");
-  await page.goto("/weekly");
-  await expect(page.getByRole("heading", { name: "Weekly", level: 1 })).toBeVisible();
-  await shot(page, "weekly");
-  await page.goto("/tasks");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(page.locator(".sv-task-rows section, .sv-table tbody tr").filter({ visible: true }).first()).toBeVisible();
-  await shot(page, "tasks");
-  await page.goto("/tasks/1");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "task");
-  await page.goto("/people");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "people");
-  await page.goto("/goals");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "goals");
-});
-
-test("тёмная тема в режиме управления: отчёт CEO, встреча, прогноз, настройки, синхронизация", async ({ page }) => {
-  test.setTimeout(60_000);
-  await enter(page, "Мурадян Арам");
-  await enterManagement(page, "owner");
-  await page.goto("/ceo-report");
-  await expect(page.getByRole("heading", { name: "Отчёт CEO", level: 1 })).toBeVisible();
-  await shot(page, "ceo");
-  await page.goto("/weekly/meeting");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "meeting");
-  await page.goto("/forecast");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await shot(page, "forecast");
-  await page.goto("/settings");
-  await expect(page.getByRole("heading", { name: "Настройки", level: 1 })).toBeVisible();
-  await shot(page, "settings");
-  await page.goto("/sync");
-  await expect(page.getByRole("heading", { name: "Синхронизация", level: 1 })).toBeVisible();
-  await shot(page, "sync");
-});

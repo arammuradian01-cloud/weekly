@@ -48,10 +48,10 @@ function resultOf(r: SyncRun): { text: string; tone: SyncView["runs"][number]["t
 
 
 export default async function SyncPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireManagement(OWNER_ROLES, "/sync");
   const sp = await searchParams;
-  // Этап 48: три связи вкладками, адрес ?tab= пересылаемый
+  // Этап 48: три связи вкладками, адрес ?tab= пересылаемый. Этап 50: вкладка переживает ввод пароля режима управления
   const tab: SyncTab = SYNC_TABS.find((t) => t === sp.tab) ?? "bord";
+  await requireManagement(OWNER_ROLES, tab === "bord" ? "/sync" : `/sync?tab=${tab}`);
   const now = new Date();
   const [status, bord, numbers, tasks, comments, entries] = await Promise.all([
     syncStatus(now),

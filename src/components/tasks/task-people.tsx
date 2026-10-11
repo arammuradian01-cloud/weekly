@@ -100,11 +100,12 @@ function Chip({ task: t, today, onOpen }: { task: Task; today: string; onOpen: (
         overdue ? "bg-danger-soft ring-danger/30" : t.status === "proposed" ? "bg-surface ring-line" : t.status === "clarify" ? "bg-warning-soft ring-warning-line" : "bg-surface ring-line",
       )}
     >
+      {/* На цветной подложке вторичный цвет не держит 4,5:1 в тёмной теме: номер и срок цветом подложки (этап 50) */}
       <span className="line-clamp-2 text-small font-medium text-ink">
-        <span className="mr-1 tabular-nums text-muted">{t.number}</span>
+        <span className={cn("mr-1 tabular-nums", overdue ? "text-danger-ink" : t.status === "clarify" ? "text-warning-ink" : "text-muted")}>{t.number}</span>
         {t.title}
       </span>
-      <span className={cn("mt-0.5 text-caption tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>
+      <span className={cn("mt-0.5 text-caption tabular-nums", overdue ? "font-semibold text-danger-ink" : t.status === "clarify" ? "text-warning-ink" : "text-muted")}>
         до {formatShort(t.due)}
         {t.status === "proposed" ? ", предложена" : t.status === "clarify" ? ", требует уточнений" : ""}
         {t.state === "blocked" ? ", заблокирована" : ""}

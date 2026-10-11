@@ -31,13 +31,16 @@
 | Цвета | warning-bg | #FFF9F0 | #503F26 | --color-warning-bg | --color-warning-bg | bg-warning-bg | сайт O06; был orange-soft |
 | Цвета | warning-dot | #FF9500 | #FF9500 | --color-warning-dot | --color-warning-dot | bg-warning-dot | сайт O100; был amber / warning-line |
 | Цвета | danger-text | #C11D1D | #F1B2B2 | --color-danger-text | --color-danger-text | text-danger-text | сайт R100; был danger-line, danger-on-dark |
-| Цвета | danger-bg | #FDF2F2 | #533232 | --color-danger-bg | --color-danger-bg | bg-danger-bg | сайт R06; фон просроченной строки |
+| Цвета | danger-bg | #FDF2F2 | #402626 | --color-danger-bg | --color-danger-bg | bg-danger-bg | сайт R06; в тёмной теме своё, темнее ради 4,5:1 у текста на строке просрочки; фон просроченной строки |
 | Цвета | danger-dot | #C11D1D | #F28B8B | --color-danger-dot | --color-danger-dot | bg-danger-dot | тёмная своё |
 | Цвета | info-text | #5047D7 | #CECBFF | --color-info-text | --color-info-text | text-info-text | сайт V100 |
 | Цвета | info-bg | #F3F2FC | #363352 | --color-info-bg | --color-info-bg | bg-info-bg | сайт V06 |
 | Цвета | row-hover | #FAFAF9 | #1D242B | --color-row-hover | --color-row-hover | bg-row-hover | своё |
 | Цвета | sidebar-bg | #002A3A | #0E1419 | --color-sidebar-bg | --color-sidebar-bg | bg-sidebar-bg | тёмная своё |
 | Цвета | overlay | rgba(0,42,58,.4) | rgba(0,0,0,.6) | --color-overlay | --color-overlay | bg-overlay |  |
+| Цвета | chart-1 | #0073A8 | #1A8FD0 | --color-chart-1 | --color-chart-1 | text-chart-1 | первый ряд графика; в тёмной теме своё, проверено палитрой по светлоте и контрасту |
+| Цвета | chart-2 | #139A43 | #12A845 | --color-chart-2 | --color-chart-2 | text-chart-2 | второй ряд; своё: фирменный #0DD149 на белом даёт около 2:1 |
+| Цвета | chart-3 | #B3BAC3 | #4E5764 | --color-chart-3 | --color-chart-3 | text-chart-3 | третий ряд, нейтральный |
 | Шрифты | font-heading | "Aeroport", "Golos Text" | то же | --font-heading | --font-heading | font-heading | вес 700 |
 | Шрифты | font-body | "Open Sans" | то же | --font-body | --font-body | font-body | 400 и 600 |
 | Шкала | text-page | 28/32 (телефон 25/32, проектор 50/52) | то же | --text-page | --text-page | text-page | заменяет text-page, text-page-lg, text-headline-lg, text-headline, text-display-sm |

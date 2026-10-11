@@ -81,7 +81,8 @@
   --color-avatar-8-bg: #E5EAF0; --color-avatar-8-text: #2F3F52;
   /* Графики */
   --color-chart-1: #0073A8;
-  --color-chart-2: #0DD149;
+  /* Своё (этап 27 приложения): второй ряд темнее фирменного зелёного #0DD149, у того контраст с белым около 2:1 */
+  --color-chart-2: #139A43;
   --color-chart-3: #B3BAC3;
   --color-chart-grid: var(--color-border);
 }
@@ -123,7 +124,7 @@
   --color-warning-bg: #503F26;
   --color-warning-dot: #FF9500;
   --color-danger-text: #F1B2B2;     /* 6,3:1 */
-  --color-danger-bg: #533232;
+  --color-danger-bg: #402626;       /* своё (этап 50): темнее, чтобы вторичный текст на строке просрочки держал 4,5:1 */
   --color-danger-dot: #F28B8B;      /* своё */
   --color-danger-hover: #F6C7C7;
   --color-info-text: #CECBFF;       /* 7,8:1 */
@@ -142,6 +143,8 @@
   --color-avatar-6-bg: #1E3E3C; --color-avatar-6-text: #B5E7E3;
   --color-avatar-7-bg: #3A3833; --color-avatar-7-text: #E3DED3;
   --color-avatar-8-bg: #2C3744; --color-avatar-8-text: #D1DBE6;
-  --color-chart-1: #00AFFF;
+  /* Своё (этап 27 приложения): ряды графиков на тёмной поверхности, проверены палитрой по светлоте и контрасту */
+  --color-chart-1: #1A8FD0;
+  --color-chart-2: #12A845;
   --color-chart-3: #4E5764;
 }

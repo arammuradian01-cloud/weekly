@@ -52,12 +52,14 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
           const sentNow = state === "submitted";
           const word = away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`;
           return (
-            <li key={person.slug} className={cn("inline-flex items-center gap-2 text-small", (away || state === "not-started") && "opacity-70")} title={`${person.shortName}: ${word}`}>
+            // Этап 50: не начавшие и отсутствующие приглушены серой точкой и цветом имени, а не прозрачностью строки:
+            // слово «не начат» при 70% прозрачности падало ниже 3:1 на белом, инициалы ниже 4,5:1
+            <li key={person.slug} className="inline-flex items-center gap-2 text-small" title={`${person.shortName}: ${word}`}>
               <span className={cn("sv-avatar sv-avatar--sm", `sv-avatar--${avatarTone(person.fullName)}`)} aria-hidden="true">
                 {initialsOf(person.fullName)}
                 <span className={cn("sv-avatar__status", away ? "sv-avatar__status--neutral" : DOT[state])} />
               </span>
-              <span className="font-semibold text-ink">{person.shortName}</span>
+              <span className={cn("font-semibold", away || state === "not-started" ? "text-text-secondary" : "text-ink")}>{person.shortName}</span>
               <span className={cn("text-text-secondary", sentNow && "sr-only")}>{word}</span>
             </li>
           );
