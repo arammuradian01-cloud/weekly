@@ -35,7 +35,8 @@ test("комментарий к задаче Ревы виден ему в «М�
   // «Напомнить завтра»: строка уходит, счётчик гаснет
   await reva.getByRole("button", { name: /^Напомнить:/ }).click();
   await reva.getByRole("menuitem", { name: "Завтра в 9:00" }).click();
-  await expect(reva.getByRole("heading", { name: "Всё разобрано" })).toBeVisible();
+  // Событий нет: группы «Прочитать» в очереди нет (этап 44), отложенное видно строкой
+  await expect(reva.getByTestId("me-read")).toHaveCount(0);
   await expect(reva.getByText("Отложено до напоминания: 1")).toBeVisible();
   await expect(nav.getByRole("link", { name: /Мне.*ждут/ })).toHaveCount(0);
 
@@ -47,6 +48,6 @@ test("комментарий к задаче Ревы виден ему в «М�
   // «Разобрано»: список пуст, ссылка ведёт к задаче
   await expect(reva.getByRole("link", { name: new RegExp(`^${number} `) }).first()).toHaveAttribute("href", `/tasks/${number}`);
   await reva.getByRole("button", { name: /^Разобрано:/ }).click();
-  await expect(reva.getByRole("heading", { name: "Всё разобрано" })).toBeVisible();
+  await expect(reva.getByTestId("me-read")).toHaveCount(0);
   await reva.close();
 });

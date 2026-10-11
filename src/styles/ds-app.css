@@ -48,6 +48,8 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 /* Карточка-поверхность: рамка и радиус карточки, без тени (как в эталонах) */
 .sv-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-panel); }
 .sv-card--soft { border-radius: var(--radius-card); }
+/* Блок «Сейчас» на главной (этап 44), пока weekly не сдан: голубая подложка выделяет единственное главное действие */
+.sv-card--now { background: var(--color-accent-soft); border-color: var(--color-accent-soft-border); }
 
 /* Переключатель команды: системный список прозрачный поверх кнопки, фокус рисуется на кнопке */
 .sv-team-switch { position: relative; }

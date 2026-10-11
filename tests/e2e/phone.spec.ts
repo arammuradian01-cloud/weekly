@@ -110,15 +110,20 @@ test("просьбу можно принять с телефона в два н�
   const nav = test.info().project.name === "phone" ? page.locator("nav.fixed") : page.getByRole("navigation", { name: "Разделы" }).first();
   await nav.getByRole("link", { name: /^Мне/ }).click();
   await expect(page).toHaveURL(/\/me$/);
-  const row = page.locator("li.sv-event").filter({ hasText: "Цифры по трафику ДВС за сентябрь" });
+  // Очередь «Мне» (этап 44): просьба одной строкой в группе «Ответить», событие о ней второй раз не показывается
+  const answer = page.locator("section", { has: page.getByRole("heading", { name: /^Ответить/ }) });
+  const row = answer.locator("li").filter({ hasText: "Цифры по трафику ДВС за сентябрь" });
+  await expect(row).toHaveCount(1);
+  await expect(page.locator("li.sv-event").filter({ hasText: "Цифры по трафику ДВС за сентябрь" })).toHaveCount(0);
   await shot(page, "me-request");
   // Нажатие 2: «Принять к …»
-  await row.getByRole("button", { name: new RegExp(`^Принять просьбу ${number} к \\d{1,2} \\S+$`) }).click();
+  await row.getByRole("button", { name: /^Принять к \d{1,2} \S+$/ }).click();
   await expect(page.getByText(/^Просьба принята, срок \d{1,2} \S+$/)).toBeVisible();
   const [r] = await sql(`SELECT status, "acceptedDue" = due AS same FROM help_requests WHERE id = 'rq-e2e-1'`);
   expect(r).toEqual({ status: "ACCEPTED", same: true });
-  // Событие разобрано: из списка ушло
+  // Просьба переехала из «Ответить» в принятые, событие разобрано
   await expect(row).toHaveCount(0);
+  await expect(page.locator("section", { has: page.getByRole("heading", { name: /Принятые, срок позже/ }) }).getByText("Цифры по трафику ДВС за сентябрь")).toBeVisible();
 
   // На странице просьбы то же одним нажатием, свой срок отдельной кнопкой
   await sql(`UPDATE help_requests SET status = 'OPEN', "acceptedDue" = NULL WHERE id = 'rq-e2e-1'`);
@@ -132,7 +137,7 @@ test("задачу можно обновить с главной в два на�
     `UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date - 2 WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
   );
   await enter(page, "Рева Тарас");
-  const urgent = page.locator("section", { has: page.getByRole("heading", { name: /Просроченные и срочные/ }) });
+  const urgent = page.locator('section[aria-labelledby="my-tasks"]');
   const row = urgent.locator("li").filter({ hasText: new RegExp(`^${number}`) });
   // Нажатие 1: статус, нажатие 2: новый статус
   await row.getByRole("button", { name: new RegExp(`^Статус задачи ${number}: В работе`) }).click();
@@ -148,7 +153,7 @@ test("задачу можно обновить с главной в два на�
   await nav.getByRole("link", { name: "Weekly" }).click();
   await expect(page).toHaveURL(/\/weekly$/);
   await page.goto("/");
-  await page.getByRole("link", { name: /Повестка, решения недели и разбор задач/ }).click();
+  await page.getByRole("link", { name: "Открыть подготовку к встрече" }).click();
   await expect(page).toHaveURL(/\/weekly\/meeting/);
 });
 

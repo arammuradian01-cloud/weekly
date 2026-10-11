@@ -1,33 +1,28 @@
 "use client";
 
-// Ключевые цифры «Мне» (этап 36): просьбы ко мне, их просрочка, события и мои сроки. Цифры ведут к своему разделу
-// страницы. Сроки считаются здесь же из задач, как блок «Сроки» ниже
+// Ключевые цифры «Мне» (этап 36, строкой с этапа 44): «13 просрочено, 1 просьба ждёт ответа, 2 события». Каждая часть
+// ведёт к своей группе очереди. Нули не показываются, при пустой очереди строки нет
 
+import type { RequestView } from "@/domain/requests";
 import { usePrototype } from "@/domain/store";
-import { addDays } from "@/domain/dates";
-import { isMine, isOverdue } from "@/domain/rules";
 import { Figures } from "@/components/ui/data";
+import { hotTasks, meFigureLabels, splitRequests } from "./me-tasks";
 
-export function MeFigures({ requests, overdueRequests, events }: { requests: number; overdueRequests: number; events: number }) {
+export function MeFigures({ incoming, events }: { incoming: RequestView[]; events: number }) {
   const { data, me } = usePrototype();
-  const tomorrow = addDays(data.today, 1);
-  const open = data.tasks.filter((t) => !t.archived && isMine(t, me.slug, me.role) && ["in-progress", "clarify", "proposed"].includes(t.status));
-  // Как в блоке «Сроки»: срок прошёл и у предложенной задачи
-  const late = open.filter((t) => isOverdue(t, data.today) || t.due < data.today).length;
-  // Предложенная задача с прошедшим сроком не «просрочена» по правилам, но и не «сегодня или завтра»
-  const soon = open.filter((t) => !isOverdue(t, data.today) && t.due >= data.today && t.due <= tomorrow).length;
-  // Всё разобрано: пять нулей ничего не добавляют к пустому списку ниже
-  if (!requests && !events && !late && !soon) return null;
+  const tasks = hotTasks(data, me);
+  const req = splitRequests(incoming, data.today);
+  const n = { late: tasks.late.length + req.late.length, soon: tasks.soon.length + req.soon.length, answer: req.answer.length, events };
+  const labels = meFigureLabels(n);
   return (
     <Figures
       label="Мне в цифрах"
+      inline
       items={[
-        // У нуля нет ссылки: раздела «Сроки» без задач на странице нет
-        { label: "Просьбы ко мне", value: requests, href: requests ? "#me-requests" : undefined, testId: "me-fig-requests" },
-        { label: "Просьбы: срок прошёл", value: overdueRequests, href: overdueRequests ? "#me-requests" : undefined, tone: "danger", testId: "me-fig-requests-late" },
-        { label: "События", value: events, href: events ? "#me-events" : undefined, testId: "me-fig-events" },
-        { label: "Мои задачи просрочены", value: late, href: late ? "#me-deadlines" : undefined, tone: "danger", testId: "me-fig-late" },
-        { label: "Срок сегодня или завтра", value: soon, href: soon ? "#me-deadlines" : undefined, tone: "warning", testId: "me-fig-soon" },
+        { label: labels.late, value: n.late, href: "#me-late", tone: "danger", testId: "me-fig-late" },
+        { label: labels.soon, value: n.soon, href: "#me-soon", tone: "warning", testId: "me-fig-soon" },
+        { label: labels.answer, value: n.answer, href: "#me-answer", testId: "me-fig-requests" },
+        { label: labels.events, value: n.events, href: "#me-read", testId: "me-fig-events" },
       ]}
     />
   );

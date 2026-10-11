@@ -32,7 +32,8 @@ test("упоминание в комментарии задачи приходи
   // Рева заранее открыл «Мне» и ничего не перезагружает
   const reva = await second(browser, page, "Рева Тарас");
   await reva.goto("/me");
-  await expect(reva.getByRole("heading", { name: "Всё разобрано" })).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Мне", level: 1 })).toBeVisible();
+  await expect(reva.getByTestId("me-read")).toHaveCount(0);
 
   await enter(page, "Фатьянов Евгений");
   await page.goto(`/tasks/${number}`);

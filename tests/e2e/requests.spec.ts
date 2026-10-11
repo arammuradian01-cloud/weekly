@@ -56,14 +56,16 @@ test("просьба из карточки задачи: адресат прин
   // Адресат отвечает из «Мне»
   const loginova = await second(browser, page, "Логинова Светлана");
   await loginova.goto("/me");
-  const incoming = loginova.locator("section", { has: loginova.getByRole("heading", { name: /Просьбы ко мне/ }) });
+  // Очередь «Мне» (этап 44): просьба без ответа в группе «Ответить», после ответа переезжает в «Принятые, срок позже»
+  const incoming = loginova.locator("section", { has: loginova.getByRole("heading", { name: /^Ответить/ }) });
   await expect(incoming.getByRole("link", { name: /Данные по трафику ДВС/ })).toBeVisible();
   await incoming.getByRole("button", { name: "Другой срок" }).click();
   const accept = loginova.getByRole("dialog", { name: `Принять просьбу ${requestNumber}` });
   await accept.getByRole("button", { name: "Через неделю" }).click();
   await accept.getByRole("button", { name: "Принять", exact: true }).click();
   await expect(loginova.getByText("Просьба принята")).toBeVisible();
-  await expect(incoming.getByText("Принята")).toBeVisible();
+  const accepted = loginova.locator("section", { has: loginova.getByRole("heading", { name: /Принятые, срок позже/ }) });
+  await expect(accepted.getByText("Принята")).toBeVisible();
   await shot(loginova, "me");
 
   // Автор видит ответ на «Моей неделе», в блоке «Жду от коллег»
