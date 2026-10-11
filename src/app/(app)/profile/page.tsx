@@ -41,21 +41,24 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const sp = await searchParams;
   const requested = TABS.find((t) => t === sp.tab) ?? "profile";
   const tab: ProfileTab = requested === "absences" && observer ? "profile" : requested;
+  // Этап 50: грузится только то, что нужно открытой вкладке
   const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed] = await Promise.all([
-    ctx.via === "TEAM" ? Promise.resolve([]) : listDevices(ctx.person.id),
-    observer ? Promise.resolve([]) : upcomingAbsences(ctx.person.id),
-    absenceWeeks(),
-    prisma.person.findMany({
-      where: { active: true, role: { not: "OBSERVER" }, id: { not: ctx.person.id }, ...colleaguesOf(ctx.person.id) },
-      orderBy: { sortOrder: "asc" },
-      select: { slug: true, fullName: true },
-    }),
-    mailPrefsFor(ctx.person.id),
-    personal ? pushPublicKey() : Promise.resolve(""),
-    pushPrefsFor(ctx.person.id),
-    personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
+    tab === "login" && ctx.via !== "TEAM" ? listDevices(ctx.person.id) : Promise.resolve([]),
+    tab === "absences" && !observer ? upcomingAbsences(ctx.person.id) : Promise.resolve([]),
+    tab === "absences" ? absenceWeeks() : Promise.resolve([]),
+    tab === "absences"
+      ? prisma.person.findMany({
+          where: { active: true, role: { not: "OBSERVER" }, id: { not: ctx.person.id }, ...colleaguesOf(ctx.person.id) },
+          orderBy: { sortOrder: "asc" },
+          select: { slug: true, fullName: true },
+        })
+      : Promise.resolve([]),
+    tab === "mail" ? mailPrefsFor(ctx.person.id) : Promise.resolve(null),
+    tab === "mail" && personal ? pushPublicKey() : Promise.resolve(""),
+    tab === "mail" ? pushPrefsFor(ctx.person.id) : Promise.resolve(null),
+    tab === "mail" && personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
     // По общему логину и наблюдателю состояние ссылки не отдаём: по нему видно, когда чужой календарь забирал данные
-    personal && !observer ? feedFor(ctx.person.id) : Promise.resolve(null),
+    tab === "profile" && personal && !observer ? feedFor(ctx.person.id) : Promise.resolve(null),
   ]);
   // Календарь сроков (этап 29): ссылка личная, по общему логину её не выдаём
   const calendarLocked = !personal
@@ -142,7 +145,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         </>
       ) : null}
 
-      {tab === "mail" ? (
+      {tab === "mail" && prefs && pushPrefs ? (
         <>
           <section aria-labelledby="mail-head">
             <h2 id="mail-head" className="text-title font-semibold text-ink">Письма</h2>

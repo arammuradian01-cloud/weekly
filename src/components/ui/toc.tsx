@@ -32,10 +32,11 @@ export function Toc({ items, label = "Разделы страницы", classNam
       const link = nav?.querySelector<HTMLElement>(`[data-toc="${current}"]`);
       if (nav && link && getComputedStyle(nav).flexDirection === "row") link.scrollIntoView({ inline: "nearest", block: "nearest" });
     };
+    let frame = 0;
     const onScroll = () => {
       if (ticking.current) return;
       ticking.current = true;
-      window.requestAnimationFrame(pick);
+      frame = window.requestAnimationFrame(pick);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onScroll);
@@ -43,6 +44,7 @@ export function Toc({ items, label = "Разделы страницы", classNam
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      window.cancelAnimationFrame(frame);
     };
   }, [ids]);
   return (

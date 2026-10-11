@@ -31,7 +31,7 @@
 | Цвета | warning-bg | #FFF9F0 | #503F26 | --color-warning-bg | --color-warning-bg | bg-warning-bg | сайт O06; был orange-soft |
 | Цвета | warning-dot | #FF9500 | #FF9500 | --color-warning-dot | --color-warning-dot | bg-warning-dot | сайт O100; был amber / warning-line |
 | Цвета | danger-text | #C11D1D | #F1B2B2 | --color-danger-text | --color-danger-text | text-danger-text | сайт R100; был danger-line, danger-on-dark |
-| Цвета | danger-bg | #FDF2F2 | #533232 | --color-danger-bg | --color-danger-bg | bg-danger-bg | сайт R06; фон просроченной строки |
+| Цвета | danger-bg | #FDF2F2 | #402626 | --color-danger-bg | --color-danger-bg | bg-danger-bg | сайт R06; в тёмной теме своё, темнее ради 4,5:1 у текста на строке просрочки; фон просроченной строки |
 | Цвета | danger-dot | #C11D1D | #F28B8B | --color-danger-dot | --color-danger-dot | bg-danger-dot | тёмная своё |
 | Цвета | info-text | #5047D7 | #CECBFF | --color-info-text | --color-info-text | text-info-text | сайт V100 |
 | Цвета | info-bg | #F3F2FC | #363352 | --color-info-bg | --color-info-bg | bg-info-bg | сайт V06 |

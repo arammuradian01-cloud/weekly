@@ -1,5 +1,6 @@
-/* Токены дизайн-системы «Сравни: внутренние продукты», шаг 1 (08.10.2026). Скопированы из design/ds-step-1/tokens без правок,
-   кроме шрифтов: они подключаются пакетами @fontsource, а не с Google Fonts. Светлая тема на :root, тёмная на [data-theme="dark"],
+/* Токены дизайн-системы «Сравни: внутренние продукты», шаг 1 (08.10.2026). Скопированы из design/ds-step-1/tokens; отличия от
+   источника помечены словом «своё» с номером этапа и переносятся в design/ds-step-1 той же правкой (этап 50). Шрифты
+   подключаются пакетами @fontsource, а не с Google Fonts. Светлая тема на :root, тёмная на [data-theme="dark"],
    телефон и проектор через data-scale. Tailwind берёт эти переменные в src/app/globals.css (@theme inline) */
 
 /* Сравни: внутренние продукты. Цвета. Светлая тема на :root, тёмная на [data-theme="dark"].
@@ -129,7 +130,7 @@
   --color-warning-bg: #503F26;
   --color-warning-dot: #FF9500;
   --color-danger-text: #F1B2B2;     /* 6,3:1 */
-  --color-danger-bg: #533232;
+  --color-danger-bg: #402626;       /* темнее, чтобы вторичный текст на строке просрочки держал 4,5:1 (этап 50) */
   --color-danger-dot: #F28B8B;      /* своё */
   --color-danger-hover: #F6C7C7;
   --color-info-text: #CECBFF;       /* 7,8:1 */
