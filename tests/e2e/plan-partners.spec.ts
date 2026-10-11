@@ -52,6 +52,9 @@ test("руководитель канала меняет полисы партн
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await pull(page);
+  // Этап 46: партнёрский канал своей вкладкой
+  await page.goto("/forecast?tab=partners");
+  await expect(page.getByTestId("tab-partners")).toHaveAttribute("aria-current", "page");
   const section = page.locator("#plan-partners");
   await expect(section.getByRole("heading", { name: "Партнёрский канал", level: 2 })).toBeVisible();
   await expect(section.getByTestId("partners-stat-revenue")).toContainText("млн");
@@ -63,7 +66,7 @@ test("руководитель канала меняет полисы партн
   await enterByLink(page, "sakhibullina");
   await page.goto("/me");
   await expect(page.getByText(/Проверьте прогноз: Партнёрский канал/)).toBeVisible();
-  await page.goto("/forecast");
+  await page.goto("/forecast?tab=partners");
   const row = partnerRow(page, "Банк Север");
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("20 000");
@@ -97,10 +100,11 @@ test("руководитель канала меняет полисы партн
   await expect(band).toContainText("Изменение партнёров учтено");
   await expect(band).toContainText("Полисы B2B продукта: LBE 150 000, прогноз 152 000");
   await expect(band.getByTestId("plan-partner-apply")).toHaveCount(0);
-  // Партнёров Головкин видит, но не корректирует: он не в команде канала
+  await shot(page, "product-band");
+  // Партнёров Головкин видит на вкладке «Партнёры», но не корректирует: он не в команде канала
+  await page.goto("/forecast?tab=partners");
   await partnerRow(page, "Банк Север").getByRole("button", { name: "Подробно" }).click();
   await expect(page.getByTestId("partner-card").getByTestId("partner-edit-policies")).toHaveCount(0);
-  await shot(page, "product-band");
 });
 
 test("отборы и поиск партнёров, партнёры без продаж свёрнуты, «Прогноз проверен» у канала", async ({ page }) => {
@@ -109,7 +113,7 @@ test("отборы и поиск партнёров, партнёры без п�
   await pull(page);
   await page.context().clearCookies();
   await enterByLink(page, "afanasyev");
-  await page.goto("/forecast");
+  await page.goto("/forecast?tab=partners");
   const table = page.getByTestId("partners-table");
   // Банк Юг ещё не продаёт: по умолчанию свёрнут, кнопка показывает таких партнёров
   await expect(table.getByText("Банк Юг")).toHaveCount(0);

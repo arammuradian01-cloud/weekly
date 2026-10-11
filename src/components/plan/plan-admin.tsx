@@ -79,7 +79,8 @@ export function PullDrawer({
     notify(`Бюджет и LBE на ${monthLabel(target)} загружены`);
     onOpenChange(false);
     setPreview(null);
-    router.push(`/forecast?month=${target}`);
+    // Остаёмся на той вкладке, с которой открыли панель (этап 46)
+    router.push(`/forecast?month=${target}${window.location.search.includes("tab=partners") ? "&tab=partners" : ""}`);
     router.refresh();
   };
 

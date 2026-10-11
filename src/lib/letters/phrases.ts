@@ -1,5 +1,6 @@
 // Тексты событий «Мне» для писем и уведомлений в браузере: кто и что, без содержимого (этапы 20 и 26). Чистые функции.
 
+import { planHref } from "@/lib/plan/links";
 import type { InboxKind } from "@/generated/prisma/enums";
 
 export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null; subject?: string };
@@ -59,7 +60,7 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   // Крупная инициатива (этап 30): карточка на странице инициатив
   if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
   // Прогноз месяца (этап 35): страница прогноза на месяц события
-  if (e.subject?.startsWith("plan:")) return `/forecast?month=${encodeURIComponent(e.subject.slice(5))}`;
+  if (e.subject?.startsWith("plan:")) return planHref(e.subject);
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

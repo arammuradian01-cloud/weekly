@@ -64,7 +64,7 @@ export async function closePlanReminders(tx: Prisma.TransactionClient, month: st
   if (partnerAdjusted) done.add(PARTNER_OWNER_CODE);
   const finished = people.filter((p) => Object.entries(owners).every(([code, list]) => !list.includes(p.slug) || !loaded.has(code) || done.has(code)));
   if (!finished.length) return;
-  await tx.inboxEvent.updateMany({ where: { recipientId: { in: finished.map((p) => p.id) }, subject: `plan:${month}`, doneAt: null }, data: { doneAt: new Date() } });
+  await tx.inboxEvent.updateMany({ where: { recipientId: { in: finished.map((p) => p.id) }, subject: { in: [`plan:${month}`, `plan:${month}:partners`] }, doneAt: null }, data: { doneAt: new Date() } });
 }
 
 /** Факт месяца по дням по продуктам: дни по порядку, кто и когда загрузил последним */

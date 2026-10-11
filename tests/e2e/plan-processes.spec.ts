@@ -105,7 +105,9 @@ test("после загрузки LBE: событие в «Мне», «Прог�
   await shot(page, "facts-drawer");
   await drawer.getByTestId("plan-facts-load").click();
   await expect(page.getByText("Факт загружен: значений 2").first()).toBeVisible();
-  await page.getByRole("radiogroup", { name: "Продукт" }).getByRole("radio", { name: "ОСАГО" }).click();
+  // Этап 46: карточка продукта раскрывается под строкой таблицы; у владельца ОСАГО уже раскрыт
+  const osago = page.getByTestId("plan-top-osago").getByRole("button", { name: "ОСАГО" });
+  if ((await osago.getAttribute("aria-expanded")) !== "true") await osago.click();
   const facts = page.locator("#plan-product-osago").getByTestId("plan-facts");
   await expect(facts.getByTestId("plan-fact-revenue")).toContainText("15,5");
   await expect(facts.getByTestId("plan-fact-units")).toContainText("9 000");

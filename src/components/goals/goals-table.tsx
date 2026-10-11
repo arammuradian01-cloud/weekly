@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
 import type { GoalResult } from "@/generated/prisma/enums";
-import { factProblem, goalProgress, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
+import { factProblem, goalProgress, parseGoalNumber, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
 import { formatShort } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { setGoalFactAction, updateGoalAction } from "@/app/(app)/goals/actions";
@@ -38,7 +38,8 @@ export function goalStatus(g: Pick<GoalNode, "result" | "risk">): { label: strin
 const dateFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "short" });
 const fullFmt = new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 
-export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?: boolean }) {
+/** Полоса прогресса цели: процент и, если есть, «141 из 160» (этап 46: полоса шире, подпись с цифрами) */
+export function Meter({ progress, risk, detail }: { progress: GoalProgress | null; risk?: boolean; detail?: string | null }) {
   if (!progress) return <span className="text-caption text-text-secondary">нет</span>;
   const width = Math.max(0, Math.min(1, progress.share)) * 100;
   return (
@@ -46,9 +47,20 @@ export function Meter({ progress, risk }: { progress: GoalProgress | null; risk?
       <span className="sv-meter__track" aria-hidden="true">
         <span className="sv-meter__fill" style={{ width: `${width}%` }} />
       </span>
-      <span className="sv-meter__label">{progressLabel(progress)}</span>
+      <span className="sv-meter__text">
+        <span className="sv-meter__label">{progressLabel(progress)}</span>
+        {detail ? <span className="sv-meter__detail">{detail}</span> : null}
+      </span>
     </span>
   );
+}
+
+/** «141 из 160»: факт и целевое, когда целевое задано числом без сдвига («+25%», «+2 п.п.» и слова не подходят) */
+export function meterDetail(g: { fact: { value: string } | null; target: string | null; base?: string | null }): string | null {
+  if (!g.fact || !g.target) return null;
+  const t = parseGoalNumber(g.target);
+  if (!t || t.signed || t.pp) return null;
+  return `${g.fact.value} из ${g.target}`;
 }
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
@@ -220,7 +232,7 @@ export function GoalsTable({
                     )}
                   </td>
                   <td data-label="Прогресс">
-                    <Meter progress={g.numeric} risk={!!g.risk} />
+                    <Meter progress={g.numeric} risk={!!g.risk} detail={meterDetail(g)} />
                   </td>
                   <td data-label="Статус">
                     <Badge tone={status.tone} dot>
@@ -282,27 +294,14 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />В риске: {g.risk}
           </p>
         ) : null}
+        {/* Этап 46: в раскрытии только то, чего нет в колонках. Метрика только на телефоне (с 640 она колонкой), счёт
+            целей ниже в заголовке списка */}
+        {/* Команда и владелец уже в заголовке группы и в подсказке строки, в раскрытии их нет */}
         <dl className="grid gap-x-6 gap-y-2 text-body sm:grid-cols-2">
-          <div>
-            <dt className="text-caption text-text-secondary">Команда</dt>
-            <dd className="text-ink">{g.team.name}</dd>
-          </div>
-          <div>
-            <dt className="text-caption text-text-secondary">Владелец</dt>
-            <dd className="text-ink">{g.owner?.fullName ?? "Руководитель команды"}</dd>
-          </div>
           {g.metric ? (
-            <div className="sm:col-span-2">
+            <div className="sm:hidden">
               <dt className="text-caption text-text-secondary">Метрика: как проверяем</dt>
               <dd className="whitespace-pre-line text-ink">{g.metric}</dd>
-            </div>
-          ) : null}
-          {g.below.total ? (
-            <div>
-              <dt className="text-caption text-text-secondary">Цели ниже</dt>
-              <dd className="text-ink">
-                достигнуто {g.below.achieved} из {g.below.total}
-              </dd>
             </div>
           ) : null}
         </dl>
@@ -314,7 +313,7 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal
         ) : null}
         {kids.length ? (
           <div>
-            <p className="text-caption text-text-secondary">Цели ниже</p>
+            <p className="text-caption text-text-secondary">Цели ниже{g.below.total ? `: достигнуто ${g.below.achieved} из ${g.below.total}` : ""}</p>
             <ul className="flex flex-col gap-1 text-body">
               {kids.map((k) => (
                 <li key={k.id}>

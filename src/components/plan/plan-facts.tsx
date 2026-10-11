@@ -34,9 +34,9 @@ export function PlanFacts({ month, facts, summary, label }: { month: string; fac
   return (
     <section className="sv-plan-facts" aria-labelledby={`facts-${summary.code}`} data-testid="plan-facts">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h3 id={`facts-${summary.code}`} className="text-body font-semibold text-ink">
+        <h4 id={`facts-${summary.code}`} className="text-body font-semibold text-ink">
           Факт месяца: {label}
-        </h3>
+        </h4>
         <p className="text-caption text-text-secondary">
           По {first.elapsed} число, дней с фактом {first.withData} из {first.elapsed}. Загружено {when(facts.loadedAt)}, {facts.loadedBy}
         </p>

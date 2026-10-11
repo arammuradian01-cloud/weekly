@@ -330,13 +330,15 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
     const people = notifyTeams && bySlug.size ? await tx.person.findMany({ where: { slug: { in: [...bySlug.keys()] }, active: true }, select: { id: true, slug: true } }) : [];
     for (const person of people) {
       const labels = bySlug.get(person.slug)!;
+      // Команде только партнёрского канала ссылка ведёт на вкладку «Партнёры» (этап 46): на вкладке продуктов канала нет
+      const partnersOnly = labels.length === 1 && labels[0] === PARTNER_LABEL;
       await notify(
         tx,
         {
           kind: "PLAN",
           recipients: [person.id],
           actor: { personId: actor.personId, fullName: actor.fullName },
-          subject: `plan:${month}`,
+          subject: partnersOnly ? `plan:${month}:partners` : `plan:${month}`,
           text: `Загружен LBE на ${monthLabel(month)}. Проверьте прогноз: ${labels.join(", ")}. Скорректируйте драйверы с причиной или отметьте «Прогноз проверен»`,
         },
         now,

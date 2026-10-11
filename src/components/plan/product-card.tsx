@@ -152,6 +152,7 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
   return (
     <Module
       id={`plan-product-${product.code}`}
+      headingLevel={3}
       title={spec.label}
       description={product.canAdjust ? "Меняйте драйверы: выручка и маржа пересчитаются сами. Каждая корректировка с причиной и обоснованием видна всей команде." : (adjustHint ?? `Прогноз продукта корректирует его команда: ${owners}.`)}
       actions={

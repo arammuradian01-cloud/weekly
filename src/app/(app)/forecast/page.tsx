@@ -33,13 +33,17 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   const tab = one(params.tab);
   const month = one(params.month);
   const compareTab = tab === "compare";
-  const weekTab = !compareTab && (tab === "week" || (!!week && tab !== "month"));
+  const partnersTab = tab === "partners";
+  const weekTab = !compareTab && !partnersTab && (tab === "week" || (!!week && tab !== "month"));
+  const keepMonth = month ? `&month=${month}` : "";
+  // Этап 46: партнёрский канал своей вкладкой, а не блоком под продуктами
   const tabs = (
     <PageTabs
       label="Разделы прогноза"
       tabs={[
-        { href: "/forecast", label: "Прогноз месяца", active: !weekTab && !compareTab, testId: "tab-month" },
-        { href: `/forecast?tab=compare${month ? `&month=${month}` : ""}`, label: "Сравнение версий", active: compareTab, testId: "tab-compare" },
+        { href: `/forecast${month ? `?month=${month}` : ""}`, label: "Прогноз месяца", active: !weekTab && !compareTab && !partnersTab, testId: "tab-month" },
+        { href: `/forecast?tab=partners${keepMonth}`, label: "Партнёры", active: partnersTab, testId: "tab-partners" },
+        { href: `/forecast?tab=compare${keepMonth}`, label: "Сравнение версий", active: compareTab, testId: "tab-compare" },
         { href: "/forecast?tab=week", label: "Цифры недели", active: weekTab, testId: "tab-week" },
       ]}
     />
@@ -60,8 +64,16 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
     const plan = await monthPlan(actor, month);
     return (
       <>
-        <PageHeader title="Прогноз" description="Бюджет и LBE месяца из LRF. Команда продукта корректирует драйверы с обоснованием, выручка и маржа пересчитываются сразу" tabs={tabs} />
-        <MonthPlan key={`${plan.month}:${plan.source.pulledAt ?? ""}`} initial={plan} />
+        <PageHeader
+          title="Прогноз"
+          description={
+            partnersTab
+              ? "Партнёрский канал месяца: полисы и комиссия по партнёрам из LRF, команда канала корректирует прогноз, продукты учитывают его в полисах B2B"
+              : "Бюджет и LBE месяца из LRF. Команда продукта корректирует драйверы с обоснованием, выручка и маржа пересчитываются сразу"
+          }
+          tabs={tabs}
+        />
+        <MonthPlan key={`${plan.month}:${plan.source.pulledAt ?? ""}:${partnersTab ? "partners" : "products"}`} initial={plan} section={partnersTab ? "partners" : "products"} />
       </>
     );
   }
