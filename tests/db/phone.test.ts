@@ -91,7 +91,7 @@ describe("подписка устройства", () => {
     await expect(push.sendTestPush(actor, deviceId, NOW)).rejects.toThrow(/ещё не включены/);
     await push.saveSubscription(actor, deviceId, sub(1), null);
     expect(await push.sendTestPush(actor, deviceId, NOW)).toEqual({ sent: 1 });
-    expect(sent[0]!.payload).toMatchObject({ url: "/profile", tag: "test" });
+    expect(sent[0]!.payload).toMatchObject({ url: "/profile?tab=mail", tag: "test" });
   });
 
   it("ключи VAPID создаются один раз и одинаковы при повторном чтении", async () => {

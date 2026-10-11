@@ -130,7 +130,7 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
         <StatusLine
           label="Состояние чтения недельного отчёта"
           items={[
-            { label: "Последнее чтение", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "warning" : "ok", testId: "numbers-status-last" },
+            { label: "Последнее чтение", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "danger" : "ok", testId: "numbers-status-last" },
             { label: "В отчёте", value: `${view.rows} ${plural(view.rows, "строка", "строки", "строк")}`, hint: `с цифрами, недель ${view.weeks}`, testId: "numbers-status-rows" },
             { label: "Последняя неделя в отчёте", value: view.latestWeek ? `с ${view.latestWeek}` : "нет", hint: `Следующее чтение: ${view.next ?? "выключено"}`, testId: "numbers-status-week" },
           ]}

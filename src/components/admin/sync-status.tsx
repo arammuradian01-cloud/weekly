@@ -13,6 +13,7 @@ import { usePrototype } from "@/domain/store";
 import { pushNowAction, rebuildNowAction, reconcileNowAction, setSpreadsheetAction } from "@/app/(app)/sync/actions";
 import { BordPull, type BordView } from "./bord-pull";
 import { NumbersSetup, type NumbersView } from "./numbers-setup";
+import type { SyncTab } from "./sync-tabs";
 
 type Tone = "ok" | "warn" | "error" | "pending";
 
@@ -53,7 +54,7 @@ function ToneIcon({ tone }: { tone: Tone }) {
 }
 
 /** Страница синхронизации для владельца: забор задач из Bord, затем таблица для просмотра: подключение, последняя выгрузка, очередь, сверка, история (раздел 5 ТЗ) */
-export function SyncStatus({ view, tab = "bord" }: { view: SyncView; /** Этап 48: связи вкладками */ tab?: "bord" | "numbers" | "mirror" }) {
+export function SyncStatus({ view, tab = "bord" }: { view: SyncView; /** Этап 48: связи вкладками */ tab?: SyncTab }) {
   const router = useRouter();
   const run = useRunAction();
   const { notify } = usePrototype();
@@ -91,109 +92,109 @@ export function SyncStatus({ view, tab = "bord" }: { view: SyncView; /** Эта�
       {tab === "numbers" ? <NumbersSetup view={view.numbers} /> : null}
 
       {tab === "mirror" ? (
-      <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
-      <div>
-        <h2 id="sync-mirror" className="text-title font-semibold text-ink">
-          Таблица для просмотра
-        </h2>
-        <p className="mt-1 max-w-[760px] text-body text-ink">
-          Ресурс сам пишет в отдельную Google-таблицу все задачи, и из Bord, и заведённые в ресурсе, а ещё комментарии и weekly. В одну сторону: таблицу правит только ресурс.
-        </p>
-        <p className="mt-2 max-w-[760px] rounded-lg bg-warning-soft px-4 py-3 text-body text-ink">
-          В таблице задачи всех команд департамента, колонка «Команда» показывает, чья задача. Давайте доступ к ней только тем, кому можно видеть весь департамент: права ресурса на таблицу не распространяются.
-        </p>
-      </div>
-
-      {view.connected ? <MirrorStatus view={view} /> : null}
-
-      {view.error ? (
-        <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
-          <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
-          <div className="min-w-0">
-            <p className="font-medium text-danger-ink">
-              {view.error.kind} не прошла {view.error.at}
+        <section aria-labelledby="sync-mirror" className="flex flex-col gap-8">
+          <div>
+            <h2 id="sync-mirror" className="text-title font-semibold text-ink">
+              Таблица для просмотра
+            </h2>
+            <p className="mt-1 max-w-[760px] text-body text-ink">
+              Ресурс сам пишет в отдельную Google-таблицу все задачи, и из Bord, и заведённые в ресурсе, а ещё комментарии и weekly. В одну сторону: таблицу правит только ресурс.
             </p>
-            <p className="mt-0.5 break-words">{view.error.message}</p>
-            <p className="mt-1 text-small text-muted">Правки ждут в очереди и не теряются. Повтор через минуту, при новых ошибках реже, до раза в 5 минут.</p>
+            <p className="mt-2 max-w-[760px] rounded-lg bg-warning-soft px-4 py-3 text-body text-ink">
+              В таблице задачи всех команд департамента, колонка «Команда» показывает, чья задача. Давайте доступ к ней только тем, кому можно видеть весь департамент: права ресурса на таблицу не распространяются.
+            </p>
           </div>
-        </div>
-      ) : null}
 
-      {view.connected ? (
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={busy !== null} onClick={() => act("push", pushNowAction, (r) => (r.items ? `Выгружено: ${r.items} ${plural(r.items, "строка", "строки", "строк")}` : "Таблица уже совпадает с ресурсом"))}>
-            <CloudUpload className="h-4 w-4" aria-hidden="true" />
-            {busy === "push" ? "Выгружаем…" : "Выгрузить сейчас"}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy !== null}
-            onClick={() =>
-              act("reconcile", reconcileNowAction, (r) => {
-                const n = r.details.diffs.length + r.details.removed.length + r.details.restored.length;
-                return n ? `Сверка вернула значения ресурса: ${n}` : "Сверка: расхождений нет";
-              })
-            }
-          >
-            <ScanSearch className="h-4 w-4" aria-hidden="true" />
-            {busy === "reconcile" ? "Сверяем…" : "Сверить сейчас"}
-          </Button>
-          <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirm(true)}>
-            <RotateCcw className="h-4 w-4" aria-hidden="true" />
-            {busy === "rebuild" ? "Пересобираем…" : "Пересобрать вкладки"}
-          </Button>
-        </div>
-      ) : null}
+          {view.connected ? <MirrorStatus view={view} /> : null}
 
-      <Connection view={view} />
+          {view.error ? (
+            <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
+              <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger-ink" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="font-medium text-danger-ink">
+                  {view.error.kind} не прошла {view.error.at}
+                </p>
+                <p className="mt-0.5 break-words">{view.error.message}</p>
+                <p className="mt-1 text-small text-muted">Правки ждут в очереди и не теряются. Повтор через минуту, при новых ошибках реже, до раза в 5 минут.</p>
+              </div>
+            </div>
+          ) : null}
 
-      <section aria-labelledby="sync-tabs">
-        <h3 id="sync-tabs" className="mb-3 text-title-sm font-semibold text-ink">
-          Вкладки ресурса в таблице
-        </h3>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {[
-            ["Задачи", `${view.counts.tasks} ${plural(view.counts.tasks, "строка", "строки", "строк")}, без архива`],
-            ["Комментарии к задачам", `${view.counts.comments} ${plural(view.counts.comments, "строка", "строки", "строк")}`],
-            ["Weekly", `${view.counts.entries} ${plural(view.counts.entries, "строка", "строки", "строк")}`],
-            ["Журнал выгрузки", "что и когда выгружено, ночью сокращается до 2000 строк"],
-            ["Сводка", "формулы по лидерам"],
-          ].map(([name, note]) => (
-            <li key={name} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-lg px-4 py-3 ring-1 ring-line">
-              <span className="text-body font-medium text-ink">{name}</span>
-              <span className="text-small text-muted">{note}</span>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-3 text-small text-muted">
-          Вкладки защищены: кроме служебного аккаунта их может править только владелец таблицы, и такую правку ночная сверка вернёт и запишет в журнал. Вкладки с такими же названиями, которые были в таблице до подключения, ресурс переименовывает в «… (архив до запуска)», остальные вкладки не трогает. Отчёт CEO в таблицу не выгружается.
-        </p>
-      </section>
+          {view.connected ? (
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={busy !== null} onClick={() => act("push", pushNowAction, (r) => (r.items ? `Выгружено: ${r.items} ${plural(r.items, "строка", "строки", "строк")}` : "Таблица уже совпадает с ресурсом"))}>
+                <CloudUpload className="h-4 w-4" aria-hidden="true" />
+                {busy === "push" ? "Выгружаем…" : "Выгрузить сейчас"}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy !== null}
+                onClick={() =>
+                  act("reconcile", reconcileNowAction, (r) => {
+                    const n = r.details.diffs.length + r.details.removed.length + r.details.restored.length;
+                    return n ? `Сверка вернула значения ресурса: ${n}` : "Сверка: расхождений нет";
+                  })
+                }
+              >
+                <ScanSearch className="h-4 w-4" aria-hidden="true" />
+                {busy === "reconcile" ? "Сверяем…" : "Сверить сейчас"}
+              </Button>
+              <Button variant="secondary" disabled={busy !== null} onClick={() => setConfirm(true)}>
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                {busy === "rebuild" ? "Пересобираем…" : "Пересобрать вкладки"}
+              </Button>
+            </div>
+          ) : null}
 
-      <section aria-labelledby="sync-log">
-        <h3 id="sync-log" className="mb-3 text-title-sm font-semibold text-ink">
-          История выгрузок
-        </h3>
-        {view.runs.length ? (
-          <ul className="divide-y divide-line sv-card sv-card--soft">
-            {view.runs.map((r) => (
-              <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-body sm:grid-cols-[150px_110px_1fr]">
-                <span className="tabular-nums text-muted">{r.at}</span>
-                <span className="text-ink">{r.kind}</span>
-                <span className={cn("col-span-2 inline-flex min-w-0 items-start gap-1.5 sm:col-span-1", r.tone === "error" ? "text-danger-ink" : r.tone === "warn" ? "text-warning-ink" : "text-ink")}>
-                  <span className="mt-0.5">
-                    <ToneIcon tone={r.tone} />
-                  </span>
-                  <span className="min-w-0 break-words">{r.text}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
-        )}
-      </section>
-      </section>
+          <Connection view={view} />
+
+          <section aria-labelledby="sync-tabs">
+            <h3 id="sync-tabs" className="mb-3 text-title-sm font-semibold text-ink">
+              Вкладки ресурса в таблице
+            </h3>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {[
+                ["Задачи", `${view.counts.tasks} ${plural(view.counts.tasks, "строка", "строки", "строк")}, без архива`],
+                ["Комментарии к задачам", `${view.counts.comments} ${plural(view.counts.comments, "строка", "строки", "строк")}`],
+                ["Weekly", `${view.counts.entries} ${plural(view.counts.entries, "строка", "строки", "строк")}`],
+                ["Журнал выгрузки", "что и когда выгружено, ночью сокращается до 2000 строк"],
+                ["Сводка", "формулы по лидерам"],
+              ].map(([name, note]) => (
+                <li key={name} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-0.5 rounded-lg px-4 py-3 ring-1 ring-line">
+                  <span className="text-body font-medium text-ink">{name}</span>
+                  <span className="text-small text-muted">{note}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-small text-muted">
+              Вкладки защищены: кроме служебного аккаунта их может править только владелец таблицы, и такую правку ночная сверка вернёт и запишет в журнал. Вкладки с такими же названиями, которые были в таблице до подключения, ресурс переименовывает в «… (архив до запуска)», остальные вкладки не трогает. Отчёт CEO в таблицу не выгружается.
+            </p>
+          </section>
+
+          <section aria-labelledby="sync-log">
+            <h3 id="sync-log" className="mb-3 text-title-sm font-semibold text-ink">
+              История выгрузок
+            </h3>
+            {view.runs.length ? (
+              <ul className="divide-y divide-line sv-card sv-card--soft">
+                {view.runs.map((r) => (
+                  <li key={r.id} className="grid grid-cols-[auto_1fr] items-start gap-x-3 gap-y-0.5 px-4 py-3 text-body sm:grid-cols-[150px_110px_1fr]">
+                    <span className="tabular-nums text-muted">{r.at}</span>
+                    <span className="text-ink">{r.kind}</span>
+                    <span className={cn("col-span-2 inline-flex min-w-0 items-start gap-1.5 sm:col-span-1", r.tone === "error" ? "text-danger-ink" : r.tone === "warn" ? "text-warning-ink" : "text-ink")}>
+                      <span className="mt-0.5">
+                        <ToneIcon tone={r.tone} />
+                      </span>
+                      <span className="min-w-0 break-words">{r.text}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="sv-card sv-card--soft px-5 py-4 text-body text-muted">Выгрузок ещё не было. Первая начнётся в течение 30 секунд после подключения таблицы.</p>
+            )}
+          </section>
+        </section>
       ) : null}
 
       <Modal

@@ -122,7 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <span>
               Правки не уходят в Google-таблицу больше 30 минут: Google не отвечает или нет доступа к таблице для просмотра. Изменения ждут в очереди и не теряются.{" "}
               {ctx.management?.role === "OWNER" ? (
-                <Link href="/sync" className="font-semibold underline underline-offset-2">
+                <Link href="/sync?tab=mirror" className="font-semibold underline underline-offset-2">
                   Открыть синхронизацию
                 </Link>
               ) : (

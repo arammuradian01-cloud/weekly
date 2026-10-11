@@ -78,7 +78,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           <Menu.Item asChild>
             <Link href="/profile" className={itemClass}>
               <UserRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
-              Профиль и входы
+              Профиль
             </Link>
           </Menu.Item>
 

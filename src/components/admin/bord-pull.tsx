@@ -107,7 +107,7 @@ export function BordPull({ view }: { view: BordView }) {
         <StatusLine
           label="Состояние забора из Bord"
           items={[
-            { label: "Последний забор", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "warning" : "ok", testId: "bord-status-last" },
+            { label: "Последний забор", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "danger" : "ok", testId: "bord-status-last" },
             { label: "Задач в Bord", value: r.rows, hint: "строк с номером во вкладке «Задачи»", testId: "bord-status-rows" },
             {
               label: "Последний раз перенесено",

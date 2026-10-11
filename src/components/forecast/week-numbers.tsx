@@ -42,7 +42,7 @@ export function WeekNumbersBlock({
   embedded?: boolean;
 }) {
   const setup = manage ? (
-    <Link href="/sync" className="font-medium text-blue-700 hover:underline">
+    <Link href="/sync?tab=numbers" className="font-medium text-blue-700 hover:underline">
       Синхронизация
     </Link>
   ) : (

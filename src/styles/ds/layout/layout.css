@@ -33,14 +33,16 @@
 .sv-toc__item.is-active { background: var(--color-accent-soft); color: var(--color-link); }
 .sv-toc__item:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
 .sv-page--toc .sv-toc-section { scroll-margin-top: calc(64px + var(--space-4)); }
+/* На планшете и телефоне страница одним блоком (у sticky в своей строке сетки нет места двигаться), лента липнет
+   под шапкой сайта 56px, якорь раздела учитывает и шапку, и ленту 52px */
 @media (max-width: 1023px) {
-  .sv-page--toc { grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
-  .sv-toc { top: 0; z-index: 10; flex-direction: row; gap: var(--space-1); overflow-x: auto; margin: 0 calc(-1 * var(--space-5)); padding: var(--space-2) var(--space-5); background: var(--color-page); scrollbar-width: none; }
+  .sv-page--toc { display: block; }
+  .sv-toc { top: 56px; z-index: 10; flex-direction: row; gap: var(--space-1); overflow-x: auto; margin: 0 calc(-1 * var(--space-5)) var(--space-4); padding: var(--space-2) var(--space-5); background: var(--color-page); scrollbar-width: none; }
   .sv-toc::-webkit-scrollbar { display: none; }
   .sv-toc__item { flex: none; white-space: nowrap; }
-  .sv-page--toc .sv-toc-section { scroll-margin-top: 56px; }
+  .sv-page--toc .sv-toc-section { scroll-margin-top: calc(56px + 52px + var(--space-2)); }
 }
-@media (max-width: 767px) { .sv-toc { margin: 0 calc(-1 * var(--content-pad-phone)); padding: var(--space-2) var(--content-pad-phone); } }
+@media (max-width: 767px) { .sv-toc { margin: 0 calc(-1 * var(--content-pad-phone)) var(--space-4); padding: var(--space-2) var(--content-pad-phone); } }
 .sv-shell__bottom { display: none; }
 .sv-shell__header { display: none; }
 /* Вариант «шапка как на сайте»: без бокового меню */

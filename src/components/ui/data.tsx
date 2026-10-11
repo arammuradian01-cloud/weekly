@@ -164,11 +164,12 @@ export type StatusItem = {
     Ссылка только на значении: обёртка dt и dd ссылкой в dl не допускается */
 export function StatusLine({ label, items, className }: { label: string; items: StatusItem[]; className?: string }) {
   return (
-    <dl className={cn("sv-statusline", className)} aria-label={label}>
+    <dl className={cn("sv-statusline", className)} role="group" aria-label={label}>
       {items.map((i) => {
+        // Точка оттенка только у состояний; у счётчиков («задач 412») её нет, чтобы не читаться как «выключено»
         const value = (
           <>
-            <span className={cn("sv-statusline__dot", i.tone && `sv-statusline__dot--${i.tone}`)} aria-hidden="true" />
+            {i.tone ? <span className={cn("sv-statusline__dot", `sv-statusline__dot--${i.tone}`)} aria-hidden="true" /> : null}
             <span className="min-w-0">{i.value}</span>
           </>
         );

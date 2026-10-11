@@ -12,6 +12,7 @@ export function Toc({ items, label = "Разделы страницы", classNam
   const [active, setActive] = useState(items[0]?.id ?? "");
   const ids = items.map((i) => i.id).join("|");
   const ticking = useRef(false);
+  const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const list = ids.split("|").filter(Boolean);
     const pick = () => {
@@ -26,6 +27,10 @@ export function Toc({ items, label = "Разделы страницы", classNam
       }
       if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) current = list[list.length - 1] ?? current;
       setActive(current);
+      // На телефоне лента прокручивается внутри себя: активный пункт подъезжает в видимую часть
+      const nav = navRef.current;
+      const link = nav?.querySelector<HTMLElement>(`[data-toc="${current}"]`);
+      if (nav && link && getComputedStyle(nav).flexDirection === "row") link.scrollIntoView({ inline: "nearest", block: "nearest" });
     };
     const onScroll = () => {
       if (ticking.current) return;
@@ -41,9 +46,9 @@ export function Toc({ items, label = "Разделы страницы", classNam
     };
   }, [ids]);
   return (
-    <nav className={cn("sv-toc", className)} aria-label={label}>
+    <nav ref={navRef} className={cn("sv-toc", className)} aria-label={label}>
       {items.map((i) => (
-        <a key={i.id} href={`#${i.id}`} className={cn("sv-toc__item", active === i.id && "is-active")} aria-current={active === i.id ? "location" : undefined} data-testid={`toc-${i.id}`}>
+        <a key={i.id} href={`#${i.id}`} className={cn("sv-toc__item", active === i.id && "is-active")} aria-current={active === i.id ? "location" : undefined} data-toc={i.id} data-testid={`toc-${i.id}`}>
           {i.label}
         </a>
       ))}

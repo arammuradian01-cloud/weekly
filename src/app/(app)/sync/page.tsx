@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs, StatusLine, type StatusItem } from "@/components/ui/data";
 import { SyncStatus, type SyncView } from "@/components/admin/sync-status";
+import { SYNC_TABS, type SyncTab } from "@/components/admin/sync-tabs";
 import { LAG_WARNING_MS, syncStatus, type SyncRun } from "@/lib/sheet/runner";
 import { PROD_SHEET_ID } from "@/lib/sheet/client";
 import { bordStatus } from "@/lib/bord/service";
@@ -45,14 +46,12 @@ function resultOf(r: SyncRun): { text: string; tone: SyncView["runs"][number]["t
   return { text: r.items ? `строк записано: ${r.items}` : "изменений не было", tone: "ok" };
 }
 
-const TABS = ["bord", "numbers", "mirror"] as const;
-export type SyncTab = (typeof TABS)[number];
 
 export default async function SyncPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requireManagement(OWNER_ROLES, "/sync");
   const sp = await searchParams;
   // Этап 48: три связи вкладками, адрес ?tab= пересылаемый
-  const tab: SyncTab = TABS.find((t) => t === sp.tab) ?? "bord";
+  const tab: SyncTab = SYNC_TABS.find((t) => t === sp.tab) ?? "bord";
   const now = new Date();
   const [status, bord, numbers, tasks, comments, entries] = await Promise.all([
     syncStatus(now),
@@ -122,7 +121,7 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
     : bordView.error
       ? { label: "Задачи из Bord", value: "забор не прошёл", hint: bordView.error.at, tone: "danger", href: "/sync?tab=bord", testId: "sync-status-bord" }
       : bordView.lastOk
-        ? { label: "Задачи из Bord", value: `забор ${bordView.lastOk.ago}`, hint: bordView.next ? `следующий ${bordView.next}` : undefined, tone: "ok", href: "/sync?tab=bord", testId: "sync-status-bord" }
+        ? { label: "Задачи из Bord", value: `забор ${bordView.lastOk.ago}`, tone: "ok", href: "/sync?tab=bord", testId: "sync-status-bord" }
         : { label: "Задачи из Bord", value: "первый забор в течение минуты", tone: "warning", href: "/sync?tab=bord", testId: "sync-status-bord" };
   const numbersState: StatusItem = !numbersView.connected
     ? { label: "Цифры недели", value: "не подключены", tone: "muted", href: "/sync?tab=numbers", testId: "sync-status-numbers" }
@@ -138,7 +137,7 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
       : view.lagging
         ? { label: "Таблица для просмотра", value: `в очереди ${view.queue.size}, ждёт ${view.queue.waitingMin} мин`, tone: "warning", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
         : view.lastPush
-          ? { label: "Таблица для просмотра", value: `выгрузка ${view.lastPush.ago}`, hint: view.queue.size ? `в очереди ${view.queue.size}` : `задач ${tasks}, записей weekly ${entries}`, tone: "ok", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
+          ? { label: "Таблица для просмотра", value: `выгрузка ${view.lastPush.ago}`, hint: view.queue.size ? `в очереди ${view.queue.size}` : undefined, tone: "ok", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
           : { label: "Таблица для просмотра", value: "первая выгрузка в течение 30 секунд", tone: "warning", href: "/sync?tab=mirror", testId: "sync-status-mirror" };
   return (
     <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { CalendarOff, Copy, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
@@ -60,10 +60,13 @@ const plural = (n: number, one: string, few: string, many: string) => {
 
 /** Раздел настроек: заголовок с якорем для оглавления (этап 48), пояснение, содержимое во всю ширину колонки */
 function Section({ id, title, description, children }: { id?: string; title: string; description?: string; children: React.ReactNode }) {
+  const headingId = useId();
   return (
-    <section id={id} aria-label={title} className="sv-toc-section border-t border-line py-8 first:border-t-0 first:pt-0">
+    <section id={id} aria-labelledby={headingId} className="sv-toc-section border-t border-line py-8">
       <div className="max-w-[72ch]">
-        <h2 className="text-title font-semibold text-ink">{title}</h2>
+        <h2 id={headingId} className="text-title font-semibold text-ink">
+          {title}
+        </h2>
         {description ? <p className="mt-1 text-small text-muted">{description}</p> : null}
       </div>
       <div className="mt-5 min-w-0">{children}</div>
@@ -125,10 +128,12 @@ export function SettingsView({
         ]
       : []),
   ];
+  // Администратору видны два раздела: оглавление из двух пунктов не нужно
+  const withToc = toc.length >= 3;
   return (
-    <div className="sv-page--toc">
-      <Toc items={toc} label="Разделы настроек" />
-      <div className="min-w-0">
+    <div className={cn(withToc && "sv-page--toc")}>
+      {withToc ? <Toc items={toc} label="Разделы настроек" /> : null}
+      <div className="min-w-0 [&>:first-child]:border-t-0 [&>:first-child]:pt-0">
         <RhythmSection initial={rhythm} />
         <Section id="dicts" title="Справочники" description="Значения списков в weekly и задачах. Скрытое значение пропадает из выбора, но остаётся в старых записях">
         <div className="grid gap-6 xl:grid-cols-2">
@@ -162,25 +167,25 @@ export function SettingsView({
             <LoginSection login={login} />
 
             <Section title="Пароли" description="Задаются на странице первичной настройки или командой на сервере. В интерфейсе их не видно">
-            <ul className="flex flex-col gap-2 text-body">
-              {passwords.map((p) => (
-                <li key={p.title} className="flex flex-wrap items-center gap-3">
-                  <span className="w-72 text-ink">{p.title}</span>
-                  <Badge tone={p.set ? "green" : "red"}>{p.set ? "Задан" : "Не задан"}</Badge>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-small text-muted">После смены общего пароля все выходят. Сменить пароль: команда npm run password на сервере.</p>
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-body">
-              <span className="w-72 text-ink">Ключ сессий</span>
-              <Badge tone={sessionKey === "env" ? "green" : "yellow"}>{sessionKey === "env" ? "Свой, SESSION_SECRET" : "Из пароля базы"}</Badge>
-            </div>
-            {sessionKey !== "env" ? (
-              <p className="mt-2 text-small text-muted">
-                До пилота задайте в переменных приложения SESSION_SECRET: случайную строку не короче 32 символов. После этого все один раз войдут заново.
-              </p>
-            ) : null}
-          </Section>
+              <ul className="flex flex-col gap-2 text-body">
+                {passwords.map((p) => (
+                  <li key={p.title} className="flex flex-wrap items-center gap-3">
+                    <span className="w-72 text-ink">{p.title}</span>
+                    <Badge tone={p.set ? "green" : "red"}>{p.set ? "Задан" : "Не задан"}</Badge>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-small text-muted">После смены общего пароля все выходят. Сменить пароль: команда npm run password на сервере.</p>
+              <div className="mt-4 flex flex-wrap items-center gap-3 text-body">
+                <span className="w-72 text-ink">Ключ сессий</span>
+                <Badge tone={sessionKey === "env" ? "green" : "yellow"}>{sessionKey === "env" ? "Свой, SESSION_SECRET" : "Из пароля базы"}</Badge>
+              </div>
+              {sessionKey !== "env" ? (
+                <p className="mt-2 text-small text-muted">
+                  До пилота задайте в переменных приложения SESSION_SECRET: случайную строку не короче 32 символов. После этого все один раз войдут заново.
+                </p>
+              ) : null}
+            </Section>
           </Group>
 
           <Group id="stand">
@@ -189,22 +194,22 @@ export function SettingsView({
             {banner === "test" ? <ReloadSection /> : null}
 
             <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
-            <p className="text-body text-ink">
-              Ссылка на таблицу, очередь и история выгрузок на странице{" "}
-              <a href="/sync" className="font-medium text-blue-700 underline-offset-2 hover:underline">
-                «Синхронизация»
-              </a>
-              . Рабочая таблица Insurance&Invest Bord подключается только с согласия владельца.
-            </p>
-          </Section>
+              <p className="text-body text-ink">
+                Ссылка на таблицу, очередь и история выгрузок на странице{" "}
+                <a href="/sync?tab=mirror" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+                  «Синхронизация»
+                </a>
+                . Рабочая таблица Insurance&Invest Bord подключается только с согласия владельца.
+              </p>
+            </Section>
 
-          <Section title="Выгрузка данных" description="Второй уровень защиты вместе с историей версий таблицы">
-            <a href="/settings/export" className={buttonClass("secondary")} download>
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Выгрузить всё в Excel
-            </a>
-            <p className="mt-3 text-small text-muted">Один файл: задачи с переносами и комментариями, weekly, недели, отчёты CEO, люди, справочники и журнал. Выгрузка попадает в журнал.</p>
-          </Section>
+            <Section title="Выгрузка данных" description="Второй уровень защиты вместе с историей версий таблицы">
+              <a href="/settings/export" className={buttonClass("secondary")} download>
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Выгрузить всё в Excel
+              </a>
+              <p className="mt-3 text-small text-muted">Один файл: задачи с переносами и комментариями, weekly, недели, отчёты CEO, люди, справочники и журнал. Выгрузка попадает в журнал.</p>
+            </Section>
           </Group>
         </>
       ) : (
@@ -801,7 +806,7 @@ function ReloadSection() {
         {result ? (
           <p role="status" className="rounded-lg bg-green-soft px-4 py-3 text-small text-green-ink">
             Загружено: задач {result.tasks}, записей weekly {result.entries}. Следующая новая задача получит номер {result.nextNumber}. Теперь на странице{" "}
-            <a href="/sync" className="font-medium underline underline-offset-2">
+            <a href="/sync?tab=mirror" className="font-medium underline underline-offset-2">
               «Синхронизация»
             </a>{" "}
             нажмите «Пересобрать вкладки», чтобы таблица совпала с базой.
