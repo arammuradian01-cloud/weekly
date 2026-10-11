@@ -185,7 +185,8 @@ test("владелец отмечает записи в отчёт CEO, отчё
   await expect(page.getByText("Запись попадёт в отчёт CEO").first()).toBeVisible();
 
   await page.goto("/ceo-report?week=2026-09-21");
-  await expect(page.getByText(/Записей с отметкой «В отчёт CEO»: 13\./)).toBeVisible();
+  // Этап 47: число отметок только в цифрах панели, в подписи его больше нет
+  await expect(page.getByTestId("ceo-fig-flags")).toContainText(/13\s*отметок «В отчёт CEO»/);
   const sections = [page.getByLabel("Главное за неделю"), page.getByLabel("Риски"), page.getByLabel("Что дальше")];
   const texts = await Promise.all(sections.map((s) => s.inputValue()));
   expect(texts.join("\n")).toContain(what.replace(/\.$/, ""));

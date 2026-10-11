@@ -96,3 +96,31 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 .sv-wstrip__cell--absent { border: 2px dashed var(--color-neutral-dot); }
 .sv-wstrip__cell--pending { border: 2px dotted var(--color-icon); }
 .sv-wstrip__cell--none { background: radial-gradient(circle, var(--color-neutral-dot) 0 2px, transparent 2.5px); }
+
+/* Сворачиваемый блок (этап 47): заголовок и подсказка видны всегда, стрелка поворачивается, содержимое с отступом.
+   Шапка сеткой: заголовок и подсказка слева в две строки, стрелка справа; заголовок прямой ребёнок summary */
+.sv-collapse { padding: 0; }
+.sv-collapse__head { display: grid; grid-template-columns: minmax(0, 1fr) 20px; grid-template-areas: "title chev" "hint chev"; align-items: center; column-gap: var(--space-3); row-gap: 2px; padding: var(--space-3) var(--space-5); cursor: pointer; list-style: none; border-radius: var(--radius-card); }
+.sv-collapse__head::-webkit-details-marker { display: none; }
+.sv-collapse__head:hover { background: var(--color-row-hover); }
+.sv-collapse__head:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
+.sv-collapse__title { grid-area: title; margin: 0; min-width: 0; font-size: var(--text-card); line-height: var(--leading-card); font-family: var(--font-heading); font-weight: var(--font-weight-heading); }
+.sv-collapse__hint { grid-area: hint; min-width: 0; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.sv-collapse__chev { grid-area: chev; width: 20px; height: 20px; color: var(--color-icon); transition: transform var(--duration) var(--ease); }
+.sv-collapse[open] > .sv-collapse__head { border-bottom: 1px solid var(--color-border); border-radius: var(--radius-card) var(--radius-card) 0 0; }
+.sv-collapse[open] > .sv-collapse__head .sv-collapse__chev { transform: rotate(180deg); }
+.sv-collapse__body { padding: var(--space-4) var(--space-5) var(--space-5); }
+.sv-collapse__body--flush { padding: 0; }
+/* Модуль внутри блока без своей рамки: отступы модуля совпадают с отступами шапки блока */
+.sv-module--flat { border: 0; background: transparent; border-radius: 0; }
+@media (max-width: 639px) { .sv-collapse__head { padding: var(--space-3) var(--space-4); } .sv-collapse__body { padding: var(--space-3) var(--space-4) var(--space-4); } .sv-collapse__body--flush { padding: 0; } }
+
+/* Группа поручений в повестке встречи (этап 47): строка «Тарас Р., 6 поручений» как пункт списка, внутри обычные пункты */
+.sv-agenda-group { display: flex; flex-direction: column; gap: 2px; }
+.sv-agenda-group__head { display: flex; align-items: center; gap: var(--space-2); min-height: 40px; padding: var(--space-2) var(--space-3); padding-left: calc(var(--space-3) + 16px); border-radius: var(--radius-control); font-size: var(--text-small); line-height: var(--leading-small); font-weight: var(--font-weight-medium); color: var(--color-text); cursor: pointer; list-style: none; position: relative; }
+.sv-agenda-group__head::-webkit-details-marker { display: none; }
+.sv-agenda-group__head::before { content: ""; position: absolute; left: var(--space-3); top: 50%; width: 6px; height: 6px; margin-top: -5px; border-right: 1.5px solid var(--color-icon); border-bottom: 1.5px solid var(--color-icon); transform: rotate(-45deg); transition: transform var(--duration) var(--ease); }
+.sv-agenda-group[open] > .sv-agenda-group__head::before { transform: rotate(45deg); margin-top: -4px; }
+.sv-agenda-group__head:hover { background: var(--color-row-hover); }
+.sv-agenda-group__head:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
+.sv-agenda-group__head > span:last-child { margin-left: auto; }

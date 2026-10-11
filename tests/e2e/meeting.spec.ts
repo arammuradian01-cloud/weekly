@@ -18,7 +18,8 @@ async function shot(page: Page, name: string) {
 async function openAgenda(page: Page) {
   const details = page.locator("details").filter({ has: page.locator("summary", { hasText: /^Повестка:/ }) });
   if (!(await details.count()) || !(await details.first().isVisible())) return;
-  if (!(await details.first().evaluate((el) => (el as HTMLDetailsElement).open))) await details.first().locator("summary").click();
+  // Только заголовок самой повестки: внутри неё с этапа 47 свои details у групп поручений
+  if (!(await details.first().evaluate((el) => (el as HTMLDetailsElement).open))) await details.first().locator(":scope > summary").click();
 }
 
 async function second(browser: Browser, page: Page, fullName: string) {
@@ -54,6 +55,23 @@ test("владелец собирает повестку, ведёт встре�
   await page.getByRole("button", { name: "Начать встречу" }).click();
   await expect(page.getByText("Встреча началась").first()).toBeVisible();
   await expect(page.getByText(/Вы ведёте/)).toBeVisible();
+  await openAgenda(page);
+
+  // Этап 47: поручения прошлой встречи в повестке группами по человеку, в группе счёт поручений; поручение на экране
+  // ведущего открывает карточку задачи с панелью действий, поля и комментарии свёрнуты. Группа с текущим пунктом раскрыта
+  const groups = nav.locator("details.sv-agenda-group");
+  expect(await groups.count()).toBeGreaterThanOrEqual(2);
+  const group = groups.first();
+  await expect(group.locator(":scope > summary")).toHaveText(/\d+ поручени/);
+  if (!(await group.evaluate((el) => (el as HTMLDetailsElement).open))) await group.locator(":scope > summary").click();
+  await group.getByRole("button").first().click();
+  await expect(page.getByTestId("agenda-task-card")).toBeVisible();
+  await expect(page.getByTestId("task-brief")).toBeVisible();
+  await expect(page.getByText(/^(Где оно сейчас|Принимаем итог)\?$/)).toBeVisible();
+  await expect(group).toHaveAttribute("open", "");
+  // Кнопки ведущего над карточкой: «Обсуждено» видна без прокрутки до конца карточки
+  await expect(page.getByRole("button", { name: "Обсуждено", exact: true })).toBeVisible();
+
   await openAgenda(page);
   await nav.getByRole("button", { name: /^Задача 28 заблокирована/ }).click();
   await expect(page.getByRole("heading", { name: /Задача 28 заблокирована/ })).toBeVisible();

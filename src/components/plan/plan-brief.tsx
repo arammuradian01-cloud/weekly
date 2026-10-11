@@ -14,11 +14,12 @@ const HEAD: { key: "revenue" | "promoMargin" | "directMargin"; label: string }[]
   { key: "directMargin", label: "Прямая маржа" },
 ];
 
-export function PlanBriefBlock({ brief, compact = false, headingLevel = 2 }: { brief: PlanBrief; compact?: boolean; headingLevel?: 2 | 3 }) {
+export function PlanBriefBlock({ brief, compact = false, headingLevel = 2, embedded = false }: { brief: PlanBrief; compact?: boolean; headingLevel?: 2 | 3; /** Внутри сворачиваемого блока: без своей рамки (этап 47) */ embedded?: boolean }) {
   return (
     <Module
       id="plan-brief"
       headingLevel={headingLevel}
+      flat={embedded}
       title={brief.asOf ? `Прогноз месяца: ${brief.monthLabel}, на ${brief.asOf.when}` : `Прогноз месяца: ${brief.monthLabel}`}
       description={
         brief.asOf

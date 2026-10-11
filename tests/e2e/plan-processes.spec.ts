@@ -137,6 +137,8 @@ test("прогноз месяца в отчёте CEO и на встрече т�
   // Прошлый месяц закрыт: проверять его уже не просят
   const open = weekMonth() >= moscowToday().slice(0, 7);
   await page.goto(`/ceo-report?week=${thisWeek()}`);
+  // Этап 47: блок прогноза в отчёте свёрнут
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   const brief = page.getByTestId("plan-brief").first();
   await expect(brief).toBeVisible();
   await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
@@ -172,6 +174,7 @@ test("отчёт CEO за прошлую неделю: прогноз на её 
 
   // Загрузка сегодня, а неделя закончилась раньше: снимка на её конец нет, это видно
   await page.goto(`/ceo-report?week=${week}`);
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   const brief = page.locator("#plan-brief");
   await expect(brief.getByRole("heading", { name: new RegExp(`на конец недели \\d+, ${ru(sundayKey).slice(0, 5).replace(".", "\\.")}$`) })).toBeVisible();
   await expect(brief).toContainText("Снимка загрузки LBE на конец недели");
@@ -182,6 +185,8 @@ test("отчёт CEO за прошлую неделю: прогноз на её 
   await sql(`UPDATE plan_pulls SET at = $1`, [new Date(`${week}T09:00:00Z`)]);
   await sql(`UPDATE plan_partners SET "pulledAt" = $1`, [new Date(`${week}T09:00:00Z`)]);
   await page.reload();
+  // После перезагрузки блок прогноза снова свёрнут
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   await expect(brief).not.toContainText("Снимка загрузки LBE");
   await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
   await shot(page, "ceo-past-week");

@@ -141,6 +141,7 @@ test("канал в сводке отчёта CEO: строкой под ито�
   await enterManagement(page, "owner");
   await pull(page, weekMonth());
   await page.goto(`/ceo-report?week=${thisWeek()}`);
+  await page.getByTestId("ceo-plan-block").locator("summary").click();
   await expect(page.getByTestId("plan-brief-partners")).toContainText("Партнёрский канал, внутри продуктов:");
   await expect(page.getByTestId("plan-brief-partners")).toContainText("млн");
   await shot(page, "ceo");

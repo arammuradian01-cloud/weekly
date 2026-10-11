@@ -10,7 +10,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, ClipboardCopy, Link2, ListPlus, Maximize2, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName, personOf } from "@/domain/people";
-import { formatLong, formatShort } from "@/domain/dates";
+import { isClosed } from "@/domain/rules";
+import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { AGENDA_BLOCKS, AGENDA_KIND_LABELS, blockOf, timerText, type AgendaItemView, type DecisionView, type MeetingView } from "@/domain/meeting";
 import {
@@ -34,6 +35,7 @@ import { StatusBadge, WeeklyBadge } from "@/components/ui/task-badges";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
+import { TaskCard } from "@/components/tasks/task-card";
 import { openNewTask } from "@/components/prototype/new-task";
 import { PersonSelect } from "@/components/requests/request-parts";
 import { EntryItem } from "@/components/weekly/entry-item";
@@ -163,7 +165,8 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog']")) return;
+      // Стрелки внутри полей, меню, окон и переключателей (например, «Комментарии или история» в карточке задачи) не листают встречу
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable='true'], [role='menu'], [role='dialog'], [role='radiogroup'], [role='tablist']")) return;
       if (busy) return;
       if (e.key === "ArrowRight" || e.key === "PageDown") step(1);
       if (e.key === "ArrowLeft" || e.key === "PageUp") step(-1);
@@ -179,7 +182,6 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
 
   return (
     <div className={cn("flex min-h-[70vh] flex-col gap-6", projector && "meeting-projector")} data-scale={projector ? "projector" : undefined}>
-      {numbers}
       <Header view={view} team={team} meeting={meeting} projector={projector}>
         {canLead && meeting.status !== "done" ? (
           <>
@@ -212,6 +214,8 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
           </Button>
         ) : null}
       </Header>
+      {/* Цифры недели после заголовка встречи (этап 47): на телефоне они стояли над названием встречи */}
+      {numbers}
 
       {meeting.status === "live" && !leading ? (
         <p className="flex flex-wrap items-center gap-3 sv-card sv-card--soft px-4 py-2 text-small text-ink">
@@ -296,8 +300,56 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
   );
 }
 
+/** Короткая подпись пункта в повестке: поручение по номеру и названию задачи, weekly по имени, остальное как есть */
+function agendaLabel(i: AgendaItemView): string {
+  if (i.kind === "person" && i.person) return personOf(i.person).fullName;
+  if (i.kind === "follow-up" && i.task) return `${i.task.number} ${i.task.title}`;
+  return i.title;
+}
+
 function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, summary = true }: { meeting: MeetingView; current: string; onSelect: (id: string) => void; canLead: boolean; busy: boolean; run: Run; discussed: number; summary?: boolean }) {
   const blocks = AGENDA_BLOCKS.map((b) => ({ ...b, items: meeting.items.filter((i) => blockOf(i.kind) === b.code) })).filter((b) => b.items.length);
+  const row = (i: AgendaItemView) => (
+    <li key={i.id} className="group flex items-start gap-1">
+      <button
+        type="button"
+        onClick={() => onSelect(i.id)}
+        aria-current={i.id === current ? "step" : undefined}
+        className={cn(
+          "flex min-h-10 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left text-small",
+          i.id === current ? "bg-accent-soft font-semibold text-link sv-mark-active" : "text-ink hover:bg-field",
+          i.discussed && i.id !== current && "text-muted line-through decoration-line",
+        )}
+      >
+        {i.discussed ? <Check className="mt-0.5 h-4 w-4 shrink-0" aria-label="обсуждено" /> : <span className="mt-0.5 inline-block h-4 w-4 shrink-0 rounded-full ring-1 ring-current opacity-40" aria-hidden="true" />}
+        <span className="min-w-0 break-words">{agendaLabel(i)}</span>
+      </button>
+      {canLead && meeting.status !== "done" && !i.decisions.length ? (
+        <button
+          type="button"
+          onClick={() => void run(() => removeAgendaItemAction(meeting.id, i.id))}
+          disabled={busy}
+          aria-label={`Убрать пункт: ${i.title}`}
+          className="mt-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-field hover:text-danger-ink focus-visible:opacity-100 group-hover:opacity-100"
+        >
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : null}
+    </li>
+  );
+  // Поручения группами по человеку (этап 47): сорок одинаковых фраз сворачиваются в «Тарас Р., 6 поручений».
+  // Группа с текущим пунктом раскрыта; без владельца или при одном-двух поручениях на всех список как есть
+  const grouped = (items: AgendaItemView[]) => {
+    if (items.length < 4) return null;
+    const byOwner = new Map<string, AgendaItemView[]>();
+    for (const i of items) {
+      const key = i.task?.owner ?? "";
+      byOwner.set(key, [...(byOwner.get(key) ?? []), i]);
+    }
+    if (byOwner.size < 2) return null;
+    return [...byOwner.entries()].map(([owner, list]) => ({ owner, list, done: list.filter((i) => i.discussed).length, open: list.some((i) => i.id === current) }));
+  };
+  const ownerName = (owner: string) => (owner === "" ? "Без ответственного" : owner === "all" ? "Все лидеры" : compactName(owner as PersonSlug));
   return (
     <nav aria-label="Повестка" className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
       {/* На телефоне та же строка уже в заголовке свёрнутой повестки */}
@@ -306,41 +358,27 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
           Повестка: {meeting.items.length} пунктов, обсуждено {discussed}
         </p>
       ) : null}
-      {blocks.map((b) => (
-        <div key={b.code}>
-          <p className="mb-1 text-caption font-semibold text-muted">{b.label}</p>
-          <ol className="flex flex-col gap-1">
-            {b.items.map((i) => (
-              <li key={i.id} className="group flex items-start gap-1">
-                <button
-                  type="button"
-                  onClick={() => onSelect(i.id)}
-                  aria-current={i.id === current ? "step" : undefined}
-                  className={cn(
-                    "flex min-h-10 flex-1 items-start gap-2 rounded-lg px-3 py-2 text-left text-small",
-                    i.id === current ? "bg-accent-soft font-semibold text-link sv-mark-active" : "text-ink hover:bg-field",
-                    i.discussed && i.id !== current && "text-muted line-through decoration-line",
-                  )}
-                >
-                  {i.discussed ? <Check className="mt-0.5 h-4 w-4 shrink-0" aria-label="обсуждено" /> : <span className="mt-0.5 inline-block h-4 w-4 shrink-0 rounded-full ring-1 ring-current opacity-40" aria-hidden="true" />}
-                  <span className="min-w-0 break-words">{i.kind === "person" && i.person ? personOf(i.person).fullName : i.title}</span>
-                </button>
-                {canLead && meeting.status !== "done" && !i.decisions.length ? (
-                  <button
-                    type="button"
-                    onClick={() => void run(() => removeAgendaItemAction(meeting.id, i.id))}
-                    disabled={busy}
-                    aria-label={`Убрать пункт: ${i.title}`}
-                    className="mt-2 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted opacity-0 hover:bg-field hover:text-danger-ink focus-visible:opacity-100 group-hover:opacity-100"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ol>
-        </div>
-      ))}
+      {blocks.map((b) => {
+        const groups = b.code === "follow-up" ? grouped(b.items) : null;
+        return (
+          <div key={b.code}>
+            <p className="mb-1 text-caption font-semibold text-muted">
+              {b.label} <span className="font-normal">{b.items.length}</span>
+            </p>
+            {groups ? (
+              <div className="flex flex-col gap-1">
+                {groups.map((g) => (
+                  <AgendaGroup key={g.owner} owner={g.owner} name={ownerName(g.owner)} hasCurrent={g.open} current={current} count={g.list.length} done={g.done}>
+                    <ol className="flex flex-col gap-1 pl-2">{g.list.map(row)}</ol>
+                  </AgendaGroup>
+                ))}
+              </div>
+            ) : (
+              <ol className="flex flex-col gap-1">{b.items.map(row)}</ol>
+            )}
+          </div>
+        );
+      })}
       <button
         type="button"
         onClick={() => onSelect(DECISIONS)}
@@ -353,13 +391,51 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
   );
 }
 
+/** Группа поручений одного человека в повестке. Открывается сама, когда текущий пункт попадает внутрь, даже если её
+    до этого свернули руками; свернуть обратно можно в любой момент */
+function AgendaGroup({ owner, name, hasCurrent, current, count, done, children }: { owner: string; name: string; hasCurrent: boolean; current: string; count: number; done: number; children: React.ReactNode }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (hasCurrent && ref.current) ref.current.open = true;
+  }, [hasCurrent, current]);
+  return (
+    <details ref={ref} open={hasCurrent} className="sv-agenda-group" data-testid={`agenda-group-${owner || "none"}`}>
+      <summary className="sv-agenda-group__head">
+        <span className="min-w-0 truncate">{name}</span>
+        <span className="shrink-0 text-caption text-muted">
+          {count} {plural(count, "поручение", "поручения", "поручений")}
+          {done ? `, обсуждено ${done}` : ""}
+        </span>
+      </summary>
+      {children}
+    </details>
+  );
+}
+
 function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed }: { view: WeekView; meeting: MeetingView; item: AgendaItemView; canLead: boolean; busy: boolean; run: Run; projector: boolean; elapsed: number }) {
   const { data } = usePrototype();
   const { open } = useOpenTask();
   const actions = useTaskActions();
   const task = item.task ? data.tasks.find((t) => t.number === item.task!.number) : undefined;
+  // Поручение прошлой встречи на экране ведущего и участника: карточка задачи целиком, с «где сейчас», сроком и
+  // статусом. На проекторе остаётся крупный вопрос и короткая строка задачи
+  const followUp = item.kind === "follow-up" && !!task && !projector;
   const h1 = cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-display-sm");
   const overTime = item.kind === "person" && elapsed >= meeting.timerMinutes * 60;
+  const leadActions =
+    canLead && meeting.status !== "done" ? (
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant={item.discussed ? "secondary" : "primary"} onClick={() => void run(() => setItemDiscussedAction(meeting.id, item.id, !item.discussed))} disabled={busy}>
+          <Check className="h-4 w-4" aria-hidden="true" />
+          {item.discussed ? "Снять «обсуждено»" : "Обсуждено"}
+        </Button>
+        <DecisionButton key={item.id} meeting={meeting} itemId={item.id} run={run} busy={busy} taskNumber={item.task?.number} />
+        <Button size="sm" variant="secondary" onClick={() => openNewTask({ source: "meeting", sourceNote: `Встреча, неделя ${meeting.weekNumber}`, title: item.kind === "manual" ? item.title.replace(/\?$/, "").slice(0, 120) : "" })}>
+          <ListPlus className="h-4 w-4" aria-hidden="true" />
+          Поставить задачу
+        </Button>
+      </div>
+    ) : null;
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -374,13 +450,29 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
         </p>
         {item.kind === "person" && item.person ? (
           <PersonStep view={view} slug={item.person} projector={projector} />
+        ) : followUp ? (
+          // Поручение (этап 47): заголовком задача, вопрос ведущего мелко, ниже карточка задачи целиком
+          <>
+            <h2 className={cn(h1, "mt-1 max-w-[40ch]")}>
+              <span className="mr-2 font-normal tabular-nums text-muted">{task.number}</span>
+              {task.title}
+            </h2>
+            <p className="mt-1 text-body text-muted">{isClosed(task) ? "Принимаем итог?" : "Где оно сейчас?"}</p>
+          </>
         ) : (
           <h2 className={cn(h1, "mt-1 max-w-[40ch]")}>{item.title}</h2>
         )}
         {item.note ? <p className={cn("mt-2 max-w-[70ch] text-ink", projector ? "text-headline" : "text-body")}>{item.note}</p> : null}
       </div>
 
-      {task ? (
+      {/* У поручения действия ведущего над карточкой: «Обсуждено» и решение под рукой, а не под полями задачи */}
+      {followUp ? leadActions : null}
+
+      {followUp ? (
+        <div className="sv-card sv-card--soft p-5" data-testid="agenda-task-card">
+          <TaskCard key={task.number} task={task} brief />
+        </div>
+      ) : task ? (
         <div className="sv-card sv-card--soft px-4 py-3">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium text-ink hover:text-blue-700 hover:underline">
@@ -433,19 +525,7 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
 
       <DecisionList decisions={item.decisions} compact />
 
-      {canLead && meeting.status !== "done" ? (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant={item.discussed ? "secondary" : "primary"} onClick={() => void run(() => setItemDiscussedAction(meeting.id, item.id, !item.discussed))} disabled={busy}>
-            <Check className="h-4 w-4" aria-hidden="true" />
-            {item.discussed ? "Снять «обсуждено»" : "Обсуждено"}
-          </Button>
-          <DecisionButton key={item.id} meeting={meeting} itemId={item.id} run={run} busy={busy} taskNumber={item.task?.number} />
-          <Button size="sm" variant="secondary" onClick={() => openNewTask({ source: "meeting", sourceNote: `Встреча, неделя ${meeting.weekNumber}`, title: item.kind === "manual" ? item.title.replace(/\?$/, "").slice(0, 120) : "" })}>
-            <ListPlus className="h-4 w-4" aria-hidden="true" />
-            Поставить задачу
-          </Button>
-        </div>
-      ) : null}
+      {!followUp ? leadActions : null}
     </div>
   );
 }
