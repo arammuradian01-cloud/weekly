@@ -65,12 +65,21 @@ test("отчёт CEO, журнал, настройки и синхронизац
   await page.goto("/settings");
   await expect(page.getByRole("list", { name: "Люди и входы в цифрах" })).toBeVisible();
   await expect(page.getByTestId("set-fig-active")).not.toContainText(/^0/);
+  // Этап 48: оглавление слева, пункт ведёт к разделу
+  await expect(page.getByRole("navigation", { name: "Разделы настроек" })).toBeVisible();
+  await page.getByTestId("toc-people").click();
+  await expect(page.getByTestId("toc-people")).toHaveAttribute("aria-current", "location");
   await shot(page, "settings");
 
+  // Этап 48: состояние связей строкой, связи вкладками
   await page.goto("/sync");
-  await expect(page.getByRole("list", { name: "Синхронизация в цифрах" })).toBeVisible();
-  await expect(page.getByTestId("sync-fig-tasks")).not.toContainText(/^0/);
+  await expect(page.getByTestId("sync-status-bord")).toBeVisible();
+  await expect(page.getByTestId("sync-status-mirror")).toContainText(/не подключена|выгрузка|очереди/);
+  await expect(page.getByTestId("sync-tab-bord")).toHaveAttribute("aria-current", "page");
   await shot(page, "sync");
+  await page.getByTestId("sync-tab-mirror").click();
+  await expect(page.getByRole("heading", { name: "Таблица для просмотра" })).toBeVisible();
+  await shot(page, "sync-mirror");
 });
 
 test("один на один: цифры встреч при личном входе", async ({ page }) => {

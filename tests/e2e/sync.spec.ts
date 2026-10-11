@@ -29,10 +29,11 @@ async function shot(page: Page, name: string) {
 test("владелец подключает копию, выгружает, сверяет и пересобирает вкладки; рабочую таблицу подключить нельзя", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await page.goto("/sync");
+  // Этап 48: связи вкладками, состояние каждой в строке под заголовком
+  await page.goto("/sync?tab=mirror");
   await expect(page.getByText("Режим имитации")).toBeVisible();
-  await expect(page.getByText("не подключена", { exact: true })).toBeVisible();
-  await expect(page.getByText("забор выключен", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("sync-status-mirror")).toContainText("не подключена");
+  await expect(page.getByTestId("sync-status-bord")).toContainText("не подключён");
   await expect(page.getByRole("button", { name: "Выгрузить сейчас" })).toHaveCount(0);
   await shot(page, "01-not-connected");
 
@@ -65,7 +66,7 @@ test("владелец подключает копию, выгружает, св
   await expect(page.getByText("Google-таблица: подключение").filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText("Google-таблица: все вкладки").filter({ visible: true }).first()).toBeVisible();
 
-  await page.goto("/sync");
+  await page.goto("/sync?tab=mirror");
   await page.getByRole("button", { name: "Отключить" }).click();
   await expect(page.getByText("Таблица отключена").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Выгрузить сейчас" })).toHaveCount(0);
@@ -74,7 +75,7 @@ test("владелец подключает копию, выгружает, св
 test("сбой Google: ошибка на странице, правки ждут в очереди, через 30 минут предупреждение в шапке режима управления", async ({ page, browser }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await page.goto("/sync");
+  await page.goto("/sync?tab=mirror");
   await page.getByRole("textbox", { name: "Ссылка на таблицу для просмотра" }).fill(COPY);
   await page.getByRole("form", { name: "Ссылка на таблицу для просмотра" }).getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText("Таблица подключена, доступ есть").first()).toBeVisible();
@@ -119,6 +120,7 @@ test("владелец подключает рабочий Bord на чтени�
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/sync");
+  await expect(page.getByTestId("sync-tab-bord")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("heading", { name: "Задачи из Bord" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Забрать сейчас" })).toHaveCount(0);
 

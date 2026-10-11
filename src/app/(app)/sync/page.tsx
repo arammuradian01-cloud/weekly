@@ -3,8 +3,9 @@ import { requireManagement } from "@/lib/auth";
 import { OWNER_ROLES } from "@/lib/roles";
 import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/page-header";
-import { Figures } from "@/components/ui/data";
+import { PageTabs, StatusLine, type StatusItem } from "@/components/ui/data";
 import { SyncStatus, type SyncView } from "@/components/admin/sync-status";
+import { SYNC_TABS, type SyncTab } from "@/components/admin/sync-tabs";
 import { LAG_WARNING_MS, syncStatus, type SyncRun } from "@/lib/sheet/runner";
 import { PROD_SHEET_ID } from "@/lib/sheet/client";
 import { bordStatus } from "@/lib/bord/service";
@@ -45,8 +46,12 @@ function resultOf(r: SyncRun): { text: string; tone: SyncView["runs"][number]["t
   return { text: r.items ? `строк записано: ${r.items}` : "изменений не было", tone: "ok" };
 }
 
-export default async function SyncPage() {
+
+export default async function SyncPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   await requireManagement(OWNER_ROLES, "/sync");
+  const sp = await searchParams;
+  // Этап 48: три связи вкладками, адрес ?tab= пересылаемый
+  const tab: SyncTab = SYNC_TABS.find((t) => t === sp.tab) ?? "bord";
   const now = new Date();
   const [status, bord, numbers, tasks, comments, entries] = await Promise.all([
     syncStatus(now),
@@ -110,27 +115,48 @@ export default async function SyncPage() {
     bord: bordView,
     numbers: numbersView,
   };
+  // Этап 48: состояние трёх связей одной строкой вместо плиток, каждое ведёт на свою вкладку
+  const bordState: StatusItem = !bordView.connected
+    ? { label: "Задачи из Bord", value: "не подключён", tone: "muted", href: "/sync?tab=bord", testId: "sync-status-bord" }
+    : bordView.error
+      ? { label: "Задачи из Bord", value: "забор не прошёл", hint: bordView.error.at, tone: "danger", href: "/sync?tab=bord", testId: "sync-status-bord" }
+      : bordView.lastOk
+        ? { label: "Задачи из Bord", value: `забор ${bordView.lastOk.ago}`, tone: "ok", href: "/sync?tab=bord", testId: "sync-status-bord" }
+        : { label: "Задачи из Bord", value: "первый забор в течение минуты", tone: "warning", href: "/sync?tab=bord", testId: "sync-status-bord" };
+  const numbersState: StatusItem = !numbersView.connected
+    ? { label: "Цифры недели", value: "не подключены", tone: "muted", href: "/sync?tab=numbers", testId: "sync-status-numbers" }
+    : numbersView.error
+      ? { label: "Цифры недели", value: "чтение не прошло", hint: numbersView.error.at, tone: "danger", href: "/sync?tab=numbers", testId: "sync-status-numbers" }
+      : numbersView.lastOk
+        ? { label: "Цифры недели", value: `чтение ${numbersView.lastOk.ago}`, hint: `выбрано ${numbersView.metrics.length} из ${METRICS_MAX}`, tone: "ok", href: "/sync?tab=numbers", testId: "sync-status-numbers" }
+        : { label: "Цифры недели", value: "первое чтение скоро", tone: "warning", href: "/sync?tab=numbers", testId: "sync-status-numbers" };
+  const mirrorState: StatusItem = !view.connected
+    ? { label: "Таблица для просмотра", value: "не подключена", tone: "muted", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
+    : view.error
+      ? { label: "Таблица для просмотра", value: `${view.error.kind.toLowerCase()} не прошла`, hint: view.error.at, tone: "danger", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
+      : view.lagging
+        ? { label: "Таблица для просмотра", value: `в очереди ${view.queue.size}, ждёт ${view.queue.waitingMin} мин`, tone: "warning", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
+        : view.lastPush
+          ? { label: "Таблица для просмотра", value: `выгрузка ${view.lastPush.ago}`, hint: view.queue.size ? `в очереди ${view.queue.size}` : undefined, tone: "ok", href: "/sync?tab=mirror", testId: "sync-status-mirror" }
+          : { label: "Таблица для просмотра", value: "первая выгрузка в течение 30 секунд", tone: "warning", href: "/sync?tab=mirror", testId: "sync-status-mirror" };
   return (
     <>
       <PageHeader
         title="Синхронизация"
         description="Задачи из рабочего Bord и цифры из недельного отчёта в ресурс, все задачи ресурса в таблицу для просмотра. В Bord и отчёт ресурс не пишет"
-        figures={
-          // Этап 37: состояние связей в цифрах. Подробности и кнопки в разделах ниже
-          <Figures
-            label="Синхронизация в цифрах"
-            items={[
-              // Связи нет (выключена или нет ключа): время прошлого забора уже ничего не говорит
-              { label: "Задачи из Bord, последний забор", value: !bordView.connected ? "не подключён" : (bordView.lastOk?.ago ?? "ещё не было"), tone: bordView.connected && bordView.error ? "danger" : undefined, testId: "sync-fig-bord" },
-              { label: "Цифры недели, последний забор", value: !numbersView.connected ? "не подключён" : (numbersView.lastOk?.ago ?? "ещё не было"), tone: numbersView.connected && numbersView.error ? "danger" : undefined, testId: "sync-fig-numbers" },
-              { label: "Правок ждут выгрузки", value: view.queue.size, tone: view.connected && view.lagging ? "warning" : undefined, testId: "sync-fig-queue" },
-              { label: "Задач в ресурсе", value: tasks, testId: "sync-fig-tasks" },
-              { label: "Записей weekly", value: entries, testId: "sync-fig-entries" },
+        figures={<StatusLine label="Состояние связей" items={[bordState, numbersState, mirrorState]} />}
+        tabs={
+          <PageTabs
+            label="Связи"
+            tabs={[
+              { href: "/sync?tab=bord", label: "Bord", active: tab === "bord", testId: "sync-tab-bord" },
+              { href: "/sync?tab=numbers", label: "Цифры недели", active: tab === "numbers", testId: "sync-tab-numbers" },
+              { href: "/sync?tab=mirror", label: "Таблица для просмотра", active: tab === "mirror", testId: "sync-tab-mirror" },
             ]}
           />
         }
       />
-      <SyncStatus view={view} />
+      <SyncStatus view={view} tab={tab} />
     </>
   );
 }

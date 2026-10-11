@@ -49,17 +49,18 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva.getByText(/только из цифр/)).toBeVisible();
   await setPasswordByLink(reva, url);
 
-  // Профиль из списка не выбирается: «Сменить профиль» нет, есть «Профиль и входы»
+  // Профиль из списка не выбирается: «Сменить профиль» нет, есть «Профиль»
   await reva.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
   await expect(reva.getByRole("menuitem", { name: "Сменить профиль" })).toHaveCount(0);
-  await reva.getByRole("menuitem", { name: "Профиль и входы" }).click();
+  await reva.getByRole("menuitem", { name: "Профиль" }).click();
   await expect(reva).toHaveURL(/\/profile$/);
   await expect(reva.getByText("ссылка от владельца").first()).toBeVisible();
-  await expect(reva.getByText("Это устройство")).toBeVisible();
   await reva.goto("/choose");
   await expect(reva).toHaveURL(/\/$/);
-  await reva.goto("/profile");
+  // Этап 48: пароль и устройства на вкладке «Вход и пароль»
+  await reva.goto("/profile?tab=login");
   await expect(reva.getByRole("heading", { name: "Пароль" })).toBeVisible();
+  await expect(reva.getByText("Это устройство")).toBeVisible();
   await shot(reva, "profile");
 
   // Выход и вход с логином и паролем
@@ -90,6 +91,7 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(page.getByText(/личный вход/).filter({ visible: true }).first()).toBeVisible();
 
   // «Выйти на всех устройствах»: снова только по новой ссылке
+  await reva.goto("/profile?tab=login");
   await reva.getByRole("button", { name: "Выйти на всех устройствах" }).click();
   await reva.getByRole("dialog").getByRole("button", { name: "Выйти везде" }).click();
   await expect(reva).toHaveURL(/\/login/);

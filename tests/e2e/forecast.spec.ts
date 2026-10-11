@@ -24,7 +24,7 @@ test.beforeEach(async () => {
 test("цифры недели из отчёта и прогноз лидера доходят до отчёта CEO", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await page.goto("/sync");
+  await page.goto("/sync?tab=numbers");
   const form = page.getByRole("form", { name: "Ссылка на недельный отчёт" });
   await form.getByLabel("Ссылка на недельный отчёт").fill("https://docs.google.com/spreadsheets/d/1o1IlcrQD6ZguW2_X1kZOdT-nFM0jKHihh38VfDYbcMg/edit");
   await form.getByRole("button", { name: "Сохранить" }).click();

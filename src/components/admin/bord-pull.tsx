@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Copy, Download, ExternalLink, TriangleAlert, XCircle } from "lucide-react";
+import { Copy, Download, ExternalLink, XCircle } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/primitives";
+import { StatusLine } from "@/components/ui/data";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 import { pullBordNowAction, setBordSourceAction } from "@/app/(app)/sync/actions";
@@ -102,28 +103,20 @@ export function BordPull({ view }: { view: BordView }) {
       </div>
 
       {view.connected && r ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className={cn("rounded-xl px-5 py-4", view.error ? "bg-warning-soft" : "bg-green-soft")}>
-            <p className={cn("inline-flex items-center gap-2 text-small font-medium", view.error ? "text-warning-ink" : "text-green-ink")}>
-              {view.error ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-              Последний забор
-            </p>
-            <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
-            <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
-          </div>
-          <div className="sv-card sv-card--soft px-5 py-4">
-            <p className="text-small font-medium text-muted">Задач в Bord</p>
-            <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{r.rows}</p>
-            <p className="text-caption text-muted">строк с номером во вкладке «Задачи»</p>
-          </div>
-          <div className="sv-card sv-card--soft px-5 py-4">
-            <p className="text-small font-medium text-muted">Последний раз перенесено</p>
-            <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">
-              {r.created.length || r.updated.length ? `новых ${r.created.length}, изменено ${r.updated.length}` : "изменений не было"}
-            </p>
-            <p className="mt-1 text-caption text-muted">Следующий забор: {view.next ?? "выключен"}</p>
-          </div>
-        </div>
+        // Этап 48: состояние забора одной строкой вместо плиток
+        <StatusLine
+          label="Состояние забора из Bord"
+          items={[
+            { label: "Последний забор", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "danger" : "ok", testId: "bord-status-last" },
+            { label: "Задач в Bord", value: r.rows, hint: "строк с номером во вкладке «Задачи»", testId: "bord-status-rows" },
+            {
+              label: "Последний раз перенесено",
+              value: r.created.length || r.updated.length ? `новых ${r.created.length}, изменено ${r.updated.length}` : "изменений не было",
+              hint: `Следующий забор: ${view.next ?? "выключен"}`,
+              testId: "bord-status-moved",
+            },
+          ]}
+        />
       ) : null}
 
       {view.connected && !r && !view.error ? <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}

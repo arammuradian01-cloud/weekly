@@ -122,14 +122,14 @@ test("обсуждение записи weekly: вопрос к встрече, 
 test("письма настраиваются в профиле при личном входе", async ({ page }) => {
   // По общему логину настройки только видны
   await enter(page, "Рева Тарас");
-  await page.goto("/profile");
+  await page.goto("/profile?tab=mail");
   await expect(page.getByRole("heading", { name: "Письма" })).toBeVisible();
   await expect(page.getByText(/при личном входе по ссылке/)).toBeVisible();
   await expect(page.getByRole("checkbox", { name: /Реакции/ })).toBeDisabled();
 
   await page.context().clearCookies();
   await enterByLink(page, "reva");
-  await page.goto("/profile");
+  await page.goto("/profile?tab=mail");
   // При личном входе «Реакции» есть и в письмах, и в уведомлениях в браузере (этап 26): берём письма
   const mail = page.locator("section", { has: page.getByRole("heading", { name: "Письма" }) });
   const reactions = mail.getByRole("checkbox", { name: /Реакции/ });

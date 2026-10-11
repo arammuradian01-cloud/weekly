@@ -42,7 +42,7 @@ function linkOf(e: { taskNumber: number | null; entryId: string | null; requestN
   return `${appUrl()}${pathOf(e)}`;
 }
 
-const footer = () => `\n\nНастроить письма: ${appUrl()}/profile\nВ письме только кто и что. Подробности видны после входа в ресурс.`;
+const footer = () => `\n\nНастроить письма: ${appUrl()}/profile?tab=mail\nВ письме только кто и что. Подробности видны после входа в ресурс.`;
 
 /** Письмо о событиях одного человека: строка на предмет, свежий предмет сверху */
 export function eventsMail(person: { shortName: string }, items: (EventLine & { subject: string; createdAt: Date })[]): { subject: string; text: string } {

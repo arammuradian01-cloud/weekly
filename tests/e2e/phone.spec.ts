@@ -159,7 +159,7 @@ test("задачу можно обновить с главной в два на�
 
 test("уведомления в браузере: по общему логину выключены, при личном входе раздел в профиле", async ({ page, browser }) => {
   await enter(page, "Рева Тарас");
-  await page.goto("/profile");
+  await page.goto("/profile?tab=mail");
   const section = page.locator("section", { has: page.getByRole("heading", { name: "Телефон и уведомления" }) });
   await expect(section.getByText("Уведомления в браузере включаются при личном входе")).toBeVisible();
   await expect(section.getByTestId("install-app")).toBeVisible();
@@ -167,7 +167,7 @@ test("уведомления в браузере: по общему логину
   const ctx = await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone", locale: "ru-RU", timezoneId: "Europe/Moscow" });
   const own = await ctx.newPage();
   await enterByLink(own, "loginova");
-  await own.goto("/profile");
+  await own.goto("/profile?tab=mail");
   const mine = own.getByTestId("push-settings");
   await expect(mine).toBeVisible();
   // Браузер в тестах без службы уведомлений: раздел честно говорит, что можно, а настройки типов сохраняются.

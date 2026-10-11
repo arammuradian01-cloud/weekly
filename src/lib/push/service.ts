@@ -319,7 +319,7 @@ export async function sendTestPush(actor: Actor, deviceId: string | null, now = 
   const device = personalOnly(actor, deviceId);
   const subs = await prisma.pushSubscription.findMany({ where: { personId: actor.personId, deviceId: device } });
   if (!subs.length) fail("На этом устройстве уведомления ещё не включены");
-  const r = await deliver(subs, { title: "Weekly", body: "Проверка: уведомления на этом устройстве работают", url: "/profile", tag: "test" }, now);
+  const r = await deliver(subs, { title: "Weekly", body: "Проверка: уведомления на этом устройстве работают", url: "/profile?tab=mail", tag: "test" }, now);
   if (!r.sent) fail("Служба уведомлений браузера не приняла сообщение. Выключите и включите уведомления ещё раз");
   return { sent: r.sent };
 }

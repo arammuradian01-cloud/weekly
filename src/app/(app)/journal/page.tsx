@@ -4,6 +4,7 @@ import { JOURNAL_ROLES } from "@/lib/roles";
 import { journalEvents, journalPeople, type JournalFilter, type JournalKind, type JournalQuery } from "@/lib/journal";
 import { PageHeader } from "@/components/page-header";
 import { JournalView } from "@/components/admin/journal-view";
+import { moscowToday } from "@/lib/tasks/dates";
 
 export const metadata: Metadata = { title: "Журнал" };
 
@@ -35,7 +36,7 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader title="Журнал" description="Кто, когда и что изменил: было и стало по каждому полю" />
-      <JournalView page={page} people={people} query={query} />
+      <JournalView page={page} people={people} query={query} today={moscowToday()} />
     </>
   );
 }

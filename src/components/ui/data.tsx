@@ -149,6 +149,50 @@ export function Figures({ items, label, className, inline = false, max }: { item
 
 export type Param = { label: string; value: React.ReactNode };
 
+export type StatusItem = {
+  label: string;
+  value: React.ReactNode;
+  /** Оттенок значения: подключено, предупреждение, ошибка, выключено */
+  tone?: "ok" | "warning" | "danger" | "muted";
+  /** Вторая строка мелко: «11 октября, 12:40» */
+  hint?: React.ReactNode;
+  href?: string;
+  testId?: string;
+};
+
+/** Состояния связей и процессов одной строкой (этап 48): подпись мелко, значение с оттенком, вместо плиток.
+    Ссылка только на значении: обёртка dt и dd ссылкой в dl не допускается */
+export function StatusLine({ label, items, className }: { label: string; items: StatusItem[]; className?: string }) {
+  return (
+    <dl className={cn("sv-statusline", className)} role="group" aria-label={label}>
+      {items.map((i) => {
+        // Точка оттенка только у состояний; у счётчиков («задач 412») её нет, чтобы не читаться как «выключено»
+        const value = (
+          <>
+            {i.tone ? <span className={cn("sv-statusline__dot", `sv-statusline__dot--${i.tone}`)} aria-hidden="true" /> : null}
+            <span className="min-w-0">{i.value}</span>
+          </>
+        );
+        return (
+          <div key={i.label} className={cn("sv-statusline__item", i.tone && `sv-statusline__item--${i.tone}`)} data-testid={i.testId}>
+            <dt className="sv-statusline__label">{i.label}</dt>
+            <dd className="sv-statusline__value">
+              {i.href ? (
+                <Link href={i.href} className="sv-statusline__link">
+                  {value}
+                </Link>
+              ) : (
+                value
+              )}
+            </dd>
+            {i.hint ? <dd className="sv-statusline__hint">{i.hint}</dd> : null}
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
 /** Модуль страницы: название, пояснение, действия справа, параметры строкой и содержимое */
 export function Module({
   title,

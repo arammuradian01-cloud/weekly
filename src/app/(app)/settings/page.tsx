@@ -11,6 +11,7 @@ import { mailConfigured } from "@/lib/mail";
 import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
 import { Figures } from "@/components/ui/data";
+import { plural } from "@/domain/dates";
 
 export const metadata: Metadata = { title: "Настройки" };
 
@@ -35,6 +36,9 @@ export default async function SettingsPage() {
     owner ? absenceWeeks(new Date(), { own: false }) : Promise.resolve([]),
     owner ? passwordStats(ctx.person.id) : Promise.resolve(undefined),
   ]);
+  const active = people.filter((p) => p.active).length;
+  const off = people.length - active;
+  const away = Object.entries(absences as Record<string, unknown[]>).filter(([slug, list]) => list.length && people.some((p) => p.slug === slug && p.active)).length;
   const passwords = (Object.keys(PASSWORD_SETTING_KEYS) as PasswordKind[]).map((kind) => ({
     title: PASSWORD_TITLES[kind],
     set: Boolean(settings.find((s) => s.key === PASSWORD_SETTING_KEYS[kind])?.value),
@@ -47,19 +51,18 @@ export default async function SettingsPage() {
         description="Ритм недели, справочники, люди и роли. Время везде московское"
         figures={
           owner && people.length ? (
-            // Этап 37: люди и входы в цифрах, только владельцу (люди и пароли видит только он)
+            // Этап 37: люди и входы в цифрах, только владельцу (люди и пароли видит только он). Этап 48: строкой, не
+            // больше трёх, нули спрятаны, цифра ведёт к разделу
             <Figures
               label="Люди и входы в цифрах"
+              inline
+              max={3}
               items={[
-                { label: "Людей включено", value: people.filter((p) => p.active).length, testId: "set-fig-active" },
-                { label: "Выключено", value: people.filter((p) => !p.active).length, testId: "set-fig-off" },
-                ...(personal ? [{ label: "С личным паролем", value: `${personal.withPassword} из ${personal.total}`, testId: "set-fig-passwords" }] : []),
-                ...(personal ? [{ label: "Без личного пароля", value: personal.total - personal.withPassword, tone: "warning" as const, testId: "set-fig-invitable" }] : []),
-                {
-                  label: "Людей с отсутствием впереди",
-                  value: Object.entries(absences as Record<string, unknown[]>).filter(([slug, list]) => list.length && people.some((p) => p.slug === slug && p.active)).length,
-                  testId: "set-fig-absences",
-                },
+                { label: plural(active, "человек включён", "человека включено", "человек включено"), value: active, href: "#people", testId: "set-fig-active", keepZero: true },
+                { label: plural(off, "выключен", "выключено", "выключено"), value: off, href: "#people", testId: "set-fig-off" },
+                ...(personal ? [{ label: `из ${personal.total} с личным паролем`, value: personal.withPassword, href: "#login", testId: "set-fig-passwords" }] : []),
+                ...(personal ? [{ label: "без личного пароля", value: personal.total - personal.withPassword, tone: "warning" as const, href: "#login", testId: "set-fig-invitable" }] : []),
+                { label: "с отсутствием впереди", value: away, href: "#people", testId: "set-fig-absences" },
               ]}
             />
           ) : null

@@ -4,10 +4,11 @@
 // которые ресурс показывает как «Цифры недели», и даёт им подписи
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle2, Download, ExternalLink, Search, TriangleAlert, X, XCircle } from "lucide-react";
-import { cn } from "@/lib/cn";
+import { Download, ExternalLink, Search, X, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SelectField, TextInput } from "@/components/ui/primitives";
+import { StatusLine } from "@/components/ui/data";
+import { plural } from "@/domain/dates";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 import type { Metric, ReportRowView } from "@/lib/numbers/service";
@@ -125,26 +126,15 @@ export function NumbersSetup({ view }: { view: NumbersView }) {
       </div>
 
       {view.connected ? (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className={cn("rounded-xl px-5 py-4", view.error ? "bg-warning-soft" : "bg-green-soft")}>
-            <p className={cn("inline-flex items-center gap-2 text-small font-medium", view.error ? "text-warning-ink" : "text-green-ink")}>
-              {view.error ? <TriangleAlert className="h-4 w-4" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4" aria-hidden="true" />}
-              Последнее чтение
-            </p>
-            <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.lastOk ? view.lastOk.ago : "ещё не было"}</p>
-            <p className="text-caption text-muted">{view.lastOk ? view.lastOk.at : ""}</p>
-          </div>
-          <div className="sv-card sv-card--soft px-5 py-4">
-            <p className="text-small font-medium text-muted">В отчёте</p>
-            <p className="mt-1 text-headline-lg font-semibold tabular-nums text-ink">{view.rows}</p>
-            <p className="text-caption text-muted">строк с цифрами, недель {view.weeks}</p>
-          </div>
-          <div className="sv-card sv-card--soft px-5 py-4">
-            <p className="text-small font-medium text-muted">Последняя неделя в отчёте</p>
-            <p className="mt-1 text-headline-sm font-semibold leading-tight text-ink">{view.latestWeek ? `с ${view.latestWeek}` : "нет"}</p>
-            <p className="mt-1 text-caption text-muted">Следующее чтение: {view.next ?? "выключено"}</p>
-          </div>
-        </div>
+        // Этап 48: состояние чтения одной строкой вместо плиток
+        <StatusLine
+          label="Состояние чтения недельного отчёта"
+          items={[
+            { label: "Последнее чтение", value: view.lastOk ? view.lastOk.ago : "ещё не было", hint: view.lastOk?.at, tone: view.error ? "danger" : "ok", testId: "numbers-status-last" },
+            { label: "В отчёте", value: `${view.rows} ${plural(view.rows, "строка", "строки", "строк")}`, hint: `с цифрами, недель ${view.weeks}`, testId: "numbers-status-rows" },
+            { label: "Последняя неделя в отчёте", value: view.latestWeek ? `с ${view.latestWeek}` : "нет", hint: `Следующее чтение: ${view.next ?? "выключено"}`, testId: "numbers-status-week" },
+          ]}
+        />
       ) : null}
 
       {view.error ? (
