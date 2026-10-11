@@ -75,3 +75,11 @@ export async function applyFactsAction(text: string): Promise<Result<{ saved: nu
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
+
+// Партнёрский канал (этап 35б): корректировка драйвера партнёра командой канала
+
+export async function adjustPartnerAction(input: plan.PartnerAdjustInput): Promise<Result<plan.MonthPlanView>> {
+  const r = await runAction("Корректировка партнёра", (a) => processes.adjustPartner(a, input));
+  if (r.ok) revalidatePath("/forecast");
+  return r;
+}

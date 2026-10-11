@@ -21,6 +21,9 @@ test.beforeEach(async () => {
   await sql(`DELETE FROM plan_facts`);
   await sql(`DELETE FROM plan_checks`);
   await sql(`DELETE FROM plan_pulls`);
+  await sql(`DELETE FROM plan_partner_adjustments`);
+  await sql(`DELETE FROM plan_partner_totals`);
+  await sql(`DELETE FROM plan_partners`);
   await sql(`DELETE FROM plan_adjustments`);
   await sql(`DELETE FROM plan_lines`);
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);

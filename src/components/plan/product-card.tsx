@@ -33,7 +33,11 @@ type Props = {
   adjustHint: string | null;
   onSaved: (view: MonthPlanView) => void;
   onOwners: () => void;
+  /** Партнёрский канал продукта (этап 35б): изменение полисов партнёров к LBE. null: партнёров у продукта нет */
+  partner?: { delta: number } | null;
 };
+
+type Preset = { text: string; reason: ForecastReasonCode; comment: string };
 
 /** Проверка после загрузки LBE словами: «ждёт проверки», «скорректирован: Головкин В., 6 октября в 10:20» */
 export function reviewText(review: ReviewView | null): string {
@@ -42,9 +46,10 @@ export function reviewText(review: ReviewView | null): string {
   return `${review.state === "adjusted" ? "скорректирован" : "проверен без корректировок"}: ${shortName(review.by ?? "")}, ${when(review.at!)}`;
 }
 
-export function ProductCard({ month, product, summary, input, total, canOwners, adjustHint, onSaved, onOwners }: Props) {
+export function ProductCard({ month, product, summary, input, total, canOwners, adjustHint, onSaved, onOwners, partner }: Props) {
   const spec = productOf(product.code)!;
   const [editing, setEditing] = useState<MetricKey | null>(null);
+  const [preset, setPreset] = useState<Preset | null>(null);
   const { notify } = usePrototype();
   const [checking, setChecking] = useState(false);
   const check = async () => {
@@ -103,7 +108,16 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
         </td>
         <td className="is-num is-action">
           {r.kind === "driver" && product.canAdjust && !isEditing ? (
-            <Button variant="soft" size="sm" onClick={() => setEditing(r.key)} aria-label={`Изменить: ${label}`} data-testid={`plan-edit-${r.key}`}>
+            <Button
+              variant="soft"
+              size="sm"
+              onClick={() => {
+                setPreset(null);
+                setEditing(r.key);
+              }}
+              aria-label={`Изменить: ${label}`}
+              data-testid={`plan-edit-${r.key}`}
+            >
               Изменить
             </Button>
           ) : null}
@@ -113,6 +127,7 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
         <tr key={`${r.key}-edit`} className="sv-datatable__row--edit">
           <td colSpan={7} className="is-wide">
             <DriverEditor
+              key={preset?.text ?? "plain"}
               month={month}
               product={product}
               metric={r.key}
@@ -121,6 +136,7 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
               input={input}
               total={total}
               summary={summary}
+              preset={preset}
               onCancel={() => setEditing(null)}
               onSaved={(view) => {
                 setEditing(null);
@@ -164,6 +180,7 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
       ]}
       flush
     >
+      {partner ? <PartnerBand partner={partner} product={product} summary={summary} onApply={(p) => (setPreset(p), setEditing("unitsB2b"))} /> : null}
       {product.facts ? (
         <div className="border-b border-border px-5 py-4">
           <PlanFacts month={month} facts={product.facts} summary={summary} label={spec.label} />
@@ -213,6 +230,41 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
   );
 }
 
+/**
+ * Партнёрский канал продукта (этап 35б): насколько полисы партнёров по прогнозу отличаются от LBE и учтено ли это в
+ * полисах B2B продукта. Учитывает команда продукта сама: кнопка открывает обычную корректировку с подставленным значением
+ */
+function PartnerBand({ partner, product, summary, onApply }: { partner: { delta: number }; product: PlanProductData; summary: ProductSummary; onApply: (preset: Preset) => void }) {
+  const row = summary.rows.find((r) => r.key === "unitsB2b" && r.kind === "driver");
+  const d = Math.round(partner.delta);
+  if (!row || row.lbe === null) return null;
+  // Предложение: LBE полисов B2B плюс изменение партнёров. Своя корректировка продукта по другой причине видна рядом,
+  // кнопка её не перезаписывает молча: команда видит обе цифры
+  const proposed = row.lbe + d;
+  const done = row.forecast !== null && Math.abs(row.forecast - proposed) < 0.5;
+  const shift = formatPlan(Math.abs(d), "count");
+  // Партнёры вернулись к LBE, а в полисах B2B осталась прежняя корректировка «по прогнозу партнёрского канала»
+  const stale = d === 0 && row.forecast !== null && Math.abs(row.forecast - row.lbe) >= 0.5 && !!product.last.unitsB2b?.comment.startsWith("По прогнозу партнёрского канала");
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-3 text-body" data-testid="plan-partner-band">
+      <p className="min-w-0 text-text-secondary">
+        Партнёрский канал: {d === 0 ? "полисы партнёров по прогнозу как в LBE." : `полисы партнёров по прогнозу ${d > 0 ? "больше" : "меньше"} LBE на ${shift}.`} Полисы B2B продукта: LBE {formatPlan(row.lbe, "count")}, прогноз {formatPlan(row.forecast, "count")}.{" "}
+        {done ? (d === 0 ? null : <span className="font-semibold text-ink">Изменение партнёров учтено.</span>) : d !== 0 || stale ? `С изменением партнёров было бы ${formatPlan(proposed, "count")}.` : null}
+      </p>
+      {!done && (d !== 0 || stale) && product.canAdjust ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => onApply({ text: inputValue(proposed, "count"), reason: "partner-sk", comment: d === 0 ? "Партнёрский канал вернулся к LBE" : `По прогнозу партнёрского канала: ${d > 0 ? "+" : "-"}${shift} полисов к LBE` })}
+          data-testid="plan-partner-apply"
+        >
+          Учесть изменение партнёров
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 function DriverEditor({
   month,
   product,
@@ -222,6 +274,7 @@ function DriverEditor({
   input,
   total,
   summary,
+  preset,
   onCancel,
   onSaved,
 }: {
@@ -233,6 +286,8 @@ function DriverEditor({
   input: PlanInput;
   total: PlanSummary["total"];
   summary: ProductSummary;
+  /** Подставленные значение, причина и обоснование: «Учесть изменение партнёров» (этап 35б) */
+  preset?: Preset | null;
   onCancel: () => void;
   onSaved: (view: MonthPlanView) => void;
 }) {
@@ -240,9 +295,9 @@ function DriverEditor({
   const unit = UNITS[metric];
   const { notify } = usePrototype();
   const initialText = inputValue(current, unit);
-  const [text, setText] = useState(initialText);
-  const [reason, setReason] = useState<ForecastReasonCode>(() => defaultReason(metric));
-  const [comment, setComment] = useState("");
+  const [text, setText] = useState(preset?.text ?? initialText);
+  const [reason, setReason] = useState<ForecastReasonCode>(() => preset?.reason ?? defaultReason(metric));
+  const [comment, setComment] = useState(preset?.comment ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const parsed = parsePlanInput(text, unit);

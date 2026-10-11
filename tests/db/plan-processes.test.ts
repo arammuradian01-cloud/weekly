@@ -39,6 +39,9 @@ const clean = async () => {
   await prisma.planFact.deleteMany();
   await prisma.planCheck.deleteMany();
   await prisma.planPull.deleteMany();
+  await prisma.planPartnerAdjustment.deleteMany();
+  await prisma.planPartnerTotal.deleteMany();
+  await prisma.planPartner.deleteMany();
   await prisma.planAdjustment.deleteMany();
   await prisma.planLine.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { startsWith: "plan." } } });
@@ -76,7 +79,9 @@ describe("загрузка LBE: снимок и событие командам 
     expect((pulls[0]!.lines as unknown[]).length).toBe(await prisma.planLine.count({ where: { month } }));
     const events = await prisma.inboxEvent.findMany({ where: { kind: "PLAN" }, include: { recipient: { select: { slug: true } } } });
     const bySlug = Object.fromEntries(events.map((e) => [e.recipient.slug, e.text]));
-    expect(Object.keys(bySlug).sort()).toEqual(["cheychenets", "fatyanov", "golovkin", "loginova", "reva"]);
+    // Этап 35б: в имитации есть листы партнёрского канала, его команде тоже событие
+    expect(Object.keys(bySlug).sort()).toEqual(["afanasyev", "cheychenets", "fatyanov", "golovkin", "loginova", "reva", "sakhibullina"]);
+    expect(bySlug.sakhibullina).toMatch(/Проверьте прогноз: Партнёрский канал\. Скорректируйте/);
     expect(bySlug.golovkin).toMatch(/Проверьте прогноз: ОСАГО\. Скорректируйте/);
     expect(bySlug.fatyanov).toMatch(/КАСКО/);
     expect(bySlug.reva).toMatch(/ОСАГО, КАСКО, Ипотечное страхование, ВЗР, Несчастный случай, Имущество, Клещ, Вклады/);
@@ -99,13 +104,16 @@ describe("загрузка LBE: снимок и событие командам 
     await proc.checkPlan(await actor.fatyanov(), month, "kasko");
     await adjust(await actor.golovkin(), "osago", "crWeb", 0.05);
     const openSlugs = async () => (await prisma.inboxEvent.findMany({ where: { kind: "PLAN", doneAt: null }, include: { recipient: { select: { slug: true } } } })).map((e) => e.recipient.slug).sort();
-    expect(await openSlugs()).toEqual(["cheychenets", "loginova", "reva"]);
+    expect(await openSlugs()).toEqual(["afanasyev", "cheychenets", "loginova", "reva", "sakhibullina"]);
     // Рева проверил Вклады: у Чейченца проверено всё, у Ревы ещё ждёт RED
     await proc.checkPlan(await actor.reva(), month, "deposits");
-    expect(await openSlugs()).toEqual(["loginova", "reva"]);
+    expect(await openSlugs()).toEqual(["afanasyev", "loginova", "reva", "sakhibullina"]);
     for (const code of ["red-mortgage", "red-travel", "red-accident", "red-property"]) await proc.checkPlan(await actor.loginova(), month, code);
-    expect(await openSlugs()).toEqual(["loginova", "reva"]);
+    expect(await openSlugs()).toEqual(["afanasyev", "loginova", "reva", "sakhibullina"]);
     await proc.checkPlan(await actor.reva(), month, "red-tick");
+    expect(await openSlugs()).toEqual(["afanasyev", "sakhibullina"]);
+    // Этап 35б: партнёрский канал проверяет его команда, после этого напоминаний нет ни у кого
+    await proc.checkPlan(await actor.sakhibullina(), month, "b2b");
     expect(await openSlugs()).toEqual([]);
   });
 
@@ -300,7 +308,7 @@ describe("сводка для отчёта CEO и встречи", () => {
     const brief = (await proc.planBrief(await actor.owner(), month))!;
     expect(brief.month).toBe(month);
     expect(brief.reasons).toEqual([expect.objectContaining({ product: "ОСАГО", metric: "Конверсия сайта", value: "5,00%", reason: "Конверсия", author: "Головкин Владислав" })]);
-    expect(brief.waiting.map((w) => w.product)).toEqual(["КАСКО", "Ипотечное страхование", "ВЗР", "Несчастный случай", "Имущество", "Клещ", "Вклады"]);
+    expect(brief.waiting.map((w) => w.product)).toEqual(["КАСКО", "Ипотечное страхование", "ВЗР", "Несчастный случай", "Имущество", "Клещ", "Вклады", "Партнёрский канал"]);
     expect(brief.waiting[0]!.owners).toEqual(["Фатьянов Евгений", "Рева Тарас"]);
     expect(brief.rows.find((r) => r.code === "red")!.kind).toBe("group");
     const text = proc.planBriefText(brief);
@@ -313,6 +321,10 @@ describe("сводка для отчёта CEO и встречи", () => {
     await load();
     expect(await proc.planForTeam(await actor.owner(), TOP_TEAM, month)).not.toBeNull();
     const sales = await prisma.team.create({ data: { name: "Тест этапа 35: партнёры", leaderId: await personId("sakhibullina") } });
+    // Этап 35б: руководитель партнёрского канала в команде канала, сводка ей нужна
+    expect(await proc.planForTeam(await actor.owner(), sales.id, month)).not.toBeNull();
+    // Без команды канала: в команде нет никого из команд продуктов
+    await plan.setOwners(await actor.owner(), "b2b", []);
     expect(await proc.planForTeam(await actor.owner(), sales.id, month)).toBeNull();
     const kasko = await prisma.team.create({ data: { name: "Тест этапа 35: КАСКО", leaderId: await personId("sakhibullina"), members: { create: [{ personId: await personId("fatyanov") }] } } });
     expect(await proc.planForTeam(await actor.owner(), kasko.id, month)).not.toBeNull();
@@ -326,7 +338,9 @@ describe("выгрузка в Excel", () => {
     expect(plan.canExportPlan(await actor.owner(), owners)).toBe(true);
     expect(plan.canExportPlan(await actor.golovkin(), owners)).toBe(true);
     expect(plan.canExportPlan(await actor.reva(), owners)).toBe(true);
-    expect(plan.canExportPlan(await actor.sakhibullina(), owners)).toBe(false);
+    // Этап 35б: команда партнёрского канала тоже выгружает; без неё человек вне команд продуктов
+    expect(plan.canExportPlan(await actor.sakhibullina(), owners)).toBe(true);
+    expect(plan.canExportPlan(await actor.sakhibullina(), { ...owners, b2b: [] })).toBe(false);
     expect(plan.canExportPlan(await actor.team(), owners)).toBe(false);
     expect(plan.canExportPlan(await tasks.actorFor("ceo"), owners)).toBe(false);
   });
@@ -340,7 +354,11 @@ describe("выгрузка в Excel", () => {
     expect(file).toBe(`prognoz-${month}.xlsx`);
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as ArrayBuffer);
-    expect(wb.worksheets.map((w) => w.name)).toEqual(["Сводка", "Драйверы", "Корректировки", "Факт по дням", "Темп к прогнозу", "Загрузки LBE"]);
+    // Этап 35б: в имитации есть партнёрский канал, у него два своих листа
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Сводка", "Драйверы", "Корректировки", "Факт по дням", "Темп к прогнозу", "Партнёрский канал", "Корректировки партнёров", "Загрузки LBE"]);
+    const partners = wb.getWorksheet("Партнёрский канал")!;
+    expect(partners.getRow(2).getCell(4).value).toBe("Банк Север");
+    expect(partners.getRow(2).getCell(5).value).toBe("Ёмкость партнёра, полисы");
     const summary = wb.getWorksheet("Сводка")!;
     const total = summary.getRows(2, summary.rowCount - 1)!.find((r) => r.getCell(1).value === "Итого по продуктам" && r.getCell(3).value === "Выручка, млн руб.")!;
     expect(total.getCell(6).value).toBeCloseTo(plan.planSummary(v).total.revenue.forecast!, 6);

@@ -5,6 +5,7 @@ import type { Values } from "./lrf";
 import type { MetricKey, PlanUnit } from "./spec";
 import type { Drivers } from "./summary";
 import type { FactMetric } from "./facts";
+import type { PartnerChannel, PartnerDrivers, PartnerMetric, PartnerTotalInput, PartnerUnit, PartnerValues } from "./partners";
 
 export type PlanPerson = { slug: string; name: string };
 
@@ -51,6 +52,47 @@ export type PlanProductData = {
   facts: ProductFacts | null;
 };
 
+/** Корректировка драйвера партнёра (этап 35б) */
+export type PartnerAdjustmentView = {
+  id: string;
+  partner: string;
+  partnerLabel: string;
+  product: string;
+  channel: PartnerChannel;
+  metric: PartnerMetric;
+  metricLabel: string;
+  unit: PartnerUnit;
+  value: number | null;
+  previous: number | null;
+  reason: ForecastReasonCode;
+  reasonLabel: string;
+  comment: string;
+  author: PlanPerson;
+  at: string;
+};
+
+export type PartnerLineView = {
+  code: string;
+  label: string;
+  product: string;
+  channel: PartnerChannel;
+  kind: string;
+  lbe: PartnerValues;
+  drivers: PartnerDrivers;
+  last: Partial<Record<PartnerMetric, PartnerAdjustmentView>>;
+};
+
+/** Партнёрский канал месяца (этап 35б): партнёры с LBE и корректировками, бюджет канала из P&L b2b */
+export type PartnerChannelView = {
+  lines: PartnerLineView[];
+  totals: PartnerTotalInput[];
+  owners: PlanPerson[];
+  canAdjust: boolean;
+  review: ReviewView | null;
+  history: PartnerAdjustmentView[];
+  pulledAt: string;
+};
+
 export type PlanSource = {
   sourceId: string;
   mode: "google" | "imitation" | "off";
@@ -83,6 +125,8 @@ export type MonthPlanView = {
   canFacts: boolean;
   /** Выгрузка в Excel: управление и команды продуктов при личном входе */
   canExport: boolean;
+  /** Партнёрский канал: null, пока листы LRF b2b не загружены */
+  partners: PartnerChannelView | null;
 };
 
 export type VersionOption = { id: string; label: string; group: "Версии месяца" | "Загрузки LBE" | "Прогноз на дату" };
@@ -128,6 +172,26 @@ export type PullPreview = {
   }[];
   /** Показателей с корректировками за месяц: останутся после загрузки */
   adjustments: number;
+  /** Партнёрский канал (этап 35б): загрузится, если листы на месте и прочитаны без проблем */
+  partners: {
+    found: boolean;
+    ready: boolean;
+    problems: string[];
+    warnings: string[];
+    lines: number;
+    before: number;
+    revenue: { lbe: number | null; budget: number | null };
+  };
+};
+
+export type PartnerAdjustInput = {
+  month: string;
+  partner: string;
+  metric: string;
+  value: number | null;
+  seen: number | null;
+  reason: string;
+  comment: string;
 };
 
 export type AdjustInput = {

@@ -84,3 +84,13 @@ export function driverBounds(unit: PlanUnit, lbe: number | null): { min: number;
     }
   }
 }
+
+/**
+ * Первая буква строчной для подписи внутри фразы: «Конверсия сайта» в «конверсия сайта». Аббревиатуры и имена не
+ * трогаются: «CPA и отказной» остаётся как есть, «Полисы через Сравни» не теряет прописную в «Сравни»
+ */
+export function lcFirst(s: string): string {
+  if (s.length < 2) return s.toLowerCase();
+  const second = s.charAt(1);
+  return second !== second.toUpperCase() ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+}

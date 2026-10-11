@@ -29,6 +29,9 @@ test.beforeEach(async () => {
   await sql(`DELETE FROM plan_facts`);
   await sql(`DELETE FROM plan_checks`);
   await sql(`DELETE FROM plan_pulls`);
+  await sql(`DELETE FROM plan_partner_adjustments`);
+  await sql(`DELETE FROM plan_partner_totals`);
+  await sql(`DELETE FROM plan_partners`);
   await sql(`DELETE FROM plan_adjustments`);
   await sql(`DELETE FROM plan_lines`);
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);
@@ -154,6 +157,8 @@ test("общий логин и человек не из команд проду�
   await enterManagement(page, "owner");
   await pull(page);
   await page.context().clearCookies();
+  // Этап 35б: Сахибуллина по умолчанию в команде партнёрского канала; без команды канала она вне команд продуктов
+  await sql(`INSERT INTO settings (key, value, "updatedAt") VALUES ('plan.owners', '{"b2b": []}'::jsonb, now()) ON CONFLICT (key) DO UPDATE SET value = '{"b2b": []}'::jsonb`);
   await enterByLink(page, "sakhibullina");
   await page.goto("/forecast");
   await expect(page.getByTestId("plan-stat-revenue")).toBeVisible();

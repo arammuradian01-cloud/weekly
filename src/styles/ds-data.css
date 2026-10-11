@@ -51,13 +51,16 @@
 /* Заголовок строки в теле таблицы (имя человека или команды, итог «Вся команда», этап 36): как ячейка, а не как шапка */
 .sv-datatable tbody th[scope="row"] { height: var(--row-comfortable); padding-top: 6px; padding-bottom: 6px; background: transparent; color: var(--color-text); font-size: var(--text-body); line-height: var(--leading-body); white-space: normal; border-bottom: 1px solid var(--color-border); }
 .sv-datatable tbody tr:last-child th { border-bottom: 0; }
-.sv-datatable__row--total th { background: var(--color-page); }
-.sv-datatable__row--sub td:first-child { padding-left: calc(var(--space-5) + var(--space-5)); color: var(--color-text-secondary); }
+/* Заголовок строки в итоговой, выбранной и редактируемой строке с тем же фоном, что ячейки (этап 35б: специфичность
+   выше общего правила заголовка строки) */
+.sv-datatable tbody .sv-datatable__row--total th[scope="row"] { background: var(--color-page); font-weight: var(--font-weight-semibold); }
+.sv-datatable tbody .sv-datatable__row--edit th[scope="row"] { background: var(--color-accent-soft); }
+.sv-datatable .sv-datatable__row--sub > :first-child { padding-left: calc(var(--space-5) + var(--space-5)); color: var(--color-text-secondary); }
 .sv-datatable__row--pick { cursor: pointer; transition: background-color var(--duration-color); }
 .sv-datatable__row--pick:hover td { background: var(--color-row-hover); }
 .sv-datatable__row--picked td { background: var(--color-row-selected); }
 .sv-datatable__row--picked td:first-child { box-shadow: inset 3px 0 0 var(--color-accent); }
-.sv-datatable__row--changed td:first-child { box-shadow: inset 3px 0 0 var(--color-warning-dot); }
+.sv-datatable__row--changed > :first-child { box-shadow: inset 3px 0 0 var(--color-warning-dot); }
 .sv-datatable__row--edit td { background: var(--color-accent-soft); }
 .sv-datatable__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sv-datatable__hint { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
@@ -122,7 +125,9 @@
   .sv-datatable--stack .sv-datatable__row--changed { box-shadow: inset 3px 0 0 var(--color-warning-dot); }
   .sv-datatable--stack .sv-datatable__row--edit { background: var(--color-accent-soft); }
   .sv-datatable--stack .sv-datatable__row--total { background: var(--color-page); }
-  .sv-datatable--stack .sv-datatable__row--sub td:first-child { padding-left: var(--space-3) !important; }
+  .sv-datatable--stack .sv-datatable__row--sub > :first-child { padding-left: var(--space-3) !important; }
+  .sv-datatable--stack .sv-datatable__row--changed th[scope="row"] { box-shadow: none; }
+  .sv-datatable--stack tbody .sv-datatable__row--total th[scope="row"], .sv-datatable--stack tbody .sv-datatable__row--edit th[scope="row"] { background: transparent; }
 }
 
 /* Дерево подчинённых (этап 34): человек в центре, путь наверх, подчинённые карточками под ним.
