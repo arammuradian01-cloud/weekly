@@ -101,7 +101,7 @@
   --color-overlay: rgba(0, 0, 0, 0.60);
   --color-text: #FFFFFF;
   --color-text-secondary: #9198A1;  /* сайт D60, 5,8:1 */
-  --color-text-disabled: #7A8694;   /* своё, 3,7:1 на поверхности: выключенное читается и в тёмной теме (этап 49) */
+  --color-text-disabled: #636F7D;   /* своё */
   --color-text-inverse: #171D23;
   --color-icon: #78808C;            /* сайт D40, 4,3:1 */
   --color-border: #4E5764;          /* сайт D15 */

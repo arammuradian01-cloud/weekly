@@ -2,7 +2,10 @@
 
 import { usePrototype } from "@/domain/store";
 import { isClosed, isClosedThisWeek, isDueNextWeek, isDueThisWeek, isMine, isOverdue, myTasksOrder } from "@/domain/rules";
+import { Plus } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
+import { openNewTask } from "@/components/prototype/new-task";
 import { TaskTable } from "./task-list";
 
 /** Мои задачи: стартовая страница лидера. Сверху просроченные, потом срок на этой неделе, потом остальные (раздел 4 ТЗ) */
@@ -31,8 +34,16 @@ export function MyTasks() {
 
   if (groups.length === 0) {
     return (
-      <EmptyState title="У вас нет задач">
-        Поставьте себе задачу кнопкой «Новая задача» или клавишей N.
+      <EmptyState
+        title="У вас нет задач"
+        action={
+          <Button size="sm" variant="secondary" onClick={() => openNewTask()}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Новая задача
+          </Button>
+        }
+      >
+        Здесь будут задачи, где вы ответственный или соисполнитель. Поставить задачу себе можно и клавишей N.
       </EmptyState>
     );
   }

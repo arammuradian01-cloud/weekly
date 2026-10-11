@@ -31,7 +31,8 @@
 .sv-task__title { font-weight: var(--font-weight-semibold); color: var(--color-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; display: flex; align-items: center; gap: 6px; }
 .sv-task__title .sv-icon { color: var(--color-danger-text); flex: none; }
 .sv-task__now { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
-.sv-task__now--empty { color: var(--color-text-disabled); }
+/* Подсказки «не заполнено» и «пусто» это не выключенные элементы: читаются вторичным цветом (этап 49) */
+.sv-task__now--empty { color: var(--color-text-secondary); }
 .sv-cell-person { display: inline-flex; align-items: center; gap: 8px; }
 /* Правка статуса прямо в строке */
 .sv-inline-edit { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 6px 0 2px; margin: 0 -6px 0 -2px; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; font: inherit; color: inherit; }
@@ -42,7 +43,7 @@
 .sv-inline-edit.is-open { background: var(--color-field); border-color: var(--color-focus); }
 /* Пустое значение (этап 42): в таблице видно только при наведении на строку, фокусе или открытом списке; в строках
    списка задач на телефоне и планшете не показывается, задать можно в карточке. Правило привязано к списку задач
-   (sv-task-rows), а не к обёртке таблицы: на «Мне» и в других списках пустое значение остаётся */
+   (sv-task-rows), а не к обёртке таблицы; очередь «Мне» и «Требует внимания» (sv-queue) ведёт себя так же, см. ниже */
 .sv-inline-edit--empty { color: var(--color-text-secondary); }
 .sv-table .sv-inline-edit--empty { opacity: 0; transition: opacity var(--duration-color); }
 .sv-table tr:hover .sv-inline-edit--empty, .sv-table tr:focus-within .sv-inline-edit--empty, .sv-table .sv-inline-edit--empty:focus-visible, .sv-table .sv-inline-edit--empty[data-state="open"] { opacity: 1; }
@@ -87,7 +88,7 @@
 .sv-board__head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 6px; font-size: var(--text-body); font-weight: var(--font-weight-semibold); }
 .sv-board__head .sv-counter { margin-left: auto; }
 .sv-board__head .sv-badge__dot { width: 8px; height: 8px; border-radius: 50%; }
-.sv-board__empty { padding: var(--space-4); text-align: center; color: var(--color-text-disabled); font-size: var(--text-caption); border: 1px dashed var(--color-border); border-radius: var(--radius-control-lg); }
+.sv-board__empty { padding: var(--space-4); text-align: center; color: var(--color-text-secondary); font-size: var(--text-caption); border: 1px dashed var(--color-border); border-radius: var(--radius-control-lg); }
 .sv-card-task { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px 14px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control-lg); cursor: grab; transition: box-shadow var(--duration-color), border-color var(--duration-color); overflow: hidden; }
 [data-theme="dark"] .sv-card-task { background: var(--color-field); }
 .sv-card-task:hover { box-shadow: var(--shadow-medium); }
@@ -134,7 +135,7 @@
 .sv-chip-task--overdue { background: var(--color-danger-bg); color: var(--color-danger-text); }
 .sv-chip-task--soon { background: var(--color-warning-bg); color: var(--color-warning-text); }
 .sv-chip-task--done { color: var(--color-text-secondary); text-decoration: line-through; }
-.sv-people-row__empty { color: var(--color-text-disabled); font-size: var(--text-caption); }
+.sv-people-row__empty { color: var(--color-text-secondary); font-size: var(--text-caption); }
 
 /* Строка срока в «Мне»: номер серый, название, справа пилюля просрочки */
 .sv-deadline { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 10px 16px; border-bottom: 1px solid var(--color-border); color: var(--color-text); text-decoration: none; }

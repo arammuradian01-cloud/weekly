@@ -128,7 +128,7 @@ export function MyWeek({
             <div className="flex flex-col gap-5">
               {urgent.length ? (
                 <AttentionGroup id="my-tasks" title="Просроченные и срочные задачи" count={urgent.length} icon={CalendarClock} tone="danger" link={{ href: "/tasks/mine", label: "Все мои задачи" }}>
-                  <ul className="sv-card sv-card--soft divide-y divide-line">
+                  <ul className="sv-queue sv-card sv-card--soft divide-y divide-line">
                     {urgent.map((t) => {
                       const overdue = isOverdue(t, data.today);
                       return (

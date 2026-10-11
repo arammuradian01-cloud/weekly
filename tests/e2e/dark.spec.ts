@@ -10,33 +10,65 @@ const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
 
 type Low = { tag: string; text: string; color: string; bg: string; ratio: number };
+type Report = { low: Low[]; unparsed: string[]; skipped: number };
 
-/** Контраст текста с ближайшим непрозрачным фоном, считается в браузере по WCAG */
-async function lowContrast(page: Page, min: number): Promise<Low[]> {
+/** Контраст текста с ближайшим непрозрачным фоном, считается в браузере по WCAG. Цвет любого вида (rgb, oklab из
+    color-mix, color(srgb)) переводится в sRGB через canvas: регулярка на rgb() молчала бы ровно там, где прозрачность
+    и создаёт слабый контраст. Неразобранные цвета и пропуски из-за фоновых картинок возвращаются отдельно */
+async function contrastReport(page: Page, min: number): Promise<Report> {
   return page.evaluate((minRatio) => {
-    const parse = (c: string): [number, number, number, number] | null => {
-      const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?\)/.exec(c);
-      if (!m) return null;
-      return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
+    type Rgba = [number, number, number, number];
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    const cache = new Map<string, Rgba | null>();
+    const unparsed = new Set<string>();
+    const parse = (c: string): Rgba | null => {
+      if (cache.has(c)) return cache.get(c)!;
+      let out: Rgba | null = null;
+      try {
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillStyle = "#000";
+        ctx.fillStyle = c;
+        // Цвет не принят: fillStyle остался чёрным, а строка не чёрная
+        const accepted = ctx.fillStyle !== "#000000" || /^(#000(000)?|black|rgba?\(0,\s*0,\s*0)/.test(c);
+        if (accepted) {
+          ctx.fillRect(0, 0, 1, 1);
+          const d = ctx.getImageData(0, 0, 1, 1).data;
+          out = [d[0]!, d[1]!, d[2]!, d[3]! / 255];
+        }
+      } catch {
+        out = null;
+      }
+      if (!out) unparsed.add(c);
+      cache.set(c, out);
+      return out;
     };
-    const lum = ([r, g, b]: [number, number, number, number]) => {
+    const lum = ([r, g, b]: Rgba) => {
       const f = (v: number) => {
         const s = v / 255;
         return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
       };
       return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
     };
-    const blend = (top: [number, number, number, number], under: [number, number, number, number]): [number, number, number, number] => {
+    const blend = (top: Rgba, under: Rgba): Rgba => {
       const a = top[3];
       return [top[0] * a + under[0] * (1 - a), top[1] * a + under[1] * (1 - a), top[2] * a + under[2] * (1 - a), 1];
     };
-    // Фон элемента: поднимаемся по предкам, полупрозрачные слои смешиваем; фон с картинкой или градиентом пропускаем
-    const background = (el: Element): [number, number, number, number] | null => {
+    const pageBg = parse(getComputedStyle(document.documentElement).backgroundColor) ?? parse(getComputedStyle(document.body).backgroundColor) ?? [255, 255, 255, 1];
+    let skipped = 0;
+    // Фон элемента: поднимаемся по предкам, полупрозрачные слои смешиваем снизу вверх; фон с картинкой или
+    // градиентом пропускаем и считаем пропуски
+    const background = (el: Element): Rgba | null => {
       let node: Element | null = el;
-      const layers: [number, number, number, number][] = [];
+      const layers: Rgba[] = [];
       while (node) {
         const cs = getComputedStyle(node);
-        if (cs.backgroundImage && cs.backgroundImage !== "none") return null;
+        if (cs.backgroundImage && cs.backgroundImage !== "none") {
+          skipped += 1;
+          return null;
+        }
         const bg = parse(cs.backgroundColor);
         if (bg && bg[3] > 0) {
           layers.push(bg);
@@ -44,31 +76,41 @@ async function lowContrast(page: Page, min: number): Promise<Low[]> {
         }
         node = node.parentElement;
       }
-      if (!layers.length) return null;
-      let out = layers[layers.length - 1]!;
-      if (out[3] < 1) out = blend(out, [255, 255, 255, 1]);
-      for (let i = layers.length - 2; i >= 0; i--) out = blend(layers[i]!, out);
+      let out: Rgba = layers.length && layers[layers.length - 1]![3] >= 1 ? layers[layers.length - 1]! : pageBg;
+      const start = layers.length && layers[layers.length - 1]![3] >= 1 ? layers.length - 2 : layers.length - 1;
+      for (let i = start; i >= 0; i--) out = blend(layers[i]!, out);
       return out;
     };
-    const out: Low[] = [];
+    // Непрозрачность с учётом предков: текст в полупрозрачной обёртке бледнее, чем говорит его цвет
+    const opacityOf = (el: Element): number => {
+      let o = 1;
+      let node: Element | null = el;
+      while (node) {
+        o *= Number(getComputedStyle(node).opacity);
+        node = node.parentElement;
+      }
+      return o;
+    };
+    const low: Low[] = [];
     const seen = new Set<string>();
-    const nodes = Array.from(document.querySelectorAll("h1, h2, h3, p, td, th, dt, dd, a, button, label, span, li")).filter((el) => {
+    const nodes = Array.from(document.body.querySelectorAll("*")).filter((el) => {
+      if (el.closest("script, style, noscript, template, svg")) return false;
       const r = el.getBoundingClientRect();
       if (r.width < 8 || r.height < 8) return false;
-      const text = (el.textContent ?? "").trim();
-      if (!text) return false;
       // Только элементы с собственным текстом, а не обёртки
       return Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim());
     });
     for (const el of nodes) {
       const cs = getComputedStyle(el);
-      if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) < 0.5) continue;
+      if (cs.visibility === "hidden" || cs.display === "none") continue;
+      const opacity = opacityOf(el);
+      if (opacity < 0.5) continue;
       // Выключенные элементы управления по WCAG контраста не требуют: пропускаем их и текст внутри них
       if (el.closest(":disabled, [aria-disabled='true']")) continue;
       const color = parse(cs.color);
       const bg = background(el);
       if (!color || !bg) continue;
-      const fg = color[3] < 1 ? blend(color, bg) : color;
+      const fg = blend([color[0], color[1], color[2], color[3] * opacity], bg);
       const l1 = lum(fg);
       const l2 = lum(bg);
       const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
@@ -76,10 +118,10 @@ async function lowContrast(page: Page, min: number): Promise<Low[]> {
         const key = `${el.tagName}:${cs.color}:${cs.backgroundColor}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ tag: el.tagName.toLowerCase(), text: (el.textContent ?? "").trim().slice(0, 60), color: cs.color, bg: `rgb(${bg.slice(0, 3).map(Math.round).join(", ")})`, ratio: Math.round(ratio * 100) / 100 });
+        low.push({ tag: el.tagName.toLowerCase(), text: (el.textContent ?? "").trim().slice(0, 60), color: cs.color, bg: `rgb(${bg.slice(0, 3).map(Math.round).join(", ")})`, ratio: Math.round(ratio * 100) / 100 });
       }
     }
-    return out;
+    return { low, unparsed: [...unparsed], skipped };
   }, min);
 }
 
@@ -91,8 +133,13 @@ async function shot(page: Page, name: string) {
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   const m = /rgb\((\d+), (\d+), (\d+)/.exec(bg)!;
   expect(Number(m[1]) + Number(m[2]) + Number(m[3]), `фон страницы ${name} не тёмный: ${bg}`).toBeLessThan(200);
-  const low = await lowContrast(page, 3);
-  expect(low, `текст без контраста на экране ${name}: ${JSON.stringify(low)}`).toEqual([]);
+  // Порог 3:1 это грубый уровень (крупный текст и элементы управления по WCAG): ловит невидимый текст, а не
+  // недобор до 4,5:1 у мелкого вторичного текста на цветных строках
+  const report = await contrastReport(page, 3);
+  expect(report.unparsed, `цвета, которые проверка не разобрала на экране ${name}`).toEqual([]);
+  expect(report.low, `текст без контраста на экране ${name}: ${JSON.stringify(report.low)}`).toEqual([]);
+  // Курсор в угол: снимок без строки под наведением
+  await page.mouse.move(0, 0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-dark-${name}.png`, fullPage: true });
 }
 
