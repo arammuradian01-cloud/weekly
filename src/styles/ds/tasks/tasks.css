@@ -48,6 +48,11 @@
 .sv-table tr:hover .sv-inline-edit--empty, .sv-table tr:focus-within .sv-inline-edit--empty, .sv-table .sv-inline-edit--empty:focus-visible, .sv-table .sv-inline-edit--empty[data-state="open"] { opacity: 1; }
 @media (hover: none) { .sv-table .sv-inline-edit--empty { opacity: 1; } }
 @media (max-width: 1023px) { .sv-task-rows .sv-inline-edit--empty { display: none; } }
+/* Очередь «Мне» и «Требует внимания» (этап 49): пустое «+ Состояние» тоже только при наведении на строку, на телефоне скрыто */
+.sv-queue .sv-inline-edit--empty { opacity: 0; transition: opacity var(--duration-color); }
+.sv-queue li:hover .sv-inline-edit--empty, .sv-queue li:focus-within .sv-inline-edit--empty, .sv-queue .sv-inline-edit--empty:focus-visible, .sv-queue .sv-inline-edit--empty[data-state="open"] { opacity: 1; }
+@media (hover: none) { .sv-queue .sv-inline-edit--empty { opacity: 1; } }
+@media (max-width: 1023px) { .sv-queue .sv-inline-edit--empty { display: none; } }
 /* Пустое значение действием «Состояние» с плюсом (этап 43): где значение задают, а не читают. Рамка пунктиром
    появляется при наведении и фокусе: в списке из десяти строк десять рамок шумят (этап 44) */
 .sv-inline-edit--set { padding-left: 6px; gap: 4px; margin-left: -6px; border-style: dashed; border-color: transparent; color: var(--color-text-secondary); font-size: var(--text-caption); font-weight: var(--font-weight-semibold); }

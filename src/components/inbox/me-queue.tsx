@@ -92,7 +92,7 @@ function Group({ id, title, count, tone, hint, testId, children }: { id: string;
         </h2>
         {hint ? <span className="sv-section__hint">{hint}</span> : null}
       </div>
-      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">{children}</ul>
+      <ul className="sv-queue flex flex-col divide-y divide-line sv-card sv-card--soft">{children}</ul>
     </section>
   );
 }
