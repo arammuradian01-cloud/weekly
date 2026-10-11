@@ -64,19 +64,20 @@ function QuestionForm({ id, initial, onSave, onCancel }: { id: string; initial?:
   );
 }
 
-/** Меню «Реакция»: поставить или убрать свою */
-function ReactionMenu({ reactions, me, disabled, onPick }: { reactions: ReactionView[]; me: PersonSlug; disabled?: boolean; onPick: (code: ReactionCode, mine: boolean) => void }) {
+/** Меню «Реакция»: поставить или убрать свою. icon: кнопкой-иконкой в низу записи ленты (этап 43), слово подсказкой */
+function ReactionMenu({ reactions, me, disabled, onPick, icon = false }: { reactions: ReactionView[]; me: PersonSlug; disabled?: boolean; onPick: (code: ReactionCode, mine: boolean) => void; icon?: boolean }) {
   // После выбора «Обсудить на встрече» фокус уходит в поле вопроса, а не обратно на кнопку меню
   const keepFocus = useRef(false);
   return (
     <Menu.Root>
       <Menu.Trigger
-        className="sv-reaction sv-reaction--discuss"
+        className={icon ? "sv-entry__act" : "sv-reaction sv-reaction--discuss"}
         aria-label="Поставить реакцию"
+        title={icon ? "Поставить реакцию" : undefined}
         disabled={disabled}
       >
-        <SmilePlus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-        Реакция
+        <SmilePlus className={icon ? undefined : "h-3.5 w-3.5"} strokeWidth={1.75} aria-hidden="true" />
+        {icon ? null : "Реакция"}
       </Menu.Trigger>
       <Menu.Portal>
         <Menu.Content
@@ -125,6 +126,7 @@ export function ReactionBar({
   canMarkDiscussed,
   large,
   compact,
+  trailing,
 }: {
   id: string;
   reactions: ReactionView[];
@@ -135,6 +137,8 @@ export function ReactionBar({
   canMarkDiscussed?: (r: ReactionView) => boolean;
   large?: boolean;
   compact?: boolean;
+  /** Что стоит в конце строки реакций справа: в ленте кнопка обсуждения иконкой рядом с меню реакции (этап 43) */
+  trailing?: React.ReactNode;
 }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState<ReactionCode | null>(null);
@@ -148,28 +152,36 @@ export function ReactionBar({
   };
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Реакции">
-        {REACTIONS.map(({ code, label, Icon }) => {
-          const list = reactions.filter((r) => r.kind === code);
-          const mine = list.some((r) => r.by === me);
-          if ((readOnly || compact) && !list.length) return null;
-          return (
-            <button
-              key={code}
-              type="button"
-              disabled={readOnly || busy !== null}
-              aria-pressed={mine}
-              title={list.length ? `${label}: ${whoText(list)}` : label}
-              onClick={() => void press(code)}
-              className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
-            >
-              <Icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-              {label}
-              {list.length ? <span className="sv-reaction__count">{list.length}</span> : null}
-            </button>
-          );
-        })}
-        {compact && !readOnly ? <ReactionMenu reactions={reactions} me={me} disabled={busy !== null} onPick={(code) => void press(code)} /> : null}
+      {/* Группа реакций слева (чипы и меню), обсуждение (trailing) справа вне группы: это не реакция */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <div className={cn("flex flex-wrap items-center gap-1.5", compact && "min-w-0 flex-1")} role="group" aria-label="Реакции">
+          {REACTIONS.map(({ code, label, Icon }) => {
+            const list = reactions.filter((r) => r.kind === code);
+            const mine = list.some((r) => r.by === me);
+            if ((readOnly || compact) && !list.length) return null;
+            return (
+              <button
+                key={code}
+                type="button"
+                disabled={readOnly || busy !== null}
+                aria-pressed={mine}
+                title={list.length ? `${label}: ${whoText(list)}` : label}
+                onClick={() => void press(code)}
+                className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
+              >
+                <Icon className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+                {label}
+                {list.length ? <span className="sv-reaction__count">{list.length}</span> : null}
+              </button>
+            );
+          })}
+          {compact && !readOnly ? (
+            <span className="sv-entry__acts">
+              <ReactionMenu icon reactions={reactions} me={me} disabled={busy !== null} onPick={(code) => void press(code)} />
+            </span>
+          ) : null}
+        </div>
+        {trailing}
       </div>
       {asking ? (
         <QuestionForm

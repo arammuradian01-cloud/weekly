@@ -151,8 +151,8 @@ export function TaskCard({ task: listed, standalone }: { task: Task; standalone?
       {/* Панель действий (этап 42): статус, состояние и приоритет в один клик слева, действия справа, остальное в «Ещё» */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line pb-4 sm:gap-x-5">
         <StatusSelect task={task} />
-        <StateSelect task={task} />
-        <PrioritySelect task={task} />
+        <StateSelect task={task} set />
+        <PrioritySelect task={task} set />
         {/* На телефоне кнопки второй строкой, а «Ещё» остаётся в первой справа: два ряда предсказуемой формы.
             В DOM порядок прежний: выборы, кнопки, «Ещё» */}
         <div className="order-last flex basis-full flex-wrap items-center gap-2 sm:order-none sm:ml-auto sm:basis-auto">

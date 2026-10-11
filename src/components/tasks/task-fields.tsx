@@ -47,7 +47,7 @@ export function StatusSelect({ task, subject }: { task: Task; subject?: string }
   );
 }
 
-export function StateSelect({ task, subject }: { task: Task; subject?: string }) {
+export function StateSelect({ task, subject, set = false }: { task: Task; subject?: string; /** Пустое значение действием «Состояние», а не бейджем (этап 43) */ set?: boolean }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   const { data } = usePrototype();
@@ -59,6 +59,7 @@ export function StateSelect({ task, subject }: { task: Task; subject?: string })
       ariaSubject={subject}
       value={task.state}
       empty={task.state === "unset"}
+      emptyLabel={set ? "Состояние" : undefined}
       valueLabel={unconfirmed ? "В графике не подтверждено" : stateLabel(task.state)}
       render={(v) => <StateDot state={v} />}
       renderValue={(v) => (unconfirmed && v === "on-track" ? <StateDot state="unset" label="В графике не подтверждено" /> : <StateDot state={v} />)}
@@ -69,7 +70,7 @@ export function StateSelect({ task, subject }: { task: Task; subject?: string })
   );
 }
 
-export function PrioritySelect({ task }: { task: Task }) {
+export function PrioritySelect({ task, set = false }: { task: Task; set?: boolean }) {
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
   return (
@@ -77,6 +78,7 @@ export function PrioritySelect({ task }: { task: Task }) {
       label="Приоритет"
       value={task.priority}
       empty={task.priority === "unset"}
+      emptyLabel={set ? "Приоритет" : undefined}
       valueLabel={priorityOf(task.priority).label}
       options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))}
       disabled={!can.priority}

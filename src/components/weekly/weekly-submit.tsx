@@ -333,7 +333,7 @@ export function WeeklySubmit({
   ].filter(Boolean) as string[];
 
   return (
-    <div className="lg:grid lg:grid-cols-[248px_minmax(0,1fr)] lg:gap-10">
+    <div className="lg:grid lg:grid-cols-[248px_minmax(0,840px)] lg:gap-10">
       <Modal
         open={confirmDelete !== null}
         onOpenChange={(open) => !open && setConfirmDelete(null)}
@@ -467,9 +467,6 @@ export function WeeklySubmit({
             readOnly={!canEdit}
             counter={{ value: headline.length, max: HEADLINE_MAX }}
           />
-          <div className="mt-4">
-            <ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={canEdit} />
-          </div>
           <div className="mt-6 flex flex-col gap-4">
             {canEdit ? <FactSuggestions week={week.key} facts={facts} setFacts={setFacts} onAdded={upsert} /> : null}
             <h3 className="text-lead font-semibold text-ink">
@@ -485,7 +482,7 @@ export function WeeklySubmit({
                 ) : (
                   <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
-                      <EntryItem entry={e} discussion={false} />
+                      <EntryItem entry={e} discussion={false} compact />
                     </div>
                     {canEdit ? <div className="flex shrink-0 gap-1">
                       <Button size="sm" variant="ghost" onClick={() => setEditing(e.id)} aria-label={`Изменить запись «${e.what}»`}>
@@ -511,7 +508,7 @@ export function WeeklySubmit({
                     const note = e.promoted?.find((x) => x.by === me.slug)?.note;
                     return (
                       <li key={e.id} className="flex flex-col gap-2 sv-card sv-card--soft px-4 py-3">
-                        <EntryItem entry={e} showAuthor discussion={false} />
+                        <EntryItem entry={e} showAuthor discussion={false} compact />
                         {note ? (
                           <p className="text-body text-ink">
                             <span className="text-muted">От себя: </span>
@@ -543,6 +540,10 @@ export function WeeklySubmit({
                 </Button>
               </div>
             )}
+          </div>
+          {/* «Спасибо коллеге» после записей (этап 43): необязательная строка в конце шага, а не между фразой и записями */}
+          <div className="mt-6">
+            <ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={canEdit} />
           </div>
         </Step>
 
@@ -670,7 +671,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
         <StatusSelect task={task} />
-        <StateSelect task={task} />
+        <StateSelect task={task} set />
       </div>
       {green ? (
         <p className="text-small text-orange-ink">

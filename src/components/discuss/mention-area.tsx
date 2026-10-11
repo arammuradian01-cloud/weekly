@@ -3,6 +3,7 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
 import { mentionQuery, mentionSuggestions } from "@/lib/discuss/mentions";
 import { cn } from "@/lib/cn";
+import { CharCounter } from "@/components/ui/primitives";
 import { useMentionPeople } from "./mention-text";
 
 const same = (a: string, b: string) => a.toLowerCase().replace(/ё/g, "е") === b.toLowerCase().replace(/ё/g, "е");
@@ -87,11 +88,7 @@ export function MentionArea({
         <label htmlFor={id} className="text-sm font-medium text-ink">
           {label}
         </label>
-        {counter ? (
-          <span className={cn("text-caption tabular-nums", counter.value > counter.max ? "text-danger-ink" : "text-muted")}>
-            {counter.value} из {counter.max}
-          </span>
-        ) : null}
+        <CharCounter counter={counter} />
       </div>
       <div className="relative">
         <textarea

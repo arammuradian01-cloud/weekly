@@ -1,6 +1,7 @@
 // Мелкие общие элементы интерфейса: аватар, скелетон, переключатель вида, фильтр-чип, поля формы.
 
 import { cn } from "@/lib/cn";
+import { plural } from "@/domain/dates";
 
 /** Тон аватара по имени, как в дизайн-системе (Avatar.jsx toneOf): восемь спокойных подложек, одно имя всегда одного цвета */
 export function avatarTone(name: string) {
@@ -85,15 +86,18 @@ export function Chip({
   children,
   count,
   tone = "default",
+  disabled,
 }: {
   active: boolean;
   onClick: () => void;
   children: React.ReactNode;
   count?: number;
   tone?: "default" | "danger";
+  /** Отбор ни к чему не приведёт (например, ноль подходящих): чип выключен, пока не включён сам */
+  disabled?: boolean;
 }) {
   return (
-    <button type="button" aria-pressed={active} onClick={onClick} className={cn("sv-pill shrink-0", tone === "danger" && "sv-pill--danger", active && "is-active")}>
+    <button type="button" aria-pressed={active} onClick={onClick} disabled={disabled} className={cn("sv-pill shrink-0", tone === "danger" && "sv-pill--danger", active && "is-active")}>
       {children}
       {count !== undefined ? (
         <span className={cn("sv-counter", active ? (tone === "danger" ? "sv-counter--danger" : "") : "sv-counter--neutral")}>{count}</span>
@@ -103,6 +107,26 @@ export function Chip({
 }
 
 const control = "sv-control w-full";
+
+/**
+ * Счётчик знаков у поля (этап 43): молчит, пока места много, появляется, когда осталось меньше 20 знаков, и краснеет,
+ * когда лимит превышен. Раньше «38 из 150» стоял у каждого поля заметнее самого поля. Экранному диктору число не
+ * читается на каждый знак: живая область всегда в DOM и меняет текст только на порогах (20, 10, 0, превышение)
+ */
+export function CharCounter({ counter }: { counter?: { value: number; max: number } }) {
+  if (!counter) return null;
+  const left = counter.max - counter.value;
+  const visible = left < 0 ? `${-left} ${plural(-left, "лишний знак", "лишних знака", "лишних знаков")}` : `${plural(left, "остался", "осталось", "осталось")} ${left} ${plural(left, "знак", "знака", "знаков")}`;
+  const spoken = left < 0 ? "Лимит знаков превышен" : left === 0 ? "Знаков не осталось" : left <= 10 ? "Осталось меньше 10 знаков" : left < 20 ? "Осталось меньше 20 знаков" : "";
+  return (
+    <span className={cn("text-caption tabular-nums", left < 0 ? "text-danger-ink" : "text-muted")}>
+      {left < 20 ? <span aria-hidden="true">{visible}</span> : null}
+      <span className="sr-only" aria-live="polite">
+        {spoken}
+      </span>
+    </span>
+  );
+}
 
 export function TextArea({
   label,
@@ -118,11 +142,7 @@ export function TextArea({
         <label htmlFor={id} className="sv-label">
           {label}
         </label>
-        {counter ? (
-          <span className={cn("text-caption tabular-nums", counter.value > counter.max ? "text-danger-ink" : "text-muted")}>
-            {counter.value} из {counter.max}
-          </span>
-        ) : null}
+        <CharCounter counter={counter} />
       </div>
       <textarea id={id} className={control} {...props} />
       {hint ? <p className="sv-field__hint">{hint}</p> : null}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { setCeoFlagAction } from "@/app/(app)/weekly/actions";
 import { useRunWeekly } from "./use-weekly";
-import { ExternalLink, HandHelping, Star } from "lucide-react";
+import { Coins, CornerDownRight, ExternalLink, HandHelping, Hash, Star } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/domain/dictionaries";
 import { authorName } from "@/domain/people";
@@ -25,8 +25,43 @@ export function EntryTypeBadge({ type }: { type: EntryTypeCode }) {
   return <span className={cn("sv-tag", TYPE_TAG[type])}>{entryTypeLabel(type)}</span>;
 }
 
+/** Отметка «В отчёте CEO»: звезда на светлом фоне, заметнее тёмной плашки среди текста */
+export function CeoTag({ className }: { className?: string }) {
+  return (
+    <span className={cn("sv-tag sv-tag--ceo", className)}>
+      <Star className="h-3 w-3 fill-current" strokeWidth={1.5} aria-hidden="true" />
+      В отчёте CEO
+    </span>
+  );
+}
+
+/**
+ * Строка записи с иконкой вместо подписи (этап 43): в ленте из десятков записей подписи «Цифра или факт» и «Что
+ * делаем дальше» повторялись сотню раз. Подпись остаётся для экранного диктора, глазу хватает иконки и формы:
+ * факт табличными цифрами, «дальше» с маркером в начале строки
+ */
+function Line({ icon: Icon, label, labels, children, className }: { icon: typeof Hash; label: string; labels: boolean; children: React.ReactNode; className?: string }) {
+  if (labels) {
+    return (
+      <div className="sv-entry__block">
+        <span className="sv-entry__label">{label}</span>
+        {children}
+      </div>
+    );
+  }
+  return (
+    <div className={cn("sv-entry__line", className)}>
+      <Icon className="sv-entry__line__icon" strokeWidth={1.75} aria-hidden="true" />
+      <span className="sr-only">{label}: </span>
+      {children}
+    </div>
+  );
+}
+
 /**
  * Одна запись weekly: одно событие. Флажок «В отчёт CEO» видят и ставят только владелец и администраторы.
+ * В ленте запись компактная: тип и блок одной мелкой строкой, заголовок, текст, факт и «дальше» строками с иконкой.
+ * Крупно (встреча, страница записи) подписи полей остаются
  */
 export function EntryItem({
   entry,
@@ -35,6 +70,7 @@ export function EntryItem({
   demo,
   discussion = true,
   card = false,
+  compact = false,
 }: {
   entry: WeeklyEntry;
   showAuthor?: boolean;
@@ -44,6 +80,8 @@ export function EntryItem({
   discussion?: boolean | "open";
   /** Отдельной карточкой (страница записи, образец). В ленте запись идёт строкой внутри карточки человека */
   card?: boolean;
+  /** Компактно (этап 43): лента и сдача weekly. Подписи полей иконками, реакция и обсуждение иконками */
+  compact?: boolean;
 }) {
   const { manage, notify } = usePrototype();
   const run = useRunWeekly();
@@ -56,8 +94,7 @@ export function EntryItem({
     if (!saved) setCeo(ceo);
   };
   const textSize = large ? "!text-title" : "";
-  // Карточка записи по дизайн-системе (weekly/EntryCard.jsx, sv-entry): тип, блок и направление, заголовок,
-  // подписанные блоки «Влияние на бизнес», «Цифра или факт», «Что делаем дальше», «Нужна помощь», ссылки
+  const labels = !compact || !!large || discussion === "open";
   return (
     <article className={cn("sv-entry", !card && "!gap-1.5 !rounded-none !border-0 !bg-transparent !p-0", card && large && "!p-6")}>
       <div className="sv-entry__head">
@@ -66,33 +103,34 @@ export function EntryItem({
           {blockLabel(entry.block)} <span aria-hidden="true">/</span> {directionLabel(entry.direction)}
         </span>
         {entry.help ? <span className="sv-tag sv-tag--help">Нужна помощь</span> : null}
-        {ceo && !manage ? <span className="sv-tag sv-tag--ceo">В отчёте CEO</span> : null}
+        {ceo && !manage ? <CeoTag /> : null}
         {showAuthor ? <span className="sv-entry__author !ml-auto">{authorName(entry.author, "compact", "Общее, без автора")}</span> : null}
       </div>
       <h3 className={cn("sv-entry__title", large && "!text-section")}>{entry.what}</h3>
       {entry.details ? (
-        <div className="sv-entry__block">
-          <span className="sv-entry__label">Подробнее</span>
+        labels ? (
+          <div className="sv-entry__block">
+            <span className="sv-entry__label">Подробнее</span>
+            <MentionText text={entry.details} className={cn("sv-entry__text whitespace-pre-line", textSize)} />
+          </div>
+        ) : (
           <MentionText text={entry.details} className={cn("sv-entry__text whitespace-pre-line", textSize)} />
-        </div>
+        )
       ) : null}
       {entry.impact ? (
-        <div className="sv-entry__block">
-          <span className="sv-entry__label">Влияние на бизнес</span>
+        <Line icon={Coins} label="Влияние на бизнес" labels={labels}>
           <p className={cn("sv-entry__text", textSize)}>{entry.impact}</p>
-        </div>
+        </Line>
       ) : null}
       {entry.fact ? (
-        <div className="sv-entry__block">
-          <span className="sv-entry__label">Цифра или факт</span>
+        <Line icon={Hash} label="Цифра или факт" labels={labels} className="sv-entry__line--fact">
           <p className={cn("sv-entry__text", textSize)}>{entry.fact}</p>
-        </div>
+        </Line>
       ) : null}
       {entry.next ? (
-        <div className="sv-entry__block">
-          <span className="sv-entry__label">Что делаем дальше</span>
+        <Line icon={CornerDownRight} label="Что делаем дальше" labels={labels} className="sv-entry__line--next">
           <p className={cn("sv-entry__text", textSize)}>{entry.next}</p>
-        </div>
+        </Line>
       ) : null}
       {entry.help ? (
         <div className="sv-entry__block">
@@ -124,7 +162,7 @@ export function EntryItem({
           ) : null}
         </div>
       ) : null}
-      {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} /> : null}
+      {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} compact={compact && !large && discussion !== "open"} /> : null}
     </article>
   );
 }

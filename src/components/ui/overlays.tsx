@@ -4,7 +4,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { Check, ChevronDown, X } from "lucide-react";
+import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export function Drawer({
@@ -103,6 +103,7 @@ export function InlineSelect<V extends string>({
   align = "start",
   ariaSubject,
   empty = false,
+  emptyLabel,
 }: {
   value: V;
   options: { value: V; label: string }[];
@@ -113,6 +114,11 @@ export function InlineSelect<V extends string>({
    * появляется при наведении на строку, фокусе или открытом списке
    */
   empty?: boolean;
+  /**
+   * Чем показать пустое значение там, где его задают (карточка, сдача weekly, этап 43): не бейджем «Не задано»,
+   * а действием «Состояние» с плюсом. Для экранного диктора подпись прежняя: «Состояние: Не задано. Изменить»
+   */
+  emptyLabel?: string;
   /** Текущее значение в строке, если оно показывается иначе, чем вариант в списке (например, «не подтверждено») */
   renderValue?: (value: V) => React.ReactNode;
   label: string;
@@ -129,9 +135,16 @@ export function InlineSelect<V extends string>({
     <Menu.Root>
       <Menu.Trigger
         aria-label={`${label}${ariaSubject ? ` ${ariaSubject}` : ""}: ${valueLabel ?? options.find((o) => o.value === value)?.label ?? value}. Изменить`}
-        className={cn("sv-inline-edit group data-[state=open]:border-focus data-[state=open]:bg-field", empty && "sv-inline-edit--empty")}
+        className={cn("sv-inline-edit group data-[state=open]:border-focus data-[state=open]:bg-field", empty && "sv-inline-edit--empty", empty && emptyLabel && "sv-inline-edit--set")}
       >
-        {current(value)}
+        {empty && emptyLabel ? (
+          <>
+            <Plus className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
+            <span aria-hidden="true">{emptyLabel}</span>
+          </>
+        ) : (
+          current(value)
+        )}
         <ChevronDown className="sv-inline-edit__chev h-3.5 w-3.5 group-focus-visible:opacity-100 group-data-[state=open]:opacity-100" strokeWidth={1.75} aria-hidden="true" />
       </Menu.Trigger>
       <Menu.Portal>
