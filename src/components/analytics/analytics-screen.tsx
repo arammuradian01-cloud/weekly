@@ -12,6 +12,7 @@ import { plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeekChart } from "./week-chart";
+import { Figures } from "@/components/ui/data";
 
 const CELL_WORDS: Record<WeeklyCell, string> = {
   "on-time": "сдан вовремя",
@@ -84,7 +85,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             Задачи и люди на вкладке «Руководителю»
           </Link>
         </div>
-        <NowTiles now={data.now} staleDays={data.staleDays} />
+        <NowTiles now={data.now} staleDays={data.staleDays} teamId={data.team.id} />
         <p className="text-caption text-muted">
           {data.teams === 1 ? "Одна команда" : `Команд в счёте: ${data.teams}`}, людей {data.people}. Состав команд сегодняшний, прошлые недели считаются по нему.
         </p>
@@ -251,24 +252,24 @@ export function weeklySummary(c: LeaderCard): string {
 
 export const staleLabel = (days: number) => `Без обновлений дольше ${days} ${plural(days, "дня", "дней", "дней")}`;
 
-function NowTiles({ now, staleDays }: { now: AreaNow; staleDays: number }) {
-  const items: [string, number][] = [
-    ["В работе", now.inWork],
-    ["Просрочено", now.overdue],
-    [staleLabel(staleDays), now.stale],
-    ["Заблокировано", now.blocked],
-    ["Требуют уточнений", now.clarify],
-    ["Предложены, ещё не приняты", now.proposed],
-  ];
+/** Задачи сейчас строкой (этап 45): не больше трёх, нули спрятаны. Шесть плиток дублировали вкладку «Руководителю» */
+function NowTiles({ now, staleDays, teamId }: { now: AreaNow; staleDays: number; teamId: string }) {
+  // Цифра ведёт на вкладку «Руководителю» этой же команды: там задачи и люди
+  const leader = `/people/leader?team=${encodeURIComponent(teamId)}`;
   return (
-    <dl className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-      {items.map(([label, value]) => (
-        <div key={label} className="flex flex-col gap-1 rounded-lg bg-surface px-3.5 py-3 ring-1 ring-line">
-          <dt className="text-caption text-muted">{label}</dt>
-          <dd className="text-number font-semibold tabular-nums text-ink">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <Figures
+      label="Задачи сейчас в цифрах"
+      inline
+      max={3}
+      items={[
+        { label: "в работе", value: now.inWork, href: `${leader}#mt-people`, keepZero: true, testId: "an-fig-work" },
+        { label: "просрочено", value: now.overdue, href: `${leader}#mt-attention`, tone: "danger", testId: "an-fig-overdue" },
+        { label: "заблокировано", value: now.blocked, href: `${leader}#mt-attention`, tone: "danger", testId: "an-fig-blocked" },
+        { label: staleLabel(staleDays).toLowerCase(), value: now.stale, href: `${leader}#mt-attention`, tone: "warning", testId: "an-fig-stale" },
+        { label: plural(now.clarify, "требует уточнений", "требуют уточнений", "требуют уточнений"), value: now.clarify, href: `${leader}#mt-people`, tone: "warning", testId: "an-fig-clarify" },
+        { label: plural(now.proposed, "предложена, ещё не принята", "предложены, ещё не приняты", "предложено, ещё не принято"), value: now.proposed, href: `${leader}#mt-people`, testId: "an-fig-proposed" },
+      ]}
+    />
   );
 }
 

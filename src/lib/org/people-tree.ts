@@ -2,6 +2,7 @@
 // Кадровых полей нет: должность, подразделение, руководители, команды. Вакансии подразделения видны руководителям
 // этой ветки, владельцу и администраторам, как на странице подразделений
 
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 import { loadTeamNodes, scopeOf, type ScopeSubject } from "@/lib/org/scope";
 import { teamOptions, weeklyPeople } from "@/lib/org/audience";
@@ -44,7 +45,14 @@ export type PeopleTree = {
   loaded: boolean;
 };
 
-export async function peopleTree(viewer: ScopeSubject): Promise<PeopleTree> {
+/**
+ * Дерево один раз на запрос (этап 45): layout «Люди» и страница структуры зовут его оба. React.cache сравнивает
+ * аргументы по ссылке, поэтому ключ из примитивов субъекта
+ */
+export const peopleTree = (viewer: ScopeSubject): Promise<PeopleTree> => peopleTreeCached(viewer.id, viewer.role, !!viewer.limited, !!viewer.shared);
+const peopleTreeCached = cache((id: string, role: ScopeSubject["role"], limited: boolean, shared: boolean) => peopleTreeUncached({ id, role, limited, shared }));
+
+async function peopleTreeUncached(viewer: ScopeSubject): Promise<PeopleTree> {
   const [people, teams, units, vacancies, nodes, functional] = await Promise.all([
     prisma.person.findMany({
       where: { active: true },

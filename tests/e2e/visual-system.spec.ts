@@ -50,7 +50,15 @@ test("люди: команда и руководителю: цифры и таб
   await expect(page.getByTestId("team-fig-weekly")).toContainText(/\d+ из \d+/);
   const table = page.getByTestId("team-summary");
   await expect(table.getByText("Вся команда")).toBeVisible();
-  await expect(table.getByRole("link", { name: "Рева Тарас" })).toBeVisible();
+  // Этап 45: имя открывает карточку человека, общую со структурой
+  await table.getByRole("button", { name: /^Рева Тарас/ }).click();
+  const card = page.getByRole("dialog", { name: "Рева Тарас" });
+  await expect(card.getByText("Карточка человека")).toBeVisible();
+  await expect(card.getByRole("link", { name: "Разбор на встрече" })).toHaveAttribute("href", "/tasks/review?person=reva");
+  // Структура в этой базе не загружена: ссылки «В структуре» нет (она проверяется в structure.spec)
+  await expect(card.getByRole("link", { name: "В структуре" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(card).toHaveCount(0);
   await shot(page, "team");
 
   await page.goto("/people/leader");

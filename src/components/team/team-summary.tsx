@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePrototype } from "@/domain/store";
 import { personOf, positionOf } from "@/domain/people";
 import { TOP_TEAM } from "@/domain/teams";
@@ -11,6 +10,7 @@ import { ROLE_LABELS } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { Figures } from "@/components/ui/data";
+import { PersonName } from "@/components/people/person-card";
 
 type Row = {
   person: Person;
@@ -55,16 +55,19 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
   // Этап 36: ключевые цифры команды плитками и одна таблица на ноутбуке и телефоне (на телефоне строки карточками)
   return (
     <div className="flex flex-col gap-4">
+      {/* Этап 45: цифры строкой, не больше трёх, нули спрятаны; подробности по каждому в таблице ниже */}
       <Figures
         label="Команда в цифрах"
+        inline
+        max={3}
         items={[
           // Цифры по людям, как итог таблицы ниже: без общих задач лидеров, поэтому без ссылок на список задач
-          { label: "В работе", value: totals.inWork, testId: "team-fig-work" },
-          { label: "Просрочено", value: totals.overdue, tone: "danger", testId: "team-fig-overdue" },
-          { label: "С риском", value: totals.risk, tone: "warning", testId: "team-fig-risk" },
-          { label: "Закрыто за неделю", value: totals.closedWeek, testId: "team-fig-closed" },
-          { label: "Давно без обновлений", value: totals.stale, tone: "warning", testId: "team-fig-stale" },
-          { label: `Weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly" },
+          { label: "в работе", value: totals.inWork, testId: "team-fig-work", keepZero: true },
+          { label: "просрочено", value: totals.overdue, tone: "danger", testId: "team-fig-overdue" },
+          { label: "с риском", value: totals.risk, tone: "warning", testId: "team-fig-risk" },
+          { label: "давно без обновлений", value: totals.stale, tone: "warning", testId: "team-fig-stale" },
+          { label: "закрыто за неделю", value: totals.closedWeek, testId: "team-fig-closed" },
+          ...(expected.length ? [{ label: `сдали weekly за неделю ${weekNumber}`, value: `${submitted} из ${expected.length}`, href: "/weekly", testId: "team-fig-weekly", keepZero: true }] : []),
         ]}
       />
       <div className="sv-card sv-card--soft overflow-x-auto p-0">
@@ -88,9 +91,8 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
               return (
                 <tr key={r.person.slug}>
                   <th scope="row" className="is-wide text-left font-normal">
-                    <Link href={`/tasks/review?person=${r.person.slug}`} className="font-semibold text-ink hover:text-blue-700 hover:underline">
-                      {r.person.fullName}
-                    </Link>
+                    {/* Этап 45: имя открывает карточку человека, общую со структурой; разбор задач по ссылке из неё */}
+                    <PersonName slug={r.person.slug} name={r.person.fullName} className="font-semibold text-ink" fallbackHref={`/tasks/review?person=${r.person.slug}`} />
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <span className="block text-caption text-muted">
                       {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${ROLE_LABELS[r.person.role]}, ${r.person.zone}`}
@@ -129,7 +131,7 @@ export function TeamSummary({ reports, weekNumber }: { reports: PersonWeekly[]; 
         </table>
       </div>
       <p className="text-small text-muted">
-        {data.team === TOP_TEAM ? `Общих задач для всех лидеров в работе: ${shared}. ` : ""}Имя открывает разбор задач человека.
+        {data.team === TOP_TEAM ? `Общих задач для всех лидеров в работе: ${shared}. ` : ""}Имя открывает карточку человека: должность, руководитель, команды, задачи и weekly.
       </p>
     </div>
   );

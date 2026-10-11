@@ -13,8 +13,9 @@ import { prisma } from "@/lib/db";
 export const metadata: Metadata = { title: "Люди: структура" };
 
 /** Структура департамента и команды (этап 14), дерево подчинённых (этап 34). Видят все, правит владелец, состав своей команды правит её руководитель */
-export default async function StructurePage() {
+export default async function StructurePage({ searchParams }: { searchParams: Promise<{ person?: string }> }) {
   const ctx = await requireContext();
+  const { person } = await searchParams;
   const owner = ctx.management?.role === "OWNER";
   const subject = subjectOf(ctx);
   const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner }), peopleTree(subject)]);
@@ -22,5 +23,5 @@ export default async function StructurePage() {
   const candidates = owner || leadsTeam ? await memberCandidates(await currentActor()) : [];
   // Ритм weekly задают руководители своих команд и команд ниже (этап 15)
   const scope = await loadScope(prisma, subject);
-  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} />;
+  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} focus={person ?? null} />;
 }

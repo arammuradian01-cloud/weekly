@@ -77,8 +77,10 @@ test.describe("аналитика руководителя", () => {
     await expect(reva.getByRole("heading", { name: "Задачи сейчас" })).toBeVisible();
     expect(Date.now() - t0, "панель открывается быстрее 2 секунд").toBeLessThan(2000);
 
+    // Этап 45: задачи сейчас строкой цифр, не больше трёх, нули спрятаны
     const now = main.locator("section", { has: reva.getByRole("heading", { name: "Задачи сейчас" }) });
-    await expect(now.locator("div", { has: reva.getByText("Просрочено", { exact: true }) }).getByText("1", { exact: true })).toBeVisible();
+    await expect(now.getByTestId("an-fig-overdue").locator(".sv-figure__value")).toHaveText("1");
+    expect(await now.getByRole("list", { name: "Задачи сейчас в цифрах" }).getByRole("listitem").count()).toBeLessThanOrEqual(3);
 
     // Weekly по неделям: таблица вместо графика и обратно
     const weeklyChart = main.locator("figure", { has: reva.getByText("Сдача weekly по неделям") });

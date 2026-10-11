@@ -4,40 +4,20 @@
 // карточками, нажатие спускает на уровень ниже. Список: всё дерево с отступами, сворачивается по веткам. Поиск по
 // имени и должности открывает человека на схеме
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronUp, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { PeopleTree, TreePerson } from "@/lib/org/people-tree";
 import { Avatar, Segmented, TextInput } from "@/components/ui/primitives";
-import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
-
-const initialsOf = (fullName: string) => {
-  const [last, first] = fullName.split(/\s+/);
-  return first ? `${first.charAt(0)}${last!.charAt(0)}` : fullName.slice(0, 2);
-};
-
-const plural = (n: number, one: string, few: string, many: string) => {
-  const m10 = n % 10;
-  const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return one;
-  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
-  return many;
-};
+import { PersonDetails, initialsOf, reportsText } from "@/components/people/person-card";
+import { plural } from "@/domain/dates";
 
 /** Поиск без регистра и без разницы «ё» и «е», как в остальном ресурсе */
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, "е");
 
-/** «4 прямых, всего 12» или «Без подчинённых» */
-export function reportsText(p: Pick<TreePerson, "reports" | "total">): string {
-  if (!p.reports.length) return "Без подчинённых";
-  const direct = `${p.reports.length} ${plural(p.reports.length, "прямой подчинённый", "прямых подчинённых", "прямых подчинённых")}`;
-  return p.total > p.reports.length ? `${direct}, всего ${p.total}` : direct;
-}
-
-export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; me: string; owner?: boolean }) {
-  const [picked, setPicked] = useState<string | null>(tree.start);
+export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree: PeopleTree; me: string; owner?: boolean; /** Человек из адреса (?person=), этап 45 */ start?: string | null }) {
+  const [picked, setPicked] = useState<string | null>(start && tree.people[start] ? start : tree.start);
   const [mode, setMode] = useState<"chart" | "list">("chart");
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -154,7 +134,9 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
             ))}
           </nav>
 
-          <FocusCard person={p} people={people} me={me} onOpen={open} headRef={headRef} />
+          <section className="sv-org__focus" aria-label={`Карточка: ${p.fullName}`} data-testid="person-focus">
+            <PersonDetails person={p} people={people} me={me} onOpen={open} headRef={headRef} />
+          </section>
 
           {p.reports.length ? (
             <>
@@ -166,7 +148,7 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
                 <ul className="sv-org__grid">
                   {p.reports.map((slug) => (
                     <li key={slug}>
-                      <PersonCard person={people[slug]!} me={me} onOpen={open} />
+                      <TreePersonButton person={people[slug]!} me={me} onOpen={open} />
                     </li>
                   ))}
                 </ul>
@@ -174,12 +156,13 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
             </>
           ) : null}
 
+          {/* Этап 45: другие ветки свёрнуты по умолчанию, чтобы не отвлекать от выбранной */}
           {otherRoots.length ? (
-            <section className="mt-2" aria-label="Другие ветки">
-              <p className="text-caption text-text-secondary">
+            <details className="mt-2 text-caption text-text-secondary" data-testid="other-roots">
+              <summary className="cursor-pointer rounded-tag py-1 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
                 {`Другие ветки и люди без руководителя в структуре: ${otherRoots.length}`}
-              </p>
-              <ul className="mt-1 flex flex-wrap gap-1.5">
+              </summary>
+              <ul className="mt-1 flex flex-wrap gap-1.5" aria-label="Другие ветки">
                 {otherRoots.slice(0, 30).map((slug) => (
                   <li key={slug}>
                     <button type="button" className="rounded-tag bg-field px-2 py-1 text-caption text-ink hover:bg-accent-soft" onClick={() => open(slug)}>
@@ -188,7 +171,7 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
                   </li>
                 ))}
               </ul>
-            </section>
+            </details>
           ) : null}
         </div>
       ) : (
@@ -198,7 +181,7 @@ export function PeopleTreeView({ tree, me, owner = false }: { tree: PeopleTree; 
   );
 }
 
-function PersonCard({ person: p, me, onOpen }: { person: TreePerson; me: string; onOpen: (slug: string) => void }) {
+function TreePersonButton({ person: p, me, onOpen }: { person: TreePerson; me: string; onOpen: (slug: string) => void }) {
   return (
     <button type="button" className={cn("sv-person", p.reports.length > 0 && "sv-person--lead")} onClick={() => onOpen(p.slug)} aria-label={`${p.fullName}${p.position ? `, ${p.position}` : ""}. ${reportsText(p)}`} data-testid={`person-${p.slug}`}>
       <Avatar text={initialsOf(p.fullName)} name={p.fullName} />
@@ -212,95 +195,6 @@ function PersonCard({ person: p, me, onOpen }: { person: TreePerson; me: string;
         <span className="sv-person__count">{reportsText(p)}</span>
       </span>
     </button>
-  );
-}
-
-function FocusCard({
-  person: p,
-  people,
-  me,
-  onOpen,
-  headRef,
-}: {
-  person: TreePerson;
-  people: Record<string, TreePerson>;
-  me: string;
-  onOpen: (slug: string) => void;
-  headRef: React.RefObject<HTMLHeadingElement | null>;
-}) {
-  const manager = p.manager ? people[p.manager] : undefined;
-  const functional = p.functional ? people[p.functional] : undefined;
-  return (
-    <section className="sv-org__focus" aria-label={`Карточка: ${p.fullName}`} data-testid="person-focus">
-      {/* На узком экране кнопка «Выше» уходит под текст, чтобы не сжимать имя и должность */}
-      <div className="flex flex-wrap items-start gap-3">
-        <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="lg" />
-        <div className="min-w-0 flex-1 basis-56">
-          <h2 ref={headRef} tabIndex={-1} className="scroll-mt-24 font-heading text-title-sm font-bold text-ink [overflow-wrap:anywhere] focus:outline-none">
-            {p.fullName}
-            {p.slug === me ? <span className="ml-2 text-caption font-normal text-text-secondary">это вы</span> : null}
-          </h2>
-          <p className="text-body text-text-secondary">{[p.position, p.unit].filter(Boolean).join(", ") || "Должность не указана"}</p>
-          <p className="mt-1 text-body text-ink">{reportsText(p)}</p>
-        </div>
-        {manager ? (
-          <Button variant="secondary" size="sm" className="ml-auto" onClick={() => onOpen(manager.slug)} aria-label={`На уровень выше: ${manager.fullName}`}>
-            <ChevronUp className="h-4 w-4" aria-hidden="true" />
-            Выше
-          </Button>
-        ) : null}
-      </div>
-      <dl className="mt-3 grid gap-x-6 gap-y-2 border-t border-border pt-3 text-body sm:grid-cols-2">
-        <div>
-          <dt className="text-caption text-text-secondary">Руководитель</dt>
-          <dd className="text-ink">{manager ? manager.fullName : "Нет в структуре"}</dd>
-        </div>
-        {functional ? (
-          <div>
-            <dt className="text-caption text-text-secondary">Функциональный руководитель</dt>
-            <dd className="text-ink">{functional.fullName}</dd>
-          </div>
-        ) : null}
-        {p.leads.length ? (
-          <div>
-            <dt className="text-caption text-text-secondary">Руководит командами</dt>
-            <dd className="text-ink">{p.leads.map((t) => t.name).join(", ")}</dd>
-          </div>
-        ) : null}
-        {p.memberOf.length ? (
-          <div>
-            <dt className="text-caption text-text-secondary">Участник команд</dt>
-            <dd className="text-ink">{p.memberOf.map((t) => t.name).join(", ")}</dd>
-          </div>
-        ) : null}
-        {p.vacancies?.length ? (
-          <div className="sm:col-span-2">
-            <dt className="text-caption text-text-secondary">Открытые вакансии в подразделении</dt>
-            <dd className="text-ink">{p.vacancies.join(", ")}</dd>
-          </div>
-        ) : null}
-      </dl>
-      {/* Цели видны шире задач (цели выше своей команды), поэтому ссылка на цели есть у всех, на задачи только у тех,
-          чьи задачи смотрящему видны, на weekly у тех, кто есть в лентах видимых команд */}
-      <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        {p.work ? (
-          <Link href={`/tasks?owner=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
-            Задачи
-          </Link>
-        ) : null}
-        {/* Этап 39: weekly человека, если он есть в ленте одной из видимых команд. Если его нет в ленте выбранной команды,
-            лента подскажет, в какой команде он есть */}
-        {p.weekly ? (
-          <Link href={`/weekly?author=${encodeURIComponent(p.slug)}`} className="text-body font-semibold text-link hover:underline">
-            Weekly
-          </Link>
-        ) : null}
-        <Link href={`/goals?find=${encodeURIComponent(p.fullName)}`} className="text-body font-semibold text-link hover:underline">
-          Цели
-        </Link>
-        <span className="text-caption text-text-secondary">откроются в команде, выбранной в верхней панели</span>
-      </div>
-    </section>
   );
 }
 
