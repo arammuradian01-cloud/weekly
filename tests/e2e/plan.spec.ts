@@ -17,6 +17,10 @@ async function shot(page: Page, name: string) {
 
 test.beforeEach(async () => {
   await resetDatabase({ weekly: false });
+  // Этап 35: снимки загрузок, отметки проверки и факт по дням
+  await sql(`DELETE FROM plan_facts`);
+  await sql(`DELETE FROM plan_checks`);
+  await sql(`DELETE FROM plan_pulls`);
   await sql(`DELETE FROM plan_adjustments`);
   await sql(`DELETE FROM plan_lines`);
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);

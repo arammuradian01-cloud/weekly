@@ -22,6 +22,16 @@ export type WeekChartProps = {
   tip: (index: number) => string[];
   /** Колонки таблицы: заголовок и значение по неделе */
   columns: { label: string; value: (index: number) => string | number }[];
+  /** Не недели, а другие периоды (этап 35: дни месяца): заголовок колонки таблицы и подсказки */
+  period?: { header: string; tip: (w: ChartWeek) => string };
+  /** Подпись оси у каждого n-го периода и у последнего: у 31 дня подписи иначе слипаются */
+  labelEvery?: number;
+  /** Число на шкале и в подписи последнего значения: по-русски, с запятой (этап 35) */
+  format?: (value: number) => string;
+  /** Точки на линии: у ровной линии-ориентира по 31 дню они только мешают */
+  dots?: boolean;
+  /** Дробная шкала: значения меньше единицы и дробные деления */
+  fractional?: boolean;
 };
 
 /** Ширина по умолчанию до первого замера: дальше график рисуется в настоящую ширину, текст не растягивается */
@@ -32,15 +42,15 @@ const PAD_R = 8;
 const PAD_T = 18;
 const PAD_B = 24;
 
-/** Верх шкалы: 1, 2, 4, 5 или 10 на степень десяти */
-export function niceMax(value: number): number {
-  if (value <= 0) return 4;
+/** Верх шкалы: 1, 2, 4, 5 или 10 на степень десяти. fractional: шкала может быть меньше единицы (выручка мелкого продукта) */
+export function niceMax(value: number, fractional = false): number {
+  if (value <= 0) return fractional ? 1 : 4;
   const pow = 10 ** Math.floor(Math.log10(value));
-  for (const m of [1, 2, 4, 5, 10]) if (m * pow >= value) return Math.max(4, m * pow);
+  for (const m of [1, 2, 4, 5, 10]) if (m * pow >= value) return fractional ? m * pow : Math.max(4, m * pow);
   return 10 * pow;
 }
 
-export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns }: WeekChartProps) {
+export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, columns, period, labelEvery = 1, format = String, dots = true, fractional = false }: WeekChartProps) {
   const [active, setActive] = useState<number | null>(null);
   // Касание пальцем: подсказка по нажатию (click), а не по началу жеста, чтобы прокрутка страницы её не дёргала
   const touch = useRef(false);
@@ -79,13 +89,13 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
   }, [active]);
   const n = weeks.length || 1;
   const all = [...(bars?.values ?? []), ...(line?.values ?? [])].filter((v): v is number => v !== null);
-  const max = unit === "%" ? 100 : niceMax(Math.max(0, ...all));
+  const max = unit === "%" ? 100 : niceMax(Math.max(0, ...all), fractional);
   const plotH = H - PAD_T - PAD_B;
   const y = (v: number) => PAD_T + plotH * (1 - v / max);
   const slot = (W - PAD_L - PAD_R) / n;
   const cx = (i: number) => PAD_L + slot * i + slot / 2;
   const bw = Math.min(28, slot * 0.5);
-  const ticks = [0, max / 2, max].filter((t) => Number.isInteger(t));
+  const ticks = [0, max / 2, max].filter((t) => fractional || Number.isInteger(t));
   const base = y(0);
 
   // Столбик со скруглённым верхом 4 px, низ прямой: стоит на нулевой линии
@@ -126,7 +136,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
             <caption className="sr-only">{title}</caption>
             <thead>
               <tr>
-                <th scope="col">Неделя</th>
+                <th scope="col">{period?.header ?? "Неделя"}</th>
                 {columns.map((c) => (
                   <th key={c.label} scope="col" className="is-num">
                     {c.label}
@@ -153,12 +163,12 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
         </div>
       ) : (
         <div ref={plot} className="sv-chart__plot" onPointerLeave={(e) => e.pointerType === "mouse" && setActive(null)} onPointerDown={(e) => (touch.current = e.pointerType !== "mouse")}>
-          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}. Подробности по неделям в таблице: кнопка «Таблицей»`}>
+          <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${title}. Подробности ${period ? `по периодам (${period.header.toLowerCase()})` : "по неделям"} в таблице: кнопка «Таблицей»`}>
             {ticks.map((t) => (
               <g key={t}>
                 <line className="sv-chart__grid" x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)} />
                 <text className="sv-chart__axis" x={PAD_L - 6} y={y(t) + 4} textAnchor="end">
-                  {t}
+                  {format(t)}
                   {unit}
                 </text>
               </g>
@@ -171,24 +181,26 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
             )}
             {/* Линия без столбиков: единственный ряд, цвет первого ряда */}
             {line && path ? <path className={cn("sv-chart__line", !bars && "sv-chart__line--solo")} d={path} /> : null}
-            {points.map((p, i) => (p ? <circle key={weeks[i].key} className={cn("sv-chart__dot", !bars && "sv-chart__dot--solo")} cx={p[0]} cy={p[1]} r={active === i ? 5 : 4} /> : null))}
+            {points.map((p, i) => (p && (dots || active === i) ? <circle key={weeks[i].key} className={cn("sv-chart__dot", !bars && "sv-chart__dot--solo")} cx={p[0]} cy={p[1]} r={active === i ? 5 : 4} /> : null))}
             {bars && lastBar >= 0 ? (
               <text className="sv-chart__value" x={cx(lastBar)} y={y(bars.values[lastBar]!) - 6} textAnchor="middle">
-                {bars.values[lastBar]}
+                {format(bars.values[lastBar]!)}
                 {unit}
               </text>
             ) : null}
             {line && lastLine >= 0 && !(bars && lastBar === lastLine) ? (
               <text className="sv-chart__value" x={cx(lastLine)} y={y(line.values[lastLine]!) - 8} textAnchor="middle">
-                {line.values[lastLine]}
+                {format(line.values[lastLine]!)}
                 {unit}
               </text>
             ) : null}
-            {weeks.map((w, i) => (
-              <text key={w.key} className="sv-chart__axis" x={cx(i)} y={H - 6} textAnchor="middle">
-                {w.current && slot >= 60 ? `${w.number}, идёт` : w.number}
-              </text>
-            ))}
+            {weeks.map((w, i) =>
+              i % labelEvery === 0 || i === weeks.length - 1 ? (
+                <text key={w.key} className="sv-chart__axis" x={cx(i)} y={H - 6} textAnchor="middle">
+                  {w.current && slot >= 60 ? `${w.number}, идёт` : w.number}
+                </text>
+              ) : null,
+            )}
             {/* Зона наведения шире столбика: вся колонка недели */}
             {weeks.map((w, i) => (
               <rect
@@ -207,7 +219,7 @@ export function WeekChart({ title, insight, weeks, bars, line, unit = "", tip, c
           </svg>
           {active !== null ? (
             <div ref={tipRef} className="sv-tooltip sv-tooltip--top sv-chart__tip" style={{ left: tipLeft(cx(active)) }} aria-hidden="true">
-              <b className="block">Неделя {weeks[active].number}{weeks[active].current ? ", идёт" : ""}</b>
+              <b className="block">{period ? period.tip(weeks[active]) : `Неделя ${weeks[active].number}${weeks[active].current ? ", идёт" : ""}`}</b>
               {tip(active).map((t) => (
                 <span key={t} className="block">
                   {t}

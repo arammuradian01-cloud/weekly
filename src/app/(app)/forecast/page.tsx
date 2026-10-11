@@ -14,6 +14,9 @@ import { ForecastForm } from "@/components/forecast/forecast-form";
 import { ForecastHistoryTable } from "@/components/forecast/forecast-history";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
 import { MonthPlan } from "@/components/plan/month-plan";
+import { PlanCompare } from "@/components/plan/plan-compare";
+import { Module } from "@/components/ui/data";
+import { compareVersions } from "@/lib/plan/processes";
 
 export const metadata: Metadata = { title: "Прогноз" };
 
@@ -21,20 +24,37 @@ export const metadata: Metadata = { title: "Прогноз" };
  * Прогноз: две вкладки. «Прогноз месяца» (этап 32): бюджет и LBE из LRF, команды продуктов корректируют драйверы.
  * «Неделя» (этап 24): цифры недели из недельного отчёта и прогноз лидеров до конца месяца
  */
-export default async function ForecastPage({ searchParams }: { searchParams: Promise<{ week?: string; tab?: string; month?: string }> }) {
+export default async function ForecastPage({ searchParams }: { searchParams: Promise<{ week?: string; tab?: string; month?: string; a?: string; b?: string }> }) {
   const ctx = await requireContext();
-  const { week, tab, month } = await searchParams;
-  const weekTab = tab === "week" || (!!week && tab !== "month");
+  const params = await searchParams;
+  // Повтор параметра в адресе даёт массив: берём первое значение
+  const one = (v: unknown) => (Array.isArray(v) ? (v[0] as string | undefined) : (v as string | undefined));
+  const week = one(params.week);
+  const tab = one(params.tab);
+  const month = one(params.month);
+  const compareTab = tab === "compare";
+  const weekTab = !compareTab && (tab === "week" || (!!week && tab !== "month"));
   const tabs = (
     <PageTabs
       label="Разделы прогноза"
       tabs={[
-        { href: "/forecast", label: "Прогноз месяца", active: !weekTab, testId: "tab-month" },
+        { href: "/forecast", label: "Прогноз месяца", active: !weekTab && !compareTab, testId: "tab-month" },
+        { href: `/forecast?tab=compare${month ? `&month=${month}` : ""}`, label: "Сравнение версий", active: compareTab, testId: "tab-compare" },
         { href: "/forecast?tab=week", label: "Цифры недели", active: weekTab, testId: "tab-week" },
       ]}
     />
   );
   const actor = await currentActor();
+
+  if (compareTab) {
+    const compare = await compareVersions(month, one(params.a), one(params.b));
+    return (
+      <>
+        <PageHeader title="Прогноз" description="Две любые версии месяца рядом: бюджет, LBE, прогноз сейчас, прежние загрузки LBE и прогноз на конец дня" tabs={tabs} />
+        {compare ? <PlanCompare view={compare} /> : <Module title="Сравнивать пока нечего" description="Версии месяца появятся после загрузки бюджета и LBE из LRF." />}
+      </>
+    );
+  }
 
   if (!weekTab) {
     const plan = await monthPlan(actor, month);

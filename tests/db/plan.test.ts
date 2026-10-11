@@ -27,6 +27,11 @@ const month = plan.currentMonth();
 const lbeOf = (view: plan.MonthPlanView, code: string) => derive(view.products.find((p) => p.code === code)!.lbe as Values);
 
 const clean = async () => {
+  // Этап 35: загрузка пишет снимок и события командам продуктов
+  await prisma.inboxEvent.deleteMany({ where: { kind: "PLAN" } });
+  await prisma.planCheck.deleteMany();
+  await prisma.planFact.deleteMany();
+  await prisma.planPull.deleteMany();
   await prisma.planAdjustment.deleteMany();
   await prisma.planLine.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { startsWith: "plan." } } });

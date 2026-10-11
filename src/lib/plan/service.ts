@@ -21,6 +21,8 @@ import { derive, rowsOf } from "./model";
 import { GROUPS, PRODUCTS, SHEETS, UNITS, metricLabel, productOf, type MetricKey, type PlanUnit, type ProductSpec } from "./spec";
 import { formatPlan, driverBounds } from "./format";
 import { summarize, type Drivers, type PlanInput } from "./summary";
+import { notify } from "@/lib/inbox/notify";
+import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PullPreview } from "./types";
@@ -210,24 +212,53 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
   const month = monthOrFail(monthInput);
   const { read, problems } = await readMonth(month);
   if (problems.length) fail(`Не загружено: ${problems[0]}`);
-  const data: Prisma.PlanLineCreateManyInput[] = [];
-  const now = new Date();
+  const rows: Omit<Prisma.PlanLineCreateManyInput, "pulledAt">[] = [];
   for (const item of [...read.products, ...read.groups]) {
     for (const [from, version] of VERSIONS) {
       const values = item.values[from as "LBE" | "BUD"];
-      for (const [metric, value] of Object.entries(values)) {
-        data.push({ month, version, product: item.code, metric, value: value ?? null, pulledAt: now });
-      }
+      for (const [metric, value] of Object.entries(values)) rows.push({ month, version, product: item.code, metric, value: value ?? null });
     }
   }
   const revenue = (items: typeof read.products, v: "LBE" | "BUD") => items.reduce((s, p) => s + (p.values[v].revenue ?? 0), 0);
   const groupsRevenue = (v: "LBE" | "BUD") => read.groups.reduce((s, gr) => s + (gr.values[v].revenue ?? 0), 0);
   const total = (v: "LBE" | "BUD") => revenue(read.products.filter((p) => !productOf(p.code)?.group), v) + groupsRevenue(v);
+  const owners = await ownersMap();
+  const loaded = new Set(read.products.map((p) => p.code));
+  let lines = 0;
+  // Прошлый месяц можно перезагрузить, но проверять его уже нечего: событий командам нет
+  const notifyTeams = month >= currentMonth();
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`plan:${month}`}))`;
+    // Время загрузки после блокировки: корректировка, которая успела до загрузки, не считается сделанной после неё
+    const now = new Date();
+    const data: Prisma.PlanLineCreateManyInput[] = rows.map((r) => ({ ...r, pulledAt: now }));
+    lines = data.length;
     const had = await tx.planLine.count({ where: { month } });
     await tx.planLine.deleteMany({ where: { month } });
     await tx.planLine.createMany({ data });
+    // Снимок загрузки (этап 35): строки месяца заменяются, а снимок остаётся для сравнения версий и прогноза на дату
+    await tx.planPull.create({ data: { month, at: now, byName: actor.fullName, lines: data.map((d) => ({ version: d.version, product: d.product, metric: d.metric, value: d.value ?? null })) } });
+    // Событие в «Мне» командам продуктов: проверить прогноз после нового LBE (сам загрузивший события не получает)
+    const bySlug = new Map<string, string[]>();
+    for (const p of PRODUCTS) {
+      if (!loaded.has(p.code)) continue;
+      for (const slug of owners[p.code] ?? []) bySlug.set(slug, [...(bySlug.get(slug) ?? []), p.label]);
+    }
+    const people = notifyTeams && bySlug.size ? await tx.person.findMany({ where: { slug: { in: [...bySlug.keys()] }, active: true }, select: { id: true, slug: true } }) : [];
+    for (const person of people) {
+      const labels = bySlug.get(person.slug)!;
+      await notify(
+        tx,
+        {
+          kind: "PLAN",
+          recipients: [person.id],
+          actor: { personId: actor.personId, fullName: actor.fullName },
+          subject: `plan:${month}`,
+          text: `Загружен LBE на ${monthLabel(month)}. Проверьте прогноз: ${labels.join(", ")}. Скорректируйте драйверы с причиной или отметьте «Прогноз проверен»`,
+        },
+        now,
+      );
+    }
     // Карта «когда загружен месяц» общая на все месяцы: две загрузки разных месяцев не должны потерять друг друга
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plan.settings'))`;
     const pulled = await tx.setting.findUnique({ where: { key: "plan.pulled" } });
@@ -249,7 +280,7 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
       },
     });
   });
-  return { month, lines: data.length };
+  return { month, lines };
 }
 
 /** Кто корректирует продукт: владельцы из настройки или по умолчанию из справочника продуктов */
@@ -344,12 +375,15 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
   const month = isMonth(monthInput) ? monthInput : months.includes(current) ? current : (months[0] ?? current);
   // Прошлый месяц закрыт: прогноз виден, но не меняется
   const closed = month < current;
-  const [lines, adjustments, owners, src] = await Promise.all([
+  const [lines, adjustments, owners, src, since, facts] = await Promise.all([
     prisma.planLine.findMany({ where: { month } }),
     prisma.planAdjustment.findMany({ where: { month }, include: { author: { select: { slug: true, fullName: true } } }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }),
     ownersMap(),
     source(month, canEditDictionaries(actor)),
+    lastPullAt(month),
+    factsOf(month),
   ]);
+  const reviews = await reviewsOf(month, since, adjustments);
   const lbe = valuesBy(lines, "LBE");
   const budget = valuesBy(lines, "BUDGET");
   const { drivers, last } = driversOf(adjustments);
@@ -362,6 +396,9 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     last: last.get(p.code) ?? {},
     owners: (owners[p.code] ?? []).map((s) => names.get(s)).filter((x): x is PlanPerson => !!x),
     canAdjust: !closed && canAdjust(actor, owners[p.code] ?? []),
+    // Прошлый месяц закрыт: проверять нечего, «ждёт проверки» там не показываем
+    review: since && !closed ? (reviews.get(p.code) ?? waitingReview(since)) : null,
+    facts: facts.get(p.code) ?? null,
   }));
   const groups = GROUPS.filter((gr) => lbe.has(gr.code)).map((gr) => ({ code: gr.code, lbe: lbe.get(gr.code)!, budget: budget.get(gr.code) ?? {} }));
   return {
@@ -379,8 +416,18 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     closed,
     adjustHint: closed ? `${monthLabel(month).replace(/^./, (c) => c.toUpperCase())} закрыт: прогноз прошлого месяца не меняется.` : actor.role === "OBSERVER" ? "Наблюдатель видит прогноз, но не корректирует его." : actor.via === "TEAM" && actor.management !== "OWNER" ? "Вы вошли под общим логином. Корректировать прогноз можно при личном входе: так видно, кто и почему меняет цифру." : null,
     source: src,
+    canFacts: canEditDictionaries(actor),
+    canExport: canExportPlan(actor, owners),
   };
 }
+
+/** Выгрузку прогноза в Excel берут управление и команды продуктов при личном входе: файл уходит из ресурса */
+export function canExportPlan(actor: Actor, owners: Record<string, string[]>): boolean {
+  if (!personal(actor)) return false;
+  return canEditDictionaries(actor) || Object.values(owners).some((list) => list.includes(actor.slug));
+}
+
+export { ownersMap, personal as personalPlanActor, canAdjust as canAdjustPlan, monthOrFail as planMonthOrFail };
 
 /** Сводка месяца для отчётов: те же числа, что на экране */
 export function planSummary(view: Pick<MonthPlanView, "products" | "groups">) {
@@ -443,6 +490,8 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
     if (value === null && (latest?.value ?? null) === null) fail("Показатель и так как в LBE");
     if (value !== null && sameInput(unit, value, effective)) fail("Значение не изменилось");
     await tx.planAdjustment.create({ data: { month, product: spec.code, metric, value, previous: effective, reason, comment, authorId: actor.personId } });
+    // Этап 35: у кого из команды продукта теперь проверено всё, событие «Проверьте прогноз» разобрано
+    await closePlanReminders(tx, month, spec.code, await ownersMap());
     await tx.auditLog.create({
       data: {
         action: "plan.adjust",

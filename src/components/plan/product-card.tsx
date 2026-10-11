@@ -6,19 +6,20 @@
 
 import { useMemo, useState } from "react";
 import { usePrototype } from "@/domain/store";
-import { adjustPlanAction } from "@/app/(app)/forecast/actions";
+import { adjustPlanAction, checkPlanAction } from "@/app/(app)/forecast/actions";
 import { FORECAST_REASONS, type ForecastReasonCode } from "@/lib/forecast/codes";
 import { derive } from "@/lib/plan/model";
 import { formatPlan, inputValue, parsePlanInput, unitLabel } from "@/lib/plan/format";
 import { UNITS, driverHint, metricLabel, productOf, type MetricKey } from "@/lib/plan/spec";
 import { summarize, summarizeProduct, type PlanInput, type PlanSummary, type ProductSummary } from "@/lib/plan/summary";
-import type { MonthPlanView, PlanProductData } from "@/lib/plan/types";
+import type { MonthPlanView, PlanProductData, ReviewView } from "@/lib/plan/types";
 import { Button } from "@/components/ui/button";
 import { Delta, Module } from "@/components/ui/data";
 import { FormError } from "@/components/ui/field";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { betterOf, defaultReason, delta, shortName, when } from "./plan-ui";
+import { PlanFacts } from "./plan-facts";
 
 const COMMENT_MAX = 300;
 
@@ -34,9 +35,26 @@ type Props = {
   onOwners: () => void;
 };
 
+/** Проверка после загрузки LBE словами: «ждёт проверки», «скорректирован: Головкин В., 6 октября в 10:20» */
+export function reviewText(review: ReviewView | null): string {
+  if (!review) return "нет данных о загрузке LBE";
+  if (review.state === "waiting") return `ждёт проверки после загрузки LBE ${when(review.since)}`;
+  return `${review.state === "adjusted" ? "скорректирован" : "проверен без корректировок"}: ${shortName(review.by ?? "")}, ${when(review.at!)}`;
+}
+
 export function ProductCard({ month, product, summary, input, total, canOwners, adjustHint, onSaved, onOwners }: Props) {
   const spec = productOf(product.code)!;
   const [editing, setEditing] = useState<MetricKey | null>(null);
+  const { notify } = usePrototype();
+  const [checking, setChecking] = useState(false);
+  const check = async () => {
+    setChecking(true);
+    const r = await checkPlanAction(month, product.code);
+    setChecking(false);
+    if (!r.ok) return notify(r.error, "error");
+    notify(`${spec.label}: прогноз отмечен проверенным`);
+    onSaved(r.value);
+  };
   const L = useMemo(() => derive(product.lbe), [product.lbe]);
   const drivers = summary.rows.filter((r) => r.kind === "driver");
   const results = summary.rows.filter((r) => r.kind === "result");
@@ -121,7 +139,18 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
       title={spec.label}
       description={product.canAdjust ? "Меняйте драйверы: выручка и маржа пересчитаются сами. Каждая корректировка с причиной и обоснованием видна всей команде." : (adjustHint ?? `Прогноз продукта корректирует его команда: ${owners}.`)}
       actions={
-        canOwners ? (
+        product.canAdjust && product.review?.state === "waiting" ? (
+          <>
+            <Button size="sm" onClick={() => void check()} loading={checking} disabled={checking} data-testid="plan-check">
+              Прогноз проверен
+            </Button>
+            {canOwners ? (
+              <Button variant="secondary" size="sm" onClick={onOwners} data-testid="plan-owners-open">
+                Команда продукта
+              </Button>
+            ) : null}
+          </>
+        ) : canOwners ? (
           <Button variant="secondary" size="sm" onClick={onOwners} data-testid="plan-owners-open">
             Команда продукта
           </Button>
@@ -131,9 +160,15 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
         { label: "Команда", value: owners },
         { label: "Модель", value: model },
         { label: "Корректировок", value: String(summary.adjusted) },
+        { label: "После LBE", value: <span data-testid="plan-review">{reviewText(product.review)}</span> },
       ]}
       flush
     >
+      {product.facts ? (
+        <div className="border-b border-border px-5 py-4">
+          <PlanFacts month={month} facts={product.facts} summary={summary} label={spec.label} />
+        </div>
+      ) : null}
       <div className="overflow-x-auto">
         <table className="sv-datatable sv-datatable--stack" data-testid="plan-product-table">
           <caption className="sr-only">

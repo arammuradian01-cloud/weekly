@@ -4,6 +4,7 @@ import type { ForecastReasonCode } from "@/lib/forecast/codes";
 import type { Values } from "./lrf";
 import type { MetricKey, PlanUnit } from "./spec";
 import type { Drivers } from "./summary";
+import type { FactMetric } from "./facts";
 
 export type PlanPerson = { slug: string; name: string };
 
@@ -24,6 +25,17 @@ export type AdjustmentView = {
   at: string;
 };
 
+/**
+ * Проверка прогноза после загрузки LBE (этап 35): команда продукта скорректировала драйверы или отметила «Прогноз
+ * проверен». waiting: после загрузки ни того, ни другого
+ */
+export type ReviewView = { state: "waiting" | "adjusted" | "checked"; by: string | null; at: string | null; since: string };
+
+export type FactDaily = { day: string; value: number };
+
+/** Факт месяца по дням из отчёта аналитиков (этап 35) */
+export type ProductFacts = { daily: Partial<Record<FactMetric, FactDaily[]>>; loadedAt: string; loadedBy: string };
+
 export type PlanProductData = {
   code: string;
   lbe: Values;
@@ -34,6 +46,9 @@ export type PlanProductData = {
   last: Partial<Record<MetricKey, AdjustmentView>>;
   owners: PlanPerson[];
   canAdjust: boolean;
+  /** null: время загрузки LBE неизвестно */
+  review: ReviewView | null;
+  facts: ProductFacts | null;
 };
 
 export type PlanSource = {
@@ -64,6 +79,34 @@ export type MonthPlanView = {
   /** Почему нельзя корректировать: месяц закрыт, наблюдатель или общий логин. null: дело в команде продукта */
   adjustHint: string | null;
   source: PlanSource;
+  /** Загружать факт по дням: владелец и администраторы в режиме управления */
+  canFacts: boolean;
+  /** Выгрузка в Excel: управление и команды продуктов при личном входе */
+  canExport: boolean;
+};
+
+export type VersionOption = { id: string; label: string; group: "Версии месяца" | "Загрузки LBE" | "Прогноз на дату" };
+
+export type CompareMetric = "units" | "revenue" | "promoMargin" | "directMargin";
+
+export type CompareRow = {
+  code: string;
+  label: string;
+  kind: "product" | "group" | "sub" | "total";
+  a: Partial<Record<CompareMetric, number | null>>;
+  b: Partial<Record<CompareMetric, number | null>>;
+};
+
+/** Сравнение двух версий месяца (этап 35) */
+export type CompareView = {
+  month: string;
+  monthLabel: string;
+  options: VersionOption[];
+  a: VersionOption;
+  b: VersionOption;
+  rows: CompareRow[];
+  /** Пояснение: например, у ранних дат нет снимка LBE и берётся текущий */
+  notes: string[];
 };
 
 export type PullPreview = {

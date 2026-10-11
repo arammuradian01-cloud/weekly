@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, type LucideIcon } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, TrendingUp, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
@@ -72,6 +72,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
+  if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -149,6 +150,10 @@ export function InboxList({ items, snoozed }: { items: InboxItem[]; snoozed: num
                   ) : item.subject.startsWith("initiative:") ? (
                     <Link href={`/initiatives#i-${encodeURIComponent(item.subject.slice(11))}`} className="sv-event__text font-semibold hover:text-link">
                       Крупная инициатива
+                    </Link>
+                  ) : item.subject.startsWith("plan:") ? (
+                    <Link href={`/forecast?month=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
+                      Прогноз месяца
                     </Link>
                   ) : null}
                   <p className="sv-event__text mt-0.5">{item.text}</p>

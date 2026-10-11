@@ -45,6 +45,8 @@ export function eventPhrase(e: EventLine): string {
       return `${who}встреча один на один`;
     case "INITIATIVE":
       return `${who}крупная инициатива`;
+    case "PLAN":
+      return `${who}прогноз месяца: проверьте после загрузки LBE`;
     default:
       return `${who}новое событие`;
   }
@@ -56,6 +58,8 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   if (e.subject?.startsWith("1on1:")) return `/one-on-one?pair=${encodeURIComponent(e.subject.slice(5))}`;
   // Крупная инициатива (этап 30): карточка на странице инициатив
   if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
+  // Прогноз месяца (этап 35): страница прогноза на месяц события
+  if (e.subject?.startsWith("plan:")) return `/forecast?month=${encodeURIComponent(e.subject.slice(5))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

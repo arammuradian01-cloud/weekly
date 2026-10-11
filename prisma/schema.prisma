@@ -192,6 +192,7 @@ model Person {
   /// Прогноз до конца месяца (этап 24)
   forecasts          Forecast[]
   planAdjustments    PlanAdjustment[]    @relation("PlanAdjustmentAuthor")
+  planChecks         PlanCheck[]         @relation("PlanCheckAuthor")
   goalFacts          GoalFact[]          @relation("GoalFactAuthor")
   /// Встречи один на один (этап 28)
   oneOnOneManaged    OneOnOnePair[]      @relation("OneOnOneManager")
@@ -531,6 +532,55 @@ model PlanAdjustment {
   @@map("plan_adjustments")
 }
 
+/// Снимок загрузки версий месяца из LRF (этап 35): бюджет и LBE на дату загрузки. Нужен для сравнения версий и прогноза
+/// на прошлую дату: строки plan_lines хранят только последнюю загрузку
+model PlanPull {
+  id     String   @id @default(cuid())
+  month  String
+  at     DateTime @default(now()) @db.Timestamptz(3)
+  /// Кто загрузил: имя на момент загрузки
+  byName String
+  /// Строки загрузки: [{ version, product, metric, value }]
+  lines  Json
+
+  @@index([month, at])
+  @@map("plan_pulls")
+}
+
+/// Отметка команды продукта «прогноз проверен» после загрузки LBE (этап 35): цифры LBE верны, корректировки не нужны
+model PlanCheck {
+  id       String   @id @default(cuid())
+  month    String
+  product  String
+  authorId String
+  author   Person   @relation("PlanCheckAuthor", fields: [authorId], references: [id])
+  at       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([month, product, at])
+  @@index([authorId])
+  @@map("plan_checks")
+}
+
+/// Факт месяца по дням (этап 35): продажи, выручка и промо-маржа продукта за день из отчёта аналитиков. Загружает
+/// владелец или администратор, повторная загрузка дня заменяет значение
+model PlanFact {
+  id       String   @id @default(cuid())
+  /// Месяц дня: 2026-10
+  month    String
+  product  String
+  /// units, revenue (млн руб.), promoMargin (млн руб.)
+  metric   String
+  day      DateTime @db.Date
+  value    Float
+  loadedAt DateTime @default(now()) @db.Timestamptz(3)
+  /// Кто загрузил: имя на момент загрузки
+  loadedBy String
+
+  @@unique([product, metric, day])
+  @@index([month])
+  @@map("plan_facts")
+}
+
 model TaskCoExecutor {
   taskId   String
   task     Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
@@ -838,6 +888,8 @@ enum InboxKind {
   ONE_ON_ONE
   /// Крупная инициатива (этап 30): вас назначили ответственным, сменилось состояние
   INITIATIVE
+  /// Прогноз месяца (этап 35): загружен LBE, команде продукта проверить прогноз
+  PLAN
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
