@@ -83,7 +83,9 @@ describe("загрузка LBE: снимок и событие командам 
     expect(bySlug.golovkin).toMatch(/Проверьте прогноз: ОСАГО\. Скорректируйте/);
     expect(bySlug.fatyanov).toMatch(/КАСКО/);
     expect(bySlug.reva).toMatch(/ОСАГО, КАСКО, Ипотечное страхование, ВЗР, Несчастный случай, Имущество, Клещ, Вклады/);
-    expect(events.every((e) => e.subject === `plan:${month}`)).toBe(true);
+    // Этап 46: команде только партнёрского канала предмет с вкладкой, чтобы ссылка вела на «Партнёры»
+    expect(events.filter((e) => e.recipient.slug !== "sakhibullina" && e.recipient.slug !== "afanasyev").every((e) => e.subject === `plan:${month}`)).toBe(true);
+    expect(events.filter((e) => e.recipient.slug === "sakhibullina" || e.recipient.slug === "afanasyev").every((e) => e.subject === `plan:${month}:partners`)).toBe(true);
     await load();
     expect(await prisma.planPull.count({ where: { month } })).toBe(2);
     // В «Мне» одна строка на месяц, сколько бы загрузок ни было

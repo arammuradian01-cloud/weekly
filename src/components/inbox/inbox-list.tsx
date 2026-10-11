@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, TrendingUp, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
+import { planHref } from "@/lib/plan/links";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
 import { usePrototype } from "@/domain/store";
@@ -111,8 +112,8 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                     Крупная инициатива
                   </Link>
                 ) : item.subject.startsWith("plan:") ? (
-                  <Link href={`/forecast?month=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
-                    Прогноз месяца
+                  <Link href={planHref(item.subject)} className="sv-event__text font-semibold hover:text-link">
+                    {item.subject.endsWith(":partners") ? "Прогноз месяца: партнёры" : "Прогноз месяца"}
                   </Link>
                 ) : null}
                 <p className="sv-event__text mt-0.5">{item.text}</p>

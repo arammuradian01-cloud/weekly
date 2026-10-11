@@ -194,12 +194,13 @@ export function GoalsScreen({
         <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink" id="unlinked" data-testid="goals-unlinked">
           <span className="font-semibold">Задачи без цели:</span>{" "}
           {view.unlinked
-            .map((u) => `${u.name} ${u.withoutGoal} из ${u.open} ${plural(u.open, "открытой", "открытых", "открытых")}${u.highWithoutGoal ? `, с высоким приоритетом ${u.highWithoutGoal}` : ""}`)
+            .map((u) => `${u.name}: ${u.withoutGoal} из ${u.open} ${plural(u.open, "открытой", "открытых", "открытых")}${u.highWithoutGoal ? ` (высокий приоритет у ${u.highWithoutGoal})` : ""}`)
             .join("; ")}
-          . Задачи с высоким приоритетом должны работать на цель квартала: привяжите цель в карточке задачи.{" "}
+          . Задачи с высоким приоритетом должны работать на цель квартала: привяжите цель в карточке задачи, список{" "}
           <Link href="/tasks?group=goal" className="font-semibold text-link hover:underline">
-            Задачи по целям
+            задачи по целям
           </Link>
+          .
         </p>
       ) : null}
 

@@ -100,10 +100,11 @@ test("руководитель канала меняет полисы партн
   await expect(band).toContainText("Изменение партнёров учтено");
   await expect(band).toContainText("Полисы B2B продукта: LBE 150 000, прогноз 152 000");
   await expect(band.getByTestId("plan-partner-apply")).toHaveCount(0);
-  // Партнёров Головкин видит, но не корректирует: он не в команде канала
+  await shot(page, "product-band");
+  // Партнёров Головкин видит на вкладке «Партнёры», но не корректирует: он не в команде канала
+  await page.goto("/forecast?tab=partners");
   await partnerRow(page, "Банк Север").getByRole("button", { name: "Подробно" }).click();
   await expect(page.getByTestId("partner-card").getByTestId("partner-edit-policies")).toHaveCount(0);
-  await shot(page, "product-band");
 });
 
 test("отборы и поиск партнёров, партнёры без продаж свёрнуты, «Прогноз проверен» у канала", async ({ page }) => {

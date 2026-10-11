@@ -9,7 +9,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
 import type { GoalResult } from "@/generated/prisma/enums";
-import { factProblem, goalProgress, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
+import { factProblem, goalProgress, parseGoalNumber, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
 import { formatShort } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { setGoalFactAction, updateGoalAction } from "@/app/(app)/goals/actions";
@@ -55,9 +55,12 @@ export function Meter({ progress, risk, detail }: { progress: GoalProgress | nul
   );
 }
 
-/** «141 из 160»: факт и целевое словами, когда оба заданы */
-export function meterDetail(g: { fact: { value: string } | null; target: string | null }): string | null {
-  return g.fact && g.target ? `${g.fact.value} из ${g.target}` : null;
+/** «141 из 160»: факт и целевое, когда целевое задано числом без сдвига («+25%», «+2 п.п.» и слова не подходят) */
+export function meterDetail(g: { fact: { value: string } | null; target: string | null; base?: string | null }): string | null {
+  if (!g.fact || !g.target) return null;
+  const t = parseGoalNumber(g.target);
+  if (!t || t.signed || t.pp) return null;
+  return `${g.fact.value} из ${g.target}`;
 }
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
@@ -268,7 +271,7 @@ export function GoalsTable({
                 isOpen ? (
                   <tr key={`${g.id}-open`}>
                     <td colSpan={COLS} className="is-wide">
-                      <GoalDetails goal={g} byId={byId} onEdit={onEdit} onMark={onMark} onAdd={onAdd} creatable={creatable} groupBy={groupBy} />
+                      <GoalDetails goal={g} byId={byId} onEdit={onEdit} onMark={onMark} onAdd={onAdd} creatable={creatable} />
                     </td>
                   </tr>
                 ) : null,
@@ -281,7 +284,7 @@ export function GoalsTable({
   );
 }
 
-function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable, groupBy }: { goal: GoalNode; byId: Map<string, GoalNode>; onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; creatable: boolean; groupBy: GoalGroupBy }) {
+function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable }: { goal: GoalNode; byId: Map<string, GoalNode>; onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; creatable: boolean }) {
   const kids = g.childIds.map((id) => byId.get(id)).filter((x): x is GoalNode => !!x);
   return (
     <div className="grid gap-5 py-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]" data-testid="goal-details">
@@ -291,22 +294,12 @@ function GoalDetails({ goal: g, byId, onEdit, onMark, onAdd, creatable, groupBy 
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />В риске: {g.risk}
           </p>
         ) : null}
-        {/* Этап 46: в раскрытии только то, чего нет в колонках. Команда или владелец (в строке виден один из них по
-            группировке), метрика только на телефоне (на ноутбуке она колонкой), счёт целей ниже в заголовке списка */}
+        {/* Этап 46: в раскрытии только то, чего нет в колонках. Метрика только на телефоне (с 640 она колонкой), счёт
+            целей ниже в заголовке списка */}
+        {/* Команда и владелец уже в заголовке группы и в подсказке строки, в раскрытии их нет */}
         <dl className="grid gap-x-6 gap-y-2 text-body sm:grid-cols-2">
-          {groupBy === "team" ? (
-            <div>
-              <dt className="text-caption text-text-secondary">Команда</dt>
-              <dd className="text-ink">{g.team.name}</dd>
-            </div>
-          ) : (
-            <div>
-              <dt className="text-caption text-text-secondary">Владелец</dt>
-              <dd className="text-ink">{g.owner?.fullName ?? "Руководитель команды"}</dd>
-            </div>
-          )}
           {g.metric ? (
-            <div className="sm:col-span-2 lg:hidden">
+            <div className="sm:hidden">
               <dt className="text-caption text-text-secondary">Метрика: как проверяем</dt>
               <dd className="whitespace-pre-line text-ink">{g.metric}</dd>
             </div>

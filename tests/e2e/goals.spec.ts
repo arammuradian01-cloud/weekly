@@ -129,7 +129,8 @@ test("факт и целевое значение в таблице целей: 
   await expect(row).toContainText("141");
   await expect(row).toContainText("70%");
   await expect(page.getByTestId("goals-stat-stale")).toHaveCount(0);
-  await expect(row).toContainText("141 из 160");
+  // Этап 46: под полосой прогресса подпись «факт из целевого»
+  await expect(row).toContainText("141 из 150");
 
   // Текст в числовой цели не проходит
   await page.getByTestId("goal-fact-D1").click();
@@ -142,13 +143,15 @@ test("факт и целевое значение в таблице целей: 
   await expect(editor).toContainText("53%");
   await editor.getByTestId("goal-fact-save").click();
   await expect(page.getByText("Целевое значение сохранено").first()).toBeVisible();
-  await expect(row).toContainText("160");
+  await expect(row).toContainText("141 из 160");
   await expect(row).toContainText("53%");
 
   // Раскрытая строка: метрика, история факта, действия
   await page.getByRole("button", { name: "Развернуть: Маржа департамента 150 млн" }).click();
   const details = page.getByTestId("goal-details");
-  await expect(details).toContainText("Промо-маржа за квартал, млн");
+  // Метрика на ноутбуке колонкой таблицы, в раскрытии только на телефоне (этап 46: без повторов)
+  if (test.info().project.name === "phone") await expect(details.getByText("Промо-маржа за квартал, млн")).toBeVisible();
+  else await expect(row.getByText("Промо-маржа за квартал, млн")).toBeVisible();
   await expect(page.getByTestId("goal-facts")).toContainText("По LRF за сентябрь");
   await expect(details.getByRole("button", { name: "Риск и итог" })).toBeVisible();
   await shot(page, "table-open");
