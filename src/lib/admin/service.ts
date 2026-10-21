@@ -2,6 +2,7 @@
 // Права по матрице раздела 2: справочники и ритм недели правят владелец и администраторы в режиме управления,
 // людей и роли меняет только владелец. Каждая правка пишется в журнал с тем, что было и что стало.
 
+import { fillMissingLogins, loginProblem } from "@/lib/login/logins";
 import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
@@ -173,10 +174,22 @@ export type PersonView = {
   lastSeenAt: string | null;
   /** Когда человек задал личный пароль (этап 20а). null: пароля нет */
   passwordSetAt: string | null;
+  /** Логин вида amuradyan (этап 52) */
+  login: string;
+  /** Почта, которую человек указал сам и ещё не подтвердил */
+  pendingEmail: string | null;
+  /** До когда действует невыданная в ход ссылка-приглашение. null: действующей ссылки нет */
+  inviteUntil: string | null;
+  /** Главный владелец (этап 52): вершина ресурса. Остальные владельцы подписаны «Совладелец» */
+  primaryOwner: boolean;
 };
 
 export async function listPeople(): Promise<PersonView[]> {
   const devices = await deviceSummary();
+  const now = new Date();
+  const primary = await primaryOwnerSlug();
+  const invites = await prisma.loginLink.groupBy({ by: ["personId"], where: { kind: "INVITE", usedAt: null, expiresAt: { gt: now } }, _max: { expiresAt: true } });
+  const inviteBy = new Map(invites.map((i) => [i.personId, i._max.expiresAt]));
   const people = await prisma.person.findMany({
     orderBy: [{ active: "desc" }, { sortOrder: "asc" }, { fullName: "asc" }],
     include: { defaultDirection: true, _count: { select: { ownedTasks: { where: { status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } } } } },
@@ -194,10 +207,24 @@ export async function listPeople(): Promise<PersonView[]> {
     devices: devices.get(p.id)?.devices ?? 0,
     lastSeenAt: devices.get(p.id)?.lastSeenAt ?? null,
     passwordSetAt: p.passwordSetAt?.toISOString() ?? null,
+    login: p.login ?? p.slug,
+    pendingEmail: p.pendingEmail,
+    inviteUntil: inviteBy.get(p.id)?.toISOString() ?? null,
+    primaryOwner: p.role === "OWNER" && p.slug === primary,
   }));
 }
 
-export type PersonInput = { fullName: string; shortName?: string; role: string; zone: string; direction: string; email?: string | null };
+export type PersonInput = { fullName: string; shortName?: string; role: string; zone: string; direction: string; email?: string | null; login?: string };
+
+/** Логин уникален и не совпадает с чужим коротким именем: иначе вход по нему был бы неоднозначным (этап 52) */
+async function checkLogin(tx: Tx, value: string, personId: string): Promise<string> {
+  const login = value.trim().toLowerCase();
+  const problem = loginProblem(login);
+  if (problem) fail(problem);
+  const taken = await tx.person.findFirst({ where: { id: { not: personId }, OR: [{ login }, { slug: login }] } });
+  if (taken) fail(`Логин ${login} уже занят: ${taken.fullName}`);
+  return login;
+}
 
 /** Почта уникальна: два человека с одним адресом войти не смогут */
 async function checkEmail(tx: Tx, value: string | null | undefined, slug?: string): Promise<string | null> {
@@ -219,6 +246,37 @@ async function directionOf(tx: Tx, code: string, currentId?: string | null) {
   const d = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code } });
   if (!d || (!d.active && d.id !== currentId)) fail("Выберите направление из списка");
   return d!;
+}
+
+export const PRIMARY_OWNER_KEY = "owner.primary";
+
+/** Главный владелец (этап 52): из настройки, а если она пуста или указывает не на владельца, первый владелец списка */
+export async function primaryOwnerSlug(db: Tx | typeof prisma = prisma): Promise<string | null> {
+  const row = await db.setting.findUnique({ where: { key: PRIMARY_OWNER_KEY } });
+  const slug = typeof row?.value === "string" ? row.value : null;
+  if (slug) {
+    const p = await db.person.findFirst({ where: { slug, role: "OWNER", active: true }, select: { slug: true } });
+    if (p) return p.slug;
+  }
+  const first = await db.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }], select: { slug: true } });
+  return first?.slug ?? null;
+}
+
+/** Сделать владельца главным: он вершина ресурса, остальные владельцы становятся совладельцами с теми же правами */
+export async function setPrimaryOwner(actor: Actor, slug: string) {
+  requirePeople(actor);
+  if (actor.management !== "OWNER") fail("Главного владельца назначает владелец в режиме управления");
+  return prisma.$transaction(async (tx) => {
+    const p = await tx.person.findUnique({ where: { slug } });
+    if (!p || !p.active) return fail("Такого человека нет или он выключен");
+    if (p.role !== "OWNER") fail("Главным можно сделать только владельца: сначала поменяйте роль");
+    const before = await primaryOwnerSlug(tx);
+    if (before === slug) return { slug };
+    await tx.setting.upsert({ where: { key: PRIMARY_OWNER_KEY }, update: { value: slug }, create: { key: PRIMARY_OWNER_KEY, value: slug } });
+    const prev = before ? await tx.person.findUnique({ where: { slug: before }, select: { fullName: true } }) : null;
+    await audit(tx, actor, "settings.person.update", "person", slug, "Главный владелец", prev?.fullName ?? null, p.fullName);
+    return { slug };
+  });
 }
 
 /** Без владельца в ресурсе некому менять людей и роли: последнего владельца выключить или понизить нельзя */
@@ -243,6 +301,8 @@ export async function createPerson(actor: Actor, input: PersonInput) {
     const slug = uniqueSlug(slugify(last ?? fullName, 24), [...all.map((p) => p.slug), "all", "system"]);
     const sortOrder = Math.max(0, ...all.map((p) => p.sortOrder)) + 10;
     const created = await tx.person.create({ data: { slug, fullName, shortName, role, zone, email, defaultDirectionId: direction.id, sortOrder, active: true } });
+    // Логин вида amuradyan сразу (этап 52)
+    await fillMissingLogins(tx);
     // Лидеры, администраторы, владелец и наблюдатель из «Людей и ролей» работают в топ-команде. Сотрудника добавляют в команду в «Структуре»
     if (role !== "EMPLOYEE") await tx.teamMember.createMany({ data: [{ teamId: TOP_TEAM, personId: created.id }], skipDuplicates: true });
     await audit(tx, actor, "settings.person.create", "person", slug, "Человек добавлен", null, `${fullName}, ${ROLE_LABELS[role].toLowerCase()}, ${zone}`);
@@ -286,10 +346,19 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
         changes.push(["Роль", ROLE_LABELS[p.role], ROLE_LABELS[role]]);
       }
     }
+    if (input.login !== undefined) {
+      const v = await checkLogin(tx, input.login, p.id);
+      if (v !== (p.login ?? p.slug)) {
+        data.login = v;
+        changes.push(["Логин", p.login ?? p.slug, v]);
+      }
+    }
     if (input.email !== undefined) {
       const v = await checkEmail(tx, input.email, slug);
       if (v !== p.email) {
         data.email = v;
+        // Адрес от владельца считается подтверждённым: неподтверждённый адрес человека с ним больше не нужен
+        if (v && v === p.pendingEmail) data.pendingEmail = null;
         changes.push(["Почта", p.email, v ?? "не указана"]);
         // Ссылки, ушедшие на старый адрес, больше не работают
         await tx.loginLink.updateMany({ where: { personId: p.id, kind: { in: ["EMAIL", "STEP_UP"] }, usedAt: null, expiresAt: { gt: new Date() } }, data: { expiresAt: new Date() } });

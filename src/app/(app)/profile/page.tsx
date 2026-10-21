@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { colleaguesOf } from "@/lib/org/people";
 import { requireContext } from "@/lib/auth";
-import { ROLE_LABELS } from "@/lib/roles";
+import { personRoleLabel } from "@/lib/roles";
+import { loginOf } from "@/lib/login/password";
+import { allowedEmailDomains } from "@/lib/login/email";
+import { EmailBinding } from "@/components/profile/email-binding";
+import { primaryOwnerSlug } from "@/lib/admin/service";
 import { listDevices } from "@/lib/login/service";
 import { LOGIN_METHOD_LABELS } from "@/lib/login/labels";
 import { PageHeader } from "@/components/page-header";
@@ -67,6 +71,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       ? "У наблюдателя нет своих сроков и встреч."
       : null;
   const mailOn = mailConfigured();
+  const login = loginOf(ctx.person);
+  const domains = tab === "login" ? await allowedEmailDomains() : [];
   const tabs = [
     { href: "/profile", label: "Профиль", active: tab === "profile", testId: "profile-tab-profile" },
     { href: "/profile?tab=login", label: "Вход и пароль", active: tab === "login", testId: "profile-tab-login" },
@@ -75,16 +81,16 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   ];
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Профиль" description="Роль, зону и почту меняет владелец ресурса в настройках" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
+      <PageHeader title="Профиль" description="Роль и зону меняет владелец ресурса, рабочую почту вы указываете сами на вкладке «Вход и пароль»" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
 
       {tab === "profile" ? (
         <>
           <dl className="flex flex-col gap-3">
             <Row label="Имя">{ctx.person.fullName}</Row>
-            <Row label="Роль">{ROLE_LABELS[ctx.person.role]}</Row>
+            <Row label="Роль">{personRoleLabel(ctx.person.role, (await primaryOwnerSlug()) === ctx.person.slug)}</Row>
             <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
-            <Row label="Логин">{ctx.person.slug}</Row>
-            <Row label="Почта">{ctx.person.email ?? "не указана"}</Row>
+            <Row label="Логин">{login}</Row>
+            <Row label="Почта">{ctx.person.email ?? (ctx.person.pendingEmail ? `${ctx.person.pendingEmail}, ждёт подтверждения` : "не указана")}</Row>
             <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
           </dl>
 
@@ -117,18 +123,24 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <h2 id="password-head" className="text-title font-semibold text-ink">Пароль</h2>
             {ctx.via === "TEAM" ? (
               <p className="mt-2 text-body text-muted">
-                Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {ctx.person.slug}.
+                Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {login}.
               </p>
             ) : (
               <>
                 <p className="mt-1 text-small text-muted">
                   {ctx.person.passwordHash
-                    ? `Входите на экране входа с логином ${ctx.person.slug} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
-                    : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${ctx.person.slug} без ссылки.`}
+                    ? `Входите на экране входа с логином ${login} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
+                    : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${login} без ссылки.`}
                 </p>
-                <PasswordForm login={ctx.person.slug} hasPassword={!!ctx.person.passwordHash} />
+                <PasswordForm login={login} hasPassword={!!ctx.person.passwordHash} />
               </>
             )}
+          </section>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="work-email-head">
+            <h2 id="work-email-head" className="text-title font-semibold text-ink">Почта для входа</h2>
+            <p className="mt-1 text-small text-muted">Для входа по почте вместо логина и для «Забыли пароль» на экране входа.</p>
+            <EmailBinding email={ctx.person.email} pending={ctx.person.pendingEmail} mailOn={mailOn} personal={personal} domains={domains} />
           </section>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="devices-head">

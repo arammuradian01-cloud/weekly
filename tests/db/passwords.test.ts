@@ -40,7 +40,7 @@ describe("пароль по ссылке", () => {
   it("человек сам задаёт пароль по ссылке и сразу входит; ссылка тратится", async () => {
     const invite = await login.issueInvite(await owner(), "reva", t0);
     const peek = await login.peekLink(invite.token, t0);
-    expect(peek).toMatchObject({ status: "ok", kind: "INVITE", login: "reva", hasPassword: false });
+    expect(peek).toMatchObject({ status: "ok", kind: "INVITE", login: "treva", hasPassword: false });
     const { session, person } = await pw.setPasswordByLink(invite.token, GOOD, GOOD, device, t0);
     expect(person.slug).toBe("reva");
     expect(session.method).toBe("INVITE");
@@ -161,7 +161,10 @@ describe("сброс, смена и ссылки всем", () => {
     expect(slugs).not.toContain("muradyan");
     expect(slugs).not.toContain("ceo");
     expect(slugs).toContain("loginova");
-    expect(links.every((l) => l.login === l.slug)).toBe(true);
+    // Логины вида treva (этап 52): первая буква имени и фамилия
+    expect(links.find((l) => l.slug === "loginova")?.login).toBe("sloginova");
+    // По умолчанию ссылки пачкой действуют три дня, срок выбирается: 3, 7 или 14
+    expect(links[0]!.expiresAt.getTime() - later(1000).getTime()).toBe(3 * 24 * 60 * 60 * 1000);
     // Каждая ссылка рабочая и задаёт пароль своему человеку
     const lg = links.find((l) => l.slug === "loginova")!;
     const r = await pw.setPasswordByLink(lg.token, "Зимний вечер у камина", "Зимний вечер у камина", device, later(2000));

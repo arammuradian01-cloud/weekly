@@ -1,6 +1,6 @@
 import { requireContext } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
-import { ROLE_LABELS } from "@/lib/roles";
+import { personRoleLabel } from "@/lib/roles";
 import { formatTime, reportingWeek, type DeadlineSetting } from "@/lib/week";
 import { SidebarBrand, Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
@@ -20,7 +20,7 @@ import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
 import { syncLagging } from "@/lib/sheet/runner";
-import { getStandBanner } from "@/lib/admin/service";
+import { getStandBanner, primaryOwnerSlug } from "@/lib/admin/service";
 import { prisma } from "@/lib/db";
 import { inboxCount } from "@/lib/inbox/service";
 import { InboxCountProvider } from "@/components/inbox/inbox-count";
@@ -60,7 +60,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     fullName: ctx.person.fullName,
     shortName: ctx.person.shortName,
     // Сотрудник, который руководит командой, подписан как руководитель (этап 14)
-    roleLabel: ctx.person.role === "EMPLOYEE" && team.scope.leads.length ? "Руководитель команды" : ROLE_LABELS[ctx.person.role],
+    roleLabel: ctx.person.role === "EMPLOYEE" && team.scope.leads.length ? "Руководитель команды" : personRoleLabel(ctx.person.role, ctx.person.role === "OWNER" && (await primaryOwnerSlug()) === ctx.person.slug),
     canManage: ctx.managementRole !== null,
     management: ctx.management?.role ?? null,
     managementUntil,

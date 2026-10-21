@@ -2,7 +2,8 @@
 // и пароль.
 //
 // Как это устроено:
-// - логин: короткое имя человека в ресурсе (как в адресах, например reva) или его рабочая почта;
+// - логин: первая буква имени и фамилия латиницей (amuradyan, этап 52), прежнее короткое имя (reva) или
+//   подтверждённая рабочая почта;
 // - пароль задаёт сам человек: владелец выдаёт ему личную ссылку, по ней человек придумывает пароль и сразу входит.
 //   Пароль не проходит ни через владельца, ни через переписку. Забыл пароль: владелец выдаёт новую ссылку;
 // - владелец может сбросить пароль: старый перестаёт работать, все входы человека завершаются;
@@ -19,7 +20,7 @@ import { computeLockState, historySince, LOCK_MS } from "@/lib/rate-limit";
 import { formatTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { Person, Prisma } from "@/generated/prisma/client";
-import { DEVICE_TTL_MS, INVITE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
+import { DEVICE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
 import { ATTEMPT_TX, BUSY_ERROR, QueueBusy, advisoryLock, lockTimeout, markAttemptOk, serialAll } from "./attempts";
 
 const fail = (message: string): never => {
@@ -36,13 +37,13 @@ export const IP_MAX_FAILURES = 30;
 
 const COMMON = ["password", "qwerty", "йцукен", "sravni", "weekly", "1q2w3e", "parol", "пароль", "admin", "123qwe"];
 
-/** Логин человека: короткое имя в ресурсе. Его же показываем на экране задания пароля и в профиле */
-export function loginOf(person: Pick<Person, "slug">): string {
-  return person.slug;
+/** Логин человека (этап 52): amuradyan, пока логина нет, короткое имя. Его показываем на экране задания пароля и в профиле */
+export function loginOf(person: Pick<Person, "slug" | "login">): string {
+  return person.login ?? person.slug;
 }
 
 /** Проверка нового личного пароля. null: подходит */
-export function validatePersonalPassword(password: string, person: Pick<Person, "slug" | "fullName" | "email">): string | null {
+export function validatePersonalPassword(password: string, person: Pick<Person, "slug" | "fullName" | "email"> & { login?: string | null }): string | null {
   if (password.length < PERSONAL_MIN_LENGTH) return `Пароль должен быть не короче ${PERSONAL_MIN_LENGTH} символов`;
   if (Buffer.byteLength(password, "utf8") > PERSONAL_MAX_BYTES) return "Пароль слишком длинный: не больше 72 латинских букв или 36 русских";
   if (password.trim() !== password) return "Пароль не должен начинаться или заканчиваться пробелом";
@@ -50,18 +51,20 @@ export function validatePersonalPassword(password: string, person: Pick<Person, 
   if (/^(.)\1+$/.test(password)) return "Слишком простой пароль";
   const low = password.toLowerCase().replace(/ё/g, "е");
   if (COMMON.some((w) => low.includes(w)) && low.length < 16) return "Слишком простой пароль: не берите слова вроде password, qwerty, sravni";
-  const parts = [person.slug, person.email?.split("@")[0] ?? "", ...person.fullName.split(/\s+/)]
+  const parts = [person.slug, person.login ?? "", person.email?.split("@")[0] ?? "", ...person.fullName.split(/\s+/)]
     .map((x) => x.toLowerCase().replace(/ё/g, "е"))
     .filter((x) => x.length >= 4);
   if (parts.some((x) => low.includes(x))) return "Пароль не должен содержать ваш логин, имя или фамилию";
   return null;
 }
 
-/** Человек по логину: короткое имя или рабочая почта, регистр не важен */
+/** Человек по логину: логин amuradyan, прежнее короткое имя или подтверждённая рабочая почта, регистр не важен.
+    Логин важнее короткого имени: если строка у одного логин, а у другого короткое имя, входит владелец логина */
 async function personByLogin(login: string) {
   const value = login.trim().toLowerCase();
   if (!value || value.length > 120) return null;
-  return prisma.person.findFirst({ where: value.includes("@") ? { email: value } : { slug: value } });
+  if (value.includes("@")) return prisma.person.findFirst({ where: { email: value } });
+  return (await prisma.person.findUnique({ where: { login: value } })) ?? (await prisma.person.findUnique({ where: { slug: value } }));
 }
 
 type Tx = Prisma.TransactionClient;
@@ -187,13 +190,15 @@ export { LOCK_MS };
 export async function setPasswordByLink(token: string, password: string, repeat: string, device: DeviceInfo, now = new Date(), replaces: string | null = null) {
   if (password !== repeat) fail("Пароли не совпадают");
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) }, include: { person: true } });
-  if (!link || link.kind === "STEP_UP") fail("Ссылка не найдена: проверьте, что она скопирована целиком");
+  // Пароль задают только по приглашению и по ссылке входа из письма. Ссылка подтверждения режима управления и
+  // ссылка подтверждения почты (этап 52) для этого не годятся
+  if (!link || (link.kind !== "INVITE" && link.kind !== "EMAIL")) fail("Ссылка не найдена: проверьте, что она скопирована целиком");
   const problem = validatePersonalPassword(password, link!.person);
   if (problem) fail(problem);
   const hash = await hashPassword(password);
   return prisma.$transaction(async (tx) => {
     const taken = await tx.loginLink.updateMany({
-      where: { id: link!.id, usedAt: null, expiresAt: { gt: now }, person: { active: true } },
+      where: { id: link!.id, kind: { in: ["INVITE", "EMAIL"] }, usedAt: null, expiresAt: { gt: now }, person: { active: true } },
       data: { usedAt: now, usedIp: device.ip },
     });
     if (taken.count !== 1) {
@@ -288,30 +293,34 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
   });
 }
 
-export type BulkInvite = { slug: string; fullName: string; login: string; token: string; expiresAt: Date };
+export type BulkInvite = { slug: string; fullName: string; login: string; position: string | null; token: string; expiresAt: Date };
+
+/** Сколько дней действуют ссылки пачкой (этап 52): при раздаче всей компании трёх дней мало */
+export const BULK_INVITE_DAYS = [3, 7, 14] as const;
 
 /**
  * Ссылки всем, кто ещё не задал пароль: включённые люди, кроме наблюдателей и самого владельца. Каждая ссылка
  * показывается один раз; прежние неиспользованные ссылки этих людей гаснут
  */
-export async function issueInvitesForAll(actor: Actor, now = new Date()): Promise<BulkInvite[]> {
+export async function issueInvitesForAll(actor: Actor, now = new Date(), days = 3): Promise<BulkInvite[]> {
   ownerOnly(actor);
+  if (!(BULK_INVITE_DAYS as readonly number[]).includes(days)) fail("Срок ссылок: 3, 7 или 14 дней");
   const people = await prisma.person.findMany({
     where: { active: true, role: { not: "OBSERVER" }, passwordHash: null, id: { not: actor.personId } },
     orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
   });
   if (!people.length) return [];
-  const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+  const expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
   const out: BulkInvite[] = [];
   await prisma.$transaction(async (tx) => {
     await tx.loginLink.updateMany({ where: { personId: { in: people.map((p) => p.id) }, kind: "INVITE", usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
     for (const p of people) {
       const token = newToken();
       await tx.loginLink.create({ data: { tokenHash: hashToken(token), kind: "INVITE", personId: p.id, createdById: actor.personId, expiresAt, createdAt: now } });
-      out.push({ slug: p.slug, fullName: p.fullName, login: loginOf(p), token, expiresAt });
+      out.push({ slug: p.slug, fullName: p.fullName, login: loginOf(p), position: p.position, token, expiresAt });
     }
     await tx.auditLog.create({
-      data: { action: "auth.invite.bulk", actorId: actor.personId, actorName: actor.fullName, entity: "person", field: "Ссылки всем без пароля", after: `выдано ссылок: ${people.length}`, ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.invite.bulk", actorId: actor.personId, actorName: actor.fullName, entity: "person", field: "Ссылки всем без пароля", after: `выдано ссылок: ${people.length}, действуют ${days} дн.`, ip: actor.ip ?? null, via: actor.via ?? null },
     });
   }, { timeout: 30_000 });
   return out;

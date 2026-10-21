@@ -21,7 +21,8 @@ const PROBLEMS = {
 export default async function LinkPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
   const { t = "" } = await searchParams;
   const link = await peekLink(t);
-  const ok = link.status === "ok" && link.kind !== "STEP_UP";
+  // Экран входа и задания пароля только для приглашения и ссылки из письма (этап 52: есть ещё подтверждение почты)
+  const ok = link.status === "ok" && (link.kind === "INVITE" || link.kind === "EMAIL");
 
   return (
     <div className="flex min-h-dvh flex-col bg-field">
@@ -47,7 +48,13 @@ export default async function LinkPage({ searchParams }: { searchParams: Promise
           ) : (
             <>
               <h1 className="text-headline font-semibold text-ink">Ссылка не подходит</h1>
-              <p className="mt-2 text-body text-ink">{link.kind === "STEP_UP" ? "Это ссылка подтверждения режима управления, а не входа." : PROBLEMS[link.status as keyof typeof PROBLEMS]}</p>
+              <p className="mt-2 text-body text-ink">
+                {link.kind === "STEP_UP"
+                  ? "Это ссылка подтверждения режима управления, а не входа."
+                  : link.kind === "EMAIL_CONFIRM"
+                    ? "Это ссылка подтверждения почты, а не входа."
+                    : PROBLEMS[link.status as keyof typeof PROBLEMS]}
+              </p>
               <p className="mt-2 text-body text-muted">Попросите новую ссылку у владельца ресурса или запросите её на почту на экране входа.</p>
               <Link href="/login" className="mt-5 inline-block text-body font-medium text-blue-700 underline-offset-2 hover:underline">
                 На экран входа

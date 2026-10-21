@@ -3,6 +3,7 @@
 // (решение 8 по умолчанию). Руководитель команды сам добавляет и убирает участников своей команды из своей ветки.
 // Каждая правка пишется в журнал: что было и что стало.
 
+import { fillMissingLogins } from "@/lib/login/logins";
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
 import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
@@ -262,6 +263,8 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       for (const v of plan.vacancies) await tx.vacancy.create({ data: { unitId: await unitOf(v.path), position: v.position } });
 
       const { teams, members } = await syncUnitTeams(tx, actor);
+      // Новым людям сразу логины вида amuradyan (этап 52)
+      await fillMissingLogins(tx);
       await audit(tx, actor, "structure.import", "structure", "import", "Структура загружена", null, `людей ${plan.planned.length}: новых ${added}, изменено ${plan.people.change.length}; подразделений новых ${unitsCreated}; вакансий ${plan.vacancies.length}`);
       return { units: unitsCreated, added, changed: plan.people.change.length, teams, members, vacancies: plan.vacancies.length };
     },

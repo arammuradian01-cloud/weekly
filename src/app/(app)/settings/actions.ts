@@ -80,12 +80,17 @@ export async function resetPasswordAction(slug: string) {
 }
 
 /** Ссылки всем, кто ещё не задал пароль (этап 20а): показываются один раз */
-export async function issueInvitesForAllAction() {
+export async function issueInvitesForAllAction(days = 3) {
   const base = await baseUrl();
   return runAction("Ссылки всем без пароля", async (a) => {
-    const list = await issueInvitesForAll(a);
-    return list.map((x) => ({ fullName: x.fullName, login: x.login, url: linkUrl(base, x.token), expiresAt: x.expiresAt.toISOString() }));
+    const list = await issueInvitesForAll(a, new Date(), Number(days));
+    return list.map((x) => ({ fullName: x.fullName, login: x.login, position: x.position ?? "", url: linkUrl(base, x.token), expiresAt: x.expiresAt.toISOString() }));
   });
+}
+
+/** Главный владелец (этап 52): вершина ресурса, остальные владельцы совладельцы */
+export async function setPrimaryOwnerAction(slug: string) {
+  return done(await runAction("Главный владелец", (a) => svc.setPrimaryOwner(a, String(slug))));
 }
 
 export async function revokePersonDevicesAction(slug: string) {

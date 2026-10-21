@@ -20,7 +20,7 @@ export function LoginForm() {
         spellCheck={false}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        hint="Короткое имя, например reva, или рабочая почта"
+        hint="Например amuradyan, или рабочая почта"
         required
       />
       <Field label="Пароль" id="password" name="password" type="password" autoComplete="current-password" required />

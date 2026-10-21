@@ -52,7 +52,7 @@ describe("ссылка от владельца", () => {
     expect(first.fullName).toBe("Рева Тарас");
     // Новая ссылка гасит прежнюю
     expect((await login.peekLink(first.token, later(2000))).status).toBe("expired");
-    expect(await login.peekLink(second.token, later(2000))).toEqual({ status: "ok", kind: "INVITE", fullName: "Рева Тарас", login: "reva", hasPassword: false });
+    expect(await login.peekLink(second.token, later(2000))).toEqual({ status: "ok", kind: "INVITE", fullName: "Рева Тарас", login: "treva", hasPassword: false });
 
     // Открытие ничего не тратит, вход тратит
     const { session, person, method } = await login.consumeLoginLink(second.token, device, later(3000));

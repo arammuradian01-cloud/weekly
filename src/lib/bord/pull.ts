@@ -13,6 +13,7 @@
 // - задачу, которую удалили из Bord, ресурс не трогает и показывает в списке «нет в Bord».
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
+import { fillMissingLogins } from "@/lib/login/logins";
 import { notifyWatchers } from "@/lib/tasks/watch";
 import { notifyDependents } from "@/lib/tasks/dependents";
 import { CLOSED_DB } from "@/lib/tasks/codes";
@@ -439,6 +440,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       const current = typeof setting?.value === "number" ? setting.value : 0;
       if (current < nextFree) await tx.setting.upsert({ where: { key: "tasks.nextNumber" }, update: { value: nextFree }, create: { key: "tasks.nextNumber", value: nextFree } });
       report.problems = report.problems.slice(0, PROBLEMS_KEEP);
+      // Новым людям из Bord сразу логины вида amuradyan (этап 52)
+      if (report.newPeople.length) await fillMissingLogins(tx);
       return report;
     },
     { timeout: 120_000, maxWait: 10_000 },

@@ -130,7 +130,12 @@ export async function setPasswordByLink(page: Page, link: string, password = TES
   await page.getByLabel(/Придумайте пароль|Новый пароль/).fill(password);
   await page.getByLabel("Повторите пароль").fill(password);
   await page.getByRole("button", { name: "Задать пароль и войти" }).click();
-  await expect(page).toHaveURL(/\/$/);
+  // Этап 52: без рабочей почты первый вход ведёт на экран приветствия, с него «Начать работу»
+  await expect(page).toHaveURL(/\/(welcome)?$/);
+  if (page.url().endsWith("/welcome")) {
+    await page.getByTestId("welcome-start").click();
+    await expect(page).toHaveURL(/\/$/);
+  }
 }
 
 /** Вход по личной ссылке из консоли сервера (этап 14): у сотрудников нет общего логина. С этапа 20а по ссылке задают пароль */

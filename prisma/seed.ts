@@ -7,6 +7,7 @@ import { importBordTasks } from "../src/lib/tasks/bord-import";
 import { importBordWeekly } from "../src/lib/weekly/bord-import";
 import { BORD_DEFAULT } from "../scripts/lib/bord-source";
 import { sessionSecretSource } from "../src/lib/database-url";
+import { fillMissingLogins } from "../src/lib/login/logins";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -75,6 +76,10 @@ async function main() {
       }
     }
   }
+
+  // Логины вида amuradyan (этап 52): всем, у кого их ещё нет. Повторный запуск ничего не меняет
+  const logins = await fillMissingLogins(prisma);
+  if (logins) console.log(`Выдано логинов: ${logins}`);
 
   // Задачи и weekly из Insurance&Invest Bord загружаются только по явной команде: BORD_IMPORT=on при запуске
   // или npm run import:bord. Иначе пустая база после сбоя или пересоздания тихо заполнилась бы старой выгрузкой

@@ -110,7 +110,7 @@ async function lock(tx: Tx, key: string): Promise<void> {
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text`;
 }
 
-async function createLinkTx(tx: Tx, kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null, deviceId: string | null = null) {
+export async function createLinkTx(tx: Tx, kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null, deviceId: string | null = null) {
   await lock(tx, `login-link:${personId}`);
   const token = newToken();
   const expiresAt = new Date(now.getTime() + ttlMs);
@@ -153,7 +153,7 @@ export async function peekLink(token: string, now = new Date()): Promise<{ statu
   if (!token) return { status: "unknown" };
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) }, include: { person: true } });
   if (!link) return { status: "unknown" };
-  const base = { kind: link.kind, fullName: link.person.fullName, login: link.person.slug, hasPassword: !!link.person.passwordHash };
+  const base = { kind: link.kind, fullName: link.person.fullName, login: link.person.login ?? link.person.slug, hasPassword: !!link.person.passwordHash };
   if (link.usedAt) return { status: "used", ...base };
   if (link.expiresAt <= now) return { status: "expired", ...base };
   if (!link.person.active) return { status: "inactive", ...base };
@@ -170,7 +170,7 @@ async function linkProblem(token: string, now: Date): Promise<never> {
 }
 
 /** Ссылку можно использовать один раз: условие в самом UPDATE, две вкладки одновременно не войдут обе */
-async function takeLinkTx(tx: Tx, token: string, kinds: LinkKind[], ip: string | null, now: Date) {
+export async function takeLinkTx(tx: Tx, token: string, kinds: LinkKind[], ip: string | null, now: Date) {
   const tokenHash = hashToken(token);
   const taken = await tx.loginLink.updateMany({
     where: { tokenHash, kind: { in: kinds }, usedAt: null, expiresAt: { gt: now }, person: { active: true } },
