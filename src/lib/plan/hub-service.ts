@@ -17,6 +17,7 @@ import { PRODUCTS } from "./spec";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_OWNER_CODE } from "./partners";
 import { HUB_LIMITS, HUB_SHEETS, SK_METRICS, SK_SENSITIVE, SK_TOTAL, daysIn, parseHubSource, readSkPlan, readVseSk, runRate, type SkMetric, type SkMonthRow } from "./hub";
 import { hubImitation } from "./hub-imitation";
+import { canSeeNumbers } from "./access";
 import type { Grid } from "./lrf";
 
 const fail = (message: string): never => {
@@ -243,8 +244,12 @@ export async function hubSource(actor: Actor): Promise<SkView["source"]> {
   return { sourceId: manager ? (hubId ?? "") : "", mode, pulledAt: pulled?.at ?? null, pulledBy: pulled?.by ?? null, serviceEmail: manager ? serviceEmail() : null };
 }
 
-/** Ранрейт ОСАГО по СК для карточки продукта. null: загрузок из хаба ещё не было */
+/**
+ * Ранрейт ОСАГО по СК для карточки продукта. null: загрузок из хаба ещё не было или человеку открыты не все цифры
+ * (этап 57). Представление месяца собирается и для сводки уровня «основные цифры», поэтому разрез по СК режется здесь
+ */
 export async function skView(actor: Actor, month: string, now = new Date()): Promise<SkView | null> {
+  if (!(await canSeeNumbers(actor))) return null;
   const [snapshots, lines, pulled, lbe] = await Promise.all([
     prisma.planSkSnapshot.findMany({ where: { month }, orderBy: { day: "asc" } }),
     prisma.planSkLine.findMany({ where: { period: month } }),

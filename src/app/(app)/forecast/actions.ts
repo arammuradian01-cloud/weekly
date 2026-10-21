@@ -87,18 +87,19 @@ export async function adjustPartnerAction(input: plan.PartnerAdjustInput): Promi
   return r;
 }
 
-// Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» на день и план ОСАГО по СК, ранрейт по СК
+// Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» на день и план ОСАГО по СК, ранрейт по СК. Как остальные
+// действия прогноза, только при всех цифрах; права управления и владельца проверяет сервис
 
 export async function previewHubAction(): Promise<Result<hub.HubPreview>> {
-  return runAction("Проверка хаба", (a) => hub.previewHub(a));
+  return runAction("Проверка хаба", (a) => numbers(a, () => hub.previewHub(a)));
 }
 
 export async function applyHubAction(): Promise<Result<{ day: string; snapshots: number; lines: number }>> {
-  const r = await runAction("Загрузка из хаба", (a) => hub.applyHub(a));
+  const r = await runAction("Загрузка из хаба", (a) => numbers(a, () => hub.applyHub(a)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function setHubSourceAction(input: string): Promise<Result<string>> {
-  return runAction("Хаб данных", (a) => hub.setHubSource(a, input));
+  return runAction("Хаб данных", (a) => numbers(a, () => hub.setHubSource(a, input)));
 }

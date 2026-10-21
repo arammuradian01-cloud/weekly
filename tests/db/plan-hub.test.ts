@@ -1,13 +1,34 @@
 // Этап 58: единая воронка, шаг 1. Хаб «Единая воронка: данные» в имитации: проверка и загрузка снимка «Все СК» на день и
 // плана ОСАГО по СК, ранрейт по СК в карточке ОСАГО, кто видит выручку и КВ по СК, права на загрузку и смену хаба, журнал
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as plan from "@/lib/plan/service";
 import * as hub from "@/lib/plan/hub-service";
+import { planBrief } from "@/lib/plan/processes";
+import { NUMBERS_ACCESS_KEY, NUMBERS_CLOSED_TEXT, NUMBERS_SUMMARY_TEXT, briefFor, numbersLevel } from "@/lib/plan/access";
 import { HUB_FAKE_SK } from "@/lib/plan/hub-imitation";
 import { moscowToday } from "@/lib/tasks/dates";
 import { PROD_SHEET_ID } from "@/lib/sheet/client";
+import * as actions from "@/app/(app)/forecast/actions";
+
+// Действия экрана вызываются напрямую: вход и кеш страниц подменены, человек задаётся тестом
+const runner = vi.hoisted(() => ({ actor: null as tasks.Actor | null }));
+vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
+vi.mock("@/lib/action-runner", async () => {
+  const { TaskRuleError } = await import("@/lib/tasks/service");
+  return {
+    currentActor: async () => runner.actor!,
+    runAction: async <T,>(_what: string, fn: (a: tasks.Actor) => Promise<T>) => {
+      try {
+        return { ok: true as const, value: await fn(runner.actor!) };
+      } catch (error) {
+        if (error instanceof TaskRuleError) return { ok: false as const, error: error.message };
+        throw error;
+      }
+    },
+  };
+});
 
 const actor = {
   owner: () => tasks.actorFor("muradyan", "OWNER"),
@@ -39,6 +60,9 @@ const clean = async () => {
   await prisma.planAdjustment.deleteMany();
   await prisma.planLine.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { startsWith: "plan." } } });
+  await prisma.setting.deleteMany({ where: { key: NUMBERS_ACCESS_KEY } });
+  await prisma.person.deleteMany({ where: { slug: { startsWith: "hub-test-" } } });
+  await prisma.person.update({ where: { slug: "ceo" }, data: { active: false } });
 };
 
 beforeAll(async () => {
@@ -161,6 +185,12 @@ describe("ОСАГО по СК в карточке", () => {
     expect(kasko.total.revenueMtd).toBeNull();
     // Полисы и план видны всем
     expect(kasko.rows[0]!.mtd).not.toBeNull();
+    expect(kasko.canPull).toBe(false);
+    expect(kasko.source.sourceId).toBe("");
+    expect(kasko.source.serviceEmail).toBeNull();
+    // Наблюдатель с открытыми всеми цифрами (этап 57) видит раздел, но не выручку и КВ
+    await prisma.person.update({ where: { slug: "ceo" }, data: { active: true } });
+    await prisma.setting.create({ data: { key: NUMBERS_ACCESS_KEY, value: { full: { units: [], people: ["ceo"] }, summary: { topManagement: true, units: [], people: [] } } } });
     const obs = await see(await actor.observer());
     expect(obs.sensitive).toBe(false);
     expect(obs.canPull).toBe(false);
@@ -205,5 +235,81 @@ describe("ОСАГО по СК в карточке", () => {
     // Имитация равномерная по дням: профиль и линейный ранрейт совпадают, месяц стабильный
     expect(fresh.total.profile! / fresh.total.linear!).toBeCloseTo(1, 1);
     expect(fresh.total.unstable).toBe(false);
+  });
+});
+
+describe("доступ к цифрам хаба по уровням этапа 57", () => {
+  const LINK = "https://docs.google.com/spreadsheets/d/1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg/edit";
+  // Двое вне команд продуктов и топ-команды: один с основными цифрами из настройки, другой без цифр
+  const levels = async () => {
+    for (const [slug, fullName] of [
+      ["hub-test-summary", "Сводкин Сергей"],
+      ["hub-test-none", "Закрытов Захар"],
+    ]) {
+      await prisma.person.create({ data: { slug, fullName, shortName: fullName.split(" ")[1]!, role: "EMPLOYEE", zone: "Тест доступа" } });
+    }
+    await prisma.setting.create({ data: { key: NUMBERS_ACCESS_KEY, value: { full: { units: [], people: [] }, summary: { topManagement: false, units: [], people: ["hub-test-summary"] } } } });
+    const summary = await tasks.actorFor("hub-test-summary");
+    const none = await tasks.actorFor("hub-test-none");
+    expect(await numbersLevel(summary)).toBe("summary");
+    expect(await numbersLevel(none)).toBe("none");
+    return { summary, none };
+  };
+  const loaded = async () => {
+    const owner = await actor.owner();
+    await plan.applyPull(owner, month);
+    await hub.applyHub(owner);
+  };
+
+  it("основные цифры и закрытый уровень: проверка, загрузка и ссылка на хаб отказывают текстом уровня и ничего не пишут", async () => {
+    await loaded();
+    const { summary, none } = await levels();
+    const snapshots = await prisma.planSkSnapshot.count();
+    const journal = await prisma.auditLog.count({ where: { action: { in: ["plan.hub", "plan.hubSource"] } } });
+    for (const [who, text] of [
+      [summary, NUMBERS_SUMMARY_TEXT],
+      [none, NUMBERS_CLOSED_TEXT],
+    ] as const) {
+      runner.actor = who;
+      expect(await actions.previewHubAction()).toEqual({ ok: false, error: text });
+      expect(await actions.applyHubAction()).toEqual({ ok: false, error: text });
+      expect(await actions.setHubSourceAction(LINK)).toEqual({ ok: false, error: text });
+    }
+    expect(await prisma.planSkSnapshot.count()).toBe(snapshots);
+    expect(await prisma.auditLog.count({ where: { action: { in: ["plan.hub", "plan.hubSource"] } } })).toBe(journal);
+    expect(await prisma.setting.findUnique({ where: { key: "plan.hubId" } })).toBeNull();
+  });
+
+  it("основные цифры получают сводку месяца без разреза по СК, закрытый уровень ничего; представление месяца без раздела по СК", async () => {
+    await loaded();
+    const { summary, none } = await levels();
+    expect((await plan.monthPlan(summary, month)).sk).toBeNull();
+    expect((await plan.monthPlan(none, month)).sk).toBeNull();
+    const brief = briefFor("summary", await planBrief(summary, month));
+    expect(brief).not.toBeNull();
+    expect(brief).not.toHaveProperty("sk");
+    const text = JSON.stringify(brief);
+    for (const x of HUB_FAKE_SK) expect(text).not.toContain(x.sk);
+    expect(briefFor("none", await planBrief(none, month))).toBeNull();
+  });
+
+  it("все цифры: владелец в режиме управления проверяет, загружает и задаёт хаб через действия; без прав управления отказ по роли остаётся", async () => {
+    const owner = await actor.owner();
+    await plan.applyPull(owner, month);
+    runner.actor = owner;
+    const preview = await actions.previewHubAction();
+    expect(preview.ok && preview.value.ready).toBe(true);
+    expect(await actions.applyHubAction()).toMatchObject({ ok: true, value: { day: today } });
+    expect(await actions.setHubSourceAction(LINK)).toEqual({ ok: true, value: "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg" });
+    // Лидер ОСАГО со всеми цифрами, но без режима управления: уровень пропускает, сервис отказывает по роли
+    runner.actor = await actor.golovkin();
+    expect(await numbersLevel(runner.actor)).toBe("full");
+    expect(await actions.previewHubAction()).toMatchObject({ ok: false, error: expect.stringMatching(/владелец и администраторы/) });
+    expect(await actions.applyHubAction()).toMatchObject({ ok: false, error: expect.stringMatching(/владелец и администраторы/) });
+    // Ссылку на хаб задаёт только владелец: администратор в режиме управления получает отказ
+    runner.actor = await actor.admin();
+    expect(await actions.setHubSourceAction(LINK)).toMatchObject({ ok: false, error: expect.stringMatching(/владелец/) });
+    // Со всеми цифрами раздел по СК приходит и без режима управления
+    expect((await plan.monthPlan(await actor.fatyanov(), month)).sk?.rows.length).toBe(HUB_FAKE_SK.length);
   });
 });
