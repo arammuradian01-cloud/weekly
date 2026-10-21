@@ -21,6 +21,10 @@ import { TextInput } from "@/components/ui/primitives";
 import { searchKey } from "@/components/ui/search-picker";
 
 const NAME_MAX = 120;
+/** Сколько людей за раз: как на сервере */
+const BATCH_MAX = 150;
+/** Перетаскиваемая область: долгое нажатие на телефоне не выделяет текст и не открывает системное меню */
+const dragArea = "cursor-grab select-none [-webkit-touch-callout:none]";
 
 type Drag = { kind: "unit"; id: string; label: string; count: number } | { kind: "person"; slug: string; label: string };
 type Target = { kind: "new" } | { kind: "project"; id: string; name: string };
@@ -97,7 +101,7 @@ function PersonChip({ person, canDrag: canDragAll, projects, onPick, me }: { per
   const { listeners, setNodeRef, isDragging } = useDraggable({ id: `p:${person.slug}`, data: drag, disabled: !canDrag });
   return (
     <li className={cn("flex items-center justify-between gap-2 rounded-control px-2 py-1.5 hover:bg-field", isDragging && "opacity-40")} data-testid={`person-${person.slug}`}>
-      <span ref={setNodeRef} {...(canDrag ? listeners : {})} data-testid={`drag-person-${person.slug}`} className={cn("flex min-w-0 flex-1 items-center gap-2", canDrag && "cursor-grab")}>
+      <span ref={setNodeRef} {...(canDrag ? listeners : {})} data-testid={`drag-person-${person.slug}`} className={cn("flex min-w-0 flex-1 items-center gap-2", canDrag && dragArea)}>
         {canDrag ? <Grip /> : null}
         <span className="min-w-0">
           <span className="block text-small text-ink">{person.fullName}</span>
@@ -130,7 +134,7 @@ function UnitNode({ unit, depth, tree, canDrag, projects, onPick, open, toggle, 
   return (
     <Wrapper className={cn(depth === 0 ? "sv-card bg-surface p-3" : "border-l border-line pl-3", isDragging && "opacity-40")} data-testid={`unit-${unit.id}`}>
       <div className="flex items-center justify-between gap-2">
-        <div ref={setNodeRef} {...(draggable ? listeners : {})} data-testid={`drag-unit-${unit.id}`} className={cn("flex min-w-0 flex-1 items-center gap-2", draggable && "cursor-grab")}>
+        <div ref={setNodeRef} {...(draggable ? listeners : {})} data-testid={`drag-unit-${unit.id}`} className={cn("flex min-w-0 flex-1 items-center gap-2", draggable && dragArea)}>
           {draggable ? <Grip /> : null}
           {leaf ? (
             <span className="min-w-0">
@@ -167,7 +171,7 @@ function UnitNode({ unit, depth, tree, canDrag, projects, onPick, open, toggle, 
   );
 }
 
-function ProjectCard({ project, busy, onRemove, onCancel, onRename, onClose }: { project: ProjectView; busy: boolean; onRemove: (slug: string, name: string) => void; onCancel: (id: string, name: string) => void; onRename: () => void; onClose: () => void }) {
+function ProjectCard({ project, busy, editable, onRemove, onCancel, onRename, onClose }: { project: ProjectView; busy: boolean; /** Под общим логином состав не меняют: кнопок нет */ editable: boolean; onRemove: (slug: string, name: string) => void; onCancel: (id: string, name: string) => void; onRename: () => void; onClose: () => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `t:${project.id}` });
   const [all, setAll] = useState(false);
   const shown = all ? project.members : project.members.slice(0, 8);
@@ -185,7 +189,7 @@ function ProjectCard({ project, busy, onRemove, onCancel, onRename, onClose }: {
             {project.kind === "UNIT" ? ", команда по структуре" : ""}
           </p>
         </div>
-        {project.kind === "CUSTOM" ? (
+        {editable && project.project ? (
           <Menu.Root>
             <Menu.Trigger className="sv-icon-btn shrink-0" aria-label={`Проект «${project.name}»: действия`}>
               <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -209,9 +213,11 @@ function ProjectCard({ project, busy, onRemove, onCancel, onRename, onClose }: {
             <li key={m.slug} className="inline-flex items-center gap-0.5 rounded-full bg-field py-0.5 pl-2.5 pr-0.5 text-caption text-ink">
               {m.fullName}
               {m.external ? <span className="text-muted">, другая ветка</span> : null}
-              <button type="button" disabled={busy} onClick={() => onRemove(m.slug, m.fullName)} className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-ink" aria-label={`Убрать из проекта «${project.name}»: ${m.fullName}`}>
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+              {editable ? (
+                <button type="button" disabled={busy} onClick={() => onRemove(m.slug, m.fullName)} className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-ink" aria-label={`Убрать из проекта «${project.name}»: ${m.fullName}`}>
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
             </li>
           ))}
           {project.members.length > shown.length ? (
@@ -232,9 +238,11 @@ function ProjectCard({ project, busy, onRemove, onCancel, onRename, onClose }: {
               <span>
                 {w.fullName}: ждёт согласия, {w.approver}
               </span>
-              <button type="button" disabled={busy} onClick={() => onCancel(w.id, w.fullName)} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full hover:bg-field hover:text-ink" aria-label={`Отменить запрос: ${w.fullName}`}>
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              </button>
+              {editable ? (
+                <button type="button" disabled={busy} onClick={() => onCancel(w.id, w.fullName)} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full hover:bg-field hover:text-ink" aria-label={`Отменить запрос: ${w.fullName}`}>
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -301,9 +309,10 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
     setDialog({ kind: "add", target, what });
   };
 
-  const finish = (d: Dialog) => {
+  /** Удалось: окно закрывается. Не удалось (дубль названия, лимит): окно остаётся с введённым, ошибка в уведомлении */
+  const finish = (d: Dialog, ok: boolean) => {
     setBusy(false);
-    if (pendingRef.current === d) setDialog((cur) => (cur === d ? null : cur));
+    if (ok && pendingRef.current === d) setDialog((cur) => (cur === d ? null : cur));
     pendingRef.current = null;
   };
 
@@ -312,22 +321,25 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
     if (!d || busy) return;
     setBusy(true);
     pendingRef.current = d;
+    let ok = false;
     if (d.kind === "add") {
       const who = !d.what ? null : d.what.kind === "unit" ? { unit: d.what.id } : { slugs: [d.what.slug] };
       if (d.target.kind === "new") {
         const r = await run(() => createProjectAction(name, who));
         if (r) notify(summary(r.name, r.result));
+        ok = r !== null;
       } else if (who) {
         const target = d.target;
         const r = await run(() => addToProjectAction(target.id, who));
         if (r) notify(summary(target.name, r));
+        ok = r !== null;
       }
     } else if (d.kind === "rename") {
-      await run(() => renameProjectAction(d.project.id, name), "Проект переименован");
+      ok = (await run(() => renameProjectAction(d.project.id, name), "Проект переименован")) !== null;
     } else {
-      await run(() => closeProjectAction(d.project.id), `Проект «${d.project.name}» закрыт`);
+      ok = (await run(() => closeProjectAction(d.project.id), `Проект «${d.project.name}» закрыт`)) !== null;
     }
-    finish(d);
+    finish(d, ok);
   };
 
   const onDragStart = (e: DragStartEvent) => setDragging((e.active.data.current as Drag) ?? null);
@@ -368,13 +380,20 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
   const rule = view.direct ? "В режиме управления люди других веток входят сразу, их руководители получат событие." : "Люди вашей ветки войдут сразу, из других веток после согласия их непосредственного руководителя.";
   const add = dialog?.kind === "add" ? dialog : null;
   const what = add?.what ?? null;
-  const addText = !what ? "Проект появится у вас со своим weekly и задачами. Людей добавите перетаскиванием или кнопкой «В проект»." : what.kind === "unit" ? `${people(what.count)} из «${what.label}». ${rule}` : `${what.label}. ${rule}`;
+  const tooBig = what?.kind === "unit" && what.count > BATCH_MAX;
+  const addText = !what
+    ? "Проект появится у вас со своим weekly и задачами. Людей добавите перетаскиванием или кнопкой «В проект»."
+    : what.kind === "unit"
+      ? tooBig
+        ? `В «${what.label}» ${people(what.count)}, за раз можно добавить до ${BATCH_MAX}: выберите подразделение поменьше.`
+        : `${people(what.count)} из «${what.label}». ${rule}`
+      : `${what.label}. ${rule}`;
   const title = !dialog ? "" : dialog.kind === "rename" ? "Название проекта" : dialog.kind === "close" ? `Закрыть проект «${dialog.project.name}»?` : dialog.target.kind === "new" ? "Новый weekly-проект" : `В проект «${dialog.target.name}»`;
   const description = !dialog ? "" : dialog.kind === "rename" ? "Название видно в переключателе команд, в weekly и задачах." : dialog.kind === "close" ? "Проект пропадёт из переключателя команд, ожидающие запросы отменятся. Закрыть можно, когда в нём нет открытых задач." : addText;
   const needsName = dialog?.kind === "rename" || (dialog?.kind === "add" && dialog.target.kind === "new");
 
   return (
-    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)} accessibility={{ announcements: announcements(labelOf, targetOf), screenReaderInstructions: { draggable: "Чтобы добавить без перетаскивания, нажмите кнопку «В проект» рядом." } }}>
+    <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd} onDragCancel={() => setDragging(null)} accessibility={{ announcements: announcements(labelOf, targetOf) }}>
       <div className={cn("grid gap-6", canDrag && "lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]")}>
         <section aria-labelledby="ready-teams" className="flex min-w-0 flex-col gap-3">
           <div>
@@ -427,6 +446,7 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
                 key={p.id}
                 project={p}
                 busy={busy}
+                editable={view.canCreate || view.direct}
                 onRemove={(slug, fullName) => void remove(p.id, slug, fullName)}
                 onCancel={(id, fullName) => void cancel(id, fullName)}
                 onRename={() => {
@@ -463,7 +483,7 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
             <Button type="button" variant="secondary" disabled={busy} onClick={() => setDialog(null)}>
               Отмена
             </Button>
-            <Button type="submit" variant={dialog?.kind === "close" ? "danger" : undefined} disabled={busy || (needsName && !name.trim())}>
+            <Button type="submit" variant={dialog?.kind === "close" ? "danger" : undefined} disabled={busy || tooBig || (needsName && !name.trim())}>
               {busy ? "Сохраняем" : dialog?.kind === "rename" ? "Сохранить" : dialog?.kind === "close" ? "Закрыть проект" : add?.target.kind === "new" ? "Создать проект" : "Добавить"}
             </Button>
           </div>

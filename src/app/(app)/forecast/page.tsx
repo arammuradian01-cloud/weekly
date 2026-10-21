@@ -18,7 +18,7 @@ import { PlanCompare } from "@/components/plan/plan-compare";
 import { Module } from "@/components/ui/data";
 import { compareVersions, planBrief, planMonthOfWeek } from "@/lib/plan/processes";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
-import { NUMBERS_CLOSED_TEXT, NUMBERS_SUMMARY_TEXT, numbersLevel } from "@/lib/plan/access";
+import { NUMBERS_CLOSED_TEXT, NUMBERS_SUMMARY_TEXT, numbersLevel, summaryBrief } from "@/lib/plan/access";
 
 export const metadata: Metadata = { title: "Прогноз" };
 
@@ -67,7 +67,8 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   if (level === "summary") {
     // Месяц и неделя как у встречи: месяц отчётной недели, цифры этой недели
     const key = await currentReportingKey();
-    const [brief, numbers] = await Promise.all([planBrief(actor, planMonthOfWeek(key)), weekNumbers(key)]);
+    const [full, numbers] = await Promise.all([planBrief(actor, planMonthOfWeek(key)), weekNumbers(key)]);
+    const brief = summaryBrief(full);
     return (
       <>
         <PageHeader title="Прогноз" description={NUMBERS_SUMMARY_TEXT} />

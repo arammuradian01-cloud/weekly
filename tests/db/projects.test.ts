@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import * as svc from "@/lib/tasks/service";
 import * as org from "@/lib/org/service";
 import * as projects from "@/lib/org/projects";
-import { NUMBERS_ACCESS_KEY, canSeeNumbers, numbersAccessView, numbersLevel, saveNumbersAccess, withNumbers } from "@/lib/plan/access";
+import { NUMBERS_ACCESS_KEY, briefFor, canSeeNumbers, numbersAccessView, numbersLevel, saveNumbersAccess, summaryBrief, withNumbers } from "@/lib/plan/access";
 import { TOP_TEAM } from "@/lib/org/scope";
 
 const owner = () => svc.actorFor("muradyan", "OWNER");
@@ -240,6 +240,64 @@ describe("пачки, гонки и границы после проверки �
     expect(row.parent?.unitId).toBe(company.id);
     expect(row.parentId).not.toBe(TOP_TEAM);
     await prisma.person.update({ where: { id: sedov.id }, data: { role: "EMPLOYEE" } });
+  });
+});
+
+describe("второй круг проверки кода", () => {
+  it("закрытие проекта и пачка людей не расходятся: после закрытия ожидающих запросов нет, согласовать в закрытый нельзя", async () => {
+    const golovkin = await personal("Головкин");
+    const p = await projects.createProject(golovkin, { name: "Гонка закрытия" });
+    const slugs = [(await person("Котов")).slug, (await person("Седов")).slug];
+    await Promise.allSettled([projects.addProjectPeople(golovkin, p.id, slugs), projects.closeProject(golovkin, p.id)]);
+    const team = await prisma.team.findUniqueOrThrow({ where: { id: p.id } });
+    if (!team.active) expect(await prisma.teamJoinRequest.count({ where: { teamId: p.id, status: "PENDING" } })).toBe(0);
+    // Запрос, который ждал, пока проект закрыли руками в обход сервиса: согласие отказывает
+    const p2 = await projects.createProjectWith(golovkin, "Закрыт до согласия", [slugs[0]!]);
+    const req = await prisma.teamJoinRequest.findFirstOrThrow({ where: { teamId: p2.id, status: "PENDING" } });
+    await prisma.team.update({ where: { id: p2.id }, data: { active: false } });
+    await expectRule(org.decideJoinRequest(await personal("Лисина"), req.id, true), /закрыта/);
+    // Общий логин запрос не отменяет
+    await prisma.team.update({ where: { id: p2.id }, data: { active: true } });
+    await expectRule(org.cancelJoinRequest({ ...golovkin, via: "TEAM" }, req.id), /войдя лично/);
+  });
+
+  it("режим управления: человек из другой ветки входит сразу, его руководитель получает одно событие на пачку", async () => {
+    const ershov = await personal("Ершов");
+    const p = await projects.createProject(ershov, { name: "Пачка владельца" });
+    const ownerActor = { ...(await owner()), via: "PASSWORD" as const };
+    const belova = await person("Белова");
+    const before = await prisma.inboxEvent.count({ where: { recipientId: belova.id, kind: "TEAM" } });
+    const r = await projects.addProjectPeople(ownerActor, p.id, [(await person("Седов")).slug]);
+    expect(r.added).toEqual(["Седов Максим"]);
+    expect(await prisma.inboxEvent.count({ where: { recipientId: belova.id, kind: "TEAM" } })).toBe(before + 1);
+  });
+
+  it("команду, которую владелец создал в «Структуре», руководитель на странице проектов не переименовывает и не закрывает", async () => {
+    const ownerActor = await owner();
+    const t = await org.createTeam(ownerActor, { name: "Команда владельца", leader: (await person("Ершов")).slug });
+    const ershov = await personal("Ершов");
+    await expectRule(projects.renameProject(ershov, t.id, "Моё название"), /нет или он закрыт/);
+    await expectRule(projects.closeProject(ershov, t.id), /нет или он закрыт/);
+    const view = await projects.projectsView(ershov);
+    expect(view.projects.find((x) => x.id === t.id)?.project).toBe(false);
+  });
+
+  it("основные цифры: итог месяца без корректировок команд и партнёров", () => {
+    const brief = { month: "2026-10", reasons: [{ product: "osago" }], partnerReasons: [{ product: "b2b" }], partnersMore: 4 } as unknown as Parameters<typeof summaryBrief>[0];
+    const cut = summaryBrief(brief)!;
+    expect(cut.reasons).toEqual([]);
+    expect(cut.partnerReasons).toEqual([]);
+    expect(cut.partnersMore).toBe(0);
+    expect(briefFor("none", brief)).toBeNull();
+    expect(briefFor("full", brief)).toBe(brief);
+  });
+
+  it("настройка со ссылками на удалённые подразделения: раздел показывает, сколько их", async () => {
+    await prisma.setting.upsert({ where: { key: NUMBERS_ACCESS_KEY }, update: { value: { full: { units: ["нет-такого"], people: [] }, summary: { topManagement: true, units: [], people: ["нет-такого-человека"] } } }, create: { key: NUMBERS_ACCESS_KEY, value: { full: { units: ["нет-такого"], people: [] }, summary: { topManagement: true, units: [], people: ["нет-такого-человека"] } } } });
+    const view = await numbersAccessView();
+    expect(view.stale).toBe(2);
+    expect(view.access.full.units).toEqual([]);
+    await prisma.setting.deleteMany({ where: { key: NUMBERS_ACCESS_KEY } });
   });
 });
 

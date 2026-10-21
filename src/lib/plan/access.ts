@@ -19,6 +19,7 @@ import { departmentOf } from "@/lib/tasks/approval";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { PRODUCTS } from "@/lib/plan/spec";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_OWNER_CODE } from "@/lib/plan/partners";
+import type { PlanBrief } from "@/lib/plan/brief";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 type Who = { personId: string; role: string; management?: string | null; slug?: string };
@@ -148,6 +149,20 @@ export async function withNumbers<T>(actor: Actor, fn: () => Promise<T> | T, nee
   return fn();
 }
 
+/**
+ * Итог месяца для уровня «основные цифры»: без корректировок драйверов и партнёров (кто, что и почему поправил).
+ * Режется на сервере: объект целиком уходит в данные страницы, спрятать списки в компоненте мало
+ */
+export function summaryBrief<T extends PlanBrief | null>(brief: T): T {
+  if (!brief) return brief;
+  return { ...brief, reasons: [], partnerReasons: [], partnersMore: 0 };
+}
+
+/** Итог месяца по уровню: все цифры как есть, основные без корректировок, иначе ничего */
+export function briefFor(level: NumbersLevel, brief: PlanBrief | null): PlanBrief | null {
+  return level === "full" ? brief : level === "summary" ? summaryBrief(brief) : null;
+}
+
 // ---------- Настройка (владелец в режиме управления) ----------
 
 export type NumbersAccessView = {
@@ -155,6 +170,8 @@ export type NumbersAccessView = {
   departments: { id: string; name: string }[];
   people: { slug: string; name: string; hint: string | null }[];
   counts: { full: number; summary: number };
+  /** Департаменты и люди из настройки, которых больше нет в структуре: их цифры молча закрылись бы */
+  stale: number;
 };
 
 /** Департаменты для выбора: уровень «департамент» и подразделения прямо под компанией */
@@ -174,11 +191,22 @@ export async function numbersAccessView(db: Db = prisma): Promise<NumbersAccessV
     const level = levelIn(ctx, p);
     if (level !== "none") counts[level] += 1;
   }
+  const departments = departmentsOf(unitRows);
+  const knownUnits = new Set(departments.map((d) => d.id));
+  const knownPeople = new Set(people.map((p) => p.slug));
+  const units = [...(ctx.access.full.units ?? []), ...ctx.access.summary.units];
+  const slugs = [...ctx.access.full.people, ...ctx.access.summary.people];
+  const stale = units.filter((id) => !knownUnits.has(id)).length + slugs.filter((s) => !knownPeople.has(s)).length;
   return {
-    access: { full: { units: [...ctx.fullUnits], people: ctx.access.full.people }, summary: ctx.access.summary },
-    departments: departmentsOf(unitRows),
+    // В форме только то, что есть в структуре: при сохранении устаревшие ссылки уходят
+    access: {
+      full: { units: [...ctx.fullUnits].filter((id) => knownUnits.has(id)), people: ctx.access.full.people.filter((s) => knownPeople.has(s)) },
+      summary: { ...ctx.access.summary, units: ctx.access.summary.units.filter((id) => knownUnits.has(id)), people: ctx.access.summary.people.filter((s) => knownPeople.has(s)) },
+    },
+    departments,
     people: people.map((p) => ({ slug: p.slug, name: p.fullName, hint: p.position })),
     counts,
+    stale,
   };
 }
 

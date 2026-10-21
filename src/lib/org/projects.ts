@@ -38,15 +38,14 @@ const teamLogin = (actor: Pick<Actor, "via" | "management">) => actor.via === "T
  * владельцы при личном входе. Руководители из загруженной структуры приходят с ролью сотрудника, поэтому для них
  * смотрим, руководят ли они командой или подразделением
  */
-export async function canCreateProject(actor: Pick<Actor, "personId" | "role" | "via" | "management">): Promise<boolean> {
+export async function canCreateProject(actor: Pick<Actor, "personId" | "role" | "via" | "management">, db: Tx | typeof prisma = prisma): Promise<boolean> {
   if (actor.role === "OBSERVER") return false;
   if (teamLogin(actor)) return false;
   if (actor.role !== "EMPLOYEE") return true;
-  const [teams, units] = await Promise.all([
-    prisma.team.count({ where: { leaderId: actor.personId, active: true } }),
-    prisma.orgUnit.count({ where: { headId: actor.personId, active: true } }),
-  ]);
-  return teams + units > 0;
+  // По очереди: внутри транзакции это одно соединение
+  const teams = await db.team.count({ where: { leaderId: actor.personId, active: true } });
+  if (teams) return true;
+  return (await db.orgUnit.count({ where: { headId: actor.personId, active: true } })) > 0;
 }
 
 /** Название: пробелы схлопнуты, длинное тире заменено, длина ограничена */
@@ -67,6 +66,8 @@ export type ProjectView = {
   id: string;
   name: string;
   kind: "UNIT" | "CUSTOM";
+  /** Свой weekly-проект: его можно переименовать и закрыть */
+  project: boolean;
   members: { slug: string; fullName: string; external: boolean }[];
   waiting: { id: string; slug: string; fullName: string; approver: string }[];
 };
@@ -93,6 +94,7 @@ export async function projectsView(actor: Actor): Promise<ProjectsView> {
         id: true,
         name: true,
         kind: true,
+        project: true,
         members: { select: { external: true, person: { select: { slug: true, fullName: true, active: true } } } },
         joinRequests: { where: { status: "PENDING" }, select: { id: true, person: { select: { slug: true, fullName: true } }, approver: { select: { fullName: true } } } },
       },
@@ -107,6 +109,7 @@ export async function projectsView(actor: Actor): Promise<ProjectsView> {
       id: t.id,
       name: t.name,
       kind: t.kind as ProjectView["kind"],
+      project: t.project,
       members: t.members.filter((m) => m.person.active).map((m) => ({ slug: m.person.slug, fullName: m.person.fullName, external: m.external })).sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")),
       // Под общим логином запросы и согласующие не показываем, как и в «Структуре»
       waiting: limited ? [] : t.joinRequests.map((r) => ({ id: r.id, slug: r.person.slug, fullName: r.person.fullName, approver: r.approver.fullName })),
@@ -149,15 +152,15 @@ async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
 }
 
 async function createIn(tx: Tx, actor: Actor, rawName: unknown): Promise<{ id: string; name: string }> {
-  if (!(await canCreateProject(actor))) fail(teamLogin(actor) ? "Проект собирают, войдя лично, со своим логином и паролем" : "Проекты собирают руководители");
+  if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Проект собирают, войдя лично, со своим логином и паролем" : "Проекты собирают руководители");
   const name = cleanName(rawName);
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${actor.personId}`}))`;
   const same = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, name } });
   if (same) fail(`Проект «${name}» у вас уже есть`);
-  const mine = await tx.team.count({ where: { leaderId: actor.personId, active: true, kind: "CUSTOM" } });
+  const mine = await tx.team.count({ where: { leaderId: actor.personId, active: true, project: true } });
   if (mine >= PROJECTS_MAX) fail(`У вас уже ${PROJECTS_MAX} проектов: закройте те, что больше не нужны`);
   const count = await tx.team.count();
-  const team = await tx.team.create({ data: { name, kind: "CUSTOM", leaderId: actor.personId, parentId: await parentFor(tx, actor), sortOrder: (count + 1) * 10 } });
+  const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: actor.personId, parentId: await parentFor(tx, actor), sortOrder: (count + 1) * 10 } });
   await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${actor.fullName}`);
   return { id: team.id, name };
 }
@@ -181,16 +184,17 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
   const list = [...new Set((Array.isArray(slugs) ? slugs : []).map(String).filter(Boolean))];
   if (!list.length) fail("Выберите людей");
   if (list.length > BATCH_MAX) fail(`За раз можно добавить до ${BATCH_MAX} человек: выберите подразделение поменьше`);
-  // Права на команду один раз, до людей
-  const team = await tx.team.findUnique({ where: { id: String(teamId) }, include: { leader: { select: { fullName: true } } } });
-  if (!team || !team.active) fail("Такого проекта нет или он закрыт");
   const owner = canManagePeople(actor);
   if (!owner) {
     if (actor.role === "OBSERVER") fail("Наблюдатель команды не меняет");
     if (teamLogin(actor)) fail("Состав команды руководитель меняет, войдя лично, со своим логином и паролем");
-    if (team!.id === TOP_TEAM || team!.leaderId !== actor.personId) fail("Состав команды меняют её руководитель и владелец в режиме управления");
   }
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${team!.id}`}))`;
+  // Сначала блокировка, потом команда: закрытие проекта и другая пачка ждут, пока эта не закончится
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
+  // Права на команду один раз, до людей
+  const team = await tx.team.findUnique({ where: { id: String(teamId) }, include: { leader: { select: { fullName: true } } } });
+  if (!team || !team.active) fail("Такого проекта нет или он закрыт");
+  if (!owner && (team!.id === TOP_TEAM || team!.leaderId !== actor.personId)) fail("Состав команды меняют её руководитель и владелец в режиме управления");
 
   // По очереди: внутри транзакции запросы и так идут одним соединением
   const people = await tx.person.findMany({ select: { id: true, slug: true, fullName: true, active: true, role: true, managerId: true, unitId: true } });
@@ -250,7 +254,8 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
       out.already.push(p.fullName);
       continue;
     }
-    const external = !inBranch(p);
+    // Команда без руководителя: ветки нет, как в addTeamMember пометку «из другой ветки» не ставим
+    const external = leaderId ? !inBranch(p) : false;
     if (!external || owner) {
       join.push({ person: p, external });
       continue;
@@ -277,12 +282,22 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
       data: join.map((j) => ({ action: "team.member.add", actorId: actor.personId, actorName: actor.fullName, source: "APP" as const, entity: "team", entityId: team!.id, field: `Участник добавлен: ${team!.name}`, after: j.external ? `${j.person.fullName} (из другой ветки)` : j.person.fullName, ip: actor.ip ?? null, via: actor.via ?? null })),
     });
     out.added.push(...join.map((j) => j.person.fullName));
-    // Из другой ветки сразу (режим управления или согласие уже есть): человек и его руководитель узнают в «Мне»
+    // Из другой ветки сразу (режим управления или согласие уже есть): каждый человек узнаёт в «Мне», а его
+    // руководитель получает одно событие на пачку со списком
+    const informed = new Map<string, { approver: PersonRow; people: PersonRow[] }>();
     for (const j of join.filter((x) => x.external)) {
-      const subject = `team:${team!.id}:${j.person.id}`;
-      await notify(tx, { kind: "TEAM", recipients: [j.person.id], actor: { personId: actor.personId, fullName: actor.fullName }, subject, text: `Вы в команде «${team!.name}», руководитель ${leaderName}` }, now);
+      await notify(tx, { kind: "TEAM", recipients: [j.person.id], actor: { personId: actor.personId, fullName: actor.fullName }, subject: `team:${team!.id}:${j.person.id}`, text: `Вы в команде «${team!.name}», руководитель ${leaderName}` }, now);
       const a = approverOf(j.person);
-      if (a && a.id !== leaderId) await notify(tx, { kind: "TEAM", recipients: [a.id], actor: { personId: actor.personId, fullName: actor.fullName }, subject, text: `${j.person.fullName} в команде «${team!.name}», руководитель ${leaderName}` }, now);
+      if (!a || a.id === leaderId || a.id === actor.personId) continue;
+      const g = informed.get(a.id) ?? { approver: a, people: [] };
+      g.people.push(j.person);
+      informed.set(a.id, g);
+    }
+    for (const { approver, people: group } of informed.values()) {
+      const names = group.filter((p) => p.id !== approver.id).map((p) => p.fullName);
+      if (!names.length) continue;
+      const who = names.length === 1 ? `${names[0]} в команде` : `Ваши сотрудники (${names.length}) в команде: ${names.slice(0, 5).join(", ")}${names.length > 5 ? ` и ещё ${names.length - 5}` : ""},`;
+      await notify(tx, { kind: "TEAM", recipients: [approver.id], actor: { personId: actor.personId, fullName: actor.fullName }, subject: `team:${team!.id}:${group[0]!.id}`, text: `${who} «${team!.name}», руководитель ${leaderName}` }, now);
     }
   }
   for (const { approver, people: group } of asks.values()) {
@@ -331,8 +346,10 @@ export async function createProjectWith(actor: Actor, name: string, slugs: strin
 
 /** Свой проект: переименовать или закрыть. Только проекты (не команды по структуре), руководитель или режим управления */
 async function ownProject(tx: Tx, actor: Actor, teamId: string) {
+  // Та же блокировка, что у пачки людей: закрытие не разойдётся с добавлением
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
   const team = await tx.team.findUnique({ where: { id: String(teamId) } });
-  if (!team || !team.active || team.kind !== "CUSTOM") fail("Такого проекта нет или он закрыт");
+  if (!team || !team.active || !team.project) fail("Такого проекта нет или он закрыт");
   if (!canManagePeople(actor)) {
     if (teamLogin(actor)) fail("Проект меняют, войдя лично, со своим логином и паролем");
     if (team!.leaderId !== actor.personId) fail("Проект меняет его руководитель и владелец в режиме управления");

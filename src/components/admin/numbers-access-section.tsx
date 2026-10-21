@@ -96,6 +96,11 @@ export function NumbersAccessSection({ initial }: { initial: NumbersAccessView }
         <p className="mt-2 text-small text-ink" data-testid="numbers-access-counts">
           Сейчас все цифры видят {people(view.counts.full)}, основные {people(view.counts.summary)}.
         </p>
+        {view.stale ? (
+          <p className="mt-2 text-small font-medium text-danger-ink" role="status" data-testid="numbers-access-stale">
+            В настройке есть департаменты или люди, которых больше нет в структуре: {view.stale}. Их цифры закрыты. Проверьте отметки ниже и сохраните.
+          </p>
+        ) : null}
       </div>
       <form
         className="mt-5 flex max-w-2xl flex-col gap-6"

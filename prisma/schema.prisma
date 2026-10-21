@@ -1116,6 +1116,8 @@ model Team {
   unitId            String?
   unit              OrgUnit? @relation(fields: [unitId], references: [id], onDelete: SetNull)
   active            Boolean  @default(true)
+  /// Weekly-проект руководителя (этап 57): его собрал сам руководитель на странице проектов, он же переименовывает и закрывает
+  project           Boolean  @default(false)
   sortOrder         Int      @default(0)
   /// Ритм weekly (этап 15). Срок сдачи: неделя (0 та же отчётная, 1 следующая), день ISO и время по Москве.
   /// Пусто: как у департамента. Позже срока департамента срок команды не бывает
