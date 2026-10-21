@@ -174,6 +174,9 @@ function Failed({ view }: { view: ParseView }) {
 
 type Busy = "save" | "send" | "tasks" | null;
 
+/** Последняя открытая вкладка разбора: экран собирается заново по свежей версии с сервера и остаётся на ней */
+const lastTab = new Map<string, ParseTab>();
+
 function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) {
   const router = useRouter();
   const { notify } = usePrototype();
@@ -186,7 +189,7 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
   // остаётся на той вкладке, где был человек, а не прыгает на «Итоги»
   const fromUrl = useSearchParams().get("tab");
   const [tab, setTab] = useState<ParseTab>(() => {
-    const wanted = tabs.find((t) => t.code === fromUrl)?.code ?? initialTab;
+    const wanted = lastTab.get(view.id) ?? tabs.find((t) => t.code === fromUrl)?.code ?? initialTab;
     return tabs.some((t) => t.code === wanted) ? wanted : "summary";
   });
   const [ceo, setCeo] = useState<CeoSections>(view.result.ceo);
@@ -201,6 +204,7 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
 
   const choose = (t: ParseTab, focus = false) => {
     setTab(t);
+    lastTab.set(view.id, t);
     if (focus) tabRefs.current[t]?.focus();
     try {
       const u = new URL(window.location.href);
