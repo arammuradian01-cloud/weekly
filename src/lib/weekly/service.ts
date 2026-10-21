@@ -924,13 +924,31 @@ export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekK
 
 // ---------- Отчёт CEO ----------
 
-export type CeoReportView = { sections: CeoSections | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string };
+/** Отправлен CEO (этап 61): когда, кем и кому */
+export type CeoSent = { at: string; by: string | null; to: string[] };
+
+export type CeoReportView = { sections: CeoSections | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string; sent?: CeoSent };
+
+/** Кому отправлен отчёт: имена из записи [{ id, name }] */
+export function sentToNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => (v && typeof v === "object" && typeof (v as { name?: unknown }).name === "string" ? String((v as { name: string }).name) : "")).filter(Boolean);
+}
 
 export async function getCeoReport(key: WeekKey): Promise<CeoReportView> {
-  const row = await prisma.week.findUnique({ where: { start: dbDate(key) }, include: { ceoReport: { include: { updatedBy: { select: { fullName: true } } } } } });
+  const row = await prisma.week.findUnique({
+    where: { start: dbDate(key) },
+    include: { ceoReport: { include: { updatedBy: { select: { fullName: true } }, sentBy: { select: { fullName: true } } } } },
+  });
   const r = row?.ceoReport;
   if (!r) return { sections: null, meetings: [] };
-  return { sections: { main: r.main, risks: r.risks, next: r.next }, meetings: cleanMeetings(r.meetings), updatedBy: r.updatedBy?.fullName, updatedAt: r.updatedAt.toISOString() };
+  return {
+    sections: { main: r.main, risks: r.risks, next: r.next },
+    meetings: cleanMeetings(r.meetings),
+    updatedBy: r.updatedBy?.fullName,
+    updatedAt: r.updatedAt.toISOString(),
+    ...(r.sentAt ? { sent: { at: r.sentAt.toISOString(), by: r.sentBy?.fullName ?? null, to: sentToNames(r.sentTo) } } : {}),
+  };
 }
 
 /** Встречи недели одним текстом для журнала: «Название: текст» через пустую строку */
@@ -942,31 +960,35 @@ const meetingsText = (list: CeoMeeting[]) => list.map((m) => `${m.title || "Вс
  */
 export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<CeoReportView> {
   requireManagement(actor, "Отчёт CEO правят");
+  return prisma.$transaction((tx) => saveCeoReportIn(tx, actor, key, sections, meetings, expected));
+}
+
+/** Сохранение отчёта CEO внутри чужой транзакции: так его сохраняет «Отправить CEO» из разбора встречи (этап 61) */
+export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<CeoReportView> {
+  requireManagement(actor, "Отчёт CEO правят");
   const clean3 = (t: unknown) => cleanDash(String(t ?? "")).slice(0, 10000);
-  return prisma.$transaction(async (tx) => {
-    const { row } = await weekContext(tx, key);
-    // Два сохранения одного отчёта подряд: второе ждёт первое, сверка идёт по уже записанному
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${key}`}))`;
-    const before = await tx.ceoReport.findUnique({ where: { weekId: row.id } });
-    if (expected !== undefined && (before?.updatedAt.toISOString() ?? null) !== (expected ?? null)) {
-      fail("Отчёт за эту неделю уже сохранён с другого устройства или другим человеком. Скопируйте свои правки и обновите страницу, чтобы не затереть чужие");
-    }
-    // Встречи не передали (или передали не список): остаются прежние, а не стираются
-    const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
-    const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
-    const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
-    // Было и стало по каждому разделу, который поменялся
-    const parts: [string, string | null, string][] = [
-      ["главное", before?.main ?? null, data.main],
-      ["риски", before?.risks ?? null, data.risks],
-      ["что дальше", before?.next ?? null, data.next],
-      ["мои встречи недели", before ? meetingsText(cleanMeetings(before.meetings)) : null, meetingsText(list)],
-    ];
-    const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
-    for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
-    if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
-    return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
-  });
+  const { row } = await weekContext(tx, key);
+  // Два сохранения одного отчёта подряд: второе ждёт первое, сверка идёт по уже записанному
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${key}`}))`;
+  const before = await tx.ceoReport.findUnique({ where: { weekId: row.id } });
+  if (expected !== undefined && (before?.updatedAt.toISOString() ?? null) !== (expected ?? null)) {
+    fail("Отчёт за эту неделю уже сохранён с другого устройства или другим человеком. Скопируйте свои правки и обновите страницу, чтобы не затереть чужие");
+  }
+  // Встречи не передали (или передали не список): остаются прежние, а не стираются
+  const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
+  const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
+  const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
+  // Было и стало по каждому разделу, который поменялся
+  const parts: [string, string | null, string][] = [
+    ["главное", before?.main ?? null, data.main],
+    ["риски", before?.risks ?? null, data.risks],
+    ["что дальше", before?.next ?? null, data.next],
+    ["мои встречи недели", before ? meetingsText(cleanMeetings(before.meetings)) : null, meetingsText(list)],
+  ];
+  const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
+  for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
+  if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
+  return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
 }
 
 export type CeoDecision = { id: string; text: string; owner: string | null; date: IsoDate };

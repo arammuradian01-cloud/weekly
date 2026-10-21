@@ -33,6 +33,10 @@ export async function setBordSourceAction(input: string) {
   return done(await runAction("Ссылка на Bord", (a) => bord.setBordSource(a, String(input ?? ""))));
 }
 
+export async function setBordPullAction(on: boolean) {
+  return done(await runAction("Забор задач из Bord", (a) => bord.setBordPull(a, !!on)));
+}
+
 export async function pullBordNowAction() {
   return done(await runAction("Забор задач из Bord", (a) => bord.pullBordNow(a)));
 }

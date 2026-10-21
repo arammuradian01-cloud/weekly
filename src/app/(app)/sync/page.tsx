@@ -66,6 +66,7 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
   const bordView: BordView = {
     sourceId: bord.sourceId,
     connected: bord.connected,
+    auto: bord.auto,
     hasKey: bord.hasKey,
     serviceEmail: bord.serviceEmail,
     working: bord.sourceId === PROD_SHEET_ID,
@@ -118,11 +119,13 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
   // Этап 48: состояние трёх связей одной строкой вместо плиток, каждое ведёт на свою вкладку
   const bordState: StatusItem = !bordView.connected
     ? { label: "Задачи из Bord", value: "не подключён", tone: "muted", href: "/sync?tab=bord", testId: "sync-status-bord" }
-    : bordView.error
-      ? { label: "Задачи из Bord", value: "забор не прошёл", hint: bordView.error.at, tone: "danger", href: "/sync?tab=bord", testId: "sync-status-bord" }
-      : bordView.lastOk
-        ? { label: "Задачи из Bord", value: `забор ${bordView.lastOk.ago}`, tone: "ok", href: "/sync?tab=bord", testId: "sync-status-bord" }
-        : { label: "Задачи из Bord", value: "первый забор в течение минуты", tone: "warning", href: "/sync?tab=bord", testId: "sync-status-bord" };
+    : !bordView.auto
+      ? { label: "Задачи из Bord", value: "забор выключен", hint: "главное приложение", tone: "muted", href: "/sync?tab=bord", testId: "sync-status-bord" }
+      : bordView.error
+        ? { label: "Задачи из Bord", value: "забор не прошёл", hint: bordView.error.at, tone: "danger", href: "/sync?tab=bord", testId: "sync-status-bord" }
+        : bordView.lastOk
+          ? { label: "Задачи из Bord", value: `забор ${bordView.lastOk.ago}`, tone: "ok", href: "/sync?tab=bord", testId: "sync-status-bord" }
+          : { label: "Задачи из Bord", value: "первый забор в течение минуты", tone: "warning", href: "/sync?tab=bord", testId: "sync-status-bord" };
   const numbersState: StatusItem = !numbersView.connected
     ? { label: "Цифры недели", value: "не подключены", tone: "muted", href: "/sync?tab=numbers", testId: "sync-status-numbers" }
     : numbersView.error
@@ -143,7 +146,7 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader
         title="Синхронизация"
-        description="Задачи из рабочего Bord и цифры из недельного отчёта в ресурс, все задачи ресурса в таблицу для просмотра. В Bord и отчёт ресурс не пишет"
+        description="Цифры из недельного отчёта в ресурс, все задачи ресурса в таблицу для просмотра. Забор задач из Bord выключен по умолчанию: главное приложение. В Bord и отчёт ресурс не пишет"
         figures={<StatusLine label="Состояние связей" items={[bordState, numbersState, mirrorState]} />}
         tabs={
           <PageTabs

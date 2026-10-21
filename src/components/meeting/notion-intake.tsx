@@ -1,6 +1,7 @@
 "use client";
 
-// Приём из Notion (этап 23): текст разбора встречи вставляют в окно, ресурс показывает кандидатов в задачи и решения,
+// Приём из Notion (этап 23): текст разбора встречи вставляют в окно (кнопка «Вставить текст»; ссылку на страницу
+// разбирает «Разобрать встречу из Notion», этап 61), ресурс показывает кандидатов в задачи и решения,
 // ведущий отмечает нужные, задаёт ответственного и срок, подтверждает. Ничего не создаётся без подтверждения.
 
 import { useState } from "react";
@@ -74,7 +75,7 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
     <>
       <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
         <FileInput className="h-4 w-4" aria-hidden="true" />
-        Из Notion
+        Вставить текст
       </Button>
       <Modal open={open} onOpenChange={setOpen} title="Приём из Notion" description="Вставьте текст разбора встречи. Ресурс покажет кандидатов в задачи и решения, вы подтвердите каждого: распознавание речи бывает неточным." wide>
         <div className="flex flex-col gap-4">

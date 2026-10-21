@@ -22,6 +22,7 @@ import { meetingQuestions } from "@/lib/discuss/service";
 import { notify, taskSubject } from "@/lib/inbox/notify";
 import { mailConfigured, sendMail } from "@/lib/mail";
 import { initiativesForAgenda } from "@/lib/initiatives/service";
+import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
@@ -206,6 +207,24 @@ export async function getMeeting(actor: Actor, teamId: string, key: WeekKey): Pr
   if (!week) return null;
   const row = await prisma.meeting.findUnique({ where: { weekId_teamId: { weekId: week.id, teamId } }, include: meetingInclude });
   return row ? toView(prisma, a, row) : null;
+}
+
+/**
+ * Права на встречу для разбора из Notion (этап 61): видит ли человек встречу (иначе ошибка), может ли её вести и кто
+ * её участники. Разбор видят те, кто видит встречу, правят те, кто её ведёт
+ */
+export async function meetingRights(actor: Actor, meetingId: string): Promise<{ canLead: boolean; teamId: string; teamName: string; participants: string[] }> {
+  const a = await meetingAccess(prisma, actor, meetingId);
+  return { canLead: canLead(a), teamId: a.node.id, teamName: a.node.name, participants: participantsOf(a.nodes, a.node) };
+}
+
+/** Встреча команды за неделю для разбора из Notion: есть, берём её, нет, собираем повестку (это создаёт встречу) */
+export async function meetingIdFor(actor: Actor, teamId: string, key: WeekKey): Promise<string> {
+  const a = await accessTo(prisma, actor, teamId);
+  requireLead(a, "Разобрать встречу");
+  const existing = await prisma.meeting.findFirst({ where: { teamId, week: { start: dbDate(key) } }, select: { id: true } });
+  if (existing) return existing.id;
+  return (await buildAgenda(actor, teamId, key)).id;
 }
 
 /** Может ли человек вести встречи команды: для кнопки «Собрать повестку» до того, как встреча есть */
@@ -534,12 +553,12 @@ export async function setTimer(actor: Actor, meetingId: string, minutes: number)
 }
 
 /** Ссылка на заметку встречи: только https и домен Notion */
-function notionUrlOf(url: string | null | undefined): string | null {
+export function notionUrlOf(url: string | null | undefined): string | null {
   const raw = String(url ?? "").trim();
   if (!raw) return null;
   try {
     const u = new URL(raw);
-    if (u.protocol !== "https:" || !/(^|\.)notion\.(so|site)$/.test(u.hostname)) throw new Error();
+    if (u.protocol !== "https:" || !isNotionHost(u.hostname)) throw new Error();
   } catch {
     fail("Ссылка должна вести на страницу Notion");
   }

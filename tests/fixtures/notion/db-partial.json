@@ -1,0 +1,130 @@
+{
+ "page": {
+  "object": "page",
+  "id": "7e8f9012-3456-47a8-b9c0-d1e2f3a4b5c6",
+  "properties": {
+   "Название": {
+    "id": "title",
+    "type": "title",
+    "title": [
+     {
+      "type": "text",
+      "text": {
+       "content": "Встреча 21.10 из базы встреч"
+      },
+      "plain_text": "Встреча 21.10 из базы встреч"
+     }
+    ]
+   }
+  },
+  "parent": {
+   "type": "database_id",
+   "database_id": "90123456-7890-4ab1-82c3-d4e5f6a7b8c9"
+  }
+ },
+ "databases": {
+  "90123456-7890-4ab1-82c3-d4e5f6a7b8c9": {
+   "parent": {
+    "type": "page_id",
+    "page_id": "8f901234-5678-49a0-b1c2-d3e4f5a6b7c8"
+   }
+  }
+ },
+ "pages": {
+  "8f901234-5678-49a0-b1c2-d3e4f5a6b7c8": {
+   "object": "page",
+   "parent": {
+    "type": "workspace",
+    "workspace": true
+   },
+   "properties": {}
+  }
+ },
+ "children": {
+  "7e8f9012-3456-47a8-b9c0-d1e2f3a4b5c6": [
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000004",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Итоги"
+       },
+       "plain_text": "Итоги"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000005",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Партнёрский канал догнал план"
+       },
+       "plain_text": "Партнёрский канал догнал план"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000006",
+    "type": "unsupported",
+    "has_children": false,
+    "unsupported": {}
+   },
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000007",
+    "type": "meeting_notes",
+    "has_children": false,
+    "meeting_notes": {}
+   },
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000008",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Задачи"
+       },
+       "plain_text": "Задачи"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "7e8f9012-0000-4000-8000-000000000009",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Токов: обновить дашборд партнёров"
+       },
+       "plain_text": "Токов: обновить дашборд партнёров"
+      }
+     ],
+     "checked": false
+    }
+   }
+  ]
+ }
+}

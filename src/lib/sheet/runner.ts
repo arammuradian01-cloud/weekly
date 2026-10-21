@@ -121,9 +121,20 @@ export async function pullDue(now: Date): Promise<boolean> {
   return now.getTime() - new Date(state.lastAttemptAt).getTime() >= wait;
 }
 
+/**
+ * Забор по расписанию включён (этап 61). Решение Арама 21.10: главное приложение, Excel-борд больше не ведём, поэтому по
+ * умолчанию забор выключен даже при сохранённой ссылке на Bord. Включает владелец на странице «Синхронизация»
+ */
+export const BORD_PULL_ON = "bord.pullOn";
+
+export async function bordPullOn(): Promise<boolean> {
+  return (await getSetting<boolean | null>(BORD_PULL_ON, null)) === true;
+}
+
 /** Забор, если включён и пора. Ошибки не бросает: они видны на странице «Синхронизация», зеркало от них не страдает */
 export async function pullIfDue(now = new Date()): Promise<void> {
   try {
+    if (!(await bordPullOn())) return;
     const conn = await bordConnection();
     if (!conn || !(await pullDue(now))) return;
     const result = await runPull(conn.reader, "auto", { now, sourceId: conn.sourceId });
