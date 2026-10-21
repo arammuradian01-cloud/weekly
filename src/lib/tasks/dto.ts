@@ -22,6 +22,8 @@ export const taskInclude = {
   checklist: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], include: { doneBy: { select: { slug: true } } } },
   repeatOf: { select: { number: true } },
   repeatNext: { select: { number: true } },
+  // Согласование (этап 54): кто согласует задачу человеку из другого департамента
+  approver: { select: { slug: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -39,6 +41,7 @@ export const taskListInclude = {
   checklist: taskInclude.checklist,
   repeatOf: taskInclude.repeatOf,
   repeatNext: taskInclude.repeatNext,
+  approver: taskInclude.approver,
   _count: { select: { comments: true } },
 } satisfies Prisma.TaskInclude;
 
@@ -108,5 +111,6 @@ export function toTaskDto(row: TaskRow): Task {
         }
       : {}),
     ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title, code: row.goal.code, quarter: row.goal.quarter } } : {}),
+    ...(row.approvalState && row.approver ? { approval: { state: row.approvalState.toLowerCase() as "pending" | "approved" | "rejected" | "informed", approver: slug(row.approver.slug) } } : {}),
   };
 }

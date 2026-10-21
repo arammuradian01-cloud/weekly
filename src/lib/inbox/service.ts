@@ -89,7 +89,7 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
 }
 
 const inboxInclude = {
-  task: { select: { number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } },
+  task: { select: { number: true, title: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } } },
   entry: { select: { id: true, what: true, authorId: true, ceo: true, promotions: { select: { byId: true } } } },
   request: { select: { number: true, text: true, status: true, authorId: true, addresseeId: true, due: true, resultTaskId: true } },
 } satisfies Prisma.InboxEventInclude;

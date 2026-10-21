@@ -8,9 +8,11 @@ import { taskSubject } from "@/lib/inbox/notify";
 type Tx = Prisma.TransactionClient;
 
 /** Видит ли человек задачу: та же проверка, что у сервиса задач (canSeeRow) */
-export function seesTask(scope: Scope, task: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[] }, personId: string): boolean {
+export function seesTask(scope: Scope, task: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[]; approverId?: string | null }, personId: string): boolean {
   if (scope.all || scope.visible.includes(task.teamId)) return true;
   if (task.ownerId === personId || task.createdById === personId || task.coExecutors.some((c) => c.personId === personId)) return true;
+  // Согласующий руководитель (этап 54)
+  if (task.approverId && task.approverId === personId) return true;
   if (!task.ownerId) return false;
   return scope.functional.includes(task.ownerId) || (task.teamId !== TOP_TEAM && scope.leadPeople.includes(task.ownerId));
 }

@@ -167,6 +167,7 @@ model Person {
   joinApprovals          TeamJoinRequest[]       @relation("JoinApprover")
   ownedTasks             Task[]                  @relation("TaskOwner")
   createdTasks           Task[]                  @relation("TaskCreator")
+  approvingTasks         Task[]                  @relation("TaskApprover")
   coTasks                TaskCoExecutor[]
   transfers              TaskTransfer[]
   taskComments           TaskComment[]
@@ -356,6 +357,12 @@ model Task {
   /// Цель, на которую работает задача (этап 17): цель своей команды или команды выше
   goalId         String?
   goal           Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  /// Задача человеку из другого департамента (этап 54): ждёт согласования его руководителя, согласована, отклонена
+  /// или руководитель только проинформирован. null: правило не сработало
+  approvalState  ApprovalState?
+  /// Кто согласует или кого проинформировали: руководитель ответственного
+  approverId     String?
+  approver       Person?        @relation("TaskApprover", fields: [approverId], references: [id], onDelete: SetNull)
 
   coExecutors    TaskCoExecutor[]
   transfers      TaskTransfer[]
@@ -388,6 +395,7 @@ model Task {
   @@index([ownerId])
   @@index([teamId])
   @@index([goalId])
+  @@index([approverId, approvalState])
   @@map("tasks")
 }
 
@@ -940,6 +948,14 @@ model Absence {
 }
 
 /// Что случилось в «Мне» (этап 11): поставили или передали задачу, предложили, добавили соисполнителем, прокомментировали
+/// Согласование задачи человеку из другого департамента (этап 54)
+enum ApprovalState {
+  PENDING
+  APPROVED
+  REJECTED
+  INFORMED
+}
+
 enum InboxKind {
   TASK_ASSIGNED
   TASK_PROPOSED
@@ -973,6 +989,8 @@ enum InboxKind {
   INITIATIVE
   /// Команды (этап 53): вас добавили в команду руководителя другой ветки, или так добавили вашего сотрудника
   TEAM
+  /// Задача вашему сотруднику из другого департамента (этап 54): согласовать или просто знать
+  APPROVAL
   /// Прогноз месяца (этап 35): загружен LBE, команде продукта проверить прогноз
   PLAN
 }
