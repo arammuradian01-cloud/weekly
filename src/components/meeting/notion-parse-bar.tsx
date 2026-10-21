@@ -26,17 +26,21 @@ export function NotionParseBar({ team, week, canLead, notionUrl, parses }: { tea
   const [url, setUrl] = useState(notionUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // По этой встрече и странице задачи уже созданы: номера и вопрос, разбирать ли ещё раз
+  const [repeat, setRepeat] = useState<number[] | null>(null);
   if (!canLead && !parses.length) return null;
 
-  const start = async (e: React.FormEvent) => {
+  const start = async (e: React.FormEvent, again = false) => {
     e.preventDefault();
     if (!url.trim()) return setError("Вставьте ссылку на страницу встречи в Notion");
     setBusy(true);
     setError(null);
     try {
-      const r = await startParseAction(team.id, week, url.trim());
+      const r = await startParseAction(team.id, week, url.trim(), again);
       if (!r.ok) return setError(r.error);
+      if (!r.value.id) return setRepeat(r.value.created ?? []);
       setOpen(false);
+      setRepeat(null);
       router.push(`/meeting/notion/${r.value.id}`);
     } catch {
       notify("Нет связи с сервером", "error");
@@ -81,21 +85,35 @@ export function NotionParseBar({ team, week, canLead, notionUrl, parses }: { tea
             id="notion-parse-url"
             type="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setRepeat(null);
+            }}
             placeholder="https://www.notion.so/..."
             autoFocus
             autoComplete="off"
             spellCheck={false}
             hint="Страница должна быть расшарена на интеграцию ресурса: в Notion меню с тремя точками справа вверху, «Подключения»"
           />
+          {repeat ? (
+            <p role="alert" className="sv-card sv-card--soft bg-warning-soft px-4 py-3 text-body text-ink" data-testid="parse-repeat">
+              Эту страницу уже разбирали, и по ней созданы задачи: {repeat.join(", ")}. Повторный разбор покажет черновики снова, похожие на созданные задачи будут сняты и помечены. Разобрать ещё раз?
+            </p>
+          ) : null}
           <FormError message={error ?? undefined} />
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Отмена
             </Button>
-            <Button type="submit" disabled={busy} loading={busy}>
-              {busy ? "Запускаем разбор…" : "Разобрать"}
-            </Button>
+            {repeat ? (
+              <Button type="button" disabled={busy} loading={busy} onClick={(e) => void start(e, true)}>
+                {busy ? "Запускаем разбор…" : "Разобрать ещё раз"}
+              </Button>
+            ) : (
+              <Button type="submit" disabled={busy} loading={busy}>
+                {busy ? "Запускаем разбор…" : "Разобрать"}
+              </Button>
+            )}
           </div>
         </form>
       </Modal>

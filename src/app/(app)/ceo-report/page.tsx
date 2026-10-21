@@ -17,10 +17,11 @@ export const metadata: Metadata = { title: "Отчёт CEO" };
 
 export default async function CeoReportPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   const { week } = await searchParams;
-  // Этап 61: CEO видит отправленные ему weekly только для чтения. Остальным без режима управления страница закрыта, как раньше
+  // Этап 61: CEO видит отправленные ему weekly собранными и только для чтения, при личном входе. Остальным без режима
+  // управления страница закрыта, как раньше
   const base = await requireContext();
   if (base.management?.role !== "OWNER" && base.management?.role !== "ADMIN") {
-    const sent = await ceoSentReports(base.person.id, isWeekKey(week) ? week : null);
+    const sent = await ceoSentReports(await currentActor(), isWeekKey(week) ? week : null);
     if (sent) {
       return (
         <>

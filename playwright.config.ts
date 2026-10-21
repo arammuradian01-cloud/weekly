@@ -52,6 +52,8 @@ export default defineConfig({
       // есть файл ответа. Остальные страницы разбираются правилами, как без ключа Claude. Настоящие сервисы не вызываются
       NOTION_FAKE_DIR: "tests/fixtures/notion",
       ANTHROPIC_FAKE_DIR: "tests/fixtures/claude",
+      // Сервер e2e запущен с NODE_ENV=production: имитации Notion и Claude работают в нём только с этим флагом
+      WEEKLY_E2E: "1",
     },
   },
 });

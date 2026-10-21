@@ -47,7 +47,7 @@ test.beforeEach(async () => {
   await sql("UPDATE people SET active = true WHERE slug = 'ceo'");
 });
 
-test("этап 61: разбор встречи правилами, weekly для CEO отправлен в приложении, задачи созданы после проверки", async ({ page, browser }) => {
+test("этап 61: разбор встречи правилами, weekly для CEO с предпросмотром отправлен в приложении, задачи и решение созданы после проверки", async ({ page, browser }) => {
   test.setTimeout(150_000);
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
@@ -73,6 +73,11 @@ test("этап 61: разбор встречи правилами, weekly для
   await expect(page.getByLabel("Главное", { exact: true })).toHaveValue(/Конверсия ОСАГО выросла до 12%/);
   await page.getByLabel("Что дальше", { exact: true }).fill("- Пилот КАСКО для такси в ноябре");
   await expect(page.getByText(/Получит: CEO/)).toBeVisible();
+  // Предпросмотр собранного отчёта: разделы из черновика, решения недели и цифры отчёт CEO соберёт сам
+  const preview = page.getByTestId("ceo-preview");
+  await expect(preview).toContainText("Что получит CEO: отчёт за неделю");
+  await expect(preview.getByRole("region", { name: "Что дальше" })).toContainText("Пилот КАСКО для такси в ноябре");
+  await expect(preview.getByRole("region", { name: "Главное за неделю" })).toContainText("Конверсия ОСАГО выросла до 12%");
   await shot(page, "ceo");
   await page.getByRole("button", { name: "Отправить CEO", exact: true }).click();
   const confirm = page.getByRole("dialog", { name: "Отправить weekly CEO?" });
@@ -96,9 +101,15 @@ test("этап 61: разбор встречи правилами, weekly для
   expect((await sql(`SELECT count(*)::int AS n FROM tasks WHERE "sourceNote" LIKE 'Разбор встречи из Notion%'`))[0]!.n).toBe(0);
   await drafts.nth(2).getByLabel("Создать задачу 3").uncheck();
   await drafts.nth(0).getByLabel("Задача", { exact: true }).fill("Прислать выгрузку по убыткам ВЗР");
+  // Решения встречи по одному: по умолчанию не записываются, текст можно поправить
+  const decision = page.getByTestId("decision-draft").first();
+  await expect(decision.getByLabel("Записать решение 1")).not.toBeChecked();
+  await decision.getByLabel("Записать решение 1").check();
+  await decision.getByLabel("Текст решения 1").fill("Пилот КАСКО для такси запускаем 10 ноября");
   await shot(page, "tasks");
   await page.getByRole("button", { name: "Создать задачи" }).click();
-  await expect(page.getByText(/Создано 2 задачи/).first()).toBeVisible();
+  await expect(page.getByText(/Создано 2 задачи, решений 1/).first()).toBeVisible();
+  expect(await sql("SELECT text FROM decisions")).toEqual([{ text: "Пилот КАСКО для такси запускаем 10 ноября" }]);
   await page.getByRole("tab", { name: /^Задачи/ }).click();
   await expect(page.getByTestId("tasks-created")).toContainText("Повторно из этого разбора задачи не создаются");
   await expect(page.getByRole("button", { name: "Создать задачи" })).toHaveCount(0);
@@ -121,7 +132,12 @@ test("этап 61: разбор встречи правилами, weekly для
   await ceo.goto("/me");
   await ceo.getByRole("link", { name: "Weekly для CEO" }).click();
   await expect(ceo).toHaveURL(/\/ceo-report\?week=/);
-  await expect(ceo.getByTestId("ceo-sent-report")).toContainText("Пилот КАСКО для такси в ноябре");
+  const sent = ceo.getByTestId("ceo-sent-report");
+  await expect(sent).toContainText("Отчёт за неделю");
+  // Собранный отчёт: разделы, решения недели (решение записано на встрече топ-команды), без кнопок правки
+  await expect(sent.getByRole("region", { name: "Что дальше" })).toContainText("Пилот КАСКО для такси в ноябре");
+  await expect(sent.getByRole("region", { name: "Главное за неделю" })).toContainText("Конверсия ОСАГО выросла до 12%");
+  await expect(sent.getByRole("region", { name: "Решения недели" })).toContainText("Пилот КАСКО для такси запускаем 10 ноября");
   await expect(ceo.getByRole("button", { name: "Сохранить" })).toHaveCount(0);
   await shot(ceo, "ceo-view");
   await ceo.close();
@@ -148,7 +164,9 @@ test("этап 61: разбор через Claude (имитация ответа
   await expect(drafts.nth(1)).toContainText("Павел А.");
   await shot(page, "claude-tasks");
   await page.getByRole("button", { name: "Создать задачи" }).click();
-  await expect(page.getByText(/Создано 2 задачи, решений 1/).first()).toBeVisible();
+  // Решения по умолчанию не записываются
+  await expect(page.getByText(/Создано 2 задачи/).first()).toBeVisible();
+  expect((await sql("SELECT count(*)::int AS n FROM decisions"))[0]!.n).toBe(0);
   const [co] = await sql(`SELECT count(*)::int AS n FROM task_co_executors c JOIN tasks t ON t.id = c."taskId" JOIN people p ON p.id = c."personId" WHERE t.title = 'Договориться с двумя агрегаторами' AND p.slug = 'afanasyev'`);
   expect(co!.n).toBe(1);
 

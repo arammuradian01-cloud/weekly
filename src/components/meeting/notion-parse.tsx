@@ -1,13 +1,14 @@
 "use client";
 
 // Страница разбора встречи из Notion (этап 61): «Разбираем встречу…», пока сервер читает страницу и разбирает текст,
-// потом три вкладки. «Итоги»: главное, решения, риски, что дальше и текст страницы. «Weekly для CEO»: черновик по
-// разделам отчёта CEO, правка и «Отправить CEO» (только в приложении). «Задачи»: черновики задач, правка, «Создать задачи»
-// разом. Права проверяет сервер, экран только прячет кнопки и объясняет, почему их нет.
+// потом вкладки. «Итоги»: главное, решения, риски, что дальше и (ведущим) текст страницы. «Weekly для CEO»: черновик по
+// разделам отчёта CEO и предпросмотр собранного отчёта, «Отправить CEO» (только в приложении); наблюдателю и общему
+// логину вкладки нет. «Задачи»: черновики задач и решения по одному, «Создать задачи» разом. Права проверяет сервер,
+// экран только прячет кнопки и объясняет, почему их нет.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Save, Send, Sparkles, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName, personOf } from "@/domain/people";
@@ -15,7 +16,7 @@ import { dictOptions } from "@/domain/dictionaries";
 import { formatLong, plural } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import type { CeoSections } from "@/lib/weekly/rules";
-import { hasCeoText, mergeCeoSections, type CeoMergeMode, type ParseTaskDraft } from "@/lib/meeting/parse-types";
+import { hasCeoText, mergeCeoSections, type CeoMergeMode, type ParseDecision, type ParseTaskDraft } from "@/lib/meeting/parse-types";
 import type { ParseView } from "@/lib/meeting/parse-service";
 import { createParseTasksAction, retryParseAction, saveParseDraftAction, sendParseToCeoAction } from "@/app/(app)/meeting/parse-actions";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +25,7 @@ import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
 import { PersonSelect } from "@/components/requests/request-parts";
+import { CeoAssembled } from "@/components/ceo/ceo-assembled";
 import { cn } from "@/lib/cn";
 
 export type ParseTab = "summary" | "ceo" | "tasks";
@@ -95,14 +97,17 @@ function RetryButton({ id, label = "Повторить" }: { id: string; label?:
   );
 }
 
-/** Разбор идёт: страница сама обновляется раз в пару секунд, пока статус не сменится */
+/**
+ * Разбор идёт: страница сама обновляется раз в пару секунд, пока статус не сменится. Разбор давно не подавал признаков
+ * жизни: экран предлагает повторить, но опрос продолжается реже, чтобы подхватить поздний результат. Озвучивается только
+ * смена состояния, счётчик секунд вне живой области
+ */
 function Pending({ view }: { view: ParseView }) {
   const router = useRouter();
   const { stale, startedAt } = view;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (stale) return;
-    const poll = setInterval(() => router.refresh(), 2500);
+    const poll = setInterval(() => router.refresh(), stale ? 10_000 : 2500);
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => {
       clearInterval(poll);
@@ -110,11 +115,17 @@ function Pending({ view }: { view: ParseView }) {
     };
   }, [stale, router]);
   const seconds = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
   if (stale) {
     return (
-      <div role="alert" className="flex flex-col gap-3 sv-card sv-card--soft bg-warning-soft px-5 py-4">
-        <p className="font-medium text-warning-ink">Разбор идёт дольше обычного</p>
-        <p className="text-body text-ink">Скорее всего, сервер перезапускался посреди разбора. Запустите разбор ещё раз: страница в Notion не изменится.</p>
+      <div className="flex flex-col gap-3 sv-card sv-card--soft bg-warning-soft px-5 py-4" data-testid="parse-stale">
+        <p role="status" className="font-medium text-warning-ink">
+          Разбор давно не подаёт признаков жизни
+        </p>
+        <p className="text-body text-ink">Скорее всего, сервер перезапускался посреди разбора. Можно запустить разбор ещё раз; если результат всё же придёт, страница покажет его сама.</p>
+        <p className="text-small text-muted" aria-hidden="true">
+          С начала разбора {elapsed}
+        </p>
         {view.canRetry ? (
           <div>
             <RetryButton id={view.id} />
@@ -124,13 +135,15 @@ function Pending({ view }: { view: ParseView }) {
     );
   }
   return (
-    <div role="status" aria-live="polite" className="flex items-start gap-3 sv-card sv-card--soft px-5 py-5" data-testid="parse-pending">
+    <div className="flex items-start gap-3 sv-card sv-card--soft px-5 py-5" data-testid="parse-pending">
       <span className="sv-spinner mt-1 shrink-0" aria-hidden="true" />
       <div>
-        <p className="text-title-sm font-semibold text-ink">Разбираем встречу…</p>
-        <p className="mt-1 text-body text-muted">
-          Читаем страницу Notion и разбираем текст: итоги, решения, черновик weekly для CEO и задачи. Обычно это занимает до минуты. Идёт {Math.floor(seconds / 60)}:
-          {String(seconds % 60).padStart(2, "0")}
+        <p role="status" className="text-title-sm font-semibold text-ink">
+          Разбираем встречу…
+        </p>
+        <p className="mt-1 text-body text-muted">Читаем страницу Notion и разбираем текст: итоги, решения, черновик weekly для CEO и задачи. Обычно это занимает до минуты.</p>
+        <p className="mt-1 text-small text-muted" aria-hidden="true">
+          Идёт {elapsed}
         </p>
       </div>
     </div>
@@ -159,23 +172,30 @@ function Failed({ view }: { view: ParseView }) {
   );
 }
 
-const TABS: { code: ParseTab; label: string }[] = [
-  { code: "summary", label: "Итоги" },
-  { code: "ceo", label: "Weekly для CEO" },
-  { code: "tasks", label: "Задачи" },
-];
+type Busy = "save" | "send" | "tasks" | null;
 
 function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) {
   const router = useRouter();
   const { notify } = usePrototype();
-  const [tab, setTab] = useState<ParseTab>(initialTab);
+  const tabs: { code: ParseTab; label: string }[] = [
+    { code: "summary", label: "Итоги" },
+    ...(view.canSeeCeo ? [{ code: "ceo" as const, label: "Weekly для CEO" }] : []),
+    { code: "tasks", label: "Задачи" },
+  ];
+  const [tab, setTab] = useState<ParseTab>(tabs.some((t) => t.code === initialTab) ? initialTab : "summary");
   const [ceo, setCeo] = useState<CeoSections>(view.result.ceo);
   const [tasks, setTasks] = useState<ParseTaskDraft[]>(view.result.tasks);
+  const [decisions, setDecisions] = useState<ParseDecision[]>(view.result.decisions);
   const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState<"save" | "send" | "tasks" | null>(null);
+  const [busy, setBusy] = useState<Busy>(null);
+  // Версия разбора, которую видел экран: после частичного успеха (черновик сохранился, отправка CEO упала) повтор
+  // идёт с новой версией и не упирается в «разбор уже поправили»
+  const [version, setVersion] = useState(view.updatedAt);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
-  const choose = (t: ParseTab) => {
+  const choose = (t: ParseTab, focus = false) => {
     setTab(t);
+    if (focus) tabRefs.current[t]?.focus();
     try {
       const u = new URL(window.location.href);
       u.searchParams.set("tab", t);
@@ -192,13 +212,25 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
     setTasks((list) => list.map((t) => (t.key === key ? { ...t, ...patch } : t)));
     setDirty(true);
   };
+  const editDecision = (key: string | undefined, patch: Partial<ParseDecision>) => {
+    setDecisions((list) => list.map((d) => (d.key === key ? { ...d, ...patch } : d)));
+    setDirty(true);
+  };
+
+  /** Сохранить черновик: true, если сохранилось. Новая версия запоминается сразу */
+  const persist = async (): Promise<string | true> => {
+    const r = await saveParseDraftAction(view.id, { ...(view.canSeeCeo ? { ceo } : {}), tasks, decisions }, version);
+    if (!r.ok) return r.error;
+    setVersion(r.value.updatedAt);
+    setDirty(false);
+    return true;
+  };
 
   const save = async () => {
     setBusy("save");
     try {
-      const r = await saveParseDraftAction(view.id, { ceo, tasks }, view.updatedAt);
-      if (!r.ok) return notify(r.error, "error");
-      setDirty(false);
+      const r = await persist();
+      if (r !== true) return notify(r, "error");
       notify("Черновик сохранён");
       router.refresh();
     } catch {
@@ -209,18 +241,28 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
   };
 
   const onTabKey = (e: React.KeyboardEvent) => {
-    const i = TABS.findIndex((t) => t.code === tab);
-    if (e.key === "ArrowRight") choose(TABS[(i + 1) % TABS.length]!.code);
-    if (e.key === "ArrowLeft") choose(TABS[(i + TABS.length - 1) % TABS.length]!.code);
+    const i = tabs.findIndex((t) => t.code === tab);
+    const go = (j: number) => {
+      e.preventDefault();
+      choose(tabs[(j + tabs.length) % tabs.length]!.code, true);
+    };
+    if (e.key === "ArrowRight") go(i + 1);
+    else if (e.key === "ArrowLeft") go(i - 1);
+    else if (e.key === "Home") go(0);
+    else if (e.key === "End") go(tabs.length - 1);
   };
 
+  const common = { view, dirty, busy, setBusy, save, persist };
   return (
     <>
       <MethodNote view={view} />
       <div role="tablist" aria-label="Разбор встречи" className="sv-tabs" onKeyDown={onTabKey}>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.code}
+            ref={(el) => {
+              tabRefs.current[t.code] = el;
+            }}
             type="button"
             role="tab"
             id={`parse-tab-${t.code}`}
@@ -238,11 +280,13 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
       <section role="tabpanel" id="parse-panel-summary" aria-labelledby="parse-tab-summary" hidden={tab !== "summary"}>
         <Summary view={view} />
       </section>
-      <section role="tabpanel" id="parse-panel-ceo" aria-labelledby="parse-tab-ceo" hidden={tab !== "ceo"}>
-        <CeoTab view={view} ceo={ceo} edit={editCeo} dirty={dirty} busy={busy} setBusy={setBusy} save={save} tasks={tasks} />
-      </section>
+      {view.canSeeCeo ? (
+        <section role="tabpanel" id="parse-panel-ceo" aria-labelledby="parse-tab-ceo" hidden={tab !== "ceo"}>
+          <CeoTab {...common} ceo={ceo} edit={editCeo} />
+        </section>
+      ) : null}
       <section role="tabpanel" id="parse-panel-tasks" aria-labelledby="parse-tab-tasks" hidden={tab !== "tasks"}>
-        <TasksTab view={view} tasks={tasks} edit={editTask} dirty={dirty} busy={busy} setBusy={setBusy} save={save} />
+        <TasksTab {...common} tasks={tasks} edit={editTask} decisions={decisions} editDecision={editDecision} />
       </section>
     </>
   );
@@ -294,6 +338,11 @@ function Summary({ view }: { view: ParseView }) {
   const r = view.result;
   return (
     <div className="flex flex-col gap-6 pt-4">
+      {r.unreadable ? (
+        <p className="sv-card sv-card--soft bg-warning-soft px-4 py-3 text-body text-ink" data-testid="parse-unreadable">
+          {r.unreadable} {plural(r.unreadable, "блок", "блока", "блоков")} не прочитано: например, AI-заметки встречи Notion API не отдаёт. Если итогов там больше, перенесите их обычным текстом на страницу и разберите ещё раз.
+        </p>
+      ) : null}
       <div className="grid gap-6 lg:grid-cols-2">
         <List title="Главное" items={r.summary} empty="Главное из текста не выделилось" />
         <List
@@ -309,10 +358,14 @@ function Summary({ view }: { view: ParseView }) {
         <List title="Риски" items={r.risks} empty="Рисков в тексте не нашлось" />
         <List title="Что дальше" items={r.next} empty="Следующих шагов отдельно не названо" />
       </div>
-      <details className="sv-card sv-card--soft">
-        <summary className="cursor-pointer px-4 py-3 text-body font-medium text-ink">Текст страницы из Notion</summary>
-        <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words border-t border-line px-4 py-3 font-sans text-small text-ink">{view.pageText || "Страница пустая"}</pre>
-      </details>
+      {view.canSeeText ? (
+        <details className="sv-card sv-card--soft">
+          <summary className="cursor-pointer px-4 py-3 text-body font-medium text-ink">Текст страницы из Notion</summary>
+          <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words border-t border-line px-4 py-3 font-sans text-small text-ink">{view.pageText || "Страница пустая"}</pre>
+        </details>
+      ) : (
+        <p className="text-small text-muted">Полный текст страницы видят те, кто ведёт встречу. Здесь итоги и черновики.</p>
+      )}
     </div>
   );
 }
@@ -323,7 +376,7 @@ const SECTIONS: { key: keyof CeoSections; label: string }[] = [
   { key: "next", label: "Что дальше" },
 ];
 
-type TabProps = { view: ParseView; dirty: boolean; busy: "save" | "send" | "tasks" | null; setBusy: (b: "save" | "send" | "tasks" | null) => void; save: () => Promise<void> };
+type TabProps = { view: ParseView; dirty: boolean; busy: Busy; setBusy: (b: Busy) => void; save: () => Promise<void>; persist: () => Promise<string | true> };
 
 function SaveButton({ view, dirty, busy, save }: Pick<TabProps, "view" | "dirty" | "busy" | "save">) {
   if (!view.canEdit) return null;
@@ -335,7 +388,7 @@ function SaveButton({ view, dirty, busy, save }: Pick<TabProps, "view" | "dirty"
   );
 }
 
-function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, tasks }: TabProps & { ceo: CeoSections; edit: (p: Partial<CeoSections>) => void; tasks: ParseTaskDraft[] }) {
+function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabProps & { ceo: CeoSections; edit: (p: Partial<CeoSections>) => void }) {
   const router = useRouter();
   const { notify } = usePrototype();
   const existing = view.ceo?.existing.sections ?? null;
@@ -344,15 +397,16 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, tasks }: TabProps
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const result = mergeCeoSections(existing, ceo, filled ? mode : "replace");
+  // В предпросмотре «Мои встречи недели» из отчёта недели: их отправка не трогает
+  const meetings = view.ceo?.existing.meetings ?? [];
 
   const send = async () => {
     setBusy("send");
     setError(null);
     try {
-      // Правки задач на этой странице не теряются: черновик задач сохраняется вместе с отправкой
       if (dirty && view.canEdit) {
-        const s = await saveParseDraftAction(view.id, { ceo, tasks }, view.updatedAt);
-        if (!s.ok) return setError(s.error);
+        const s = await persist();
+        if (s !== true) return setError(s);
       }
       const r = await sendParseToCeoAction(view.id, { ceo, mode: filled ? mode : null, expected: view.ceo?.existing.updatedAt ?? null });
       if (!r.ok) return setError(r.error);
@@ -373,12 +427,12 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, tasks }: TabProps
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-ink" aria-hidden="true" />
           <span>
             Отправлено CEO {moment(view.ceoSentAt)}
-            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит отчёт на странице «Отчёт CEO» и событие в «Мне». Можно поправить и отправить ещё раз.
+            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт CEO» и событие в «Мне». Можно поправить и отправить ещё раз.
           </span>
         </p>
       ) : null}
       <p className="max-w-[760px] text-body text-muted">
-        Черновик weekly для CEO в разделах отчёта CEO за неделю {view.weekNumber}. Каждая мысль отдельной строкой, начинается с «- ». Цифры недели, решения и благодарности отчёт CEO добавит сам.
+        Черновик weekly для CEO в разделах отчёта CEO за неделю {view.weekNumber}. Каждая мысль отдельной строкой, начинается с «- ». Цифры недели, решения и благодарности отчёт соберёт сам: ниже видно, что получит CEO.
       </p>
       <div className="grid gap-4">
         {SECTIONS.map((s) => (
@@ -418,23 +472,31 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, tasks }: TabProps
               <p className="text-small text-muted">
                 {mode === "merge" ? "Строки встречи допишутся в конец каждого раздела, строки, которые уже есть, второй раз не попадут." : "Разделы «Главное», «Риски» и «Что дальше» станут такими, как в черновике. «Мои встречи недели» останутся."}
               </p>
-              <details className="rounded-lg bg-surface ring-1 ring-line" open>
-                <summary className="cursor-pointer px-4 py-2.5 text-body font-medium text-ink">{mode === "merge" ? "Что получится" : "Что будет заменено"}</summary>
-                <div className="grid gap-3 border-t border-line px-4 py-3 lg:grid-cols-3">
-                  {SECTIONS.map((s) => (
-                    <div key={s.key} className="min-w-0">
-                      <p className="text-caption font-semibold text-muted">{s.label}</p>
-                      {mode === "replace" ? (
+              {mode === "replace" ? (
+                <details className="rounded-lg bg-surface ring-1 ring-line">
+                  <summary className="cursor-pointer px-4 py-2.5 text-body font-medium text-ink">Что будет заменено</summary>
+                  <div className="grid gap-3 border-t border-line px-4 py-3 lg:grid-cols-3">
+                    {SECTIONS.map((s) => (
+                      <div key={s.key} className="min-w-0">
+                        <p className="text-caption font-semibold text-muted">{s.label}</p>
                         <p className="mt-1 whitespace-pre-wrap break-words text-small text-muted line-through decoration-line">{existing?.[s.key] || "Раздел пустой"}</p>
-                      ) : null}
-                      <p className="mt-1 whitespace-pre-wrap break-words text-small text-ink">{result[s.key] || "Раздел пустой"}</p>
-                    </div>
-                  ))}
-                </div>
-              </details>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
             </>
           ) : null}
         </div>
+      ) : null}
+
+      {view.ceoPreview ? (
+        <section aria-labelledby="ceo-preview-title" className="flex flex-col gap-3 rounded-xl px-4 py-4 ring-1 ring-line sm:px-5" data-testid="ceo-preview">
+          <h2 id="ceo-preview-title" className="text-title-sm font-semibold text-ink">
+            Что получит CEO: отчёт за неделю {view.weekNumber}
+          </h2>
+          <CeoAssembled ctx={view.ceoPreview} sections={result} meetings={meetings} idPrefix="ceo-preview" />
+        </section>
       ) : null}
 
       {view.sendHint ? <p className="text-body text-muted">{view.sendHint}</p> : null}
@@ -468,17 +530,27 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, tasks }: TabProps
   );
 }
 
-function TasksTab({ view, tasks, edit, dirty, busy, setBusy, save }: TabProps & { tasks: ParseTaskDraft[]; edit: (key: string, p: Partial<ParseTaskDraft>) => void }) {
+function TasksTab({
+  view,
+  tasks,
+  edit,
+  decisions,
+  editDecision,
+  dirty,
+  busy,
+  setBusy,
+  save,
+}: TabProps & { tasks: ParseTaskDraft[]; edit: (key: string, p: Partial<ParseTaskDraft>) => void; decisions: ParseDecision[]; editDecision: (key: string | undefined, p: Partial<ParseDecision>) => void }) {
   const router = useRouter();
   const { notify, data } = usePrototype();
-  const [decisions, setDecisions] = useState(view.result.decisions.length > 0);
   const [error, setError] = useState<string | null>(null);
   const chosen = tasks.filter((t) => t.on);
   const missing = chosen.filter((t) => !t.owner);
+  const chosenDecisions = decisions.filter((d) => d.on);
 
   const create = async () => {
     if (missing.length) return setError(`Выберите ответственного: ${missing.map((t) => `«${t.title}»`).join(", ")}`);
-    if (!chosen.length && !decisions) return setError("Отметьте задачи, которые создать");
+    if (!chosen.length && !chosenDecisions.length) return setError("Отметьте задачи или решения, которые записать");
     setBusy("tasks");
     setError(null);
     try {
@@ -538,22 +610,39 @@ function TasksTab({ view, tasks, edit, dirty, busy, setBusy, save }: TabProps & 
           <DraftCard key={t.key} index={i} task={t} edit={(p) => edit(t.key, p)} readOnly={!view.canEdit} today={data.today} team={view.team.name} />
         ))}
       </ol>
+
+      {decisions.length ? (
+        <section aria-labelledby="parse-decisions" className="flex flex-col gap-3 sv-card sv-card--soft p-4" data-testid="decision-drafts">
+          <div>
+            <h2 id="parse-decisions" className="text-title-sm font-semibold text-ink">
+              Решения встречи в журнал решений
+            </h2>
+            <p className="mt-1 text-small text-muted">Запишутся только отмеченные, вместе с задачами. Текст можно поправить.</p>
+          </div>
+          <ol className="flex flex-col gap-3">
+            {decisions.map((d, i) => (
+              <li key={d.key ?? i} className="flex flex-col gap-2" data-testid="decision-draft">
+                <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-body text-ink">
+                  <input type="checkbox" checked={!!d.on} disabled={!view.canEdit} onChange={(e) => editDecision(d.key, { on: e.target.checked })} className="h-4 w-4 accent-blue-700" />
+                  Записать решение {i + 1}
+                </label>
+                <TextArea label={`Текст решения ${i + 1}`} id={`decision-${d.key ?? i}`} value={d.text} rows={2} maxLength={1000} readOnly={!view.canEdit} onChange={(e) => editDecision(d.key, { text: e.target.value })} />
+                {d.owner ? <p className="text-small text-muted">Владелец: {personName(d.owner)}</p> : d.ownerText ? <p className="text-small text-muted">Владелец в тексте: {d.ownerText}</p> : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+
       {view.tasksHint ? <p className="text-body text-muted">{view.tasksHint}</p> : null}
       <FormError message={error ?? undefined} />
       {view.canEdit ? (
         <div className="flex flex-col gap-3 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <p className="text-body text-ink">
-              Будет создано: {chosen.length} {plural(chosen.length, "задача", "задачи", "задач")}
-              {missing.length ? <span className="text-danger-ink">. Без ответственного: {missing.length}</span> : null}
-            </p>
-            {view.result.decisions.length ? (
-              <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-body text-ink">
-                <input type="checkbox" checked={decisions} onChange={(e) => setDecisions(e.target.checked)} className="h-4 w-4 accent-blue-700" />
-                Записать решения встречи в журнал решений: {view.result.decisions.length}
-              </label>
-            ) : null}
-          </div>
+          <p className="text-body text-ink">
+            Будет создано: {chosen.length} {plural(chosen.length, "задача", "задачи", "задач")}
+            {chosenDecisions.length ? `, решений ${chosenDecisions.length}` : ""}
+            {missing.length ? <span className="text-danger-ink">. Без ответственного: {missing.length}</span> : null}
+          </p>
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
             <SaveButton view={view} dirty={dirty} busy={busy} save={save} />
             {view.canCreateTasks ? (
@@ -571,6 +660,12 @@ function TasksTab({ view, tasks, edit, dirty, busy, setBusy, save }: TabProps & 
 function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: number; task: ParseTaskDraft; edit: (p: Partial<ParseTaskDraft>) => void; readOnly: boolean; today: string; team: string }) {
   const id = `draft-${t.key}`;
   const noOwner = t.on && !t.owner;
+  // Поля, от которых зависит цель, поменяли на экране: цель проверится при сохранении или создании
+  const [touched, setTouched] = useState(false);
+  const change = (p: Partial<ParseTaskDraft>, goal = false) => {
+    if (goal) setTouched(true);
+    edit(p);
+  };
   return (
     <li className={cn("flex flex-col gap-3 sv-card sv-card--soft p-4", !t.on && "opacity-60", noOwner && "ring-2 ring-danger")} data-testid="task-draft">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -580,14 +675,23 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
         </label>
         <span className="text-caption text-muted">Команда: {team}</span>
       </div>
-      <TextInput label="Задача" id={`${id}-title`} value={t.title} maxLength={120} readOnly={readOnly} onChange={(e) => edit({ title: e.target.value })} />
-      <TextArea label="Что нужно сделать" id={`${id}-outcome`} value={t.outcome} rows={2} maxLength={1000} readOnly={readOnly} onChange={(e) => edit({ outcome: e.target.value })} />
+      {t.existing ? (
+        <p className="text-small text-warning-ink" data-testid="draft-existing">
+          Уже есть задача{" "}
+          <Link href={`/tasks/${t.existing}`} className="font-semibold underline-offset-2 hover:underline">
+            {t.existing}
+          </Link>
+          : её создали из прошлого разбора этой встречи. Строка снята, отметьте, если нужна ещё одна.
+        </p>
+      ) : null}
+      <TextInput label="Задача" id={`${id}-title`} value={t.title} maxLength={120} readOnly={readOnly} onChange={(e) => change({ title: e.target.value }, true)} />
+      <TextArea label="Что нужно сделать" id={`${id}-outcome`} value={t.outcome} rows={2} maxLength={1000} readOnly={readOnly} onChange={(e) => change({ outcome: e.target.value }, true)} />
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1">
           {readOnly ? (
             <TextInput label="Ответственный" id={`${id}-owner`} value={t.owner ? personName(t.owner) : "не выбран"} readOnly />
           ) : (
-            <PersonSelect id={`${id}-owner`} label="Ответственный" value={t.owner ?? ""} onChange={(v) => edit({ owner: v || null, coExecutors: t.coExecutors.filter((c) => c !== v) })} exclude={"" as PersonSlug} />
+            <PersonSelect id={`${id}-owner`} label="Ответственный" value={t.owner ?? ""} onChange={(v) => change({ owner: v || null, coExecutors: t.coExecutors.filter((c) => c !== v) }, true)} exclude={"" as PersonSlug} />
           )}
           {!t.owner ? (
             <p className={cn("text-small", t.on ? "text-danger-ink" : "text-muted")}>
@@ -596,7 +700,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
           ) : null}
         </div>
         <div className="flex flex-col gap-1">
-          <TextInput label="Срок" id={`${id}-due`} type="date" min={today} value={t.due} readOnly={readOnly} onChange={(e) => edit({ due: e.target.value, dueGuessed: false })} />
+          <TextInput label="Срок" id={`${id}-due`} type="date" min={today} value={t.due} readOnly={readOnly} onChange={(e) => change({ due: e.target.value, dueGuessed: false }, true)} />
           {t.dueGuessed ? <p className="text-small text-warning-ink">Срок не назван на встрече: подставлен через неделю, проверьте</p> : t.dueText ? <p className="text-small text-muted">В тексте: «{t.dueText}»</p> : null}
         </div>
         <SelectField label="Направление" id={`${id}-direction`} value={t.direction} disabled={readOnly} onChange={(e) => edit({ direction: e.target.value })} options={dictOptions("DIRECTION", t.direction)} />
@@ -608,7 +712,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
                 <li key={c} className="inline-flex items-center gap-1 rounded-full bg-field px-2.5 py-1 text-small text-ink">
                   {compactName(c as PersonSlug)}
                   {!readOnly ? (
-                    <button type="button" aria-label={`Убрать соисполнителя ${personName(c)}`} onClick={() => edit({ coExecutors: t.coExecutors.filter((x) => x !== c) })} className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-surface">
+                    <button type="button" aria-label={`Убрать соисполнителя ${personName(c)}`} onClick={() => change({ coExecutors: t.coExecutors.filter((x) => x !== c) }, true)} className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-surface">
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   ) : null}
@@ -624,7 +728,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
               id={`${id}-co`}
               label="Добавить соисполнителя"
               value=""
-              onChange={(v) => v && v !== t.owner && !t.coExecutors.includes(v) && edit({ coExecutors: [...t.coExecutors, v] })}
+              onChange={(v) => v && v !== t.owner && !t.coExecutors.includes(v) && change({ coExecutors: [...t.coExecutors, v] }, true)}
               exclude={(t.owner ?? "") as PersonSlug}
             />
           ) : null}
@@ -632,9 +736,8 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
       </div>
       <div className="flex flex-col gap-1 text-small">
         <p className="text-ink">
-          Цель:{" "}
-          {t.goalMode === "none" ? <span className="text-muted">без цели</span> : t.goalTitle ? <span>{t.goalTitle}</span> : <span className="text-muted">по тексту не нашлась</span>}
-          {t.goalMode === "auto" ? <span className="text-muted">. Подбирается по тексту при создании</span> : null}
+          Цель: {t.goalMode === "none" ? <span className="text-muted">без цели</span> : t.goalTitle ? <span>{t.goalTitle}</span> : <span className="text-muted">по тексту не нашлась</span>}
+          {t.goalMode === "auto" && touched ? <span className="text-muted">. Поля поменялись: цель проверится при сохранении и при создании</span> : null}
         </p>
         {!readOnly ? (
           <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-ink">

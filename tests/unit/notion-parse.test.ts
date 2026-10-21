@@ -2,9 +2,9 @@
 // понятными ошибками, разбор правилами, проверка ответа Claude, вызов Claude через подменённый транспорт, черновик
 // weekly для CEO и объединение с отчётом недели. Настоящие Notion и Claude не вызываются.
 import { describe, expect, it } from "vitest";
-import { NotionError, blocksToText, notionPageIdFromUrl, readNotionPage, type NotionBlock } from "@/lib/meeting/notion-api";
+import { NotionError, allowedParentsFromEnv, blocksToText, fakeAllowed, meaningfulText, notionPageIdFromUrl, readNotionPage, unreadableBlock, type NotionBlock } from "@/lib/meeting/notion-api";
 import { parseByRules, taskFromLine } from "@/lib/meeting/parse-rules";
-import { ceoDraftOf, cleanText, dueFromText, mergeCeoSections, taskTitle, validateRawMeeting } from "@/lib/meeting/parse-types";
+import { ceoDraftOf, cleanText, dueFromText, mergeCeoSections, sameTask, taskTitle, validateRawMeeting } from "@/lib/meeting/parse-types";
 import { ClaudeError, parseWithClaude, userMessage, type ClaudeInput } from "@/lib/meeting/claude";
 
 const PAGE = "1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6";
@@ -20,6 +20,39 @@ describe("ссылка на страницу Notion", () => {
     expect(notionPageIdFromUrl(`https://notion.so.evil.example/${PAGE}`)).toBeNull();
     expect(notionPageIdFromUrl("https://www.notion.so/sravni/Bez-id")).toBeNull();
     expect(notionPageIdFromUrl("не ссылка")).toBeNull();
+  });
+
+  it("домены notion.so, notion.com, app.notion.com и *.notion.site; битый «%» в адресе не роняет, а даёт «не похожа»", () => {
+    for (const host of ["notion.so", "www.notion.so", "notion.com", "www.notion.com", "app.notion.com", "sravni.notion.site"]) {
+      expect(notionPageIdFromUrl(`https://${host}/Vstrecha-${PAGE}`), host).toBe(DASHED);
+    }
+    expect(notionPageIdFromUrl(`https://api.notion.com/${PAGE}`)).toBeNull();
+    expect(notionPageIdFromUrl(`https://www.notion.so/%E0%A4%A-${PAGE}`)).toBeNull();
+    expect(notionPageIdFromUrl("https://www.notion.so/%")).toBeNull();
+  });
+
+  it("разрешённые разделы из окружения: ID с дефисами и без, ссылки, лишнее отбрасывается", () => {
+    expect(allowedParentsFromEnv(`${PAGE}, https://www.notion.so/Vstrechi-${PAGE.replace("1a", "2b")}; мусор`)).toEqual([DASHED, "2b2b3c4d-5e6f-47a8-b9c0-d1e2f3a4b5c6"]);
+    expect(allowedParentsFromEnv("")).toEqual([]);
+  });
+
+  it("имитации Notion и Claude не включаются в рабочем образе без флага сквозных тестов", () => {
+    const env = process.env as Record<string, string | undefined>;
+    const before = { node: env.NODE_ENV, e2e: env.WEEKLY_E2E };
+    try {
+      env.NODE_ENV = "production";
+      delete env.WEEKLY_E2E;
+      expect(fakeAllowed()).toBe(false);
+      env.WEEKLY_E2E = "1";
+      expect(fakeAllowed()).toBe(true);
+      env.NODE_ENV = "test";
+      delete env.WEEKLY_E2E;
+      expect(fakeAllowed()).toBe(true);
+    } finally {
+      env.NODE_ENV = before.node;
+      if (before.e2e === undefined) delete env.WEEKLY_E2E;
+      else env.WEEKLY_E2E = before.e2e;
+    }
   });
 });
 
@@ -121,6 +154,39 @@ describe("чтение страницы Notion", () => {
       throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
     }) as unknown as typeof fetch;
     await expect(readNotionPage(DASHED, { fetch: timeout, token: "t" })).rejects.toMatchObject({ code: "timeout" });
+  });
+
+  it("общий срок чтения: что не успели, обрезается, страница всё равно разбирается; срок вышел до страницы: ошибка времени", async () => {
+    const { fetchFn } = notionStub();
+    // Медленный ответ, который, как настоящий fetch, обрывается по сигналу срока
+    const slow = (async (input: string, init: RequestInit) => {
+      if (input.includes("start_cursor")) {
+        await new Promise((resolve, reject) => {
+          const t = setTimeout(resolve, 500);
+          init.signal?.addEventListener("abort", () => {
+            clearTimeout(t);
+            reject(Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+          });
+        });
+      }
+      return fetchFn(input, init);
+    }) as unknown as typeof fetch;
+    const page = await readNotionPage(DASHED, { fetch: slow, token: "t", base: "https://notion.test", budgetMs: 60 });
+    expect(page).toMatchObject({ cutByTime: true, truncated: true });
+    expect(page.text).toBe("## Итоги\n- Конверсия выросла");
+    await expect(readNotionPage(DASHED, { fetch: fetchFn, token: "t", base: "https://notion.test", budgetMs: 0 })).rejects.toMatchObject({ code: "timeout" });
+  });
+
+  it("нечитаемые блоки считаются: AI-заметки, расшифровка, unsupported и незнакомые без текста; картинки и разделители нет", () => {
+    expect(unreadableBlock({ id: "1", type: "unsupported" })).toBe(true);
+    expect(unreadableBlock({ id: "2", type: "transcription" })).toBe(true);
+    expect(unreadableBlock({ id: "3", type: "meeting_notes" })).toBe(true);
+    expect(unreadableBlock({ id: "4", type: "new_future_block" })).toBe(true);
+    expect(unreadableBlock({ id: "5", type: "image", image: {} })).toBe(false);
+    expect(unreadableBlock({ id: "6", type: "divider", divider: {} })).toBe(false);
+    expect(unreadableBlock(block("7", "paragraph", ""))).toBe(false);
+    expect(meaningfulText("## Итоги\n---\n- [ ] ")).toBe(false);
+    expect(meaningfulText("## Итоги\n- Конверсия выросла")).toBe(true);
   });
 });
 
@@ -277,6 +343,17 @@ describe("вызов Claude", () => {
     await expect(parseWithClaude(INPUT, deps({ error: {} }, 401))).rejects.toThrow(/ANTHROPIC_API_KEY/);
     await expect(parseWithClaude(INPUT, deps({ stop_reason: "max_tokens", content: [] }))).rejects.toThrow(/слишком длинная/);
     await expect(parseWithClaude(INPUT, deps({ content: [{ type: "tool_use", name: "meeting_result", input: { summary: "не список" } }] }))).rejects.toThrow(/не прошёл проверку/);
+    await expect(parseWithClaude(INPUT, deps({ error: {} }, 400))).rejects.toThrow("Claude не принял запрос: проверьте модель или длину страницы");
+  });
+});
+
+describe("повторный разбор", () => {
+  it("та же задача: то же название или почти те же слова и тот же ответственный", () => {
+    expect(sameTask({ title: "Собрать дашборд конверсии по СК", owner: "tokov" }, { title: "собрать дашборд конверсии по СК.", owner: "tokov" })).toBe(true);
+    expect(sameTask({ title: "Собрать дашборд конверсии по страховым", owner: "tokov" }, { title: "Собрать дашборд конверсии страховых", owner: "tokov" })).toBe(true);
+    expect(sameTask({ title: "Собрать дашборд конверсии по СК", owner: "reva" }, { title: "Собрать дашборд конверсии по СК", owner: "tokov" })).toBe(false);
+    expect(sameTask({ title: "Собрать дашборд конверсии по СК", owner: null }, { title: "Собрать дашборд конверсии по СК", owner: null })).toBe(false);
+    expect(sameTask({ title: "Собрать дашборд конверсии", owner: "tokov" }, { title: "Обновить тарифы ВЗР", owner: "tokov" })).toBe(false);
   });
 });
 

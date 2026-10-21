@@ -878,6 +878,8 @@ model CeoReport {
   sentById    String?
   sentBy      Person?   @relation("CeoReportSentBy", fields: [sentById], references: [id], onDelete: SetNull)
   sentTo      Json      @default("[]")
+  /// Что ушло CEO (этап 61): разделы и «Мои встречи» в момент отправки. Цифры и решения недели собираются живыми
+  sentSnapshot Json?
 
   @@map("ceo_reports")
 }
@@ -1722,6 +1724,8 @@ model MeetingParse {
   startedAt        DateTime            @default(now()) @db.Timestamptz(3)
   finishedAt       DateTime?           @db.Timestamptz(3)
   attempts         Int                 @default(0)
+  /// Отметка «жив»: идущий разбор обновляет её раз в 15 секунд, «завис» считается от неё
+  lastBeatAt       DateTime?           @db.Timestamptz(3)
   /// Weekly для CEO отправлен: когда и кем
   ceoSentAt        DateTime?           @db.Timestamptz(3)
   ceoSentById      String?

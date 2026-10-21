@@ -7,6 +7,7 @@
 
 import { addDays, type IsoDate } from "@/domain/dates";
 import type { CeoSections } from "@/lib/weekly/rules";
+import { sameStem, tokens } from "@/lib/goals/match";
 
 /** Пределы разбора: что длиннее, обрезается, что сверх количества, отбрасывается */
 export const PARSE_LIMITS = {
@@ -66,13 +67,16 @@ export type ParseTaskDraft = {
   /** Срок не назван на встрече: подставлен через неделю, его стоит проверить */
   dueGuessed: boolean;
   direction: string;
-  /** auto: цель подбирается по тексту при создании (этап 55), none: без цели */
+  /** auto: цель по тексту (этап 55), та же, что получит задача; none: без цели */
   goalMode: "auto" | "none";
   goal: string | null;
   goalTitle: string | null;
+  /** Похожая задача уже создана из прошлого разбора этой встречи: строка снята, номер показан */
+  existing?: number | null;
 };
 
-export type ParseDecision = { text: string; ownerText: string | null; owner: string | null };
+/** Решение встречи: в журнал решений записываются только отмеченные, текст можно поправить */
+export type ParseDecision = { key?: string; on?: boolean; text: string; ownerText: string | null; owner: string | null };
 
 export type ParseResult = {
   summary: string[];
@@ -81,9 +85,35 @@ export type ParseResult = {
   next: string[];
   ceo: CeoSections;
   tasks: ParseTaskDraft[];
+  /** Блоки страницы, которые Notion API не отдал текстом */
+  unreadable?: number;
 };
 
 export const EMPTY_RESULT: ParseResult = { summary: [], decisions: [], risks: [], next: [], ceo: { main: "", risks: "", next: "" }, tasks: [] };
+
+const titleNorm = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^a-zа-я0-9]+/gi, " ")
+    .trim();
+
+/**
+ * Та же задача: одинаковое название без учёта регистра и знаков или почти те же слова (основы слов, сходство от 0,8),
+ * и тот же ответственный. Так повторный разбор той же страницы не ставит задачу второй раз
+ */
+export function sameTask(a: { title: string; owner: string | null }, b: { title: string; owner: string | null }): boolean {
+  if (!a.owner || a.owner !== b.owner) return false;
+  const x = titleNorm(a.title);
+  const y = titleNorm(b.title);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const tx = new Set(tokens(a.title));
+  const ty = new Set(tokens(b.title));
+  if (tx.size < 2 || ty.size < 2) return false;
+  const common = [...tx].filter((t) => [...ty].some((u) => sameStem(t, u))).length;
+  return common / Math.max(tx.size, ty.size) >= 0.8;
+}
 
 /**
  * Текст для ресурса: длинное тире и стрелки становятся дефисом, точка посередине запятой, пробелы схлопнуты.

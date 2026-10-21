@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_BLOCKS = 1500;
 const MAX_DEPTH = 4;
 
-export type NotionErrorCode = "no-token" | "bad-url" | "not-shared" | "unauthorized" | "rate" | "timeout" | "other";
+export type NotionErrorCode = "no-token" | "bad-url" | "not-shared" | "not-allowed" | "unauthorized" | "rate" | "timeout" | "other";
 
 /** Ошибка Notion словами для экрана: что не так и что сделать. Без ключа и без текста страницы */
 export class NotionError extends Error {
@@ -32,6 +32,8 @@ export const NOTION_MESSAGES: Record<NotionErrorCode, string> = {
   "bad-url": "Ссылка не похожа на страницу Notion. Откройте встречу в Notion, «Поделиться», «Скопировать ссылку» и вставьте её целиком",
   "not-shared":
     "Notion не отдал страницу: её нет или она не расшарена на интеграцию. Откройте страницу в Notion, меню с тремя точками справа вверху, «Подключения» и добавьте интеграцию ресурса",
+  "not-allowed":
+    "Эта страница не лежит в разделах Notion, из которых ресурсу разрешено разбирать встречи (переменная NOTION_ALLOWED_PARENTS). Перенесите встречу в такой раздел или попросите владельца добавить раздел",
   unauthorized: "Notion не принял ключ интеграции. Проверьте переменную NOTION_TOKEN на сервере",
   rate: "Notion просит подождать: слишком много запросов. Повторите через минуту",
   timeout: "Notion не ответил вовремя. Повторите через минуту",
@@ -42,31 +44,58 @@ const failWith = (code: NotionErrorCode): never => {
   throw new NotionError(NOTION_MESSAGES[code], code);
 };
 
+/** Домены Notion: notion.so, notion.com с www и app, опубликованные страницы *.notion.site */
+export function isNotionHost(host: string): boolean {
+  return /^(?:www\.)?notion\.(?:so|com)$|^app\.notion\.com$|^[a-z0-9-]+\.notion\.site$/i.test(host);
+}
+
 /**
  * ID страницы из ссылки: 32 шестнадцатеричных знака в конце адреса или в параметре p (с дефисами или без).
- * Только https и домены Notion. null: ссылка не на страницу Notion
+ * Только https и домены Notion. null: ссылка не на страницу Notion, в том числе с битым «%» в адресе
  */
 export function notionPageIdFromUrl(input: string): string | null {
   const raw = String(input ?? "").trim();
   if (!raw) return null;
-  let u: URL;
+  let candidates: string[];
   try {
-    u = new URL(raw);
+    const u = new URL(raw);
+    if (u.protocol !== "https:" || !isNotionHost(u.hostname)) return null;
+    candidates = [u.searchParams.get("p") ?? "", decodeURIComponent(u.pathname)];
   } catch {
     return null;
   }
-  if (u.protocol !== "https:" || !/(^|\.)notion\.(so|site)$/.test(u.hostname)) return null;
-  const candidates = [u.searchParams.get("p") ?? "", decodeURIComponent(u.pathname)];
   for (const c of candidates) {
     const found = [...c.matchAll(/([0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12})(?![0-9a-f])/gi)].at(-1)?.[1];
-    if (found) return dashed(found.replace(/-/g, "").toLowerCase());
+    if (found) return normId(found);
   }
   return null;
+}
+
+/** ID Notion в одном виде: строчные с дефисами. null: не ID */
+export function normId(value: string): string | null {
+  const hex = String(value ?? "").replace(/-/g, "").trim().toLowerCase();
+  return /^[0-9a-f]{32}$/.test(hex) ? dashed(hex) : null;
 }
 
 const dashed = (hex: string) => `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 
 // ---------- Блоки в текст ----------
+
+/** Блоки, которые Notion API не отдаёт текстом: AI-заметки встречи, расшифровки и всё, что API помечает unsupported */
+const UNREADABLE = new Set(["unsupported", "transcription", "meeting_notes", "ai_block"]);
+/** Блоки без текста по своей природе: их отсутствие текста не ошибка */
+const NO_TEXT = new Set([
+  "image", "video", "file", "pdf", "audio", "embed", "bookmark", "link_preview", "divider", "table_of_contents", "breadcrumb",
+  "column_list", "column", "table", "link_to_page", "child_page", "child_database", "synced_block", "template", "equation",
+]);
+const KNOWN_TEXT = new Set(["paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item", "to_do", "toggle", "quote", "callout", "code", "table_row"]);
+
+/** Не прочитался ли блок: известный нечитаемый тип или незнакомый тип без текста и без детей */
+export function unreadableBlock(b: NotionBlock): boolean {
+  if (UNREADABLE.has(b.type)) return true;
+  if (KNOWN_TEXT.has(b.type) || NO_TEXT.has(b.type)) return false;
+  return !blockLine(b).trim() && !b.has_children;
+}
 
 type RichText = { plain_text?: string; type?: string; text?: { content?: string } };
 export type NotionBlock = { id: string; type: string; has_children?: boolean; children?: NotionBlock[] } & Record<string, unknown>;
@@ -158,21 +187,49 @@ export type NotionDeps = {
   base?: string;
   timeoutMs?: number;
   maxBlocks?: number;
+  /** Общий срок на чтение страницы: что не успели, отмечается «текст обрезан по времени» */
+  budgetMs?: number;
+  /** Разрешённые разделы (NOTION_ALLOWED_PARENTS): страница должна лежать под одним из них */
+  allowedParents?: string[];
 };
 
-export type NotionPage = { id: string; title: string; text: string; blocks: number; truncated: boolean };
+export type NotionPage = {
+  id: string;
+  title: string;
+  text: string;
+  blocks: number;
+  truncated: boolean;
+  /** Не успели дочитать за общий срок */
+  cutByTime: boolean;
+  /** Блоки, которые Notion API не отдаёт текстом */
+  unreadable: number;
+};
 
-async function call(deps: Required<Pick<NotionDeps, "fetch" | "base" | "timeoutMs">> & { token: string }, path: string): Promise<unknown> {
+/** Общий срок на чтение Notion: дальше разбор идёт по тому, что успели прочитать */
+export const NOTION_BUDGET_MS = 90_000;
+/** Сколько уровней вверх проверять разрешённый раздел */
+const PARENT_DEPTH = 5;
+
+type Conn = { fetch: typeof fetch; base: string; timeoutMs: number; token: string; deadline: number };
+
+class OutOfTime extends Error {}
+
+async function call(d: Conn, path: string): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
+    const left = d.deadline - Date.now();
+    if (left <= 0) throw new OutOfTime();
     let res: Response;
     try {
-      res = await deps.fetch(`${deps.base}${path}`, {
-        headers: { Authorization: `Bearer ${deps.token}`, "Notion-Version": NOTION_VERSION, Accept: "application/json" },
-        signal: AbortSignal.timeout(deps.timeoutMs),
+      res = await d.fetch(`${d.base}${path}`, {
+        headers: { Authorization: `Bearer ${d.token}`, "Notion-Version": NOTION_VERSION, Accept: "application/json" },
+        signal: AbortSignal.timeout(Math.min(d.timeoutMs, left)),
         cache: "no-store",
       });
     } catch (error) {
-      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) return failWith("timeout");
+      if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+        if (d.deadline - Date.now() <= 0) throw new OutOfTime();
+        return failWith("timeout");
+      }
       return failWith("other");
     }
     if (res.ok) return res.json();
@@ -202,36 +259,112 @@ function pageTitle(page: unknown): string {
   return cleanText(richText(prop?.title), 300);
 }
 
-/** Транспорт по умолчанию: имитация по фикстурам, если задан NOTION_FAKE_DIR, иначе настоящий Notion с ключом из окружения */
-export async function notionDepsFromEnv(): Promise<NotionDeps> {
-  if (process.env.NOTION_FAKE_DIR) {
-    const { fakeNotionFetch } = await import("./notion-fake");
-    return { fetch: fakeNotionFetch(process.env.NOTION_FAKE_DIR), token: "fake", base: "https://notion.fake" };
+type Parent = { type?: string; page_id?: string; database_id?: string; data_source_id?: string; block_id?: string };
+
+/** Родитель объекта Notion: страница, база, источник данных или блок. Пространство и неизвестное: верх */
+function parentOf(obj: unknown): { kind: "page" | "database" | "block"; id: string } | null {
+  const p = (obj as { parent?: Parent })?.parent;
+  if (!p) return null;
+  if (p.type === "page_id" && p.page_id) return { kind: "page", id: p.page_id };
+  if (p.type === "database_id" && p.database_id) return { kind: "database", id: p.database_id };
+  if (p.type === "data_source_id" && (p.database_id || p.data_source_id)) return { kind: "database", id: (p.database_id ?? p.data_source_id)! };
+  if (p.type === "block_id" && p.block_id) return { kind: "block", id: p.block_id };
+  return null;
+}
+
+/**
+ * Лежит ли страница под разрешённым разделом: сама страница или её родители до пяти уровней вверх. Родителя не видно
+ * (не расшарен на интеграцию): проверить нельзя, значит нельзя и разбирать
+ */
+async function checkAllowed(d: Conn, pageId: string, page: unknown, allowed: string[]): Promise<void> {
+  const want = new Set(allowed.map(normId).filter((x): x is string => !!x));
+  if (!want.size) return;
+  if (want.has(normId(pageId)!)) return;
+  let cur: unknown = page;
+  for (let level = 0; level < PARENT_DEPTH; level++) {
+    const parent = parentOf(cur);
+    if (!parent) break;
+    const id = normId(parent.id);
+    if (id && want.has(id)) return;
+    const path = parent.kind === "page" ? `/v1/pages/${encodeURIComponent(parent.id)}` : parent.kind === "database" ? `/v1/databases/${encodeURIComponent(parent.id)}` : `/v1/blocks/${encodeURIComponent(parent.id)}`;
+    try {
+      cur = await call(d, path);
+    } catch {
+      break;
+    }
   }
-  return { fetch: globalThis.fetch, token: process.env.NOTION_TOKEN ?? null, base: process.env.NOTION_API_BASE || DEFAULT_BASE };
+  failWith("not-allowed");
+}
+
+/** Разрешённые разделы из окружения: ID страниц или баз через запятую, можно ссылками */
+export function allowedParentsFromEnv(value = process.env.NOTION_ALLOWED_PARENTS): string[] {
+  return String(value ?? "")
+    .split(/[,;\s]+/)
+    .map((x) => (x.startsWith("http") ? notionPageIdFromUrl(x) : normId(x)))
+    .filter((x): x is string => !!x);
+}
+
+/** Имитация включается только в тестах: в рабочем образе (NODE_ENV=production) лишь со сквозными тестами (WEEKLY_E2E=1) */
+export function fakeAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.WEEKLY_E2E === "1";
+}
+
+/** Транспорт по умолчанию: имитация по фикстурам, если задан NOTION_FAKE_DIR и это тест, иначе настоящий Notion с ключом из окружения */
+export async function notionDepsFromEnv(): Promise<NotionDeps> {
+  const allowedParents = allowedParentsFromEnv();
+  if (process.env.NOTION_FAKE_DIR && fakeAllowed()) {
+    const { fakeNotionFetch } = await import("./notion-fake");
+    return { fetch: fakeNotionFetch(process.env.NOTION_FAKE_DIR), token: "fake", base: "https://notion.fake", allowedParents };
+  }
+  return { fetch: globalThis.fetch, token: process.env.NOTION_TOKEN ?? null, base: process.env.NOTION_API_BASE || DEFAULT_BASE, allowedParents };
 }
 
 /** Страница целиком: заголовок и текст блоков. Ошибка: NotionError со словами для экрана */
 export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<NotionPage> {
   const token = deps.token?.trim();
   if (!token) return failWith("no-token");
-  const d = { fetch: deps.fetch ?? globalThis.fetch, base: (deps.base ?? DEFAULT_BASE).replace(/\/+$/, ""), timeoutMs: deps.timeoutMs ?? REQUEST_TIMEOUT_MS, token };
+  const d: Conn = {
+    fetch: deps.fetch ?? globalThis.fetch,
+    base: (deps.base ?? DEFAULT_BASE).replace(/\/+$/, ""),
+    timeoutMs: deps.timeoutMs ?? REQUEST_TIMEOUT_MS,
+    token,
+    deadline: Date.now() + (deps.budgetMs ?? NOTION_BUDGET_MS),
+  };
   const max = deps.maxBlocks ?? MAX_BLOCKS;
-  const page = await call(d, `/v1/pages/${encodeURIComponent(pageId)}`);
+  let page: unknown;
+  try {
+    page = await call(d, `/v1/pages/${encodeURIComponent(pageId)}`);
+    await checkAllowed(d, pageId, page, deps.allowedParents ?? []);
+  } catch (error) {
+    if (error instanceof OutOfTime) return failWith("timeout");
+    throw error;
+  }
   let count = 0;
   let truncated = false;
+  let cutByTime = false;
+  let unreadable = 0;
   const children = async (id: string, depth: number): Promise<NotionBlock[]> => {
     const list: NotionBlock[] = [];
     let cursor: string | null = null;
     do {
       const q: string = `/v1/blocks/${encodeURIComponent(id)}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ""}`;
-      const res = (await call(d, q)) as { results?: NotionBlock[]; has_more?: boolean; next_cursor?: string | null };
+      let res: { results?: NotionBlock[]; has_more?: boolean; next_cursor?: string | null };
+      try {
+        res = (await call(d, q)) as typeof res;
+      } catch (error) {
+        // Время вышло: разбираем то, что успели прочитать
+        if (!(error instanceof OutOfTime)) throw error;
+        cutByTime = true;
+        truncated = true;
+        return list;
+      }
       for (const b of res.results ?? []) {
         if (count >= max) {
           truncated = true;
           break;
         }
         count++;
+        if (unreadableBlock(b)) unreadable++;
         list.push(b);
       }
       cursor = res.has_more && count < max ? (res.next_cursor ?? null) : null;
@@ -240,7 +373,7 @@ export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<
     for (const b of list) {
       // Вложенные страницы и базы не читаем: это другие документы
       if (!b.has_children || b.type === "child_page" || b.type === "child_database") continue;
-      if (depth >= MAX_DEPTH || count >= max) {
+      if (depth >= MAX_DEPTH || count >= max || cutByTime) {
         truncated = true;
         continue;
       }
@@ -254,5 +387,15 @@ export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<
     text = text.slice(0, PARSE_LIMITS.pageText);
     truncated = true;
   }
-  return { id: pageId, title: pageTitle(page), text, blocks: count, truncated };
+  return { id: pageId, title: pageTitle(page), text, blocks: count, truncated, cutByTime, unreadable };
+}
+
+/** Есть ли в тексте что разбирать: без заголовков, значков списков и разметки хотя бы пара слов */
+export function meaningfulText(text: string): boolean {
+  const body = text
+    .split("\n")
+    .filter((l) => !/^\s*#/.test(l) && l.trim() !== "---")
+    .join(" ")
+    .replace(/[-*>|\[\]x\d.\s]/gi, "");
+  return body.length >= 10;
 }

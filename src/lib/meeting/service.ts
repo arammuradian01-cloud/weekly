@@ -22,6 +22,7 @@ import { meetingQuestions } from "@/lib/discuss/service";
 import { notify, taskSubject } from "@/lib/inbox/notify";
 import { mailConfigured, sendMail } from "@/lib/mail";
 import { initiativesForAgenda } from "@/lib/initiatives/service";
+import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
@@ -557,7 +558,7 @@ export function notionUrlOf(url: string | null | undefined): string | null {
   if (!raw) return null;
   try {
     const u = new URL(raw);
-    if (u.protocol !== "https:" || !/(^|\.)notion\.(so|site)$/.test(u.hostname)) throw new Error();
+    if (u.protocol !== "https:" || !isNotionHost(u.hostname)) throw new Error();
   } catch {
     fail("Ссылка должна вести на страницу Notion");
   }

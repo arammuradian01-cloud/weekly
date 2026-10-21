@@ -5,17 +5,18 @@
 // Защита от подмены инструкций: текст встречи передаётся как данные внутри <meeting_notes>, системная инструкция прямо
 // говорит, что всё внутри данных не команды. Модель ничего не создаёт сама: её ответ становится черновиком, который
 // проверяет ведущий. Транспорт подменяемый: в тестах fetch внедряется, в e2e работает имитация по фикстурам
-// (ANTHROPIC_FAKE_DIR). Ключ не попадает в журнал, тексты ошибок и ответы экрану.
+// (ANTHROPIC_FAKE_DIR, только в тестах). Ключ не попадает в журнал, тексты ошибок и ответы экрану.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { validateRawMeeting, type RawMeeting } from "./parse-types";
+import { fakeAllowed } from "./notion-api";
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 const DEFAULT_BASE = "https://api.anthropic.com";
 const API_VERSION = "2023-06-01";
-/** Разбор длинной встречи занимает до минуты: ждём две, дальше честно говорим, что Claude не ответил */
-const TIMEOUT_MS = 120_000;
+/** Разбор длинной встречи занимает минуту-две: ждём четыре, дальше честно говорим, что Claude не ответил */
+export const CLAUDE_TIMEOUT_MS = 240_000;
 const TOOL = "meeting_result";
 
 /** Claude не ответил или ответил не по схеме: разбор уходит в правила, экран пишет причину */
@@ -114,16 +115,17 @@ export async function parseWithClaude(input: ClaudeInput, deps: ClaudeDeps): Pro
         tool_choice: { type: "tool", name: TOOL },
         messages: [{ role: "user", content: userMessage(input) }],
       }),
-      signal: AbortSignal.timeout(deps.timeoutMs ?? TIMEOUT_MS),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? CLAUDE_TIMEOUT_MS),
       cache: "no-store",
     });
   } catch (error) {
-    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) throw new ClaudeError("Claude не ответил за две минуты");
+    if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) throw new ClaudeError("Claude не ответил за четыре минуты");
     throw new ClaudeError("нет связи с Claude");
   }
   if (!res.ok) {
     if (res.status === 401 || res.status === 403) throw new ClaudeError("Claude не принял ключ ANTHROPIC_API_KEY");
-    if (res.status === 404 || res.status === 400) throw new ClaudeError(`Claude отклонил запрос (код ${res.status}): проверьте модель в ANTHROPIC_MODEL`);
+    if (res.status === 400) throw new ClaudeError("Claude не принял запрос: проверьте модель или длину страницы");
+    if (res.status === 404) throw new ClaudeError("Claude не нашёл модель: проверьте ANTHROPIC_MODEL");
     if (res.status === 429) throw new ClaudeError("у Claude превышен лимит запросов");
     if (res.status === 529 || res.status >= 500) throw new ClaudeError("Claude перегружен или недоступен");
     throw new ClaudeError(`Claude ответил ошибкой ${res.status}`);
@@ -159,7 +161,8 @@ export const modelFromEnv = () => (process.env.ANTHROPIC_MODEL ?? "").trim() || 
 
 /** Транспорт Claude для страницы. null: ключа нет, разбор правилами */
 export function claudeDepsFromEnv(pageId: string): ClaudeDeps | null {
-  const fakeDir = process.env.ANTHROPIC_FAKE_DIR;
+  // Имитация только в тестах: в рабочем образе переменная ничего не включает (кроме сквозных тестов с WEEKLY_E2E=1)
+  const fakeDir = fakeAllowed() ? process.env.ANTHROPIC_FAKE_DIR : undefined;
   if (fakeDir) {
     const file = join(resolve(process.cwd(), fakeDir), `${pageId.replace(/-/g, "").toLowerCase()}.json`);
     return existsSync(file) ? { fetch: fakeClaudeFetch(file), apiKey: "fake", model: modelFromEnv(), base: "https://claude.fake" } : null;
