@@ -73,7 +73,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
   const fromEntry = new Map(taskMeta.map((t) => [t.number, t.weeklyEntry?.what ?? ""]));
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Weekly, Страхование и инвестиции";
+  wb.creator = "Weekly Сравни";
   wb.created = new Date();
 
   sheet(

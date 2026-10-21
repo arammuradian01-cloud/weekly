@@ -171,6 +171,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
         teamId: true,
         ownerId: true,
         createdById: true,
+        approverId: true,
         owner: { select: { slug: true, fullName: true } },
         coExecutors: { select: { personId: true } },
       },
@@ -179,7 +180,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
     prisma.person.findMany({ where: { id: { in: peopleIds }, active: true, role: { not: "OBSERVER" } }, select: { id: true, slug: true, fullName: true, position: true, sortOrder: true }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] }),
     prisma.taskTransfer.findMany({
       where: { at: { gte: since30 }, task: { ownerId: { in: peopleIds }, archivedAt: null } },
-      select: { task: { select: { ownerId: true, teamId: true, createdById: true, coExecutors: { select: { personId: true } } } } },
+      select: { task: { select: { ownerId: true, teamId: true, createdById: true, approverId: true, coExecutors: { select: { personId: true } } } } },
     }),
     weeklyLights(nodes),
   ]);
@@ -193,7 +194,7 @@ export async function teamPanel(subject: ScopeSubject & { management?: boolean }
     .map((g) => g.teamId);
 
   // Задачи людей из чужих команд показываем только те, что человек видит и так (этап 14): участник, автор, руководитель людей
-  const sees = (t: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[] }) => seesTask(scope, t, subject.id);
+  const sees = (t: { teamId: string; ownerId: string | null; createdById: string | null; approverId: string | null; coExecutors: { personId: string }[] }) => seesTask(scope, t, subject.id);
   const seen = tasks.filter(sees);
   const view = (t: (typeof seen)[number]): PanelTask => {
     const due = isoFromDbDate(t.due);

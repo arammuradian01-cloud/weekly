@@ -141,13 +141,14 @@ test("лидер без режима управления видит повес�
   await openAgenda(page);
   await expect(page.getByRole("navigation", { name: "Повестка" }).getByRole("button", { name: /^Запускаем ли КАСКО для такси/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Начать встречу" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Из Notion" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Вставить текст" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Разобрать встречу из Notion" })).toHaveCount(0);
 
   await page.context().clearCookies();
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto(`/weekly/meeting?week=${key}`);
-  await page.getByRole("button", { name: "Из Notion" }).click();
+  await page.getByRole("button", { name: "Вставить текст" }).click();
   const dialog = page.getByRole("dialog", { name: "Приём из Notion" });
   await dialog.getByLabel("Текст разбора").fill("- Решили: пилот КАСКО для такси в ноябре\n- @Логинова прислать выгрузку по убыткам до пятницы");
   await dialog.getByRole("button", { name: "Разобрать" }).click();

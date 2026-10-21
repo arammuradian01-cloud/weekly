@@ -6,6 +6,7 @@
 // Каждая правка пишется в журнал: что было и что стало.
 
 import { fillMissingLogins, lockPeopleNames, reservedLogins, takenNames } from "@/lib/login/logins";
+import { refreshApprovals } from "@/lib/tasks/approval";
 import { primaryOwner, primaryOwnerSlug } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
@@ -387,6 +388,8 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       const { teams, members } = await syncUnitTeams(tx, actor);
       // Новым людям сразу логины вида amuradyan (этап 52)
       await fillMissingLogins(tx);
+      // Сменились руководители и подразделения: согласующие задач пересчитываются (этап 54)
+      await refreshApprovals(tx, actor);
       await audit(tx, actor, "structure.import", "structure", "import", "Структура загружена", null, `людей ${plan.planned.length}: новых ${added}, изменено ${plan.people.change.length}; подразделений новых ${unitsCreated}; вакансий ${plan.vacancies.length}`);
       return { units: unitsCreated, added, changed: plan.people.change.length, teams, members, vacancies: plan.vacancies.length };
     },
@@ -772,6 +775,8 @@ export async function decideJoinRequest(actor: Actor, id: string, approve: boole
     const subject = `team:${r.teamId}:${r.personId}`;
     if (approve) {
       if (!r.person.active) fail(`${r.person.fullName} выключен`);
+      // Этап 57: проект закрыли, пока запрос ждал
+      if (!r.team.active) fail(`Команда «${r.team.name}» закрыта`);
       await tx.teamMember.createMany({ data: [{ teamId: r.teamId, personId: r.personId, addedById: r.requestedById, external: true }], skipDuplicates: true });
       await audit(tx, actor, "team.member.add", "team", r.teamId, `Участник добавлен: ${r.team.name}`, null, `${r.person.fullName} (из другой ветки, согласовал ${actor.fullName})`);
       await teamEvent(tx, actor, r.personId, subject, `Вы в команде «${r.team.name}», руководитель ${r.team.leader?.fullName ?? "не назначен"}`, now);
@@ -785,6 +790,7 @@ export async function decideJoinRequest(actor: Actor, id: string, approve: boole
 
 /** Запрос отменяет тот, кто просил, руководитель команды или владелец */
 export async function cancelJoinRequest(actor: Actor, id: string, now = new Date()): Promise<void> {
+  if (teamLogin(actor)) fail("Запрос отменяют, войдя лично");
   await prisma.$transaction(async (tx) => {
     const r = await tx.teamJoinRequest.findUnique({ where: { id }, include: { team: true, person: { select: { fullName: true } } } });
     if (!r || r.status !== "PENDING") return fail("Запроса уже нет: его решили или отменили");
@@ -891,7 +897,9 @@ export async function setPersonOrg(actor: Actor, slug: string, input: PersonOrgI
     if (!changes.length) fail("Ничего не изменилось");
     await tx.person.update({ where: { id: person.id }, data });
     for (const [field, before, after] of changes) await audit(tx, actor, "structure.person.update", "person", slug, field, before ?? "нет", after ?? "нет");
-  });
+    await refreshApprovals(tx, actor);
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export type UnitInput = { name?: string; kind?: UnitKind; parent?: string | null; head?: string | null; headNote?: string | null; active?: boolean };
@@ -958,7 +966,9 @@ export async function updateUnit(actor: Actor, id: string, input: UnitInput): Pr
     if (!log.length) fail("Ничего не изменилось");
     await tx.orgUnit.update({ where: { id }, data });
     for (const [field, before, after] of log) await audit(tx, actor, "structure.unit.update", "unit", id, field, before, after);
-  });
+    await refreshApprovals(tx, actor);
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export async function createUnit(actor: Actor, input: { name: string; kind: UnitKind; parent?: string | null }): Promise<{ id: string }> {

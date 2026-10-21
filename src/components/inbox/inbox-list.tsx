@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, SquareCheck, TrendingUp, Users, type LucideIcon } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, Rss, SquareCheck, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { planHref } from "@/lib/plan/links";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
@@ -29,12 +29,15 @@ const when = (iso: string, today: string) => {
 function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info" | "success" | "warning" | "neutral" } {
   if (item.requestNumber) return { icon: Hand, tone: "info" };
   if (item.subject.startsWith("meeting:")) return { icon: Presentation, tone: "neutral" };
+  if (item.subject.startsWith("ceo-report:")) return { icon: FileText, tone: "info" };
+  if (item.subject.startsWith("meeting-parse:")) return { icon: Presentation, tone: "info" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
   if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
-  if (item.subject.startsWith("team:") || item.subject.startsWith("join:")) return { icon: Users, tone: "info" };
+  if (item.subject.startsWith("news:")) return { icon: Rss, tone: "info" };
+  if (item.subject.startsWith("team:") || item.subject.startsWith("join:") || item.subject.startsWith("approval-co:")) return { icon: Users, tone: "info" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -96,6 +99,16 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                     Встреча
                   </Link>
+                ) : item.subject.startsWith("ceo-report:") ? (
+                  // Этап 61: weekly для CEO отправили из разбора встречи
+                  <Link href={`/ceo-report?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
+                    Weekly для CEO
+                  </Link>
+                ) : item.subject.startsWith("meeting-parse:") ? (
+                  // Этап 61: разбор встречи из Notion готов или не получился
+                  <Link href={`/meeting/notion/${encodeURIComponent(item.subject.slice("meeting-parse:".length))}`} className="sv-event__text font-semibold hover:text-link">
+                    Разбор встречи из Notion
+                  </Link>
                 ) : item.subject.startsWith("decision:") ? (
                   <Link href="/decisions" className="sv-event__text font-semibold hover:text-link">
                     Решение встречи
@@ -116,6 +129,10 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href={planHref(item.subject)} className="sv-event__text font-semibold hover:text-link">
                     {item.subject.endsWith(":partners") ? "Прогноз месяца: партнёры" : "Прогноз месяца"}
                   </Link>
+                ) : item.subject.startsWith("news:") ? (
+                  <Link href={`/news?digest=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
+                    Дайджест новостей
+                  </Link>
                 ) : item.subject.startsWith("team:") ? (
                   <Link href={`/people/structure?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
                     Состав команды
@@ -124,6 +141,9 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href="/people/structure#join-requests" className="sv-event__text font-semibold hover:text-link">
                     Запрос в команду
                   </Link>
+                ) : item.subject.startsWith("approval-co:") ? (
+                  // Этап 54: соисполнитель из вашей команды в задаче другого департамента. Задачу руководитель может не видеть
+                  <p className="sv-event__text font-semibold">Соисполнитель в задаче другого департамента</p>
                 ) : null}
                 <p className="sv-event__text mt-0.5">{item.text}</p>
                 {item.requestQuickDue ? (

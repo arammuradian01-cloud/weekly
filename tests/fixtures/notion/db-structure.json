@@ -1,0 +1,198 @@
+{
+ "page": {
+  "object": "page",
+  "id": "5c6d7e8f-9012-43a4-b5c6-d7e8f9a0b1c2",
+  "properties": {
+   "Название": {
+    "id": "title",
+    "type": "title",
+    "title": [
+     {
+      "type": "text",
+      "text": {
+       "content": "Встреча управления продукта 20.10"
+      },
+      "plain_text": "Встреча управления продукта 20.10"
+     }
+    ]
+   }
+  }
+ },
+ "children": {
+  "5c6d7e8f-9012-43a4-b5c6-d7e8f9a0b1c2": [
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000017",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Итоги"
+       },
+       "plain_text": "Итоги"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000018",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Конверсия в покупку ОСАГО выросла до 12%"
+       },
+       "plain_text": "Конверсия в покупку ОСАГО выросла до 12%"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000019",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Решения"
+       },
+       "plain_text": "Решения"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000020",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Решили: запускаем тест новой формы расчёта в ноябре"
+       },
+       "plain_text": "Решили: запускаем тест новой формы расчёта в ноябре"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000021",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Задачи"
+       },
+       "plain_text": "Задачи"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000022",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Токов: собрать дашборд конверсии по СК"
+       },
+       "plain_text": "Токов: собрать дашборд конверсии по СК"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000023",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Сверка комиссий партнёров за октябрь. Ответственный: Погосова Сабина"
+       },
+       "plain_text": "Сверка комиссий партнёров за октябрь. Ответственный: Погосова Сабина"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000024",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Иванов: созвониться с СК по API"
+       },
+       "plain_text": "Иванов: созвониться с СК по API"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000025",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Риски"
+       },
+       "plain_text": "Риски"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "5c6d7e8f-0000-4000-8000-000000000026",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Задержка выгрузки от финансов"
+       },
+       "plain_text": "Задержка выгрузки от финансов"
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

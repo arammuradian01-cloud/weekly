@@ -6,7 +6,7 @@ import { MAIN_NAV, MANAGEMENT_NAV, NAV_GROUPS, mobileItems } from "@/components/
 describe("меню", () => {
   it("группы и порядок разделов", () => {
     expect(NAV_GROUPS.map((g) => g.label)).toEqual(["Моё", "Команда", "Бизнес"]);
-    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/me", "/one-on-one", "/weekly", "/tasks", "/people", "/goals", "/initiatives", "/decisions", "/forecast"]);
+    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/me", "/one-on-one", "/weekly", "/tasks", "/roadmap", "/people", "/goals", "/initiatives", "/decisions", "/forecast", "/news"]);
     expect(MANAGEMENT_NAV.map((i) => i.href)).toEqual(["/ceo-report", "/journal", "/sync", "/settings"]);
     // Адреса не повторяются и у каждого пункта есть подпись и иконка
     const all = [...MAIN_NAV, ...MANAGEMENT_NAV];

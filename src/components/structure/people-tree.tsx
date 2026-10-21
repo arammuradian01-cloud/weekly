@@ -1,7 +1,7 @@
 "use client";
 
 // Дерево подчинённых (этап 34). Схема: человек в центре с руководителем и путём до верха, под ним прямые подчинённые
-// карточками, нажатие спускает на уровень ниже. Список: всё дерево с отступами, сворачивается по веткам. Поиск по
+// карточками, разложенные по отделам и секторам его ветки (этап 57), нажатие спускает на уровень ниже. Список: всё дерево с отступами, сворачивается по веткам. Поиск по
 // имени и должности открывает человека на схеме
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
 import { PersonDetails, initialsOf, reportsText } from "@/components/people/person-card";
 import { plural } from "@/domain/dates";
+import { groupReports, unitTitle, type ReportGroup } from "@/lib/org/tree-groups";
 
 /** Поиск без регистра и без разницы «ё» и «е», как в остальном ресурсе */
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, "е");
@@ -145,13 +146,7 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
                 <h3 className="sv-org__level-title">
                   {p.reports.length} {plural(p.reports.length, "прямой подчинённый", "прямых подчинённых", "прямых подчинённых")}
                 </h3>
-                <ul className="sv-org__grid">
-                  {p.reports.map((slug) => (
-                    <li key={slug}>
-                      <TreePersonButton person={people[slug]!} me={me} onOpen={open} />
-                    </li>
-                  ))}
-                </ul>
+                <Reports person={p} tree={tree} me={me} onOpen={open} />
               </section>
             </>
           ) : null}
@@ -178,6 +173,86 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
         <TreeList tree={tree} focus={focus} onOpen={open} />
       )}
     </div>
+  );
+}
+
+function PeopleGrid({ slugs, people, me, onOpen }: { slugs: string[]; people: PeopleTree["people"]; me: string; onOpen: (slug: string) => void }) {
+  return (
+    <ul className="sv-org__grid">
+      {slugs.map((slug) => (
+        <li key={slug}>
+          <TreePersonButton person={people[slug]!} me={me} onOpen={onOpen} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const peopleCount = (n: number) => `${n} ${plural(n, "человек", "человека", "человек")}`;
+
+/** Подчинённые по подразделениям ветки на всю глубину (этап 57); нечего раскладывать: обычная сетка */
+function Reports({ person, tree, me, onOpen }: { person: TreePerson; tree: PeopleTree; me: string; onOpen: (slug: string) => void }) {
+  const grouped = groupReports(person, tree);
+  if (!grouped) return <PeopleGrid slugs={person.reports} people={tree.people} me={me} onOpen={onOpen} />;
+  const root = unitTitle(grouped.root);
+  return (
+    <div className="flex flex-col gap-4" data-testid="tree-units">
+      {grouped.direct.length ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-center text-caption text-text-secondary">
+            Прямо в подразделении: {root.kind ? `${root.kind.toLowerCase()} ` : ""}
+            {root.name}
+          </p>
+          <PeopleGrid slugs={grouped.direct} people={tree.people} me={me} onOpen={onOpen} />
+        </div>
+      ) : null}
+      {grouped.groups.map((g) => (
+        <UnitBlock key={g.unit.id} group={g} depth={0} tree={tree} me={me} onOpen={onOpen} />
+      ))}
+      {grouped.other.length ? (
+        <section aria-label="Из других подразделений" className="rounded-panel border border-dashed border-line p-3 sm:p-4" data-testid="tree-unit-other">
+          <h4 className="mb-3 text-center text-body font-semibold text-ink">Из других подразделений</h4>
+          <PeopleGrid slugs={grouped.other} people={tree.people} me={me} onOpen={onOpen} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function UnitBlock({ group, depth, tree, me, onOpen }: { group: ReportGroup; depth: number; tree: PeopleTree; me: string; onOpen: (slug: string) => void }) {
+  const t = unitTitle(group.unit);
+  const head = group.unit.head ? tree.people[group.unit.head] : undefined;
+  const title = `${t.kind ? `${t.kind} ` : ""}${t.name}`;
+  return (
+    <section aria-label={title} className={cn("rounded-panel border border-line p-3 sm:p-4", depth % 2 ? "bg-surface" : "bg-field/50")} data-testid={`tree-unit-${group.unit.id}`}>
+      <header className="mb-3 text-center">
+        <h4 className="text-body font-semibold text-ink">
+          {t.kind ? <span className="font-normal text-text-secondary">{t.kind} </span> : null}
+          {t.name}
+        </h4>
+        <p className="mt-0.5 text-caption text-text-secondary">
+          {head ? (
+            <>
+              Руководитель:{" "}
+              <button type="button" className="font-medium text-blue-700 underline-offset-2 hover:underline" onClick={() => onOpen(head.slug)}>
+                {head.fullName}
+              </button>
+            </>
+          ) : (
+            "Руководитель не отмечен в структуре"
+          )}
+          , {peopleCount(group.total)}
+        </p>
+      </header>
+      {group.people.length ? <PeopleGrid slugs={group.people} people={tree.people} me={me} onOpen={onOpen} /> : null}
+      {group.children.length ? (
+        <div className={cn("flex flex-col gap-3", group.people.length && "mt-3")}>
+          {group.children.map((c) => (
+            <UnitBlock key={c.unit.id} group={c} depth={depth + 1} tree={tree} me={me} onOpen={onOpen} />
+          ))}
+        </div>
+      ) : null}
+    </section>
   );
 }
 

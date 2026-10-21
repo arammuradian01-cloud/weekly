@@ -76,14 +76,37 @@ test("цель департамента, цель сектора ниже и з�
   const dialog = antonov.getByRole("dialog", { name: "Новая задача" });
   await dialog.getByLabel("Задача").fill("Выкатить форму на весь трафик");
   await dialog.getByLabel("Что нужно сделать").fill("Форма на 100% трафика");
+  // Этап 55: цель подтянулась по тексту задачи, её можно сменить или убрать
+  const goalBox = dialog.getByRole("combobox", { name: "Цель" });
+  await expect(goalBox).toHaveValue("Новая форма расчёта на всём трафике");
+  await expect(dialog.getByText("Подобрана по тексту задачи")).toBeVisible();
+  // Escape в открытом списке целей закрывает список, а не форму с набранным текстом
+  await goalBox.click();
+  await expect(dialog.getByRole("listbox", { name: "Цель" })).toBeVisible();
+  await antonov.keyboard.press("Escape");
+  await expect(dialog.getByRole("listbox", { name: "Цель" })).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Задача")).toHaveValue("Выкатить форму на весь трафик");
   await dialog.getByLabel("Ответственный").selectOption({ label: "Чемоданова Алиса" });
+  await expect(goalBox).toHaveValue("Новая форма расчёта на всём трафике");
+  await shot(antonov, "new-task-goal");
   await dialog.getByRole("button", { name: "Поставить задачу" }).click();
   await expect(antonov.getByText(/Задача \d+ создана/).first()).toBeVisible();
-  const [task] = await sql("SELECT number FROM tasks WHERE title = 'Выкатить форму на весь трафик'");
-  await antonov.goto(`/tasks/${task!.number}`);
-  await antonov.getByRole("button", { name: "Выбрать цель" }).click();
   const [goal] = await sql("SELECT id FROM goals WHERE title = 'Новая форма расчёта на всём трафике'");
-  await antonov.getByLabel("Цель команды, команды выше или личная цель").selectOption(goal!.id as string);
+  const [task] = await sql(`SELECT number, "goalId" FROM tasks WHERE title = 'Выкатить форму на весь трафик'`);
+  expect(task!.goalId).toBe(goal!.id);
+
+  // В карточке цель меняют поиском: отвязали и выбрали снова, подходящая по тексту вверху списка
+  await antonov.goto(`/tasks/${task!.number}`);
+  await antonov.getByRole("button", { name: "Сменить цель" }).click();
+  const goalList = antonov.getByRole("listbox", { name: "Цель команды, команды выше или личная цель" });
+  await expect(goalList.getByRole("option").first()).toContainText("Новая форма расчёта на всём трафике");
+  await expect(goalList.getByRole("option").first()).toContainText("по тексту");
+  await antonov.getByRole("button", { name: "Отвязать от цели" }).click();
+  await expect(antonov.getByText("Задача отвязана от цели").first()).toBeVisible();
+  await antonov.getByRole("button", { name: "Выбрать цель" }).click();
+  await antonov.getByRole("combobox", { name: "Цель команды, команды выше или личная цель" }).fill("форма расч");
+  await goalList.getByRole("option", { name: /Новая форма расчёта на всём трафике/ }).click();
   await expect(antonov.getByText(/Задача работает на цель/).first()).toBeVisible();
 
   // Дерево целей: прогресс у цели сектора и у цели департамента

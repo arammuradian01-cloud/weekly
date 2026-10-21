@@ -143,19 +143,24 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   // Предложенную задачу принимает или отклоняет сам адресат или его руководитель (этап 16), с этапа 21 и в топ-команде.
   // Режим управления может решить за адресата
   const addressee = proposed && task.owner !== "all" && (directOwner || !!v.people?.includes(task.owner));
+  // Ждёт согласования (этап 54): решает только согласующий, а за него режим управления. Ни адресат, ни руководитель
+  // команды задачи (он же часто её поставил) сами её не принимают
+  const pending = proposed && task.approval?.state === "pending";
+  const approver = pending && !!task.approval!.approver && task.approval!.approver === me;
   return {
     status: manage || (owner && !proposed),
     state: manage || (owner && !proposed),
     where: manage || owner || co,
     due: manage || (owner && !proposed),
-    priority: manage || creator,
+    // Важность (этап 56, решение Арама 21.10): кроме режима управления, руководителя команды и автора ещё ответственный
+    priority: manage || creator || (owner && !proposed),
     edit: manage || creator,
     owner: manage,
     coExecutors: manage || directOwner,
     links: manage || owner || co || creator,
     comment: true,
     archive: v.management === "OWNER",
-    confirm: manage || addressee,
+    confirm: pending ? !!v.management || approver : manage || addressee,
     handover: !proposed && !CLOSED_STATUSES.includes(task.status) && (manage || directOwner),
   };
 }

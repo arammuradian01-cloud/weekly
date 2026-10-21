@@ -213,9 +213,17 @@ describe("матрица прав раздела 2 на сервере", () => {
     await expectRule(svc.changeStatus(reva, 13, "clarify"), /Статус меняет/);
   });
 
-  it("приоритет: лидер только у поставленных им, у задач со встречи только режим управления", async () => {
+  it("приоритет: тот, кто поставил, ответственный, руководитель команды или режим управления (этап 56)", async () => {
     const reva = await actors.reva();
-    await expectRule(svc.changePriority(reva, 7, "high"), /Приоритет меняет/);
+    // Посторонний лидер: не ставил задачу и не ответственный
+    const seven = (await svc.getTask(7))!;
+    const stranger = (["reva", "loginova", "fatyanov", "cheychenets"] as const).find((s) => s !== seven.owner && s !== seven.createdBy)!;
+    await expectRule(svc.changePriority(await svc.actorFor(stranger), 7, "high"), /Приоритет меняет/);
+    // Ответственный меняет важность своей задачи, даже если её поставил другой
+    if (seven.owner !== "all") {
+      const owner = await svc.actorFor(seven.owner);
+      expect((await svc.changePriority(owner, 7, "high")).task.priority).toBe("high");
+    }
     const own = await svc.createTask(reva, { title: "Моя", outcome: "Готово", owner: "reva", direction: "product", due: future });
     expect((await svc.changePriority(reva, own.task.number, "high")).task.priority).toBe("high");
     expect((await svc.changePriority(await actors.admin(), 7, "critical")).task.priority).toBe("critical");

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+<channel>
+<title>Банк России: пресс-релизы</title>
+<link>https://www.cbr.ru/press/</link>
+<item>
+<title>Банк России обсудил со страховщиками изменения в тарифах ОСАГО</title>
+<link>https://www.cbr.ru/press/event/?id=10001&amp;utm_source=rss</link>
+<guid isPermaLink="false">cbr-10001</guid>
+<pubDate>Tue, 20 Oct 2026 10:30:00 +0300</pubDate>
+<description><![CDATA[<p>Регулятор рассмотрел предложения РСА по расширению тарифного коридора &mdash; решение будет принято в ноябре. Также обсуждались сроки европротокола.</p>]]></description>
+</item>
+<item>
+<title>Ключевая ставка сохранена</title>
+<link>https://www.cbr.ru/press/keypr/?id=10002</link>
+<guid>cbr-10002</guid>
+<pubDate>Fri, 17 Oct 2026 13:30:00 +0300</pubDate>
+<description>Совет директоров Банка России сохранил ключевую ставку. Ставки по вкладам, по оценке регулятора, останутся на прежнем уровне.</description>
+</item>
+<item>
+<title>Запись без ссылки</title>
+<guid>cbr-10003</guid>
+<description>Такая запись пропускается</description>
+</item>
+<item>
+<title>Погода в Москве</title>
+<link>https://www.cbr.ru/press/event/?id=10004</link>
+<guid>cbr-10004</guid>
+<pubDate>Mon, 19 Oct 2026 09:00:00 MSK</pubDate>
+<description>Новость ни об одном продукте.</description>
+</item>
+<item>
+<title>Старая новость про страхование</title>
+<link>https://www.cbr.ru/press/event/?id=9000</link>
+<guid>cbr-9000</guid>
+<pubDate>Mon, 05 Jan 2026 09:00:00 +0300</pubDate>
+<description>Очень старая запись о страховании, старше 30 дней: при заборе не берётся.</description>
+</item>
+</channel>
+</rss>

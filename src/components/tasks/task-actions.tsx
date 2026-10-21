@@ -8,7 +8,7 @@
 import { createContext, useContext, useRef, useState } from "react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, type IsoDate } from "@/domain/dates";
-import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
+import { CLOSED_STATUSES, priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
 import { statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/domain/types";
 import {
@@ -71,8 +71,14 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
     setBusy(false);
   };
 
-  const statusToast = (task: Task, next: StatusCode) =>
-    task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
+  const statusToast = (task: Task, next: StatusCode) => {
+    // Согласование (этап 54): решение руководителя и повторная отправка отклонённой задачи
+    if (task.status === "proposed" && task.approval?.state === "pending") {
+      if (next === "in-progress") return `Задача ${task.number} согласована`;
+      if (next === "cancelled") return task.approval.from ? `Передача задачи ${task.number} не согласована, задача вернулась прежнему ответственному` : `Задача ${task.number} не согласована`;
+    }
+    return task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
+  };
 
   const actions: Actions = {
     changeStatus: (task, next) => {
@@ -80,6 +86,18 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       if (note) {
         setText("");
         setPending({ kind: "status", task, next, note });
+        return;
+      }
+      // Отклонённую задачу открывают снова (этап 54): что с ней стало, решает сервер, тост по его ответу
+      if (task.approval?.state === "rejected" && CLOSED_STATUSES.includes(task.status) && !CLOSED_STATUSES.includes(next)) {
+        void (async () => {
+          try {
+            const r = await changeStatusAction(task.number, next);
+            applyTaskResult(r, r.ok && r.task?.approval?.state === "pending" ? `Задача ${task.number} снова отправлена на согласование` : statusToast(task, next));
+          } catch {
+            applyTaskResult({ ok: false, error: "Нет связи с сервером: статус не сохранился" }, "");
+          }
+        })();
         return;
       }
       void runTask(() => changeStatusAction(task.number, next), statusToast(task, next));
@@ -193,6 +211,8 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
         ? `Задача ${pending.task.number} заблокирована`
         : pending?.kind === "risk"
           ? `Задача ${pending.task.number}: есть риск`
+        : pending?.kind === "status" && pending.next === "cancelled" && pending.task.status === "proposed" && pending.task.approval?.state === "pending"
+          ? `Не согласовать задачу ${pending.task.number}`
         : pending
           ? `Задача ${pending.task.number}: ${statusOf(pending.next).label.toLowerCase()}`
           : "";

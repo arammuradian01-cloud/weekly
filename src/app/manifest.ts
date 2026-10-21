@@ -7,9 +7,9 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Weekly · Страхование и инвестиции",
+    name: "Weekly Сравни",
     short_name: "Weekly",
-    description: "Weekly, задачи и просьбы команды «Страхование и инвестиции»",
+    description: "Weekly, задачи и просьбы команд Сравни",
     lang: "ru",
     start_url: "/",
     scope: "/",

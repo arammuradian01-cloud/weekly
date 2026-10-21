@@ -121,6 +121,12 @@ export type Task = {
    * next: какая задача уже создана следом
    */
   repeat?: { kind: RepeatKindCode; mode: RepeatModeCode; active: boolean; of?: number; next?: number };
+  /**
+   * Задача человеку из другого департамента (этап 54): pending ждёт согласования руководителя ответственного,
+   * informed руководитель только проинформирован
+   */
+  /** Этап 54: from, у кого была задача до передачи, которая ждёт согласования. approver null: согласующего удалили */
+  approval?: { state: "pending" | "approved" | "rejected" | "informed"; approver: PersonSlug | null; from?: PersonSlug };
 };
 
 export type ChecklistItem = { id: string; text: string; done: boolean; by?: PersonSlug };

@@ -1,5 +1,10 @@
 "use client";
 
+import { ApprovalSection } from "./approval-section";
+import { NumbersAccessSection } from "./numbers-access-section";
+import type { NumbersAccessView } from "@/lib/plan/access";
+import { NewsSettings, type NewsSettingsProps } from "@/components/news/news-settings";
+import type { ApprovalSetting } from "@/lib/tasks/approval-modes";
 import { csvCell } from "@/lib/csv";
 import { useId, useState } from "react";
 import { CalendarOff, Copy, Crown, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, Search, UserMinus, UserPlus } from "lucide-react";
@@ -101,6 +106,9 @@ export function SettingsView({
   login,
   absences,
   weeks,
+  approval,
+  numbersAccess,
+  news,
 }: {
   owner: boolean;
   me: string;
@@ -117,6 +125,12 @@ export function SettingsView({
   /** Отсутствия людей с отчётной недели и недели, которые можно отметить (этап 9) */
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
+  /** Согласование задач в другие департаменты (этап 54): только владельцу */
+  approval?: { setting: ApprovalSetting; departments: { id: string; name: string }[] };
+  /** Доступ к цифрам прогноза (этап 57): только владельцу */
+  numbersAccess?: NumbersAccessView;
+  /** Новости (этап 60): источники и ключевые слова, только владельцу */
+  news?: NewsSettingsProps;
 }) {
   // Оглавление (этап 48): только те разделы, которые человек видит
   const toc: TocItem[] = [
@@ -126,6 +140,9 @@ export function SettingsView({
       ? [
           { id: "people", label: "Люди и роли" },
           { id: "login", label: "Вход и пароли" },
+          ...(approval ? [{ id: "approval", label: "Согласование задач" }] : []),
+          ...(numbersAccess ? [{ id: "numbers-access", label: "Доступ к цифрам" }] : []),
+          ...(news ? [{ id: "news", label: "Новости" }] : []),
           { id: "stand", label: banner === "test" ? "Стенд и данные" : "Плашка и данные" },
         ]
       : []),
@@ -164,6 +181,11 @@ export function SettingsView({
       {owner ? (
         <>
           <PeopleSection people={people} me={me} absences={absences} weeks={weeks} />
+
+          {approval ? <ApprovalSection setting={approval.setting} departments={approval.departments} /> : null}
+
+          {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
+          {news ? <NewsSettings {...news} /> : null}
 
           <Group id="login">
             <LoginSection login={login} />

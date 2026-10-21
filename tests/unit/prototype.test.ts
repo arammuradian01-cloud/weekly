@@ -181,17 +181,21 @@ describe("правила задач (раздел 4 ТЗ)", () => {
     const firstNormal = ordered.findIndex((t) => !isOverdue(t, TODAY));
     expect(ordered.slice(firstNormal).some((t) => isOverdue(t, TODAY))).toBe(false);
   });
-  it("права: лидер меняет статус только своей задачи, приоритет только поставленной им", () => {
+  it("права: лидер меняет статус только своей задачи, приоритет поставленной им и своей (этап 56)", () => {
     expect(permissions(base, "sakhibullina", false).status).toBe(true);
     expect(permissions(base, "reva", false).status).toBe(false);
     expect(permissions(base, "reva", true).status).toBe(true);
     expect(permissions(base, "afanasyev", false).priority).toBe(true); // поставил задачу
-    expect(permissions(base, "sakhibullina", false).priority).toBe(false);
+    // Этап 56: важность (приоритет) меняет и ответственный, соисполнитель нет
+    expect(permissions(base, "sakhibullina", false).priority).toBe(true);
+    expect(permissions(base, "golovkin", false).priority).toBe(false);
+    expect(permissions(at({ status: "proposed" }), "sakhibullina", false).priority).toBe(false);
     expect(permissions(base, "golovkin", false).where).toBe(true); // соисполнитель пишет «где сейчас»
     expect(permissions(base, "golovkin", false).status).toBe(false);
-    // Задача со встречи без автора: приоритет меняет только владелец или администратор
-    expect(permissions(at({ createdBy: null }), "sakhibullina", false).priority).toBe(false);
-    expect(permissions(at({ createdBy: null }), "sakhibullina", true).priority).toBe(true);
+    // Задача со встречи без автора: приоритет меняет ответственный, владелец или администратор, но не другой лидер
+    expect(permissions(at({ createdBy: null }), "sakhibullina", false).priority).toBe(true);
+    expect(permissions(at({ createdBy: null }), "reva", false).priority).toBe(false);
+    expect(permissions(at({ createdBy: null }), "reva", true).priority).toBe(true);
   });
   it("права режима управления, наблюдателя и предложенных задач (матрица раздела 2)", () => {
     const owner = { slug: "muradyan" as const, management: "OWNER" as const };

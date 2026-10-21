@@ -25,6 +25,6 @@ export function relevant(kind: "inbox" | "tasks" | "weekly" | "meeting", path: s
   if (kind === "inbox") return home || path.startsWith("/me");
   // Встреча 2.0 (этап 23): экраны участников идут за ведущим, журнал решений обновляется
   if (kind === "meeting") return path.startsWith("/weekly/meeting") || path.startsWith("/decisions");
-  if (kind === "tasks") return home || ["/tasks", "/me", "/people", "/goals", "/requests"].some((p) => path.startsWith(p));
+  if (kind === "tasks") return home || ["/tasks", "/me", "/people", "/goals", "/requests", "/roadmap"].some((p) => path.startsWith(p));
   return home || ["/weekly", "/people"].some((p) => path.startsWith(p));
 }

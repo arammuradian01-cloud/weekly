@@ -404,6 +404,13 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const { pushPass } = await import("@/lib/push/service");
       return pushPass(now);
     });
+    // Новости (этап 60) последними: забор чужих лент раз в час может идти минуту-две и не должен задерживать
+    // напоминания, дайджест встречи и письма о событиях. Его время ограничено, чтобы проход укладывался в аренду
+    await safe("Новости", async () => {
+      const { newsPass } = await import("@/lib/news/service");
+      const r = await newsPass(now);
+      return r.digest;
+    });
     return { pushes, reminders, digest, events };
   });
 }

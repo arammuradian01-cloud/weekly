@@ -22,6 +22,9 @@ export const taskInclude = {
   checklist: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], include: { doneBy: { select: { slug: true } } } },
   repeatOf: { select: { number: true } },
   repeatNext: { select: { number: true } },
+  // Согласование (этап 54): кто согласует задачу человеку из другого департамента
+  approver: { select: { slug: true } },
+  approvalFrom: { select: { slug: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -39,6 +42,8 @@ export const taskListInclude = {
   checklist: taskInclude.checklist,
   repeatOf: taskInclude.repeatOf,
   repeatNext: taskInclude.repeatNext,
+  approver: taskInclude.approver,
+  approvalFrom: taskInclude.approvalFrom,
   _count: { select: { comments: true } },
 } satisfies Prisma.TaskInclude;
 
@@ -108,5 +113,15 @@ export function toTaskDto(row: TaskRow): Task {
         }
       : {}),
     ...(row.goal ? { goal: { id: row.goal.id, title: row.goal.code ? `${row.goal.code}. ${row.goal.title}` : row.goal.title, code: row.goal.code, quarter: row.goal.quarter } } : {}),
+    // Согласующего могли удалить: задача всё равно ждёт решения, его тогда принимает режим управления
+    ...(row.approvalState
+      ? {
+          approval: {
+            state: row.approvalState.toLowerCase() as "pending" | "approved" | "rejected" | "informed",
+            approver: row.approver ? slug(row.approver.slug) : null,
+            ...(row.approvalFrom && row.approvalState === "PENDING" ? { from: slug(row.approvalFrom.slug) } : {}),
+          },
+        }
+      : {}),
   };
 }

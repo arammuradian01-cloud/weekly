@@ -71,6 +71,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM settings WHERE key IN ('sheet.layout', 'sheet.synced', 'sheet.lock', 'sheet.imitationDown')");
   // Забор из Bord выключен, прошлых заборов не было
   await client.query("DELETE FROM settings WHERE key LIKE 'bord.%'");
+  // Этапы 54 и 57: правила согласования и доступ к цифрам ссылаются на подразделения, которые тесты создают заново
+  await client.query("DELETE FROM settings WHERE key IN ('tasks.crossDepartment', 'numbers.access')");
   await client.query("DELETE FROM sheet_runs");
   await client.end();
   const env = { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL };

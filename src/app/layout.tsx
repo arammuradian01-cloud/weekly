@@ -7,7 +7,7 @@ import { ServiceWorkerRegister } from "@/components/pwa/register";
 
 export const metadata: Metadata = {
   title: { default: "Weekly", template: "%s | Weekly" },
-  description: "Weekly и задачи команды «Страхование и инвестиции»",
+  description: "Weekly, задачи и просьбы команд Сравни",
   robots: { index: false, follow: false },
   // Приложение на экране «Домой» (этап 26): значок для iPhone и запуск без адресной строки
   icons: { apple: "/icons/apple-touch-icon.png" },

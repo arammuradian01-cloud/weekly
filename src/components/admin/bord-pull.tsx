@@ -8,11 +8,13 @@ import { TextInput } from "@/components/ui/primitives";
 import { StatusLine } from "@/components/ui/data";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
-import { pullBordNowAction, setBordSourceAction } from "@/app/(app)/sync/actions";
+import { pullBordNowAction, setBordPullAction, setBordSourceAction } from "@/app/(app)/sync/actions";
 
 export type BordView = {
   sourceId: string | null;
   connected: boolean;
+  /** Забор по расписанию включён (этап 61: по умолчанию выключен, главное приложение) */
+  auto: boolean;
   hasKey: boolean;
   serviceEmail: string | null;
   /** Подключён рабочий Bord, а не копия */
@@ -60,7 +62,7 @@ export function BordPull({ view }: { view: BordView }) {
   const run = useRunAction();
   const { notify } = usePrototype();
   const [link, setLink] = useState(view.sourceId ? sheetUrl(view.sourceId) : "");
-  const [busy, setBusy] = useState<"save" | "pull" | null>(null);
+  const [busy, setBusy] = useState<"save" | "pull" | "auto" | null>(null);
   const changed = link.trim() !== (view.sourceId ? sheetUrl(view.sourceId) : "");
   const r = view.report;
 
@@ -74,6 +76,16 @@ export function BordPull({ view }: { view: BordView }) {
       else if (res.access === "no-key") notify("Ссылка сохранена. Забор начнётся, когда на сервере появится ключ служебного аккаунта");
       else notify(`Ссылка сохранена, но ${res.access.charAt(0).toLowerCase()}${res.access.slice(1)}`, "error");
       setLink(res.id ? sheetUrl(res.id) : "");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleAuto(on: boolean) {
+    setBusy("auto");
+    try {
+      const res = await run(() => setBordPullAction(on));
+      if (res) notify(res.on ? "Забор из Bord включён: раз в 5 минут" : "Забор из Bord по расписанию остановлен. Задачи в ресурсе остаются");
     } finally {
       setBusy(null);
     }
@@ -98,9 +110,18 @@ export function BordPull({ view }: { view: BordView }) {
           Задачи из Bord
         </h2>
         <p className="mt-1 max-w-[760px] text-body text-ink">
-          Bord остаётся главным, пока не готова финальная версия ресурса. Ресурс раз в 5 минут читает вкладку «Задачи» и переносит задачи всех сотрудников. В Bord ресурс ничего не пишет.
+          С 21 октября главное приложение: Excel-борд больше не ведём, задачи ставятся в ресурсе и из разбора встреч. Поэтому забор из Bord по умолчанию выключен. Если нужно временно забирать задачи из Bord, включите забор: ресурс раз в 5 минут прочитает вкладку «Задачи» и перенесёт задачи всех сотрудников. В Bord ресурс ничего не пишет.
         </p>
       </div>
+
+      {view.connected && !view.auto ? (
+        <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4 sm:flex-row sm:items-center sm:justify-between" data-testid="bord-auto-off">
+          <p className="text-body text-ink">Забор по расписанию выключен: задачи из Bord сами не переносятся. Ссылка на Bord сохранена, забрать один раз можно кнопкой «Забрать сейчас».</p>
+          <Button variant="secondary" className="shrink-0" disabled={busy !== null} onClick={() => void toggleAuto(true)}>
+            {busy === "auto" ? "Включаем…" : "Включить забор"}
+          </Button>
+        </div>
+      ) : null}
 
       {view.connected && r ? (
         // Этап 48: состояние забора одной строкой вместо плиток
@@ -119,7 +140,7 @@ export function BordPull({ view }: { view: BordView }) {
         />
       ) : null}
 
-      {view.connected && !r && !view.error ? <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}
+      {view.connected && view.auto && !r && !view.error ? <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">Первый забор пройдёт в течение минуты. Можно не ждать: «Забрать сейчас».</p> : null}
 
       {view.error ? (
         <div role="alert" className="flex gap-3 sv-card sv-card--soft bg-danger-soft px-5 py-4 text-body text-ink">
@@ -138,6 +159,11 @@ export function BordPull({ view }: { view: BordView }) {
             <Download className="h-4 w-4" aria-hidden="true" />
             {busy === "pull" ? "Забираем…" : "Забрать сейчас"}
           </Button>
+          {view.auto ? (
+            <Button variant="secondary" disabled={busy !== null} onClick={() => void toggleAuto(false)}>
+              {busy === "auto" ? "Останавливаем…" : "Остановить забор по расписанию"}
+            </Button>
+          ) : null}
         </div>
       ) : null}
 

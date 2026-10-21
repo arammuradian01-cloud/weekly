@@ -46,8 +46,15 @@ export async function applyBordGoalsAction(tab: string, team: string, quarter: s
   return done(await runAction("Цели из Bord", (a) => applyBordGoals(a, String(tab ?? ""), { team: String(team), quarter })));
 }
 
-export async function goalOptionsAction(number: number): Promise<Result<{ id: string; label: string }[]>> {
+export async function goalOptionsAction(number: number): Promise<Result<goals.GoalOption[]>> {
   return runAction("Цели для задачи", (a) => goals.goalOptions({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, Number(number)));
+}
+
+/** Цель для новой задачи по тексту (этап 55): лучшая подставляется в форму, остальные в поиске */
+export async function suggestGoalsAction(input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<Result<{ options: goals.GoalOption[]; best: string | null }>> {
+  return runAction("Цели для новой задачи", (a) =>
+    goals.suggestGoals({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, { team: String(input?.team ?? ""), due: String(input?.due ?? ""), title: String(input?.title ?? ""), outcome: String(input?.outcome ?? ""), owner: input?.owner ? String(input.owner) : null }),
+  );
 }
 
 export async function linkGoalAction(number: number, goalId: string | null): Promise<Result<{ goal: string | null }>> {

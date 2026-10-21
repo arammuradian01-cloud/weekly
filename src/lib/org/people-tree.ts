@@ -12,6 +12,8 @@ export type TreePerson = {
   fullName: string;
   position: string | null;
   unit: string | null;
+  /** Подразделение (этап 57): по нему схема раскладывает подчинённых по отделам и секторам */
+  unitId: string | null;
   /** Административный руководитель в дереве: null у корня */
   manager: string | null;
   /** Функциональный руководитель: видит работу, но не управляет задачами */
@@ -33,8 +35,13 @@ export type TreePerson = {
   weekly: boolean;
 };
 
+/** Подразделение для схемы (этап 57): вид, родитель, руководитель */
+export type TreeUnit = { id: string; name: string; kind: string; parentId: string | null; head: string | null; order: number };
+
 export type PeopleTree = {
   people: Record<string, TreePerson>;
+  /** Подразделения по id: схема дорисовывает структуру до конца, а не плоский список подчинённых */
+  units: Record<string, TreeUnit>;
   /** Корни: люди без руководителя в дереве. Первым руководитель департамента */
   roots: string[];
   /** Сколько людей с руководителем вне дерева или в петле: поставлены в корни */
@@ -57,10 +64,10 @@ async function peopleTreeUncached(viewer: ScopeSubject): Promise<PeopleTree> {
     prisma.person.findMany({
       where: { active: true },
       orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
-      select: { id: true, slug: true, fullName: true, position: true, managerId: true, functionalManagerId: true, unit: { select: { name: true, active: true } } },
+      select: { id: true, slug: true, fullName: true, position: true, managerId: true, functionalManagerId: true, unitId: true, unit: { select: { name: true, active: true } } },
     }),
     prisma.team.findMany({ where: { active: true }, select: { id: true, name: true, leaderId: true, members: { select: { personId: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
-    prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, headId: true, parentId: true, kind: true } }),
+    prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, headId: true, parentId: true, kind: true, name: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.vacancy.findMany({ where: { closedAt: null }, select: { unitId: true, position: true }, orderBy: { createdAt: "asc" } }),
     loadTeamNodes(prisma),
     prisma.person.findMany({ where: { functionalManagerId: viewer.id }, select: { id: true } }),
@@ -165,6 +172,7 @@ async function peopleTreeUncached(viewer: ScopeSubject): Promise<PeopleTree> {
       position: p.position,
       // Выключенное подразделение не показываем: человек мог остаться в нём со старой загрузки
       unit: p.unit?.active ? p.unit.name : null,
+      unitId: p.unit?.active ? p.unitId : null,
       manager: slugOf(managerOf.get(p.id) ?? null),
       functional: slugOf(p.functionalManagerId),
       reports: order(reports.get(p.id) ?? []).map((id) => byId.get(id)!.slug),
@@ -180,5 +188,9 @@ async function peopleTreeUncached(viewer: ScopeSubject): Promise<PeopleTree> {
   const me = byId.get(viewer.id);
   const loaded = people.some((p) => managerOf.get(p.id));
   const start = me ? (reports.has(me.id) ? me.slug : (slugOf(managerOf.get(me.id) ?? null) ?? byId.get(roots[0] ?? "")?.slug ?? null)) : (byId.get(roots[0] ?? "")?.slug ?? null);
-  return { people: out, roots: roots.map((id) => byId.get(id)!.slug), orphans, start, loaded };
+  const treeUnits: Record<string, TreeUnit> = {};
+  units.forEach((u, i) => {
+    treeUnits[u.id] = { id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: slugOf(u.headId), order: i };
+  });
+  return { people: out, units: treeUnits, roots: roots.map((id) => byId.get(id)!.slug), orphans, start, loaded };
 }
