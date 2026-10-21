@@ -239,7 +239,7 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
     // Первый вход (этап 52): если рабочей почты ещё нет, ресурс предлагает её указать
-    if (!person.email) target = "/welcome";
+    if (!person.email) target = "/welcome?new=1";
   } catch (error) {
     const message = ruleError(error);
     if (!message) {
@@ -255,8 +255,13 @@ export type ConfirmState = { error?: string; email?: string } | null;
 
 /** Кнопка «Подтвердить почту» на экране ссылки из письма (этап 52): ссылка тратится только здесь, не при открытии */
 export async function confirmEmailAction(_prev: ConfirmState, formData: FormData): Promise<ConfirmState> {
-  const result = await confirmEmail(String(formData.get("token") ?? ""), await requestIp());
-  return result.ok ? { email: result.email } : { error: result.error };
+  try {
+    const result = await confirmEmail(String(formData.get("token") ?? ""), await requestIp());
+    return result.ok ? { email: result.email } : { error: result.error };
+  } catch (error) {
+    console.error("Подтверждение почты: не прошло", error);
+    return { error: "Не получилось подтвердить адрес. Обновите страницу и попробуйте ещё раз" };
+  }
 }
 
 /** «Прислать ссылку на почту» на экране входа */

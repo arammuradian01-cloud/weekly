@@ -180,13 +180,15 @@ test("этап 52: первый вход показывает логин и пр
   await svet.getByLabel("Придумайте пароль").fill(TEST_PASSWORD);
   await svet.getByLabel("Повторите пароль").fill(TEST_PASSWORD);
   await svet.getByRole("button", { name: "Задать пароль и войти" }).click();
-  await expect(svet).toHaveURL(/\/welcome$/);
+  await expect(svet).toHaveURL(/\/welcome\?new=1$/);
+  await expect(svet.getByRole("heading", { name: /Добро пожаловать/ })).toBeVisible();
   await expect(svet.getByTestId("welcome-login")).toHaveText("sloginova");
   await shot(svet, "welcome");
-  // Только рабочий домен
+  // Только рабочий домен; ошибка видна у формы, а не только всплывающим сообщением
   await svet.getByRole("textbox", { name: "Рабочая почта" }).fill("svet@gmail.com");
+  await svet.getByLabel("Ваш пароль").fill(TEST_PASSWORD);
   await svet.getByRole("button", { name: "Прислать ссылку" }).click();
-  await expect(svet.getByText(/Нужна рабочая почта/).first()).toBeVisible();
+  await expect(svet.getByRole("alert").filter({ hasText: /Нужна рабочая почта/ })).toBeVisible();
   await svet.getByRole("textbox", { name: "Рабочая почта" }).fill("S.Loginova@sravni.ru");
   await svet.getByRole("button", { name: "Прислать ссылку" }).click();
   await expect(svet.getByTestId("email-pending")).toContainText("s.loginova@sravni.ru");
@@ -199,6 +201,9 @@ test("этап 52: первый вход показывает логин и пр
   const phone = await freshPage(browser, page);
   await phone.goto(linkFrom(mail!.text));
   await expect(phone.getByRole("heading", { name: "Подтверждение почты" })).toBeVisible();
+  // Чей вход и какой адрес, адрес скрыт наполовину
+  await expect(phone.getByTestId("email-confirm-who")).toContainText("s***a@sravni.ru");
+  await expect(phone.getByTestId("email-confirm-who")).toContainText("Логинова Светлана");
   await phone.getByRole("button", { name: "Подтвердить почту" }).click();
   await expect(phone.getByTestId("email-confirmed")).toContainText("s.loginova@sravni.ru");
   await phone.context().close();

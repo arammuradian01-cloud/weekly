@@ -131,8 +131,8 @@ export async function setPasswordByLink(page: Page, link: string, password = TES
   await page.getByLabel("Повторите пароль").fill(password);
   await page.getByRole("button", { name: "Задать пароль и войти" }).click();
   // Этап 52: без рабочей почты первый вход ведёт на экран приветствия, с него «Начать работу»
-  await expect(page).toHaveURL(/\/(welcome)?$/);
-  if (page.url().endsWith("/welcome")) {
+  await expect(page).toHaveURL(/\/(welcome\?new=1)?$/);
+  if (page.url().includes("/welcome")) {
     await page.getByTestId("welcome-start").click();
     await expect(page).toHaveURL(/\/$/);
   }

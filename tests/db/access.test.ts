@@ -23,7 +23,12 @@ const expectRule = async (p: Promise<unknown>, message: RegExp) => {
 let sent: Mail[] = [];
 const tokenFrom = (mail: Mail) => decodeURIComponent(/[?&]t=([^\s&]+)/.exec(mail.text)![1]!);
 
+/** Зоны, которые тесты правят: после файла они возвращаются, их сверяют тесты журнала в других файлах */
+const ZONES: Record<string, string> = {};
+
 async function reset() {
+  if (!Object.keys(ZONES).length) for (const p of await prisma.person.findMany({ where: { slug: { in: ["reva", "golovkin"] } } })) ZONES[p.slug] = p.zone;
+  for (const [slug, zone] of Object.entries(ZONES)) await prisma.person.update({ where: { slug }, data: { zone } });
   await prisma.deviceSession.deleteMany();
   await prisma.loginLink.deleteMany();
   await prisma.loginAttempt.deleteMany();
@@ -81,7 +86,7 @@ describe("логины вида amuradyan", () => {
 describe("рабочая почта", () => {
   it("человек указывает почту, она начинает работать только после ссылки из письма", async () => {
     const reva = await personal("reva");
-    await email.requestEmailBinding(reva, "T.Reva@sravni.ru", "https://weekly.test", t0);
+    await email.requestEmailBinding(reva, "T.Reva@sravni.ru", "", "https://weekly.test", t0);
     const p1 = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
     expect(p1.email).toBeNull();
     expect(p1.pendingEmail).toBe("t.reva@sravni.ru");
@@ -110,28 +115,29 @@ describe("рабочая почта", () => {
 
   it("только рабочий домен, чужой привязанный адрес нельзя, по общему логину нельзя, ссылка живёт сутки", async () => {
     const reva = await personal("reva");
-    await expectRule(email.requestEmailBinding(reva, "reva@gmail.com", "https://weekly.test", t0), /рабочая почта/);
+    await expectRule(email.requestEmailBinding(reva, "reva@gmail.com", "", "https://weekly.test", t0), /рабочая почта/);
     await prisma.person.update({ where: { slug: "golovkin" }, data: { email: "golovkin@sravni.ru" } });
-    await expectRule(email.requestEmailBinding(reva, "golovkin@sravni.ru", "https://weekly.test", t0), /уже привязан/);
-    await expectRule(email.requestEmailBinding({ ...reva, via: "TEAM" }, "t.reva@sravni.ru", "https://weekly.test", t0), /личном входе/);
-    // Поддомен рабочего домена подходит
-    await email.requestEmailBinding(reva, "t.reva@mail.sravni.ru", "https://weekly.test", t0);
+    await expectRule(email.requestEmailBinding(reva, "golovkin@sravni.ru", "", "https://weekly.test", t0), /уже привязан/);
+    await expectRule(email.requestEmailBinding({ ...reva, via: "TEAM" }, "t.reva@sravni.ru", "", "https://weekly.test", t0), /личном входе/);
+    // Поддомен по умолчанию не подходит: им может управлять подрядчик
+    await expectRule(email.requestEmailBinding(reva, "t.reva@mail.sravni.ru", "", "https://weekly.test", t0), /рабочая почта/);
+    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", t0);
     const token = tokenFrom(sent.at(-1)!);
     expect(await email.confirmEmail(token, null, later(email.EMAIL_CONFIRM_TTL_MS + 1000))).toMatchObject({ ok: false });
     // Домены задаются настройкой
     await prisma.setting.create({ data: { key: email.EMAIL_DOMAINS_KEY, value: ["sravni.ru", "sravni.tech"] } });
-    await email.requestEmailBinding(reva, "t.reva@sravni.tech", "https://weekly.test", t0);
+    await email.requestEmailBinding(reva, "t.reva@sravni.tech", "", "https://weekly.test", t0);
     expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).pendingEmail).toBe("t.reva@sravni.tech");
   });
 
   it("адрес успели занять до подтверждения, человек передумал, почта не настроена", async () => {
     const reva = await personal("reva");
-    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "https://weekly.test", t0);
+    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", t0);
     const token = tokenFrom(sent.at(-1)!);
     await prisma.person.update({ where: { slug: "golovkin" }, data: { email: "t.reva@sravni.ru" } });
     expect(await email.confirmEmail(token, null, later(1000))).toMatchObject({ ok: false, error: expect.stringMatching(/другому человеку/) });
     await prisma.person.update({ where: { slug: "golovkin" }, data: { email: null } });
-    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "https://weekly.test", later(2000));
+    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", later(2000));
     const second = tokenFrom(sent.at(-1)!);
     await email.cancelEmailBinding(reva, later(3000));
     expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).pendingEmail).toBeNull();
@@ -140,7 +146,7 @@ describe("рабочая почта", () => {
     const app = process.env.APP_URL;
     delete process.env.APP_URL;
     try {
-      await expectRule(email.requestEmailBinding(reva, "t.reva@sravni.ru", "https://weekly.test", later(5000)), /не настроена/);
+      await expectRule(email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", later(5000)), /не настроена/);
     } finally {
       if (app !== undefined) process.env.APP_URL = app;
     }
@@ -148,8 +154,8 @@ describe("рабочая почта", () => {
 
   it("не больше пяти писем подтверждения в сутки", async () => {
     const reva = await personal("reva");
-    for (let i = 0; i < email.EMAIL_CONFIRMS_PER_DAY; i++) await email.requestEmailBinding(reva, `t.reva${i}@sravni.ru`, "https://weekly.test", later(i * 1000));
-    await expectRule(email.requestEmailBinding(reva, "t.reva9@sravni.ru", "https://weekly.test", later(10_000)), /Слишком много/);
+    for (let i = 0; i < email.EMAIL_CONFIRMS_PER_DAY; i++) await email.requestEmailBinding(reva, `t.reva${i}@sravni.ru`, "", "https://weekly.test", later(i * 1000));
+    await expectRule(email.requestEmailBinding(reva, "t.reva9@sravni.ru", "", "https://weekly.test", later(10_000)), /Слишком много/);
   });
 });
 
@@ -166,10 +172,148 @@ describe("главный владелец и совладельцы", () => {
     // Совладелец сохраняет права владельца: управляет людьми
     await admin.updatePerson(await owner(), "reva", { zone: "Продукт" });
     await expectRule(admin.setPrimaryOwner({ ...(await tasks.actorFor("golovkin", "ADMIN")), via: "INVITE" as const }, "muradyan"), /владелец/);
-    // Главный владелец выключен или понижен: главным считается первый владелец списка
-    await admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" });
+    // Совладелец не меняет главного: не понижает, не выключает, не сбрасывает пароль, не выдаёт ссылку, не назначает себя
+    await expectRule(admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" }), /Главного владельца меняет только он сам/);
+    await expectRule(admin.setPersonActive(await owner(), "golovkin", false), /только он сам/);
+    await expectRule(pw.resetPassword(await owner(), "golovkin"), /только он сам/);
+    await expectRule(login.issueInvite(await owner(), "golovkin"), /только он сам/);
+    await expectRule(login.revokeAllDevices(await owner(), "golovkin"), /только он сам/);
+    await expectRule(admin.setPrimaryOwner(await owner(), "muradyan"), /только сам главный владелец/);
+    // Зону главного совладелец править может: это не доступ
+    await admin.updatePerson(await owner(), "golovkin", { zone: "Департамент" });
+    // Главный сам перестал быть владельцем: настройка снимается с записью в журнал, главным считается первый владелец
+    const golovkin = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "INVITE" as const };
+    await admin.updatePerson(golovkin, "golovkin", { role: "ADMIN" });
+    expect(await prisma.setting.findUnique({ where: { key: admin.PRIMARY_OWNER_KEY } })).toBeNull();
     expect(await admin.primaryOwnerSlug()).toBe("muradyan");
-    expect(await prisma.auditLog.count({ where: { field: "Главный владелец" } })).toBeGreaterThan(0);
+    // Снова владелец: молча главным он не возвращается
+    await admin.updatePerson(await owner(), "golovkin", { role: "OWNER" });
+    expect(await admin.primaryOwnerSlug()).toBe("muradyan");
+    await admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" });
+    expect(await prisma.auditLog.count({ where: { field: "Главный владелец" } })).toBeGreaterThan(1);
+  });
+});
+
+describe("после проверки кода этапа 52", () => {
+  it("смена пароля, сброс, «выйти везде» и выключение снимают неподтверждённую почту и ссылку на неё", async () => {
+    const steps: [string, () => Promise<unknown>][] = [
+      ["смена пароля в профиле", async () => {
+        const invite = await login.issueInvite(await owner(), "reva", t0);
+        const { session } = await pw.setPasswordByLink(invite.token, GOOD, GOOD, device, t0);
+        await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", GOOD, "https://weekly.test", later(1000));
+        await pw.changePassword({ ...(await personal("reva")), via: "PASSWORD" }, session.id, GOOD, "Новый пароль для всех", "Новый пароль для всех", later(2000));
+      }],
+      ["пароль по ссылке", async () => {
+        await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", later(1000));
+        const invite = await login.issueInvite(await owner(), "reva", later(1500));
+        await pw.setPasswordByLink(invite.token, GOOD, GOOD, device, later(2000));
+      }],
+      ["сброс владельцем", async () => {
+        await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", later(1000));
+        await pw.resetPassword(await owner(), "reva", later(2000));
+      }],
+      ["выйти везде", async () => {
+        await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", later(1000));
+        await login.revokeAllDevices(await owner(), "reva", later(2000));
+      }],
+      ["выключение", async () => {
+        await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", later(1000));
+        await admin.setPersonActive(await owner(), "reva", false);
+        await admin.setPersonActive(await owner(), "reva", true);
+      }],
+    ];
+    for (const [name, step] of steps) {
+      await reset();
+      sent = [];
+      await step();
+      const token = tokenFrom(sent.find((m) => m.subject.startsWith("Подтвердите"))!);
+      expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).pendingEmail, name).toBeNull();
+      expect((await email.confirmEmail(token, null, later(3000))).ok, name).toBe(false);
+    }
+  });
+
+  it("сменить почту можно только с текущим паролем; владелец и администратор только в режиме управления", async () => {
+    const invite = await login.issueInvite(await owner(), "reva", t0);
+    await pw.setPasswordByLink(invite.token, GOOD, GOOD, device, t0);
+    const reva = await personal("reva");
+    await expectRule(email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", later(1000)), /Текущий пароль неверный/);
+    await expectRule(email.requestEmailBinding(reva, "t.reva@sravni.ru", "не тот", "https://weekly.test", later(1000)), /Текущий пароль неверный/);
+    await email.requestEmailBinding(reva, "t.reva@sravni.ru", GOOD, "https://weekly.test", later(2000));
+    const admin1 = { ...(await tasks.actorFor("golovkin")), via: "PASSWORD" as const };
+    await expectRule(email.requestEmailBinding(admin1, "golovkin@sravni.ru", "", "https://weekly.test", later(3000)), /режиме управления/);
+    await email.requestEmailBinding({ ...admin1, management: "ADMIN" }, "golovkin@sravni.ru", "", "https://weekly.test", later(3000));
+    await expectRule(email.requestEmailBinding({ ...(await personal("muradyan")) }, "a.muradyan@sravni.ru", "", "https://weekly.test", later(4000)), /режиме управления/);
+  });
+
+  it("подтверждается адрес из письма; прежний адрес узнаёт о смене", async () => {
+    await prisma.person.update({ where: { slug: "reva" }, data: { email: "old.reva@sravni.ru" } });
+    await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", t0);
+    const token = tokenFrom(sent.at(-1)!);
+    expect((await login.peekLink(token, later(1000))).target).toBe("t***a@sravni.ru");
+    expect(await email.confirmEmail(token, null, later(2000))).toMatchObject({ ok: true, email: "t.reva@sravni.ru" });
+    const notice = sent.find((m) => m.to === "old.reva@sravni.ru");
+    expect(notice?.subject).toMatch(/изменена/);
+    expect(notice?.text).not.toContain("t.reva@sravni.ru");
+  });
+
+  it("владелец вписал почту, пока человек ждал подтверждения: старое письмо адрес не возвращает", async () => {
+    await email.requestEmailBinding(await personal("reva"), "t.reva@sravni.ru", "", "https://weekly.test", t0);
+    const token = tokenFrom(sent.at(-1)!);
+    await admin.updatePerson(await owner(), "reva", { email: "reva@sravni.ru" });
+    expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).pendingEmail).toBeNull();
+    expect((await email.confirmEmail(token, null, later(1000))).ok).toBe(false);
+    expect((await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } })).email).toBe("reva@sravni.ru");
+  });
+
+  it("параллельные запросы не обходят лимит писем; занятый адрес тоже считается", async () => {
+    const reva = await personal("reva");
+    const results = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => email.requestEmailBinding(reva, `t.reva${i}@sravni.ru`, "", "https://weekly.test", later(1000))));
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(email.EMAIL_CONFIRMS_PER_DAY);
+    expect(sent).toHaveLength(email.EMAIL_CONFIRMS_PER_DAY);
+    await reset();
+    await prisma.person.update({ where: { slug: "golovkin" }, data: { email: "golovkin@sravni.ru" } });
+    for (let i = 0; i < email.EMAIL_CONFIRMS_PER_DAY; i++) await expectRule(email.requestEmailBinding(reva, "golovkin@sravni.ru", "", "https://weekly.test", later(i)), /уже привязан/);
+    await expectRule(email.requestEmailBinding(reva, "golovkin@sravni.ru", "", "https://weekly.test", later(10)), /Слишком много/);
+  });
+
+  it("два человека подтверждают один адрес одновременно: один успевает, второй получает понятный ответ", async () => {
+    await email.requestEmailBinding(await personal("reva"), "same@sravni.ru", "", "https://weekly.test", t0);
+    await email.requestEmailBinding(await personal("loginova"), "same@sravni.ru", "", "https://weekly.test", t0);
+    const [a, b] = sent.map(tokenFrom);
+    const results = await Promise.all([email.confirmEmail(a!, null, later(1000)), email.confirmEmail(b!, null, later(1000))]);
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.find((r) => !r.ok)).toMatchObject({ ok: false, error: expect.stringMatching(/другому человеку/) });
+  });
+
+  it("неподтверждённую почту по общему логину не отменить; отмена пишется в журнал", async () => {
+    const reva = await personal("reva");
+    await email.requestEmailBinding(reva, "t.reva@sravni.ru", "", "https://weekly.test", t0);
+    await expectRule(email.cancelEmailBinding({ ...reva, via: "TEAM" }), /личном входе/);
+    await email.cancelEmailBinding(reva, later(1000));
+    expect(await prisma.auditLog.count({ where: { action: "auth.email.cancel", entityId: "reva" } })).toBeGreaterThan(0);
+  });
+
+  it("короткое имя нового человека не совпадает с чужим логином; правка без смены логина проходит", async () => {
+    const dir = (await prisma.dictionaryItem.findFirstOrThrow({ where: { kind: "DIRECTION" } })).code;
+    const a = await admin.createPerson(await owner(), { fullName: "Трева Иван", role: "LEADER", zone: "Тест", direction: dir });
+    try {
+      expect(a.slug).not.toBe("treva");
+      expect(await prisma.person.count({ where: { OR: [{ slug: "treva" }, { login: "treva" }] } })).toBe(1);
+      const created = await prisma.person.findUniqueOrThrow({ where: { slug: a.slug } });
+      // Форма присылает логин всегда: правка зоны не упирается в проверку логина
+      await admin.updatePerson(await owner(), a.slug, { zone: "Другая зона", login: created.login! });
+      // Логины, занятые ресурсом
+      await expectRule(admin.updatePerson(await owner(), a.slug, { login: "team" }), /занят ресурсом/);
+    } finally {
+      await prisma.person.delete({ where: { slug: a.slug } });
+    }
+  });
+
+  it("ссылки пачкой не выдаются владельцам и администраторам", async () => {
+    const links = await pw.issueInvitesForAll(await owner(), t0);
+    expect(links.map((l) => l.slug)).not.toContain("golovkin");
+    expect(links.map((l) => l.slug)).not.toContain("muradyan");
+    expect((await pw.passwordStats((await owner()).personId)).invitable).toBe(links.length);
   });
 });
 

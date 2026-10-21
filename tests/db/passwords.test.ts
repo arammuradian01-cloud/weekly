@@ -284,11 +284,13 @@ describe("после проверки кода", () => {
     expect(!r.ok && r.error).toMatch(/к этому логину/);
   });
 
-  it("владелец не сбрасывает свой пароль из списка людей; счётчик ссылок не считает владельца", async () => {
+  it("владелец не сбрасывает свой пароль из списка людей; счётчик ссылок не считает владельцев и администраторов", async () => {
     const me = await owner();
     await expectRule(pw.resetPassword(me, "muradyan"), /Свой пароль меняйте в профиле/);
     const stats = await pw.passwordStats(me.personId);
-    expect(stats.invitable).toBe(stats.total - stats.withPassword - 1);
+    // Без пароля владелец и администратор Головкин: ссылки пачкой им не выдаются (этап 52)
+    const admins = await prisma.person.count({ where: { active: true, role: { in: ["OWNER", "ADMIN"] }, passwordHash: null } });
+    expect(stats.invitable).toBe(stats.total - stats.withPassword - admins);
     expect((await pw.issueInvitesForAll(me, later(1000))).length).toBe(stats.invitable);
   });
 

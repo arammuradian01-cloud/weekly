@@ -19,9 +19,10 @@ import { hashPassword, verifyPassword } from "@/lib/passwords";
 import { computeLockState, historySince, LOCK_MS } from "@/lib/rate-limit";
 import { formatTime } from "@/lib/week";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import type { Person, Prisma } from "@/generated/prisma/client";
+import type { Person, Prisma, Role } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
 import { ATTEMPT_TX, BUSY_ERROR, QueueBusy, advisoryLock, lockTimeout, markAttemptOk, serialAll } from "./attempts";
+import { guardPrimary } from "./primary";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -175,9 +176,14 @@ export async function loginWithPassword(login: string, password: string, device:
   return { ok: true, sessionId: session.id, personId: usable.id };
 }
 
-/** Неиспользованные ссылки входа человека гаснут: после нового пароля по старой ссылке не войти и пароль не заменить */
-function expireLinks(tx: Tx, personId: string, now: Date) {
-  return tx.loginLink.updateMany({ where: { personId, kind: { in: ["INVITE", "EMAIL"] }, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+/**
+ * Неиспользованные ссылки входа человека гаснут: после нового пароля по старой ссылке не войти и пароль не заменить.
+ * И неподтверждённая почта со ссылкой на неё (этап 52): по почте восстанавливают пароль, поэтому адрес, вписанный
+ * тем, кто узнал прежний пароль, не должен пережить смену пароля
+ */
+async function expireLinks(tx: Tx, personId: string, now: Date) {
+  await tx.loginLink.updateMany({ where: { personId, kind: { in: ["INVITE", "EMAIL", "EMAIL_CONFIRM"] }, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  await tx.person.update({ where: { id: personId }, data: { pendingEmail: null } });
 }
 
 export { LOCK_MS };
@@ -247,16 +253,7 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
   if (actor.via === "TEAM" || !deviceId) fail("Пароль меняют при личном входе: по общему логину можно выбрать чужой профиль");
   if (next !== repeat) fail("Новые пароли не совпадают");
   const person = await prisma.person.findUniqueOrThrow({ where: { id: actor.personId } });
-  if (person.passwordHash) {
-    // Текущий пароль сверяется с тем же счётчиком, что и вход: из открытого чужого профиля его не подобрать
-    const reserved = await reserveAttempt(actor.ip ?? "unknown", attemptKey(person, person.slug), person.id, now).catch((error) => {
-      if (error instanceof QueueBusy) fail(BUSY_ERROR);
-      throw error;
-    });
-    if (!reserved.ok) fail(`Слишком много неверных попыток. Попробуйте снова в ${formatTime(reserved.until)}`);
-    if (!(await verifyPassword(current, person.passwordHash))) fail("Текущий пароль неверный");
-    if (reserved.ok) await markOk(prisma, reserved.attemptId);
-  }
+  await checkCurrentPassword(actor, person, current, now);
   const problem = validatePersonalPassword(next, person);
   if (problem) fail(problem);
   const hash = await hashPassword(next);
@@ -272,6 +269,21 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
   });
 }
 
+/**
+ * Текущий пароль человека, если он задан. Сверяется с тем же счётчиком, что и вход: из открытого чужого профиля
+ * его не подобрать. Нужен для смены пароля и для смены почты (этап 52)
+ */
+export async function checkCurrentPassword(actor: Actor, person: Pick<Person, "id" | "slug" | "passwordHash">, current: string, now = new Date()): Promise<void> {
+  if (!person.passwordHash) return;
+  const reserved = await reserveAttempt(actor.ip ?? "unknown", attemptKey(person, person.slug), person.id, now).catch((error) => {
+    if (error instanceof QueueBusy) fail(BUSY_ERROR);
+    throw error;
+  });
+  if (!reserved.ok) fail(`Слишком много неверных попыток. Попробуйте снова в ${formatTime(reserved.until)}`);
+  if (!(await verifyPassword(String(current ?? ""), person.passwordHash))) fail("Текущий пароль неверный");
+  if (reserved.ok) await markOk(prisma, reserved.attemptId);
+}
+
 function ownerOnly(actor: Actor) {
   if (actor.management !== "OWNER" || actor.role === "OBSERVER") fail("Это делает только владелец в режиме управления");
 }
@@ -282,8 +294,9 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
   const person = await prisma.person.findUnique({ where: { slug: String(slug) } });
   if (!person) return fail("Человек не найден");
   if (person.id === actor.personId) fail("Свой пароль меняйте в профиле: сброс завершил бы и ваш вход");
+  await guardPrimary(prisma, actor.slug, person.slug, "сбрасывает ему пароль");
   await prisma.$transaction(async (tx) => {
-    await tx.person.update({ where: { id: person.id }, data: { passwordHash: null, passwordSetAt: null } });
+    await tx.person.update({ where: { id: person.id }, data: { passwordHash: null, passwordSetAt: null, pendingEmail: null } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "owner" } });
     await tx.loginLink.updateMany({ where: { personId: person.id, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
     await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
@@ -298,15 +311,19 @@ export type BulkInvite = { slug: string; fullName: string; login: string; positi
 /** Сколько дней действуют ссылки пачкой (этап 52): при раздаче всей компании трёх дней мало */
 export const BULK_INVITE_DAYS = [3, 7, 14] as const;
 
+/** Кому ссылки пачкой не выдаются: наблюдатель, владельцы и администраторы. Им ссылку выдают по одной, лично */
+const NOT_IN_BULK: Role[] = ["OBSERVER", "OWNER", "ADMIN"];
+
 /**
- * Ссылки всем, кто ещё не задал пароль: включённые люди, кроме наблюдателей и самого владельца. Каждая ссылка
- * показывается один раз; прежние неиспользованные ссылки этих людей гаснут
+ * Ссылки всем, кто ещё не задал пароль: включённые люди, кроме наблюдателей, владельцев и администраторов. Файл со
+ * ссылками могут передать ассистенту для рассылки, а ссылка владельца или администратора даёт слишком много.
+ * Каждая ссылка показывается один раз; прежние неиспользованные ссылки этих людей гаснут
  */
 export async function issueInvitesForAll(actor: Actor, now = new Date(), days = 3): Promise<BulkInvite[]> {
   ownerOnly(actor);
   if (!(BULK_INVITE_DAYS as readonly number[]).includes(days)) fail("Срок ссылок: 3, 7 или 14 дней");
   const people = await prisma.person.findMany({
-    where: { active: true, role: { not: "OBSERVER" }, passwordHash: null, id: { not: actor.personId } },
+    where: { active: true, role: { notIn: NOT_IN_BULK }, passwordHash: null, id: { not: actor.personId } },
     orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
   });
   if (!people.length) return [];
@@ -328,13 +345,13 @@ export async function issueInvitesForAll(actor: Actor, now = new Date(), days = 
 
 export type PasswordStats = { withPassword: number; total: number; invitable: number };
 
-/** Сколько человек задали пароль и скольким уйдут «Ссылки всем без пароля» (кроме самого владельца): для настроек */
+/** Сколько человек задали пароль и скольким уйдут «Ссылки всем без пароля» (без владельцев и администраторов): для настроек */
 export async function passwordStats(ownerId: string): Promise<PasswordStats> {
   const base = { active: true, role: { not: "OBSERVER" as const } };
   const [withPassword, total, invitable] = await Promise.all([
     prisma.person.count({ where: { ...base, passwordHash: { not: null } } }),
     prisma.person.count({ where: base }),
-    prisma.person.count({ where: { ...base, passwordHash: null, id: { not: ownerId } } }),
+    prisma.person.count({ where: { active: true, role: { notIn: NOT_IN_BULK }, passwordHash: null, id: { not: ownerId } } }),
   ]);
   return { withPassword, total, invitable };
 }

@@ -16,8 +16,13 @@ export function Field({
         id={id}
         className="sv-control w-full"
         {...props}
+        aria-describedby={[props["aria-describedby"], hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined}
       />
-      {hint ? <p className="sv-field__hint">{hint}</p> : null}
+      {hint ? (
+        <p id={`${id}-hint`} className="sv-field__hint">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

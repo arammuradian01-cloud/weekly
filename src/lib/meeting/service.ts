@@ -3,6 +3,7 @@
 // Ведущий ведёт живой режим: его текущий пункт хранится в базе, экраны участников идут за ним через живые обновления.
 // Решения остаются в журнале, после закрытия участникам уходит протокол. Права проверяются здесь, экран только прячет.
 
+import { primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import type { AgendaKind, DecisionStatus, MeetingStatus, Prisma } from "@/generated/prisma/client";
 import { addDays, formatLong, formatShort, type IsoDate } from "@/domain/dates";
@@ -395,7 +396,8 @@ export async function agendaPass(now = new Date()): Promise<number> {
     const have = new Set((await prisma.meeting.findMany({ where: { weekId: week.id }, select: { teamId: true } })).map((m) => m.teamId));
     for (const node of nodes) {
       if (!node.active || have.has(node.id)) continue;
-      const leaderId = node.leaderId ?? (node.id === TOP_TEAM ? (await prisma.person.findFirst({ where: { role: "OWNER", active: true }, select: { id: true } }))?.id : null);
+      // Без руководителя у топ-команды повестку собирает главный владелец, а не случайный из совладельцев (этап 52)
+      const leaderId = node.leaderId ?? (node.id === TOP_TEAM ? (await primaryOwner(prisma))?.id : null);
       if (!leaderId) continue;
       const person = await prisma.person.findUnique({ where: { id: leaderId } });
       if (!person) continue;

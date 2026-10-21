@@ -140,7 +140,15 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="work-email-head">
             <h2 id="work-email-head" className="text-title font-semibold text-ink">Почта для входа</h2>
             <p className="mt-1 text-small text-muted">Для входа по почте вместо логина и для «Забыли пароль» на экране входа.</p>
-            <EmailBinding email={ctx.person.email} pending={ctx.person.pendingEmail} mailOn={mailOn} personal={personal} domains={domains} />
+            <EmailBinding
+              email={ctx.person.email}
+              pending={ctx.person.pendingEmail}
+              mailOn={mailOn}
+              personal={personal}
+              domains={domains}
+              hasPassword={!!ctx.person.passwordHash}
+              needsManagement={!!ctx.managementRole && !ctx.management}
+            />
           </section>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="devices-head">

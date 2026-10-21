@@ -1,7 +1,7 @@
 // Личная ссылка для входа из консоли сервера (этап 9): на случай, когда владелец не может войти сам,
 // например после выключения общего логина или на новом устройстве без доступа к почте.
 //
-// npm run login-link -- <короткое имя или почта>
+// npm run login-link -- <логин, короткое имя или почта>
 //
 // Ссылка действует 3 дня и открывает вход один раз. Прежняя неиспользованная ссылка этого человека гаснет.
 import "dotenv/config";
@@ -10,9 +10,10 @@ import { INVITE_TTL_MS, hashToken, linkUrl, newToken } from "../src/lib/login/se
 
 async function main() {
   const who = (process.argv[2] ?? "").trim().toLowerCase();
-  if (!who) throw new Error("Укажите человека: npm run login-link -- <короткое имя или почта>");
-  const person = await prisma.person.findFirst({ where: { OR: [{ slug: who }, { email: who }] } });
-  if (!person) throw new Error(`Человек «${who}» не найден. Короткие имена: ${(await prisma.person.findMany({ select: { slug: true } })).map((p) => p.slug).join(", ")}`);
+  if (!who) throw new Error("Укажите человека: npm run login-link -- <логин, короткое имя или почта>");
+  // Логин вида amuradyan (этап 52) важнее короткого имени: так же ищет и вход
+  const person = (await prisma.person.findFirst({ where: { OR: [{ login: who }, { email: who }] } })) ?? (await prisma.person.findFirst({ where: { slug: who } }));
+  if (!person) throw new Error(`Человек «${who}» не найден. Проверьте логин в списке людей в режиме управления`);
   if (!person.active) throw new Error(`${person.fullName} выключен: сначала включите его в настройках`);
 
   const now = new Date();

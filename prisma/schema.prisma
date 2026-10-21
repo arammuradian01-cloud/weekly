@@ -60,6 +60,8 @@ enum AttemptKind {
   LINK
   /// Личный логин и пароль (этап 20а)
   PERSONAL
+  /// Человек указал рабочую почту (этап 52): лимит писем подтверждения и попыток с занятым адресом
+  EMAIL_BIND
 }
 
 /// Как человек вошёл (этап 9): общий логин team, ссылка на почту или ссылка-приглашение от владельца
@@ -883,6 +885,8 @@ model LoginLink {
   createdById String?
   /// Ссылка подтверждения режима управления работает только на устройстве, с которого её запросили
   deviceId    String?
+  /// Подтверждение почты (этап 52): адрес, на который ушла ссылка. Подтверждается он, а не то, что лежит у человека сейчас
+  target      String?
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   expiresAt   DateTime  @db.Timestamptz(3)
   usedAt      DateTime? @db.Timestamptz(3)

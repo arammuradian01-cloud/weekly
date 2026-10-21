@@ -6,7 +6,7 @@ import { confirmEmailAction, type ConfirmState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/field";
 
-export function ConfirmEmailForm({ token }: { token: string }) {
+export function ConfirmEmailForm({ token, who }: { token: string; who: { fullName: string; target: string } | null }) {
   const [state, action, pending] = useActionState<ConfirmState, FormData>(confirmEmailAction, null);
   if (state?.email) {
     return (
@@ -22,7 +22,13 @@ export function ConfirmEmailForm({ token }: { token: string }) {
   }
   return (
     <form action={action} className="mt-3 flex flex-col gap-4">
-      <p className="text-body text-muted">Нажмите кнопку, чтобы привязать этот адрес к своему входу в Weekly.</p>
+      {who ? (
+        <p className="text-body text-ink" data-testid="email-confirm-who">
+          Адрес <span className="font-semibold break-all">{who.target}</span> станет почтой для входа: <span className="font-semibold">{who.fullName}</span>. Если это не вы, закройте страницу.
+        </p>
+      ) : (
+        <p className="text-body text-muted">Нажмите кнопку, чтобы привязать этот адрес к своему входу в Weekly.</p>
+      )}
       <input type="hidden" name="token" value={token} />
       <FormError message={state?.error} />
       <Button type="submit" disabled={pending || !token} className="w-full">

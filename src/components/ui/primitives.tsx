@@ -188,8 +188,12 @@ export function TextInput({
       <label htmlFor={id} className={cn("sv-label", hideLabel && "sr-only")}>
         {label}
       </label>
-      <input id={id} className={control} {...props} />
-      {hint ? <p className="sv-field__hint">{hint}</p> : null}
+      <input id={id} className={control} {...props} aria-describedby={[props["aria-describedby"], hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined} />
+      {hint ? (
+        <p id={`${id}-hint`} className="sv-field__hint">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

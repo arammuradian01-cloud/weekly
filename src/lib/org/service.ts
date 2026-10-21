@@ -3,7 +3,8 @@
 // (решение 8 по умолчанию). Руководитель команды сам добавляет и убирает участников своей команды из своей ветки.
 // Каждая правка пишется в журнал: что было и что стало.
 
-import { fillMissingLogins } from "@/lib/login/logins";
+import { fillMissingLogins, reservedLogins, takenNames } from "@/lib/login/logins";
+import { primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
 import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
@@ -88,7 +89,7 @@ function unitPaths(units: UnitRow[]): Map<string, string[]> {
 async function rootUnit(tx: Tx): Promise<UnitRow> {
   const found = await tx.orgUnit.findFirst({ where: { kind: "DEPARTMENT" }, orderBy: { createdAt: "asc" } });
   if (found) return found;
-  const owner = await tx.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" } });
+  const owner = await primaryOwner(tx);
   return tx.orgUnit.create({ data: { name: ROOT_UNIT_NAME, kind: "DEPARTMENT", headId: owner?.id ?? null } });
 }
 
@@ -173,8 +174,9 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       // Люди: новые заводятся сотрудниками, у известных обновляются должность, подразделение и почта
       const fallback = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: "department" } });
       if (!fallback) fail("В справочнике нет направления «Департамент»: сначала запустите сид");
-      const all = await tx.person.findMany({ select: { id: true, slug: true, sortOrder: true, email: true, fullName: true } });
-      const taken = new Set([...all.map((p) => p.slug), "all", "system"]);
+      const all = await tx.person.findMany({ select: { id: true, slug: true, login: true, sortOrder: true, email: true, fullName: true } });
+      // Чужие логины тоже заняты (этап 52): короткое имя нового человека не совпадёт с логином другого
+      const taken = new Set([...takenNames(all), ...(await reservedLogins(tx))]);
       let sortOrder = Math.max(0, ...all.map((p) => p.sortOrder));
       /** «file:строка» новых людей в их id после создания */
       const idOfKey = new Map<string, string>();
@@ -196,7 +198,11 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
           added += 1;
           await audit(tx, actor, "structure.person.create", "person", slug, "Сотрудник добавлен из структуры", null, [p.fullName, p.position, p.path.join(" / ")].filter(Boolean).join(", "));
         } else if (p.changes.length) {
-          await tx.person.update({ where: { id }, data: { position: p.position || null, unitId, active: true, ...(email ? { email } : {}) } });
+          const before = all.find((x) => x.id === id);
+          // Новая почта из файла: неподтверждённый адрес человека и ссылки на прежний адрес гаснут (этап 52)
+          const newEmail = !!email && email !== before?.email;
+          await tx.person.update({ where: { id }, data: { position: p.position || null, unitId, active: true, ...(email ? { email } : {}), ...(newEmail ? { pendingEmail: null } : {}) } });
+          if (newEmail) await tx.loginLink.updateMany({ where: { personId: id, kind: { in: ["EMAIL", "STEP_UP", "EMAIL_CONFIRM"] }, usedAt: null, expiresAt: { gt: new Date() } }, data: { expiresAt: new Date() } });
           const slug = all.find((x) => x.id === id)?.slug ?? id;
           await audit(tx, actor, "structure.person.update", "person", slug, "Структура: изменения", null, p.changes.join("; "));
         }

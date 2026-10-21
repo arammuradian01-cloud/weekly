@@ -21,6 +21,7 @@ import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
 import { syncLagging } from "@/lib/sheet/runner";
 import { getStandBanner, primaryOwnerSlug } from "@/lib/admin/service";
+import { primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import { inboxCount } from "@/lib/inbox/service";
 import { InboxCountProvider } from "@/components/inbox/inbox-count";
@@ -50,7 +51,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
     ctx.management ? syncLagging() : Promise.resolve(false),
     getStandBanner(),
-    prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" }, select: { fullName: true } }),
+    // Плашка стенда называет главного владельца (этап 52), а не первого в списке
+    primaryOwner(prisma),
     inboxCount(ctx.person.id, new Date(), subjectOf(ctx)),
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
   ]);

@@ -1,5 +1,6 @@
 "use client";
 
+import { csvCell } from "@/lib/csv";
 import { useId, useState } from "react";
 import { CalendarOff, Copy, Crown, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, Search, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
@@ -526,7 +527,7 @@ function PeopleSection({
                       Ссылка для входа
                     </Button>
                   ) : null}
-                  {p.active && p.role === "OWNER" && !p.primaryOwner ? (
+                  {p.active && p.role === "OWNER" && !p.primaryOwner && people.some((x) => x.primaryOwner && x.slug === me) ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -873,7 +874,7 @@ type BulkLink = { fullName: string; login: string; position: string; url: string
 
 /** Выгрузка ссылок для рассылки (этап 52): CSV с точкой с запятой, открывается в Excel и Google Таблицах */
 function downloadLinks(links: BulkLink[]) {
-  const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const cell = csvCell;
   const rows = [["ФИО", "Должность", "Логин", "Ссылка для входа", "Действует до"], ...links.map((l) => [l.fullName, l.position, l.login, l.url, shortWhen(l.expiresAt)])];
   const blob = new Blob([`\ufeff${rows.map((r) => r.map(cell).join(";")).join("\r\n")}`], { type: "text/csv;charset=utf-8" });
   const a = document.createElement("a");
@@ -891,7 +892,8 @@ function BulkInviteModal({ links, onClose }: { links: BulkLink[] | null; onClose
     <Modal open={links !== null} onOpenChange={(open) => !open && onClose()} title={`Ссылки для входа: ${links?.length ?? 0}`}>
       <p className="text-small text-muted">
         Отправьте каждому его ссылку лично, не в общий чат. По ссылке человек сам придумает пароль. Ссылки действуют до {links?.[0] ? shortWhen(links[0].expiresAt) : ""} и
-        открываются один раз. После закрытия окна их не показать снова: только выдать новые.
+        открываются один раз. После закрытия окна их не показать снова: только выдать новые. Файл CSV даёт вход каждому из списка: не пересылайте его
+        целиком и удалите после рассылки. Владельцам и администраторам ссылки здесь не выдаются, им ссылку выдают по одной.
       </p>
       {links?.length ? (
         <ul className="mt-4 flex max-h-80 flex-col divide-y divide-line overflow-auto rounded-lg ring-1 ring-line">

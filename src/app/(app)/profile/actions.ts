@@ -128,9 +128,9 @@ export async function revokeCalendarAction() {
 }
 
 /** Рабочая почта (этап 52): сохраняется неподтверждённой, на неё уходит ссылка подтверждения */
-export async function requestEmailBindingAction(email: string) {
+export async function requestEmailBindingAction(email: string, currentPassword: string) {
   const base = await baseUrl();
-  const result = await runAction("Рабочая почта", (a) => requestEmailBinding(a, String(email ?? ""), base));
+  const result = await runAction("Рабочая почта", (a) => requestEmailBinding(a, String(email ?? ""), String(currentPassword ?? ""), base));
   if (result.ok) revalidatePath("/profile");
   return result;
 }

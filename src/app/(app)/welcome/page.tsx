@@ -11,18 +11,25 @@ import { WelcomeEmail } from "./welcome-email";
 export const metadata: Metadata = { title: "Добро пожаловать" };
 export const dynamic = "force-dynamic";
 
-/** Первый вход (этап 52): логин крупно и предложение указать рабочую почту. Можно пропустить, почта есть в профиле */
-export default async function WelcomePage() {
+/**
+ * Первый вход (этап 52): логин крупно и предложение указать рабочую почту. Можно пропустить, почта есть в профиле.
+ * Приветствие только сразу после пароля по ссылке (?new=1): при повторном заходе страница просто про логин и почту
+ */
+export default async function WelcomePage({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
   const ctx = await requireContext();
+  const fresh = (await searchParams).new === "1" && ctx.via !== "TEAM";
   const login = loginOf(ctx.person);
   const mailOn = mailConfigured();
   const domains = await allowedEmailDomains();
   return (
     <div className="max-w-xl">
-      <PageHeader title={`Добро пожаловать, ${ctx.person.shortName}`} description="Пароль задан, вход запомнится на этом устройстве на 30 дней" />
+      <PageHeader
+        title={fresh ? `Добро пожаловать, ${ctx.person.shortName}` : "Логин и почта для входа"}
+        description={fresh ? "Пароль сохранён, вход запомнится на этом устройстве на 30 дней" : undefined}
+      />
       <div className="sv-card sv-card--soft flex flex-col gap-2 p-5">
         <p className="text-body text-muted">Ваш логин</p>
-        <p className="text-number font-semibold text-ink" data-testid="welcome-login">
+        <p className="text-number font-semibold text-ink break-all" data-testid="welcome-login">
           {login}
         </p>
         <p className="text-small text-muted">С ним и паролем входите на экране входа. Логин виден и в профиле.</p>
@@ -32,7 +39,15 @@ export default async function WelcomePage() {
         <p className="mt-1 text-body text-muted">
           Укажите корпоративную почту: по ней можно входить вместо логина и восстанавливать пароль, если забудете его.
         </p>
-        <WelcomeEmail email={ctx.person.email} pending={ctx.person.pendingEmail} mailOn={mailOn} personal={ctx.via !== "TEAM"} domains={domains} />
+        <WelcomeEmail
+          email={ctx.person.email}
+          pending={ctx.person.pendingEmail}
+          mailOn={mailOn}
+          personal={ctx.via !== "TEAM"}
+          domains={domains}
+          hasPassword={!!ctx.person.passwordHash}
+          needsManagement={!!ctx.managementRole && !ctx.management}
+        />
       </section>
       <div className="mt-8 border-t border-line pt-6">
         <Link href="/" className={buttonClass("primary")} data-testid="welcome-start">
