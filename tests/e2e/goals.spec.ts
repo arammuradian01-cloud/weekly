@@ -80,6 +80,13 @@ test("цель департамента, цель сектора ниже и з�
   const goalBox = dialog.getByRole("combobox", { name: "Цель" });
   await expect(goalBox).toHaveValue("Новая форма расчёта на всём трафике");
   await expect(dialog.getByText("Подобрана по тексту задачи")).toBeVisible();
+  // Escape в открытом списке целей закрывает список, а не форму с набранным текстом
+  await goalBox.click();
+  await expect(dialog.getByRole("listbox", { name: "Цель" })).toBeVisible();
+  await antonov.keyboard.press("Escape");
+  await expect(dialog.getByRole("listbox", { name: "Цель" })).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Задача")).toHaveValue("Выкатить форму на весь трафик");
   await dialog.getByLabel("Ответственный").selectOption({ label: "Чемоданова Алиса" });
   await expect(goalBox).toHaveValue("Новая форма расчёта на всём трафике");
   await shot(antonov, "new-task-goal");

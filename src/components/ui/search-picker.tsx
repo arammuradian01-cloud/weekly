@@ -56,13 +56,19 @@ export function SearchPicker({
 }) {
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
+  const listInput = useRef<HTMLInputElement>(null);
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
   // Человек начал печатать: до этого список показывает все варианты, даже если в поле стоит выбранный (этап 55)
   const [typed, setTyped] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const matched = useMemo(() => (typed ? options.filter((o) => matchOption(o, query)) : options), [options, query, typed]);
+  // Пока человек не печатал, выбранный вариант первым: Enter сразу после фокуса оставляет выбор как был, даже если
+  // он дальше первой двадцатки
+  const matched = useMemo(
+    () => (typed ? options.filter((o) => matchOption(o, query)) : selected ? [selected, ...options.filter((o) => o.value !== selected.value)] : options),
+    [options, query, typed, selected],
+  );
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
@@ -85,6 +91,7 @@ export function SearchPicker({
         {label}
       </label>
       <input
+        ref={listInput}
         id={id}
         className="sv-control w-full"
         type="text"
@@ -111,12 +118,21 @@ export function SearchPicker({
           }
           setTyped(false);
           setOpen(true);
-          const at = selected ? options.slice(0, limit).findIndex((o) => o.value === selected.value) : -1;
-          setActive(Math.max(at, 0));
+          setActive(0);
+        }}
+        // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
+        onMouseDown={() => {
+          if (!open && document.activeElement === listInput.current) {
+            setTyped(false);
+            setOpen(true);
+            setActive(0);
+          }
         }}
         onBlur={() => {
           setOpen(false);
           setTyped(false);
+          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор
+          if (!value) setQuery("");
         }}
         onChange={(e) => {
           setQuery(e.target.value);

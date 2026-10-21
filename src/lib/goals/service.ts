@@ -516,9 +516,12 @@ async function candidateGoals(nodes: TeamNode[], task: { teamId: string; dueIso:
 }
 
 /** Цель в списке выбора: название с кодом, квартал и чья цель, насколько подходит по тексту задачи */
-export type GoalOption = { id: string; label: string; title: string; context: string; score: number; suggested: boolean };
+export type GoalOption = { id: string; label: string; title: string; context: string; score: number; suggested: boolean; personal: boolean };
 
-/** Личная цель человека задачи подходит чуть вероятнее цели команды: это его цель на квартал */
+/**
+ * Личная цель человека задачи подходит чуть вероятнее цели команды: это его цель на квартал. Надбавка не делает
+ * сходство равным совпадению номера и не меняет число совпавших слов, нужное для автоподстановки
+ */
 const PERSONAL_BOOST = 0.1;
 
 /**
@@ -526,15 +529,15 @@ const PERSONAL_BOOST = 0.1;
  * порядке (личные цели людей задачи, потом цели команд). best: цель, которую можно подставить самой
  */
 function withSuggestions(options: { id: string; label: string; title: string; context: string; personal: boolean; doc: GoalDoc }[], text: string): { options: GoalOption[]; best: string | null } {
-  const raw = new Map(rankGoals(text, options.map((o) => o.doc)).map((r) => [r.id, r.score]));
+  const raw = new Map(rankGoals(text, options.map((o) => o.doc)).map((r) => [r.id, r]));
   const scored = options.map((o) => {
-    const base = raw.get(o.id) ?? 0;
-    const score = base > 0 && o.personal ? Math.min(1, base + PERSONAL_BOOST) : base;
-    return { id: o.id, label: o.label, title: o.title, context: o.context, score, suggested: score >= SUGGEST_MIN };
+    const r = raw.get(o.id) ?? { score: 0, matches: 0, code: false };
+    const score = r.code ? 1 : r.score > 0 && o.personal ? Math.min(0.99, r.score + PERSONAL_BOOST) : r.score;
+    return { option: { id: o.id, label: o.label, title: o.title, context: o.context, score, suggested: score >= SUGGEST_MIN, personal: o.personal }, rank: { id: o.id, score, matches: r.matches, code: r.code } };
   });
-  const ranked = [...scored].sort((a, b) => b.score - a.score);
-  const best = bestGoal(ranked);
-  return { options: [...ranked.filter((o) => o.suggested), ...scored.filter((o) => !o.suggested)], best };
+  const ranked = [...scored].sort((a, b) => b.rank.score - a.rank.score);
+  const best = bestGoal(ranked.map((x) => x.rank));
+  return { options: [...ranked.filter((x) => x.option.suggested), ...scored.filter((x) => !x.option.suggested)].map((x) => x.option), best };
 }
 
 export async function goalOptions(who: Who, number: number): Promise<GoalOption[]> {
@@ -551,6 +554,8 @@ export async function goalOptions(who: Who, number: number): Promise<GoalOption[
  * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем
  */
 export async function suggestGoals(who: Who, input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<{ options: GoalOption[]; best: string | null }> {
+  // Наблюдатель задач не ставит: подбирать ему нечего
+  if (who.role === "OBSERVER" || !input || typeof input.team !== "string") return { options: [], best: null };
   const { scope, nodes } = await scopeFor(prisma, who);
   const own = new Set([...scope.member, ...scope.leads]);
   if (!own.has(input.team) && !(who.management && scope.visible.includes(input.team))) return { options: [], best: null };

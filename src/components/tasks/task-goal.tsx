@@ -16,11 +16,20 @@ export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
   const { notify } = usePrototype();
   const [options, setOptions] = useState<GoalOption[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   const open = async () => {
-    const r = await goalOptionsAction(task.number);
-    if (!r.ok) return notify(r.error, "error");
-    setOptions(r.value);
+    if (loading) return;
+    setLoading(true);
+    try {
+      const r = await goalOptionsAction(task.number);
+      if (!r.ok) return notify(r.error, "error");
+      setOptions(r.value);
+    } catch {
+      notify("Нет связи с сервером: цели не загрузились", "error");
+    } finally {
+      setLoading(false);
+    }
   };
   const choose = async (goalId: string) => {
     if (busy) return;
@@ -43,8 +52,8 @@ export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
         <span className="text-muted">Без цели</span>
       )}
       {canLink && !options ? (
-        <button type="button" onClick={open} className="self-start text-small font-medium text-blue-700 hover:underline">
-          {task.goal ? "Сменить цель" : "Выбрать цель"}
+        <button type="button" onClick={open} disabled={loading} aria-busy={loading} className="self-start text-small font-medium text-blue-700 hover:underline disabled:opacity-60">
+          {loading ? "Загружаем цели…" : task.goal ? "Сменить цель" : "Выбрать цель"}
         </button>
       ) : null}
       {options ? (

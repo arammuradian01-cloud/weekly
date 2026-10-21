@@ -127,6 +127,24 @@ describe("подбор цели для новой задачи", () => {
   });
 });
 
+describe("ложные подстановки после проверки кода", () => {
+  it("цифровой номер цели не совпадает с процентом и датой, одно общее слово не подставляет цель, наблюдателю пусто", async () => {
+    const sector = await teamOf("Антонов");
+    const antonov = await actor("Антонов");
+    const ten = (await goals.createGoal(await owner(), { quarter: Q, code: "10", title: "Лендинг калькулятора ОСАГО", team: sector.id })).id;
+    const percent = await goals.suggestGoals(who(antonov), { team: sector.id, due: future, title: "Поднять конверсию на 10% к 12 ноября", outcome: "", owner: antonov.slug });
+    expect(percent.best).toBeNull();
+    expect((await goals.suggestGoals(who(antonov), { team: sector.id, due: future, title: "По цели 10: тексты", outcome: "", owner: antonov.slug })).best).toBe(ten);
+    // «КАСКО» есть только в одной цели, но одно слово цель не подставляет: она лишь первая в списке
+    const one = await goals.suggestGoals(who(antonov), { team: sector.id, due: future, title: "Интеграция с Ингосстрахом по КАСКО", outcome: "", owner: antonov.slug });
+    expect(one.best).toBeNull();
+    expect(one.options[0]).toMatchObject({ id: ids.s2, suggested: true });
+    const observer = await prisma.person.findFirst({ where: { role: "OBSERVER" } });
+    if (observer) expect(await goals.suggestGoals({ personId: observer.id, role: "OBSERVER" }, { team: sector.id, due: future, title: "Новая форма расчёта ОСАГО", outcome: "" })).toEqual({ options: [], best: null });
+    await prisma.goal.delete({ where: { id: ten } });
+  });
+});
+
 describe("цель при постановке задачи", () => {
   it("задача встаёт с целью, цель в журнале; чужая, снятая, другого квартала и несуществующая цель не проходят", async () => {
     const sector = await teamOf("Антонов");
@@ -134,7 +152,8 @@ describe("цель при постановке задачи", () => {
     const base = { outcome: "Результат", owner: antonov.slug, direction: "department", due: future, team: sector.id };
     const { task } = await svc.createTask(antonov, { ...base, title: "Новая форма расчёта на 50% трафика", goal: ids.s1 });
     expect(task.goal?.id).toBe(ids.s1);
-    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(task.number), action: "task.create" } });
+    // Журнал не чистится между файлами тестов, а номера задач начинаются заново: берём последнюю строку создания
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(task.number), action: "task.create" }, orderBy: { id: "desc" } });
     expect(audit.after).toMatch(/Цель: S1\. Новая форма расчёта ОСАГО/);
     // Без цели как раньше
     expect((await svc.createTask(antonov, { ...base, title: "Без цели" })).task.goal ?? null).toBeNull();

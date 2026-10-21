@@ -3,13 +3,20 @@
 // Цель в форме новой задачи (этап 55). Решение Арама 21.10: цель подтягивается сама по сути задачи, её можно
 // поменять, найти другую поиском или убрать. Подбор идёт на сервере по целям, которые задаче можно дать: своей
 // команды и команд выше на квартал сегодня и квартал срока, личные цели ответственного.
+//
+// Что держим в голове: подбор отвечает с паузой, поэтому при смене команды прежняя цель снимается сразу, а не через
+// 350 мс (иначе форма успеет отправить цель чужой команды). Ответ после закрытия формы никуда не подставляется.
+// Ручным выбором считается только выбор из списка и «Без цели»: случайная буква в поле подбор не выключает.
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { suggestGoalsAction } from "@/app/(app)/goals/actions";
 import type { GoalOption } from "@/lib/goals/service";
 import { SearchPicker } from "@/components/ui/search-picker";
 
-type Suggestion = { options: GoalOption[]; best: string | null };
+type Suggestion = { options: GoalOption[]; best: string | null; failed?: boolean };
+
+/** Квартал срока: «2026-Q4». Пустой или неверный срок: пустая строка */
+const quarter = (d: string) => (/^\d{4}-\d{2}/.test(d) ? `${d.slice(0, 4)}-Q${Math.ceil(Number(d.slice(5, 7)) / 3)}` : "");
 
 /** Пока человек печатает, подбор ждёт паузу: не дёргаем сервер на каждую букву */
 const PAUSE_MS = 350;
@@ -32,15 +39,16 @@ export function NewTaskGoal({
   owner: string;
   /** Выбранная цель, пустая строка: без цели */
   goal: string;
-  /** Человек выбрал или убрал цель сам: подбор по тексту её больше не меняет */
+  /** Человек выбрал цель из списка или нажал «Без цели»: подбор по тексту её больше не меняет */
   manual: boolean;
   /** Подбор по тексту подставил цель или снял ту, что больше не подходит */
   onAuto: (goal: string) => void;
-  /** Человек выбрал цель в поиске или убрал её */
+  /** Человек выбрал цель в списке или убрал её */
   onPick: (goal: string) => void;
 }) {
   const [state, setState] = useState<Suggestion | null>(null);
   const seq = useRef(0);
+  const scope = useRef({ team, due, owner });
 
   // Свежий ответ сервера: сами подставляем лучшую цель, пока человек не выбрал. Выбранная вручную цель остаётся,
   // если она всё ещё подходит; сменили команду или срок и её больше нет в списке: подбираем заново
@@ -52,9 +60,20 @@ export function NewTaskGoal({
       onAuto(r.best ?? "");
     }
   });
+  // Сменились команда, квартал срока или ответственный: цель снимается сразу, если она больше не годится (цель другой
+  // команды, другого квартала, личная цель прежнего ответственного). Цель команды при смене ответственного остаётся.
+  // Новый ответ подбора подставит подходящую
+  const reset = useEffectEvent(() => {
+    const prev = scope.current;
+    scope.current = { team, due, owner };
+    if (!goal) return;
+    const option = state?.options.find((o) => o.id === goal);
+    if (prev.team !== team || quarter(prev.due) !== quarter(due) || (prev.owner !== owner && option?.personal)) onAuto("");
+  });
   const first = state === null;
 
   useEffect(() => {
+    reset();
     const n = ++seq.current;
     const timer = setTimeout(
       async () => {
@@ -62,24 +81,35 @@ export function NewTaskGoal({
           const r = await suggestGoalsAction({ team, due, title, outcome, owner });
           // Ответ на старый текст не перетирает более свежий
           if (n !== seq.current) return;
-          apply(r.ok ? r.value : { options: [], best: null });
+          apply(r.ok ? r.value : { options: [], best: null, failed: true });
         } catch {
           // Нет связи: форма работает без подбора, задачу можно поставить без цели
-          if (n === seq.current) setState((s) => s ?? { options: [], best: null });
+          if (n === seq.current) setState((s) => s ?? { options: [], best: null, failed: true });
         }
       },
       first ? 0 : PAUSE_MS,
     );
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // Форму закрыли или ввод поменялся: ответ, который уже в пути, никуда не подставляется
+      seq.current += 1;
+    };
     // first нужен только для задержки первого запроса, повторять запрос при его смене не надо
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [team, due, title, outcome, owner]);
 
-  if (!state) return null;
+  // Пока цели не пришли, место поля занято: форма не прыгает
+  if (!state) {
+    return (
+      <p className="text-small text-muted sm:col-span-2" data-testid="nt-goal-loading">
+        Подбираем цель задачи…
+      </p>
+    );
+  }
   if (!state.options.length) {
     return (
       <p className="text-small text-muted sm:col-span-2" data-testid="nt-goal-none">
-        Целей у команды задачи и команд выше на этот квартал нет: задача будет без цели
+        {state.failed ? "Цели не загрузились: задачу можно поставить без цели и выбрать цель потом в карточке" : "Целей у команды задачи и команд выше на этот квартал нет: задача будет без цели"}
       </p>
     );
   }
@@ -100,7 +130,8 @@ export function NewTaskGoal({
         label="Цель"
         options={state.options.map((o) => ({ value: o.id, label: o.title, hint: o.context, note: o.suggested ? "по тексту" : null }))}
         value={goal}
-        onChange={onPick}
+        // Поле сбрасывает выбор, пока человек печатает поиск: это ещё не решение, подбор не выключаем
+        onChange={(id) => (id ? onPick(id) : onAuto(""))}
         placeholder="Название или код цели"
         emptyText="Такой цели нет: проверьте написание"
         hint={hint}
