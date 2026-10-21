@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, resetDatabase } from "./helpers";
+import { enter, enterByLink, resetDatabase, sql } from "./helpers";
 
 // Этап 36: визуальная система разделов, волна 1. Ключевые цифры плитками под заголовком, таблицы вместо сплошного
 // текста, пустые экраны с действием. Каждый раздел открывается без горизонтальной прокрутки, цифры ведут на отбор.
@@ -84,7 +84,9 @@ test("инициативы и решения: цифры, таблица реш�
 });
 
 test("мне и моя неделя: цифры ведут к группам очереди", async ({ page }) => {
-  // У Головкина всё разобрано и сроков нет: цифр нет, нули не нужны, одна пустая очередь
+  // У Головкина всё разобрано и сроков нет: цифр нет, нули не нужны, одна пустая очередь. Сроки задач из выгрузки Bord
+  // со временем проходят, поэтому его открытые задачи сдвигаем на месяц вперёд
+  await sql(`UPDATE tasks SET due = CURRENT_DATE + 30 WHERE "ownerId" = (SELECT id FROM people WHERE slug = 'golovkin') AND status IN ('IN_PROGRESS', 'CLARIFY', 'PROPOSED')`);
   await enterByLink(page, "golovkin");
   await page.goto("/me");
   await expect(page.getByRole("heading", { name: "Всё разобрано" })).toBeVisible();
