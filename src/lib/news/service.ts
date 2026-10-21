@@ -16,7 +16,7 @@
 //   на неделе, по будням с 8:00 до 20:00, если цикл работал до конца понедельничного окна и у человека был
 //   еженедельный за прошлую неделю. Один на человека и период, в «Мне» тихим событием (без счётчика)
 //   и письмом, если почта настроена. Пустой дайджест не отправляется. Продукты и частоту человек выбирает в профиле;
-//   по умолчанию у кого есть направление: его продукты раз в неделю, у кого нет: не присылать;
+//   по умолчанию дайджест выключен (решение Арама 22.10), продукты своего направления;
 // - очистка раз в сутки: новости старше 180 дней, дайджесты старше 90, пустые еженедельные старше 15.
 
 import { prisma } from "@/lib/db";
@@ -27,7 +27,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { isoWeekOf, isoWeekday, moscowDate, moscowDateTime, type CalendarDate } from "@/lib/week";
 import { plural } from "@/domain/dates";
 import { parseFeed, urlKeyOf } from "./feed";
-import { FeedError, checkFeedUrl, fetchFeed } from "./transport";
+import { FeedError, checkFeedUrl, fetchFeed, type FeedResponse } from "./transport";
 import { KEYWORDS_KEY, keywordsOf, normalizeKeywords, parseKeywordLine } from "./keywords";
 import { matchDirections, ruleSummary, withoutOwnName } from "./match";
 import { NEWS_FREQUENCY_LABELS, directionsFor, newsPrefsOf, type NewsFrequency, type NewsPrefs } from "./prefs";
@@ -63,6 +63,9 @@ export const LOOP_STARTED_KEY = "news.loop.startedAt";
 const MANUAL_FETCH_KEY = "news.manualFetch";
 /** Источник не начинаем, если до конца общего срока прохода меньше 20 секунд */
 export const MIN_SOURCE_LEFT_MS = 20_000;
+/** Сколько лент скачиваем одновременно: разные сайты, по одному запросу на каждый. 13 лент в худшем случае
+ * (таймаут и повтор у каждой) укладываются в общий срок прохода */
+export const FETCH_PARALLEL = 4;
 /** Записи старше этого при заборе не берутся: первый забор архивной ленты не тянет прошлогоднее */
 const MAX_ITEM_AGE_MS = 30 * DAY_MS;
 /** Дата из будущего больше чем на 5 минут: часы ленты врут, ставим время забора */
@@ -289,10 +292,27 @@ export function sourceDue(s: { lastFetchAt: Date | null; failCount: number }, no
   return now.getTime() - s.lastFetchAt.getTime() >= retryIntervalMs(s.failCount) - 5 * 60_000;
 }
 
-/** Забрать одну ленту. Любая ошибка остаётся в источнике и не поднимается наверх: остальные ленты идут своим чередом */
-export async function fetchSource(source: SourceRow, keywords: Record<string, string[]>, order: string[], now = new Date(), deadline?: number): Promise<FetchResult> {
+/** Скачанная лента или ошибка сети: скачивание идёт параллельно, сохранение по порядку списка источников */
+type Download = { ok: true; response: FeedResponse } | { ok: false; error: unknown };
+
+async function download(source: SourceRow, deadline?: number): Promise<Download> {
   try {
-    const response = await fetchFeed({ url: source.url, etag: source.etag, lastModified: source.lastModified }, { deadline });
+    return { ok: true, response: await fetchFeed({ url: source.url, etag: source.etag, lastModified: source.lastModified }, { deadline }) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/** Забрать одну ленту: скачать и сохранить */
+export async function fetchSource(source: SourceRow, keywords: Record<string, string[]>, order: string[], now = new Date(), deadline?: number): Promise<FetchResult> {
+  return storeSource(source, await download(source, deadline), keywords, order, now);
+}
+
+/** Сохранить скачанную ленту. Любая ошибка остаётся в источнике и не поднимается наверх: остальные ленты идут своим чередом */
+async function storeSource(source: SourceRow, got: Download, keywords: Record<string, string[]>, order: string[], now: Date): Promise<FetchResult> {
+  try {
+    if (!got.ok) throw got.error;
+    const response = got.response;
     if (response.status === 304) {
       await prisma.newsSource.update({ where: { id: source.id }, data: { lastFetchAt: now, lastOkAt: now, lastError: null, failCount: 0 } });
       return { sourceId: source.id, name: source.name, ok: true, added: 0, total: source.lastCount, error: null };
@@ -354,33 +374,50 @@ export async function fetchSource(source: SourceRow, keywords: Record<string, st
 }
 
 /**
- * Проход забора: включённые ленты по очереди (ленты чужие, параллельно их не дёргаем), дольше всех не забиравшиеся
- * первыми. Общий срок budgetMs: что не успели, заберём в следующий час. force (вручную из настроек): и источники
- * с ошибками, не дожидаясь их интервала
+ * Проход забора: включённые ленты, дольше всех не забиравшиеся первыми, скачиваются до FETCH_PARALLEL одновременно
+ * (по одному запросу на сайт). Сохраняются строго по порядку списка источников: перепечатку (тот же адрес статьи)
+ * получает источник выше в списке, обычно первоисточник, и результат не зависит от того, какой сайт ответил быстрее.
+ * Общий срок budgetMs: что не успели, заберём в следующий час. force (вручную из настроек): и источники с ошибками,
+ * не дожидаясь их интервала. parallel только для тестов
  */
-export async function fetchPass(now = new Date(), options: { budgetMs?: number; force?: boolean; minLeftMs?: number } = {}): Promise<FetchPass> {
+export async function fetchPass(now = new Date(), options: { budgetMs?: number; force?: boolean; minLeftMs?: number; parallel?: number } = {}): Promise<FetchPass> {
   const deadline = Date.now() + (options.budgetMs ?? FETCH_BUDGET_MS);
   const minLeft = options.minLeftMs ?? MIN_SOURCE_LEFT_MS;
   const [sources, keywords, directions] = await Promise.all([
     prisma.newsSource.findMany({
       where: { active: true },
       orderBy: [{ lastFetchAt: { sort: "asc", nulls: "first" } }, { sortOrder: "asc" }, { createdAt: "asc" }],
-      select: { id: true, name: true, url: true, strict: true, etag: true, lastModified: true, lastCount: true, lastFetchAt: true, failCount: true },
+      select: { id: true, name: true, url: true, strict: true, etag: true, lastModified: true, lastCount: true, lastFetchAt: true, failCount: true, sortOrder: true, createdAt: true },
     }),
     loadKeywords(),
     newsDirections(),
   ]);
   const order = directions.filter((d) => d.active).map((d) => d.code);
   const due = options.force ? sources : sources.filter((s) => sourceDue(s, now));
+  const downloads: (Download | undefined)[] = new Array(due.length);
+  let next = 0;
+  const parallel = Math.max(1, options.parallel ?? FETCH_PARALLEL);
+  await Promise.all(
+    Array.from({ length: Math.min(parallel, due.length) }, async () => {
+      while (next < due.length) {
+        const i = next++;
+        // Меньше 20 секунд до конца срока: лента не успеет, начинать не стоит
+        if (deadline - Date.now() < minLeft) continue;
+        downloads[i] = await download(due[i]!, deadline);
+      }
+    }),
+  );
+  const listed = due
+    .map((source, i) => ({ source, got: downloads[i] }))
+    .sort((a, b) => a.source.sortOrder - b.source.sortOrder || a.source.createdAt.getTime() - b.source.createdAt.getTime());
   const results: FetchResult[] = [];
   let postponed = 0;
-  for (const s of due) {
-    // Меньше 20 секунд до конца срока: лента не успеет, начинать не стоит
-    if (deadline - Date.now() < minLeft) {
+  for (const { source, got } of listed) {
+    if (!got) {
       postponed += 1;
       continue;
     }
-    const r = await fetchSource(s, keywords, order, now, deadline);
+    const r = await storeSource(source, got, keywords, order, now);
     if (r.postponed) postponed += 1;
     else results.push(r);
   }
@@ -389,7 +426,7 @@ export async function fetchPass(now = new Date(), options: { budgetMs?: number; 
 }
 
 /** Забрать все ленты, которым пора. Результат по каждой забранной */
-export async function fetchAll(now = new Date(), options: { budgetMs?: number; force?: boolean; minLeftMs?: number } = {}): Promise<FetchResult[]> {
+export async function fetchAll(now = new Date(), options: { budgetMs?: number; force?: boolean; minLeftMs?: number; parallel?: number } = {}): Promise<FetchResult[]> {
   return (await fetchPass(now, options)).results;
 }
 
@@ -592,7 +629,7 @@ export async function listNews(filter: { directions?: string[]; page?: number; p
 export async function personDirections(personId: string, db: Db = prisma): Promise<string[]> {
   const [p, directions] = await Promise.all([db.person.findUnique({ where: { id: personId }, select: { newsPrefs: true, defaultDirection: { select: { code: true } } } }), newsDirections(db)]);
   const own = p?.defaultDirection?.code ?? null;
-  return directionsFor(newsPrefsOf(p?.newsPrefs, own), own, directions.filter((d) => d.active).map((d) => d.code));
+  return directionsFor(newsPrefsOf(p?.newsPrefs), own, directions.filter((d) => d.active).map((d) => d.code));
 }
 
 /** Блок на главной: свежие новости по продуктам человека */
@@ -623,17 +660,17 @@ export async function digestView(id: string, personId: string): Promise<DigestVi
 
 // ---------- Настройки человека ----------
 
-/** Настройки дайджеста человека с учётом умолчания: с направлением раз в неделю, без направления не присылать */
+/** Настройки дайджеста человека с учётом умолчания: не присылать, продукты своего направления */
 export async function newsPrefsFor(personId: string): Promise<NewsPrefs> {
-  const p = await prisma.person.findUnique({ where: { id: personId }, select: { newsPrefs: true, defaultDirection: { select: { code: true } } } });
-  return newsPrefsOf(p?.newsPrefs, p?.defaultDirection?.code ?? null);
+  const p = await prisma.person.findUnique({ where: { id: personId }, select: { newsPrefs: true } });
+  return newsPrefsOf(p?.newsPrefs);
 }
 
 /** Частота и продукты дайджеста. Только при личном входе: по общему логину можно выбрать чужой профиль */
 export async function saveNewsPrefs(actor: Actor, input: unknown): Promise<NewsPrefs> {
   if (actor.via === "TEAM") fail("Дайджест настраивается при личном входе");
   const before = await newsPrefsFor(actor.personId);
-  // Частоту не прислали: остаётся прежняя (в том числе умолчание по направлению)
+  // Частоту не прислали: остаётся прежняя (в том числе умолчание)
   const raw = newsPrefsOf(input);
   const frequency = input && typeof input === "object" && "frequency" in input ? raw.frequency : before.frequency;
   const known = new Set((await newsDirections()).map((d) => d.code));
@@ -883,7 +920,7 @@ export async function newsDigestPass(now = new Date(), options: { renew?: () => 
     const people = await prisma.person.findMany({ where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, email: true, shortName: true, newsPrefs: true, defaultDirection: { select: { code: true } } } });
     let wanted = people.flatMap((p) => {
       const own = p.defaultDirection?.code ?? null;
-      const prefs = newsPrefsOf(p.newsPrefs, own);
+      const prefs = newsPrefsOf(p.newsPrefs);
       const frequency: NewsFrequency = prefs.frequency;
       const slot = frequency === "daily" ? daily : frequency === "weekly" ? weekly : null;
       if (!slot) return [];

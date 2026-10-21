@@ -142,14 +142,13 @@ describe("описание по правилам", () => {
 });
 
 describe("настройки дайджеста", () => {
-  it("по умолчанию: с направлением раз в неделю его продукты, без направления не присылать и продуктов нет", () => {
-    expect(newsPrefsOf(undefined, "osago")).toEqual({ frequency: "weekly", directions: null });
+  it("по умолчанию дайджест не приходит никому (решение 22.10), продукты своего направления; без направления продуктов нет", () => {
     expect(newsPrefsOf(undefined)).toEqual({ frequency: "off", directions: null });
-    expect(newsPrefsOf({}, null).frequency).toBe("off");
+    expect(newsPrefsOf({}).frequency).toBe("off");
     // Свой выбор человека сильнее умолчания
-    expect(newsPrefsOf({ frequency: "weekly" }, null).frequency).toBe("weekly");
+    expect(newsPrefsOf({ frequency: "weekly" }).frequency).toBe("weekly");
     expect(newsPrefsOf({ frequency: "daily", directions: ["osago", "osago", 5] })).toEqual({ frequency: "daily", directions: ["osago"] });
-    expect(newsPrefsOf({ frequency: "never" }, "kasko").frequency).toBe("weekly");
+    expect(newsPrefsOf({ frequency: "never" }).frequency).toBe("off");
     const all = [...CODES, "department"];
     expect(directionsFor({ frequency: "weekly", directions: null }, "osago", all)).toEqual(["osago"]);
     expect(directionsFor({ frequency: "weekly", directions: null }, "department", all)).toEqual(CODES);

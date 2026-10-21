@@ -330,7 +330,10 @@ describe("чтение", () => {
     expect((await news.newsForPerson(golovkin.id)).items).toEqual([]);
   });
 
-  it("без направления в карточке: продуктов нет и дайджест по умолчанию выключен", async () => {
+  it("по умолчанию дайджест выключен у всех, продукты своего направления; без направления в карточке продуктов нет", async () => {
+    const golovkin = await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } });
+    expect(await news.newsPrefsFor(golovkin.id)).toEqual({ frequency: "off", directions: null });
+    expect(await news.personDirections(golovkin.id)).toEqual(["osago"]);
     const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
     await prisma.person.update({ where: { id: reva.id }, data: { defaultDirectionId: null } });
     try {
@@ -429,23 +432,23 @@ describe("дайджесты", () => {
     expect((await news.digestView(f.id, f.personId))!.items.map((i) => i.title)).toEqual(["КАСКО вчера"]);
   });
 
-  it("еженедельный в понедельник всем с направлением по умолчанию, без направления и «не присылать» нет, без почты только событие", async () => {
+  it("еженедельный в понедельник только тем, кто включил; по умолчанию и «не присылать» нет, без почты только событие", async () => {
     await addSources();
     await news.fetchAll(new Date(MON.getTime() - 3_600_000));
     const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
     const cheychenets = await prisma.person.findUniqueOrThrow({ where: { slug: "cheychenets" } });
     await news.saveNewsPrefs(await personal("reva"), { frequency: "off", directions: null });
-    // Чейченец без направления в карточке: дайджест по умолчанию выключен
-    await prisma.person.update({ where: { id: cheychenets.id }, data: { defaultDirectionId: null } });
-    try {
+    // Включили сами, продукты своего направления. Остальные ничего не выбирали: по умолчанию дайджест выключен
+    const subscribed = ["muradyan", "golovkin", "fatyanov"];
+    for (const slug of subscribed) await news.saveNewsPrefs(await personal(slug), { frequency: "weekly", directions: null });
+    {
       await prisma.person.update({ where: { slug: "muradyan" }, data: { email: "a.muradyan@sravni.ru" } });
-      // Все включённые с направлением, кроме Ревы: у каждого новости есть (продукты направления или все)
-      const expected = await prisma.person.count({ where: { active: true, defaultDirectionId: { not: null }, slug: { not: "reva" } } });
-      expect(expected).toBeGreaterThan(4);
+      const expected = subscribed.length;
       const r = await news.newsDigestPass(MON);
       expect(r).toEqual({ sent: expected, skipped: 0, failed: 0 });
       expect(await prisma.inboxEvent.count({ where: { recipientId: { in: [reva.id, cheychenets.id] } } })).toBe(0);
       expect(await prisma.inboxEvent.count({ where: { kind: "NEWS" } })).toBe(expected);
+      expect((await prisma.inboxEvent.findMany({ where: { kind: "NEWS" }, select: { recipient: { select: { slug: true } } } })).map((e) => e.recipient.slug).sort()).toEqual([...subscribed].sort());
     // Письмо только тем, у кого есть почта
     expect(sent.map((m) => m.to)).toEqual(["a.muradyan@sravni.ru"]);
     expect(sent[0]!.subject).toBe("Weekly: новости за неделю 43, 4 новости");
@@ -454,8 +457,6 @@ describe("дайджесты", () => {
     expect(d.itemIds).toHaveLength(4);
       // Повтор в тот же понедельник ничего не шлёт
       expect(await news.newsDigestPass(new Date(MON.getTime() + 60_000))).toEqual({ sent: 0, skipped: expected, failed: 0 });
-    } finally {
-      await prisma.person.update({ where: { id: cheychenets.id }, data: { defaultDirectionId: cheychenets.defaultDirectionId } });
     }
   });
 
@@ -616,11 +617,43 @@ describe("забор: срок прохода, сбойные источники
       await sleep(400);
       return { status: 200, body: fixture(FEEDS[url]!) };
     });
-    const first = await news.fetchPass(WED, { budgetMs: 600, minLeftMs: 100 });
+    // По одной ленте за раз, чтобы срок кончился посередине
+    const first = await news.fetchPass(WED, { budgetMs: 600, minLeftMs: 100, parallel: 1 });
     expect(first.results.map((r) => r.name)).toEqual(["Первая", "Вторая"]);
     expect(first.postponed).toBe(1);
-    const second = await news.fetchPass(new Date(WED.getTime() + 3_600_000), { budgetMs: 600, minLeftMs: 100 });
-    expect(second.results[0]!.name).toBe("Третья");
+    const second = await news.fetchPass(new Date(WED.getTime() + 3_600_000), { budgetMs: 600, minLeftMs: 100, parallel: 1 });
+    // Отложенная скачивается первой; в итоге ленты идут по порядку списка
+    expect(order.slice(0, 3)).toEqual(["https://www.cbr.ru/rss/RssPress", "https://www.asn-news.ru/rss", "https://www.cbr.ru/rss/RssNews"]);
+    expect(second.results.map((r) => r.name)).toContain("Третья");
+  });
+
+  it("ленты скачиваются до четырёх одновременно, сохраняются по порядку списка: перепечатку получает источник выше, а не быстрее", async () => {
+    const a = await owner();
+    // Банк России выше в списке и отвечает медленнее «агрегатора» с теми же статьями
+    await news.addSource(a, { name: "Банк России", url: "https://www.cbr.ru/rss/RssPress" });
+    await news.addSource(a, { name: "Агрегатор", url: "https://www.cbr.ru/rss/RssNews" });
+    for (const host of ["one", "two", "three"]) await news.addSource(a, { name: `Медленная ${host}`, url: `https://${host}.example/rss` });
+    let active = 0;
+    let peak = 0;
+    setNewsTransport(async ({ url }) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      try {
+        await sleep(url.endsWith("RssPress") ? 500 : url.endsWith("RssNews") ? 0 : 300);
+        return { status: 200, body: fixture(FEEDS[url] ?? "cbr.ru.xml") };
+      } finally {
+        active -= 1;
+      }
+    });
+    expect(news.FETCH_PARALLEL).toBe(4);
+    const r = await news.fetchPass(WED);
+    expect(peak).toBe(4);
+    expect(r.results.map((x) => x.name)).toEqual(["Банк России", "Агрегатор", "Медленная one", "Медленная two", "Медленная three"]);
+    const cbr = await prisma.newsSource.findFirstOrThrow({ where: { name: "Банк России" } });
+    const items = await prisma.newsItem.findMany({ select: { sourceId: true } });
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((i) => i.sourceId === cbr.id)).toBe(true);
+    expect(r.results.find((x) => x.name === "Агрегатор")).toMatchObject({ ok: true, added: 0 });
   });
 
   it("меньше 20 секунд до конца срока: источник не начинается; обрыв по общему сроку не сбой источника", async () => {

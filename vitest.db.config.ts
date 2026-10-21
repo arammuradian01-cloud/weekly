@@ -24,6 +24,8 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       SESSION_SECRET: "db-test-secret-0123456789-0123456789-abcdef",
       BORD_IMPORT: "off",
+      // Этап 60: ленты новостей в тестах базы только из фикстур, без сети, даже если тест не подменил транспорт
+      NEWS_FAKE: "1",
     },
   },
 });

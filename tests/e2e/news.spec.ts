@@ -148,8 +148,8 @@ test("дайджест настраивается в профиле при ли�
   await enterByLink(page, "golovkin");
   await page.goto("/profile?tab=mail");
   const form = page.getByTestId("news-prefs");
-  // По умолчанию раз в неделю и продукты направления: у Головкина ОСАГО
-  await expect(form.getByRole("radio", { name: "Раз в неделю, в понедельник" })).toBeChecked();
+  // По умолчанию дайджест не приходит (решение 22.10), продукты направления: у Головкина ОСАГО
+  await expect(form.getByRole("radio", { name: "Не присылать" })).toBeChecked();
   await expect(form.getByRole("radio", { name: /Продукты моего направления: ОСАГО/ })).toBeChecked();
   await form.getByRole("radio", { name: "По будням утром" }).check();
   await form.getByRole("radio", { name: "Выбрать самому" }).check();

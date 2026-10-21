@@ -2,9 +2,8 @@
 // Частота: по будням утром, еженедельно в понедельник или не присылать. Продукты: явный список кодов направлений
 // или null, что значит «продукты моего направления» (по умолчанию).
 //
-// По умолчанию (решение после проверки 21.10, приложение для всей компании): у кого в карточке есть направление,
-// тот получает продукты своего направления раз в неделю; у кого направления нет, дайджест выключен, пока человек
-// сам не включит его в профиле. Писем без согласия людям вне страхования ресурс не шлёт.
+// По умолчанию (решение Арама 22.10, приложение для всей компании): дайджест не приходит никому, пока человек сам
+// не включит его в профиле. Продукты по умолчанию его направления. Писем без согласия ресурс не шлёт.
 
 export type NewsFrequency = "daily" | "weekly" | "off";
 export const NEWS_FREQUENCIES: NewsFrequency[] = ["daily", "weekly", "off"];
@@ -18,16 +17,14 @@ export type NewsPrefs = { frequency: NewsFrequency; directions: string[] | null 
 
 const isFrequency = (v: unknown): v is NewsFrequency => typeof v === "string" && (NEWS_FREQUENCIES as string[]).includes(v);
 
-/** Частота, если человек её не выбирал: с направлением раз в неделю, без направления не присылать */
-export function defaultFrequency(own: string | null | undefined): NewsFrequency {
-  return own ? "weekly" : "off";
-}
+/** Частота, если человек её не выбирал: не присылать */
+export const DEFAULT_FREQUENCY: NewsFrequency = "off";
 
-/** Настройки из базы. own: код направления из карточки человека, от него зависит частота по умолчанию */
-export function newsPrefsOf(value: unknown, own: string | null = null): NewsPrefs {
+/** Настройки из базы */
+export function newsPrefsOf(value: unknown): NewsPrefs {
   const raw = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   const directions = Array.isArray(raw.directions) ? [...new Set(raw.directions.filter((d): d is string => typeof d === "string" && d.length > 0 && d.length <= 40))] : null;
-  return { frequency: isFrequency(raw.frequency) ? raw.frequency : defaultFrequency(own), directions };
+  return { frequency: isFrequency(raw.frequency) ? raw.frequency : DEFAULT_FREQUENCY, directions };
 }
 
 /**
