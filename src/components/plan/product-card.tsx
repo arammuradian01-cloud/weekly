@@ -20,6 +20,7 @@ import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { betterOf, defaultReason, delta, shortName, when } from "./plan-ui";
 import { PlanFacts } from "./plan-facts";
+import { PlanSk } from "./plan-sk";
 
 const COMMENT_MAX = 300;
 
@@ -35,6 +36,8 @@ type Props = {
   onOwners: () => void;
   /** Партнёрский канал продукта (этап 35б): изменение полисов партнёров к LBE. null: партнёров у продукта нет */
   partner?: { delta: number } | null;
+  /** ОСАГО по СК из хаба (этап 58): только у ОСАГО и только после загрузки хаба */
+  sk?: MonthPlanView["sk"];
 };
 
 type Preset = { text: string; reason: ForecastReasonCode; comment: string };
@@ -46,7 +49,7 @@ export function reviewText(review: ReviewView | null): string {
   return `${review.state === "adjusted" ? "скорректирован" : "проверен без корректировок"}: ${shortName(review.by ?? "")}, ${when(review.at!)}`;
 }
 
-export function ProductCard({ month, product, summary, input, total, canOwners, adjustHint, onSaved, onOwners, partner }: Props) {
+export function ProductCard({ month, product, summary, input, total, canOwners, adjustHint, onSaved, onOwners, partner, sk }: Props) {
   const spec = productOf(product.code)!;
   const [editing, setEditing] = useState<MetricKey | null>(null);
   const [preset, setPreset] = useState<Preset | null>(null);
@@ -185,6 +188,11 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
       {product.facts ? (
         <div className="border-b border-border px-5 py-4">
           <PlanFacts month={month} facts={product.facts} summary={summary} label={spec.label} />
+        </div>
+      ) : null}
+      {sk ? (
+        <div className="border-b border-border px-5 py-4">
+          <PlanSk sk={sk} />
         </div>
       ) : null}
       <div className="overflow-x-auto">

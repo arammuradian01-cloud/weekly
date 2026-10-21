@@ -26,6 +26,7 @@ import { notify } from "@/lib/inbox/notify";
 import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_PNL_SHEET, PARTNER_SHEETS, PARTNER_SHEET_PREFIX, readPartners, type PartnerPull } from "./partners";
 import { partnerSnapshot, partnerView, writePartners } from "./partners-service";
+import { hubSource, skView } from "./hub-service";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PartnerAdjustInput, PullPreview } from "./types";
@@ -530,6 +531,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     at,
     when: asOf?.when,
   });
+  // По СК: только текущий срез, на прошлый момент не показываем
+  const [sk, hub] = await Promise.all([at ? null : skView(actor, month, now), hubSource(actor)]);
   return {
     month,
     monthLabel: monthLabel(month),
@@ -549,6 +552,8 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     canFacts: canEditDictionaries(actor),
     canExport: canExportPlan(actor, owners),
     partners,
+    sk,
+    hubSource: hub,
   };
 }
 

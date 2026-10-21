@@ -631,6 +631,44 @@ model PlanFact {
   @@map("plan_facts")
 }
 
+/// Снимок «Все СК» из хаба данных (этап 58): полисы, премия и выручка ОСАГО по СК, пул и апсейл за месяц нарастающим
+/// итогом на день снимка. Дневной факт считается как разница снимков соседних дней. Повторная загрузка дня заменяет снимок
+model PlanSkSnapshot {
+  id       String   @id @default(cuid())
+  /// День снимка по Москве
+  day      DateTime @db.Date
+  /// Месяц, к которому относятся цифры: 2026-10
+  month    String
+  sk       String
+  pool     Boolean
+  upsale   Boolean
+  policies Float
+  /// Премия и выручка без НДС в рублях, как в «Все СК»
+  premium  Float?
+  revenue  Float?
+  loadedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([day, month, sk, pool, upsale])
+  @@index([month, day])
+  @@map("plan_sk_snapshots")
+}
+
+/// Строка модели «ОСАГО СК × каналы × регионы» из хаба (этап 58): план 2027, факт и ранрейт 2026 по СК. Последняя загрузка
+model PlanSkLine {
+  id       String   @id @default(cuid())
+  /// Месяц 2026-10 или год FY2026
+  period   String
+  sk       String
+  /// pol, np, pool, prem_tot, rev, kv_tot
+  metric   String
+  value    Float?
+  pulledAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([period, sk, metric])
+  @@index([period])
+  @@map("plan_sk_lines")
+}
+
 /// Партнёр партнёрского канала в месяце (этап 35б): из LRF b2b через таблицу-связку, значения LBE на дату загрузки.
 /// Бюджета по партнёру в LRF нет. Повторная загрузка месяца заменяет строки, корректировки команды канала остаются
 model PlanPartner {
