@@ -153,6 +153,8 @@ model Person {
   mailPrefs           Json            @default("{}")
   /// Какие уведомления в браузере человек получает (этап 26): { tasks, mentions, reactions }. Нет ключа: по умолчанию
   pushPrefs           Json            @default("{}")
+  /// Дайджест новостей (этап 60): { frequency: daily | weekly | off, directions: коды продуктов или null }. Нет ключа: по умолчанию
+  newsPrefs           Json            @default("{}")
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
@@ -181,6 +183,7 @@ model Person {
   loginLinks             LoginLink[]
   devices                DeviceSession[]
   pushSubscriptions      PushSubscription[]
+  newsDigests            NewsDigest[]
   absences               Absence[]               @relation("AbsencePerson")
   substitutions          Absence[]               @relation("AbsenceSubstitute")
   inbox                  InboxEvent[]            @relation("InboxRecipient")
@@ -1006,6 +1009,8 @@ enum InboxKind {
   APPROVAL
   /// Прогноз месяца (этап 35): загружен LBE, команде продукта проверить прогноз
   PLAN
+  /// Дайджест новостей по продуктам (этап 60): ежедневный или еженедельный
+  NEWS
 }
 
 /// Событие в «Мне» (этап 11). Предмет (subject) склеивает события: одна строка на задачу.
@@ -1898,4 +1903,79 @@ model InitiativeChange {
 
   @@index([initiativeId, at])
   @@map("initiative_changes")
+}
+
+/// Источник новостей (этап 60): публичная лента RSS или Atom. Список ведёт владелец в «Настройках».
+/// Состояние последнего забора видно там же: недоступный источник не ломает остальные
+model NewsSource {
+  id           String     @id @default(cuid())
+  name         String
+  url          String     @unique
+  active       Boolean    @default(true)
+  sortOrder    Int        @default(0)
+  lastFetchAt  DateTime?  @db.Timestamptz(3)
+  lastOkAt     DateTime?  @db.Timestamptz(3)
+  /// Текст последней ошибки забора, null после удачного забора
+  lastError    String?
+  /// Сколько записей было в ленте при последнем удачном заборе
+  lastCount    Int        @default(0)
+  failCount    Int        @default(0)
+  /// Условные запросы: лента не изменилась, и сервер отвечает 304 без тела
+  etag         String?
+  lastModified String?
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @db.Timestamptz(3)
+  items        NewsItem[]
+
+  @@map("news_sources")
+}
+
+/// Новость (этап 60): заголовок, дата, источник, ссылка, продукты и короткое описание. Статьи целиком не храним.
+/// Дубли: одна запись на ленту и guid, одна на нормализованный адрес статьи по всем лентам
+model NewsItem {
+  id          String     @id @default(cuid())
+  sourceId    String
+  source      NewsSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  guid        String
+  /// Адрес без схемы, utm-меток и завершающего слэша
+  urlKey      String     @unique
+  url         String
+  title       String
+  summary     String
+  publishedAt DateTime   @db.Timestamptz(3)
+  /// Коды продуктов из справочника направлений. Пусто: новость не показывается
+  directions  String[]   @default([])
+  /// Чем уточнена привязка и описание: rules или claude. null: ещё не уточнялась через Claude
+  enrichedBy  String?
+  enrichedAt  DateTime?  @db.Timestamptz(3)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+
+  @@unique([sourceId, guid])
+  @@index([publishedAt])
+  @@index([createdAt])
+  @@map("news_items")
+}
+
+enum NewsDigestKind {
+  DAILY
+  WEEKLY
+}
+
+/// Отправленный дайджест новостей (этап 60): один на человека, вид и период. По нему же открывается страница дайджеста
+model NewsDigest {
+  id         String         @id @default(cuid())
+  personId   String
+  person     Person         @relation(fields: [personId], references: [id], onDelete: Cascade)
+  kind       NewsDigestKind
+  /// День 2026-10-21 для ежедневного, неделя 2026-W43 для еженедельного
+  periodKey  String
+  directions String[]       @default([])
+  itemIds    String[]       @default([])
+  sentAt     DateTime       @default(now()) @db.Timestamptz(3)
+  /// Письмо ушло. null: почта не настроена или у человека нет адреса
+  mailedAt   DateTime?      @db.Timestamptz(3)
+
+  @@unique([personId, kind, periodKey])
+  @@index([personId, sentAt])
+  @@map("news_digests")
 }

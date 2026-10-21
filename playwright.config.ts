@@ -48,6 +48,8 @@ export default defineConfig({
       MAIL_LOG_FILE: E2E_MAIL_LOG,
       // Письма о событиях и напоминания проверяют тесты базы: в сквозных тестах лог писем только для ссылок входа
       MAIL_LOOP: "off",
+      // Этап 60: ленты новостей из фикстур tests/fixtures/news вместо сети
+      NEWS_FAKE: "1",
     },
   },
 });

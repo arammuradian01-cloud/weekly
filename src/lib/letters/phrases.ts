@@ -50,6 +50,8 @@ export function eventPhrase(e: EventLine): string {
       return `${who}прогноз месяца: проверьте после загрузки LBE`;
     case "TEAM":
       return `${who}состав команды`;
+    case "NEWS":
+      return "дайджест новостей по вашим продуктам";
     case "APPROVAL":
       // Соисполнитель из вашей команды в задаче другого департамента (этап 54): номер задачи в тексте события
       if (e.subject?.startsWith("approval-co:")) return `${who}ваш сотрудник стал соисполнителем задачи другого департамента`;
@@ -70,6 +72,8 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   // Состав команды (этап 53): страница структуры с этой командой, запрос в команду: список запросов
   if (e.subject?.startsWith("team:")) return `/people/structure?team=${encodeURIComponent(e.subject.split(":")[1] ?? "")}`;
   if (e.subject?.startsWith("join:")) return "/people/structure#join-requests";
+  // Дайджест новостей (этап 60): страница дайджеста
+  if (e.subject?.startsWith("news:")) return `/news?digest=${encodeURIComponent(e.subject.slice(5))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;
