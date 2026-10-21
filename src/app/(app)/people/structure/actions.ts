@@ -33,8 +33,17 @@ export async function updateTeamAction(id: string, input: org.TeamInput): Promis
   return done(await runAction("Правка команды", (a) => org.updateTeam(a, String(id), input)));
 }
 
-export async function addMemberAction(team: string, slug: string): Promise<Result<{ external: boolean }>> {
+export async function addMemberAction(team: string, slug: string): Promise<Result<org.AddMemberResult>> {
   return done(await runAction("Участник команды", (a) => org.addTeamMember(a, String(team), String(slug))));
+}
+
+/** Согласие или отказ руководителя человека на запрос в команду другой ветки (этап 53) */
+export async function decideJoinAction(id: string, approve: boolean): Promise<Result<void>> {
+  return done(await runAction("Запрос в команду", (a) => org.decideJoinRequest(a, String(id), !!approve)));
+}
+
+export async function cancelJoinAction(id: string): Promise<Result<void>> {
+  return done(await runAction("Запрос в команду", (a) => org.cancelJoinRequest(a, String(id))));
 }
 
 export async function removeMemberAction(team: string, slug: string): Promise<Result<void>> {

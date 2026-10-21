@@ -4,7 +4,7 @@
 // на сотни строк не годится: в нём не найти человека, особенно с телефона. Поле с подсказками по образцу combobox
 // из WAI-ARIA: стрелки двигают выбор, Enter выбирает, Escape закрывает список.
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 
 export type PickerOption = {
@@ -52,7 +52,7 @@ export function SearchPicker({
   className?: string;
 }) {
   const listId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -61,6 +61,11 @@ export function SearchPicker({
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
+  // Активный пункт всегда в видимой части списка: стрелками можно уйти ниже края
+  useEffect(() => {
+    if (!open) return;
+    listRef.current?.querySelector(`[id="${listId}-${active}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [active, open, listId]);
 
   const pick = (o: PickerOption) => {
     onChange(o.value);
@@ -74,7 +79,6 @@ export function SearchPicker({
         {label}
       </label>
       <input
-        ref={inputRef}
         id={id}
         className="sv-control w-full"
         type="text"
@@ -89,6 +93,8 @@ export function SearchPicker({
         placeholder={placeholder}
         value={text}
         onFocus={() => {
+          // Выбранное остаётся в поле: повторный фокус не стирает текст, по нему список сразу показывает выбор
+          if (selected) setQuery(selected.label);
           setOpen(true);
           setActive(0);
         }}
@@ -111,7 +117,12 @@ export function SearchPicker({
             e.preventDefault();
             pick(shown[active]!);
           } else if (e.key === "Escape") {
-            setOpen(false);
+            // Первый Escape закрывает список, второй очищает поле
+            if (open) setOpen(false);
+            else {
+              setQuery("");
+              if (value) onChange("");
+            }
           }
         }}
       />
@@ -121,32 +132,38 @@ export function SearchPicker({
         </p>
       ) : null}
       {open ? (
-        <ul id={listId} role="listbox" aria-label={label} className="sv-menu m-0 list-none">
-          {shown.map((o, i) => (
-            <li
-              key={o.value}
-              id={`${listId}-${i}`}
-              role="option"
-              aria-selected={i === active}
-              // mousedown, а не click: иначе поле теряет фокус и список закрывается раньше выбора
-              onMouseDown={(e) => {
-                e.preventDefault();
-                pick(o);
-              }}
-              onMouseEnter={() => setActive(i)}
-              className={cn("sv-menu__item items-start justify-between", i === active && "is-active")}
-            >
-              <span className="min-w-0">
-                <span className="block text-body text-ink">{o.label}</span>
-                {o.hint ? <span className="block text-small text-muted">{o.hint}</span> : null}
-              </span>
-              {o.note ? <span className="shrink-0 text-caption text-muted">{o.note}</span> : null}
-            </li>
-          ))}
-          {!shown.length ? <li className="sv-menu__group">{emptyText}</li> : null}
-          {more > 0 ? <li className="sv-menu__group">Ещё {more}: уточните запрос</li> : null}
-        </ul>
+        <div ref={listRef} className="sv-menu m-0">
+          <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
+            {shown.map((o, i) => (
+              <li
+                key={o.value}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={i === active}
+                // mousedown, а не click: иначе поле теряет фокус и список закрывается раньше выбора
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(o);
+                }}
+                onMouseEnter={() => setActive(i)}
+                className={cn("sv-menu__item items-start justify-between", i === active && "is-active")}
+              >
+                <span className="min-w-0">
+                  <span className="block text-body text-ink">{o.label}</span>
+                  {o.hint ? <span className="block text-small text-muted">{o.hint}</span> : null}
+                </span>
+                {o.note ? <span className="shrink-0 text-caption text-muted">{o.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+          {!shown.length ? <p className="sv-menu__group m-0">{emptyText}</p> : null}
+          {more > 0 ? <p className="sv-menu__group m-0">Ещё {more}: уточните запрос</p> : null}
+        </div>
       ) : null}
+      {/* Сколько нашлось: экранный диктор читает это при вводе */}
+      <span className="sr-only" aria-live="polite">
+        {open ? (matched.length ? `Найдено: ${matched.length}` : emptyText) : ""}
+      </span>
     </div>
   );
 }

@@ -13,7 +13,8 @@ import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
 import { canManagePeople } from "@/lib/admin/service";
 import { slugify, uniqueSlug } from "@/lib/translit";
 import { TOP_TEAM, ancestorsOf, loadScope, loadTeamNodes, subtreeOf } from "./scope";
-import { kindOfDepth, pathKey, plannedKey, planStructure, readStructureTable, type ExistingPerson, type StructurePlan } from "./import";
+import { decideMode, kindOfDepth, pathKey, plannedKey, planStructure, readStructureTable, type ExistingPerson, type LoadMode, type StructurePlan } from "./import";
+import { normName } from "@/lib/bord/names";
 import { notify } from "@/lib/inbox/notify";
 import { WEEKDAY_NAMES, isSlot, slotMoment, slotOf, slotText, type Slot } from "./rhythm";
 import { getSetting } from "@/lib/settings";
@@ -152,7 +153,7 @@ async function rootUnit(tx: Tx): Promise<UnitRow> {
 }
 
 /** Люди ресурса для плана. unitPath null: человек вне корня загрузки или без подразделения */
-async function existingPeople(tx: Tx, paths: Map<string, string[]>): Promise<ExistingPerson[]> {
+async function existingPeople(tx: Tx, paths: Map<string, string[]>, offUnits: Set<string> = new Set()): Promise<ExistingPerson[]> {
   const people = await tx.person.findMany({
     include: { manager: { select: { fullName: true } }, functionalManager: { select: { fullName: true } } },
     orderBy: [{ sortOrder: "asc" }],
@@ -163,7 +164,8 @@ async function existingPeople(tx: Tx, paths: Map<string, string[]>): Promise<Exi
     fullName: p.fullName,
     shortName: p.shortName,
     position: p.position,
-    unitPath: p.unitId && paths.has(p.unitId) ? pathKey(paths.get(p.unitId)!) : null,
+    // В выключенном подразделении: путь с пометкой, он не совпадёт ни с одним путём файла и человек переедет
+    unitPath: p.unitId && paths.has(p.unitId) ? `${offUnits.has(p.unitId) ? "#выключено:" : ""}${pathKey(paths.get(p.unitId)!)}` : null,
     manager: p.manager?.fullName ?? null,
     managerId: p.managerId,
     functional: p.functionalManager?.fullName ?? null,
@@ -173,17 +175,44 @@ async function existingPeople(tx: Tx, paths: Map<string, string[]>): Promise<Exi
   }));
 }
 
-async function planFor(tx: Tx, fileText: string): Promise<StructurePlan> {
+type Load = { plan: StructurePlan; mode: LoadMode; root: UnitRow | null };
+
+/**
+ * План загрузки и корень. Вся компания: корень «компания» (до первой загрузки его ещё нет, пути идут от самого
+ * верха). Один департамент в колонке: этот департамент. Без колонки: департамент руководителя топ-команды, а если
+ * понять нельзя, загрузка не идёт. Предпросмотр базу не меняет
+ */
+async function resolveLoad(tx: Tx, fileText: string): Promise<Load> {
   if (!fileText.trim()) fail("Выберите файл со структурой или вставьте ячейки из таблицы");
   if (fileText.length > LIMITS.file) fail("Файл больше 1 МБ: выгрузите только лист со структурой");
-  const { rows, problems, company } = readStructureTable(fileText);
-  if (!rows.length && !problems.length) fail("В файле нет строк с людьми");
-  // Предпросмотр базу не меняет: корня компании до первой загрузки ещё нет, тогда пути идут от самого верха
-  const root = company ? await findCompany(tx) : await findDepartmentRoot(tx);
+  const table = readStructureTable(fileText);
+  if (!table.rows.length && !table.problems.length) fail("В файле нет строк с людьми");
+  const { mode, rows, problems } = decideMode(table);
   const units = await tx.orgUnit.findMany();
+  let root: UnitRow | null = null;
+  if (mode.kind === "company") root = await findCompany(tx);
+  else if (mode.kind === "department") {
+    root = units.find((u) => u.active && u.kind === "DEPARTMENT" && normName(u.name) === normName(mode.name)) ?? null;
+    if (!root) problems.push({ line: 2, text: `Департамента «${mode.name}» нет в структуре: загрузите файл всей компании или проверьте название` });
+  } else {
+    root = await findDepartmentRoot(tx);
+    const company = units.find((u) => u.kind === "COMPANY");
+    const top = await tx.team.findUnique({ where: { id: TOP_TEAM }, select: { leaderId: true } });
+    const departments = units.filter((u) => u.active && u.kind === "DEPARTMENT");
+    if (company && departments.length > 1 && !departments.some((d) => top?.leaderId && d.headId === top.leaderId)) {
+      problems.push({ line: 1, text: "Непонятно, в какой департамент грузить файл: добавьте колонку «Департамент»" });
+    }
+  }
   const paths = unitPaths(units, root?.id ?? null);
+  const off = new Set(units.filter((u) => !u.active).map((u) => u.id));
   const existing = units.filter((u) => u.active && u.id !== root?.id && paths.has(u.id)).map((u) => paths.get(u.id)!);
-  return planStructure(rows, problems, existing, await existingPeople(tx, paths), company);
+  const plan = planStructure(rows, problems, existing, await existingPeople(tx, paths, off), mode.kind === "company");
+  plan.root = mode.kind === "company" ? (root?.name ?? COMPANY_UNIT_NAME) : (root?.name ?? (mode.kind === "department" ? mode.name : ROOT_UNIT_NAME));
+  return { plan, mode, root };
+}
+
+async function planFor(tx: Tx, fileText: string): Promise<StructurePlan> {
+  return (await resolveLoad(tx, fileText)).plan;
 }
 
 /** Предпросмотр загрузки: что добавится, изменится и уйдёт. В базе ничего не меняется */
@@ -203,16 +232,24 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
   requireOwner(actor);
   return prisma.$transaction(
     async (tx) => {
-      const plan = await planFor(tx, fileText);
+      // Две загрузки одновременно не заводят две компании и не перебивают друг друга
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('structure-load'))::text`;
+      const load = await resolveLoad(tx, fileText);
+      const plan = load.plan;
       if (plan.problems.length) fail(`Структуру не загрузить, база не тронута. Исправьте в файле: ${plan.problems.slice(0, 5).map((p) => `строка ${p.line}: ${p.text}`).join("; ")}`);
       // Файл всей компании грузится от корня «компания», файл департамента только в свой департамент:
       // подразделения, вакансии и люди других департаментов такая загрузка не трогает
-      const root = plan.company ? await companyRoot(tx, actor) : await departmentRoot(tx);
+      const root = load.mode.kind === "company" ? await companyRoot(tx, actor) : (load.root ?? (await departmentRoot(tx)));
       const units = await tx.orgUnit.findMany();
       const paths = unitPaths(units, root.id);
       const inRoot = new Set(paths.keys());
       const byPath = new Map<string, string>();
-      for (const u of units) if (u.id !== root.id && u.active && paths.has(u.id)) byPath.set(pathKey(paths.get(u.id)!), u.id);
+      const offByPath = new Map<string, string>();
+      for (const u of units) {
+        if (u.id === root.id || !paths.has(u.id)) continue;
+        if (u.active) byPath.set(pathKey(paths.get(u.id)!), u.id);
+        else if (!offByPath.has(pathKey(paths.get(u.id)!))) offByPath.set(pathKey(paths.get(u.id)!), u.id);
+      }
       let unitsCreated = 0;
       // Подразделения из файла вместе со всеми подразделениями выше: остальные после загрузки выключаются
       const used = new Set<string>([root.id]);
@@ -220,7 +257,16 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
         if (!path.length) return root.id;
         const key = pathKey(path);
         let id = byPath.get(key);
-        if (!id) {
+        // Выключенное подразделение с тем же путём снова в файле: оно включается, второе с тем же именем не заводится
+        const off = !id ? offByPath.get(key) : undefined;
+        if (off) {
+          await unitOf(path.slice(0, -1));
+          await tx.orgUnit.update({ where: { id: off }, data: { active: true } });
+          await audit(tx, actor, "structure.unit.on", "unit", off, "Подразделение снова в структуре", null, path.join(" / "));
+          byPath.set(key, off);
+          offByPath.delete(key);
+          id = off;
+        } else if (!id) {
           const parentId = await unitOf(path.slice(0, -1));
           const sortOrder = (await tx.orgUnit.count({ where: { parentId } })) * 10 + 10;
           const created = await tx.orgUnit.create({ data: { name: path.at(-1)!, kind: kindOfDepth(path.length - 1, path.at(-1), plan.company), parentId, sortOrder } });
@@ -379,12 +425,24 @@ export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: numb
   const desiredFor = (leaderId: string) => (reportsOf.get(leaderId) ?? []).filter((id) => id !== leaderId && (leaderId !== ownerId || !topIds.has(id)));
 
   const teams = await tx.team.findMany({ where: { kind: "UNIT" }, orderBy: [{ createdAt: "asc" }] });
-  const activeUnits = new Set((await tx.orgUnit.findMany({ where: { active: true }, select: { id: true } })).map((u) => u.id));
+  const unitRows = await tx.orgUnit.findMany({ where: { active: true }, select: { id: true, parentId: true } });
+  const activeUnits = new Set(unitRows.map((u) => u.id));
+  // Руководитель нескольких подразделений получает команду самого верхнего из них: департамента, а не своего управления
+  const parentOf = new Map(unitRows.map((u) => [u.id, u.parentId]));
+  const depthOf = (id: string) => {
+    let d = 0;
+    const seen = new Set<string>();
+    for (let cur = parentOf.get(id); cur && !seen.has(cur); cur = parentOf.get(cur) ?? null) {
+      seen.add(cur);
+      d += 1;
+    }
+    return d;
+  };
   let createdTeams = 0;
   let addedMembers = 0;
   for (const m of people) {
     if (m.role === "OBSERVER") continue;
-    const headed = m.id === ownerId ? null : (m.headOf[0] ?? null);
+    const headed = m.id === ownerId ? null : ([...m.headOf].sort((a, b) => depthOf(a.id) - depthOf(b.id))[0] ?? null);
     // Без прямых подчинённых команду не заводим. Но у руководителя подразделения с уже заведённой командой
     // её переименование и смена руководителя всё равно отрабатывают
     if (!desiredFor(m.id).length && !(headed && teams.some((t) => t.unitId === headed.id || t.leaderId === m.id))) continue;
@@ -438,6 +496,9 @@ export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: numb
   // Команда генерального директора стоит на самом верху (этап 53)
   const company = await tx.orgUnit.findFirst({ where: { kind: "COMPANY", active: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
   const companyTeam = company ? teams.find((t) => t.active && t.unitId === company.id) : undefined;
+  // Команде без команды выше место под командой генерального директора, а без неё на самом верху. Топ-команда тут
+  // только для структуры одного департамента: финансы и маркетинг под командой Арама не встают
+  const fallback: string | null = company ? (companyTeam?.id ?? null) : TOP_TEAM;
   const nodes = await loadTeamNodes(tx);
   const teamOfLeader = new Map<string, string>();
   for (const t of teams) if (t.active && t.leaderId && !teamOfLeader.has(t.leaderId) && t.unitId) teamOfLeader.set(t.leaderId, t.id);
@@ -446,9 +507,10 @@ export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: numb
     if (!t.active || t.parentManual || !t.leaderId) continue;
     const managerId = people.find((p) => p.id === t.leaderId)?.managerId ?? null;
     // Команда «Прямые подчинённые» владельца остаётся под топ-командой, даже если сам владелец подчиняется генеральному
-    let parentId: string | null = t.id === companyTeam?.id ? null : t.leaderId === ownerId ? TOP_TEAM : (managerId && managerId !== ownerId && teamOfLeader.get(managerId)) || TOP_TEAM;
+    let parentId: string | null =
+      t.id === companyTeam?.id ? null : t.leaderId === ownerId || managerId === ownerId ? TOP_TEAM : (managerId && teamOfLeader.get(managerId)) || fallback;
     // Петля в дереве команд невозможна, но на всякий случай: команда не встаёт ниже самой себя
-    if (parentId && subtreeOf(nodes, t.id).includes(parentId)) parentId = TOP_TEAM;
+    if (parentId && subtreeOf(nodes, t.id).includes(parentId)) parentId = fallback === t.id ? null : fallback;
     if (parentId !== t.parentId && parentId !== t.id) {
       await tx.team.update({ where: { id: t.id }, data: { parentId } });
       const n = nodes.find((x) => x.id === t.id);
@@ -464,7 +526,38 @@ export async function syncUnitTeams(tx: Tx, actor: Actor): Promise<{ teams: numb
       await audit(tx, actor, "team.update", "team", TOP_TEAM, `Команда выше: ${top.name}`, before, want ? (companyTeam?.name ?? null) : "нет");
     }
   }
+  await recomputeExternal(tx);
   return { teams: createdTeams, members: addedMembers };
+}
+
+/**
+ * Пометка «из другой ветки» пересчитывается после загрузки структуры и смены руководителя команды: человек мог
+ * перейти в другую ветку, у команды мог появиться руководитель. Свой: подчиняется руководителю команды по линии
+ */
+export async function recomputeExternal(tx: Tx): Promise<number> {
+  const [people, teams] = await Promise.all([
+    tx.person.findMany({ where: { active: true }, select: { id: true, managerId: true } }),
+    tx.team.findMany({ where: { active: true, leaderId: { not: null } }, select: { id: true, leaderId: true, members: { select: { personId: true, auto: true, external: true } } } }),
+  ]);
+  const managerOf = new Map(people.map((p) => [p.id, p.managerId]));
+  const under = (personId: string, leaderId: string) => {
+    const seen = new Set<string>();
+    for (let cur = managerOf.get(personId) ?? null; cur && !seen.has(cur); cur = managerOf.get(cur) ?? null) {
+      if (cur === leaderId) return true;
+      seen.add(cur);
+    }
+    return false;
+  };
+  let changed = 0;
+  for (const t of teams) {
+    for (const m of t.members) {
+      const external = m.auto ? false : !under(m.personId, t.leaderId!);
+      if (external === m.external) continue;
+      await tx.teamMember.update({ where: { teamId_personId: { teamId: t.id, personId: m.personId } }, data: { external } });
+      changed += 1;
+    }
+  }
+  return changed;
 }
 
 // ---------- Команды ----------
@@ -517,7 +610,7 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
       }
     }
     if (input.parent !== undefined) {
-      if (id === TOP_TEAM) fail("Топ-команда стоит на самом верху");
+      if (id === TOP_TEAM) fail("Команду выше у топ-команды задаёт структура: при структуре компании это команда генерального директора");
       const parentId = input.parent || TOP_TEAM;
       if (parentId !== team.parentId) {
         const nodes = await loadTeamNodes(tx);
@@ -541,13 +634,15 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
     }
     if (!Object.keys(data).length) fail("Ничего не изменилось");
     await tx.team.update({ where: { id }, data });
+    // Новый руководитель: кто в команде из другой ветки, считается заново (этап 53)
+    if (data.leaderId !== undefined) await recomputeExternal(tx);
   });
 }
 
 /**
- * Человек из ветки руководителя: прямой или непрямой подчинённый, или участник его команд ниже (кроме добавленных
- * из других веток). Остальных руководитель тоже может добавить в свою команду (этап 53), но они становятся
- * участниками из другой ветки, а их руководитель получает уведомление
+ * Человек из ветки руководителя: прямой или непрямой подчинённый по линии подчинения. Остальных руководитель тоже
+ * может позвать в свою команду (этап 53): они входят с согласия своего руководителя как участники из другой ветки.
+ * Тот же признак пересчитывает recomputeExternal
  */
 async function inBranch(tx: Tx, leaderId: string, personId: string): Promise<boolean> {
   const seen = new Set<string>();
@@ -557,9 +652,7 @@ async function inBranch(tx: Tx, leaderId: string, personId: string): Promise<boo
     seen.add(cur.managerId);
     cur = await tx.person.findUnique({ where: { id: cur.managerId }, select: { id: true, managerId: true } });
   }
-  const nodes = await loadTeamNodes(tx);
-  const led = nodes.filter((n) => n.leaderId === leaderId && n.id !== TOP_TEAM).flatMap((n) => subtreeOf(nodes, n.id));
-  return nodes.some((n) => led.includes(n.id) && ((n.members.includes(personId) && !(n.external ?? []).includes(personId)) || n.leaderId === personId));
+  return false;
 }
 
 /** Общий логин team без режима управления: им пользуется вся топ-команда, поэтому командами через него не управляют */
@@ -574,34 +667,130 @@ async function requireTeamEditor(tx: Tx, actor: Actor, teamId: string) {
   return fail("Состав команды меняют её руководитель и владелец в режиме управления");
 }
 
+/** Кто соглашается отдать человека в команду другой ветки: его руководитель, нет его: руководитель его подразделения выше */
+async function joinApprover(tx: Tx, person: { id: string; managerId: string | null; unitId: string | null }): Promise<{ id: string; fullName: string } | null> {
+  if (person.managerId) {
+    const m = await tx.person.findUnique({ where: { id: person.managerId }, select: { id: true, fullName: true, active: true } });
+    if (m?.active) return { id: m.id, fullName: m.fullName };
+  }
+  const units = await tx.orgUnit.findMany({ where: { active: true }, select: { id: true, parentId: true, headId: true } });
+  const byId = new Map(units.map((u) => [u.id, u]));
+  const seen = new Set<string>();
+  for (let cur = person.unitId ? byId.get(person.unitId) : undefined; cur && !seen.has(cur.id); cur = cur.parentId ? byId.get(cur.parentId) : undefined) {
+    seen.add(cur.id);
+    if (cur.headId && cur.headId !== person.id) {
+      const h = await tx.person.findUnique({ where: { id: cur.headId }, select: { id: true, fullName: true, active: true } });
+      if (h?.active) return { id: h.id, fullName: h.fullName };
+    }
+  }
+  return null;
+}
+
+/** Событие «Мне» о составе команды: отдельная строка на человека, повтор за сутки не шлётся */
+async function teamEvent(tx: Tx, actor: Actor, recipient: string | null | undefined, subject: string, text: string, now: Date) {
+  if (!recipient || recipient === actor.personId) return;
+  const recent = await tx.inboxEvent.count({ where: { recipientId: recipient, subject, kind: "TEAM", createdAt: { gte: new Date(now.getTime() - 24 * 60 * 60 * 1000) } } });
+  if (recent) return;
+  await notify(tx, { kind: "TEAM", recipients: [recipient], actor: { personId: actor.personId, fullName: actor.fullName }, subject, text }, now);
+}
+
+export type AddMemberResult = { added: boolean; external: boolean; pendingWith?: string };
+
 /**
- * Участник в команду. Руководитель собирает свою команду из кого угодно (этап 53, решение Арама 21.10): например,
- * в команду страхования входят люди из других департаментов. Человек не из ветки руководителя команды становится
- * участником из другой ветки: его задачи вне этой команды руководитель не видит, а его собственный руководитель и он
- * сам получают уведомление в «Мне». Так руководитель человека всегда знает, в каких командах тот работает
+ * Участник в команду (этап 53, решение Арама 21.10: команду собирают из людей любых веток, например в команду
+ * страхования входят люди других департаментов). Человек из ветки руководителя команды входит сразу. Человек из другой
+ * ветки входит, когда согласится его руководитель: участник команды видит weekly и задачи коллег, а они его, так что
+ * без согласия руководитель открыл бы себе чужую работу. Владелец в режиме управления добавляет сразу, руководитель
+ * человека получает уведомление. Задачи участника из другой ветки вне этой команды руководителю не видны
  */
-export async function addTeamMember(actor: Actor, teamId: string, slug: string, now = new Date()): Promise<{ external: boolean }> {
+export async function addTeamMember(actor: Actor, teamId: string, slug: string, now = new Date()): Promise<AddMemberResult> {
   return prisma.$transaction(async (tx) => {
-    const { team } = await requireTeamEditor(tx, actor, teamId);
+    const { team, owner } = await requireTeamEditor(tx, actor, teamId);
     const person = await personBySlug(tx, slug);
     if (!person.active) fail(`${person.fullName} выключен`);
     if (person.role === "OBSERVER") fail("Наблюдатель в командах не состоит");
     if (team.leaderId === person.id) fail(`${person.fullName} руководит этой командой`);
     const exists = await tx.teamMember.findUnique({ where: { teamId_personId: { teamId, personId: person.id } } });
     if (exists) fail(`${person.fullName} уже в команде`);
-    // Ветка считается от руководителя команды, а не от того, кто добавляет: владелец тоже может собрать команду
+    const waiting = await tx.teamJoinRequest.findFirst({ where: { teamId, personId: person.id, status: "PENDING" }, include: { approver: { select: { fullName: true } } } });
+    if (waiting) fail(`${person.fullName} уже ждёт согласия руководителя: ${waiting.approver.fullName}`);
+    // Ветка считается от руководителя команды, а не от того, кто добавляет
     const external = team.leaderId ? !(await inBranch(tx, team.leaderId, person.id)) : false;
-    await tx.teamMember.create({ data: { teamId, personId: person.id, addedById: actor.personId, external } });
-    await audit(tx, actor, "team.member.add", "team", teamId, `Участник добавлен: ${team.name}`, null, external ? `${person.fullName} (из другой ветки)` : person.fullName);
-    if (external) {
-      const leaderName = team.leader?.fullName ?? "руководитель не назначен";
-      const by = { personId: actor.personId, fullName: actor.fullName };
-      await notify(tx, { kind: "TEAM", recipients: [person.id], actor: by, subject: `team:${teamId}`, text: `Вы в команде «${team.name}», руководитель ${leaderName}` }, now);
-      if (person.managerId && person.managerId !== team.leaderId) {
-        await notify(tx, { kind: "TEAM", recipients: [person.managerId], actor: by, subject: `team:${teamId}`, text: `${person.fullName} в команде «${team.name}», руководитель ${leaderName}` }, now);
+    const leaderName = team.leader?.fullName ?? "руководитель не назначен";
+    if (!external || owner) {
+      await tx.teamMember.create({ data: { teamId, personId: person.id, addedById: actor.personId, external } });
+      await audit(tx, actor, "team.member.add", "team", teamId, `Участник добавлен: ${team.name}`, null, external ? `${person.fullName} (из другой ветки)` : person.fullName);
+      if (external) {
+        const subject = `team:${teamId}:${person.id}`;
+        await teamEvent(tx, actor, person.id, subject, `Вы в команде «${team.name}», руководитель ${leaderName}`, now);
+        const approver = await joinApprover(tx, person);
+        if (approver && approver.id !== team.leaderId) await teamEvent(tx, actor, approver.id, subject, `${person.fullName} в команде «${team.name}», руководитель ${leaderName}`, now);
       }
+      return { added: true, external };
     }
-    return { external };
+    const approver = await joinApprover(tx, person);
+    if (!approver) fail(`У ${person.fullName} в структуре нет руководителя, согласовать некому: попросите владельца ресурса добавить его`);
+    if (approver!.id === actor.personId) {
+      // Добавляет сам руководитель человека: его согласие уже есть
+      await tx.teamMember.create({ data: { teamId, personId: person.id, addedById: actor.personId, external } });
+      await audit(tx, actor, "team.member.add", "team", teamId, `Участник добавлен: ${team.name}`, null, `${person.fullName} (из другой ветки)`);
+      return { added: true, external };
+    }
+    const request = await tx.teamJoinRequest.create({ data: { teamId, personId: person.id, requestedById: actor.personId, approverId: approver!.id, createdAt: now } });
+    await audit(tx, actor, "team.join.request", "team", teamId, `Запрос в команду: ${team.name}`, null, `${person.fullName}, согласует ${approver!.fullName}`);
+    await notify(
+      tx,
+      { kind: "TEAM", recipients: [approver!.id], actor: { personId: actor.personId, fullName: actor.fullName }, subject: `join:${request.id}`, text: `Просят добавить вашего сотрудника ${person.fullName} в команду «${team.name}», руководитель ${leaderName}: согласуйте или откажите` },
+      now,
+    );
+    return { added: false, external: true, pendingWith: approver!.fullName };
+  });
+}
+
+export type JoinRequestView = { id: string; team: { id: string; name: string }; person: { slug: string; fullName: string; position: string | null }; requestedBy: string | null; approver: string; createdAt: string };
+
+/** Запросы в команды: которые ждут моего согласия и которые ждут согласия по моим командам */
+export async function joinRequestsFor(actor: Actor): Promise<{ toApprove: JoinRequestView[]; waiting: JoinRequestView[] }> {
+  const rows = await prisma.teamJoinRequest.findMany({
+    where: { status: "PENDING", OR: [{ approverId: actor.personId }, { team: { leaderId: actor.personId } }, ...(canManagePeople(actor) ? [{}] : [])] },
+    include: { team: { select: { id: true, name: true } }, person: { select: { slug: true, fullName: true, position: true } }, requestedBy: { select: { fullName: true } }, approver: { select: { id: true, fullName: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  const view = (r: (typeof rows)[number]): JoinRequestView => ({ id: r.id, team: r.team, person: r.person, requestedBy: r.requestedBy?.fullName ?? null, approver: r.approver.fullName, createdAt: r.createdAt.toISOString() });
+  return { toApprove: rows.filter((r) => r.approverId === actor.personId).map(view), waiting: rows.map(view) };
+}
+
+/** Согласие или отказ руководителя человека. Решает он сам или владелец в режиме управления */
+export async function decideJoinRequest(actor: Actor, id: string, approve: boolean, now = new Date()): Promise<void> {
+  if (teamLogin(actor)) fail("Решение по запросу принимают, войдя лично");
+  await prisma.$transaction(async (tx) => {
+    const r = await tx.teamJoinRequest.findUnique({ where: { id }, include: { team: { include: { leader: { select: { fullName: true } } } }, person: true } });
+    if (!r || r.status !== "PENDING") return fail("Запроса уже нет: его решили или отменили");
+    if (r.approverId !== actor.personId && !canManagePeople(actor)) fail("Решает руководитель человека или владелец в режиме управления");
+    const taken = await tx.teamJoinRequest.updateMany({ where: { id, status: "PENDING" }, data: { status: approve ? "APPROVED" : "DECLINED", decidedAt: now } });
+    if (taken.count !== 1) fail("Запроса уже нет: его решили или отменили");
+    const subject = `team:${r.teamId}:${r.personId}`;
+    if (approve) {
+      if (!r.person.active) fail(`${r.person.fullName} выключен`);
+      await tx.teamMember.createMany({ data: [{ teamId: r.teamId, personId: r.personId, addedById: r.requestedById, external: true }], skipDuplicates: true });
+      await audit(tx, actor, "team.member.add", "team", r.teamId, `Участник добавлен: ${r.team.name}`, null, `${r.person.fullName} (из другой ветки, согласовал ${actor.fullName})`);
+      await teamEvent(tx, actor, r.personId, subject, `Вы в команде «${r.team.name}», руководитель ${r.team.leader?.fullName ?? "не назначен"}`, now);
+      await teamEvent(tx, actor, r.requestedById, subject, `${r.person.fullName} в команде «${r.team.name}»: руководитель согласовал`, now);
+    } else {
+      await audit(tx, actor, "team.join.decline", "team", r.teamId, `Запрос в команду отклонён: ${r.team.name}`, r.person.fullName, null);
+      await teamEvent(tx, actor, r.requestedById, subject, `${r.person.fullName} не добавлен в команду «${r.team.name}»: руководитель отказал`, now);
+    }
+  });
+}
+
+/** Запрос отменяет тот, кто просил, руководитель команды или владелец */
+export async function cancelJoinRequest(actor: Actor, id: string, now = new Date()): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const r = await tx.teamJoinRequest.findUnique({ where: { id }, include: { team: true, person: { select: { fullName: true } } } });
+    if (!r || r.status !== "PENDING") return fail("Запроса уже нет: его решили или отменили");
+    if (r.requestedById !== actor.personId && r.team.leaderId !== actor.personId && !canManagePeople(actor)) fail("Запрос отменяет тот, кто просил, или владелец");
+    await tx.teamJoinRequest.update({ where: { id }, data: { status: "CANCELLED", decidedAt: now } });
+    await audit(tx, actor, "team.join.cancel", "team", r.teamId, `Запрос в команду отменён: ${r.team.name}`, r.person.fullName, null);
   });
 }
 
@@ -790,7 +979,7 @@ export async function createUnit(actor: Actor, input: { name: string; kind: Unit
 /** Создать недостающие команды руководителей подразделений вручную, без загрузки файла */
 export async function syncTeams(actor: Actor): Promise<{ teams: number; members: number }> {
   requireOwner(actor);
-  return prisma.$transaction((tx) => syncUnitTeams(tx, actor));
+  return prisma.$transaction((tx) => syncUnitTeams(tx, actor), { timeout: 60_000 });
 }
 
 export { ancestorsOf };
@@ -821,10 +1010,7 @@ export async function memberCandidates(actor: Actor): Promise<MemberCandidate[]>
     }
     return false;
   };
-  const nodes = await loadTeamNodes(prisma);
-  const led = new Set(nodes.filter((n) => n.leaderId === actor.personId && n.id !== TOP_TEAM).flatMap((n) => subtreeOf(nodes, n.id)));
-  const inLed = new Set(nodes.filter((n) => led.has(n.id)).flatMap((n) => [...n.members.filter((id) => !(n.external ?? []).includes(id)), ...(n.leaderId ? [n.leaderId] : [])]));
-  return people.filter((p) => p.id !== actor.personId).map((p) => view(p, underMe(p.id) || inLed.has(p.id)));
+  return people.filter((p) => p.id !== actor.personId).map((p) => view(p, underMe(p.id)));
 }
 
 // ---------- Ритм weekly команды (этап 15) ----------
@@ -854,7 +1040,10 @@ export async function setTeamRhythm(actor: Actor, teamId: string, input: RhythmI
     const setting = await getSetting<DeadlineSetting>("week.deadline", { weekday: 1, time: "18:00" });
     const key = reportingKey(new Date(), setting);
     const department = deadlineOf(key, setting);
-    if (input.deadline && slotMoment(key, input.deadline).getTime() > department.getTime()) {
+    // Команда генерального директора стоит над топ-командой: её срок позже срока департамента, ограничения сверху нет
+    const companyUnit = team.unitId ? await tx.orgUnit.findUnique({ where: { id: team.unitId }, select: { kind: true } }) : null;
+    const isCompany = companyUnit?.kind === "COMPANY";
+    if (!isCompany && input.deadline && slotMoment(key, input.deadline).getTime() > department.getTime()) {
       fail(`Срок команды не позже срока департамента (${WEEKDAY_NAMES[setting.weekday - 1]} следующей недели, ${setting.time}): руководитель должен успеть собрать weekly команды`);
     }
     // И не позже срока команды выше, если у неё свой срок: её руководитель сдаёт weekly с записями этой команды

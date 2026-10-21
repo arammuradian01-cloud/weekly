@@ -257,11 +257,25 @@ test("этап 53: структура всей компании, генерал�
   await option.click();
   await expect(lead.getByTestId(`add-${team}-external`)).toContainText("не из вашей ветки");
   await shot(lead, "company-add-external");
-  await lead.getByRole("button", { name: "Добавить", exact: true }).click();
-  await expect(lead.getByText(/Погосова Сабина.* в команде, уведомление отправлено/).first()).toBeVisible();
+  await lead.getByRole("button", { name: "Попросить", exact: true }).click();
+  await expect(lead.getByText(/Запрос отправлен: Погосова Сабина.*согласится Кацемба Наталья/).first()).toBeVisible();
+  await expect(lead.getByText(/ждёт согласия: Кацемба Наталья/)).toBeVisible();
+  const [none] = await sql(`SELECT count(*)::int AS n FROM team_members WHERE "teamId" = '${team}'`);
+  expect(none!.n).toBe(1);
+
+  // Руководитель Погосовой видит запрос у себя и соглашается
+  const boss = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" })).newPage();
+  const katsemba = (await sql(`SELECT slug FROM people WHERE "fullName" LIKE 'Кацемба%'`))[0]!.slug as string;
+  await enterByLink(boss, katsemba);
+  await boss.goto("/me");
+  await boss.getByRole("link", { name: "Запрос в команду" }).first().click();
+  await expect(boss.getByTestId("join-requests")).toContainText("Погосова Сабина");
+  await shot(boss, "company-join-request");
+  await boss.getByRole("button", { name: "Согласовать" }).click();
+  // После согласия запрос уходит из списка
+  await expect(boss.getByTestId("join-requests")).toHaveCount(0);
   const [member] = await sql(`SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = '${team}' AND p."fullName" LIKE 'Погосова%'`);
   expect(member!.external).toBe(true);
-  const events = await sql(`SELECT p."fullName" FROM inbox_events e JOIN people p ON p.id = e."recipientId" WHERE e.kind = 'TEAM' ORDER BY 1`);
-  expect(events.map((e) => e.fullName)).toEqual([expect.stringMatching(/^Кацемба/), expect.stringMatching(/^Погосова/)]);
+  await boss.close();
   await lead.close();
 });

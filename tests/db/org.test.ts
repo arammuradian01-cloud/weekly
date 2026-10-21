@@ -266,8 +266,12 @@ describe("состав команд", () => {
   it("руководитель добавляет и людей других веток с пометкой; топ-команду правит только владелец", async () => {
     const antonovTeam = await teamLedBy("Антонов");
     const antonov = await actor("Антонов");
-    // Новикова из другого управления: Антонов добавляет её сам (этап 53), она участник из другой ветки
-    expect((await org.addTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"))).external).toBe(true);
+    // Новикова из другого управления (этап 53): Антонов зовёт её, она войдёт с согласия своего руководителя
+    expect(await org.addTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"))).toMatchObject({ added: false, external: true });
+    const req = await prisma.teamJoinRequest.findFirstOrThrow({ where: { teamId: antonovTeam.id, status: "PENDING" } });
+    await org.cancelJoinRequest(antonov, req.id);
+    // Владелец добавляет сразу
+    await org.addTeamMember(await actors.owner(), antonovTeam.id, await slugOf("Новикова"));
     await org.removeTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"));
     await expectRule(org.addTeamMember(await actors.reva(), TOP_TEAM, await slugOf("Токов")), /меняют её руководитель и владелец/);
     await expectRule(org.updateTeam(await actors.owner(), TOP_TEAM, { leader: "reva" }), /Топ-командой руководит владелец/);

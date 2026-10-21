@@ -71,8 +71,12 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
         <div className="rounded-lg bg-field px-4 py-3 text-small text-ink">
           <p className="font-semibold">Какие колонки читаются</p>
           <p className="mt-1 text-muted">
-            ФИО, Должность, Управление, Отдел, Сектор, Направление, Руководитель, Функциональный руководитель, Почта, Руководит (да, если человек руководит своим подразделением), Статус (вакансия).
-            Остальные колонки, в том числе кадровые, ресурс не читает и не хранит.
+            ФИО, Должность, Департамент, Управление, Отдел, Сектор, Направление, Руководитель, Функциональный руководитель, Почта, Руководит (да, если человек руководит своим подразделением), Статус
+            (вакансия). Остальные колонки, в том числе кадровые, ресурс не читает и не хранит.
+          </p>
+          <p className="mt-1 text-muted">
+            Несколько департаментов в колонке «Департамент» или строка генерального директора: файл всей компании. Один департамент: файл грузится только в него. Без колонки: в департамент
+            руководителя топ-команды.
           </p>
         </div>
         <FileField
@@ -103,6 +107,11 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
 function PlanView({ plan }: { plan: StructurePlan }) {
   return (
     <div className="flex flex-col gap-4" aria-live="polite">
+      {plan.root ? (
+        <p className="text-body font-semibold text-ink" data-testid="structure-root">
+          {plan.company ? `Структура всей компании: ${plan.root}` : `Загрузка в департамент: ${plan.root}. Другие департаменты не меняются`}
+        </p>
+      ) : null}
       <p className="text-body text-ink">
         Людей добавится {plan.people.add.length}, изменится {plan.people.change.length}, без изменений {plan.people.same}. Подразделений новых {plan.units.add.length}, вакансий{" "}
         {plan.vacancies.length}.

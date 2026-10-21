@@ -34,7 +34,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
   if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
-  if (item.subject.startsWith("team:")) return { icon: Users, tone: "info" };
+  if (item.subject.startsWith("team:") || item.subject.startsWith("join:")) return { icon: Users, tone: "info" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -117,8 +117,12 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                     {item.subject.endsWith(":partners") ? "Прогноз месяца: партнёры" : "Прогноз месяца"}
                   </Link>
                 ) : item.subject.startsWith("team:") ? (
-                  <Link href="/people/structure" className="sv-event__text font-semibold hover:text-link">
+                  <Link href={`/people/structure?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
                     Состав команды
+                  </Link>
+                ) : item.subject.startsWith("join:") ? (
+                  <Link href="/people/structure#join-requests" className="sv-event__text font-semibold hover:text-link">
+                    Запрос в команду
                   </Link>
                 ) : null}
                 <p className="sv-event__text mt-0.5">{item.text}</p>

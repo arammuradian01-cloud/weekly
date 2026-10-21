@@ -8,6 +8,7 @@ import * as org from "@/lib/org/service";
 import { loadScope, TOP_TEAM } from "@/lib/org/scope";
 import { structureView } from "@/lib/org/view";
 import { peopleTree } from "@/lib/org/people-tree";
+import { entryReaders } from "@/lib/discuss/access";
 import { moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
 
@@ -194,29 +195,59 @@ describe("загрузка структуры всей компании", () => 
 });
 
 describe("руководитель собирает команду из разных веток", () => {
-  it("человек из другого департамента: участник из другой ветки, ему и его руководителю уведомление", async () => {
-    const golovkin = await actorOf("Головкин");
+  it("человек из другого департамента входит с согласия своего руководителя; до согласия его weekly не виден", async () => {
+    const golovkin = { ...(await actorOf("Головкин")), via: "PASSWORD" as const };
     const team = await teamLedBy("Головкин");
     const pogosova = await person("Погосова");
-    const candidates = await org.memberCandidates({ ...golovkin, via: "PASSWORD" });
+    const candidates = await org.memberCandidates(golovkin);
     expect(candidates.find((c) => c.slug === pogosova.slug)?.own).toBe(false);
     const fatyanov = await person("Фатьянов");
     expect(candidates.find((c) => c.slug === fatyanov.slug)?.own).toBe(true);
-    const r = await org.addTeamMember({ ...golovkin, via: "PASSWORD" }, team.id, pogosova.slug);
-    expect(r.external).toBe(true);
+    // Запись weekly Погосовой: пока она не в команде, руководитель чужой команды её не видит
+    const entry = { authorId: pogosova.id, ceo: false, promotedBy: [] as string[] };
+    const reva = await person("Рева");
+    const r = await org.addTeamMember(golovkin, team.id, pogosova.slug);
+    expect(r).toMatchObject({ added: false, external: true, pendingWith: expect.stringMatching(/^Кацемба/) });
+    expect(await prisma.teamMember.count({ where: { teamId: team.id, personId: pogosova.id } })).toBe(0);
+    expect(await entryReaders(prisma, entry, [reva.id])).toEqual([]);
+    await expectRule(org.addTeamMember(golovkin, team.id, pogosova.slug), /ждёт согласия/);
+    const request = await prisma.teamJoinRequest.findFirstOrThrow({ where: { teamId: team.id, personId: pogosova.id, status: "PENDING" } });
+    expect((await prisma.inboxEvent.findFirstOrThrow({ where: { subject: `join:${request.id}` }, include: { recipient: true } })).recipient.fullName).toMatch(/^Кацемба/);
+    // Решает только руководитель человека или владелец
+    await expectRule(org.decideJoinRequest(golovkin, request.id, true), /руководитель человека/);
+    const katsemba = { ...(await actorOf("Кацемба")), via: "PASSWORD" as const };
+    expect((await org.joinRequestsFor(katsemba)).toApprove.map((x) => x.id)).toEqual([request.id]);
+    await org.decideJoinRequest(katsemba, request.id, true);
     const member = await prisma.teamMember.findUniqueOrThrow({ where: { teamId_personId: { teamId: team.id, personId: pogosova.id } } });
     expect(member.external).toBe(true);
-    const events = await prisma.inboxEvent.findMany({ where: { kind: "TEAM" }, include: { recipient: true } });
-    const to = events.map((e) => e.recipient.fullName);
-    expect(to).toHaveLength(2);
-    expect(to.some((n) => n.startsWith("Кацемба"))).toBe(true);
-    expect(to.some((n) => n.startsWith("Погосова"))).toBe(true);
-    expect(events.every((e) => e.subject === `team:${team.id}`)).toBe(true);
-    // Своего человека добавляет без уведомлений
+    const events = await prisma.inboxEvent.findMany({ where: { kind: "TEAM", subject: `team:${team.id}:${pogosova.id}` }, include: { recipient: true } });
+    expect(events.map((e) => e.recipient.fullName).sort()).toEqual([golovkin.fullName, pogosova.fullName].sort());
+    // Своего человека руководитель добавляет сразу, без запроса и уведомлений
     const cheychenets = await person("Чейченец");
     await prisma.teamMember.deleteMany({ where: { teamId: team.id, personId: cheychenets.id } });
-    expect((await org.addTeamMember({ ...golovkin, via: "PASSWORD" }, team.id, cheychenets.slug)).external).toBe(false);
-    expect(await prisma.inboxEvent.count({ where: { kind: "TEAM" } })).toBe(2);
+    expect(await org.addTeamMember(golovkin, team.id, cheychenets.slug)).toEqual({ added: true, external: false });
+    expect(await prisma.inboxEvent.count({ where: { kind: "TEAM", subject: `team:${team.id}:${cheychenets.id}` } })).toBe(0);
+  });
+
+  it("отказ и отмена запроса; владелец добавляет сразу, руководитель человека узнаёт", async () => {
+    const reva = { ...(await actorOf("Рева")), via: "PASSWORD" as const };
+    const team = await teamLedBy("Рева");
+    const plokhikh = await person("Плохих");
+    const first = await org.addTeamMember(reva, team.id, plokhikh.slug);
+    expect(first.added).toBe(false);
+    const req = await prisma.teamJoinRequest.findFirstOrThrow({ where: { personId: plokhikh.id, status: "PENDING" } });
+    const evdokimova = { ...(await actorOf("Евдокимова")), via: "PASSWORD" as const };
+    await org.decideJoinRequest(evdokimova, req.id, false);
+    expect(await prisma.teamMember.count({ where: { teamId: team.id, personId: plokhikh.id } })).toBe(0);
+    await org.addTeamMember(reva, team.id, plokhikh.slug);
+    const again = await prisma.teamJoinRequest.findFirstOrThrow({ where: { personId: plokhikh.id, status: "PENDING" } });
+    await org.cancelJoinRequest(reva, again.id);
+    // Владелец в режиме управления добавляет сразу: человек и его руководитель получают по своей строке в «Мне»
+    const r = await org.addTeamMember(await owner(), team.id, plokhikh.slug);
+    expect(r).toEqual({ added: true, external: true });
+    const to = (await prisma.inboxEvent.findMany({ where: { kind: "TEAM", subject: `team:${team.id}:${plokhikh.id}` }, include: { recipient: true } })).map((e) => e.recipient.fullName);
+    expect(to.some((n) => n.startsWith("Евдокимова"))).toBe(true);
+    expect(to.some((n) => n.startsWith("Плохих"))).toBe(true);
   });
 
   it("задачи участника из другой ветки видны руководителю только в его команде", async () => {
@@ -224,7 +255,7 @@ describe("руководитель собирает команду из разн
     const reva = { ...(await actorOf("Рева")), via: "PASSWORD" as const };
     const team = await teamLedBy("Рева");
     const pogosova = await person("Погосова");
-    expect((await org.addTeamMember(reva, team.id, pogosova.slug)).external).toBe(true);
+    await org.addTeamMember(await owner(), team.id, pogosova.slug);
     const katsemba = await actorOf("Кацемба");
     const acc = await teamLedBy("Кацемба");
     const inFinance = await svc.createTask(katsemba, { title: "Сверка доходов за октябрь", outcome: "Сверка готова", owner: pogosova.slug, direction: "department", due: future, team: acc.id });
@@ -236,6 +267,67 @@ describe("руководитель собирает команду из разн
     const seen = (await svc.listTasks({ reader: { personId: reva.personId, role: reva.role } })).map((t) => t.number);
     expect(seen).toContain(inMine.task.number);
     expect(seen).not.toContain(inFinance.task.number);
+  });
+
+  it("пометка «из другой ветки» пересчитывается: человек перешёл в ветку руководителя команды", async () => {
+    const team = await teamLedBy("Рева");
+    const pogosova = await person("Погосова");
+    await prisma.person.update({ where: { id: pogosova.id }, data: { managerId: (await person("Рева")).id } });
+    await prisma.$transaction((tx) => org.recomputeExternal(tx));
+    expect((await prisma.teamMember.findUniqueOrThrow({ where: { teamId_personId: { teamId: team.id, personId: pogosova.id } } })).external).toBe(false);
+    await prisma.person.update({ where: { id: pogosova.id }, data: { managerId: (await person("Кацемба")).id } });
+    await prisma.$transaction((tx) => org.recomputeExternal(tx));
+    expect((await prisma.teamMember.findUniqueOrThrow({ where: { teamId_personId: { teamId: team.id, personId: pogosova.id } } })).external).toBe(true);
+  });
+});
+
+describe("режим загрузки после проверки кода", () => {
+  it("файл одного департамента с колонкой «Департамент» грузится только в него и называет корень", async () => {
+    const plan = await org.previewStructure(await owner(), [
+      ["ФИО", "Должность", "Департамент", "Управление", "Руководит"],
+      ["Харченко Артём", "CFO", FIN, "", "да"],
+      ["Кацемба Наталья Сергеевна", "Chief Accountant", FIN, "Управление финансового учёта и контроля", "да"],
+    ].map((r) => r.join(";")).join("\n"));
+    expect(plan.company).toBe(false);
+    expect(plan.root).toBe(FIN);
+    expect(plan.units.remove.some((u) => u.includes("клиентским"))).toBe(false);
+    expect(plan.people.missing.some((p) => p.fullName.startsWith("Евдокимова"))).toBe(false);
+    // Незнакомый департамент: ошибка, а не загрузка в чужой
+    const bad = await org.previewStructure(await owner(), [["ФИО", "Департамент"], ["Харченко Артём", "Департамент снабжения"]].map((r) => r.join(";")).join("\n"));
+    expect(bad.problems.some((p) => /нет в структуре/.test(p.text))).toBe(true);
+  });
+
+  it("два руководителя одного подразделения в файле: ошибка", async () => {
+    const plan = await org.previewStructure(await owner(), [
+      ["ФИО", "Департамент", "Руководит"],
+      ["Крайник Александр", "", "да"],
+      ["Харченко Артём", "", "да"],
+    ].map((r) => r.join(";")).join("\n"));
+    expect(plan.problems.some((p) => /уже есть руководитель/.test(p.text))).toBe(true);
+  });
+
+  it("выключенное подразделение снова в файле включается, второе такое же не заводится, люди возвращаются", async () => {
+    const unit = await unitNamed("Управление клиентским сервисом");
+    await org.updateUnit(await owner(), unit.id, { active: false });
+    const plan = await org.previewStructure(await owner(), COMPANY);
+    expect(plan.people.change.some((p) => p.fullName.startsWith("Евдокимова"))).toBe(true);
+    await org.applyStructure(await owner(), COMPANY);
+    expect(await prisma.orgUnit.count({ where: { name: "Управление клиентским сервисом" } })).toBe(1);
+    expect((await prisma.orgUnit.findUniqueOrThrow({ where: { id: unit.id } })).active).toBe(true);
+    expect((await person("Евдокимова")).unitId).toBe(unit.id);
+  });
+
+  it("без команды генерального команды департаментов не встают под топ-команду", async () => {
+    const ceo = await teamLedBy("Крайник");
+    await prisma.team.update({ where: { id: ceo.id }, data: { active: false } });
+    try {
+      await org.syncTeams(await owner());
+      expect((await teamLedBy("Харченко")).parentId).not.toBe(TOP_TEAM);
+    } finally {
+      await prisma.team.update({ where: { id: ceo.id }, data: { active: true } });
+      await org.syncTeams(await owner());
+    }
+    expect((await teamLedBy("Харченко")).parentId).toBe(ceo.id);
   });
 });
 

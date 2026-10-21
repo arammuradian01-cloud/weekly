@@ -34,7 +34,8 @@ export type TeamView = {
   parentId: string | null;
   unitId: string | null;
   active: boolean;
-  members: { slug: string; fullName: string; position: string | null }[];
+  /** external: участник из другой ветки (этап 53) */
+  members: { slug: string; fullName: string; position: string | null; external?: boolean }[];
   openTasks: number;
   /** Открытые задачи со сроком в прошлом */
   overdue: number;
@@ -128,10 +129,10 @@ export async function structureView(viewer: { id: string; role: Role; limited?: 
         unitId: t.unitId,
         active: t.active,
         members: t.members
-          .map((m) => m.person)
+          .map((m) => ({ ...m.person, external: m.external }))
           .filter((p) => opts.includeInactive || p.active)
           .sort((a, b) => a.sortOrder - b.sortOrder || a.fullName.localeCompare(b.fullName, "ru"))
-          .map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position })),
+          .map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, external: p.external })),
         openTasks: openByTeam.get(t.id) ?? 0,
         overdue: overdueByTeam.get(t.id) ?? 0,
         rhythm: nodes.find((n) => n.id === t.id)!.rhythm,
