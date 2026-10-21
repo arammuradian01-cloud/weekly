@@ -52,7 +52,7 @@ export type InboxView = { items: InboxItem[]; snoozed: number };
  * События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления. Прогноз месяца
  * (этап 35) тоже: его проверяют и корректируют при личном входе
  */
-const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { notIn: ["ONE_ON_ONE", "PLAN"] } } : {});
+const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM"] } } : {});
 
 const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxEventWhereInput => ({
   recipientId: personId,

@@ -20,6 +20,8 @@ enum Role {
 
 /// Уровень подразделения в структуре департамента (этап 14)
 enum UnitKind {
+  /// Компания целиком (этап 53): корень структуры, над департаментами. Руководитель: генеральный директор
+  COMPANY
   DEPARTMENT
   MANAGEMENT
   DIVISION
@@ -159,6 +161,10 @@ model Person {
   headOf                 OrgUnit[]               @relation("UnitHead")
   leads                  Team[]                  @relation("TeamLeader")
   teams                  TeamMember[]
+  /// Запросы в команды из других веток (этап 53): о ком, кто просил, кто согласует
+  joinRequests           TeamJoinRequest[]       @relation("JoinPerson")
+  joinAsked              TeamJoinRequest[]       @relation("JoinRequestedBy")
+  joinApprovals          TeamJoinRequest[]       @relation("JoinApprover")
   ownedTasks             Task[]                  @relation("TaskOwner")
   createdTasks           Task[]                  @relation("TaskCreator")
   coTasks                TaskCoExecutor[]
@@ -965,6 +971,8 @@ enum InboxKind {
   ONE_ON_ONE
   /// Крупная инициатива (этап 30): вас назначили ответственным, сменилось состояние
   INITIATIVE
+  /// Команды (этап 53): вас добавили в команду руководителя другой ветки, или так добавили вашего сотрудника
+  TEAM
   /// Прогноз месяца (этап 35): загружен LBE, команде продукта проверить прогноз
   PLAN
 }
@@ -1104,10 +1112,40 @@ model Team {
   ratingVotes MeetingRatingVote[]
   ratingBoxes MeetingRatingBox[]
   initiatives Initiative[]
+  joinRequests TeamJoinRequest[]
 
   @@index([leaderId])
   @@index([parentId])
   @@map("teams")
+}
+
+/// Руководитель команды просит человека из другой ветки (этап 53). Человек входит в команду, когда согласится его
+/// руководитель: участник команды видит weekly и задачи коллег, а они его, поэтому без согласия так открыть чужую
+/// работу нельзя
+model TeamJoinRequest {
+  id            String            @id @default(cuid())
+  teamId        String
+  team          Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  personId      String
+  person        Person            @relation("JoinPerson", fields: [personId], references: [id], onDelete: Cascade)
+  requestedById String?
+  requestedBy   Person?           @relation("JoinRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  approverId    String
+  approver      Person            @relation("JoinApprover", fields: [approverId], references: [id], onDelete: Cascade)
+  status        JoinRequestStatus @default(PENDING)
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  decidedAt     DateTime?         @db.Timestamptz(3)
+
+  @@index([approverId, status])
+  @@index([teamId, status])
+  @@map("team_join_requests")
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
 }
 
 /// Участник команды. Руководитель команды в участниках не числится, он в Team.leaderId
@@ -1121,6 +1159,8 @@ model TeamMember {
   /// Добавлен по структуре как прямой подчинённый руководителя. Такие участники пересчитываются при загрузке структуры,
   /// добавленные руками остаются
   auto      Boolean  @default(false)
+  /// Из другой ветки структуры (этап 53): руководитель команды видит его задачи только в своих командах, а не все
+  external  Boolean  @default(false)
 
   @@id([teamId, personId])
   @@index([personId])

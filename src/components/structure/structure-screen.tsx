@@ -8,15 +8,19 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, ChevronRight, Plus, Upload, Users } from "lucide-react";
 import type { StructureView, TeamView, UnitView } from "@/lib/org/view";
+import type { AddMemberResult, JoinRequestView } from "@/lib/org/service";
 import { usePrototype } from "@/domain/store";
 import { TOP_TEAM } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
 import { EmptyState } from "@/components/empty-state";
 import {
   addMemberAction,
+  cancelJoinAction,
+  decideJoinAction,
   createTeamAction,
   removeMemberAction,
   setPersonOrgAction,
@@ -31,11 +35,34 @@ import type { PeopleTree } from "@/lib/org/people-tree";
 import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
 import { deadlineText } from "@/components/weekly/weekly-feed";
 
-type Candidate = { slug: string; fullName: string; position: string | null };
+type Candidate = { slug: string; fullName: string; position: string | null; unit?: string | null; own?: boolean };
 
-export function StructureScreen({ view, tree, owner, me, candidates, leads = [], focus = null }: { view: StructureView; tree: PeopleTree; owner: boolean; me: string; candidates: Candidate[]; leads?: string[]; /** Человек из адреса: дерево открывается на нём (этап 45) */ focus?: string | null }) {
+export function StructureScreen({
+  view,
+  tree,
+  owner,
+  me,
+  candidates,
+  leads = [],
+  focus = null,
+  focusTeam = null,
+  requests = { toApprove: [], waiting: [] },
+}: {
+  view: StructureView;
+  tree: PeopleTree;
+  owner: boolean;
+  me: string;
+  candidates: Candidate[];
+  leads?: string[];
+  /** Человек из адреса: дерево открывается на нём (этап 45) */
+  focus?: string | null;
+  /** Команда из адреса (этап 53): вкладка «Команды» открывается с ней */
+  focusTeam?: string | null;
+  /** Запросы в команды из других веток (этап 53) */
+  requests?: { toApprove: JoinRequestView[]; waiting: JoinRequestView[] };
+}) {
   // Дерево подчинённых первым (этап 34): так смотрят структуру чаще всего. Пока руководители не заданы, первыми подразделения
-  const [tab, setTab] = useState<"people" | "units" | "teams">(tree.loaded ? "people" : "units");
+  const [tab, setTab] = useState<"people" | "units" | "teams">(focusTeam ? "teams" : tree.loaded ? "people" : "units");
   const [importing, setImporting] = useState(false);
   const [creating, setCreating] = useState(false);
   const { notify } = usePrototype();
@@ -51,7 +78,8 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [],
       }
     });
 
-  const empty = view.units.filter((u) => u.kind !== "DEPARTMENT").length === 0;
+  // Пусто, пока под корнем (компанией или департаментом) нет ни одного подразделения
+  const empty = view.units.filter((u) => u.depth > 0).length === 0;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -85,6 +113,8 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [],
         ) : null}
       </div>
 
+      {requests.toApprove.length ? <JoinRequests list={requests.toApprove} onSave={run} pending={pending} /> : null}
+
       {tab === "people" ? (
         <PeopleTreeView key={focus ?? "start"} tree={tree} me={me} owner={owner} start={focus} />
       ) : tab === "units" ? (
@@ -96,7 +126,7 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [],
           <UnitTree units={view.units} owner={owner} people={candidates} onSave={run} />
         )
       ) : (
-        <TeamTree teams={view.teams} owner={owner} me={me} candidates={candidates} onSave={run} pending={pending} leads={leads} />
+        <TeamTree teams={view.teams} owner={owner} me={me} candidates={candidates} onSave={run} pending={pending} leads={leads} waiting={requests.waiting} focusTeam={focusTeam} />
       )}
 
       {owner && tab === "units" && view.unplaced.length ? (
@@ -151,7 +181,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
   });
   return (
     <>
-      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Подразделения департамента">
+      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Подразделения">
         {units.filter((u) => !hidden.has(u.id)).map((u) => {
           const open = openIds.has(u.id);
           return (
@@ -200,7 +230,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                           Вакансии: {u.vacancies.join(", ")}
                         </p>
                       ) : null}
-                      {owner && u.kind !== "DEPARTMENT" ? (
+                      {owner && u.depth > 0 ? (
                         <button type="button" className="self-start text-small text-blue-700 hover:underline" onClick={() => setEditingUnit(u)}>
                           Изменить подразделение
                         </button>
@@ -260,15 +290,9 @@ function PersonOrgModal({
       >
         <TextInput label="Должность" id="po-position" value={position} onChange={(e) => setPosition(e.target.value)} maxLength={120} />
         <SelectField label="Подразделение" id="po-unit" value={unit} onChange={(e) => setUnit(e.target.value)} options={units.map((u) => ({ value: u.id, label: `${"  ".repeat(u.depth)}${u.name}` }))} />
-        <SelectField label="Руководитель" id="po-manager" value={manager} onChange={(e) => setManager(e.target.value)} options={[{ value: "", label: "Не менять" }, { value: "-", label: "Нет руководителя" }, ...others]} />
-        <SelectField
-          label="Функциональный руководитель"
-          id="po-functional"
-          value={functional}
-          onChange={(e) => setFunctional(e.target.value)}
-          options={[{ value: "", label: "Не менять" }, { value: "-", label: "Нет" }, ...others]}
-          hint="Видит задачи человека, но не управляет ими"
-        />
+        {/* Людей в компании сотни: выбор с поиском (этап 53). Пусто: не менять */}
+        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" />
+        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Отмена
@@ -296,7 +320,7 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         }}
       >
         <TextInput label="Название" id="un-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SelectField label="Руководитель" id="un-head" value={head} onChange={(e) => setHead(e.target.value)} options={[{ value: "", label: "Не выделен" }, ...people.map((p) => ({ value: p.slug, label: p.fullName }))]} />
+        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" />
         {!head ? <TextInput label="Пометка о руководителе" id="un-note" value={headNote} onChange={(e) => setHeadNote(e.target.value)} placeholder="Например, роль делят CPO, PMM и CRM Lead" /> : null}
         <SelectField
           label="Подразделение выше"
@@ -360,6 +384,8 @@ function TeamTree({
   onSave,
   pending,
   leads,
+  waiting,
+  focusTeam,
 }: {
   teams: TeamView[];
   owner: boolean;
@@ -368,8 +394,10 @@ function TeamTree({
   onSave: Runner;
   pending: boolean;
   leads: string[];
+  waiting: JoinRequestView[];
+  focusTeam: string | null;
 }) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(focusTeam);
   const [editing, setEditing] = useState<TeamView | null>(null);
   const [rhythm, setRhythm] = useState<TeamView | null>(null);
   return (
@@ -410,6 +438,7 @@ function TeamTree({
                             <li key={m.slug} className="flex flex-wrap items-baseline gap-x-2 text-small">
                               <span className="text-ink">{m.fullName}</span>
                               {m.position ? <span className="text-muted">{m.position}</span> : null}
+                              {m.external ? <span className="text-caption text-muted">из другой ветки</span> : null}
                               {canEdit ? (
                                 <button type="button" disabled={pending} className="text-blue-700 hover:underline disabled:opacity-50" onClick={() => onSave(() => removeMemberAction(t.id, m.slug), `${m.fullName} убран из команды`)}>
                                   Убрать
@@ -421,7 +450,24 @@ function TeamTree({
                       ) : (
                         <p className="text-small text-muted">Участников пока нет.</p>
                       )}
-                      {canEdit && addable.length ? <AddMember team={t} people={addable} onSave={onSave} /> : null}
+                      {waiting.filter((w) => w.team.id === t.id).length ? (
+                        <ul className="flex flex-col gap-1" aria-label={`Ждут согласия руководителя: ${t.name}`}>
+                          {waiting
+                            .filter((w) => w.team.id === t.id)
+                            .map((w) => (
+                              <li key={w.id} className="flex flex-wrap items-baseline gap-x-2 text-small text-muted">
+                                <span className="text-ink">{w.person.fullName}</span>
+                                <span>ждёт согласия: {w.approver}</span>
+                                {canEdit ? (
+                                  <button type="button" disabled={pending} className="text-blue-700 hover:underline disabled:opacity-50" onClick={() => onSave(() => cancelJoinAction(w.id), "Запрос отменён")}>
+                                    Отменить
+                                  </button>
+                                ) : null}
+                              </li>
+                            ))}
+                        </ul>
+                      ) : null}
+                      {canEdit && addable.length ? <AddMember team={t} people={addable.filter((c) => !waiting.some((w) => w.team.id === t.id && w.person.slug === c.slug))} /> : null}
                       <div className="flex flex-wrap gap-x-4 gap-y-1">
                         {t.active && t.id !== TOP_TEAM && (owner || leads.includes(t.id)) ? (
                           <button type="button" className="text-small text-blue-700 hover:underline" onClick={() => setRhythm(t)}>
@@ -548,32 +594,85 @@ function SlotFields({ legend, id, value, onChange }: { legend: string; id: strin
   );
 }
 
-function AddMember({ team, people, onSave }: { team: TeamView; people: Candidate[]; onSave: Runner }) {
+/**
+ * Участник в команду: поиск по всей компании (этап 53). Человек не из ветки руководителя команды помечен «другая
+ * ветка»: руководитель команды просит его, а входит человек с согласия своего руководителя. Владелец добавляет сразу
+ */
+function AddMember({ team, people }: { team: TeamView; people: Candidate[] }) {
   const [slug, setSlug] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { notify } = usePrototype();
+  const router = useRouter();
+  const chosen = people.find((p) => p.slug === slug) ?? null;
+  const options: PickerOption[] = useMemo(
+    () => people.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null, note: p.own === false ? "другая ветка" : null })),
+    [people],
+  );
   return (
     <form
-      className="flex flex-col gap-2 sm:flex-row sm:items-end"
-      onSubmit={(e) => {
+      className="flex flex-col gap-2"
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (!slug) return;
-        const name = people.find((p) => p.slug === slug)?.fullName ?? slug;
-        onSave(() => addMemberAction(team.id, slug), `${name} в команде`);
-        setSlug("");
+        if (!chosen || busy) return;
+        setBusy(true);
+        try {
+          const r = await addMemberAction(team.id, chosen.slug);
+          if (!r.ok) notify(r.error, "error");
+          else {
+            const v: AddMemberResult = r.value;
+            notify(v.added ? (v.external ? `${chosen.fullName} в команде, его руководитель знает об этом` : `${chosen.fullName} в команде`) : `Запрос отправлен: ${chosen.fullName} войдёт в команду, когда согласится ${v.pendingWith}`);
+            setSlug("");
+            router.refresh();
+          }
+        } catch {
+          notify("Нет связи с сервером: участник не добавлен", "error");
+        } finally {
+          setBusy(false);
+        }
       }}
     >
-      <SelectField
-        label="Добавить участника"
-        id={`add-${team.id}`}
-        value={slug}
-        onChange={(e) => setSlug(e.target.value)}
-        options={[{ value: "", label: "Выберите человека" }, ...people.map((p) => ({ value: p.slug, label: p.position ? `${p.fullName}, ${p.position}` : p.fullName }))]}
-        className="sm:w-80"
-      />
-      <Button size="sm" type="submit" disabled={!slug}>
-        <Users className="h-4 w-4" aria-hidden="true" />
-        Добавить
-      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <SearchPicker label="Добавить участника" id={`add-${team.id}`} value={slug} onChange={setSlug} options={options} placeholder="Фамилия, должность или подразделение" className="sm:w-96" />
+        <Button size="sm" type="submit" disabled={!chosen || busy}>
+          <Users className="h-4 w-4" aria-hidden="true" />
+          {chosen?.own === false ? "Попросить" : "Добавить"}
+        </Button>
+      </div>
+      {chosen?.own === false ? (
+        <p className="text-small text-muted" data-testid={`add-${team.id}-external`}>
+          {chosen.fullName} не из вашей ветки. Человек войдёт в команду, когда согласится его руководитель. Задачи этого человека вне команды вам видны не будут.
+        </p>
+      ) : null}
     </form>
+  );
+}
+
+/** Запросы в команды, которые ждут вашего согласия (этап 53): ваш сотрудник нужен руководителю другой ветки */
+function JoinRequests({ list, onSave, pending }: { list: JoinRequestView[]; onSave: Runner; pending: boolean }) {
+  return (
+    <section id="join-requests" aria-labelledby="join-requests-title" className="sv-card sv-card--soft scroll-mt-24 p-4" data-testid="join-requests">
+      <h2 id="join-requests-title" className="text-title-sm font-semibold text-ink">
+        Ваших сотрудников зовут в команды: {list.length}
+      </h2>
+      <p className="mt-1 text-small text-muted">Участник команды видит weekly и задачи коллег по ней, а они его. Согласитесь, если человек действительно будет работать с этой командой.</p>
+      <ul className="mt-3 flex flex-col gap-3">
+        {list.map((r) => (
+          <li key={r.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-body text-ink">
+              <span className="font-semibold">{r.person.fullName}</span> в команду «{r.team.name}»{r.requestedBy ? <span className="text-muted">, просит {r.requestedBy}</span> : null}
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={pending} onClick={() => onSave(() => decideJoinAction(r.id, true), `${r.person.fullName} в команде «${r.team.name}»`)}>
+                Согласовать
+              </Button>
+              <Button size="sm" variant="secondary" disabled={pending} onClick={() => onSave(() => decideJoinAction(r.id, false), "Запрос отклонён")}>
+                Отказать
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

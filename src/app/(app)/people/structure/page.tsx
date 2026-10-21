@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { structureView } from "@/lib/org/view";
 import { peopleTree } from "@/lib/org/people-tree";
-import { memberCandidates } from "@/lib/org/service";
+import { joinRequestsFor, memberCandidates } from "@/lib/org/service";
 import { currentActor } from "@/lib/action-runner";
 import { StructureScreen } from "@/components/structure/structure-screen";
 import { TOP_TEAM } from "@/domain/teams";
@@ -13,9 +13,9 @@ import { prisma } from "@/lib/db";
 export const metadata: Metadata = { title: "Люди: структура" };
 
 /** Структура департамента и команды (этап 14), дерево подчинённых (этап 34). Видят все, правит владелец, состав своей команды правит её руководитель */
-export default async function StructurePage({ searchParams }: { searchParams: Promise<{ person?: string }> }) {
+export default async function StructurePage({ searchParams }: { searchParams: Promise<{ person?: string; team?: string }> }) {
   const ctx = await requireContext();
-  const { person } = await searchParams;
+  const { person, team } = await searchParams;
   const owner = ctx.management?.role === "OWNER";
   const subject = subjectOf(ctx);
   const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner }), peopleTree(subject)]);
@@ -23,5 +23,7 @@ export default async function StructurePage({ searchParams }: { searchParams: Pr
   const candidates = owner || leadsTeam ? await memberCandidates(await currentActor()) : [];
   // Ритм weekly задают руководители своих команд и команд ниже (этап 15)
   const scope = await loadScope(prisma, subject);
-  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} focus={person ?? null} />;
+  // Запросы в команды из других веток (этап 53): по общему логину не показываем, профиль там выбирают сами
+  const requests = ctx.via === "TEAM" ? { toApprove: [], waiting: [] } : await joinRequestsFor(await currentActor());
+  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} focus={person ?? null} focusTeam={team ?? null} requests={requests} />;
 }

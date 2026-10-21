@@ -29,6 +29,8 @@ export type TeamNode = {
   sortOrder: number;
   /** id участников, без руководителя */
   members: string[];
+  /** Участники из другой ветки структуры (этап 53): их задачи вне этой команды руководитель не видит */
+  external?: string[];
   /** Ритм weekly команды (этап 15) */
   rhythm: TeamRhythm;
 };
@@ -51,7 +53,7 @@ export type Scope = {
 export async function loadTeamNodes(db: Db): Promise<TeamNode[]> {
   const rows = await db.team.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-    include: { members: { select: { personId: true } } },
+    include: { members: { select: { personId: true, external: true } } },
   });
   return rows.map((t) => ({
     id: t.id,
@@ -63,6 +65,7 @@ export async function loadTeamNodes(db: Db): Promise<TeamNode[]> {
     active: t.active,
     sortOrder: t.sortOrder,
     members: t.members.map((m) => m.personId),
+    external: t.members.filter((m) => m.external).map((m) => m.personId),
     rhythm: {
       deadline: slotOf(t.deadlineWeek, t.deadlineWeekday, t.deadlineTime),
       meeting: slotOf(t.meetingWeek, t.meetingWeekday, t.meetingTime),
@@ -138,7 +141,9 @@ export function scopeOf(nodes: TeamNode[], person: ScopeSubject, functional: str
   }
   const all = seesAll(person.role);
   const visible = all ? nodes.map((n) => n.id) : [...new Set([...member, ...leads])];
-  const leadPeople = [...new Set(active.filter((n) => leads.has(n.id)).flatMap(teamPeopleIds))].filter((id) => id !== person.id);
+  // Люди своих команд, чьи задачи руководитель видит и в других командах. Участник из другой ветки (этап 53) сюда не
+  // входит: его задачи видны только в командах этого руководителя, иначе любой руководитель открыл бы себе чужую работу
+  const leadPeople = [...new Set(active.filter((n) => leads.has(n.id)).flatMap((n) => teamPeopleIds(n).filter((id) => !(n.external ?? []).includes(id))))].filter((id) => id !== person.id);
   return { all, member, leads: [...leads], visible, functional, leadPeople };
 }
 
