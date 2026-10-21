@@ -24,6 +24,7 @@ import { matchPerson } from "@/lib/org/import";
 import { normName } from "@/lib/bord/names";
 import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow } from "./parse";
 import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
+import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
 
 type Tx = Prisma.TransactionClient;
@@ -487,16 +488,11 @@ export async function deleteGoal(actor: Actor, id: string): Promise<void> {
   });
 }
 
-/** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше, личные цели её людей */
-export async function goalOptions(who: Who, number: number): Promise<{ id: string; label: string }[]> {
-  const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
-  const { scope, nodes } = await scopeFor(prisma, who);
-  // Чужую задачу не подтверждаем: ни команду, ни срок, ни цель
-  if (!task || task.archivedAt || !seesTask(scope, task, who.personId)) return fail(`Задачи ${number} нет`);
+/** Цели, которые подходят задаче: своей команды и команд выше на квартал сегодня и квартал срока, личные цели людей задачи */
+async function candidateGoals(nodes: TeamNode[], task: { teamId: string; dueIso: string; people: string[]; goalId: string | null }) {
   const teams = [task.teamId, ...ancestorsOf(nodes, task.teamId)];
-  const quarters = [...new Set([quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))])];
-  // Личные цели ответственного и соисполнителей (этап 31): цели квартала из бордов лидеров, в любой их команде
-  const people = taskPeople(task);
+  const quarters = [...new Set([quarterOf(moscowToday()), quarterOf(task.dueIso)])];
+  const people = task.people;
   const goals = await prisma.goal.findMany({
     where: {
       OR: [
@@ -512,12 +508,64 @@ export async function goalOptions(who: Who, number: number): Promise<{ id: strin
   // предлагаем: в команде они лежат рядом с целями команды, но это чужие цели
   const personal = (g: (typeof goals)[number]) => fromLeaderBoard(g) && !!g.ownerId && people.includes(g.ownerId);
   const offered = goals.filter((g) => g.id === task.goalId || !othersPersonal(g, nodes, people));
-  return [...offered.filter(personal), ...offered.filter((g) => !personal(g))].map((g) => ({
-    id: g.id,
-    label: personal(g)
-      ? `${quarterLabel(g.quarter)}, личная цель ${g.owner?.fullName ?? ""}: ${g.code ? `${g.code}. ` : ""}${g.title}`
-      : `${quarterLabel(g.quarter)}, ${g.team.name}: ${g.code ? `${g.code}. ` : ""}${g.title}`,
-  }));
+  return [...offered.filter(personal), ...offered.filter((g) => !personal(g))].map((g) => {
+    const title = `${g.code ? `${g.code}. ` : ""}${g.title}`;
+    const context = personal(g) ? `${quarterLabel(g.quarter)}, личная цель ${g.owner?.fullName ?? ""}` : `${quarterLabel(g.quarter)}, ${g.team.name}`;
+    return { id: g.id, title, context, personal: personal(g), label: `${context}: ${title}`, doc: { id: g.id, title: g.title, code: g.code, metric: g.metric, description: g.description } };
+  });
+}
+
+/** Цель в списке выбора: название с кодом, квартал и чья цель, насколько подходит по тексту задачи */
+export type GoalOption = { id: string; label: string; title: string; context: string; score: number; suggested: boolean; personal: boolean };
+
+/**
+ * Личная цель человека задачи подходит чуть вероятнее цели команды: это его цель на квартал. Надбавка не делает
+ * сходство равным совпадению номера и не меняет число совпавших слов, нужное для автоподстановки
+ */
+const PERSONAL_BOOST = 0.1;
+
+/**
+ * Цели по тексту наверху списка (этап 55): подходящие по смыслу первыми, по убыванию сходства, остальные в прежнем
+ * порядке (личные цели людей задачи, потом цели команд). best: цель, которую можно подставить самой
+ */
+function withSuggestions(options: { id: string; label: string; title: string; context: string; personal: boolean; doc: GoalDoc }[], text: string): { options: GoalOption[]; best: string | null } {
+  const raw = new Map(rankGoals(text, options.map((o) => o.doc)).map((r) => [r.id, r]));
+  const scored = options.map((o) => {
+    const r = raw.get(o.id) ?? { score: 0, matches: 0, code: false };
+    const score = r.code ? 1 : r.score > 0 && o.personal ? Math.min(0.99, r.score + PERSONAL_BOOST) : r.score;
+    return { option: { id: o.id, label: o.label, title: o.title, context: o.context, score, suggested: score >= SUGGEST_MIN, personal: o.personal }, rank: { id: o.id, score, matches: r.matches, code: r.code } };
+  });
+  const ranked = [...scored].sort((a, b) => b.rank.score - a.rank.score);
+  const best = bestGoal(ranked.map((x) => x.rank));
+  return { options: [...ranked.filter((x) => x.option.suggested), ...scored.filter((x) => !x.option.suggested)].map((x) => x.option), best };
+}
+
+export async function goalOptions(who: Who, number: number): Promise<GoalOption[]> {
+  const task = await prisma.task.findUnique({ where: { number }, select: { title: true, outcome: true, teamId: true, due: true, goalId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
+  const { scope, nodes } = await scopeFor(prisma, who);
+  // Чужую задачу не подтверждаем: ни команду, ни срок, ни цель
+  if (!task || task.archivedAt || !seesTask(scope, task, who.personId)) return fail(`Задачи ${number} нет`);
+  const options = await candidateGoals(nodes, { teamId: task.teamId, dueIso: isoFromDbDate(task.due), people: taskPeople(task), goalId: task.goalId });
+  return withSuggestions(options, `${task.title} ${task.outcome}`.slice(0, 2000)).options;
+}
+
+/**
+ * Цель для новой задачи по её тексту (этап 55): форма новой задачи подставляет лучшую, человек может сменить.
+ * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем
+ */
+export async function suggestGoals(who: Who, input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<{ options: GoalOption[]; best: string | null }> {
+  // Наблюдатель задач не ставит: подбирать ему нечего
+  if (who.role === "OBSERVER" || !input || typeof input.team !== "string") return { options: [], best: null };
+  const { scope, nodes } = await scopeFor(prisma, who);
+  const own = new Set([...scope.member, ...scope.leads]);
+  if (!own.has(input.team) && !(who.management && scope.visible.includes(input.team))) return { options: [], best: null };
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(input.due) ? input.due : moscowToday();
+  // Личные цели только ответственного из этой команды или самого себя: так же выбирают ответственного в форме
+  const owner = input.owner && input.owner !== "all" ? await prisma.person.findUnique({ where: { slug: input.owner }, select: { id: true } }) : null;
+  const node = nodes.find((n) => n.id === input.team);
+  const ownerFits = !!owner && (owner.id === who.personId || node?.leaderId === owner.id || !!node?.members.includes(owner.id));
+  const options = await candidateGoals(nodes, { teamId: input.team, dueIso: due, people: ownerFits ? [owner!.id] : [], goalId: null });
+  return withSuggestions(options, `${input.title} ${input.outcome}`.slice(0, 2000));
 }
 
 /** Привязать задачу к цели или отвязать */

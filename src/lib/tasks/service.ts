@@ -19,9 +19,10 @@ import { finishRequestsOfTask, refinishRequestsOfTask, reopenRequestsOfTask, syn
 import { REACTION_LABEL, editable, mentionsIn, namesOf } from "@/lib/discuss/common";
 import { taskReaders } from "@/lib/discuss/access";
 import { applyReaction } from "@/lib/discuss/reactions";
-import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/scope";
+import { TOP_TEAM, loadScope, loadTeamNodes, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 import { nextRepeatDue, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "./repeat";
-import { foreignGoal, taskPeople } from "@/lib/goals/personal";
+import { foreignGoal, goalFits, taskPeople } from "@/lib/goals/personal";
+import { quarterOf } from "@/lib/goals/parse";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval";
 
@@ -321,6 +322,8 @@ export type NewTaskInput = {
   team?: string;
   /** Повтор (этап 25): еженедельно или ежемесячно, следующая при закрытии или по расписанию */
   repeat?: RepeatInput | null;
+  /** Цель задачи (этап 55): форма подставляет подходящую по тексту, человек может сменить или убрать */
+  goal?: string | null;
 };
 
 export type RepeatInput = { kind: RepeatKindCode; mode?: RepeatModeCode };
@@ -392,6 +395,19 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
   let status = newTaskStatus(input.owner, viewer, teamId);
   // Руководитель команды ставит сразу «В работе» только людям своих команд. Остальным задачу можно только предложить
   if (status === "in-progress" && !actor.management && ownerId && ownerId !== actor.personId && !scope.leadPeople.includes(ownerId)) status = "proposed";
+  // Цель задачи (этап 55): цель своей команды или команды выше, или личная цель человека задачи, на квартал сегодня
+  // или квартал срока. Та же проверка, что при выборе цели в карточке
+  let goalId: string | null = null;
+  let goalTitle: string | null = null;
+  if (input.goal) {
+    const g = (await tx.goal.findUnique({ where: { id: String(input.goal) } })) ?? fail("Такой цели нет: выберите другую");
+    const nodes = await loadTeamNodes(tx);
+    if (!goalFits(g, { teamId }, [...(ownerId ? [ownerId] : []), ...coIds], nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
+    if (g.result === "DROPPED") fail("Цель снята: выберите другую");
+    if (![quarterOf(moscowToday()), quarterOf(input.due)].includes(g.quarter)) fail("Цель из другого квартала: выберите цель текущего квартала или квартала срока");
+    goalId = g.id;
+    goalTitle = g.code ? `${g.code}. ${g.title}` : g.title;
+  }
   // Человек из другого департамента (этап 54): задача ждёт согласования его руководителя, или руководитель узнаёт о ней.
   // Режим управления не ждёт согласования: руководитель ответственного только узнаёт о задаче, как при передаче
   const rule = await approvalRule(tx, requester, ownerId);
@@ -419,6 +435,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
+      goalId,
       ...(rule ? { approvalState: pending ? "PENDING" : "INFORMED", approverId: rule.approverId } : {}),
       approvalAuthorId: requester,
       ...repeatDb(input.repeat),
@@ -446,7 +463,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
     {
       action: status === "proposed" ? "task.propose" : "task.create",
       field: status === "proposed" ? "Задача предложена" : "Задача создана",
-      after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}${row.repeat ? `. Повтор: ${repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close").toLowerCase()}` : ""}`,
+      after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}${goalTitle ? `. Цель: ${goalTitle}` : ""}${row.repeat ? `. Повтор: ${repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close").toLowerCase()}` : ""}`,
     },
     ...(approvalLine ? [approvalLine] : []),
   ]);

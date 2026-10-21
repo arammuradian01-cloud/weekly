@@ -38,6 +38,7 @@ export function SearchPicker({
   limit = 20,
   emptyText = "Никого не нашли: проверьте написание",
   className,
+  autoFocus,
 }: {
   id: string;
   label: string;
@@ -50,14 +51,24 @@ export function SearchPicker({
   limit?: number;
   emptyText?: string;
   className?: string;
+  /** Поле получает фокус сразу и показывает список: открыли выбор кнопкой «Выбрать цель» */
+  autoFocus?: boolean;
 }) {
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
+  const listInput = useRef<HTMLInputElement>(null);
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
+  // Человек начал печатать: до этого список показывает все варианты, даже если в поле стоит выбранный (этап 55)
+  const [typed, setTyped] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const matched = useMemo(() => options.filter((o) => matchOption(o, query)), [options, query]);
+  // Пока человек не печатал, выбранный вариант первым: Enter сразу после фокуса оставляет выбор как был, даже если
+  // он дальше первой двадцатки
+  const matched = useMemo(
+    () => (typed ? options.filter((o) => matchOption(o, query)) : selected ? [selected, ...options.filter((o) => o.value !== selected.value)] : options),
+    [options, query, typed, selected],
+  );
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
@@ -70,6 +81,7 @@ export function SearchPicker({
   const pick = (o: PickerOption) => {
     onChange(o.value);
     setQuery("");
+    setTyped(false);
     setOpen(false);
   };
 
@@ -79,6 +91,7 @@ export function SearchPicker({
         {label}
       </label>
       <input
+        ref={listInput}
         id={id}
         className="sv-control w-full"
         type="text"
@@ -92,15 +105,38 @@ export function SearchPicker({
         aria-describedby={hint ? `${id}-hint` : undefined}
         placeholder={placeholder}
         value={text}
-        onFocus={() => {
-          // Выбранное остаётся в поле: повторный фокус не стирает текст, по нему список сразу показывает выбор
-          if (selected) setQuery(selected.label);
+        autoFocus={autoFocus}
+        onFocus={(e) => {
+          // Выбранное остаётся в поле: повторный фокус не стирает текст. Список показывает все варианты, выбранный
+          // подсвечен: чтобы сменить выбор, не нужно сначала стирать поле. Текст выделен: первая буква заменяет его
+          if (selected) {
+            setQuery(selected.label);
+            const input = e.currentTarget;
+            requestAnimationFrame(() => {
+              if (document.activeElement === input) input.select();
+            });
+          }
+          setTyped(false);
           setOpen(true);
           setActive(0);
         }}
-        onBlur={() => setOpen(false)}
+        // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
+        onMouseDown={() => {
+          if (!open && document.activeElement === listInput.current) {
+            setTyped(false);
+            setOpen(true);
+            setActive(0);
+          }
+        }}
+        onBlur={() => {
+          setOpen(false);
+          setTyped(false);
+          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор
+          if (!value) setQuery("");
+        }}
         onChange={(e) => {
           setQuery(e.target.value);
+          setTyped(true);
           setOpen(true);
           setActive(0);
           if (value) onChange("");
@@ -121,6 +157,7 @@ export function SearchPicker({
             if (open) setOpen(false);
             else {
               setQuery("");
+              setTyped(false);
               if (value) onChange("");
             }
           }

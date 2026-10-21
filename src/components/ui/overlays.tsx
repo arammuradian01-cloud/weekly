@@ -7,6 +7,15 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Check, ChevronDown, Plus, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 
+/**
+ * Escape в открытом списке поля с поиском (выбор цели, человека) закрывает только список. Radix слушает Escape на
+ * документе раньше поля, поэтому без этой проверки закрывался весь диалог вместе с набранным текстом (этап 55)
+ */
+function keepOpenOnListEscape(e: KeyboardEvent) {
+  const el = e.target instanceof HTMLElement ? e.target : null;
+  if (el?.getAttribute("role") === "combobox" && el.getAttribute("aria-expanded") === "true") e.preventDefault();
+}
+
 export function Drawer({
   open,
   onOpenChange,
@@ -29,6 +38,7 @@ export function Drawer({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay data-[state=open]:animate-fade-in" />
         <Dialog.Content
+          onEscapeKeyDown={keepOpenOnListEscape}
           className={cn(
             "sv-drawer fixed inset-y-0 right-0 z-50 w-full rounded-none outline-none data-[state=open]:animate-slide-in sm:rounded-l-panel",
             wide ? "sm:max-w-[720px]" : "sm:max-w-[560px]",
@@ -73,7 +83,7 @@ export function Modal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay" />
-        <Dialog.Content className={cn("fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-panel bg-surface p-5 shadow-medium outline-none sm:px-6 sm:py-5", wide ? "max-w-[760px]" : "max-w-[560px]")}>
+        <Dialog.Content onEscapeKeyDown={keepOpenOnListEscape} className={cn("fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-panel bg-surface p-5 shadow-medium outline-none sm:px-6 sm:py-5", wide ? "max-w-[760px]" : "max-w-[560px]")}>
           <Dialog.Title className="sv-modal__title block">{title}</Dialog.Title>
           {description ? (
             <Dialog.Description className="mt-1 text-body text-text-secondary">{description}</Dialog.Description>
