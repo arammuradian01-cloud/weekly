@@ -400,7 +400,8 @@ export async function setPersonActive(actor: Actor, slug: string, active: boolea
     // Выключили согласующего или ответственного: согласующие задач пересчитываются (этап 54)
     await refreshApprovals(tx, actor);
     return { slug, active };
-  });
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 // Ритм недели

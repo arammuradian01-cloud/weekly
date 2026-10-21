@@ -169,6 +169,7 @@ model Person {
   createdTasks           Task[]                  @relation("TaskCreator")
   approvingTasks         Task[]                  @relation("TaskApprover")
   approvalFromTasks      Task[]                  @relation("TaskApprovalFrom")
+  approvalAuthorTasks    Task[]                  @relation("TaskApprovalAuthor")
   coTasks                TaskCoExecutor[]
   transfers              TaskTransfer[]
   taskComments           TaskComment[]
@@ -369,6 +370,12 @@ model Task {
   approvalFromId     String?
   approvalFrom       Person?        @relation("TaskApprovalFrom", fields: [approvalFromId], references: [id], onDelete: SetNull)
   approvalFromStatus TaskStatus?
+  /// У прежнего ответственного были «Все лидеры»: отказ в передаче возвращает их
+  approvalFromAll    Boolean        @default(false)
+  /// Чья это задача для правила согласования: тот, кто её поставил, автор просьбы, из которой она сделана, или тот,
+  /// кто передал задачу без автора (задача из Bord). Пересчёт после смены структуры считает правило от него
+  approvalAuthorId   String?
+  approvalAuthor     Person?        @relation("TaskApprovalAuthor", fields: [approvalAuthorId], references: [id], onDelete: SetNull)
 
   coExecutors    TaskCoExecutor[]
   transfers      TaskTransfer[]

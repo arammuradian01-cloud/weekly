@@ -47,7 +47,7 @@ type Pending =
 const ActionsContext = createContext<Actions | null>(null);
 
 export function TaskActionsProvider({ children }: { children: React.ReactNode }) {
-  const { runTask, applyTaskResult, data, me, manage } = usePrototype();
+  const { runTask, applyTaskResult, data, me } = usePrototype();
   const [pending, setPending] = useState<Pending | null>(null);
   // «Заблокирована»: чего ждёт задача (этап 21)
   const [mode, setMode] = useState<WaitMode>("task");
@@ -77,9 +77,6 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       if (next === "in-progress") return `Задача ${task.number} согласована`;
       if (next === "cancelled") return task.approval.from ? `Передача задачи ${task.number} не согласована, задача вернулась прежнему ответственному` : `Задача ${task.number} не согласована`;
     }
-    if (task.approval?.state === "rejected" && CLOSED_STATUSES.includes(task.status) && !CLOSED_STATUSES.includes(next) && !manage && task.approval.approver !== me.slug) {
-      return `Задача ${task.number} снова отправлена на согласование`;
-    }
     return task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
   };
 
@@ -89,6 +86,18 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
       if (note) {
         setText("");
         setPending({ kind: "status", task, next, note });
+        return;
+      }
+      // Отклонённую задачу открывают снова (этап 54): что с ней стало, решает сервер, тост по его ответу
+      if (task.approval?.state === "rejected" && CLOSED_STATUSES.includes(task.status) && !CLOSED_STATUSES.includes(next)) {
+        void (async () => {
+          try {
+            const r = await changeStatusAction(task.number, next);
+            applyTaskResult(r, r.ok && r.task?.approval?.state === "pending" ? `Задача ${task.number} снова отправлена на согласование` : statusToast(task, next));
+          } catch {
+            applyTaskResult({ ok: false, error: "Нет связи с сервером: статус не сохранился" }, "");
+          }
+        })();
         return;
       }
       void runTask(() => changeStatusAction(task.number, next), statusToast(task, next));

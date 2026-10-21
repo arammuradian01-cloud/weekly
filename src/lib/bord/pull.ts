@@ -359,8 +359,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         }
         if (inBord((s) => s.status)) {
           // Задача ждёт согласования руководителя ответственного (этап 54): статус меняет только его решение
-          if (status && task.approvalState === "PENDING" && status !== task.status) {
-            report.problems.push(`задача ${row.number}: ждёт согласования руководителя ответственного, статус из Bord не применён`);
+          if (status && (task.approvalState === "PENDING" || task.approvalState === "REJECTED") && status !== task.status) {
+            report.problems.push(`задача ${row.number}: ${task.approvalState === "PENDING" ? "ждёт согласования" : "не согласована"} руководителем ответственного, статус из Bord не применён`);
             bad.add("status");
           } else if (!status) {
             report.problems.push(`задача ${row.number}: статус «${row.status}» не из справочника, статус в ресурсе не изменён`);
@@ -398,6 +398,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
                 data.approverId = null;
                 data.approvalFromId = null;
                 data.approvalFromStatus = null;
+                data.approvalFromAll = false;
                 if (task.approverId) await tx.inboxEvent.updateMany({ where: { taskId: task.id, recipientId: task.approverId, kind: "APPROVAL", doneAt: null }, data: { doneAt: now } });
               }
               co = owners.co;

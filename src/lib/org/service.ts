@@ -895,7 +895,8 @@ export async function setPersonOrg(actor: Actor, slug: string, input: PersonOrgI
     await tx.person.update({ where: { id: person.id }, data });
     for (const [field, before, after] of changes) await audit(tx, actor, "structure.person.update", "person", slug, field, before ?? "нет", after ?? "нет");
     await refreshApprovals(tx, actor);
-  });
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export type UnitInput = { name?: string; kind?: UnitKind; parent?: string | null; head?: string | null; headNote?: string | null; active?: boolean };
@@ -963,7 +964,8 @@ export async function updateUnit(actor: Actor, id: string, input: UnitInput): Pr
     await tx.orgUnit.update({ where: { id }, data });
     for (const [field, before, after] of log) await audit(tx, actor, "structure.unit.update", "unit", id, field, before, after);
     await refreshApprovals(tx, actor);
-  });
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export async function createUnit(actor: Actor, input: { name: string; kind: UnitKind; parent?: string | null }): Promise<{ id: string }> {

@@ -103,7 +103,7 @@ describe("передача на согласовании", () => {
     const toTokov = await prisma.inboxEvent.findFirstOrThrow({ where: { task: { number: t.number }, kind: "TASK_ASSIGNED", text: { contains: "передачу" }, recipient: { fullName: { startsWith: "Токов" } } } });
     expect(toTokov.text).toMatch(/не согласовал передачу, задача снова у вас/);
     const toPogosova = await prisma.inboxEvent.findFirstOrThrow({ where: { task: { number: t.number }, kind: "TASK_CONFIRMED", recipient: { fullName: { startsWith: "Погосова" } } } });
-    expect(toPogosova.text).toMatch(/Передачу задачи вам не согласовали/);
+    expect(toPogosova.text).toMatch(/Передачу задачи не согласовали, она вернулась прежнему ответственному/);
   });
 
   it("R12: правило считается от автора задачи, а не от того, кто передаёт внутри финансов", async () => {
