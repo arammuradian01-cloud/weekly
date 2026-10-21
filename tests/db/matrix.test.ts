@@ -241,9 +241,15 @@ const MATRIX: Row[] = [
     },
   },
   {
-    row: "Менять приоритет задачи, которую поставил другой",
+    // Этап 56, решение Арама 21.10: важность меняет и ответственный, даже если задачу поставил другой
+    row: "Менять приоритет своей задачи, которую поставил другой",
+    expect: [true, true, true, false],
+    steps: (a, who) => [{ name: "приоритет своей задачи чужой постановки", act: () => tasks.changePriority(a, ownTask(who), "high") }],
+  },
+  {
+    row: "Менять приоритет чужой задачи (не ставил и не ответственный)",
     expect: [true, true, false, false],
-    steps: (a, who) => [{ name: "приоритет чужой постановки", act: () => tasks.changePriority(a, ownTask(who), "high") }],
+    steps: (a) => [{ name: "приоритет чужой задачи", act: () => tasks.changePriority(a, fx.foreign, "high") }],
   },
   {
     row: "Комментировать любую задачу",

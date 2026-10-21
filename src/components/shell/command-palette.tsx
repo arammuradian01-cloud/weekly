@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, type LucideIcon } from "lucide-react";
+import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -140,6 +140,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/weekly/meeting", "Встреча", Users, "повестка встреча вторник"],
       ["/tasks", "Задачи", ListChecks, "список задач"],
       ["/tasks/mine", "Мои задачи", ListChecks, "мои"],
+      ["/roadmap", "Roadmap", MapIcon, "роадмап дорожная карта план направления важные задачи звёздочки"],
       ["/goals", "Цели", Target, "цели квартала"],
       ["/decisions", "Решения", Gavel, "журнал решений"],
       ["/forecast", "Прогноз месяца", TrendingUp, "прогноз месяца LBE бюджет драйверы корректировка LRF"],

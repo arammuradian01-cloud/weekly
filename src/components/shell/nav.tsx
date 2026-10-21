@@ -19,6 +19,7 @@ import {
   MessagesSquare,
   Rocket,
   Menu,
+  Map as MapIcon,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -56,6 +57,8 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/weekly", label: "Weekly", icon: Newspaper },
       { href: "/tasks", label: "Задачи", icon: SquareCheck },
+      // Roadmap (этап 56): задачи по направлениям и месяцам, важные со звёздочками
+      { href: "/roadmap", label: "Roadmap", icon: MapIcon },
       // Люди (этап 41): команда, панель руководителя, структура и аналитика вкладками одной страницы
       { href: "/people", label: "Люди", icon: Users },
       { href: "/goals", label: "Цели", icon: Target },

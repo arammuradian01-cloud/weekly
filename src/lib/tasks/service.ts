@@ -776,7 +776,7 @@ export async function taskLinks(actor: Actor, number: number): Promise<{ waitsFo
 
 export async function changePriority(actor: Actor, number: number, next: PriorityCode): Promise<TaskResult> {
   return mutate(actor, number, async (row, can) => {
-    if (!can.priority) fail("Приоритет меняет тот, кто поставил задачу, владелец или администратор");
+    if (!can.priority) fail("Приоритет меняет тот, кто поставил задачу, ответственный, руководитель команды или режим управления");
     if (next === "unset") fail("Выберите приоритет");
     const db: TaskPriority = priorityDb(next) ?? fail("Нет такого приоритета");
     if (db === row.priority) fail("Приоритет уже такой");
