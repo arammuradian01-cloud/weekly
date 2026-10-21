@@ -1,8 +1,8 @@
 "use client";
 
-// ОСАГО по СК в карточке продукта (этап 58): план месяца из модели по СК, факт с начала месяца по снимку «Все СК» из хаба,
-// ранрейт до конца месяца и прогноз к плану. Выручка и КВ по СК показываются только управлению и командам ОСАГО и
-// партнёрского канала: остальным колонок нет вовсе, не пустые ячейки
+// ОСАГО по СК в карточке продукта (этап 58): план месяца из модели по СК, факт с начала месяца по снимку «Все СК» из хаба
+// (факт по вчерашний день), ранрейт до конца месяца и прогноз к плану. Выручка (с апсейлом) и КВ по СК показываются только
+// управлению и командам ОСАГО и партнёрского канала при личном входе: остальным колонок нет вовсе, не пустые ячейки
 
 import type { SkRow, SkView } from "@/lib/plan/hub-service";
 import { formatPlan } from "@/lib/plan/format";
@@ -39,7 +39,7 @@ function Row({ r, sensitive, total }: { r: SkRow; sensitive: boolean; total?: bo
       </td>
       {sensitive ? (
         <>
-          <td className="is-num" data-label="Выручка, млн" data-testid="plan-sk-revenue">
+          <td className="is-num" data-label="Выручка с апсейлом, млн" data-testid="plan-sk-revenue">
             {r.revenueMtd === null ? "нет" : formatPlan(r.revenueMtd, "mln")}
           </td>
           <td className="is-num" data-label="КВ" data-testid="plan-sk-kv">
@@ -59,17 +59,22 @@ export function PlanSk({ sk }: { sk: SkView }) {
         <h4 id="plan-sk-title" className="text-body font-semibold text-ink">
           ОСАГО по СК: план, факт и ранрейт
         </h4>
-        <p className="text-caption text-text-secondary">
-          {sk.day ? `Снимок «Все СК» на ${dayText(sk.day)}, день ${sk.elapsed} из ${sk.days}` : "Снимков «Все СК» за месяц нет"}
+        <p className="text-caption text-text-secondary" data-testid="plan-sk-asof">
+          {sk.factTomorrow ? "Факт за месяц появится завтра" : sk.day ? `Факт «Все СК» по ${dayText(sk.day)}${sk.loadDay ? ` (снимок ${dayText(sk.loadDay)})` : ""}, день ${sk.elapsed} из ${sk.days}` : "Снимков «Все СК» за месяц нет"}
           {sk.source.pulledAt ? `. Загружено ${when(sk.source.pulledAt)}${sk.source.pulledBy ? `, ${sk.source.pulledBy}` : ""}` : ""}
         </p>
       </div>
-      {sk.stale ? (
-        <p className="sv-alert sv-alert--warning" data-testid="plan-sk-stale">
-          Снимок не сегодняшний: факт с начала месяца отстаёт. Загрузите хаб, чтобы ранрейт считался по свежим цифрам.
+      {sk.factTomorrow ? (
+        <p className="sv-alert sv-alert--info" data-testid="plan-sk-tomorrow">
+          Факт за месяц появится завтра: в «Все СК» факт по вчерашний день, сегодняшний снимок закрывает прошлый месяц. Ранрейт пока не считается, в таблице план месяца.
         </p>
       ) : null}
-      {sk.profileDays < 14 ? (
+      {sk.stale ? (
+        <p className="sv-alert sv-alert--warning" data-testid="plan-sk-stale">
+          Снимок старше вчерашнего: факт с начала месяца отстаёт. Загрузите хаб, чтобы ранрейт считался по свежим цифрам.
+        </p>
+      ) : null}
+      {!sk.factTomorrow && sk.profileDays < 14 ? (
         <p className="text-caption text-text-secondary" data-testid="plan-sk-method">
           Прогноз линейный по дням. Профиль дней недели включится, когда дневных снимков подряд будет 14, сейчас {sk.profileDays}.
         </p>
@@ -98,7 +103,7 @@ export function PlanSk({ sk }: { sk: SkView }) {
               {sk.sensitive ? (
                 <>
                   <th scope="col" className="is-num">
-                    Выручка с начала месяца, млн
+                    Выручка с апсейлом с начала месяца, млн
                   </th>
                   <th scope="col" className="is-num">
                     КВ плана

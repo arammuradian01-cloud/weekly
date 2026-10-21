@@ -1,8 +1,9 @@
 // Имитация хаба «Единая воронка: данные» (этап 58) для тестов и показа без ключа: четыре СК, прошлый месяц целиком и
-// текущий нарастающим итогом по день снимка. Цифры выдуманные, порядок величин как у ОСАГО
+// текущий нарастающим итогом по вчерашний день, как в настоящем листе (1-го числа строк текущего месяца ещё нет). Цифры
+// выдуманные, порядок величин как у ОСАГО
 
 import type { Grid } from "./lrf";
-import { HUB_SHEETS, daysIn } from "./hub";
+import { HUB_SHEETS, daysIn, factDay } from "./hub";
 
 export const HUB_FAKE_SK: { sk: string; monthly: number; pool: number }[] = [
   { sk: "АльфаСтрахование", monthly: 120_000, pool: 0.3 },
@@ -16,11 +17,11 @@ const serial = (month: string) => Math.round((Date.UTC(Number(month.slice(0, 4))
 /** Листы хаба на день снимка: today это «YYYY-MM-DD» по Москве, prev прошлый месяц */
 export function hubImitation(today: string, prev: string): Record<string, Grid> {
   const month = today.slice(0, 7);
-  const elapsed = Number(today.slice(8, 10));
-  const share = elapsed / daysIn(month);
+  const last = factDay(today);
+  const share = last.startsWith(month) ? Number(last.slice(8, 10)) / daysIn(month) : 0;
   const head = ["MONTH", "PARTNER_NAME", "POOL", "WITH_UPSALE", "POLICIES_CNT", "POLICIES_INCOME", "POLICIES_REVENUE_VAT_INCLUDED", "POLICIES_REVENUE_WO_VAT", "UPSALE_INCOME", "UPSALE_REVENUE_VAT_INCLUDED", "UPSALE_REVENUE_WO_VAT"];
   const vse: Grid = [head];
-  for (const m of [prev, month]) {
+  for (const m of share > 0 ? [prev, month] : [prev]) {
     const k = m === month ? share : 1;
     for (const s of HUB_FAKE_SK) {
       const pool = Math.round(s.monthly * s.pool * k);

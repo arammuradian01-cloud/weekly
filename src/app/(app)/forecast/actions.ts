@@ -94,7 +94,7 @@ export async function previewHubAction(): Promise<Result<hub.HubPreview>> {
   return runAction("Проверка хаба", (a) => numbers(a, () => hub.previewHub(a)));
 }
 
-export async function applyHubAction(): Promise<Result<{ day: string; snapshots: number; lines: number }>> {
+export async function applyHubAction(): Promise<Result<hub.HubApplied>> {
   const r = await runAction("Загрузка из хаба", (a) => numbers(a, () => hub.applyHub(a)));
   if (r.ok) revalidatePath("/forecast");
   return r;

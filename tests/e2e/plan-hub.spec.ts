@@ -45,8 +45,9 @@ test("владелец загружает хаб, в карточке ОСАГО
   await drawer.getByTestId("plan-hub-check").click();
   const preview = drawer.getByTestId("plan-hub-preview");
   await expect(preview.getByText("Всё читается")).toBeVisible();
-  await expect(preview).toContainText("СК за текущий месяц: 4");
-  await expect(preview).toContainText("План ОСАГО по СК");
+  await expect(preview.getByTestId("plan-hub-fact")).toContainText("СК: 4");
+  await expect(preview.getByTestId("plan-hub-fact")).toContainText("загрузится");
+  await expect(preview.getByTestId("plan-hub-plan")).toContainText("План ОСАГО по СК");
   await shot(page, "hub-drawer");
   await drawer.getByTestId("plan-hub-load").click();
   await expect(page.getByText(/Снимок «Все СК» на .* загружен/).first()).toBeVisible();
@@ -57,7 +58,9 @@ test("владелец загружает хаб, в карточке ОСАГО
   await expect(sk.getByRole("heading", { name: "ОСАГО по СК: план, факт и ранрейт" })).toBeVisible();
   await expect(sk.getByTestId("plan-sk-row")).toHaveCount(4);
   await expect(sk.getByTestId("plan-sk-total")).toContainText("ИТОГО");
-  await expect(sk.getByTestId("plan-sk-method")).toContainText("Прогноз линейный по дням");
+  // Факт в «Все СК» по вчерашний день: 1-го числа факта за месяц ещё нет, ранрейт не считается
+  if (new Date().toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow", day: "numeric" }) === "1") await expect(sk.getByTestId("plan-sk-tomorrow")).toContainText("появится завтра");
+  else await expect(sk.getByTestId("plan-sk-method")).toContainText("Прогноз линейный по дням");
   await expect(sk.getByTestId("plan-sk-lbe")).toContainText("против LBE полисов ОСАГО");
   await expect(sk.getByTestId("plan-sk-stale")).toHaveCount(0);
   // Владелец видит выручку и КВ: на телефоне шапки нет, поэтому проверяем ячейки

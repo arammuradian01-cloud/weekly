@@ -17,7 +17,7 @@ import { moscowToday } from "@/lib/tasks/dates";
 import { FORECAST_REASONS, addMonths, monthLabel, type ForecastReasonCode } from "@/lib/forecast/codes";
 import { lrfImitation } from "./imitation";
 import { partnersImitation } from "./partners-imitation";
-import { readLrf, type Grid, type Values } from "./lrf";
+import { LRF_MIRROR_ID, LRF_SHEET_ID, readLrf, type Grid, type Values } from "./lrf";
 import { derive, rowsOf } from "./model";
 import { GROUPS, PRODUCTS, SHEETS, UNITS, metricLabel, productOf, type MetricKey, type PlanUnit, type ProductSpec } from "./spec";
 import { formatPlan, driverBounds } from "./format";
@@ -27,6 +27,7 @@ import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } fro
 import { PARTNER_DEFAULT_OWNERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_PNL_SHEET, PARTNER_SHEETS, PARTNER_SHEET_PREFIX, readPartners, type PartnerPull } from "./partners";
 import { partnerSnapshot, partnerView, writePartners } from "./partners-service";
 import { hubSource, skView } from "./hub-service";
+import { personalLogin } from "./access";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PartnerAdjustInput, PullPreview } from "./types";
@@ -35,13 +36,8 @@ const fail = (message: string): never => {
   throw new TaskRuleError(message);
 };
 
-/**
- * Боевой LRF «INSURANCE & INVEST: 5Y_LRF (CURRENT)». Доступ служебному аккаунту на него не дают, поэтому ресурс читает
- * таблицу-связку: в ней четыре листа с формулой IMPORTRANGE на листы боевого LRF. Владелец может указать другой источник
- */
-export const LRF_SHEET_ID = "1NyXreA9PYUC-CTeUmIvh_w1L7kIggCxhjpo5-f5vK7k";
-/** Таблица-связка «LRF для Weekly (только чтение, связь с LRF INSURANCE & INVEST)»: источник по умолчанию */
-export const LRF_MIRROR_ID = "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg";
+/** Боевой LRF и таблица-связка по умолчанию: константы в lrf.ts, их же не принимает хаб этапа 58 */
+export { LRF_MIRROR_ID, LRF_SHEET_ID };
 /** Листы LRF b2b (этап 35б): в таблице-связке с префиксом «B2B. », в самом LRF b2b без него. Их может не быть */
 const PARTNER_SHEET_NAMES = [...PARTNER_SHEETS.map((x) => x.name), PARTNER_PNL_SHEET].flatMap((n) => [`${PARTNER_SHEET_PREFIX}${n}`, n]);
 export const PLAN_LIMITS = { comment: 300, commentMin: 3, owners: 12, history: 60, rows: 1500, cols: 1500 };
@@ -380,11 +376,8 @@ async function ownersMap(): Promise<Record<string, string[]>> {
 /** У кого есть команда: продукты и партнёрский канал (этап 35б) */
 const ownerSpecs = (): { code: string; label: string; owners: string[] }[] => [...PRODUCTS, { code: PARTNER_OWNER_CODE, label: PARTNER_LABEL, owners: PARTNER_DEFAULT_OWNERS }];
 
-/**
- * Корректирует человек, которого видно: личный вход или режим владельца (пароль владельца знает только он). Пароль
- * администраторов общий, поэтому общий логин с режимом администратора не подходит: под ним можно выбрать чужой профиль
- */
-const personal = (actor: Actor) => actor.role !== "OBSERVER" && (actor.via !== "TEAM" || actor.management === "OWNER");
+/** Корректирует человек, которого видно: личный вход или режим владельца (правило в access.ts, его же держит хаб этапа 58) */
+const personal = (actor: Actor) => personalLogin(actor);
 
 function canAdjust(actor: Actor, owners: string[]): boolean {
   if (!personal(actor)) return false;
@@ -531,8 +524,9 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     at,
     when: asOf?.when,
   });
-  // По СК: только текущий срез, на прошлый момент не показываем
-  const [sk, hub] = await Promise.all([at ? null : skView(actor, month, now), hubSource(actor)]);
+  // По СК: только текущий срез, на прошлый момент не показываем. Источник хаба читается один раз и отдаётся разделу по СК
+  const hubP = hubSource(actor);
+  const [sk, hub] = await Promise.all([at ? null : skView(actor, month, now, hubP), hubP]);
   return {
     month,
     monthLabel: monthLabel(month),
