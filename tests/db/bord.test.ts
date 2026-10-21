@@ -303,6 +303,8 @@ describe("подключение Bord владельцем", () => {
 
     const res = await bord.setBordSource(await owner(), `https://docs.google.com/spreadsheets/d/${PROD_SHEET_ID}/edit#gid=1`);
     expect(res).toEqual({ id: PROD_SHEET_ID, access: "ok" });
+    // Владелец сам вставил ссылку: забор по расписанию включился (этап 61)
+    expect((await bord.bordStatus()).auto).toBe(true);
     expect(await prisma.auditLog.findFirst({ where: fresh({ action: "sync.bord" }) })).toMatchObject({ before: "забор выключен", after: PROD_SHEET_ID });
 
     // «Забрать сейчас» в имитации читает выгрузку 05.10: в ресурсе те же задачи
@@ -318,7 +320,7 @@ describe("подключение Bord владельцем", () => {
     await prisma.setting.update({ where: { key: "sheet.spreadsheetId" }, data: { value: "1OtherBordCopyForTests_0123456789ab" } });
     expect(await connection()).toBeNull();
     await bord.setBordSource(await owner(), "");
-    expect((await bord.bordStatus()).connected).toBe(false);
+    expect((await bord.bordStatus())).toMatchObject({ connected: false, auto: false });
     await expect(bord.pullBordNow(await owner())).rejects.toThrow(/Сначала вставьте ссылку на Bord/);
   });
 
@@ -326,6 +328,8 @@ describe("подключение Bord владельцем", () => {
     process.env.SHEET_FAKE = "1";
     imitationBord();
     await prisma.setting.create({ data: { key: "bord.sourceId", value: PROD_SHEET_ID } });
+    // Этап 61: забор по расписанию выключен по умолчанию, тест включает его явно
+    await prisma.setting.create({ data: { key: "bord.pullOn", value: true } });
     await prisma.task.delete({ where: { number: 51 } });
     await tick(new Date());
     expect(await prisma.task.findUnique({ where: { number: 51 } })).toMatchObject({ importBatch: PULL_BATCH });

@@ -29,6 +29,8 @@ const when = (iso: string, today: string) => {
 function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info" | "success" | "warning" | "neutral" } {
   if (item.requestNumber) return { icon: Hand, tone: "info" };
   if (item.subject.startsWith("meeting:")) return { icon: Presentation, tone: "neutral" };
+  if (item.subject.startsWith("ceo-report:")) return { icon: FileText, tone: "info" };
+  if (item.subject.startsWith("meeting-parse:")) return { icon: Presentation, tone: "info" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
@@ -96,6 +98,16 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                 ) : item.subject.startsWith("meeting:") ? (
                   <Link href={`/weekly/meeting?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                     Встреча
+                  </Link>
+                ) : item.subject.startsWith("ceo-report:") ? (
+                  // Этап 61: weekly для CEO отправили из разбора встречи
+                  <Link href={`/ceo-report?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
+                    Weekly для CEO
+                  </Link>
+                ) : item.subject.startsWith("meeting-parse:") ? (
+                  // Этап 61: разбор встречи из Notion готов или не получился
+                  <Link href={`/meeting/notion/${encodeURIComponent(item.subject.slice("meeting-parse:".length))}`} className="sv-event__text font-semibold hover:text-link">
+                    Разбор встречи из Notion
                   </Link>
                 ) : item.subject.startsWith("decision:") ? (
                   <Link href="/decisions" className="sv-event__text font-semibold hover:text-link">

@@ -20,7 +20,8 @@ jobs:
         run: npx eslint . --max-warnings 0 --prune-suppressions && git diff --exit-code eslint-suppressions.json
 
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest перешёл на 26.04, где Playwright не ставит браузер: тестам нужна версия с поддержкой
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16

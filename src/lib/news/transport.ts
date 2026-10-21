@@ -117,7 +117,8 @@ async function fakeTransport(request: FeedRequest): Promise<FeedResponse> {
 /** Забрать ленту: при временной ошибке один повтор через полторы секунды */
 export async function fetchFeed(request: FeedRequest): Promise<FeedResponse> {
   if (override) return override(request);
-  if (process.env.NEWS_FAKE === "1") return fakeTransport(request);
+  // Имитация только в тестах: в рабочем образе (NODE_ENV=production) лишь со сквозными тестами (WEEKLY_E2E=1), как у Notion и Claude этапа 61
+  if (process.env.NEWS_FAKE === "1" && (process.env.NODE_ENV !== "production" || process.env.WEEKLY_E2E === "1")) return fakeTransport(request);
   try {
     return await fetchOnce(request);
   } catch (error) {

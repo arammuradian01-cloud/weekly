@@ -270,6 +270,14 @@ export function CeoReport({
           <p className="text-small text-muted" aria-live="polite">
             {status}
           </p>
+          {/* Этап 61: weekly отправили CEO из разбора встречи в Notion: когда, кто и кому */}
+          {saved.sent ? (
+            <p className="text-small text-ink" data-testid="ceo-report-sent">
+              Отправлен CEO {moment(saved.sent.at)}
+              {saved.sent.by ? `, отправил ${saved.sent.by}` : ""}
+              {saved.sent.to.length ? `. Получил: ${saved.sent.to.join(", ")}` : ""}
+            </p>
+          ) : null}
           <Button onClick={save} disabled={busy || !dirty} className="w-full">
             <Save className="h-4 w-4" aria-hidden="true" />
             {busy ? "Сохраняю…" : "Сохранить"}

@@ -1,0 +1,56 @@
+{
+ "page": {
+  "object": "page",
+  "id": "6d7e8f90-1234-45a6-b7c8-d9e0f1a2b3c4",
+  "properties": {
+   "Название": {
+    "id": "title",
+    "type": "title",
+    "title": [
+     {
+      "type": "text",
+      "text": {
+       "content": "Встреча с AI-заметками"
+      },
+      "plain_text": "Встреча с AI-заметками"
+     }
+    ]
+   }
+  }
+ },
+ "children": {
+  "6d7e8f90-1234-45a6-b7c8-d9e0f1a2b3c4": [
+   {
+    "object": "block",
+    "id": "6d7e8f90-0000-4000-8000-000000000001",
+    "type": "unsupported",
+    "has_children": false,
+    "unsupported": {}
+   },
+   {
+    "object": "block",
+    "id": "6d7e8f90-0000-4000-8000-000000000002",
+    "type": "transcription",
+    "has_children": false,
+    "transcription": {}
+   },
+   {
+    "object": "block",
+    "id": "6d7e8f90-0000-4000-8000-000000000003",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Итоги"
+       },
+       "plain_text": "Итоги"
+      }
+     ]
+    }
+   }
+  ]
+ }
+}
