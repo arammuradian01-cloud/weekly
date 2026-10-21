@@ -6,6 +6,7 @@ import type { MetricKey, PlanUnit } from "./spec";
 import type { Drivers } from "./summary";
 import type { FactMetric } from "./facts";
 import type { PartnerChannel, PartnerCompareValues, PartnerDrivers, PartnerMetric, PartnerTotalInput, PartnerUnit, PartnerValues } from "./partners";
+import type { SkView } from "./hub-service";
 
 export type PlanPerson = { slug: string; name: string };
 
@@ -129,6 +130,10 @@ export type MonthPlanView = {
   canExport: boolean;
   /** Партнёрский канал: null, пока листы LRF b2b не загружены */
   partners: PartnerChannelView | null;
+  /** ОСАГО по СК из хаба «Единая воронка: данные» (этап 58): null, пока загрузок из хаба не было */
+  sk: SkView | null;
+  /** Откуда читается хаб: для панели загрузки у управления */
+  hubSource: SkView["source"];
   /** Прогноз на прошлый момент (этап 39, отчёт CEO за прошлую неделю): когда и пометки, если снимка не было */
   asOf?: { at: string; when: string; notes: string[] } | null;
 };

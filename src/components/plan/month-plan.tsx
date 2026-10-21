@@ -19,7 +19,7 @@ import { Segmented } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { HEADLINES, delta, when, type Headline } from "./plan-ui";
 import { ProductCard } from "./product-card";
-import { FactsDrawer, OwnersDrawer, PullDrawer } from "./plan-admin";
+import { FactsDrawer, HubDrawer, OwnersDrawer, PullDrawer } from "./plan-admin";
 import { pace } from "@/lib/plan/facts";
 import { policiesDelta } from "@/lib/plan/partners";
 import { PartnerChannel } from "./partner-channel";
@@ -36,6 +36,8 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
   // Команда партнёрского канала (этап 35б) меняется той же панелью, что команда продукта
   const [partnerOwnersOpen, setPartnerOwnersOpen] = useState(false);
   const [factsOpen, setFactsOpen] = useState(false);
+  // Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» и план по СК
+  const [hubOpen, setHubOpen] = useState(false);
 
   const input: PlanInput = useMemo(() => ({ products: view.products.map((p) => ({ code: p.code, lbe: p.lbe, budget: p.budget, drivers: p.drivers })), groups: view.groups }), [view]);
   const summary = useMemo(() => summarize(input), [input]);
@@ -113,6 +115,11 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
               Загрузить из LRF
             </Button>
           ) : null}
+          {view.canPull && !view.empty ? (
+            <Button variant="secondary" onClick={() => setHubOpen(true)} data-testid="plan-hub-open">
+              Загрузить из хаба
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -187,6 +194,7 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
                     onSaved={setView}
                     onOwners={() => setOwnersOpen(true)}
                     partner={partner}
+                    sk={product.code === "osago" ? view.sk : null}
                   />
                 ) : null
               }
@@ -199,6 +207,7 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
 
       {view.canPull ? <PullDrawer open={pullOpen} onOpenChange={setPullOpen} month={view.month} serviceEmail={view.source.serviceEmail} mode={view.source.mode} sourceId={view.source.sourceId} canSource={view.canSource} /> : null}
       {view.canFacts ? <FactsDrawer open={factsOpen} onOpenChange={setFactsOpen} /> : null}
+      {view.canPull && !view.empty ? <HubDrawer open={hubOpen} onOpenChange={setHubOpen} serviceEmail={view.hubSource.serviceEmail} mode={view.hubSource.mode} sourceId={view.hubSource.sourceId} canSource={view.canSource} /> : null}
       {view.canOwners && product ? <OwnersDrawer key={product.code} open={ownersOpen} onOpenChange={setOwnersOpen} product={product.code} owners={product.owners} onSaved={setOwners} /> : null}
       {view.canOwners && view.partners ? <OwnersDrawer key="b2b" open={partnerOwnersOpen} onOpenChange={setPartnerOwnersOpen} product="b2b" owners={view.partners.owners} onSaved={setPartnerOwners} /> : null}
     </div>
