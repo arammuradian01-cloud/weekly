@@ -63,6 +63,8 @@ export function TaskCard({
   const task = listed.partial && loaded && loaded.number === listed.number ? { ...listed, comments: loaded.comments, partial: false } : listed;
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
+  // Задача человеку из другого департамента ждёт согласования его руководителя (этап 54)
+  const pendingApproval = task.status === "proposed" && task.approval?.state === "pending";
   // Задачу открыли: события «Мне» по ней просмотрены, письмо о них не нужно (этап 20)
   useEffect(() => {
     if (brief) return;
@@ -214,23 +216,43 @@ export function TaskCard({
       </div>
 
       {task.status === "proposed" && can.confirm ? (
-        <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-small text-blue-700">Предложение от: {authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет, когда вы её примете.</p>
+        <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="task-confirm">
+          <p className="text-small text-blue-700">
+            {pendingApproval
+              ? task.approval!.approver === me.slug
+                ? task.approval!.from
+                  ? `Задачу из другого департамента передают вашему сотруднику: ${ownerName(task.owner)}. Решение за вами. Не согласуете: задача вернётся, у кого была: ${personOf(task.approval!.from).fullName}.`
+                  : `Задача из другого департамента для вашего сотрудника: ${ownerName(task.owner)}. Ставит ${authorName(task.createdBy, "full", "участник встречи")}. Решение за вами.`
+                : `Задача из другого департамента ждёт согласования${task.approval!.approver ? `: ${personOf(task.approval!.approver).fullName}` : ""}. В режиме управления можно решить за руководителя.`
+              : `Предложение от: ${authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет, когда вы её примете.`}
+          </p>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => actions.changeStatus(task, "cancelled")}>
-              Отклонить
+              {pendingApproval ? "Не согласовать" : "Отклонить"}
             </Button>
             <Button size="sm" onClick={() => actions.changeStatus(task, "in-progress")}>
               <Check className="h-4 w-4" aria-hidden="true" />
-              Принять в работу
+              {pendingApproval ? "Согласовать" : "Принять в работу"}
             </Button>
           </div>
         </div>
       ) : null}
 
       {task.status === "proposed" && !can.confirm ? (
-        <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700">
-          Задача предложена. Задачей она станет, когда её примет адресат, его руководитель или руководитель команды.
+        <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700" data-testid="task-proposed">
+          {pendingApproval
+            ? `Задача из другого департамента ждёт согласования${task.approval!.approver ? `: ${personOf(task.approval!.approver).fullName}` : ""}. Задачей она станет после решения руководителя ответственного.${task.approval!.from ? ` Не согласует: задача вернётся, у кого была: ${personOf(task.approval!.from).fullName}.` : ""}`
+            : "Задача предложена. Задачей она станет, когда её примет адресат, его руководитель или руководитель команды."}
+        </p>
+      ) : null}
+
+      {task.approval && task.approval.state !== "pending" ? (
+        <p className="text-small text-muted" data-testid="task-approval">
+          {task.approval.state === "informed"
+            ? `Задача из другого департамента, руководитель ответственного в курсе${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`
+            : task.approval.state === "approved"
+              ? `Согласовано руководителем ответственного${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`
+              : `Не согласовано руководителем ответственного${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`}
         </p>
       ) : null}
 

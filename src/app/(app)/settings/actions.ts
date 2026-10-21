@@ -3,6 +3,8 @@
 // Действия экрана «Настройки». Права и правила проверяет сервис: справочники и ритм недели для режима управления,
 // люди и роли только для владельца.
 
+import { saveApprovalSetting } from "@/lib/tasks/approval-settings";
+import type { ApprovalMode } from "@/lib/tasks/approval";
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/admin/service";
@@ -107,4 +109,9 @@ export async function setAbsenceForAction(slug: string, week: string, substitute
 
 export async function removeAbsenceForAction(slug: string, week: string) {
   return done(await runAction("Отмена отсутствия коллеги", (a) => removeAbsence(a, String(slug), String(week) as WeekKey)));
+}
+
+/** Согласование задач в другие департаменты (этап 54) */
+export async function saveApprovalAction(input: { default: string; departments: Record<string, string> }) {
+  return done(await runAction("Согласование задач", (a) => saveApprovalSetting(a, { default: input?.default as ApprovalMode, departments: (input?.departments ?? {}) as Record<string, ApprovalMode> })));
 }

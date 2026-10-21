@@ -60,7 +60,7 @@ export async function entryReaders(db: Db, entry: EntryAccess, ids: string[]): P
   return [...readers.values()].filter((r) => seesEntry(r.scope, nodes, entry, r.id)).map((r) => r.id);
 }
 
-type TaskAccess = { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] };
+type TaskAccess = { teamId: string; ownerId: string | null; createdById: string | null; approverId: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] };
 
 /** Кто из людей видит задачу. Архивную задачу видит только владелец */
 export async function taskReaders(db: Db, task: TaskAccess, ids: string[]): Promise<string[]> {

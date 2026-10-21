@@ -167,6 +167,9 @@ model Person {
   joinApprovals          TeamJoinRequest[]       @relation("JoinApprover")
   ownedTasks             Task[]                  @relation("TaskOwner")
   createdTasks           Task[]                  @relation("TaskCreator")
+  approvingTasks         Task[]                  @relation("TaskApprover")
+  approvalFromTasks      Task[]                  @relation("TaskApprovalFrom")
+  approvalAuthorTasks    Task[]                  @relation("TaskApprovalAuthor")
   coTasks                TaskCoExecutor[]
   transfers              TaskTransfer[]
   taskComments           TaskComment[]
@@ -303,59 +306,76 @@ model LoginAttempt {
 
 /// Задача (раздел 4 ТЗ). Номер сквозной и не меняется, новые выдаются из настройки tasks.nextNumber.
 model Task {
-  id             String         @id @default(cuid())
-  number         Int            @unique
+  id                 String         @id @default(cuid())
+  number             Int            @unique
   /// До 120 знаков, одна мысль
-  title          String
+  title              String
   /// Ожидаемый результат: по чему понять, что задача сделана
-  outcome        String
+  outcome            String
   /// null и ownerAll = false: ответственный не назначен
-  ownerId        String?
-  owner          Person?        @relation("TaskOwner", fields: [ownerId], references: [id])
+  ownerId            String?
+  owner              Person?        @relation("TaskOwner", fields: [ownerId], references: [id])
   /// «Все лидеры»: только для общих задач
-  ownerAll       Boolean        @default(false)
-  directionId    String
-  direction      DictionaryItem @relation(fields: [directionId], references: [id])
+  ownerAll           Boolean        @default(false)
+  directionId        String
+  direction          DictionaryItem @relation(fields: [directionId], references: [id])
   /// null: приоритет не задан (задачи из таблицы, где его нет)
-  priority       TaskPriority?
-  status         TaskStatus     @default(IN_PROGRESS)
+  priority           TaskPriority?
+  status             TaskStatus     @default(IN_PROGRESS)
   /// null: состояние не задано (задачи из таблицы)
-  state          TaskState?
+  state              TaskState?
   /// Чем заблокирована и кто может помочь: при BLOCKED. С этапа 21 пояснение к ссылке на задачу или человека
-  blockedBy      String?
+  blockedBy          String?
   /// Что вернёт задачу в график: обязательно при AT_RISK (этап 21)
-  riskNote       String?
+  riskNote           String?
   /// «Где сейчас»: одна-две фразы о текущем состоянии
-  whereNow       String         @default("")
-  whereUpdatedAt DateTime       @db.Date
-  due            DateTime       @db.Date
+  whereNow           String         @default("")
+  whereUpdatedAt     DateTime       @db.Date
+  due                DateTime       @db.Date
   /// Исходный срок не меняется. null: срок переносили в таблице до запуска ресурса, прежний не записан
-  originalDue    DateTime?      @db.Date
+  originalDue        DateTime?      @db.Date
   /// Код из справочника TASK_SOURCE: meeting, weekly, ceo, other
-  sourceCode     String         @default("other")
-  sourceNote     String?
+  sourceCode         String         @default("other")
+  sourceNote         String?
   /// Дата встречи, на которой поставили задачу
-  sourceDate     DateTime?      @db.Date
+  sourceDate         DateTime?      @db.Date
   /// Запись weekly, из которой сделана задача
-  weeklyEntryId  String?
-  weeklyEntry    WeeklyEntry?   @relation(fields: [weeklyEntryId], references: [id], onDelete: SetNull)
+  weeklyEntryId      String?
+  weeklyEntry        WeeklyEntry?   @relation(fields: [weeklyEntryId], references: [id], onDelete: SetNull)
   /// null: задача поставлена на встрече, автор в таблице не записан
-  createdById    String?
-  createdBy      Person?        @relation("TaskCreator", fields: [createdById], references: [id])
-  createdAt      DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt      DateTime       @updatedAt @db.Timestamptz(3)
-  closedAt       DateTime?      @db.Timestamptz(3)
+  createdById        String?
+  createdBy          Person?        @relation("TaskCreator", fields: [createdById], references: [id])
+  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
+  closedAt           DateTime?      @db.Timestamptz(3)
   /// Итог для DONE, что сделано и что нет для PARTIAL, причина для FAILED и CANCELLED
-  resolution     String?
-  archivedAt     DateTime?      @db.Timestamptz(3)
+  resolution         String?
+  archivedAt         DateTime?      @db.Timestamptz(3)
   /// Партия импорта из таблицы, например bord-2026-10-05. Нужна сверке
-  importBatch    String?
+  importBatch        String?
   /// Команда задачи (этап 14). Всё, что было до команд, принадлежит топ-команде
-  teamId         String         @default("top")
-  team           Team           @relation(fields: [teamId], references: [id])
+  teamId             String         @default("top")
+  team               Team           @relation(fields: [teamId], references: [id])
   /// Цель, на которую работает задача (этап 17): цель своей команды или команды выше
-  goalId         String?
-  goal           Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  goalId             String?
+  goal               Goal?          @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  /// Задача человеку из другого департамента (этап 54): ждёт согласования его руководителя, согласована, отклонена
+  /// или руководитель только проинформирован. null: правило не сработало
+  approvalState      ApprovalState?
+  /// Кто согласует или кого проинформировали: руководитель ответственного
+  approverId         String?
+  approver           Person?        @relation("TaskApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  /// Согласование передачи (этап 54): у кого была задача и в каком статусе. Руководитель не согласовал передачу:
+  /// задача возвращается прежнему ответственному в тот же статус, а не отменяется
+  approvalFromId     String?
+  approvalFrom       Person?        @relation("TaskApprovalFrom", fields: [approvalFromId], references: [id], onDelete: SetNull)
+  approvalFromStatus TaskStatus?
+  /// У прежнего ответственного были «Все лидеры»: отказ в передаче возвращает их
+  approvalFromAll    Boolean        @default(false)
+  /// Чья это задача для правила согласования: тот, кто её поставил, автор просьбы, из которой она сделана, или тот,
+  /// кто передал задачу без автора (задача из Bord). Пересчёт после смены структуры считает правило от него
+  approvalAuthorId   String?
+  approvalAuthor     Person?        @relation("TaskApprovalAuthor", fields: [approvalAuthorId], references: [id], onDelete: SetNull)
 
   coExecutors    TaskCoExecutor[]
   transfers      TaskTransfer[]
@@ -388,6 +408,7 @@ model Task {
   @@index([ownerId])
   @@index([teamId])
   @@index([goalId])
+  @@index([approverId, approvalState])
   @@map("tasks")
 }
 
@@ -939,6 +960,14 @@ model Absence {
   @@map("absences")
 }
 
+/// Согласование задачи человеку из другого департамента (этап 54)
+enum ApprovalState {
+  PENDING
+  APPROVED
+  REJECTED
+  INFORMED
+}
+
 /// Что случилось в «Мне» (этап 11): поставили или передали задачу, предложили, добавили соисполнителем, прокомментировали
 enum InboxKind {
   TASK_ASSIGNED
@@ -973,6 +1002,8 @@ enum InboxKind {
   INITIATIVE
   /// Команды (этап 53): вас добавили в команду руководителя другой ветки, или так добавили вашего сотрудника
   TEAM
+  /// Задача вашему сотруднику из другого департамента (этап 54): согласовать или просто знать
+  APPROVAL
   /// Прогноз месяца (этап 35): загружен LBE, команде продукта проверить прогноз
   PLAN
 }
@@ -1100,18 +1131,18 @@ model Team {
   createdAt         DateTime @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime @updatedAt @db.Timestamptz(3)
 
-  members     TeamMember[]
-  tasks       Task[]
-  closes      TeamWeekClose[]
-  goals       Goal[]
+  members      TeamMember[]
+  tasks        Task[]
+  closes       TeamWeekClose[]
+  goals        Goal[]
   /// Встречи и решения команды (этап 23)
-  meetings    Meeting[]
-  decisions   Decision[]
-  forecasts   Forecast[]
+  meetings     Meeting[]
+  decisions    Decision[]
+  forecasts    Forecast[]
   /// Анонимная оценка встреч раз в месяц (этап 29)
-  ratingVotes MeetingRatingVote[]
-  ratingBoxes MeetingRatingBox[]
-  initiatives Initiative[]
+  ratingVotes  MeetingRatingVote[]
+  ratingBoxes  MeetingRatingBox[]
+  initiatives  Initiative[]
   joinRequests TeamJoinRequest[]
 
   @@index([leaderId])

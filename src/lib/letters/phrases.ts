@@ -50,6 +50,10 @@ export function eventPhrase(e: EventLine): string {
       return `${who}прогноз месяца: проверьте после загрузки LBE`;
     case "TEAM":
       return `${who}состав команды`;
+    case "APPROVAL":
+      // Соисполнитель из вашей команды в задаче другого департамента (этап 54): номер задачи в тексте события
+      if (e.subject?.startsWith("approval-co:")) return `${who}ваш сотрудник стал соисполнителем задачи другого департамента`;
+      return `${who}задача из другого департамента для вашего сотрудника${n}`;
     default:
       return `${who}новое событие`;
   }

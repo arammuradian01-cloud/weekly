@@ -102,6 +102,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "settings.dict.show": "Значение справочника возвращено",
   "settings.person.create": "Человек добавлен",
   "settings.person.update": "Человек изменён",
+  "settings.approval": "Согласование задач в другие департаменты",
+  "task.approval": "Согласование задачи",
   "settings.person.disable": "Человек выключен",
   "settings.person.enable": "Человек включён",
   "settings.update": "Ритм недели изменён",

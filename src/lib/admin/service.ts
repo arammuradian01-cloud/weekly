@@ -3,6 +3,7 @@
 // людей и роли меняет только владелец. Каждая правка пишется в журнал с тем, что было и что стало.
 
 import { fillMissingLogins, lockPeopleNames, loginProblem, reservedLogins, takenNames } from "@/lib/login/logins";
+import { refreshApprovals } from "@/lib/tasks/approval";
 import { guardPrimary, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
 import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
@@ -396,8 +397,11 @@ export async function setPersonActive(actor: Actor, slug: string, active: boolea
     // Выключенный человек сразу теряет личные входы и неиспользованные ссылки
     if (!active) await revokeOnDeactivate(tx, p.id);
     await audit(tx, actor, active ? "settings.person.enable" : "settings.person.disable", "person", slug, "В команде", active ? "выключен" : "да", active ? "да" : "выключен");
+    // Выключили согласующего или ответственного: согласующие задач пересчитываются (этап 54)
+    await refreshApprovals(tx, actor);
     return { slug, active };
-  });
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 // Ритм недели

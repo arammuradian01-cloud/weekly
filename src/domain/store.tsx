@@ -218,7 +218,18 @@ export function PrototypeProvider({
         try {
           const result = await createTaskAction(input);
           if (!result.ok) return { error: result.error };
-          applyTaskResult(result, result.task?.status === "proposed" ? `Задача ${result.number} предложена` : `Задача ${result.number} создана`);
+          // Этап 54: задача человеку из другого департамента ушла на согласование или его руководитель проинформирован
+          const approval = result.task?.approval;
+          applyTaskResult(
+            result,
+            approval?.state === "pending"
+              ? `Задача ${result.number} отправлена на согласование${approval.approver ? `: ${personOf(approval.approver).fullName}` : ""}`
+              : approval?.state === "informed"
+                ? `Задача ${result.number} создана, руководитель ответственного проинформирован`
+                : result.task?.status === "proposed"
+                  ? `Задача ${result.number} предложена`
+                  : `Задача ${result.number} создана`,
+          );
           return { number: result.number };
         } catch {
           return { error: "Нет связи с сервером: задача не сохранилась" };

@@ -38,7 +38,7 @@ const fail = (message: string): never => {
 const STATUS_CODE: Record<RequestStatus, RequestStatusCode> = { OPEN: "open", ACCEPTED: "accepted", DONE: "done", DECLINED: "declined", WITHDRAWN: "withdrawn" };
 const ACTIVE: RequestStatus[] = ["OPEN", "ACCEPTED"];
 
-const taskSelect = { id: true, number: true, title: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, directionId: true, coExecutors: { select: { personId: true } } } as const;
+const taskSelect = { id: true, number: true, title: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, directionId: true, coExecutors: { select: { personId: true } } } as const;
 
 const requestInclude = {
   author: { select: { id: true, slug: true, fullName: true } },
@@ -343,7 +343,7 @@ export async function requestToTask(actor: Actor, number: number, direction: str
       due,
       source: "other",
       sourceNote: `Просьба ${row.number}: ${row.author.fullName}`.slice(0, 200),
-    });
+    }, { requester: row.authorId });
     const taskRow = await tx.task.findUniqueOrThrow({ where: { number: task.number }, select: { id: true } });
     created = task.number;
     const before = stateLabel(row);

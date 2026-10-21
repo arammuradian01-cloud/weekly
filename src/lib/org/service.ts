@@ -6,6 +6,7 @@
 // Каждая правка пишется в журнал: что было и что стало.
 
 import { fillMissingLogins, lockPeopleNames, reservedLogins, takenNames } from "@/lib/login/logins";
+import { refreshApprovals } from "@/lib/tasks/approval";
 import { primaryOwner, primaryOwnerSlug } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
@@ -387,6 +388,8 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       const { teams, members } = await syncUnitTeams(tx, actor);
       // Новым людям сразу логины вида amuradyan (этап 52)
       await fillMissingLogins(tx);
+      // Сменились руководители и подразделения: согласующие задач пересчитываются (этап 54)
+      await refreshApprovals(tx, actor);
       await audit(tx, actor, "structure.import", "structure", "import", "Структура загружена", null, `людей ${plan.planned.length}: новых ${added}, изменено ${plan.people.change.length}; подразделений новых ${unitsCreated}; вакансий ${plan.vacancies.length}`);
       return { units: unitsCreated, added, changed: plan.people.change.length, teams, members, vacancies: plan.vacancies.length };
     },
@@ -891,7 +894,9 @@ export async function setPersonOrg(actor: Actor, slug: string, input: PersonOrgI
     if (!changes.length) fail("Ничего не изменилось");
     await tx.person.update({ where: { id: person.id }, data });
     for (const [field, before, after] of changes) await audit(tx, actor, "structure.person.update", "person", slug, field, before ?? "нет", after ?? "нет");
-  });
+    await refreshApprovals(tx, actor);
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export type UnitInput = { name?: string; kind?: UnitKind; parent?: string | null; head?: string | null; headNote?: string | null; active?: boolean };
@@ -958,7 +963,9 @@ export async function updateUnit(actor: Actor, id: string, input: UnitInput): Pr
     if (!log.length) fail("Ничего не изменилось");
     await tx.orgUnit.update({ where: { id }, data });
     for (const [field, before, after] of log) await audit(tx, actor, "structure.unit.update", "unit", id, field, before, after);
-  });
+    await refreshApprovals(tx, actor);
+    // Пересчёт согласующих у сотен задач не должен упираться в пять секунд транзакции по умолчанию
+  }, { timeout: 30_000 });
 }
 
 export async function createUnit(actor: Actor, input: { name: string; kind: UnitKind; parent?: string | null }): Promise<{ id: string }> {

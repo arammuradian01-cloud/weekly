@@ -23,6 +23,7 @@ import { TOP_TEAM, loadScope, visibleTasksWhere, type Scope } from "@/lib/org/sc
 import { nextRepeatDue, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "./repeat";
 import { foreignGoal, taskPeople } from "@/lib/goals/personal";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
+import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -67,9 +68,11 @@ async function scopeOfActor(db: Db, actor: Actor): Promise<Scope> {
 }
 
 /** Видит ли человек задачу: её команда в его командах, или он участник задачи, или он функциональный руководитель ответственного */
-export function canSeeRow(scope: Scope, row: Pick<TaskRow, "teamId" | "ownerId" | "createdById"> & { coExecutors: { personId: string }[] }, personId: string): boolean {
+export function canSeeRow(scope: Scope, row: Pick<TaskRow, "teamId" | "ownerId" | "createdById" | "approverId"> & { coExecutors: { personId: string }[] }, personId: string): boolean {
   if (scope.all || scope.visible.includes(row.teamId)) return true;
   if (row.ownerId === personId || row.createdById === personId) return true;
+  // Руководитель, который согласует задачу своего сотрудника или о ней проинформирован (этап 54)
+  if (row.approverId && row.approverId === personId) return true;
   if (row.coExecutors.some((c) => c.personId === personId)) return true;
   // Этап 16: руководитель видит задачи своих людей в любой команде, в том числе предложенные им из другой команды
   return !!row.ownerId && (scope.functional.includes(row.ownerId) || (row.teamId !== TOP_TEAM && scope.leadPeople.includes(row.ownerId)));
@@ -348,7 +351,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
 }
 
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
-export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): Promise<TaskResult> {
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string } = {}): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
@@ -377,6 +380,9 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
   const priority: TaskPriority = input.priority && input.priority !== "unset" ? (priorityDb(input.priority) ?? fail("Нет такого приоритета")) : "MEDIUM";
   const co = [...new Set(input.coExecutors ?? [])].filter((s) => s !== input.owner);
   const coIds = co.map((s) => people.get(s)?.id ?? fail("Такого соисполнителя нет в команде"));
+  // Чья это задача для правила согласования (этап 54): автор просьбы, из которой её делают, иначе тот, кто ставит
+  const requester = opts.requester ?? actor.personId;
+  const coRules = await coExecutorRules(tx, actor, requester, coIds);
   const links = (input.links ?? []).map((l) => ({ title: optional(l.title, LIMITS.linkTitle, "Название ссылки") ?? new URL(checkUrl(l.url)).hostname, url: checkUrl(l.url) }));
 
   if (input.weeklyEntryId) {
@@ -386,6 +392,11 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
   let status = newTaskStatus(input.owner, viewer, teamId);
   // Руководитель команды ставит сразу «В работе» только людям своих команд. Остальным задачу можно только предложить
   if (status === "in-progress" && !actor.management && ownerId && ownerId !== actor.personId && !scope.leadPeople.includes(ownerId)) status = "proposed";
+  // Человек из другого департамента (этап 54): задача ждёт согласования его руководителя, или руководитель узнаёт о ней.
+  // Режим управления не ждёт согласования: руководитель ответственного только узнаёт о задаче, как при передаче
+  const rule = await approvalRule(tx, requester, ownerId);
+  const pending = rule?.mode === "approve" && !actor.management;
+  if (pending) status = "proposed";
   const number = await nextNumber(tx);
   const today = dbDate(moscowToday());
   const row = await tx.task.create({
@@ -408,6 +419,8 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
+      ...(rule ? { approvalState: pending ? "PENDING" : "INFORMED", approverId: rule.approverId } : {}),
+      approvalAuthorId: requester,
       ...repeatDb(input.repeat),
       coExecutors: { create: coIds.map((personId) => ({ personId })) },
       links: { create: links.map((l) => ({ ...l, addedById: actor.personId })) },
@@ -422,16 +435,20 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput): P
     actor,
     subject,
     taskId: row.id,
-    text: status === "proposed" ? "Вам предложена задача: примите её или отклоните с причиной" : "Новая задача для вас",
+    text: pending ? "Вам предложена задача из другого департамента: она ждёт согласования вашего руководителя" : status === "proposed" ? "Вам предложена задача: примите её или отклоните с причиной" : "Новая задача для вас",
   });
+  const approvalLine = rule ? await startApproval(tx, actor, { id: row.id, number, ownerId: ownerId! }, rule, pending ? "approve" : "inform", false) : null;
   await notify(tx, { kind: "TASK_COEXECUTOR", recipients: coIds, actor, subject, taskId: row.id, text: "Вы соисполнитель" });
+  await informCoApprovers(tx, actor, { id: row.id, number, title }, coRules);
   const names = await nameMap(tx);
+  // Строка согласования после строки создания: история в карточке начинается со строки создания
   await audit(tx, actor, number, [
     {
       action: status === "proposed" ? "task.propose" : "task.create",
       field: status === "proposed" ? "Задача предложена" : "Задача создана",
       after: `${title}. Ответственный: ${ownerLabel(row, names)}, срок ${formatLong(input.due)}${row.repeat ? `. Повтор: ${repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close").toLowerCase()}` : ""}`,
     },
+    ...(approvalLine ? [approvalLine] : []),
   ]);
   return { task: toTaskDto(row), undo: issueUndoToken({ kind: "create", number, expectUpdatedAt: row.updatedAt.toISOString() }, actor.personId) };
 }
@@ -456,7 +473,11 @@ function pickTeam(scope: Scope, actor: Actor, wanted: string | undefined): strin
 export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
+    const pendingApproval = current === "proposed" && row.approvalState === "PENDING";
+    // По общему логину можно выбрать профиль согласующего: решение только при личном входе (как согласие в этапе 53)
+    if (pendingApproval && actor.via === "TEAM" && !actor.management) fail("Согласовать задачу можно при личном входе");
     if (current === "proposed" ? !can.confirm : !can.status) {
+      if (pendingApproval) fail("Задача ждёт согласования руководителя ответственного: принять или отклонить её может только он или режим управления");
       fail(current === "proposed" ? "Предложенную задачу принимает адресат, его руководитель или руководитель команды" : "Статус меняет ответственный, владелец или администратор");
     }
     if (next === current) fail("Статус уже такой");
@@ -472,8 +493,18 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
         need === "reason" ? "Причина" : "Итог",
       );
     }
+    // Руководитель не согласовал передачу (этап 54): задача возвращается прежнему ответственному в прежний статус.
+    // Не отменяется: серия, просьбы и зависимые задачи остаются как были
+    if (pendingApproval && next === "cancelled" && row.approvalFromStatus) return rejectTransfer(tx, actor, row, resolution!);
     const closing = CLOSED_DB.includes(db);
     const wasClosed = CLOSED_DB.includes(row.status);
+    // Не согласованную задачу закрыть иначе («Выполнена» и другие) может только согласующий или режим управления
+    if (row.approvalState === "REJECTED" && wasClosed && closing && !actor.management && row.approverId !== actor.personId) {
+      fail("Руководитель ответственного не согласовал задачу: закрыть её иначе может он или режим управления. Чтобы взять её в работу, откройте её снова, она уйдёт на согласование");
+    }
+    // Отклонённую задачу открывают снова (этап 54): без согласующего или режима управления она снова ждёт согласования
+    const reopen = row.approvalState === "REJECTED" && wasClosed && !closing ? await reopenApproval(tx, actor, row) : null;
+    const finalDb = reopen?.pending ? ("PROPOSED" as const) : db;
     // Задача из просьбы закрыта: просьба закрывается вместе с ней, автор просьбы узнаёт об этом. Закрытую задачу
     // открыли снова: просьба снова принята (этап 21). У закрытой сменили итог: у просьбы тот же новый итог (этап 22)
     if (closing && wasClosed) await refinishRequestsOfTask(tx, { id: row.id, number }, db as TaskOutcome, resolution, actor);
@@ -486,7 +517,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
     let spawned: Task | null = null;
     const stopSeries = !!row.repeat && next === "cancelled";
     if (closing && !wasClosed && !stopSeries && current !== "proposed" && row.repeat && row.repeatMode === "ON_CLOSE" && !row.repeatNext) spawned = await spawnRepeatIn(tx, row, actor);
-    await notifyWatchers(tx, row.id, `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
+    await notifyWatchers(tx, row.id, reopen?.pending ? "Задачу открыли снова, она ждёт согласования руководителя ответственного" : `Статус: ${statusOf(next).label}${resolution ? `. ${quote(resolution)}` : ""}`, actor);
     // Предложенную задачу подтвердили: ответственный и тот, кто предлагал, узнают об этом в «Мне»
     if (current === "proposed") {
       // Адресат или его руководитель решают только «принять» или «отклонить»; остальные статусы у режима управления
@@ -499,19 +530,78 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
         actor,
         subject: taskSubject(number),
         taskId: row.id,
-        text: declined ? `Предложение отклонено: ${quote(resolution ?? "")}` : "Задача подтверждена",
+        text: pendingApproval
+          ? `${actor.personId === row.approverId ? "Руководитель ответственного" : "Режим управления за руководителя ответственного"} ${declined ? `не согласовал задачу: ${quote(resolution ?? "")}` : "согласовал задачу, она в работе"}`
+          : declined
+            ? `Предложение отклонено: ${quote(resolution ?? "")}`
+            : "Задача подтверждена",
       });
     }
+    // Согласование (этап 54): решение согласующего записывается вместе со статусом, его событие в «Мне» разобрано
+    if (pendingApproval) await closeApprovalEvents(tx, row.id, row.approverId);
+    const approval = pendingApproval ? { approvalState: next === "cancelled" ? ("REJECTED" as const) : ("APPROVED" as const), approvalFromId: null, approvalFromStatus: null, approvalFromAll: false } : (reopen?.data ?? {});
     return {
-      data: { status: db, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null, ...(stopSeries ? { repeat: null } : {}) },
+      data: { status: finalDb, resolution: closing ? resolution : null, closedAt: closing ? new Date() : null, ...(stopSeries ? { repeat: null } : {}), ...approval },
       changes: [
-        { field: "Статус", before: statusOf(current).label, after: `${resolution ? `${statusOf(next).label}. ${resolution}` : statusOf(next).label}${spawned ? `. Создан повтор: задача ${spawned.number}` : ""}` },
+        ...(pendingApproval ? [{ action: "task.approval", field: "Согласование", before: "Ждёт согласования", after: next === "cancelled" ? "Не согласована" : "Согласована" }] : []),
+        {
+          field: "Статус",
+          before: statusOf(current).label,
+          after: reopen?.pending ? "Предложена: снова ждёт согласования руководителя ответственного" : `${resolution ? `${statusOf(next).label}. ${resolution}` : statusOf(next).label}${spawned ? `. Создан повтор: задача ${spawned.number}` : ""}`,
+        },
+        ...(reopen?.changes ?? []),
         ...(stopSeries ? [{ field: "Повтор", before: repeatLabel(row.repeat === "MONTHLY" ? "monthly" : "weekly", row.repeatMode === "SCHEDULE" ? "schedule" : "on-close"), after: "Без повтора: задача отменена" }] : []),
       ],
-      // Созданный повтор отменой закрытия не исчезает, поэтому и само закрытие не отменяется кнопкой
-      ...(spawned ? { undo: false as const } : {}),
+      // Созданный повтор отменой закрытия не исчезает, поэтому и само закрытие не отменяется кнопкой. Решение по
+      // согласованию тоже не отменяется кнопкой: отмена вернула бы задачу в «Предложена» без согласования
+      ...(spawned || pendingApproval || reopen ? { undo: false as const } : {}),
     };
   });
+}
+
+/**
+ * Отказ в передаче (этап 54): задача снова у прежнего ответственного в том статусе, в котором была, он больше не
+ * соисполнитель. Прежний и несостоявшийся ответственный узнают о решении и причине
+ */
+async function rejectTransfer(tx: Tx, actor: Actor, row: TaskRow, reason: string): Promise<Plan> {
+  const fromId = row.approvalFromId;
+  const back = row.approvalFromStatus && !CLOSED_DB.includes(row.approvalFromStatus) ? row.approvalFromStatus : "IN_PROGRESS";
+  if (fromId) await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: fromId } });
+  await closeApprovalEvents(tx, row.id, row.approverId);
+  const who = actor.personId === row.approverId ? "Руководитель нового ответственного" : "Режим управления";
+  if (fromId) await notify(tx, { kind: "TASK_ASSIGNED", recipients: [fromId], actor, subject: taskSubject(row.number), taskId: row.id, text: `${who} не согласовал передачу, задача снова у вас: ${quote(reason)}` });
+  // Несостоявшийся ответственный и тот, кто поставил задачу, узнают о решении
+  await notify(tx, { kind: "TASK_CONFIRMED", recipients: [row.ownerId, row.createdById].filter((id) => id !== fromId), actor, subject: taskSubject(row.number), taskId: row.id, text: `Передачу задачи не согласовали, она вернулась прежнему ответственному: ${quote(reason)}` });
+  const names = await nameMap(tx);
+  const fromName = row.approvalFromAll ? "Все лидеры" : fromId ? await fullNameOf(tx, fromId) : "нет";
+  await notifyWatchers(tx, row.id, `Передача не согласована, задача снова у прежнего ответственного: ${fromName}`, actor, [fromId, row.ownerId]);
+  const coBefore = row.coExecutors.map((c) => names.get(c.person.slug) ?? c.person.slug);
+  const coAfter = row.coExecutors.filter((c) => c.personId !== fromId).map((c) => names.get(c.person.slug) ?? c.person.slug);
+  return {
+    data: { ownerId: fromId, ownerAll: row.approvalFromAll, status: back, approvalState: null, approverId: null, approvalFromId: null, approvalFromStatus: null, approvalFromAll: false },
+    changes: [
+      { action: "task.approval", field: "Согласование", before: "Ждёт согласования передачи", after: `Передача не согласована. ${reason}` },
+      { field: "Ответственный", before: ownerLabel(row, names), after: fromName },
+      ...(coBefore.length !== coAfter.length ? [{ field: "Соисполнители", before: coBefore.join(", ") || "нет", after: coAfter.join(", ") || "нет" }] : []),
+      { field: "Статус", before: statusOf("proposed").label, after: statusOf(statusCode(back)).label },
+    ],
+    undo: false,
+  };
+}
+
+/**
+ * Отклонённую задачу открывают снова (этап 54). Согласующий или режим управления открывают её сами, это и есть
+ * согласие. Остальные отправляют её на согласование ещё раз: согласующий по сегодняшней структуре
+ */
+async function reopenApproval(tx: Tx, actor: Actor, row: TaskRow): Promise<{ data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; pending: boolean }> {
+  if (actor.management || (row.approverId && row.approverId === actor.personId)) {
+    return { data: { approvalState: "APPROVED" }, changes: [{ action: "task.approval", field: "Согласование", before: "Не согласована", after: actor.management ? "Согласована: задачу открыл режим управления" : "Согласована: задачу открыл руководитель" }], pending: false };
+  }
+  const rule = await approvalRule(tx, ruleAuthor(row, actor), row.ownerId);
+  if (!rule || !row.ownerId) return { data: { approvalState: null, approverId: null }, changes: [], pending: false };
+  const pending = rule.mode === "approve";
+  const line = await startApproval(tx, actor, { id: row.id, number: row.number, ownerId: row.ownerId }, rule, rule.mode, false);
+  return { data: { approvalState: pending ? "PENDING" : "INFORMED", approverId: rule.approverId }, changes: [line], pending };
 }
 
 /** Чего ждёт задача, когда её блокируют (этап 21): другую задачу по номеру. Человека ждут через просьбу (requests) */
@@ -594,7 +684,7 @@ async function linkDependency(tx: Tx, actor: Actor, row: TaskRow, blockerNumber:
   if (blockerNumber === row.number) fail("Задача не может ждать сама себя");
   const blocker = await tx.task.findUnique({
     where: { number: blockerNumber },
-    select: { id: true, number: true, title: true, status: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } },
+    select: { id: true, number: true, title: true, status: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } },
   });
   const scope = await scopeOfActor(tx, actor);
   if (!blocker || blocker.archivedAt || !canSeeRow(scope, blocker, actor.personId)) fail(`Задачи ${blockerNumber} нет`);
@@ -647,7 +737,7 @@ export async function taskLinks(actor: Actor, number: number): Promise<{ waitsFo
   const scope = await scopeOfActor(prisma, actor);
   const row = await prisma.task.findUnique({ where: { number }, include: taskInclude });
   if (!row || !canSeeRow(scope, row, actor.personId)) return null;
-  const select = { id: true, number: true, title: true, due: true, status: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, owner: { select: { slug: true } }, coExecutors: { select: { personId: true } } } as const;
+  const select = { id: true, number: true, title: true, due: true, status: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, owner: { select: { slug: true } }, coExecutors: { select: { personId: true } } } as const;
   const [waits, blocks] = await Promise.all([
     prisma.taskDependency.findMany({ where: { taskId: row.id }, select: { blocker: { select } }, orderBy: { createdAt: "asc" } }),
     prisma.taskDependency.findMany({ where: { blockerId: row.id }, select: { task: { select } }, orderBy: { createdAt: "asc" } }),
@@ -763,8 +853,106 @@ export async function editTask(actor: Actor, number: number, input: EditInput): 
         changes.push({ field: "Подробнее об источнике", before: row.sourceNote, after: v });
       }
     }
+    // Согласующий (этап 54) решал по названию и результату: их правку он видит в «Мне»
+    const essential = changes.filter((c) => c.field === "Задача" || c.field === "Что нужно сделать").map((c) => c.field.toLowerCase());
+    if (essential.length && row.approverId && row.approverId !== actor.personId && (row.approvalState === "PENDING" || row.approvalState === "APPROVED")) {
+      await notify(tx, { kind: "APPROVAL", recipients: [row.approverId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу из другого департамента для вашего сотрудника поправили: ${essential.join(", ")}` });
+    }
     return { data, changes };
   });
+}
+
+/** Чья задача для правила согласования (этап 54): сохранённый автор, иначе тот, кто поставил, иначе тот, кто правит */
+const ruleAuthor = (row: Pick<TaskRow, "approvalAuthorId" | "createdById">, actor: Actor) => row.approvalAuthorId ?? row.createdById ?? actor.personId;
+
+/** Имя человека для текстов и журнала */
+async function fullNameOf(tx: Tx, id: string | null | undefined): Promise<string> {
+  if (!id) return "";
+  return (await tx.person.findUnique({ where: { id }, select: { fullName: true } }))?.fullName ?? "";
+}
+
+/**
+ * Согласование или информирование началось (этап 54): событие согласующему, он подписан на задачу и видит её правки.
+ * Имя сотрудника в тексте стоит отдельно: так его не нужно склонять. Возвращает строку журнала
+ */
+async function startApproval(tx: Tx, actor: Actor, task: { id: string; number: number; ownerId: string }, rule: ApprovalRule, mode: "approve" | "inform", transfer: boolean): Promise<Change> {
+  const owner = await fullNameOf(tx, task.ownerId);
+  await tx.taskWatch.createMany({ data: [{ taskId: task.id, personId: rule.approverId }], skipDuplicates: true });
+  await notify(tx, {
+    kind: "APPROVAL",
+    recipients: [rule.approverId],
+    actor,
+    subject: taskSubject(task.number),
+    taskId: task.id,
+    text:
+      mode === "approve"
+        ? `${transfer ? "Вашему сотруднику передают задачу из другого департамента" : "Задача из другого департамента для вашего сотрудника"}: ${owner}. Согласуйте или отклоните`
+        : `${transfer ? "Вашему сотруднику передали задачу из другого департамента" : "Задача из другого департамента для вашего сотрудника"}: ${owner}. Решать ничего не нужно, вы в курсе`,
+  });
+  return { action: "task.approval", field: mode === "approve" ? "Ждёт согласования руководителя" : "Руководитель проинформирован", after: await fullNameOf(tx, rule.approverId) };
+}
+
+/**
+ * Соисполнители из других департаментов (этап 54). Где задачи идут через согласование руководителя, соисполнителя без
+ * режима управления не добавить: его участие согласовать негде, ему ставят отдельную задачу. Где информирование,
+ * руководитель соисполнителя узнаёт о задаче в «Мне» (informCoApprovers)
+ */
+async function coExecutorRules(tx: Tx, actor: Actor, requester: string, ids: string[]): Promise<{ personId: string; rule: ApprovalRule }[]> {
+  const out: { personId: string; rule: ApprovalRule }[] = [];
+  for (const personId of ids) {
+    const rule = await approvalRule(tx, requester, personId, [actor.personId]);
+    if (!rule) continue;
+    if (rule.mode === "approve" && !actor.management) {
+      fail(`Соисполнитель ${await fullNameOf(tx, personId)}: в департаменте «${rule.department}» задачи идут через согласование руководителя. Поставьте отдельную задачу, её согласуют`);
+    }
+    out.push({ personId, rule });
+  }
+  return out;
+}
+
+/**
+ * Руководитель соисполнителя из другого департамента узнаёт о задаче. Задачу он может и не видеть (видимость даёт
+ * только ответственный), поэтому номер и название в самом тексте, а ссылки на задачу у события нет
+ */
+async function informCoApprovers(tx: Tx, actor: Actor, task: { id: string; number: number; title: string }, rules: { personId: string; rule: ApprovalRule }[]): Promise<void> {
+  for (const { personId, rule } of rules) {
+    await notify(tx, {
+      kind: "APPROVAL",
+      recipients: [rule.approverId],
+      actor,
+      subject: `approval-co:${task.id}:${personId}`,
+      text: `Ваш сотрудник стал соисполнителем задачи ${task.number} «${quote(task.title)}» из другого департамента: ${await fullNameOf(tx, personId)}`,
+    });
+  }
+}
+
+/**
+ * Новый ответственный из другого департамента (этап 54). Правило считается от автора задачи, а тот, кто передаёт, не
+ * требует согласования, если он руководитель нового ответственного по линии. Департамент с согласованием: задача снова
+ * ждёт согласования и помнит, у кого и в каком статусе была; отказ вернёт её туда. Режим управления или департамент с
+ * информированием: руководитель нового ответственного узнаёт о задаче. Возвращает поля задачи, строки журнала и
+ * признак ожидания согласования
+ */
+async function reassignApproval(tx: Tx, actor: Actor, row: TaskRow, ownerId: string | null): Promise<{ data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; pending: boolean }> {
+  const author = ruleAuthor(row, actor);
+  const rule = await approvalRule(tx, author, ownerId, [actor.personId]);
+  // Прежние события согласования по задаче разобраны: решение теперь про другого человека, даже если согласующий тот же
+  if (row.approverId) await closeApprovalEvents(tx, row.id, row.approverId);
+  const cleared = { approvalState: null, approverId: null, approvalFromId: null, approvalFromStatus: null, approvalFromAll: false };
+  // Передача ждала решения, а задачу передали снова без согласования: она в том статусе, в котором была до передачи
+  const transfer = row.approvalState === "PENDING" && row.approvalFromStatus ? row.approvalFromStatus : null;
+  const restore = transfer && transfer !== row.status ? { status: transfer } : {};
+  const restoreLine: Change[] = transfer && transfer !== row.status ? [{ field: "Статус", before: statusOf(statusCode(row.status)).label, after: statusOf(statusCode(transfer)).label }] : [];
+  if (!rule || !ownerId) return { data: row.approvalState ? { ...cleared, ...restore } : {}, changes: restoreLine, pending: false };
+  const pending = rule.mode === "approve" && !actor.management;
+  const line = await startApproval(tx, actor, { id: row.id, number: row.number, ownerId }, rule, pending ? "approve" : "inform", true);
+  if (!pending) return { data: { ...cleared, ...restore, approvalState: "INFORMED", approverId: rule.approverId, approvalAuthorId: author }, changes: [...restoreLine, line], pending: false };
+  // Передачу уже ждали: прежний ответственный остаётся тем, у кого задача была до первой передачи
+  const from = transfer
+    ? { approvalFromId: row.approvalFromId, approvalFromStatus: row.approvalFromStatus, approvalFromAll: row.approvalFromAll }
+    : { approvalFromId: row.ownerAll ? null : row.ownerId, approvalFromStatus: row.status, approvalFromAll: row.ownerAll };
+  const changes: Change[] = row.status !== "PROPOSED" ? [{ field: "Статус", before: statusOf(statusCode(row.status)).label, after: "Предложена: ждёт согласования руководителя нового ответственного" }, line] : [line];
+  return { data: { approvalState: "PENDING", approverId: rule.approverId, approvalAuthorId: author, status: "PROPOSED", ...from }, changes, pending: true };
 }
 
 export async function assignOwner(actor: Actor, number: number, owner: Owner): Promise<TaskResult> {
@@ -786,7 +974,8 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
       if (!scope.leadPeople.includes(ownerId)) fail("Передать задачу можно человеку из ваших команд. Другим её можно предложить новой задачей");
     }
     const changes: Change[] = [{ field: "Ответственный", before, after: owner === "all" ? "Все лидеры" : (names.get(owner) ?? owner) }];
-    await notify(tx, { kind: "TASK_ASSIGNED", recipients: [ownerId], actor, subject: taskSubject(number), taskId: row.id, text: "Задача передана вам" });
+    const approval = await reassignApproval(tx, actor, row, ownerId);
+    await notify(tx, { kind: "TASK_ASSIGNED", recipients: [ownerId], actor, subject: taskSubject(number), taskId: row.id, text: approval.pending ? "Вам передают задачу из другого департамента: она ждёт согласования вашего руководителя" : "Задача передана вам" });
     // Ответственный не бывает своим же соисполнителем: если он им был, это тоже правка и она в журнале
     if (ownerId && row.coExecutors.some((c) => c.person.slug === owner)) {
       await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id, personId: ownerId } });
@@ -794,7 +983,7 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
       const co = row.coExecutors.map((c) => c.person.slug);
       changes.push({ field: "Соисполнители", before: list(co), after: list(co.filter((x) => x !== owner)) });
     }
-    return { data: { ownerId, ownerAll: owner === "all" }, changes, undo: false };
+    return { data: { ownerId, ownerAll: owner === "all", ...approval.data }, changes: [...changes, ...approval.changes], undo: false };
   });
 }
 
@@ -831,12 +1020,20 @@ export async function handOver(actor: Actor, number: number, to: PersonSlug, com
     const coAfter = [...coBefore.filter((x) => x !== target!.slug), ...(row.owner && prevId && !coBefore.includes(row.owner.slug) ? [row.owner.slug] : [])];
     const list = (slugs: string[]) => slugs.map((x) => names.get(x) ?? x).join(", ") || "нет";
     if (list(coBefore) !== list(coAfter)) changes.push({ field: "Соисполнители", before: list(coBefore), after: list(coAfter) });
-    await notify(tx, { kind: "TASK_ASSIGNED", recipients: [target!.id], actor, subject: taskSubject(number), taskId: row.id, text: `Задача передана вам: ${quote(why)}` });
+    const approval = await reassignApproval(tx, actor, row, target!.id);
+    await notify(tx, {
+      kind: "TASK_ASSIGNED",
+      recipients: [target!.id],
+      actor,
+      subject: taskSubject(number),
+      taskId: row.id,
+      text: approval.pending ? `Вам передают задачу из другого департамента, она ждёт согласования вашего руководителя: ${quote(why)}` : `Задача передана вам: ${quote(why)}`,
+    });
     if (prevId && prevId !== actor.personId) {
       await notify(tx, { kind: "TASK_COEXECUTOR", recipients: [prevId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу передали: ${target!.fullName}. Вы соисполнитель` });
     }
-    await notifyWatchers(tx, row.id, `Задачу передали: ${target!.fullName}`, actor, [target!.id, prevId]);
-    return { data: { ownerId: target!.id, ownerAll: false }, changes, undo: false };
+    await notifyWatchers(tx, row.id, `Задачу передали: ${target!.fullName}${approval.pending ? ". Передача ждёт согласования руководителя" : ""}`, actor, [target!.id, prevId]);
+    return { data: { ownerId: target!.id, ownerAll: false, ...approval.data }, changes: [...changes, ...approval.changes], undo: false };
   });
 }
 
@@ -860,10 +1057,17 @@ export async function setCoExecutors(actor: Actor, number: number, slugs: Person
     const before = row.coExecutors.map((c) => names.get(c.person.slug) ?? c.person.slug).join(", ");
     const after = wanted.map((s) => names.get(s) ?? s).join(", ");
     if (before === after) fail("Соисполнители не изменились");
+    const added = ids.filter((id) => !row.coExecutors.some((c) => c.personId === id));
+    // Соисполнитель из другого департамента (этап 54): где согласование, только отдельной задачей; где информирование,
+    // руководитель узнаёт
+    const coRules = await coExecutorRules(tx, actor, ruleAuthor(row, actor), added);
+    // Снятым соисполнителям из других департаментов: событие их руководителю больше не нужно
+    const removed = row.coExecutors.filter((c) => !ids.includes(c.personId)).map((c) => `approval-co:${row.id}:${c.personId}`);
+    if (removed.length) await tx.inboxEvent.updateMany({ where: { subject: { in: removed }, doneAt: null }, data: { doneAt: new Date() } });
     await tx.taskCoExecutor.deleteMany({ where: { taskId: row.id } });
     if (ids.length) await tx.taskCoExecutor.createMany({ data: ids.map((personId) => ({ taskId: row.id, personId })) });
-    const added = ids.filter((id) => !row.coExecutors.some((c) => c.personId === id));
     await notify(tx, { kind: "TASK_COEXECUTOR", recipients: added, actor, subject: taskSubject(number), taskId: row.id, text: "Вы соисполнитель" });
+    await informCoApprovers(tx, actor, { id: row.id, number, title: row.title }, coRules);
     return { data: { updatedAt: new Date() }, changes: [{ field: "Соисполнители", before: before || "нет", after: after || "нет" }], undo: false };
   });
 }
@@ -941,7 +1145,8 @@ export async function addComment(actor: Actor, number: number, text: string): Pr
  * своих людей только смотрит: не комментирует и не ставит реакции
  */
 function canComment(scope: Scope, row: TaskRow, actor: Actor): void {
-  const participant = row.ownerId === actor.personId || row.createdById === actor.personId || row.coExecutors.some((c) => c.personId === actor.personId);
+  // Согласующий руководитель (этап 54) тоже участник: он решает по задаче и может спросить в комментарии
+  const participant = row.ownerId === actor.personId || row.createdById === actor.personId || row.approverId === actor.personId || row.coExecutors.some((c) => c.personId === actor.personId);
   // Руководитель ответственного комментирует задачу своего человека и в чужой команде, например, просьбу к нему (этап 16)
   const ownersLeader = !!row.ownerId && scope.leadPeople.includes(row.ownerId) && row.teamId !== TOP_TEAM;
   if (!scope.all && !scope.visible.includes(row.teamId) && !participant && !ownersLeader) fail("Функциональный руководитель видит задачу, но не комментирует её");
@@ -1081,6 +1286,8 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
       if (row.comments.length || row.transfers.length) fail("По задаче уже работают: создание не отменить, можно отменить задачу статусом");
       // Чужую правку отмена создания не стирает: если задачу уже поменяли, удалить её нельзя
       if (s.expectUpdatedAt && row.updatedAt.toISOString() !== s.expectUpdatedAt) fail("Задачу уже изменили после создания: отменить нельзя");
+      // События руководителям соисполнителей из других департаментов (этап 54) без ссылки на задачу: уходят вместе с ней
+      await tx.inboxEvent.deleteMany({ where: { subject: { startsWith: `approval-co:${row.id}:` } } });
       await tx.task.delete({ where: { id: row.id } });
       await audit(tx, actor, s.number, [{ action: "task.undo", field: "Создание отменено", before: row.title }]);
       return { task: null, number: s.number };
@@ -1293,6 +1500,8 @@ async function spawnRepeatIn(tx: Tx, row: TaskRow, actor: Actor, today: IsoDate 
       repeat: row.repeat,
       repeatMode: row.repeatMode,
       repeatOfId: row.id,
+      // Согласованная серия или серия, о которой руководитель знает (этап 54): следующие задачи он тоже видит
+      ...(row.approverId && (row.approvalState === "APPROVED" || row.approvalState === "INFORMED") ? { approvalState: row.approvalState, approverId: row.approverId } : {}),
       coExecutors: { create: row.coExecutors.map((c) => ({ personId: c.personId })) },
       checklist: { create: row.checklist.map((c, i) => ({ text: c.text, sortOrder: i })) },
     },
