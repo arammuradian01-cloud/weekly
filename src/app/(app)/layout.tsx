@@ -28,6 +28,7 @@ import { InboxCountProvider } from "@/components/inbox/inbox-count";
 import { TeamSwitcher } from "@/components/shell/team-switcher";
 import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
+import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const team = await currentTeam(subject);
   const reader = { personId: ctx.person.id, role: ctx.person.role, limited: subject.limited };
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const [tasks, registry, lagging, banner, owner, inbox, slugs] = await Promise.all([
+  const [tasks, registry, lagging, banner, owner, inbox, slugs, marketAccess] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER", reader, team: team.id && team.id !== ALL_TEAMS ? team.id : undefined }),
     loadRegistry(),
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
@@ -55,7 +56,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     primaryOwner(prisma),
     inboxCount(ctx.person.id, new Date(), subjectOf(ctx)),
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
+    loadMarketAccess(),
   ]);
+  // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел, и только при личном входе
+  const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via }, marketAccess) };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
 
   const profile = {
@@ -92,7 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             Перейти к содержимому
           </a>
           <SidebarBrand />
-          <SidebarNav management={profile.management} />
+          <SidebarNav management={profile.management} access={nav} />
           <div className="sv-sidebar__spacer" />
           <div className="sv-sidebar__profile">
             <ProfileMenu {...profile} tone="dark" />
@@ -140,10 +144,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
     </div>
 
-    <MobileNav management={profile.management} />
+    <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} />
+    <CommandPalette management={profile.management} market={nav.market} />
     <RequestDialogHost />
     <DeviceSync />
     </InboxCountProvider>

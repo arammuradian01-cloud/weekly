@@ -10,7 +10,12 @@ const nextConfig = {
   poweredByHeader: false,
   // next dev не дописывает в репозиторий свои AGENTS.md и CLAUDE.md
   agentRules: false,
-  experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
+  experimental: {
+    // Пакет рынка (этап 62) до 25 МБ идёт телом запроса в обработчик загрузки. С proxy Next по умолчанию держит
+    // только первые 10 МБ тела, остальное обрезает: предел поднят с запасом
+    proxyClientMaxBodySize: "26mb",
+    ...(allowedOrigins.length ? { serverActions: { allowedOrigins } } : {}),
+  },
   serverExternalPackages: ["pg", "pg-boss", "nodemailer"],
   // Прежние адреса страниц про людей (до этапа 41): постоянное перенаправление на страницу «Люди» до отрисовки,
   // параметры адреса (?team=) переносятся сами

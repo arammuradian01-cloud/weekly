@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, ClipboardCopy, Link2, ListPlus, Maximize2, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { Check, ChartLine, ChevronLeft, ChevronRight, ClipboardCopy, Link2, ListPlus, Maximize2, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName, personOf } from "@/domain/people";
 import { isClosed } from "@/domain/rules";
@@ -27,7 +27,7 @@ import {
   startMeetingAction,
 } from "@/app/(app)/meeting/actions";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 import { TextArea, TextInput } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
@@ -487,6 +487,23 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
         )}
         {item.note ? <p className={cn("mt-2 max-w-[70ch] text-ink", projector ? "text-headline" : "text-body")}>{item.note}</p> : null}
       </div>
+
+      {/* Разбор рынка (этап 62): раздел «Рынок» открыт отдельным людям, остальные видят только пункт. Рынок открывается
+          в новой вкладке: экран встречи остаётся за ведущим */}
+      {item.kind === "market" ? (
+        meeting.canOpenMarket ? (
+          <div>
+            <Link href="/market" target="_blank" rel="noopener" className={buttonClass("secondary", projector ? "md" : "sm")} data-testid="agenda-market-open">
+              <ChartLine className="h-4 w-4" aria-hidden="true" />
+              Открыть рынок
+            </Link>
+          </div>
+        ) : (
+          <p className="text-body text-muted" data-testid="agenda-market-closed">
+            Разбор рынка: открывают участники с доступом
+          </p>
+        )
+      ) : null}
 
       {/* У поручения действия ведущего над карточкой: «Обсуждено» и решение под рукой, а не под полями задачи */}
       {followUp ? leadActions : null}

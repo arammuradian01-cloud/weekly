@@ -10,6 +10,7 @@ import { absenceWeeks, upcomingAbsencesAll } from "@/lib/weekly/service";
 import { mailConfigured } from "@/lib/mail";
 import { approvalDepartments, loadApprovalSetting } from "@/lib/tasks/approval";
 import { numbersAccessView } from "@/lib/plan/access";
+import { marketSettingsView } from "@/lib/market/access";
 import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
 import { Figures } from "@/components/ui/data";
@@ -42,6 +43,8 @@ export default async function SettingsPage() {
   const approval = owner ? { setting: await loadApprovalSetting(), departments: await approvalDepartments() } : undefined;
   // Этап 57: кто видит цифры прогноза
   const numbersAccess = owner ? await numbersAccessView() : undefined;
+  // Этап 62: кто видит рынок КАСКО и ОСАГО и у каких команд разбор на встрече
+  const market = owner ? await marketSettingsView() : undefined;
   // Новости (этап 60): источники, ключевые слова и состояние забора, только владельцу
   const news = owner
     ? { sources: await listSources(), keywords: await loadKeywords(), directions: await newsDirections(), lastFetchAt: (await lastFetchAt())?.toISOString() ?? null, claude: claudeStatus() }
@@ -78,7 +81,7 @@ export default async function SettingsPage() {
           ) : null
         }
       />
-      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} news={news} />
+      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} market={market} news={news} />
     </>
   );
 }
