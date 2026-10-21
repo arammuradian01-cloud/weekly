@@ -7,7 +7,7 @@
 // экран только прячет кнопки и объясняет, почему их нет.
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Save, Send, Sparkles, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
@@ -182,7 +182,13 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
     ...(view.canSeeCeo ? [{ code: "ceo" as const, label: "Weekly для CEO" }] : []),
     { code: "tasks", label: "Задачи" },
   ];
-  const [tab, setTab] = useState<ParseTab>(tabs.some((t) => t.code === initialTab) ? initialTab : "summary");
+  // Вкладка из адреса на клиенте: после отправки или сохранения разбор обновляется и экран собирается заново, но
+  // остаётся на той вкладке, где был человек, а не прыгает на «Итоги»
+  const fromUrl = useSearchParams().get("tab");
+  const [tab, setTab] = useState<ParseTab>(() => {
+    const wanted = tabs.find((t) => t.code === fromUrl)?.code ?? initialTab;
+    return tabs.some((t) => t.code === wanted) ? wanted : "summary";
+  });
   const [ceo, setCeo] = useState<CeoSections>(view.result.ceo);
   const [tasks, setTasks] = useState<ParseTaskDraft[]>(view.result.tasks);
   const [decisions, setDecisions] = useState<ParseDecision[]>(view.result.decisions);
