@@ -14,6 +14,7 @@ import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { openCommandPalette } from "@/components/shell/command-palette";
 import { REPEAT_KINDS, type RepeatKindCode } from "@/lib/tasks/repeat";
+import { NewTaskGoal } from "@/components/tasks/new-task-goal";
 
 const OPEN_EVENT = "weekly:new-task";
 /** Задачу поставили по записи weekly: форма записи показывает её номер, человек остаётся на экране сдачи */
@@ -67,6 +68,10 @@ export function GlobalHotkeys() {
   const [weeklyEntryId, setWeeklyEntryId] = useState<string | undefined>(undefined);
   // Повтор (этап 25): «нет» или вид повтора, следующая создаётся при закрытии
   const [repeat, setRepeat] = useState<"" | RepeatKindCode>("");
+  // Цель (этап 55): подбирается по тексту, пока человек не выбрал сам. opened: новый подбор на каждое открытие
+  const [goal, setGoal] = useState("");
+  const [goalManual, setGoalManual] = useState(false);
+  const [opened, setOpened] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   // Обработчики видят свежие команду, режим управления и список команд, а подписка на окно ставится один раз
@@ -82,6 +87,9 @@ export function GlobalHotkeys() {
     setDue(addDays(data.today, 7));
     setRepeat("");
     setTaskTeam(defaultTeam());
+    setGoal("");
+    setGoalManual(false);
+    setOpened((n) => n + 1);
     setError(null);
     setOpen(true);
   });
@@ -134,6 +142,7 @@ export function GlobalHotkeys() {
       sourceNote: sourceNote.trim() || undefined,
       weeklyEntryId,
       team: taskTeam,
+      goal: goal || null,
       ...(repeat ? { repeat: { kind: repeat, mode: "on-close" as const } } : {}),
     });
     setBusy(false);
@@ -183,6 +192,24 @@ export function GlobalHotkeys() {
               className="sm:col-span-2"
             />
           ) : null}
+          <NewTaskGoal
+            key={opened}
+            team={taskTeam}
+            due={due}
+            title={title}
+            outcome={outcome}
+            owner={owner}
+            goal={goal}
+            manual={goalManual}
+            onAuto={(id) => {
+              setGoal(id);
+              setGoalManual(false);
+            }}
+            onPick={(id) => {
+              setGoal(id);
+              setGoalManual(true);
+            }}
+          />
           <SelectField label="Ответственный" id="nt-owner" value={owner} onChange={(e) => setOwner(e.target.value as Owner)} options={ownerOptions} />
           <SelectField label="Направление" id="nt-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={dictOptions("DIRECTION", direction)} />
           <SelectField label="Приоритет" id="nt-pr" value={priority} onChange={(e) => setPriority(e.target.value as PriorityCode)} options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />

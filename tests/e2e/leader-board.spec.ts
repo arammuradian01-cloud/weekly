@@ -71,9 +71,10 @@ test("цели Q4 из файла борда лидера, задача с ли�
   const number = task!.number as number;
   await page.goto(`/tasks/${number}`);
   await page.getByRole("button", { name: "Выбрать цель" }).click();
-  const select = page.getByLabel("Цель команды, команды выше или личная цель");
-  const option = select.locator("option", { hasText: "личная цель Рева Тарас: РТ-1. Подписка ОСАГО" });
-  await select.selectOption({ value: (await option.getAttribute("value"))! });
+  await page.getByRole("combobox", { name: "Цель команды, команды выше или личная цель" }).fill("РТ-1");
+  const option = page.getByRole("listbox", { name: "Цель команды, команды выше или личная цель" }).getByRole("option", { name: /РТ-1\. Подписка ОСАГО/ });
+  await expect(option).toContainText("личная цель Рева Тарас");
+  await option.click();
   await expect(page.getByText("Задача работает на цель: Подписка ОСАГО запущена и имеет P&L")).toBeVisible();
 
   // В списке задач метка цели, группировка «По цели»

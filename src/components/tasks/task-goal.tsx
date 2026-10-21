@@ -1,6 +1,7 @@
 "use client";
 
-// Цель задачи в карточке (этап 17): на какую цель команды или команды выше работает задача.
+// Цель задачи в карточке (этап 17): на какую цель команды или команды выше работает задача. С этапа 55 выбор с
+// поиском по названию и коду, подходящие по тексту задачи цели вверху списка.
 
 import Link from "next/link";
 import { useState } from "react";
@@ -8,11 +9,12 @@ import { Target } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { usePrototype } from "@/domain/store";
 import { goalOptionsAction, linkGoalAction } from "@/app/(app)/goals/actions";
-import { SelectField } from "@/components/ui/primitives";
+import type { GoalOption } from "@/lib/goals/service";
+import { SearchPicker } from "@/components/ui/search-picker";
 
 export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
   const { notify } = usePrototype();
-  const [options, setOptions] = useState<{ id: string; label: string }[] | null>(null);
+  const [options, setOptions] = useState<GoalOption[] | null>(null);
   const [busy, setBusy] = useState(false);
 
   const open = async () => {
@@ -21,6 +23,7 @@ export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
     setOptions(r.value);
   };
   const choose = async (goalId: string) => {
+    if (busy) return;
     setBusy(true);
     const r = await linkGoalAction(task.number, goalId || null);
     setBusy(false);
@@ -46,14 +49,33 @@ export function TaskGoal({ task, canLink }: { task: Task; canLink: boolean }) {
       ) : null}
       {options ? (
         options.length ? (
-          <SelectField
-            label="Цель команды, команды выше или личная цель"
-            id={`goal-${task.number}`}
-            value={task.goal?.id ?? ""}
-            disabled={busy}
-            onChange={(e) => void choose(e.target.value)}
-            options={[{ value: "", label: "Без цели" }, ...options.map((o) => ({ value: o.id, label: o.label }))]}
-          />
+          <div className="flex flex-col gap-2" data-testid="task-goal-picker">
+            {/* Кнопки над полем: открытый список целей не закрывает их */}
+            <div className="flex flex-wrap gap-4">
+              {task.goal ? (
+                <button type="button" disabled={busy} onClick={() => void choose("")} className="text-small font-medium text-blue-700 hover:underline">
+                  Отвязать от цели
+                </button>
+              ) : null}
+              <button type="button" onClick={() => setOptions(null)} className="text-small font-medium text-muted hover:underline">
+                Отмена
+              </button>
+            </div>
+            <SearchPicker
+              id={`task-goal-${task.number}`}
+              label="Цель команды, команды выше или личная цель"
+              options={options.map((o) => ({ value: o.id, label: o.title, hint: o.context, note: o.suggested ? "по тексту" : null }))}
+              value={task.goal?.id ?? ""}
+              // Пока человек печатает, поле сбрасывает выбор: цель меняется только выбором из списка, снимается кнопкой
+              onChange={(id) => {
+                if (id && id !== task.goal?.id) void choose(id);
+              }}
+              placeholder="Название или код цели"
+              emptyText="Такой цели нет: проверьте написание"
+              hint={options.some((o) => o.suggested) ? "Подходящие по тексту задачи цели вверху списка" : undefined}
+              autoFocus
+            />
+          </div>
         ) : (
           <p className="text-small text-muted">
             Целей у команды задачи и команд выше на этот квартал нет. Их заводят на странице{" "}

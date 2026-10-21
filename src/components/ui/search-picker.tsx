@@ -38,6 +38,7 @@ export function SearchPicker({
   limit = 20,
   emptyText = "Никого не нашли: проверьте написание",
   className,
+  autoFocus,
 }: {
   id: string;
   label: string;
@@ -50,14 +51,18 @@ export function SearchPicker({
   limit?: number;
   emptyText?: string;
   className?: string;
+  /** Поле получает фокус сразу и показывает список: открыли выбор кнопкой «Выбрать цель» */
+  autoFocus?: boolean;
 }) {
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
+  // Человек начал печатать: до этого список показывает все варианты, даже если в поле стоит выбранный (этап 55)
+  const [typed, setTyped] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const matched = useMemo(() => options.filter((o) => matchOption(o, query)), [options, query]);
+  const matched = useMemo(() => (typed ? options.filter((o) => matchOption(o, query)) : options), [options, query, typed]);
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
@@ -70,6 +75,7 @@ export function SearchPicker({
   const pick = (o: PickerOption) => {
     onChange(o.value);
     setQuery("");
+    setTyped(false);
     setOpen(false);
   };
 
@@ -92,15 +98,29 @@ export function SearchPicker({
         aria-describedby={hint ? `${id}-hint` : undefined}
         placeholder={placeholder}
         value={text}
-        onFocus={() => {
-          // Выбранное остаётся в поле: повторный фокус не стирает текст, по нему список сразу показывает выбор
-          if (selected) setQuery(selected.label);
+        autoFocus={autoFocus}
+        onFocus={(e) => {
+          // Выбранное остаётся в поле: повторный фокус не стирает текст. Список показывает все варианты, выбранный
+          // подсвечен: чтобы сменить выбор, не нужно сначала стирать поле. Текст выделен: первая буква заменяет его
+          if (selected) {
+            setQuery(selected.label);
+            const input = e.currentTarget;
+            requestAnimationFrame(() => {
+              if (document.activeElement === input) input.select();
+            });
+          }
+          setTyped(false);
           setOpen(true);
-          setActive(0);
+          const at = selected ? options.slice(0, limit).findIndex((o) => o.value === selected.value) : -1;
+          setActive(Math.max(at, 0));
         }}
-        onBlur={() => setOpen(false)}
+        onBlur={() => {
+          setOpen(false);
+          setTyped(false);
+        }}
         onChange={(e) => {
           setQuery(e.target.value);
+          setTyped(true);
           setOpen(true);
           setActive(0);
           if (value) onChange("");
@@ -121,6 +141,7 @@ export function SearchPicker({
             if (open) setOpen(false);
             else {
               setQuery("");
+              setTyped(false);
               if (value) onChange("");
             }
           }
