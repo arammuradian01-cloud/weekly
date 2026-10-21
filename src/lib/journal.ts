@@ -143,9 +143,12 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     if (entity === "settings") {
       if (id === "stand.banner") return "Плашка над страницами";
       if (id === "auth.teamLogin") return "Вход: общий логин team";
+      // Этап 62: доступ к рынку и разбор рынка на встрече
+      if (id === "market.access" || id === "market.meeting") return "Рынок КАСКО и ОСАГО";
       return "Ритм недели";
     }
     if (entity === "data") return "Задачи и weekly";
+    if (entity === "market") return "Рынок КАСКО и ОСАГО: пакет рынка";
     if (entity === "export") return "Выгрузка в Excel";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";
