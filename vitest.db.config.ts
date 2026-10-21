@@ -24,6 +24,8 @@ export default defineConfig({
       DATABASE_URL: TEST_DATABASE_URL,
       SESSION_SECRET: "db-test-secret-0123456789-0123456789-abcdef",
       BORD_IMPORT: "off",
+      // Этап 60: общий цикл писем забирает ленты новостей; в тестах они из фикстур, без сети
+      NEWS_FAKE: "1",
     },
   },
 });

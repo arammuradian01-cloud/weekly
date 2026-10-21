@@ -11,7 +11,8 @@ import { clampSummary, SUMMARY_LIMIT } from "./match";
 
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
 const API_URL = "https://api.anthropic.com/v1/messages";
-const TIMEOUT_MS = 60_000;
+/** Ответ модели ждём не дольше 45 секунд: проход новостей идёт в общем цикле писем под арендой на 5 минут */
+const TIMEOUT_MS = 45_000;
 /** Сколько новостей уходит в один запрос и сколько знаков анонса берём для каждой */
 export const BATCH = 12;
 const DESCRIPTION_CHARS = 1200;
