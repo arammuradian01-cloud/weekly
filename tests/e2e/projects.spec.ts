@@ -151,12 +151,26 @@ test("руководитель собирает weekly-проект из гот�
   await empty.getByRole("button", { name: "Создать проект" }).click();
   await expect(reva.getByText("Проект «Кросс-продажи» создан").first()).toBeVisible();
   await expect(reva.getByRole("heading", { name: "Кросс-продажи", level: 3 })).toBeVisible();
+
+  // Ожидающий запрос отменяет тот, кто просил; проект переименовывают из меню карточки
+  await card.getByRole("button", { name: "Отменить запрос: Котов Игорь" }).click();
+  await expect(reva.getByText("Запрос отменён: Котов Игорь").first()).toBeVisible();
+  await expect(card).toContainText("0 участников, ждут согласия 2");
+  await card.getByRole("button", { name: `Проект «${name}»: действия` }).click();
+  await reva.getByRole("menuitem", { name: "Переименовать" }).click();
+  const rename = reva.getByRole("dialog", { name: "Название проекта" });
+  await rename.getByLabel("Название проекта").fill("Money и страхование");
+  await rename.getByRole("button", { name: "Сохранить" }).click();
+  await expect(reva.getByText("Проект переименован").first()).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Money и страхование", level: 3 })).toBeVisible();
 });
 
 test("сотрудник Money: цифры прогноза закрыты, проектов не собирает, под логотипом нет департамента", async ({ page, browser }) => {
   test.setTimeout(120_000);
   await loadCompany(page);
   const kotov = await personal(browser, page, "Котов");
+  // Сначала страница отрисовалась, потом проверяем, что подписи департамента нет
+  await expect(kotov.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(kotov.getByText("Страхование и инвестиции")).toHaveCount(0);
   await kotov.goto("/forecast");
   await expect(kotov.getByTestId("forecast-closed")).toContainText("Прогноз по вашему направлению появится позже");
@@ -171,8 +185,42 @@ test("сотрудник Money: цифры прогноза закрыты, пр
   await expect(kotov.getByText("Собирать weekly-проекты могут руководители, войдя лично.")).toBeVisible();
   await expect(kotov.getByTestId("project-new")).toHaveCount(0);
 
-  // Сотрудник страхования с ролью сотрудника цифры видит
+  // Сотрудник страхования с ролью сотрудника видит все цифры
   const tokov = await personal(browser, page, "Токов");
   await tokov.goto("/forecast");
+  await expect(tokov.getByTestId("tab-month")).toBeVisible();
   await expect(tokov.getByTestId("forecast-closed")).toHaveCount(0);
+
+  // Руководитель департамента Money: топ-менеджмент видит основные цифры, без вкладок с драйверами
+  const ershov = await personal(browser, page, "Ершов");
+  await ershov.goto("/forecast");
+  await expect(ershov.getByTestId("forecast-summary")).toBeVisible();
+  await expect(ershov.getByTestId("tab-month")).toHaveCount(0);
+  await shot(ershov, "forecast-summary");
+});
+
+test("владелец настраивает доступ к цифрам; схема раскладывает подчинённых по подразделениям", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loadCompany(page);
+  await page.goto("/settings#numbers-access");
+  const section = page.getByTestId("numbers-access-section");
+  await expect(section).toBeVisible();
+  await expect(section.getByTestId("numbers-access-counts")).toContainText("Сейчас все цифры видят");
+  const full = section.getByRole("group", { name: "Все цифры" });
+  await expect(full.getByRole("checkbox", { name: INS })).toBeChecked();
+  await full.getByRole("checkbox", { name: "Департамент Money" }).check();
+  await section.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("Доступ к цифрам сохранён").first()).toBeVisible();
+  const [row] = await sql("SELECT value FROM settings WHERE key = 'numbers.access'");
+  expect((row!.value as { full: { units: string[] } }).full.units).toContain(await unitId("Департамент Money"));
+  await shot(page, "numbers-access");
+
+  // Схема: у руководителя департамента подчинённые разложены по управлениям с руководителем управления
+  await page.goto(`/people/structure?person=${await slugOf("Ершов")}`);
+  const tree = page.getByTestId("people-tree");
+  await expect(tree.getByTestId("person-focus")).toContainText("Ершов Пётр");
+  const credit = tree.getByTestId(`tree-unit-${await unitId("Управление кредитных продуктов")}`);
+  await expect(credit).toContainText("Руководитель: Лисина Анна");
+  await expect(credit.getByTestId(`person-${await slugOf("Лисина")}`)).toBeVisible();
+  await shot(page, "tree-units");
 });

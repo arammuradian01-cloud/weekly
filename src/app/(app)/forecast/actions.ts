@@ -9,14 +9,9 @@ import * as plan from "@/lib/plan/service";
 import * as processes from "@/lib/plan/processes";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import type { WeekKey } from "@/domain/types";
-import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import { NUMBERS_CLOSED_TEXT, canSeeNumbers } from "@/lib/plan/access";
-
-/** Цифры прогноза пока только у департамента страхования и инвестиций и топ-команды (этап 57) */
-async function numbers<T>(a: Actor, fn: () => Promise<T> | T): Promise<T> {
-  if (!(await canSeeNumbers(a))) throw new TaskRuleError(NUMBERS_CLOSED_TEXT);
-  return fn();
-}
+import { TaskRuleError } from "@/lib/tasks/service";
+// Этап 57: все действия прогноза только у тех, кому открыты все цифры (настройка «Доступ к цифрам»)
+import { withNumbers as numbers } from "@/lib/plan/access";
 
 function weekOf(key: unknown): WeekKey {
   if (!isWeekKey(key)) throw new TaskRuleError("Неверная неделя");

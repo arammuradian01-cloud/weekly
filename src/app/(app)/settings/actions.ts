@@ -4,6 +4,7 @@
 // люди и роли только для владельца.
 
 import { saveApprovalSetting } from "@/lib/tasks/approval-settings";
+import { saveNumbersAccess, type NumbersAccessView } from "@/lib/plan/access";
 import type { ApprovalMode } from "@/lib/tasks/approval";
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
@@ -114,4 +115,9 @@ export async function removeAbsenceForAction(slug: string, week: string) {
 /** Согласование задач в другие департаменты (этап 54) */
 export async function saveApprovalAction(input: { default: string; departments: Record<string, string> }) {
   return done(await runAction("Согласование задач", (a) => saveApprovalSetting(a, { default: input?.default as ApprovalMode, departments: (input?.departments ?? {}) as Record<string, ApprovalMode> })));
+}
+
+/** Доступ к цифрам прогноза (этап 57): владелец в режиме управления */
+export async function saveNumbersAccessAction(input: { full: { units: string[]; people: string[] }; summary: { topManagement: boolean; units: string[]; people: string[] } }): Promise<Result<NumbersAccessView>> {
+  return done(await runAction("Доступ к цифрам", (a) => saveNumbersAccess(a, input)));
 }

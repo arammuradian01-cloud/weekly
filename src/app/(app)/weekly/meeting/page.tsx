@@ -11,7 +11,7 @@ import { meetingQuestions } from "@/lib/discuss/service";
 import { stuckForMeeting } from "@/lib/requests/service";
 import { canLeadTeam, getMeeting } from "@/lib/meeting/service";
 import { weekNumbers } from "@/lib/numbers/service";
-import { canSeeNumbers } from "@/lib/plan/access";
+import { numbersLevel } from "@/lib/plan/access";
 import { WeekNumbersBlock } from "@/components/forecast/week-numbers";
 import { planAsOfWeek, planForTeam, planMonthOfWeek } from "@/lib/plan/processes";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
@@ -28,8 +28,8 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
   // Встреча 2.0 (этап 23): у одной команды свой объект встречи с повесткой и решениями. «Все команды» показывают
   // ленту недели по-старому: встреча идёт в каждой команде отдельно
   const single = team.id && team.id !== ALL_TEAMS ? { id: team.id, name: team.name } : null;
-  // Этап 57: цифры недели и прогноз в шапке встречи только у тех, кто видит цифры
-  const numbersOpen = await canSeeNumbers(actor);
+  // Этап 57: цифры недели и итог прогноза в шапке встречи это основные цифры: их видят те, кому открыт хотя бы этот уровень
+  const numbersOpen = (await numbersLevel(actor)) !== "none";
   const [meeting, canLead, numbers, plan] = single
     ? await Promise.all([
         getMeeting(actor, single.id, view.week.key),

@@ -5,7 +5,7 @@
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
 import * as projects from "@/lib/org/projects";
-import { removeTeamMember } from "@/lib/org/service";
+import { cancelJoinRequest, removeTeamMember } from "@/lib/org/service";
 
 const done = <T,>(r: Result<T>): Result<T> => {
   if (r.ok) revalidatePath("/", "layout");
@@ -21,13 +21,7 @@ async function slugsOf(who: Who | null | undefined): Promise<string[]> {
 }
 
 export async function createProjectAction(name: string, who?: Who | null): Promise<Result<{ id: string; name: string; result: projects.AddPeopleResult | null }>> {
-  return done(
-    await runAction("Новый weekly-проект", async (a) => {
-      const team = await projects.createProject(a, { name: String(name ?? "") });
-      const slugs = await slugsOf(who);
-      return { ...team, result: slugs.length ? await projects.addProjectPeople(a, team.id, slugs) : null };
-    }),
-  );
+  return done(await runAction("Новый weekly-проект", async (a) => projects.createProjectWith(a, String(name ?? ""), await slugsOf(who))));
 }
 
 export async function addToProjectAction(teamId: string, who: Who): Promise<Result<projects.AddPeopleResult>> {
@@ -36,4 +30,16 @@ export async function addToProjectAction(teamId: string, who: Who): Promise<Resu
 
 export async function removeFromProjectAction(teamId: string, slug: string): Promise<Result<void>> {
   return done(await runAction("Участник проекта", (a) => removeTeamMember(a, String(teamId), String(slug))));
+}
+
+export async function cancelProjectRequestAction(requestId: string): Promise<Result<void>> {
+  return done(await runAction("Запрос в проект", (a) => cancelJoinRequest(a, String(requestId))));
+}
+
+export async function renameProjectAction(teamId: string, name: string): Promise<Result<{ id: string; name: string }>> {
+  return done(await runAction("Название проекта", (a) => projects.renameProject(a, String(teamId), String(name ?? ""))));
+}
+
+export async function closeProjectAction(teamId: string): Promise<Result<void>> {
+  return done(await runAction("Закрыть проект", (a) => projects.closeProject(a, String(teamId))));
 }
