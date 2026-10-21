@@ -775,6 +775,8 @@ export async function decideJoinRequest(actor: Actor, id: string, approve: boole
     const subject = `team:${r.teamId}:${r.personId}`;
     if (approve) {
       if (!r.person.active) fail(`${r.person.fullName} выключен`);
+      // Этап 57: проект закрыли, пока запрос ждал
+      if (!r.team.active) fail(`Команда «${r.team.name}» закрыта`);
       await tx.teamMember.createMany({ data: [{ teamId: r.teamId, personId: r.personId, addedById: r.requestedById, external: true }], skipDuplicates: true });
       await audit(tx, actor, "team.member.add", "team", r.teamId, `Участник добавлен: ${r.team.name}`, null, `${r.person.fullName} (из другой ветки, согласовал ${actor.fullName})`);
       await teamEvent(tx, actor, r.personId, subject, `Вы в команде «${r.team.name}», руководитель ${r.team.leader?.fullName ?? "не назначен"}`, now);
@@ -788,6 +790,7 @@ export async function decideJoinRequest(actor: Actor, id: string, approve: boole
 
 /** Запрос отменяет тот, кто просил, руководитель команды или владелец */
 export async function cancelJoinRequest(actor: Actor, id: string, now = new Date()): Promise<void> {
+  if (teamLogin(actor)) fail("Запрос отменяют, войдя лично");
   await prisma.$transaction(async (tx) => {
     const r = await tx.teamJoinRequest.findUnique({ where: { id }, include: { team: true, person: { select: { fullName: true } } } });
     if (!r || r.status !== "PENDING") return fail("Запроса уже нет: его решили или отменили");

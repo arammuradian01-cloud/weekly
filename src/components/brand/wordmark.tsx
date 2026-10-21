@@ -25,7 +25,8 @@ export function Sign({ className }: { className?: string }) {
   return <img src="/logo/sravni_sign.svg" alt="Сравни" className={cn("h-[26px] w-auto shrink-0", className)} />;
 }
 
-/** Логоблок бокового меню по дизайн-системе: логотип, черта, «Weekly» и подпись департамента */
+/** Логоблок бокового меню по дизайн-системе: логотип, черта и «Weekly». С этапа 57 приложение для всей компании:
+ * подписи департамента под логотипом нет (решение Арама 21.10) */
 export function SidebarBrand() {
   return (
     <div className="sv-sidebar__brand">
@@ -35,7 +36,6 @@ export function SidebarBrand() {
       </span>
       <span className="sv-sidebar__divider" />
       <div className="sv-sidebar__title">Weekly</div>
-      <div className="sv-sidebar__sub">Страхование и инвестиции</div>
     </div>
   );
 }
@@ -54,7 +54,7 @@ export function Wordmark({ tone = "dark", compact = false }: { tone?: "dark" | "
     <div className="flex flex-col gap-1.5">
       <Logo onDark={onDark} className="h-6 self-start" />
       <div className={cn("text-caption", onDark ? "text-sidebar-muted" : "text-muted")}>
-        <span className={cn("font-heading text-small font-bold", onDark ? "text-sidebar-text" : "text-ink")}>Weekly</span> · Страхование и инвестиции
+        <span className={cn("font-heading text-small font-bold", onDark ? "text-sidebar-text" : "text-ink")}>Weekly</span>
       </div>
     </div>
   );

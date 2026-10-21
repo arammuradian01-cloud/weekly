@@ -152,6 +152,7 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/initiatives", "Инициативы", Target, "крупные инициативы шкала готовности ищем делаем проекты"],
       ["/people", "Люди, вкладка «Команда»", Users, "команда люди состав"],
       ["/people/structure", "Люди, вкладка «Структура»", Users, "структура дерево подчинённых подразделения команды"],
+      ["/people/projects", "Люди, вкладка «Weekly-проекты»", Users, "проекты weekly-проект готовые команды money партнёрка собрать команду перетащить"],
     ];
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
     if (management) {

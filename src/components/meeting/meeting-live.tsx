@@ -52,8 +52,9 @@ export function MeetingLive({ view, meeting: initial, canLead, team, numbers }: 
   const projector = params.get("screen") === "projector";
   const { notify, me } = usePrototype();
   const [meeting, setMeeting] = useState<MeetingView | null>(initial);
-  // Свежая версия с сервера после живого обновления
-  useEffect(() => setMeeting(initial), [initial]);
+  // Свежая версия с сервера после живого обновления. Обновление страницы, которое сервер собрал до последнего перехода
+  // ведущего, приходит позже ответа на переход: старую версию не берём, иначе экран откатывается на прежний пункт
+  useEffect(() => setMeeting((cur) => (cur && initial && cur.id === initial.id && cur.version && initial.version && initial.version < cur.version ? cur : initial)), [initial]);
   const [busy, setBusy] = useState(false);
 
   const run = async (fn: () => Promise<{ ok: true; value: MeetingView } | { ok: false; error: string }>, done?: string) => {
@@ -151,9 +152,21 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
   }, []);
   const elapsed = Math.floor((now - since) / 1000);
 
+  // Ведущий нажал следующий пункт, пока предыдущий переход ещё сохраняется (медленная сеть): нажатие не теряется,
+  // переход уходит, как только освободится
+  const queued = useRef<string | null>(null);
   const go = (next: string) => {
-    if (leading) void run(() => goToItemAction(meeting.id, next === DECISIONS ? DECISIONS : next));
-    else {
+    if (leading) {
+      if (busy) {
+        queued.current = next;
+        return;
+      }
+      void run(() => goToItemAction(meeting.id, next === DECISIONS ? DECISIONS : next)).then(() => {
+        const later = queued.current;
+        queued.current = null;
+        if (later && later !== next) go(later);
+      });
+    } else {
       setFollowing(false);
       setLocal(next);
     }

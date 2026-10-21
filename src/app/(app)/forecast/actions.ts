@@ -10,6 +10,8 @@ import * as processes from "@/lib/plan/processes";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import type { WeekKey } from "@/domain/types";
 import { TaskRuleError } from "@/lib/tasks/service";
+// Этап 57: все действия прогноза только у тех, кому открыты все цифры (настройка «Доступ к цифрам»)
+import { withNumbers as numbers } from "@/lib/plan/access";
 
 function weekOf(key: unknown): WeekKey {
   if (!isWeekKey(key)) throw new TaskRuleError("Неверная неделя");
@@ -17,61 +19,61 @@ function weekOf(key: unknown): WeekKey {
 }
 
 export async function saveForecastAction(key: string, lines: svc.ForecastLineInput[]): Promise<Result<svc.MyForecast>> {
-  const r = await runAction("Прогноз месяца", (a) => svc.saveForecast(a, weekOf(key), lines));
+  const r = await runAction("Прогноз месяца", (a) => numbers(a, () => svc.saveForecast(a, weekOf(key), lines)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function myForecastAction(key: string): Promise<Result<svc.MyForecast>> {
-  return runAction("Прогноз месяца", (a) => svc.myForecast(a, weekOf(key)));
+  return runAction("Прогноз месяца", (a) => numbers(a, () => svc.myForecast(a, weekOf(key))));
 }
 
 // Прогноз месяца по драйверам (этап 32): права, границы значений и обоснование проверяет сервис
 
 export async function adjustPlanAction(input: plan.AdjustInput): Promise<Result<plan.MonthPlanView>> {
-  const r = await runAction("Корректировка прогноза", (a) => plan.adjust(a, input));
+  const r = await runAction("Корректировка прогноза", (a) => numbers(a, () => plan.adjust(a, input)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function previewPullAction(month: string): Promise<Result<plan.PullPreview>> {
-  return runAction("Проверка LRF", (a) => plan.previewPull(a, month));
+  return runAction("Проверка LRF", (a) => numbers(a, () => plan.previewPull(a, month)));
 }
 
 export async function applyPullAction(month: string): Promise<Result<{ month: string; lines: number }>> {
-  const r = await runAction("Загрузка версий из LRF", (a) => plan.applyPull(a, month));
+  const r = await runAction("Загрузка версий из LRF", (a) => numbers(a, () => plan.applyPull(a, month)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function setPlanOwnersAction(product: string, slugs: string[]): Promise<Result<{ slug: string; name: string }[]>> {
-  const r = await runAction("Команда продукта", (a) => plan.setOwners(a, product, slugs));
+  const r = await runAction("Команда продукта", (a) => numbers(a, () => plan.setOwners(a, product, slugs)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function planPeopleAction(): Promise<Result<{ slug: string; name: string }[]>> {
-  return runAction("Люди", (a) => plan.planPeople(a));
+  return runAction("Люди", (a) => numbers(a, () => plan.planPeople(a)));
 }
 
 export async function setPlanSourceAction(input: string): Promise<Result<string>> {
-  return runAction("Источник прогноза", (a) => plan.setPlanSource(a, input));
+  return runAction("Источник прогноза", (a) => numbers(a, () => plan.setPlanSource(a, input)));
 }
 
 // Прогноз в процессах (этап 35): отметка «Прогноз проверен» и факт по дням
 
 export async function checkPlanAction(month: string, product: string): Promise<Result<plan.MonthPlanView>> {
-  const r = await runAction("Прогноз проверен", (a) => processes.checkPlan(a, month, product));
+  const r = await runAction("Прогноз проверен", (a) => numbers(a, () => processes.checkPlan(a, month, product)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
 
 export async function previewFactsAction(text: string): Promise<Result<processes.FactsPreview>> {
-  return runAction("Проверка факта", (a) => processes.previewFacts(a, String(text ?? "")));
+  return runAction("Проверка факта", (a) => numbers(a, () => processes.previewFacts(a, String(text ?? ""))));
 }
 
 export async function applyFactsAction(text: string): Promise<Result<{ saved: number; replaced: number }>> {
-  const r = await runAction("Загрузка факта", (a) => processes.applyFacts(a, String(text ?? "")));
+  const r = await runAction("Загрузка факта", (a) => numbers(a, () => processes.applyFacts(a, String(text ?? ""))));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }
@@ -79,7 +81,7 @@ export async function applyFactsAction(text: string): Promise<Result<{ saved: nu
 // Партнёрский канал (этап 35б): корректировка драйвера партнёра командой канала
 
 export async function adjustPartnerAction(input: plan.PartnerAdjustInput): Promise<Result<plan.MonthPlanView>> {
-  const r = await runAction("Корректировка партнёра", (a) => processes.adjustPartner(a, input));
+  const r = await runAction("Корректировка партнёра", (a) => numbers(a, () => processes.adjustPartner(a, input)));
   if (r.ok) revalidatePath("/forecast");
   return r;
 }

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { currentActor } from "@/lib/action-runner";
 import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
-import { getWeekView } from "@/lib/weekly/service";
+import { currentReportingKey, getWeekView } from "@/lib/weekly/service";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import { weekNumbers } from "@/lib/numbers/service";
 import { forecastHistory, forecastSummary, myForecast } from "@/lib/forecast/service";
@@ -16,7 +16,9 @@ import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/we
 import { MonthPlan } from "@/components/plan/month-plan";
 import { PlanCompare } from "@/components/plan/plan-compare";
 import { Module } from "@/components/ui/data";
-import { compareVersions } from "@/lib/plan/processes";
+import { compareVersions, planBrief, planMonthOfWeek } from "@/lib/plan/processes";
+import { PlanBriefBlock } from "@/components/plan/plan-brief";
+import { NUMBERS_CLOSED_TEXT, NUMBERS_SUMMARY_TEXT, numbersLevel, summaryBrief } from "@/lib/plan/access";
 
 export const metadata: Metadata = { title: "Прогноз" };
 
@@ -49,6 +51,34 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
     />
   );
   const actor = await currentActor();
+  // Этап 57: раздел видят все. Все цифры у тех, кому их открывает настройка «Доступ к цифрам», основные цифры у
+  // топ-менеджмента, остальным прогноз их направления появится позже
+  const level = await numbersLevel(actor);
+  if (level === "none") {
+    return (
+      <>
+        <PageHeader title="Прогноз" description="Прогноз месяца и цифры недели по продуктам" />
+        <div data-testid="forecast-closed">
+          <Module title="Прогноз по вашему направлению появится позже" description={NUMBERS_CLOSED_TEXT} />
+        </div>
+      </>
+    );
+  }
+  if (level === "summary") {
+    // Месяц и неделя как у встречи: месяц отчётной недели, цифры этой недели
+    const key = await currentReportingKey();
+    const [full, numbers] = await Promise.all([planBrief(actor, planMonthOfWeek(key)), weekNumbers(key)]);
+    const brief = summaryBrief(full);
+    return (
+      <>
+        <PageHeader title="Прогноз" description={NUMBERS_SUMMARY_TEXT} />
+        <div className="flex flex-col gap-6" data-testid="forecast-summary">
+          {brief ? <PlanBriefBlock brief={brief} /> : <Module title="Прогноз месяца ещё не начат" description="Итог месяца появится после загрузки бюджета и LBE из LRF." />}
+          {numbers.figures.length ? <WeekNumbersBlock numbers={numbers} /> : null}
+        </div>
+      </>
+    );
+  }
 
   if (compareTab) {
     const compare = await compareVersions(month, one(params.a), one(params.b));

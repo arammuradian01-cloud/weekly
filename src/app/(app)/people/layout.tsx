@@ -18,12 +18,13 @@ export default async function PeopleLayout({ children }: { children: React.React
   // команды» раньше). Аналитика только при личном входе: под общим логином она пустая
   const panel = team.scope.leads.length > 0 || ctx.person.role === "OWNER" || ctx.person.role === "ADMIN";
   const analytics = panel && !subject.limited;
+  // Weekly-проекты (этап 57): руководителям, в том числе руководителям подразделений из загруженной структуры
   return (
     <PersonCardProvider tree={tree} me={ctx.person.slug}>
       <PageHeader
         title="Люди"
-        description={panel ? "Кто с кем работает и что у людей в работе: команда за неделю, панель руководителя, структура и аналитика" : "Кто с кем работает: команда за неделю и структура департамента"}
-        tabs={<PeopleTabs panel={panel} analytics={analytics} />}
+        description={panel ? "Кто с кем работает и что у людей в работе: команда за неделю, панель руководителя, структура, weekly-проекты и аналитика" : "Кто с кем работает: команда за неделю и структура компании"}
+        tabs={<PeopleTabs panel={panel} analytics={analytics} projects={panel || ctx.person.role === "LEADER"} />}
       />
       {children}
     </PersonCardProvider>

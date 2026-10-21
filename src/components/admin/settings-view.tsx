@@ -1,6 +1,8 @@
 "use client";
 
 import { ApprovalSection } from "./approval-section";
+import { NumbersAccessSection } from "./numbers-access-section";
+import type { NumbersAccessView } from "@/lib/plan/access";
 import type { ApprovalSetting } from "@/lib/tasks/approval-modes";
 import { csvCell } from "@/lib/csv";
 import { useId, useState } from "react";
@@ -104,6 +106,7 @@ export function SettingsView({
   absences,
   weeks,
   approval,
+  numbersAccess,
 }: {
   owner: boolean;
   me: string;
@@ -122,6 +125,8 @@ export function SettingsView({
   weeks: { value: string; label: string }[];
   /** Согласование задач в другие департаменты (этап 54): только владельцу */
   approval?: { setting: ApprovalSetting; departments: { id: string; name: string }[] };
+  /** Доступ к цифрам прогноза (этап 57): только владельцу */
+  numbersAccess?: NumbersAccessView;
 }) {
   // Оглавление (этап 48): только те разделы, которые человек видит
   const toc: TocItem[] = [
@@ -132,6 +137,7 @@ export function SettingsView({
           { id: "people", label: "Люди и роли" },
           { id: "login", label: "Вход и пароли" },
           ...(approval ? [{ id: "approval", label: "Согласование задач" }] : []),
+          ...(numbersAccess ? [{ id: "numbers-access", label: "Доступ к цифрам" }] : []),
           { id: "stand", label: banner === "test" ? "Стенд и данные" : "Плашка и данные" },
         ]
       : []),
@@ -172,6 +178,8 @@ export function SettingsView({
           <PeopleSection people={people} me={me} absences={absences} weeks={weeks} />
 
           {approval ? <ApprovalSection setting={approval.setting} departments={approval.departments} /> : null}
+
+          {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
 
           <Group id="login">
             <LoginSection login={login} />

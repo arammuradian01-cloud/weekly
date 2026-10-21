@@ -30,6 +30,7 @@ import {
   updateUnitAction,
 } from "@/app/(app)/people/structure/actions";
 import { StructureImport } from "./structure-import";
+import { unitTitle } from "@/lib/org/tree-groups";
 import { PeopleTreeView } from "./people-tree";
 import type { PeopleTree } from "@/lib/org/people-tree";
 import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
@@ -199,7 +200,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                 <div className="min-w-0 flex-1">
                   <p className="text-body text-ink">
                     {/* Вид подразделения не повторяется, если название с него начинается: «Департамент Департамент страхования» */}
-                    {u.name.toLowerCase().startsWith(`${u.kindLabel.toLowerCase()} `) ? null : <span className="text-small text-muted">{u.kindLabel} </span>}
+                    {unitTitle({ name: u.name, kind: u.kind }).kind ? <span className="text-small text-muted">{u.kindLabel} </span> : null}
                     <span className="font-semibold">{u.name}</span>
                     {!u.active ? <span className="ml-2 text-caption text-muted">выключено</span> : null}
                   </p>

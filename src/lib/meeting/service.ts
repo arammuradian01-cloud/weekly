@@ -195,6 +195,7 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
     decisions: row.decisions.map(decisionDto),
     participants: people.map((p) => p.slug as PersonSlug),
     canLead: canLead(a),
+    version: row.updatedAt.toISOString(),
   };
 }
 
