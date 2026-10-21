@@ -292,6 +292,15 @@ export function sourceDue(s: { lastFetchAt: Date | null; failCount: number }, no
   return now.getTime() - s.lastFetchAt.getTime() >= retryIntervalMs(s.failCount) - 5 * 60_000;
 }
 
+/** Сайт ленты для очереди забора: www. не считается, адрес с ошибкой сам по себе */
+export function hostKey(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 /** Скачанная лента или ошибка сети: скачивание идёт параллельно, сохранение по порядку списка источников */
 type Download = { ok: true; response: FeedResponse } | { ok: false; error: unknown };
 
@@ -374,9 +383,10 @@ async function storeSource(source: SourceRow, got: Download, keywords: Record<st
 }
 
 /**
- * Проход забора: включённые ленты, дольше всех не забиравшиеся первыми, скачиваются до FETCH_PARALLEL одновременно
- * (по одному запросу на сайт). Сохраняются строго по порядку списка источников: перепечатку (тот же адрес статьи)
- * получает источник выше в списке, обычно первоисточник, и результат не зависит от того, какой сайт ответил быстрее.
+ * Проход забора: включённые ленты, дольше всех не забиравшиеся первыми, скачиваются до FETCH_PARALLEL сайтов
+ * одновременно; ленты одного сайта идут друг за другом. Сохраняются строго по порядку списка источников: перепечатку
+ * (тот же адрес статьи) в пределах прохода получает источник выше в списке, обычно первоисточник, кто бы ни ответил
+ * быстрее. Статья, сохранённая в прошлых проходах, остаётся у своего источника.
  * Общий срок budgetMs: что не успели, заберём в следующий час. force (вручную из настроек): и источники с ошибками,
  * не дожидаясь их интервала. parallel только для тестов
  */
@@ -394,16 +404,27 @@ export async function fetchPass(now = new Date(), options: { budgetMs?: number; 
   ]);
   const order = directions.filter((d) => d.active).map((d) => d.code);
   const due = options.force ? sources : sources.filter((s) => sourceDue(s, now));
+  // Ленты одного сайта в одной очереди: к одному сайту не больше одного запроса за раз
+  const queues = new Map<string, number[]>();
+  due.forEach((s, i) => {
+    const host = hostKey(s.url);
+    const queue = queues.get(host);
+    if (queue) queue.push(i);
+    else queues.set(host, [i]);
+  });
+  const groups = [...queues.values()];
   const downloads: (Download | undefined)[] = new Array(due.length);
   let next = 0;
   const parallel = Math.max(1, options.parallel ?? FETCH_PARALLEL);
   await Promise.all(
-    Array.from({ length: Math.min(parallel, due.length) }, async () => {
-      while (next < due.length) {
-        const i = next++;
-        // Меньше 20 секунд до конца срока: лента не успеет, начинать не стоит
-        if (deadline - Date.now() < minLeft) continue;
-        downloads[i] = await download(due[i]!, deadline);
+    Array.from({ length: Math.min(parallel, groups.length) }, async () => {
+      while (next < groups.length) {
+        const group = groups[next++]!;
+        for (const i of group) {
+          // Меньше 20 секунд до конца срока: лента не успеет, начинать не стоит
+          if (deadline - Date.now() < minLeft) continue;
+          downloads[i] = await download(due[i]!, deadline);
+        }
       }
     }),
   );

@@ -411,7 +411,8 @@ async function fakeTransport(request: FeedRequest): Promise<FeedResponse> {
  */
 export async function fetchFeed(request: FeedRequest, options: { deadline?: number } = {}): Promise<FeedResponse> {
   if (override) return override(request);
-  if (fakeFeedsOn()) return fakeTransport(request);
+  // Подмена сети в тестах сильнее режима фикстур: иначе проверка адресов прошла бы впустую
+  if (fakeFeedsOn() && !network) return fakeTransport(request);
   const deadline = options.deadline ?? Date.now() + 2 * FETCH_TIMEOUT_MS + RETRY_DELAY_MS;
   try {
     return await fetchOnce(request, deadline);

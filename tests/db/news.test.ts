@@ -617,38 +617,52 @@ describe("забор: срок прохода, сбойные источники
       await sleep(400);
       return { status: 200, body: fixture(FEEDS[url]!) };
     });
-    // По одной ленте за раз, чтобы срок кончился посередине
+    // По одному сайту за раз, чтобы срок кончился посередине. Ленты Банка России одним сайтом друг за другом
     const first = await news.fetchPass(WED, { budgetMs: 600, minLeftMs: 100, parallel: 1 });
-    expect(first.results.map((r) => r.name)).toEqual(["Первая", "Вторая"]);
+    expect(first.results.map((r) => r.name)).toEqual(["Первая", "Третья"]);
     expect(first.postponed).toBe(1);
     const second = await news.fetchPass(new Date(WED.getTime() + 3_600_000), { budgetMs: 600, minLeftMs: 100, parallel: 1 });
-    // Отложенная скачивается первой; в итоге ленты идут по порядку списка
-    expect(order.slice(0, 3)).toEqual(["https://www.cbr.ru/rss/RssPress", "https://www.asn-news.ru/rss", "https://www.cbr.ru/rss/RssNews"]);
-    expect(second.results.map((r) => r.name)).toContain("Третья");
+    // Отложенная скачивается первой в следующий час
+    expect(order.slice(0, 3)).toEqual(["https://www.cbr.ru/rss/RssPress", "https://www.cbr.ru/rss/RssNews", "https://www.asn-news.ru/rss"]);
+    expect(second.results.map((r) => r.name)).toContain("Вторая");
   });
 
-  it("ленты скачиваются до четырёх одновременно, сохраняются по порядку списка: перепечатку получает источник выше, а не быстрее", async () => {
+  it("ленты скачиваются до четырёх сайтов одновременно, один сайт по очереди, сохраняются по порядку списка: перепечатку получает источник выше, а не быстрее", async () => {
     const a = await owner();
-    // Банк России выше в списке и отвечает медленнее «агрегатора» с теми же статьями
+    // Банк России выше в списке, отвечает медленнее «агрегатора» с теми же статьями и забирался час назад, поэтому
+    // скачивается последним: в базу его статьи всё равно попадают первыми
     await news.addSource(a, { name: "Банк России", url: "https://www.cbr.ru/rss/RssPress" });
-    await news.addSource(a, { name: "Агрегатор", url: "https://www.cbr.ru/rss/RssNews" });
+    await news.addSource(a, { name: "Агрегатор", url: "https://agg.example/rss" });
+    await news.addSource(a, { name: "Банк России: новости", url: "https://cbr.ru/rss/RssNews" });
     for (const host of ["one", "two", "three"]) await news.addSource(a, { name: `Медленная ${host}`, url: `https://${host}.example/rss` });
+    await prisma.newsSource.updateMany({ where: { name: "Банк России" }, data: { lastFetchAt: new Date(WED.getTime() - 3_600_000) } });
     let active = 0;
     let peak = 0;
+    const perHost = new Map<string, number>();
+    let hostPeak = 0;
+    const started: string[] = [];
     setNewsTransport(async ({ url }) => {
+      const host = news.hostKey(url);
+      started.push(url);
       active += 1;
       peak = Math.max(peak, active);
+      perHost.set(host, (perHost.get(host) ?? 0) + 1);
+      hostPeak = Math.max(hostPeak, perHost.get(host)!);
       try {
-        await sleep(url.endsWith("RssPress") ? 500 : url.endsWith("RssNews") ? 0 : 300);
-        return { status: 200, body: fixture(FEEDS[url] ?? "cbr.ru.xml") };
+        await sleep(url.endsWith("RssPress") ? 500 : url.includes("one.") || url.includes("two.") || url.includes("three.") ? 300 : 0);
+        return { status: 200, body: fixture("cbr.ru.xml") };
       } finally {
         active -= 1;
+        perHost.set(host, perHost.get(host)! - 1);
       }
     });
     expect(news.FETCH_PARALLEL).toBe(4);
     const r = await news.fetchPass(WED);
     expect(peak).toBe(4);
-    expect(r.results.map((x) => x.name)).toEqual(["Банк России", "Агрегатор", "Медленная one", "Медленная two", "Медленная three"]);
+    expect(hostPeak).toBe(1);
+    expect(started.at(-1)).toBe("https://www.cbr.ru/rss/RssPress");
+    expect(started.indexOf("https://agg.example/rss")).toBeLessThan(started.indexOf("https://www.cbr.ru/rss/RssPress"));
+    expect(r.results.map((x) => x.name)).toEqual(["Банк России", "Агрегатор", "Банк России: новости", "Медленная one", "Медленная two", "Медленная three"]);
     const cbr = await prisma.newsSource.findFirstOrThrow({ where: { name: "Банк России" } });
     const items = await prisma.newsItem.findMany({ select: { sourceId: true } });
     expect(items.length).toBeGreaterThan(0);
