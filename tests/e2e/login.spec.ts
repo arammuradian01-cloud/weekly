@@ -40,7 +40,7 @@ test("владелец выдаёт ссылку, человек входит п
   const reva = await freshPage(browser, page);
   await reva.goto(url);
   await expect(reva.getByText(/Вы входите как/)).toContainText("Рева Тарас");
-  await expect(reva.getByText("Ваш логин: reva")).toBeVisible();
+  await expect(reva.getByText("Ваш логин: treva")).toBeVisible();
   await shot(reva, "login-link");
   // Пароль придумывает сам человек: слабый не принимается, ссылка при этом не тратится
   await reva.getByLabel("Придумайте пароль").fill("12345678901");
@@ -66,7 +66,7 @@ test("владелец выдаёт ссылку, человек входит п
   // Выход и вход с логином и паролем
   await reva.context().clearCookies();
   await reva.goto("/login");
-  await reva.getByLabel("Логин").fill("reva");
+  await reva.getByLabel("Логин").fill("treva");
   await reva.getByLabel("Пароль").fill("не тот пароль");
   await reva.getByRole("button", { name: "Войти" }).click();
   await expect(reva.getByText("Неверный логин или пароль")).toBeVisible();
@@ -85,7 +85,7 @@ test("владелец выдаёт ссылку, человек входит п
 
   // Владелец видит личный вход в списке людей, журнал пишет способ входа
   await page.goto("/settings");
-  await expect(page.getByText(/Логин reva\. Пароль задан/)).toBeVisible();
+  await expect(page.getByTestId("access-reva")).toContainText(/Логин treva\. Пароль свой/);
   await page.goto("/journal?kind=login");
   await expect(page.getByText(/Личный вход: Рева/).filter({ visible: true }).first()).toBeVisible();
   await expect(page.getByText(/личный вход/).filter({ visible: true }).first()).toBeVisible();
@@ -112,7 +112,7 @@ test("ссылка на почту: человек с адресом в спис
 
   const guest = await freshPage(browser, page);
   await guest.goto("/login");
-  await expect(guest.getByRole("heading", { name: "Нет пароля" })).toBeVisible();
+  await expect(guest.getByRole("heading", { name: "Забыли пароль или его ещё нет" })).toBeVisible();
   await shot(guest, "login-both");
   await guest.getByLabel("Рабочая почта").fill("fatyanov@sravni.ru");
   await guest.getByRole("button", { name: "Прислать ссылку для входа" }).click();
@@ -167,4 +167,67 @@ test("владелец выключает общий логин только п�
 
   await page.getByRole("radiogroup", { name: "Способ входа" }).getByRole("radio", { name: "Общий и личный" }).click();
   await expect(page.getByText("Общий логин снова работает")).toBeVisible();
+});
+
+test("этап 52: первый вход показывает логин и предлагает рабочую почту, почта работает после ссылки из письма", async ({ page, browser }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  const url = await issueInvite(page, "Логинова Светлана");
+
+  const svet = await freshPage(browser, page);
+  await svet.goto(url);
+  await expect(svet.getByText("Ваш логин: sloginova")).toBeVisible();
+  await svet.getByLabel("Придумайте пароль").fill(TEST_PASSWORD);
+  await svet.getByLabel("Повторите пароль").fill(TEST_PASSWORD);
+  await svet.getByRole("button", { name: "Задать пароль и войти" }).click();
+  await expect(svet).toHaveURL(/\/welcome\?new=1$/);
+  await expect(svet.getByRole("heading", { name: /Добро пожаловать/ })).toBeVisible();
+  await expect(svet.getByTestId("welcome-login")).toHaveText("sloginova");
+  await shot(svet, "welcome");
+  // Только рабочий домен; ошибка видна у формы, а не только всплывающим сообщением
+  await svet.getByRole("textbox", { name: "Рабочая почта" }).fill("svet@gmail.com");
+  await svet.getByLabel("Ваш пароль").fill(TEST_PASSWORD);
+  await svet.getByRole("button", { name: "Прислать ссылку" }).click();
+  await expect(svet.getByRole("alert").filter({ hasText: /Нужна рабочая почта/ })).toBeVisible();
+  await svet.getByRole("textbox", { name: "Рабочая почта" }).fill("S.Loginova@sravni.ru");
+  await svet.getByRole("button", { name: "Прислать ссылку" }).click();
+  await expect(svet.getByTestId("email-pending")).toContainText("s.loginova@sravni.ru");
+  const mail = lastMailTo("s.loginova@sravni.ru");
+  expect(mail?.subject).toBe("Подтвердите почту для Weekly");
+  await svet.getByTestId("welcome-start").click();
+  await expect(svet).toHaveURL(/\/$/);
+
+  // Ссылку из письма открывают на другом устройстве, без входа: подтверждение только по кнопке
+  const phone = await freshPage(browser, page);
+  await phone.goto(linkFrom(mail!.text));
+  await expect(phone.getByRole("heading", { name: "Подтверждение почты" })).toBeVisible();
+  // Чей вход и какой адрес, адрес скрыт наполовину
+  await expect(phone.getByTestId("email-confirm-who")).toContainText("s***a@sravni.ru");
+  await expect(phone.getByTestId("email-confirm-who")).toContainText("Логинова Светлана");
+  await phone.getByRole("button", { name: "Подтвердить почту" }).click();
+  await expect(phone.getByTestId("email-confirmed")).toContainText("s.loginova@sravni.ru");
+  await phone.context().close();
+
+  // Теперь по почте можно войти вместо логина
+  await svet.context().clearCookies();
+  await svet.goto("/login");
+  await svet.getByLabel("Логин").fill("s.loginova@sravni.ru");
+  await svet.getByLabel("Пароль").fill(TEST_PASSWORD);
+  await svet.getByRole("button", { name: "Войти" }).click();
+  await expect(svet).toHaveURL(/\/$/);
+  await svet.goto("/profile?tab=login");
+  await expect(svet.getByTestId("email-binding")).toContainText("Подтверждённая почта: s.loginova@sravni.ru");
+  await svet.context().close();
+
+  // Владелец видит логин, статус доступа и почту; ссылки пачкой выгружаются файлом
+  await page.goto("/settings");
+  await expect(page.getByTestId("access-loginova")).toContainText(/Логин sloginova\. Пароль свой.*Почта s\.loginova@sravni\.ru/);
+  await page.getByLabel("Ссылки действуют").selectOption("14");
+  await page.getByRole("button", { name: /Ссылки всем без пароля/ }).click();
+  const dialog = page.getByRole("dialog", { name: /Ссылки для входа/ });
+  await expect(dialog).toBeVisible();
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Скачать CSV" }).click();
+  expect((await download).suggestedFilename()).toMatch(/^weekly-ssylki-dlya-vhoda-\d{4}-\d{2}-\d{2}\.csv$/);
+  await dialog.getByRole("button", { name: "Готово" }).click();
 });

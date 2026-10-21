@@ -7,6 +7,8 @@ import { importBordTasks } from "../src/lib/tasks/bord-import";
 import { importBordWeekly } from "../src/lib/weekly/bord-import";
 import { BORD_DEFAULT } from "../scripts/lib/bord-source";
 import { sessionSecretSource } from "../src/lib/database-url";
+import { fillMissingLoginsAll } from "../src/lib/login/logins";
+import { PRIMARY_OWNER_KEY, primaryOwnerSlug } from "../src/lib/login/primary";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -74,6 +76,17 @@ async function main() {
         await prisma.teamMember.createMany({ data: rest.map((p) => ({ teamId: "top", personId: p.id })), skipDuplicates: true });
       }
     }
+  }
+
+  // Логины вида amuradyan (этап 52): всем, у кого их ещё нет. Повторный запуск ничего не меняет
+  const logins = await fillMissingLoginsAll(prisma);
+  if (logins) console.log(`Выдано логинов: ${logins}`);
+
+  // Главный владелец записывается явно (этап 52): иначе им считался бы первый владелец списка, и защита главного
+  // переезжала бы к любому, кого повысили до владельца выше в списке
+  if (!(await prisma.setting.findUnique({ where: { key: PRIMARY_OWNER_KEY } }))) {
+    const primary = await primaryOwnerSlug(prisma);
+    if (primary) await prisma.setting.create({ data: { key: PRIMARY_OWNER_KEY, value: primary } });
   }
 
   // Задачи и weekly из Insurance&Invest Bord загружаются только по явной команде: BORD_IMPORT=on при запуске

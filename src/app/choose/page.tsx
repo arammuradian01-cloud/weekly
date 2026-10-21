@@ -3,7 +3,8 @@ import { topTeamOnly } from "@/lib/org/people";
 import { prisma } from "@/lib/db";
 import { requireSignedIn } from "@/lib/auth";
 import { chooseProfile } from "@/app/actions/auth";
-import { ROLE_LABELS } from "@/lib/roles";
+import { personRoleLabel } from "@/lib/roles";
+import { primaryOwnerSlug } from "@/lib/login/primary";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
@@ -18,6 +19,7 @@ export default async function ChoosePage() {
     where: { active: true, ...topTeamOnly },
     orderBy: { sortOrder: "asc" },
   });
+  const primary = await primaryOwnerSlug();
 
   return (
     <div className="min-h-dvh bg-field">
@@ -49,7 +51,7 @@ export default async function ChoosePage() {
                       <span className="block text-title-sm font-semibold text-ink">{p.fullName}</span>
                       <span className="mt-0.5 block text-small text-muted">{p.zone}</span>
                     </span>
-                    {p.role !== "LEADER" ? <Badge tone={p.role === "OWNER" ? "navy" : "outline"}>{ROLE_LABELS[p.role]}</Badge> : null}
+                    {p.role !== "LEADER" ? <Badge tone={p.role === "OWNER" ? "navy" : "outline"}>{personRoleLabel(p.role, p.slug === primary)}</Badge> : null}
                   </button>
                 </li>
               );

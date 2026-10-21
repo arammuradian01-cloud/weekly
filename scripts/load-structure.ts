@@ -10,12 +10,13 @@ import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/db";
 import { actorFor } from "../src/lib/tasks/service";
 import { applyStructure, previewStructure } from "../src/lib/org/service";
+import { primaryOwner } from "../src/lib/login/primary";
 
 async function main() {
   const file = process.argv.slice(2).find((a) => !a.startsWith("--"));
   if (!file) throw new Error("Укажите файл: npm run structure -- путь/к/файлу.csv [--yes]");
   const text = readFileSync(file, "utf8");
-  const owner = await prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: { sortOrder: "asc" } });
+  const owner = await primaryOwner(prisma);
   if (!owner) throw new Error("В ресурсе нет включённого владельца");
   const actor = { ...(await actorFor(owner.slug, "OWNER")), ip: null, via: null };
   const plan = await previewStructure(actor, text);

@@ -24,6 +24,7 @@ import {
 import { currentActor } from "@/lib/action-runner";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
+import { confirmEmail } from "@/lib/login/email";
 import { TaskRuleError } from "@/lib/tasks/service";
 
 export type FormState = { error?: string } | null;
@@ -224,6 +225,7 @@ export type EmailFormState = { error?: string; sent?: boolean } | null;
 /** Экран личной ссылки (этап 20а): человек придумывает пароль и сразу входит */
 export async function setPasswordAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const token = String(formData.get("token") ?? "");
+  let target = "/";
   try {
     const previous = (await readSession())?.sid ?? null;
     const { session, person } = await setPasswordByLink(
@@ -236,6 +238,8 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
     );
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
+    // Первый вход (этап 52): если рабочей почты ещё нет, ресурс предлагает её указать
+    if (!person.email) target = "/welcome?new=1";
   } catch (error) {
     const message = ruleError(error);
     if (!message) {
@@ -244,7 +248,20 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
     }
     return { error: message };
   }
-  redirect("/");
+  redirect(target);
+}
+
+export type ConfirmState = { error?: string; email?: string } | null;
+
+/** Кнопка «Подтвердить почту» на экране ссылки из письма (этап 52): ссылка тратится только здесь, не при открытии */
+export async function confirmEmailAction(_prev: ConfirmState, formData: FormData): Promise<ConfirmState> {
+  try {
+    const result = await confirmEmail(String(formData.get("token") ?? ""), await requestIp());
+    return result.ok ? { email: result.email } : { error: result.error };
+  } catch (error) {
+    console.error("Подтверждение почты: не прошло", error);
+    return { error: "Не получилось подтвердить адрес. Обновите страницу и попробуйте ещё раз" };
+  }
 }
 
 /** «Прислать ссылку на почту» на экране входа */

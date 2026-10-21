@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { baseUrl, clearSession, readSession, requestUserAgent, requireContext } from "@/lib/auth";
 import { createFeed, feedUrl, revokeFeed, setFeedTitles } from "@/lib/calendar/service";
 import { changePassword } from "@/lib/login/password";
+import { cancelEmailBinding, requestEmailBinding } from "@/lib/login/email";
 import { runAction } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
@@ -122,6 +123,20 @@ export async function calendarTitlesAction(withTitles: boolean) {
 
 export async function revokeCalendarAction() {
   const result = await runAction("Отключение календаря", (a) => revokeFeed(a));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+/** Рабочая почта (этап 52): сохраняется неподтверждённой, на неё уходит ссылка подтверждения */
+export async function requestEmailBindingAction(email: string, currentPassword: string) {
+  const base = await baseUrl();
+  const result = await runAction("Рабочая почта", (a) => requestEmailBinding(a, String(email ?? ""), String(currentPassword ?? ""), base));
+  if (result.ok) revalidatePath("/profile");
+  return result;
+}
+
+export async function cancelEmailBindingAction() {
+  const result = await runAction("Рабочая почта", (a) => cancelEmailBinding(a));
   if (result.ok) revalidatePath("/profile");
   return result;
 }

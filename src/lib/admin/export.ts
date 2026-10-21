@@ -4,7 +4,8 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { listTasks } from "@/lib/tasks/service";
-import { ROLE_LABELS } from "@/lib/roles";
+import { personRoleLabel } from "@/lib/roles";
+import { primaryOwnerSlug } from "@/lib/login/primary";
 import { AUDIT_ACTION_LABELS } from "@/lib/audit";
 import { DICT_TITLES } from "./labels";
 import { priorityOf, stateLabel, statusOf, type EditableDictKind } from "@/domain/dictionaries";
@@ -64,6 +65,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       orderBy: { number: "asc" },
     }),
   ]);
+  const primary = await primaryOwnerSlug();
   const name = new Map(people.map((p) => [p.slug, p.fullName]));
   const nameById = new Map(people.map((p) => [p.id, p.fullName]));
   const who = (slug: string | null | undefined) => (slug ? (slug === "all" ? "Все лидеры" : (name.get(slug) ?? slug)) : "");
@@ -318,7 +320,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       { header: "Направление", width: 18 },
       { header: "В команде", width: 10 },
     ],
-    people.map((p) => [p.fullName, p.shortName, ROLE_LABELS[p.role], p.zone, p.defaultDirection?.label ?? "", p.active ? "да" : "выключен"]),
+    people.map((p) => [p.fullName, p.shortName, personRoleLabel(p.role, p.slug === primary), p.zone, p.defaultDirection?.label ?? "", p.active ? "да" : "выключен"]),
   );
 
   sheet(

@@ -13,6 +13,7 @@
 // - задачу, которую удалили из Bord, ресурс не трогает и показывает в списке «нет в Bord».
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
+import { fillMissingLogins, lockPeopleNames, reservedLogins, takenNames } from "@/lib/login/logins";
 import { notifyWatchers } from "@/lib/tasks/watch";
 import { notifyDependents } from "@/lib/tasks/dependents";
 import { CLOSED_DB } from "@/lib/tasks/codes";
@@ -142,7 +143,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       // ---------- Люди ----------
       const fallback = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: "department" } });
       if (!fallback) throw new Error("В справочнике нет направления «Департамент»: сначала запустите сид");
-      const people = await tx.person.findMany({ select: { id: true, slug: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true } });
+      await lockPeopleNames(tx);
+      const people = await tx.person.findMany({ select: { id: true, slug: true, login: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true } });
       const byId = new Map(people.map((p) => [p.id, p]));
       // Bord ведёт топ-команда: имена сначала ищем среди её людей. Остальных сотрудников департамента только запасным
       // вариантом, иначе второй Евгений из структуры сделал бы «Евгения» из Bord неоднозначным (этап 14)
@@ -150,7 +152,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       const topIds = new Set([...(top?.leaderId ? [top.leaderId] : []), ...(top?.members.map((m) => m.personId) ?? [])]);
       const index = new NameIndex(people.filter((p) => topIds.has(p.id)));
       const rest = new NameIndex(people.filter((p) => !topIds.has(p.id)));
-      const takenSlugs = new Set([...people.map((p) => p.slug), "all", "system"]);
+      // Чужие логины тоже заняты (этап 52): короткое имя нового человека не совпадёт с логином другого
+      const takenSlugs = new Set([...takenNames(people), ...(await reservedLogins(tx))]);
       let sortOrder = Math.max(0, ...people.map((p) => p.sortOrder));
 
       async function personFor(name: string): Promise<string | "ambiguous"> {
@@ -166,7 +169,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
         sortOrder += 10;
         const p = await tx.person.create({
           data: { slug, fullName, shortName, role: "LEADER", zone: BORD_ZONE, defaultDirectionId: fallback!.id, sortOrder, active: true },
-          select: { id: true, slug: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true },
+          select: { id: true, slug: true, login: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true },
         });
         // Ответственные из Bord работают в топ-команде (этап 14)
         await tx.teamMember.createMany({ data: [{ teamId: TOP_TEAM, personId: p.id }], skipDuplicates: true });
@@ -439,6 +442,8 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       const current = typeof setting?.value === "number" ? setting.value : 0;
       if (current < nextFree) await tx.setting.upsert({ where: { key: "tasks.nextNumber" }, update: { value: nextFree }, create: { key: "tasks.nextNumber", value: nextFree } });
       report.problems = report.problems.slice(0, PROBLEMS_KEEP);
+      // Новым людям из Bord сразу логины вида amuradyan (этап 52)
+      if (report.newPeople.length) await fillMissingLogins(tx);
       return report;
     },
     { timeout: 120_000, maxWait: 10_000 },

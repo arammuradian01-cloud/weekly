@@ -10,6 +10,12 @@ export const ROLE_LABELS: Record<Role, string> = {
   EMPLOYEE: "Сотрудник",
 };
 
+/** Подпись роли человека (этап 52): владельцев несколько, главный подписан «Владелец», остальные «Совладелец» */
+export function personRoleLabel(role: Role, primaryOwner: boolean): string {
+  if (role === "OWNER" && !primaryOwner) return "Совладелец";
+  return ROLE_LABELS[role];
+}
+
 /** Режим управления доступен только профилям владельца и администраторов */
 export function managementRoleFor(role: Role): ManagementRole | null {
   if (role === "OWNER") return "OWNER";

@@ -40,7 +40,7 @@ describe("пароль по ссылке", () => {
   it("человек сам задаёт пароль по ссылке и сразу входит; ссылка тратится", async () => {
     const invite = await login.issueInvite(await owner(), "reva", t0);
     const peek = await login.peekLink(invite.token, t0);
-    expect(peek).toMatchObject({ status: "ok", kind: "INVITE", login: "reva", hasPassword: false });
+    expect(peek).toMatchObject({ status: "ok", kind: "INVITE", login: "treva", hasPassword: false });
     const { session, person } = await pw.setPasswordByLink(invite.token, GOOD, GOOD, device, t0);
     expect(person.slug).toBe("reva");
     expect(session.method).toBe("INVITE");
@@ -161,7 +161,10 @@ describe("сброс, смена и ссылки всем", () => {
     expect(slugs).not.toContain("muradyan");
     expect(slugs).not.toContain("ceo");
     expect(slugs).toContain("loginova");
-    expect(links.every((l) => l.login === l.slug)).toBe(true);
+    // Логины вида treva (этап 52): первая буква имени и фамилия
+    expect(links.find((l) => l.slug === "loginova")?.login).toBe("sloginova");
+    // По умолчанию ссылки пачкой действуют три дня, срок выбирается: 3, 7 или 14
+    expect(links[0]!.expiresAt.getTime() - later(1000).getTime()).toBe(3 * 24 * 60 * 60 * 1000);
     // Каждая ссылка рабочая и задаёт пароль своему человеку
     const lg = links.find((l) => l.slug === "loginova")!;
     const r = await pw.setPasswordByLink(lg.token, "Зимний вечер у камина", "Зимний вечер у камина", device, later(2000));
@@ -281,11 +284,13 @@ describe("после проверки кода", () => {
     expect(!r.ok && r.error).toMatch(/к этому логину/);
   });
 
-  it("владелец не сбрасывает свой пароль из списка людей; счётчик ссылок не считает владельца", async () => {
+  it("владелец не сбрасывает свой пароль из списка людей; счётчик ссылок не считает владельцев и администраторов", async () => {
     const me = await owner();
     await expectRule(pw.resetPassword(me, "muradyan"), /Свой пароль меняйте в профиле/);
     const stats = await pw.passwordStats(me.personId);
-    expect(stats.invitable).toBe(stats.total - stats.withPassword - 1);
+    // Без пароля владелец и администратор Головкин: ссылки пачкой им не выдаются (этап 52)
+    const admins = await prisma.person.count({ where: { active: true, role: { in: ["OWNER", "ADMIN"] }, passwordHash: null } });
+    expect(stats.invitable).toBe(stats.total - stats.withPassword - admins);
     expect((await pw.issueInvitesForAll(me, later(1000))).length).toBe(stats.invitable);
   });
 

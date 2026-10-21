@@ -77,3 +77,22 @@ describe("скользящая сессия", () => {
     expect(await refreshSessionToken(undefined, secret)).toBeNull();
   });
 });
+
+describe("рабочая почта после проверки кода этапа 52", () => {
+  it("домен только точным совпадением: поддомены и похожие адреса не проходят", async () => {
+    const { domainAllowed } = await import("@/lib/login/email");
+    expect(domainAllowed("a@sravni.ru", ["sravni.ru"])).toBe(true);
+    expect(domainAllowed("a@SRAVNI.RU", ["sravni.ru"])).toBe(true);
+    expect(domainAllowed("a@evilsravni.ru", ["sravni.ru"])).toBe(false);
+    expect(domainAllowed("a@sravni.ru.evil.com", ["sravni.ru"])).toBe(false);
+    expect(domainAllowed("a@mail.sravni.ru", ["sravni.ru"])).toBe(false);
+    expect(domainAllowed("a@mail.sravni.ru", ["sravni.ru", "mail.sravni.ru"])).toBe(true);
+    expect(domainAllowed("a@b@sravni.ru", ["sravni.ru"])).toBe(false);
+  });
+
+  it("адрес на странице подтверждения скрыт наполовину", async () => {
+    const { maskEmail } = await import("@/lib/login/service");
+    expect(maskEmail("t.reva@sravni.ru")).toBe("t***a@sravni.ru");
+    expect(maskEmail("ab@sravni.ru")).toBe("a***@sravni.ru");
+  });
+});

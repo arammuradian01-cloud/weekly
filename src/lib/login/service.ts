@@ -16,6 +16,7 @@ import { mailConfigured, sendMail, type Mail } from "@/lib/mail";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { LinkKind, LoginMethod } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
+import { guardPrimary } from "./primary";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -110,14 +111,22 @@ async function lock(tx: Tx, key: string): Promise<void> {
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))::text`;
 }
 
-async function createLinkTx(tx: Tx, kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null, deviceId: string | null = null) {
+/** target: адрес, который подтверждает ссылка EMAIL_CONFIRM (этап 52) */
+export async function createLinkTx(tx: Tx, kind: LinkKind, personId: string, ttlMs: number, now: Date, createdById: string | null, deviceId: string | null = null, target: string | null = null) {
   await lock(tx, `login-link:${personId}`);
   const token = newToken();
   const expiresAt = new Date(now.getTime() + ttlMs);
   // Действует одна свежая ссылка каждого вида: новая гасит прежние неиспользованные
   await tx.loginLink.updateMany({ where: { personId, kind, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
-  await tx.loginLink.create({ data: { tokenHash: hashToken(token), kind, personId, createdById, deviceId, expiresAt, createdAt: now } });
+  await tx.loginLink.create({ data: { tokenHash: hashToken(token), kind, personId, createdById, deviceId, target, expiresAt, createdAt: now } });
   return { token, expiresAt };
+}
+
+/** Адрес так, чтобы его узнал хозяин, но не прочитал посторонний: a***n@sravni.ru */
+export function maskEmail(email: string): string {
+  const [name = "", domain = ""] = email.split("@");
+  const masked = name.length <= 2 ? `${name.slice(0, 1)}***` : `${name.slice(0, 1)}***${name.slice(-1)}`;
+  return domain ? `${masked}@${domain}` : masked;
 }
 
 /** Владелец выдаёт человеку ссылку для входа: показывается один раз, отправляется лично */
@@ -126,6 +135,8 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
   if (!person!.active) fail("Человек выключен: сначала включите его в списке");
+  // Ссылка задаёт новый пароль: выдать её главному владельцу значило бы забрать его вход
+  await guardPrimary(prisma, actor.slug, person!.slug, "выдаёт ему ссылку для входа");
   const link = await prisma.$transaction(async (tx) => {
     const created = await createLinkTx(tx, "INVITE", person!.id, INVITE_TTL_MS, now, actor.personId);
     await tx.auditLog.create({
@@ -149,11 +160,11 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
 export type LinkStatus = "ok" | "used" | "expired" | "unknown" | "inactive";
 
 /** Что за ссылка, без её использования: для экрана «Войти как ...». login и hasPassword нужны экрану задания пароля */
-export async function peekLink(token: string, now = new Date()): Promise<{ status: LinkStatus; kind?: LinkKind; fullName?: string; login?: string; hasPassword?: boolean }> {
+export async function peekLink(token: string, now = new Date()): Promise<{ status: LinkStatus; kind?: LinkKind; fullName?: string; login?: string; hasPassword?: boolean; target?: string }> {
   if (!token) return { status: "unknown" };
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) }, include: { person: true } });
   if (!link) return { status: "unknown" };
-  const base = { kind: link.kind, fullName: link.person.fullName, login: link.person.slug, hasPassword: !!link.person.passwordHash };
+  const base = { kind: link.kind, fullName: link.person.fullName, login: link.person.login ?? link.person.slug, hasPassword: !!link.person.passwordHash, ...(link.target ? { target: maskEmail(link.target) } : {}) };
   if (link.usedAt) return { status: "used", ...base };
   if (link.expiresAt <= now) return { status: "expired", ...base };
   if (!link.person.active) return { status: "inactive", ...base };
@@ -170,7 +181,7 @@ async function linkProblem(token: string, now: Date): Promise<never> {
 }
 
 /** Ссылку можно использовать один раз: условие в самом UPDATE, две вкладки одновременно не войдут обе */
-async function takeLinkTx(tx: Tx, token: string, kinds: LinkKind[], ip: string | null, now: Date) {
+export async function takeLinkTx(tx: Tx, token: string, kinds: LinkKind[], ip: string | null, now: Date) {
   const tokenHash = hashToken(token);
   const taken = await tx.loginLink.updateMany({
     where: { tokenHash, kind: { in: kinds }, usedAt: null, expiresAt: { gt: now }, person: { active: true } },
@@ -360,6 +371,7 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
   if (!person) fail("Человек не найден");
   const own = person!.id === actor.personId;
   if (!own && (actor.management !== "OWNER" || actor.role === "OBSERVER")) fail("Чужие входы завершает только владелец в режиме управления");
+  if (!own) await guardPrimary(prisma, actor.slug, person!.slug, "завершает его входы");
   // По общему логину любой может выбрать чужое имя: завершать «свои» личные входы так нельзя
   if (own && actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
   const result = await prisma.deviceSession.updateMany({
@@ -367,8 +379,9 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
     data: { revokedAt: now, revokedBy: own ? "self" : "owner" },
   });
   // Неиспользованные ссылки тоже гаснут: «выйти везде» на случай утечки ссылки или потери телефона. И ссылка на
-  // календарь сроков (этап 29): её могли переслать вместе с телефоном
+  // календарь сроков (этап 29): её могли переслать вместе с телефоном. Неподтверждённая почта снимается (этап 52)
   await prisma.loginLink.updateMany({ where: { personId: person!.id, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  await prisma.person.update({ where: { id: person!.id }, data: { pendingEmail: null } });
   await prisma.calendarFeed.deleteMany({ where: { personId: person!.id } });
   await prisma.auditLog.create({
     data: {
@@ -399,12 +412,14 @@ export async function deviceSummary(now = new Date()): Promise<Map<string, { dev
 
 /** Выключение человека завершает его входы и гасит ссылки (вызывается из настроек людей) */
 export async function revokeOnDeactivate(
-  tx: { deviceSession: typeof prisma.deviceSession; loginLink: typeof prisma.loginLink; calendarFeed: typeof prisma.calendarFeed },
+  tx: { deviceSession: typeof prisma.deviceSession; loginLink: typeof prisma.loginLink; calendarFeed: typeof prisma.calendarFeed; person: typeof prisma.person },
   personId: string,
   now = new Date(),
 ) {
   await tx.deviceSession.updateMany({ where: { personId, revokedAt: null }, data: { revokedAt: now, revokedBy: "deactivate" } });
   await tx.loginLink.updateMany({ where: { personId, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
+  // Неподтверждённая почта снимается вместе со ссылкой на неё (этап 52)
+  await tx.person.update({ where: { id: personId }, data: { pendingEmail: null } });
   // Ссылка на календарь сроков гаснет вместе со входами (этап 29)
   await tx.calendarFeed.deleteMany({ where: { personId } });
 }

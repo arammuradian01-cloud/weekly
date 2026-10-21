@@ -1,7 +1,8 @@
 "use client";
 
+import { csvCell } from "@/lib/csv";
 import { useId, useState } from "react";
-import { CalendarOff, Copy, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, UserMinus, UserPlus } from "lucide-react";
+import { CalendarOff, Copy, Crown, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, Search, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
@@ -24,6 +25,7 @@ import {
   saveTeamLoginAction,
   setDictItemActiveAction,
   setPersonActiveAction,
+  setPrimaryOwnerAction,
   updatePersonAction,
 } from "@/app/(app)/settings/actions";
 import { cn } from "@/lib/cn";
@@ -371,7 +373,14 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
   );
 }
 
-type PersonForm = { fullName: string; shortName: string; zone: string; role: Role; direction: string; email: string };
+type PersonForm = { fullName: string; shortName: string; zone: string; role: Role; direction: string; email: string; login?: string };
+
+/** Статус доступа человека (этап 52): вошёл сам, ссылка выдана и ждёт, доступа нет */
+function accessLabel(p: PersonView): string {
+  if (p.passwordSetAt) return `Пароль свой, задан ${shortWhen(p.passwordSetAt)}`;
+  if (p.inviteUntil) return `Ссылка выдана, действует до ${shortWhen(p.inviteUntil)}`;
+  return "Доступа нет";
+}
 
 function PersonFields({ id, form, set }: { id: string; form: PersonForm; set: (patch: Partial<PersonForm>) => void }) {
   return (
@@ -389,6 +398,19 @@ function PersonFields({ id, form, set }: { id: string; form: PersonForm; set: (p
         hint="Для входа по ссылке на почту. Можно оставить пустой"
         className="sm:col-span-2"
       />
+      {form.login !== undefined ? (
+        <TextInput
+          label="Логин"
+          id={`${id}-login`}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={form.login}
+          onChange={(e) => set({ login: e.target.value })}
+          hint="Первая буква имени и фамилия латиницей, например amuradyan"
+          className="sm:col-span-2"
+        />
+      ) : null}
       <SelectField label="Роль" id={`${id}-role`} value={form.role} onChange={(e) => set({ role: e.target.value as Role })} options={ROLES} />
       <SelectField label="Направление по умолчанию" id={`${id}-dir`} value={form.direction} onChange={(e) => set({ direction: e.target.value })} options={dictOptions("DIRECTION", form.direction)} />
     </div>
@@ -417,6 +439,10 @@ function PeopleSection({
   const [resetFor, setResetFor] = useState<PersonView | null>(null);
   const [away, setAway] = useState<PersonView | null>(null);
   const team = people.filter((p) => p.active && p.role !== "OBSERVER");
+  // Поиск по ФИО, логину и почте (этап 52): людей в ресурсе станет несколько сотен
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q ? people.filter((p) => [p.fullName, p.login, p.slug, p.email ?? "", p.pendingEmail ?? ""].some((x) => x.toLowerCase().includes(q))) : people;
 
   const toggle = async (p: PersonView) => {
     if (p.active && p.openTasks > 0 && confirmOff !== p.slug) return setConfirmOff(p.slug);
@@ -426,8 +452,23 @@ function PeopleSection({
 
   return (
     <Section id="people" title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
+      {people.length > 12 ? (
+        <div className="mb-3 flex items-center gap-2">
+          <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+          <TextInput
+            label="Найти человека"
+            id="people-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Фамилия, логин или почта"
+            autoComplete="off"
+            className="min-w-0 flex-1"
+          />
+        </div>
+      ) : null}
+      {q ? <p className="mb-2 text-caption text-muted">Найдено: {shown.length} из {people.length}</p> : null}
       <ul className="divide-y divide-line sv-card sv-card--soft">
-        {people.map((p) => (
+        {shown.map((p) => (
           <li key={p.slug} className="px-4 py-3">
             {editing === p.slug ? (
               <form
@@ -457,21 +498,23 @@ function PeopleSection({
                     {p.slug === me ? <span className="ml-2 text-caption font-normal text-muted">это вы</span> : null}
                   </p>
                   <p className="text-caption text-muted">
-                    {roleLabel(p.role)}. {p.zone}
+                    {p.role === "OWNER" ? (p.primaryOwner ? "Главный владелец" : "Совладелец") : roleLabel(p.role)}. {p.zone}
                     {p.openTasks ? `. Открытых задач: ${p.openTasks}` : ""}
                   </p>
                   {absences[p.slug]?.length ? (
                     <p className="text-caption text-muted">Нет на неделе {absences[p.slug]!.map((a) => a.number).join(", ")}</p>
                   ) : null}
                   {p.active ? (
-                    <p className="text-caption text-muted">
-                      Логин {p.slug}. {p.passwordSetAt ? `Пароль задан ${shortWhen(p.passwordSetAt)}` : "Пароля нет"}. {p.email ?? "Почта не указана"}.{" "}
+                    <p className="text-caption text-muted" data-testid={`access-${p.slug}`}>
+                      Логин <span className="font-semibold text-ink">{p.login}</span>. {accessLabel(p)}.{" "}
+                      {p.email ? `Почта ${p.email}` : p.pendingEmail ? `Почта ${p.pendingEmail} ждёт подтверждения` : "Почта не указана"}.{" "}
                       {p.devices ? `Личных входов: ${p.devices}, последний раз ${shortWhen(p.lastSeenAt)}` : "Личного входа нет"}
                     </p>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-1 lg:max-w-[60%] lg:justify-end">
-                  {p.active ? (
+                  {/* Входом главного владельца управляет только он сам (этап 52): совладельцу эти кнопки не показываем */}
+                  {p.active && (!p.primaryOwner || p.slug === me) ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -485,19 +528,30 @@ function PeopleSection({
                       Ссылка для входа
                     </Button>
                   ) : null}
+                  {p.active && p.role === "OWNER" && !p.primaryOwner && people.some((x) => x.primaryOwner && x.slug === me) ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Сделать главным владельцем: ${p.fullName}`}
+                      onClick={() => void run(() => setPrimaryOwnerAction(p.slug), `${p.fullName}: главный владелец`)}
+                    >
+                      <Crown className="h-4 w-4" aria-hidden="true" />
+                      Сделать главным
+                    </Button>
+                  ) : null}
                   {p.active && p.role !== "OBSERVER" ? (
                     <Button size="sm" variant="ghost" aria-label={`Отсутствие: ${p.fullName}`} onClick={() => setAway(p)}>
                       <CalendarOff className="h-4 w-4" aria-hidden="true" />
                       Отсутствие
                     </Button>
                   ) : null}
-                  {p.passwordSetAt && p.slug !== me ? (
+                  {p.passwordSetAt && p.slug !== me && !p.primaryOwner ? (
                     <Button size="sm" variant="ghost" aria-label={`Сбросить пароль: ${p.fullName}`} onClick={() => setResetFor(p)}>
                       <KeyRound className="h-4 w-4" aria-hidden="true" />
                       Сбросить пароль
                     </Button>
                   ) : null}
-                  {p.devices ? (
+                  {p.devices && (!p.primaryOwner || p.slug === me) ? (
                     <Button size="sm" variant="ghost" aria-label={`Завершить входы: ${p.fullName}`} onClick={() => setRevoke(p)}>
                       <LogOut className="h-4 w-4" aria-hidden="true" />
                       Завершить входы
@@ -509,7 +563,7 @@ function PeopleSection({
                     aria-label={`Изменить: ${p.fullName}`}
                     onClick={() => {
                       setEditing(p.slug);
-                      setForm({ fullName: p.fullName, shortName: p.shortName, zone: p.zone, role: p.role, direction: p.direction, email: p.email ?? "" });
+                      setForm({ fullName: p.fullName, shortName: p.shortName, zone: p.zone, role: p.role, direction: p.direction, email: p.email ?? "", login: p.login });
                     }}
                   >
                     <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -817,7 +871,19 @@ function ReloadSection() {
   );
 }
 
-type BulkLink = { fullName: string; login: string; url: string; expiresAt: string };
+type BulkLink = { fullName: string; login: string; position: string; url: string; expiresAt: string };
+
+/** Выгрузка ссылок для рассылки (этап 52): CSV с точкой с запятой, открывается в Excel и Google Таблицах */
+function downloadLinks(links: BulkLink[]) {
+  const cell = csvCell;
+  const rows = [["ФИО", "Должность", "Логин", "Ссылка для входа", "Действует до"], ...links.map((l) => [l.fullName, l.position, l.login, l.url, shortWhen(l.expiresAt)])];
+  const blob = new Blob([`\ufeff${rows.map((r) => r.map(cell).join(";")).join("\r\n")}`], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `weekly-ssylki-dlya-vhoda-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 /** Ссылки всем без пароля: показываются один раз, после закрытия окна их не достать */
 function BulkInviteModal({ links, onClose }: { links: BulkLink[] | null; onClose: () => void }) {
@@ -827,7 +893,8 @@ function BulkInviteModal({ links, onClose }: { links: BulkLink[] | null; onClose
     <Modal open={links !== null} onOpenChange={(open) => !open && onClose()} title={`Ссылки для входа: ${links?.length ?? 0}`}>
       <p className="text-small text-muted">
         Отправьте каждому его ссылку лично, не в общий чат. По ссылке человек сам придумает пароль. Ссылки действуют до {links?.[0] ? shortWhen(links[0].expiresAt) : ""} и
-        открываются один раз. После закрытия окна их не показать снова: только выдать новые.
+        открываются один раз. После закрытия окна их не показать снова: только выдать новые. Файл CSV даёт вход каждому из списка: не пересылайте его
+        целиком и удалите после рассылки. Владельцам и администраторам ссылки здесь не выдаются, им ссылку выдают по одной.
       </p>
       {links?.length ? (
         <ul className="mt-4 flex max-h-80 flex-col divide-y divide-line overflow-auto rounded-lg ring-1 ring-line">
@@ -861,6 +928,12 @@ function BulkInviteModal({ links, onClose }: { links: BulkLink[] | null; onClose
           Готово
         </Button>
         {links?.length ? (
+          <Button variant="secondary" onClick={() => downloadLinks(links)}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Скачать CSV
+          </Button>
+        ) : null}
+        {links?.length ? (
           <Button
             onClick={async () => {
               try {
@@ -891,6 +964,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
   const { notify } = usePrototype();
   const [value, setValue] = useState(login.team);
   const [bulk, setBulk] = useState<BulkLink[] | null>(null);
+  const [days, setDays] = useState(7);
   return (
     <Section title="Вход" description="Личный вход записывает в журнал настоящего автора. Общий логин team работает переходную неделю, потом владелец его выключает">
       <Segmented
@@ -919,21 +993,34 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
             Личный пароль задали: <span className="font-semibold tabular-nums">{login.passwords.withPassword}</span> из {login.passwords.total}
           </p>
           <p className="mt-1 text-small text-muted">
-            Каждый задаёт пароль сам по личной ссылке. Ссылки всем, у кого пароля ещё нет, выдаются одной кнопкой: отправьте каждому его ссылку лично. Ссылка действует 3 дня.
+            Каждый задаёт пароль сам по личной ссылке: пароль не проходит ни через владельца, ни через переписку. Ссылки всем, у кого пароля ещё нет, выдаются одной
+            кнопкой и скачиваются списком для рассылки: отправьте каждому его строку лично. По ссылке человек видит свой логин, придумывает пароль и указывает рабочую почту.
           </p>
-          <Button
-            size="sm"
-            variant="secondary"
-            className="mt-3"
-            disabled={login.passwords.invitable === 0}
-            onClick={async () => {
-              const r = await run(() => issueInvitesForAllAction(), undefined, { refresh: false });
-              if (r) setBulk(r);
-            }}
-          >
-            <Link2 className="h-4 w-4" aria-hidden="true" />
-            Ссылки всем без пароля
-          </Button>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <SelectField
+              label="Ссылки действуют"
+              id="bulk-days"
+              value={String(days)}
+              onChange={(e) => setDays(Number(e.target.value))}
+              options={[
+                { value: "3", label: "3 дня" },
+                { value: "7", label: "7 дней" },
+                { value: "14", label: "14 дней" },
+              ]}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={login.passwords.invitable === 0}
+              onClick={async () => {
+                const r = await run(() => issueInvitesForAllAction(days), undefined, { refresh: false });
+                if (r) setBulk(r);
+              }}
+            >
+              <Link2 className="h-4 w-4" aria-hidden="true" />
+              Ссылки всем без пароля: {login.passwords.invitable}
+            </Button>
+          </div>
         </div>
       ) : null}
       <BulkInviteModal links={bulk} onClose={() => setBulk(null)} />

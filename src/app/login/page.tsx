@@ -42,7 +42,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             До 18:00 понедельника каждый сдаёт weekly за прошедшую неделю. Во вторник разбираем его и задачи на встрече.
           </p>
         </div>
-        <p className="hidden text-caption text-white/50 lg:block">Департамент «Страхование и инвестиции», Сравни</p>
+        <p className="hidden text-caption text-white/50 lg:block">Сравни</p>
       </section>
 
       <section className="flex items-start justify-center px-5 py-8 sm:items-center sm:px-10 sm:py-10">
@@ -51,7 +51,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <p className="mb-6 mt-1.5 text-body text-muted">
             {teamLogin === "on"
               ? "Ваш личный логин и пароль. Пока идёт переходный период, работает и общий логин team: после входа по нему выберите себя из списка."
-              : "Ваш личный логин и пароль. Нет пароля или забыли его: попросите личную ссылку у владельца ресурса."}
+              : "Ваш личный логин и пароль. Логин: первая буква имени и фамилия латиницей, например amuradyan, или подтверждённая рабочая почта."}
           </p>
           <p className="-mt-3 mb-6 text-small text-muted sm:hidden">Weekly сдаём до 18:00 понедельника, во вторник встреча.</p>
           {ended ? (
@@ -74,10 +74,13 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           ) : null}
           <LoginForm />
           <div className="mt-8 border-t border-line pt-6">
-            <h3 className="text-title-sm font-semibold text-ink">Нет пароля</h3>
+            <h3 className="text-title-sm font-semibold text-ink">Забыли пароль или его ещё нет</h3>
             {mail ? (
               <>
-                <p className="mb-4 mt-1 text-small text-muted">Ссылка на рабочую почту: по ней можно войти и задать новый пароль.</p>
+                <p className="mb-4 mt-1 text-small text-muted">
+                  Ссылка придёт на рабочую почту, если вы её подтвердили в профиле. По ссылке можно войти и задать новый пароль. Почты в ресурсе нет: ссылку выдаёт
+                  владелец ресурса.
+                </p>
                 <EmailLinkForm />
               </>
             ) : (
