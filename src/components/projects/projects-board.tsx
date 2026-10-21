@@ -89,7 +89,9 @@ function AddMenu({ projects, onPick, subject }: { projects: ProjectView[]; onPic
 
 type Pick = (target: Target, what: Drag) => void;
 
-function PersonChip({ person, canDrag, projects, onPick }: { person: ProjectPerson; canDrag: boolean; projects: ProjectView[]; onPick: Pick }) {
+function PersonChip({ person, canDrag: canDragAll, projects, onPick, me }: { person: ProjectPerson; canDrag: boolean; projects: ProjectView[]; onPick: Pick; me: string }) {
+  // Себя в свой проект не добавляют: руководитель в нём и так
+  const canDrag = canDragAll && person.slug !== me;
   const drag: Drag = { kind: "person", slug: person.slug, label: person.fullName };
   // Без клавиатурного перетаскивания: с клавиатуры и экранным диктором добавляют кнопкой «В проект»
   const { listeners, setNodeRef, isDragging } = useDraggable({ id: `p:${person.slug}`, data: drag, disabled: !canDrag });
@@ -109,7 +111,7 @@ function PersonChip({ person, canDrag, projects, onPick }: { person: ProjectPers
 
 /** Подразделение: строка тянется целиком (вся ветка), раскрывается в людей и подразделения ниже. В поиске без раскрытия:
  * найденные люди идут отдельным списком, и один человек не появляется на экране дважды */
-function UnitNode({ unit, depth, tree, canDrag, projects, onPick, open, toggle, leaf = false }: { unit: ProjectUnit; depth: number; tree: ReturnType<typeof useTree>; canDrag: boolean; projects: ProjectView[]; onPick: Pick; open: Set<string>; toggle: (id: string) => void; leaf?: boolean }) {
+function UnitNode({ unit, depth, tree, canDrag, projects, onPick, open, toggle, me, leaf = false }: { unit: ProjectUnit; depth: number; tree: ReturnType<typeof useTree>; canDrag: boolean; projects: ProjectView[]; onPick: Pick; open: Set<string>; toggle: (id: string) => void; me: string; leaf?: boolean }) {
   const count = tree.count.get(unit.id) ?? 0;
   const draggable = canDrag && count > 0 && unit.kind !== "COMPANY";
   const drag: Drag = { kind: "unit", id: unit.id, label: unit.name, count };
@@ -152,12 +154,12 @@ function UnitNode({ unit, depth, tree, canDrag, projects, onPick, open, toggle, 
           {persons.length ? (
             <ul className="m-0 flex list-none flex-col p-0">
               {persons.map((p) => (
-                <PersonChip key={p.slug} person={p} canDrag={canDrag} projects={projects} onPick={onPick} />
+                <PersonChip key={p.slug} person={p} canDrag={canDrag} projects={projects} onPick={onPick} me={me} />
               ))}
             </ul>
           ) : null}
           {kids.map((k) => (
-            <UnitNode key={k.id} unit={k} depth={depth + 1} tree={tree} canDrag={canDrag} projects={projects} onPick={onPick} open={open} toggle={toggle} />
+            <UnitNode key={k.id} unit={k} depth={depth + 1} tree={tree} canDrag={canDrag} projects={projects} onPick={onPick} open={open} toggle={toggle} me={me} />
           ))}
         </div>
       ) : null}
@@ -394,14 +396,14 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
               {foundUnits.length ? (
                 <div className="flex flex-col gap-2">
                   {foundUnits.map((u) => (
-                    <UnitNode key={u.id} unit={u} depth={1} tree={tree} canDrag={canDrag} projects={view.projects} onPick={ask} open={open} toggle={toggle} leaf />
+                    <UnitNode key={u.id} unit={u} depth={1} tree={tree} canDrag={canDrag} projects={view.projects} onPick={ask} open={open} toggle={toggle} me={view.me} leaf />
                   ))}
                 </div>
               ) : null}
               {foundPeople.length ? (
                 <ul className="m-0 mt-2 flex list-none flex-col p-0">
                   {foundPeople.map((p) => (
-                    <PersonChip key={p.slug} person={p} canDrag={canDrag} projects={view.projects} onPick={ask} />
+                    <PersonChip key={p.slug} person={p} canDrag={canDrag} projects={view.projects} onPick={ask} me={view.me} />
                   ))}
                 </ul>
               ) : null}
@@ -409,7 +411,7 @@ export function ProjectsBoard({ view }: { view: ProjectsView }) {
           ) : (
             <div className="flex flex-col gap-3" data-testid="ready-teams">
               {tree.ready.map((u) => (
-                <UnitNode key={u.id} unit={u} depth={0} tree={tree} canDrag={canDrag} projects={view.projects} onPick={ask} open={open} toggle={toggle} />
+                <UnitNode key={u.id} unit={u} depth={0} tree={tree} canDrag={canDrag} projects={view.projects} onPick={ask} open={open} toggle={toggle} me={view.me} />
               ))}
             </div>
           )}
