@@ -9,6 +9,7 @@ import { BORD_DEFAULT } from "../scripts/lib/bord-source";
 import { sessionSecretSource } from "../src/lib/database-url";
 import { fillMissingLoginsAll } from "../src/lib/login/logins";
 import { PRIMARY_OWNER_KEY, primaryOwnerSlug } from "../src/lib/login/primary";
+import { seedSources } from "../src/lib/news/service";
 import type { DictKind, Prisma } from "../src/generated/prisma/client";
 
 async function main() {
@@ -54,6 +55,9 @@ async function main() {
       },
     });
   }
+
+  // Стартовые источники новостей (этап 60): один раз в пустую таблицу, дальше список ведёт владелец в настройках
+  await seedSources(prisma);
 
   await prisma.setting.createMany({
     data: Object.entries(settings).map(([key, value]) => ({

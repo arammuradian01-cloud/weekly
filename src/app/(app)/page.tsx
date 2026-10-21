@@ -29,6 +29,7 @@ import { listInbox } from "@/lib/inbox/service";
 import { withoutRequestEvents } from "@/components/inbox/me-tasks";
 import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
+import { NewsBlock } from "@/components/news/news-block";
 
 export const metadata: Metadata = { title: "Моя неделя" };
 
@@ -109,6 +110,8 @@ export default async function MyWeekPage() {
         />
         <TaskDrawer />
       </Suspense>
+      {/* Новости своих продуктов (этап 60): без новостей блока нет */}
+      <NewsBlock personId={person.id} />
     </>
   );
 }

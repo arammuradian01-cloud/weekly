@@ -20,6 +20,7 @@ import {
   Rocket,
   Menu,
   Map as MapIcon,
+  Rss,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -68,7 +69,11 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Бизнес",
-    items: [{ href: "/forecast", label: "Прогноз", icon: TrendingUp }],
+    items: [
+      { href: "/forecast", label: "Прогноз", icon: TrendingUp },
+      // Новости по продуктам (этап 60)
+      { href: "/news", label: "Новости", icon: Rss },
+    ],
   },
 ];
 

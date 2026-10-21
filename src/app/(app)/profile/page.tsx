@@ -22,6 +22,8 @@ import { InstallApp, PushSettings } from "@/components/profile/push-settings";
 import { pushDevices, pushPrefsFor, pushPublicKey } from "@/lib/push/service";
 import { feedFor } from "@/lib/calendar/service";
 import { CalendarFeedSettings } from "@/components/profile/calendar-feed";
+import { NewsPrefsForm } from "@/components/news/news-prefs";
+import { newsDirections, newsPrefsFor, personDirections } from "@/lib/news/service";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -178,6 +180,20 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
             {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
             <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
+          </section>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="news-head">
+            <h2 id="news-head" className="text-title font-semibold text-ink">
+              Дайджест новостей
+            </h2>
+            <p className="mt-1 text-small text-muted">Публичные новости рынка по вашим продуктам: регулятор, союзы страховщиков, СМИ. У каждой новости ссылка на источник.</p>
+            {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Дайджест настраивается при личном входе: по общему логину можно выбрать чужой профиль.</p> : null}
+            <NewsPrefsForm
+              initial={await newsPrefsFor(ctx.person.id)}
+              directions={(await newsDirections()).filter((d) => d.active).map((d) => ({ code: d.code, label: d.label }))}
+              defaults={await personDirections(ctx.person.id)}
+              locked={ctx.via === "TEAM"}
+            />
           </section>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="phone-push">
