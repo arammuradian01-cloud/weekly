@@ -2,8 +2,8 @@
 //
 // LRF «b2b channel: 5Y_LRF (CURRENT)» ресурс читает через ту же таблицу-связку, листы там с префиксом «B2B. ». Читаются
 // только листы страхования:
-// - «CPA & WAYBACK OSAGO LRF» и «CPA & WAYBACK RED LRF»: партнёры и отказной трафик страховых по типам партнёров;
-// - «AGENTS OSAGO LRF» и «AGENTS RED LRF»: агенты, в том числе по API;
+// - «CPA & WAYBACK: OSAGO LRF» и «CPA & WAYBACK: RED LRF»: партнёры и отказной трафик страховых по типам партнёров;
+// - «AGENTS: OSAGO LRF» и «AGENTS: RED LRF»: агенты, в том числе по API;
 // - «PnL_b2b»: бюджет и LBE канала по продуктам (выручка, расходы на партнёров, промо-маржа).
 // У партнёров в LRF только факт и LBE, бюджета по партнёру нет: бюджет показывается по продукту и каналу из P&L.
 //
@@ -65,12 +65,13 @@ export const PARTNER_CHANNELS: { code: PartnerChannel; label: string }[] = [
 
 export const channelLabel = (c: string) => PARTNER_CHANNELS.find((x) => x.code === c)?.label ?? c;
 
-/** Листы партнёрского канала в LRF b2b. В таблице-связке они с префиксом «B2B. » */
+/** Листы партнёрского канала в LRF b2b. В таблице-связке они с префиксом «B2B. ». Имена с двоеточием: так они
+    называются в самом LRF, проверено по таблице-связке 11.10 */
 export const PARTNER_SHEETS: { name: string; channel: PartnerChannel }[] = [
-  { name: "CPA & WAYBACK OSAGO LRF", channel: "cpa" },
-  { name: "AGENTS OSAGO LRF", channel: "agents" },
-  { name: "CPA & WAYBACK RED LRF", channel: "cpa" },
-  { name: "AGENTS RED LRF", channel: "agents" },
+  { name: "CPA & WAYBACK: OSAGO LRF", channel: "cpa" },
+  { name: "AGENTS: OSAGO LRF", channel: "agents" },
+  { name: "CPA & WAYBACK: RED LRF", channel: "cpa" },
+  { name: "AGENTS: RED LRF", channel: "agents" },
 ];
 export const PARTNER_PNL_SHEET = "PnL_b2b";
 export const PARTNER_SHEET_PREFIX = "B2B. ";

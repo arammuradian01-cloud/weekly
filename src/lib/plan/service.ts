@@ -44,7 +44,7 @@ export const LRF_MIRROR_ID = "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg";
 /** Листы LRF b2b (этап 35б): в таблице-связке с префиксом «B2B. », в самом LRF b2b без него. Их может не быть */
 const PARTNER_SHEET_NAMES = [...PARTNER_SHEETS.map((x) => x.name), PARTNER_PNL_SHEET].flatMap((n) => [`${PARTNER_SHEET_PREFIX}${n}`, n]);
 export const PLAN_LIMITS = { comment: 300, commentMin: 3, owners: 12, history: 60, rows: 1500, cols: 1500 };
-/** Листы партнёров длиннее листов ключевых метрик: в «CPA & WAYBACK RED LRF» уже больше тысячи строк */
+/** Листы партнёров длиннее листов ключевых метрик: в «CPA & WAYBACK: RED LRF» уже больше тысячи строк */
 const PARTNER_LIMITS = { rows: 5000, cols: 400 };
 
 type Reader = Pick<SheetsClient, "getValues" | "sheets">;
