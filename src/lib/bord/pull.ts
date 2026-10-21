@@ -13,7 +13,7 @@
 // - задачу, которую удалили из Bord, ресурс не трогает и показывает в списке «нет в Bord».
 // Одна битая строка забор не останавливает, поменявшийся формат вкладки останавливает целиком.
 
-import { fillMissingLogins, reservedLogins, takenNames } from "@/lib/login/logins";
+import { fillMissingLogins, lockPeopleNames, reservedLogins, takenNames } from "@/lib/login/logins";
 import { notifyWatchers } from "@/lib/tasks/watch";
 import { notifyDependents } from "@/lib/tasks/dependents";
 import { CLOSED_DB } from "@/lib/tasks/codes";
@@ -143,6 +143,7 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
       // ---------- Люди ----------
       const fallback = await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code: "department" } });
       if (!fallback) throw new Error("В справочнике нет направления «Департамент»: сначала запустите сид");
+      await lockPeopleNames(tx);
       const people = await tx.person.findMany({ select: { id: true, slug: true, login: true, fullName: true, shortName: true, sortOrder: true, defaultDirectionId: true } });
       const byId = new Map(people.map((p) => [p.id, p]));
       // Bord ведёт топ-команда: имена сначала ищем среди её людей. Остальных сотрудников департамента только запасным

@@ -7,7 +7,8 @@ import * as login from "@/lib/login/service";
 import * as pw from "@/lib/login/password";
 import * as email from "@/lib/login/email";
 import * as admin from "@/lib/admin/service";
-import { fillMissingLogins } from "@/lib/login/logins";
+import * as org from "@/lib/org/service";
+import { fillMissingLoginsAll } from "@/lib/login/logins";
 import { setMailTransport, type Mail } from "@/lib/mail";
 
 const device = { ip: "10.0.0.9", userAgent: "Mozilla/5.0 (Macintosh) Safari/605.1" };
@@ -77,7 +78,7 @@ describe("логины вида amuradyan", () => {
   });
 
   it("повторное заполнение ничего не меняет, а логин не совпадает с чужим коротким именем", async () => {
-    expect(await fillMissingLogins(prisma)).toBe(0);
+    expect(await fillMissingLoginsAll(prisma)).toBe(0);
     const people = await prisma.person.findMany({ select: { id: true, slug: true, login: true } });
     for (const p of people) expect(people.some((o) => o.id !== p.id && o.slug === p.login)).toBe(false);
   });
@@ -306,6 +307,35 @@ describe("после проверки кода этапа 52", () => {
       await expectRule(admin.updatePerson(await owner(), a.slug, { login: "team" }), /занят ресурсом/);
     } finally {
       await prisma.person.delete({ where: { slug: a.slug } });
+    }
+  });
+
+  it("загрузка структуры не меняет почту главного владельца, если грузит совладелец", async () => {
+    await admin.updatePerson(await owner(), "golovkin", { role: "OWNER" });
+    await admin.setPrimaryOwner(await owner(), "golovkin");
+    await prisma.person.update({ where: { slug: "golovkin" }, data: { email: "golovkin@sravni.ru" } });
+    try {
+      await org.applyStructure(await owner(), [["ФИО", "Должность", "Почта"], ["Головкин Владислав", "Директор", "evil@sravni.ru"]].map((r) => r.join(";")).join("\n"));
+      expect((await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } })).email).toBe("golovkin@sravni.ru");
+    } finally {
+      const golovkin = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "INVITE" as const };
+      await admin.updatePerson(golovkin, "golovkin", { role: "ADMIN" });
+      await prisma.person.updateMany({ data: { unitId: null, managerId: null, position: null } });
+      await prisma.team.deleteMany({ where: { id: { not: "top" } } });
+      for (let i = 0; i < 10 && (await prisma.orgUnit.count()); i++) await prisma.orgUnit.deleteMany({ where: { children: { none: {} } } });
+    }
+  });
+
+  it("два человека с одной фамилией добавляются одновременно: короткие имена разные, общей ошибки нет", async () => {
+    const dir = (await prisma.dictionaryItem.findFirstOrThrow({ where: { kind: "DIRECTION" } })).code;
+    const made = await Promise.all([
+      admin.createPerson(await owner(), { fullName: "Зайцев Пётр", role: "LEADER", zone: "Тест", direction: dir }),
+      admin.createPerson(await owner(), { fullName: "Зайцев Олег", role: "LEADER", zone: "Тест", direction: dir }),
+    ]);
+    try {
+      expect(new Set(made.map((m) => m.slug)).size).toBe(2);
+    } finally {
+      await prisma.person.deleteMany({ where: { slug: { in: made.map((m) => m.slug) } } });
     }
   });
 

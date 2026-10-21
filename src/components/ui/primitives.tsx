@@ -144,8 +144,12 @@ export function TextArea({
         </label>
         <CharCounter counter={counter} />
       </div>
-      <textarea id={id} className={control} {...props} />
-      {hint ? <p className="sv-field__hint">{hint}</p> : null}
+      <textarea id={id} className={control} {...props} aria-describedby={[props["aria-describedby"], hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined} />
+      {hint ? (
+        <p id={`${id}-hint`} className="sv-field__hint">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -163,14 +167,18 @@ export function SelectField({
       <label htmlFor={id} className="sv-label">
         {label}
       </label>
-      <select id={id} className={control} {...props}>
+      <select id={id} className={control} {...props} aria-describedby={[props["aria-describedby"], hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined}>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
           </option>
         ))}
       </select>
-      {hint ? <p className="sv-field__hint">{hint}</p> : null}
+      {hint ? (
+        <p id={`${id}-hint`} className="sv-field__hint">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }

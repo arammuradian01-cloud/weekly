@@ -11,8 +11,10 @@ const MAP: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m",
   н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch",
   ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
-  // Казахские, узбекские и таджикские буквы: без них логины таких имён выходили бы искажёнными
+  // Казахские, узбекские, таджикские и украинские буквы: без них логины таких имён выходили бы искажёнными
   ә: "a", ғ: "g", қ: "k", ң: "n", ө: "o", ұ: "u", ү: "u", һ: "h", і: "i", ў: "u", ҳ: "h", ҷ: "j", ӣ: "i", ӯ: "u",
+  // Украинские буквы
+  ї: "yi", є: "ye", ґ: "g",
 };
 
 /** Латиница из слова: только буквы a-z, остальное выкидывается */
@@ -66,15 +68,17 @@ export function takenNames(people: { slug: string; login: string | null }[]): st
  * Логины всем, у кого их ещё нет. Занятыми считаются чужие логины и чужие короткие имена: логин одного человека не
  * должен совпасть с коротким именем другого, иначе вход по нему стал бы неоднозначным. Возвращает, сколько выдано
  */
-export async function fillMissingLogins(db: Db): Promise<number> {
-  // Два параллельных добавления людей (или два запуска сида) не выдают один логин: внутри транзакции под замком,
-  // снаружи одной транзакцией со своим замком
-  if (!("$transaction" in db)) return fillMissingLoginsTx(db);
-  return (db as PrismaClient).$transaction((tx) => fillMissingLoginsTx(tx), { timeout: 60_000 });
+/**
+ * Замок на короткие имена и логины до конца транзакции. Его берут до расчёта короткого имени нового человека:
+ * два параллельных добавления людей с одной фамилией не получат одно и то же имя
+ */
+export async function lockPeopleNames(db: Prisma.TransactionClient): Promise<void> {
+  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('people-logins'))::text`;
 }
 
-async function fillMissingLoginsTx(db: Prisma.TransactionClient): Promise<number> {
-  await db.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('people-logins'))::text`;
+export async function fillMissingLogins(db: Prisma.TransactionClient): Promise<number> {
+  // Вызывается внутри транзакции: замок держится до её конца, два параллельных добавления людей не выдадут один логин
+  await lockPeopleNames(db);
   const people = await db.person.findMany({ select: { id: true, slug: true, login: true, fullName: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
   const missing = people.filter((p) => !p.login);
   if (!missing.length) return 0;
@@ -94,4 +98,9 @@ async function fillMissingLoginsTx(db: Prisma.TransactionClient): Promise<number
     await db.person.update({ where: { id: p.id }, data: { login } });
   }
   return missing.length;
+}
+
+/** То же для сида и скриптов: своя транзакция с замком, два запуска сида одновременно не выдадут один логин */
+export function fillMissingLoginsAll(client: PrismaClient): Promise<number> {
+  return client.$transaction((tx) => fillMissingLogins(tx), { timeout: 60_000 });
 }

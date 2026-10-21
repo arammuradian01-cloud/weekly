@@ -513,7 +513,8 @@ function PeopleSection({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-1 lg:max-w-[60%] lg:justify-end">
-                  {p.active ? (
+                  {/* Входом главного владельца управляет только он сам (этап 52): совладельцу эти кнопки не показываем */}
+                  {p.active && (!p.primaryOwner || p.slug === me) ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -544,13 +545,13 @@ function PeopleSection({
                       Отсутствие
                     </Button>
                   ) : null}
-                  {p.passwordSetAt && p.slug !== me ? (
+                  {p.passwordSetAt && p.slug !== me && !p.primaryOwner ? (
                     <Button size="sm" variant="ghost" aria-label={`Сбросить пароль: ${p.fullName}`} onClick={() => setResetFor(p)}>
                       <KeyRound className="h-4 w-4" aria-hidden="true" />
                       Сбросить пароль
                     </Button>
                   ) : null}
-                  {p.devices ? (
+                  {p.devices && (!p.primaryOwner || p.slug === me) ? (
                     <Button size="sm" variant="ghost" aria-label={`Завершить входы: ${p.fullName}`} onClick={() => setRevoke(p)}>
                       <LogOut className="h-4 w-4" aria-hidden="true" />
                       Завершить входы

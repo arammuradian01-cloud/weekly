@@ -2,7 +2,7 @@
 // Права по матрице раздела 2: справочники и ритм недели правят владелец и администраторы в режиме управления,
 // людей и роли меняет только владелец. Каждая правка пишется в журнал с тем, что было и что стало.
 
-import { fillMissingLogins, loginProblem, reservedLogins, takenNames } from "@/lib/login/logins";
+import { fillMissingLogins, lockPeopleNames, loginProblem, reservedLogins, takenNames } from "@/lib/login/logins";
 import { guardPrimary, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
 import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
@@ -289,6 +289,7 @@ export async function createPerson(actor: Actor, input: PersonInput) {
   return prisma.$transaction(async (tx) => {
     const direction = await directionOf(tx, input.direction);
     const email = await checkEmail(tx, input.email);
+    await lockPeopleNames(tx);
     const all = await tx.person.findMany({ select: { slug: true, login: true, fullName: true, sortOrder: true, active: true } });
     if (all.some((p) => p.active && p.fullName.toLowerCase() === fullName.toLowerCase())) fail(`${fullName} уже есть в команде`);
     // «all» и «system» заняты: так ресурс помечает «Все лидеры» и события системы. Чужие логины тоже (этап 52):
