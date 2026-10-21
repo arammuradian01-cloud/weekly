@@ -126,7 +126,7 @@ test("руководитель собирает weekly-проект из гот�
     await reva.getByRole("menuitem", { name }).click();
   } else {
     await ready.getByRole("button", { name: new RegExp(`^${INS} Мурадян`) }).click();
-    await reva.getByRole("button", { name: /^Управление продуктового развития \(insurance\)/ }).click();
+    await reva.getByRole("button", { name: /^Управление продуктового развития \(insurance\) Рева/ }).click();
     await drag(reva, reva.getByTestId(`drag-person-${tokov}`), card);
   }
   const add = reva.getByRole("dialog", { name: `В проект «${name}»` });
