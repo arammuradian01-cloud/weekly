@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
 import { EmptyState } from "@/components/empty-state";
 import {
   addMemberAction,
@@ -31,7 +32,7 @@ import type { PeopleTree } from "@/lib/org/people-tree";
 import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
 import { deadlineText } from "@/components/weekly/weekly-feed";
 
-type Candidate = { slug: string; fullName: string; position: string | null };
+type Candidate = { slug: string; fullName: string; position: string | null; unit?: string | null; own?: boolean };
 
 export function StructureScreen({ view, tree, owner, me, candidates, leads = [], focus = null }: { view: StructureView; tree: PeopleTree; owner: boolean; me: string; candidates: Candidate[]; leads?: string[]; /** Человек из адреса: дерево открывается на нём (этап 45) */ focus?: string | null }) {
   // Дерево подчинённых первым (этап 34): так смотрят структуру чаще всего. Пока руководители не заданы, первыми подразделения
@@ -51,7 +52,8 @@ export function StructureScreen({ view, tree, owner, me, candidates, leads = [],
       }
     });
 
-  const empty = view.units.filter((u) => u.kind !== "DEPARTMENT").length === 0;
+  // Пусто, пока под корнем (компанией или департаментом) нет ни одного подразделения
+  const empty = view.units.filter((u) => u.depth > 0).length === 0;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -151,7 +153,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
   });
   return (
     <>
-      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Подразделения департамента">
+      <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Подразделения">
         {units.filter((u) => !hidden.has(u.id)).map((u) => {
           const open = openIds.has(u.id);
           return (
@@ -200,7 +202,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                           Вакансии: {u.vacancies.join(", ")}
                         </p>
                       ) : null}
-                      {owner && u.kind !== "DEPARTMENT" ? (
+                      {owner && u.depth > 0 ? (
                         <button type="button" className="self-start text-small text-blue-700 hover:underline" onClick={() => setEditingUnit(u)}>
                           Изменить подразделение
                         </button>
@@ -548,31 +550,39 @@ function SlotFields({ legend, id, value, onChange }: { legend: string; id: strin
   );
 }
 
+/**
+ * Участник в команду: поиск по всей компании (этап 53). Человек не из ветки руководителя команды помечен «другая
+ * ветка»: после добавления он и его руководитель получат уведомление, а его задачи вне этой команды руководителю не видны
+ */
 function AddMember({ team, people, onSave }: { team: TeamView; people: Candidate[]; onSave: Runner }) {
   const [slug, setSlug] = useState("");
+  const chosen = people.find((p) => p.slug === slug) ?? null;
+  const options: PickerOption[] = useMemo(
+    () => people.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null, note: p.own === false ? "другая ветка" : null })),
+    [people],
+  );
   return (
     <form
-      className="flex flex-col gap-2 sm:flex-row sm:items-end"
+      className="flex flex-col gap-2"
       onSubmit={(e) => {
         e.preventDefault();
-        if (!slug) return;
-        const name = people.find((p) => p.slug === slug)?.fullName ?? slug;
-        onSave(() => addMemberAction(team.id, slug), `${name} в команде`);
+        if (!chosen) return;
+        onSave(() => addMemberAction(team.id, chosen.slug), chosen.own === false ? `${chosen.fullName} в команде, уведомление отправлено` : `${chosen.fullName} в команде`);
         setSlug("");
       }}
     >
-      <SelectField
-        label="Добавить участника"
-        id={`add-${team.id}`}
-        value={slug}
-        onChange={(e) => setSlug(e.target.value)}
-        options={[{ value: "", label: "Выберите человека" }, ...people.map((p) => ({ value: p.slug, label: p.position ? `${p.fullName}, ${p.position}` : p.fullName }))]}
-        className="sm:w-80"
-      />
-      <Button size="sm" type="submit" disabled={!slug}>
-        <Users className="h-4 w-4" aria-hidden="true" />
-        Добавить
-      </Button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <SearchPicker label="Добавить участника" id={`add-${team.id}`} value={slug} onChange={setSlug} options={options} placeholder="Фамилия, должность или подразделение" className="sm:w-96" />
+        <Button size="sm" type="submit" disabled={!chosen}>
+          <Users className="h-4 w-4" aria-hidden="true" />
+          Добавить
+        </Button>
+      </div>
+      {chosen?.own === false ? (
+        <p className="text-small text-muted" data-testid={`add-${team.id}-external`}>
+          {chosen.fullName} не из вашей ветки. Он и его руководитель получат уведомление, а его задачи вне этой команды вам видны не будут.
+        </p>
+      ) : null}
     </form>
   );
 }

@@ -48,6 +48,8 @@ export function eventPhrase(e: EventLine): string {
       return `${who}крупная инициатива`;
     case "PLAN":
       return `${who}прогноз месяца: проверьте после загрузки LBE`;
+    case "TEAM":
+      return `${who}состав команды`;
     default:
       return `${who}новое событие`;
   }
@@ -61,6 +63,8 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
   // Прогноз месяца (этап 35): страница прогноза на месяц события
   if (e.subject?.startsWith("plan:")) return planHref(e.subject);
+  // Состав команды (этап 53): страница структуры с командами
+  if (e.subject?.startsWith("team:")) return "/people/structure";
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

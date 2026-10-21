@@ -2,8 +2,10 @@
 // ячейки из Google-таблицы, ресурс показывает, что добавится, изменится и уйдёт, и только по подтверждению применяет.
 //
 // Колонки (заголовки по-русски, порядок любой, лишние колонки не читаются):
-//   ФИО, Должность, Управление, Отдел, Сектор, Направление, Руководитель, Функциональный руководитель, Почта, Руководит, Статус
+//   ФИО, Должность, Департамент, Управление, Отдел, Сектор, Направление, Руководитель, Функциональный руководитель, Почта, Руководит, Статус
 // - путь подразделения: Управление, Отдел, Сектор, Направление; пустые уровни пропускаются, корень: департамент;
+// - колонка «Департамент» (этап 53) включает структуру всей компании: корень тогда компания, первый уровень пути
+//   департамент. Строка без департамента и подразделения с «Руководит» да: генеральный директор;
 // - «Руководит»: да, если человек руководит самым глубоким подразделением своей строки;
 // - «Статус»: «вакансия», или ФИО начинается со слова «вакансия»: строка становится пустым местом, человека не заводим;
 // - «Руководитель»: ФИО административного руководителя. Пусто: руководитель подразделения, а для руководителя
@@ -15,6 +17,7 @@ import { NameIndex, normName, personNameFromBord, type NamedPerson } from "@/lib
 export const IMPORT_COLUMNS = {
   name: ["фио", "сотрудник", "имя"],
   position: ["должность", "позиция", "position"],
+  department: ["департамент", "дирекция", "блок"],
   management: ["управление"],
   division: ["отдел"],
   sector: ["сектор"],
@@ -41,6 +44,9 @@ export type ImportRow = {
 };
 
 export type ImportProblem = { line: number; text: string };
+
+/** Что прочитано из файла. company: есть колонка «Департамент», файл описывает всю компанию (этап 53) */
+export type StructureTable = { rows: ImportRow[]; problems: ImportProblem[]; company: boolean };
 
 /** Разбор CSV с разделителем: запятая, точка с запятой или табуляция (так копируются ячейки из Google-таблицы) */
 export function parseDelimited(text: string): string[][] {
@@ -86,10 +92,10 @@ const cleanCell = (v: string | undefined) => (v ?? "").replace(/[—–]/g, "-")
 const isDash = (v: string) => !v || v === "-" || v.toLowerCase() === "n/a";
 const yes = (v: string) => ["да", "1", "yes", "true", "+", "руководитель"].includes(v.toLowerCase());
 
-export function readStructureTable(text: string): { rows: ImportRow[]; problems: ImportProblem[] } {
+export function readStructureTable(text: string): StructureTable {
   const table = parseDelimited(text).filter((r) => r.some((c) => c.trim()));
   const problems: ImportProblem[] = [];
-  if (!table.length) return { rows: [], problems: [{ line: 0, text: "Файл пустой" }] };
+  if (!table.length) return { rows: [], problems: [{ line: 0, text: "Файл пустой" }], company: false };
   const header = table[0]!.map((h) => normName(h));
   const col: Partial<Record<ColumnKey, number>> = {};
   for (const [key, names] of Object.entries(IMPORT_COLUMNS) as [ColumnKey, readonly string[]][]) {
@@ -97,7 +103,8 @@ export function readStructureTable(text: string): { rows: ImportRow[]; problems:
     const exact = header.findIndex((h) => names.includes(h));
     if (exact >= 0) col[key] = exact;
   }
-  if (col.name === undefined) return { rows: [], problems: [{ line: 1, text: "Нет колонки «ФИО»: первая строка файла должна быть заголовком" }] };
+  if (col.name === undefined) return { rows: [], problems: [{ line: 1, text: "Нет колонки «ФИО»: первая строка файла должна быть заголовком" }], company: false };
+  const company = col.department !== undefined;
   const get = (r: string[], key: ColumnKey) => (col[key] === undefined ? "" : cleanCell(r[col[key]!]));
   const rows: ImportRow[] = [];
   table.slice(1).forEach((r, i) => {
@@ -105,7 +112,7 @@ export function readStructureTable(text: string): { rows: ImportRow[]; problems:
     const name = get(r, "name");
     const status = get(r, "status").toLowerCase();
     const position = isDash(get(r, "position")) ? "" : get(r, "position");
-    const path = (["management", "division", "sector", "stream"] as ColumnKey[]).map((k) => get(r, k)).filter((v) => !isDash(v));
+    const path = (["department", "management", "division", "sector", "stream"] as ColumnKey[]).map((k) => get(r, k)).filter((v) => !isDash(v));
     const vacancy = status.startsWith("ваканс") || /^ваканс/i.test(name);
     if (!name && !vacancy) {
       if (position || path.length) problems.push({ line, text: "Нет ФИО" });
@@ -131,7 +138,7 @@ export function readStructureTable(text: string): { rows: ImportRow[]; problems:
       vacancy,
     });
   });
-  return { rows, problems };
+  return { rows, problems, company };
 }
 
 export const pathKey = (path: string[]) => path.map((p) => normName(p)).join(" / ");
@@ -139,14 +146,19 @@ export const pathKey = (path: string[]) => path.map((p) => normName(p)).join(" /
 /** Фамилия и имя без отчества: «антонов дмитрий» */
 export const nameKey2 = (name: string) => normName(name).split(" ").slice(0, 2).join(" ");
 
-/** Уровень подразделения: по первому слову названия («Сектор телемаркетинга»), иначе по глубине пути */
-export function kindOfDepth(depth: number, name = ""): "MANAGEMENT" | "DIVISION" | "SECTOR" | "STREAM" | "FUNCTION" {
+/**
+ * Уровень подразделения: по первому слову названия («Сектор телемаркетинга»), иначе по глубине пути.
+ * company: путь от компании (этап 53), первый уровень пути департамент
+ */
+export function kindOfDepth(depth: number, name = "", company = false): "DEPARTMENT" | "MANAGEMENT" | "DIVISION" | "SECTOR" | "STREAM" | "FUNCTION" {
   const first = normName(name).split(" ")[0] ?? "";
+  if (company && (first.startsWith("департамент") || first.startsWith("дирекц") || first.startsWith("блок"))) return "DEPARTMENT";
   if (first.startsWith("управлен")) return "MANAGEMENT";
   if (first.startsWith("отдел")) return "DIVISION";
   if (first.startsWith("сектор")) return "SECTOR";
   if (first.startsWith("направлен") || first.startsWith("групп")) return "STREAM";
   if (first.startsWith("функц")) return "FUNCTION";
+  if (company) return (["DEPARTMENT", "MANAGEMENT", "DIVISION", "SECTOR", "STREAM"] as const)[Math.min(depth, 4)]!;
   return (["MANAGEMENT", "DIVISION", "SECTOR", "STREAM"] as const)[Math.min(depth, 3)]!;
 }
 
@@ -194,6 +206,8 @@ export type StructurePlan = {
   problems: ImportProblem[];
   /** Все строки людей в порядке файла: для применения */
   planned: PlannedPerson[];
+  /** Файл всей компании: есть колонка «Департамент» (этап 53) */
+  company: boolean;
 };
 
 /** Человек по ФИО из файла: точное ФИО, фамилия и имя без отчества, или фамилия плюс короткое имя */
@@ -212,7 +226,9 @@ export function matchPerson<T extends NamedPerson>(index: NameIndex, people: T[]
 }
 
 /** existingUnits: пути включённых подразделений ресурса, как их показывать («Управление / Отдел») */
-export function planStructure(rows: ImportRow[], problems: ImportProblem[], existingUnits: string[][], people: ExistingPerson[]): StructurePlan {
+/** company: файл всей компании (этап 53), пути от компании */
+export function planStructure(rows: ImportRow[], problems: ImportProblem[], existingUnits: string[][], people: ExistingPerson[], company = false): StructurePlan {
+  const rootLabel = company ? "компания" : "департамент";
   const index = new NameIndex(people);
   const plannedUnits = new Map<string, string[]>();
   for (const r of rows) for (let d = 1; d <= r.path.length; d++) plannedUnits.set(pathKey(r.path.slice(0, d)), r.path.slice(0, d));
@@ -227,6 +243,7 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
     vacancies: rows.filter((r) => r.vacancy).map((r) => ({ path: r.path, position: r.position })),
     problems: [...problems],
     planned: [],
+    company,
   };
   const seen = new Map<string, number>();
 
@@ -261,7 +278,7 @@ export function planStructure(rows: ImportRow[], problems: ImportProblem[], exis
     };
     if (hit.person) {
       const p = hit.person;
-      const unit = r.path.length ? r.path.join(" / ") : "департамент";
+      const unit = r.path.length ? r.path.join(" / ") : rootLabel;
       if ((p.position ?? "") !== r.position) planned.changes.push(`должность: ${p.position || "нет"}, станет ${r.position || "нет"}`);
       if (pathKey(r.path) !== (p.unitPath ?? "")) planned.changes.push(`подразделение: станет ${unit}`);
       if (r.email && r.email !== (p.email ?? "")) planned.changes.push(`почта: станет ${r.email}`);

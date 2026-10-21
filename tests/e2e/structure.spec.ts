@@ -204,3 +204,64 @@ test("дерево подчинённых: схема с путём наверх
   await expect(sharedTree.getByTestId("person-focus")).not.toContainText("Открытые вакансии");
   await other.close();
 });
+
+// Этап 53: файл всей компании с колонкой «Департамент»
+const COMPANY = [
+  ["ФИО", "Должность", "Департамент", "Управление", "Отдел", "Руководитель", "Руководит", "Статус"],
+  ["Крайник Александр", "CEO", "", "", "", "", "да", ""],
+  ["Мурадян Арам", "Директор департамента", "Департамент страхования и инвестиций", "", "", "", "да", ""],
+  ["Рева Тарас Игоревич", "CPO", "Департамент страхования и инвестиций", "Управление продуктового развития (insurance)", "", "", "да", ""],
+  ["Токов Никита Андреевич", "Analytics Lead", "Департамент страхования и инвестиций", "Управление продуктового развития (insurance)", "Отдел аналитики (insurance)", "", "", ""],
+  ["Харченко Артём", "CFO", "Финансовый департамент", "", "", "", "да", ""],
+  ["Кацемба Наталья Сергеевна", "Chief Accountant", "Финансовый департамент", "Управление финансового учёта и контроля", "", "", "да", ""],
+  ["Погосова Сабина Левоновна", "Finance coordinator", "Финансовый департамент", "Управление финансового учёта и контроля", "Отдел финансового сопровождения бизнеса", "", "", ""],
+  ["", "CMO", "Департамент маркетинга", "", "", "", "", "вакансия"],
+]
+  .map((r) => r.join("\t"))
+  .join("\n");
+
+test("этап 53: структура всей компании, генеральный во главе, руководитель добавляет человека из другого департамента поиском", async ({ page, browser }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/people/structure");
+  await page.getByRole("button", { name: "Загрузить структуру" }).click();
+  const drawer = page.getByRole("dialog", { name: "Загрузить структуру" });
+  await drawer.getByLabel("Или вставьте ячейки из таблицы").fill(COMPANY);
+  await drawer.getByRole("button", { name: "Проверить" }).click();
+  await expect(drawer.getByText(/Людей добавится 5/)).toBeVisible();
+  await drawer.getByRole("button", { name: "Загрузить", exact: true }).click();
+  await expect(page.getByText(/Структура загружена/).first()).toBeVisible();
+
+  // Подразделения: компания наверху, генеральный её руководитель, департаменты под ней
+  const main = page.getByRole("main");
+  await page.getByRole("radio", { name: "Подразделения" }).click();
+  await expect(main.getByText("Сравни", { exact: true })).toBeVisible();
+  await expect(main.getByText("Руководитель: Крайник Александр", { exact: false }).first()).toBeVisible();
+  await expect(main.getByText("Финансовый департамент", { exact: true })).toBeVisible();
+  await shot(page, "company-units");
+  await page.getByRole("radio", { name: /Команды/ }).click();
+  await expect(main.getByText("Команда генерального директора", { exact: true })).toBeVisible();
+  await shot(page, "company-teams");
+
+  // Рева собирает свою команду: находит человека из финансового департамента поиском
+  const lead = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" })).newPage();
+  await enterByLink(lead, "reva");
+  await lead.goto("/people/structure");
+  await lead.getByRole("radio", { name: /Команды/ }).click();
+  await lead.getByRole("button", { name: "Показать участников: Управление продуктового развития (insurance)" }).click();
+  const team = (await sql("SELECT id FROM teams WHERE name = 'Управление продуктового развития (insurance)'"))[0]!.id as string;
+  const search = lead.getByRole("combobox", { name: "Добавить участника" });
+  await search.fill("погос");
+  const option = lead.getByRole("option", { name: /Погосова Сабина/ });
+  await expect(option).toContainText("другая ветка");
+  await option.click();
+  await expect(lead.getByTestId(`add-${team}-external`)).toContainText("не из вашей ветки");
+  await shot(lead, "company-add-external");
+  await lead.getByRole("button", { name: "Добавить", exact: true }).click();
+  await expect(lead.getByText(/Погосова Сабина.* в команде, уведомление отправлено/).first()).toBeVisible();
+  const [member] = await sql(`SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = '${team}' AND p."fullName" LIKE 'Погосова%'`);
+  expect(member!.external).toBe(true);
+  const events = await sql(`SELECT p."fullName" FROM inbox_events e JOIN people p ON p.id = e."recipientId" WHERE e.kind = 'TEAM' ORDER BY 1`);
+  expect(events.map((e) => e.fullName)).toEqual([expect.stringMatching(/^Кацемба/), expect.stringMatching(/^Погосова/)]);
+  await lead.close();
+});

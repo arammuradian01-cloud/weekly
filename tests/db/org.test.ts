@@ -65,8 +65,8 @@ async function cleanStructure() {
   await prisma.weeklyReport.deleteMany({ where: { author: { role: "EMPLOYEE" } } });
   await prisma.person.deleteMany({ where: { role: "EMPLOYEE" } });
   await prisma.vacancy.deleteMany();
-  await prisma.orgUnit.deleteMany({ where: { kind: { not: "DEPARTMENT" } } });
-  await prisma.orgUnit.deleteMany();
+  // С листьев: у дерева подразделений внешний ключ на родителя без каскада, сверху бывает компания (этап 53)
+  for (let i = 0; i < 10 && (await prisma.orgUnit.count()); i++) await prisma.orgUnit.deleteMany({ where: { children: { none: {} } } });
 }
 
 afterAll(async () => {
@@ -263,12 +263,11 @@ describe("права руководителя команды", () => {
 });
 
 describe("состав команд", () => {
-  it("руководитель добавляет людей своей ветки, чужих добавляет владелец; топ-команду правит только владелец", async () => {
+  it("руководитель добавляет и людей других веток с пометкой; топ-команду правит только владелец", async () => {
     const antonovTeam = await teamLedBy("Антонов");
     const antonov = await actor("Антонов");
-    // Новикова из другого управления: Антонову её добавить нельзя
-    await expectRule(org.addTeamMember(antonov, antonovTeam.id, await slugOf("Новикова")), /не из вашей ветки/);
-    await org.addTeamMember(await actors.owner(), antonovTeam.id, await slugOf("Новикова"));
+    // Новикова из другого управления: Антонов добавляет её сам (этап 53), она участник из другой ветки
+    expect((await org.addTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"))).external).toBe(true);
     await org.removeTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"));
     await expectRule(org.addTeamMember(await actors.reva(), TOP_TEAM, await slugOf("Токов")), /меняют её руководитель и владелец/);
     await expectRule(org.updateTeam(await actors.owner(), TOP_TEAM, { leader: "reva" }), /Топ-командой руководит владелец/);

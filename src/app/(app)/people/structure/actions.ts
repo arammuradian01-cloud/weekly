@@ -33,7 +33,7 @@ export async function updateTeamAction(id: string, input: org.TeamInput): Promis
   return done(await runAction("Правка команды", (a) => org.updateTeam(a, String(id), input)));
 }
 
-export async function addMemberAction(team: string, slug: string): Promise<Result<void>> {
+export async function addMemberAction(team: string, slug: string): Promise<Result<{ external: boolean }>> {
   return done(await runAction("Участник команды", (a) => org.addTeamMember(a, String(team), String(slug))));
 }
 

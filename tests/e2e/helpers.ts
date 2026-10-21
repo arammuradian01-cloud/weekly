@@ -31,8 +31,11 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM teams WHERE id <> 'top'");
   await client.query('UPDATE people SET "unitId" = NULL, "managerId" = NULL, "functionalManagerId" = NULL, position = NULL');
   await client.query("DELETE FROM vacancies");
-  await client.query("DELETE FROM org_units WHERE kind <> 'DEPARTMENT'");
-  await client.query("DELETE FROM org_units");
+  // С листьев: у дерева подразделений внешний ключ на родителя без каскада, сверху бывает компания (этап 53)
+  for (let i = 0; i < 10; i++) {
+    const { rowCount } = await client.query("DELETE FROM org_units u WHERE NOT EXISTS (SELECT 1 FROM org_units c WHERE c.\"parentId\" = u.id)");
+    if (!rowCount) break;
+  }
   await client.query("INSERT INTO team_members (\"teamId\", \"personId\") SELECT 'top', id FROM people WHERE slug = ANY($1) AND slug <> 'muradyan' ON CONFLICT DO NOTHING", [SEED_PEOPLE]);
   await client.query("DELETE FROM tasks WHERE \"ownerId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);
   await client.query("DELETE FROM weekly_entries WHERE \"authorId\" IN (SELECT id FROM people WHERE slug <> ALL($1))", [SEED_PEOPLE]);

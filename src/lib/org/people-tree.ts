@@ -143,8 +143,8 @@ async function peopleTreeUncached(viewer: ScopeSubject): Promise<PeopleTree> {
 
   const depthOf = new Map<string, number>();
   const roots = order(people.filter((p) => !managerOf.get(p.id)).map((p) => p.id));
-  // Первым руководитель департамента: голова подразделения верхнего уровня
-  const head = units.find((u) => u.kind === "DEPARTMENT" && u.headId)?.headId;
+  // Первым руководитель верха структуры: генеральный директор (этап 53), без компании руководитель департамента
+  const head = (units.find((u) => u.kind === "COMPANY" && u.headId) ?? units.find((u) => u.kind === "DEPARTMENT" && !u.parentId && u.headId) ?? units.find((u) => u.kind === "DEPARTMENT" && u.headId))?.headId;
   if (head && roots.includes(head)) {
     roots.splice(roots.indexOf(head), 1);
     roots.unshift(head);
