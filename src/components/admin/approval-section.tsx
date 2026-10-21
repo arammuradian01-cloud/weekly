@@ -36,7 +36,12 @@ export function ApprovalSection({ setting, departments }: { setting: ApprovalSet
           e.preventDefault();
           setBusy(true);
           const departmentsOut = Object.fromEntries(Object.entries(deps).filter(([, m]) => m) as [string, ApprovalMode][]);
-          await run(() => saveApprovalAction({ default: def, departments: departmentsOut }), "Согласование задач сохранено");
+          const saved = await run(() => saveApprovalAction({ default: def, departments: departmentsOut }), "Согласование задач сохранено");
+          // Форма показывает то, что сохранилось на сервере: департаменты, которых уже нет, из неё уходят
+          if (saved) {
+            setDef(saved.default);
+            setDeps(Object.fromEntries(departments.map((d) => [d.id, saved.departments[d.id] ?? ""])));
+          }
           setBusy(false);
         }}
       >

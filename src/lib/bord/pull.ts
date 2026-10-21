@@ -358,7 +358,11 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
           }
         }
         if (inBord((s) => s.status)) {
-          if (!status) {
+          // Задача ждёт согласования руководителя ответственного (этап 54): статус меняет только его решение
+          if (status && task.approvalState === "PENDING" && status !== task.status) {
+            report.problems.push(`задача ${row.number}: ждёт согласования руководителя ответственного, статус из Bord не применён`);
+            bad.add("status");
+          } else if (!status) {
             report.problems.push(`задача ${row.number}: статус «${row.status}» не из справочника, статус в ресурсе не изменён`);
             bad.add("status");
           } else {
@@ -388,6 +392,14 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
               if (snap?.owner !== undefined && normName(ownersText(was)) !== normName(snap.owner)) report.overwritten += 1;
               data.ownerId = owners.ownerId;
               data.ownerAll = owners.ownerAll;
+              // Ответственного сменили в Bord: прежнее согласование к новому человеку не относится (этап 54)
+              if (task.approvalState) {
+                data.approvalState = null;
+                data.approverId = null;
+                data.approvalFromId = null;
+                data.approvalFromStatus = null;
+                if (task.approverId) await tx.inboxEvent.updateMany({ where: { taskId: task.id, recipientId: task.approverId, kind: "APPROVAL", doneAt: null }, data: { doneAt: now } });
+              }
               co = owners.co;
               changes.push(["Ответственный", ownersText(was), ownersText(owners)]);
             }

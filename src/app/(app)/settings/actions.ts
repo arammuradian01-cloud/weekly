@@ -113,5 +113,5 @@ export async function removeAbsenceForAction(slug: string, week: string) {
 
 /** Согласование задач в другие департаменты (этап 54) */
 export async function saveApprovalAction(input: { default: string; departments: Record<string, string> }) {
-  return done(await runAction("Согласование задач", (a) => saveApprovalSetting(a, { default: input.default as ApprovalMode, departments: input.departments as Record<string, ApprovalMode> })));
+  return done(await runAction("Согласование задач", (a) => saveApprovalSetting(a, { default: input?.default as ApprovalMode, departments: (input?.departments ?? {}) as Record<string, ApprovalMode> })));
 }

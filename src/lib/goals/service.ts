@@ -133,7 +133,7 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
       owner: { select: { id: true, slug: true, fullName: true } },
       tasks: {
         where: { archivedAt: null },
-        select: { number: true, title: true, status: true, due: true, teamId: true, ownerId: true, createdById: true, owner: { select: { fullName: true } }, coExecutors: { select: { personId: true } } },
+        select: { number: true, title: true, status: true, due: true, teamId: true, ownerId: true, createdById: true, approverId: true, owner: { select: { fullName: true } }, coExecutors: { select: { personId: true } } },
         orderBy: { due: "asc" },
       },
       facts: { orderBy: [{ at: "desc" }, { id: "desc" }], take: FACT_HISTORY, include: { author: { select: { fullName: true } } } },
@@ -489,7 +489,7 @@ export async function deleteGoal(actor: Actor, id: string): Promise<void> {
 
 /** Цели, к которым можно привязать задачу: квартал срока задачи и текущий, цели команды задачи и команд выше, личные цели её людей */
 export async function goalOptions(who: Who, number: number): Promise<{ id: string; label: string }[]> {
-  const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
+  const task = await prisma.task.findUnique({ where: { number }, select: { teamId: true, due: true, goalId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
   const { scope, nodes } = await scopeFor(prisma, who);
   // Чужую задачу не подтверждаем: ни команду, ни срок, ни цель
   if (!task || task.archivedAt || !seesTask(scope, task, who.personId)) return fail(`Задачи ${number} нет`);

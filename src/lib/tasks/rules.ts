@@ -146,7 +146,7 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
   // Ждёт согласования (этап 54): решает только согласующий, а за него режим управления. Ни адресат, ни руководитель
   // команды задачи (он же часто её поставил) сами её не принимают
   const pending = proposed && task.approval?.state === "pending";
-  const approver = pending && task.approval!.approver === me;
+  const approver = pending && !!task.approval!.approver && task.approval!.approver === me;
   return {
     status: manage || (owner && !proposed),
     state: manage || (owner && !proposed),

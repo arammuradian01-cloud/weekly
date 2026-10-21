@@ -87,7 +87,7 @@ describe("информирование", () => {
     expect(task.approval).toEqual({ state: "informed", approver: (await person("Кацемба")).slug });
     const katsemba = await person("Кацемба");
     const event = await prisma.inboxEvent.findFirstOrThrow({ where: { kind: "APPROVAL", recipientId: katsemba.id } });
-    expect(event.text).toMatch(/поставлена задача из другого департамента/);
+    expect(event.text).toMatch(/Задача из другого департамента для вашего сотрудника: Погосова Сабина Левоновна\. Решать ничего не нужно/);
     const seen = (await svc.listTasks({ reader: { personId: katsemba.id, role: katsemba.role } })).map((t) => t.number);
     expect(seen).toContain(task.number);
   });

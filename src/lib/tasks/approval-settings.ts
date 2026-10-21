@@ -18,8 +18,9 @@ export async function saveApprovalSetting(actor: Actor, input: ApprovalSetting):
   for (const [id, mode] of Object.entries(input.departments ?? {})) {
     if (!known.has(id)) continue;
     if (!ok(mode)) fail("Выберите правило из списка");
-    // Как по умолчанию: отдельная строка не нужна
-    if (mode !== input.default) departments[id] = mode;
+    // Выбор департамента хранится, даже если сейчас он совпадает с правилом по умолчанию: смена умолчания его не меняет.
+    // «Как по умолчанию» в форме: департамента в настройке нет
+    departments[id] = mode;
   }
   const next: ApprovalSetting = { default: input.default, departments };
   return prisma.$transaction(async (tx) => {

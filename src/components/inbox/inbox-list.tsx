@@ -34,7 +34,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
   if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
-  if (item.subject.startsWith("team:") || item.subject.startsWith("join:")) return { icon: Users, tone: "info" };
+  if (item.subject.startsWith("team:") || item.subject.startsWith("join:") || item.subject.startsWith("approval-co:")) return { icon: Users, tone: "info" };
   if (/упомян/i.test(item.text)) return { icon: AtSign, tone: "accent" };
   if (/срок/i.test(item.text)) return { icon: CalendarClock, tone: "warning" };
   if (item.entryId) return { icon: FileText, tone: "accent" };
@@ -124,6 +124,9 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href="/people/structure#join-requests" className="sv-event__text font-semibold hover:text-link">
                     Запрос в команду
                   </Link>
+                ) : item.subject.startsWith("approval-co:") ? (
+                  // Этап 54: соисполнитель из вашей команды в задаче другого департамента. Задачу руководитель может не видеть
+                  <p className="sv-event__text font-semibold">Соисполнитель в задаче другого департамента</p>
                 ) : null}
                 <p className="sv-event__text mt-0.5">{item.text}</p>
                 {item.requestQuickDue ? (

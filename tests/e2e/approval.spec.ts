@@ -87,11 +87,40 @@ test("этап 54: задача сотруднице другого департ
   // Кацемба согласует из карточки задачи
   const boss = await person(browser, page, "Кацемба");
   await boss.goto(`/tasks/${task!.number}`);
-  await expect(boss.getByTestId("task-confirm")).toContainText("Она станет задачей, когда вы её согласуете");
+  await expect(boss.getByTestId("task-confirm")).toContainText("Задача из другого департамента для вашего сотрудника: Погосова Сабина Левоновна");
+  await expect(boss.getByTestId("task-confirm")).toContainText("Решение за вами");
   await shot(boss, "confirm");
   await boss.getByRole("button", { name: "Согласовать", exact: true }).click();
-  await expect(boss.getByTestId("task-approval")).toContainText("Согласовал руководитель ответственного");
-  await boss.close();
+  await expect(boss.getByTestId("task-approval")).toContainText("Согласовано руководителем ответственного");
   const [after] = await sql(`SELECT status, "approvalState" FROM tasks WHERE number = $1`, [task!.number]);
   expect(after).toMatchObject({ status: "IN_PROGRESS", approvalState: "APPROVED" });
+  // Событие о согласовании в «Мне» разобрано вместе с решением
+  const [open] = await sql(`SELECT count(*)::int AS n FROM inbox_events e JOIN people p ON p.id = e."recipientId" WHERE e.kind = 'APPROVAL' AND e."doneAt" IS NULL AND p."fullName" LIKE 'Кацемба%'`);
+  expect(open!.n).toBe(0);
+
+  // Вторую задачу Кацемба не согласует с причиной: Погосова видит отметку в карточке
+  const reva2 = await person(browser, page, "Рева");
+  await reva2.goto("/tasks");
+  await reva2.keyboard.press("n");
+  const dialog2 = reva2.getByRole("dialog", { name: "Новая задача" });
+  await dialog2.getByLabel("Команда").selectOption(team);
+  await dialog2.getByLabel("Задача").fill("Отчёт по возвратам");
+  await dialog2.getByLabel("Что нужно сделать").fill("Возвраты за квартал");
+  await dialog2.getByLabel("Ответственный").selectOption({ label: "Погосова Сабина Левоновна" });
+  await dialog2.getByRole("button", { name: "Поставить задачу" }).click();
+  await expect(reva2.getByText(/отправлена на согласование/).first()).toBeVisible();
+  await reva2.close();
+  const [second] = await sql(`SELECT number FROM tasks WHERE title = 'Отчёт по возвратам'`);
+  await boss.goto(`/tasks/${second!.number}`);
+  await boss.getByRole("button", { name: "Не согласовать", exact: true }).click();
+  const reject = boss.getByRole("dialog", { name: `Не согласовать задачу ${second!.number}` });
+  await reject.getByLabel("Причина").fill("Сабина закрывает квартал, вернёмся в ноябре");
+  await reject.getByRole("button", { name: "Сохранить" }).click();
+  await expect(boss.getByText(`Задача ${second!.number} не согласована`).first()).toBeVisible();
+  await boss.close();
+  const worker2 = await person(browser, page, "Погосова");
+  await worker2.goto(`/tasks/${second!.number}`);
+  await expect(worker2.getByTestId("task-approval")).toContainText("Не согласовано руководителем ответственного: Кацемба Наталья");
+  await shot(worker2, "rejected");
+  await worker2.close();
 });

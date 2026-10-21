@@ -8,7 +8,7 @@ import { taskSubject } from "@/lib/inbox/notify";
 type Tx = Prisma.TransactionClient;
 
 /** Видит ли человек задачу: та же проверка, что у сервиса задач (canSeeRow) */
-export function seesTask(scope: Scope, task: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[]; approverId?: string | null }, personId: string): boolean {
+export function seesTask(scope: Scope, task: { teamId: string; ownerId: string | null; createdById: string | null; coExecutors: { personId: string }[]; approverId: string | null }, personId: string): boolean {
   if (scope.all || scope.visible.includes(task.teamId)) return true;
   if (task.ownerId === personId || task.createdById === personId || task.coExecutors.some((c) => c.personId === personId)) return true;
   // Согласующий руководитель (этап 54)
@@ -33,7 +33,7 @@ export async function notifyWatchers(
   const watchers = await tx.taskWatch.findMany({ where: { taskId }, select: { personId: true, person: { select: { role: true, active: true } } } });
   const candidates = watchers.filter((w) => w.person.active && w.personId !== actor?.personId && !skip.includes(w.personId));
   if (!candidates.length) return 0;
-  const task = await tx.task.findUnique({ where: { id: taskId }, select: { number: true, teamId: true, ownerId: true, createdById: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
+  const task = await tx.task.findUnique({ where: { id: taskId }, select: { number: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, coExecutors: { select: { personId: true } } } });
   if (!task) return 0;
   const nodes = await loadTeamNodes(tx);
   const functional = await tx.person.findMany({ where: { functionalManagerId: { in: candidates.map((c) => c.personId) } }, select: { id: true, functionalManagerId: true } });

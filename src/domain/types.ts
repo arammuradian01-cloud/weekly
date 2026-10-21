@@ -125,7 +125,8 @@ export type Task = {
    * Задача человеку из другого департамента (этап 54): pending ждёт согласования руководителя ответственного,
    * informed руководитель только проинформирован
    */
-  approval?: { state: "pending" | "approved" | "rejected" | "informed"; approver: PersonSlug };
+  /** Этап 54: from, у кого была задача до передачи, которая ждёт согласования. approver null: согласующего удалили */
+  approval?: { state: "pending" | "approved" | "rejected" | "informed"; approver: PersonSlug | null; from?: PersonSlug };
 };
 
 export type ChecklistItem = { id: string; text: string; done: boolean; by?: PersonSlug };

@@ -51,7 +51,7 @@ export function eventPhrase(e: EventLine): string {
     case "TEAM":
       return `${who}состав команды`;
     case "APPROVAL":
-      return `${who}задача вашему сотруднику из другого департамента${n}`;
+      return `${who}задача из другого департамента для вашего сотрудника${n}`;
     default:
       return `${who}новое событие`;
   }

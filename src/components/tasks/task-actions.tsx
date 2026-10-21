@@ -8,7 +8,7 @@
 import { createContext, useContext, useRef, useState } from "react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, type IsoDate } from "@/domain/dates";
-import { priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
+import { CLOSED_STATUSES, priorityOf, stateLabel, statusOf, type PriorityCode, type StateCode, type StatusCode } from "@/domain/dictionaries";
 import { statusNeedsNote } from "@/lib/tasks/rules";
 import type { Task } from "@/domain/types";
 import {
@@ -47,7 +47,7 @@ type Pending =
 const ActionsContext = createContext<Actions | null>(null);
 
 export function TaskActionsProvider({ children }: { children: React.ReactNode }) {
-  const { runTask, applyTaskResult, data, me } = usePrototype();
+  const { runTask, applyTaskResult, data, me, manage } = usePrototype();
   const [pending, setPending] = useState<Pending | null>(null);
   // «Заблокирована»: чего ждёт задача (этап 21)
   const [mode, setMode] = useState<WaitMode>("task");
@@ -71,8 +71,17 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
     setBusy(false);
   };
 
-  const statusToast = (task: Task, next: StatusCode) =>
-    task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
+  const statusToast = (task: Task, next: StatusCode) => {
+    // Согласование (этап 54): решение руководителя и повторная отправка отклонённой задачи
+    if (task.status === "proposed" && task.approval?.state === "pending") {
+      if (next === "in-progress") return `Задача ${task.number} согласована`;
+      if (next === "cancelled") return task.approval.from ? `Передача задачи ${task.number} не согласована, задача вернулась прежнему ответственному` : `Задача ${task.number} не согласована`;
+    }
+    if (task.approval?.state === "rejected" && CLOSED_STATUSES.includes(task.status) && !CLOSED_STATUSES.includes(next) && !manage && task.approval.approver !== me.slug) {
+      return `Задача ${task.number} снова отправлена на согласование`;
+    }
+    return task.status === "proposed" && next === "in-progress" ? `Задача ${task.number} принята в работу` : `Задача ${task.number}: ${statusOf(next).label.toLowerCase()}`;
+  };
 
   const actions: Actions = {
     changeStatus: (task, next) => {
@@ -193,6 +202,8 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
         ? `Задача ${pending.task.number} заблокирована`
         : pending?.kind === "risk"
           ? `Задача ${pending.task.number}: есть риск`
+        : pending?.kind === "status" && pending.next === "cancelled" && pending.task.status === "proposed" && pending.task.approval?.state === "pending"
+          ? `Не согласовать задачу ${pending.task.number}`
         : pending
           ? `Задача ${pending.task.number}: ${statusOf(pending.next).label.toLowerCase()}`
           : "";

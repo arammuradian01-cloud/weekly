@@ -219,7 +219,11 @@ export function TaskCard({
         <div className="flex flex-col gap-3 rounded-xl bg-blue-soft p-4 sm:flex-row sm:items-center sm:justify-between" data-testid="task-confirm">
           <p className="text-small text-blue-700">
             {pendingApproval
-              ? `Задача вашему сотруднику ${ownerName(task.owner)} из другого департамента, ставит ${authorName(task.createdBy, "full", "участник встречи")}. Она станет задачей, когда вы её согласуете.`
+              ? task.approval!.approver === me.slug
+                ? task.approval!.from
+                  ? `Задачу из другого департамента передают вашему сотруднику: ${ownerName(task.owner)}. Решение за вами. Не согласуете: задача вернётся, у кого была: ${personOf(task.approval!.from).fullName}.`
+                  : `Задача из другого департамента для вашего сотрудника: ${ownerName(task.owner)}. Ставит ${authorName(task.createdBy, "full", "участник встречи")}. Решение за вами.`
+                : `Задача из другого департамента ждёт согласования${task.approval!.approver ? `: ${personOf(task.approval!.approver).fullName}` : ""}. В режиме управления можно решить за руководителя.`
               : `Предложение от: ${authorName(task.createdBy, "full", "участник встречи")}. Задачей она станет, когда вы её примете.`}
           </p>
           <div className="flex gap-2">
@@ -237,7 +241,7 @@ export function TaskCard({
       {task.status === "proposed" && !can.confirm ? (
         <p className="rounded-xl bg-blue-soft px-4 py-3 text-small text-blue-700" data-testid="task-proposed">
           {pendingApproval
-            ? `Задача из другого департамента ждёт согласования: ${personOf(task.approval!.approver).fullName}. Задачей она станет после его решения.`
+            ? `Задача из другого департамента ждёт согласования${task.approval!.approver ? `: ${personOf(task.approval!.approver).fullName}` : ""}. Задачей она станет после решения руководителя ответственного.${task.approval!.from ? ` Не согласует: задача вернётся, у кого была: ${personOf(task.approval!.from).fullName}.` : ""}`
             : "Задача предложена. Задачей она станет, когда её примет адресат, его руководитель или руководитель команды."}
         </p>
       ) : null}
@@ -245,10 +249,10 @@ export function TaskCard({
       {task.approval && task.approval.state !== "pending" ? (
         <p className="text-small text-muted" data-testid="task-approval">
           {task.approval.state === "informed"
-            ? `Задача из другого департамента: руководитель ответственного ${personOf(task.approval.approver).fullName} проинформирован`
+            ? `Задача из другого департамента, руководитель ответственного в курсе${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`
             : task.approval.state === "approved"
-              ? `Согласовал руководитель ответственного: ${personOf(task.approval.approver).fullName}`
-              : `Не согласовал руководитель ответственного: ${personOf(task.approval.approver).fullName}`}
+              ? `Согласовано руководителем ответственного${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`
+              : `Не согласовано руководителем ответственного${task.approval.approver ? `: ${personOf(task.approval.approver).fullName}` : ""}`}
         </p>
       ) : null}
 

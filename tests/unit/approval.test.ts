@@ -1,6 +1,8 @@
 // Согласование задач (этап 54): департамент человека по структуре и чтение настройки
 import { describe, expect, it } from "vitest";
 import { approvalSettingOf, departmentOf } from "@/lib/tasks/approval";
+import { permissions } from "@/lib/tasks/rules";
+import type { Task } from "@/domain/types";
 
 const units = new Map(
   [
@@ -31,5 +33,47 @@ describe("департамент человека", () => {
     expect(approvalSettingOf(null)).toEqual({ default: "inform", departments: {} });
     expect(approvalSettingOf({ default: "approve", departments: { a: "off", b: "что-то" } })).toEqual({ default: "approve", departments: { a: "off" } });
     expect(approvalSettingOf({ default: "всегда" }).default).toBe("inform");
+  });
+});
+
+describe("права на задачу, которая ждёт согласования", () => {
+  const task = (approver: string | null) =>
+    ({
+      number: 1,
+      title: "Сверка",
+      outcome: "Готово",
+      owner: "pogosova",
+      coExecutors: [],
+      direction: "department",
+      priority: "medium",
+      status: "proposed",
+      state: "on-track",
+      where: "",
+      whereUpdatedAt: "2026-10-21",
+      due: "2026-10-30",
+      originalDue: "2026-10-30",
+      transfers: [],
+      source: { kind: "meeting", note: "" },
+      links: [],
+      comments: [],
+      history: [],
+      createdBy: "reva",
+      createdAt: "2026-10-21",
+      updatedAt: "2026-10-21",
+      team: "t-reva",
+      approval: { state: "pending", approver },
+    }) as unknown as Task;
+
+  it("решает согласующий или режим управления; адресат, автор, руководитель команды и наблюдатель нет", () => {
+    expect(permissions(task("katsemba"), { slug: "katsemba" as never }).confirm).toBe(true);
+    expect(permissions(task("katsemba"), { slug: "admin" as never, management: "ADMIN" }).confirm).toBe(true);
+    expect(permissions(task("katsemba"), { slug: "pogosova" as never }).confirm).toBe(false);
+    expect(permissions(task("katsemba"), { slug: "reva" as never, leads: ["t-reva"], people: ["pogosova" as never] }).confirm).toBe(false);
+    expect(permissions(task("katsemba"), { slug: "obs" as never, observer: true }).confirm).toBe(false);
+  });
+
+  it("согласующего удалили: решает только режим управления", () => {
+    expect(permissions(task(null), { slug: "pogosova" as never }).confirm).toBe(false);
+    expect(permissions(task(null), { slug: "owner" as never, management: "OWNER" }).confirm).toBe(true);
   });
 });

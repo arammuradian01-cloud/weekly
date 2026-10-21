@@ -52,7 +52,7 @@ export type InboxView = { items: InboxItem[]; snoozed: number };
  * События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления. Прогноз месяца
  * (этап 35) тоже: его проверяют и корректируют при личном входе
  */
-const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM"] } } : {});
+const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput => (viewer?.shared || viewer?.limited ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM", "APPROVAL"] } } : {});
 
 const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxEventWhereInput => ({
   recipientId: personId,
@@ -71,7 +71,7 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
   const topNode = nodes.find((n) => n.id === TOP_TEAM);
   const top = new Set([...(topNode?.leaderId ? [topNode.leaderId] : []), ...(topNode?.members ?? [])]);
   return (r: {
-    task: { teamId: string; ownerId: string | null; createdById: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null;
+    task: { teamId: string; ownerId: string | null; createdById: string | null; approverId: string | null; archivedAt: Date | null; coExecutors: { personId: string }[] } | null;
     entry: { authorId: string | null; ceo: boolean; promotions: { byId: string }[] } | null;
     request: { authorId: string; addresseeId: string } | null;
     kind: InboxKind;

@@ -223,7 +223,7 @@ export function PrototypeProvider({
           applyTaskResult(
             result,
             approval?.state === "pending"
-              ? `Задача ${result.number} отправлена на согласование: ${personOf(approval.approver).fullName}`
+              ? `Задача ${result.number} отправлена на согласование${approval.approver ? `: ${personOf(approval.approver).fullName}` : ""}`
               : approval?.state === "informed"
                 ? `Задача ${result.number} создана, руководитель ответственного проинформирован`
                 : result.task?.status === "proposed"
