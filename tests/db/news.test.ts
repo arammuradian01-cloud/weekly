@@ -302,18 +302,25 @@ describe("дайджесты", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("еженедельный в понедельник всем по умолчанию, «не присылать» выключает, без почты только событие", async () => {
+  it("по умолчанию дайджест не приходит; еженедельный в понедельник тем, кто включил, без почты только событие", async () => {
     await addSources();
     await news.fetchAll(new Date(MON.getTime() - 3_600_000));
-    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
-    await news.saveNewsPrefs(await personal("reva"), { frequency: "off", directions: null });
+    // Никто ничего не включал: дайджестов нет совсем
+    expect(await news.newsDigestPass(MON)).toEqual({ sent: 0, skipped: 0, failed: 0 });
+    expect(await prisma.newsDigest.count()).toBe(0);
+    expect(await prisma.inboxEvent.count({ where: { kind: "NEWS" } })).toBe(0);
+
+    // Включили раз в неделю двое: Арам с почтой и Рева без почты; Головкин выбрал «не присылать»
+    await news.saveNewsPrefs(await personal("muradyan"), { frequency: "weekly", directions: null });
+    await news.saveNewsPrefs(await personal("reva"), { frequency: "weekly", directions: null });
+    await news.saveNewsPrefs(await personal("golovkin"), { frequency: "off", directions: null });
     await prisma.person.update({ where: { slug: "muradyan" }, data: { email: "a.muradyan@sravni.ru" } });
-    const active = await prisma.person.count({ where: { active: true } });
-    const r = await news.newsDigestPass(MON);
-    // Все включённые, кроме Ревы: у каждого новости есть (продукты направления или все)
-    expect(r).toEqual({ sent: active - 1, skipped: 0, failed: 0 });
-    expect(await prisma.inboxEvent.count({ where: { recipientId: reva.id } })).toBe(0);
-    expect(await prisma.inboxEvent.count({ where: { kind: "NEWS" } })).toBe(active - 1);
+    const later = new Date(MON.getTime() + 60_000);
+    expect(await news.newsDigestPass(later)).toEqual({ sent: 2, skipped: 0, failed: 0 });
+    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
+    const golovkin = await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } });
+    expect(await prisma.inboxEvent.count({ where: { recipientId: reva.id, kind: "NEWS" } })).toBe(1);
+    expect(await prisma.inboxEvent.count({ where: { recipientId: golovkin.id } })).toBe(0);
     // Письмо только тем, у кого есть почта
     expect(sent.map((m) => m.to)).toEqual(["a.muradyan@sravni.ru"]);
     expect(sent[0]!.subject).toBe("Weekly: новости за неделю 43, 4 новости");
@@ -321,7 +328,31 @@ describe("дайджесты", () => {
     expect(d).toMatchObject({ kind: "WEEKLY", periodKey: "2026-W43" });
     expect(d.itemIds).toHaveLength(4);
     // Повтор в тот же понедельник ничего не шлёт
-    expect(await news.newsDigestPass(new Date(MON.getTime() + 60_000))).toEqual({ sent: 0, skipped: active - 1, failed: 0 });
+    expect(await news.newsDigestPass(new Date(MON.getTime() + 120_000))).toEqual({ sent: 0, skipped: 2, failed: 0 });
+  });
+
+  it("медленная лента не задерживает остальные: ленты забираются параллельно, порядок результатов как в списке", async () => {
+    const a = await owner();
+    for (let i = 1; i <= 5; i++) await news.addSource(a, { name: `Медленная ${i}`, url: `https://slow${i}.example/rss` });
+    await addSources();
+    let running = 0;
+    let peak = 0;
+    setNewsTransport(async ({ url }) => {
+      running += 1;
+      peak = Math.max(peak, running);
+      await new Promise((r) => setTimeout(r, url.includes("slow") ? 200 : 10));
+      running -= 1;
+      const file = FEEDS[url];
+      if (!file) throw new FeedError("Нет ответа за 10 секунд", true);
+      return { status: 200, body: fixture(file) };
+    });
+    const started = Date.now();
+    const r = await news.fetchAll(WED);
+    // Пять медленных по 200 мс при четырёх одновременно: около 400 мс, а не секунда подряд
+    expect(Date.now() - started).toBeLessThan(900);
+    expect(peak).toBe(4);
+    expect(r.map((x) => x.name)).toEqual(["Медленная 1", "Медленная 2", "Медленная 3", "Медленная 4", "Медленная 5", "Банк России", "АСН"]);
+    expect(r.filter((x) => x.ok).map((x) => x.added)).toEqual([2, 2]);
   });
 
   it("почта лежала: дайджест записан, письмо уходит следующим проходом", async () => {

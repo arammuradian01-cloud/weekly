@@ -10,7 +10,7 @@
 //   уточняются через Claude API отдельным проходом; без ключа всё работает по правилам;
 // - дайджест: ежедневный по будням утром и еженедельный в понедельник, окно 8:00-12:00 по Москве. Один на человека
 //   и период, в «Мне» событием и письмом, если почта настроена. Пустой дайджест не отправляется. Продукты и частоту
-//   человек выбирает в профиле; по умолчанию продукты его направления, раз в неделю.
+//   человек выбирает в профиле; по умолчанию дайджест выключен (решение Арама 22.10), продукты его направления.
 
 import { prisma } from "@/lib/db";
 import type { NewsDigestKind, Prisma } from "@/generated/prisma/client";
@@ -20,7 +20,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { isoWeekOf, isoWeekday, moscowDate, moscowDateTime, type CalendarDate } from "@/lib/week";
 import { plural } from "@/domain/dates";
 import { parseFeed, urlKeyOf } from "./feed";
-import { FeedError, checkFeedUrl, fetchFeed } from "./transport";
+import { FeedError, checkFeedUrl, fetchFeed, type FeedResponse } from "./transport";
 import { KEYWORDS_KEY, keywordsOf, normalizeKeywords, parseKeywordLine } from "./keywords";
 import { matchDirections, ruleSummary } from "./match";
 import { DEFAULT_NEWS_PREFS, NEWS_FREQUENCY_LABELS, directionsFor, newsPrefsOf, type NewsFrequency, type NewsPrefs } from "./prefs";
@@ -220,10 +220,30 @@ export type FetchResult = { sourceId: string; name: string; ok: boolean; added: 
 
 type SourceRow = { id: string; name: string; url: string; etag: string | null; lastModified: string | null; lastCount: number };
 
-/** Забрать одну ленту. Любая ошибка остаётся в источнике и не поднимается наверх: остальные ленты идут своим чередом */
-export async function fetchSource(source: SourceRow, keywords: Record<string, string[]>, order: string[], now = new Date()): Promise<FetchResult> {
+/** Скачанная лента или ошибка сети: скачивание идёт параллельно, сохранение по порядку источников */
+type Download = { ok: true; response: FeedResponse } | { ok: false; error: unknown };
+
+async function download(source: SourceRow): Promise<Download> {
   try {
-    const response = await fetchFeed({ url: source.url, etag: source.etag, lastModified: source.lastModified });
+    return { ok: true, response: await fetchFeed({ url: source.url, etag: source.etag, lastModified: source.lastModified }) };
+  } catch (error) {
+    return { ok: false, error };
+  }
+}
+
+/** Забрать одну ленту: скачать и сохранить */
+export async function fetchSource(source: SourceRow, keywords: Record<string, string[]>, order: string[], now = new Date()): Promise<FetchResult> {
+  return storeSource(source, await download(source), keywords, order, now);
+}
+
+/**
+ * Сохранить скачанную ленту. Любая ошибка остаётся в источнике и не поднимается наверх. Вызывается по порядку
+ * источников: перепечатку (тот же адрес статьи) получает источник, который стоит в списке выше, обычно первоисточник
+ */
+async function storeSource(source: SourceRow, got: Download, keywords: Record<string, string[]>, order: string[], now: Date): Promise<FetchResult> {
+  try {
+    if (!got.ok) throw got.error;
+    const response = got.response;
     if (response.status === 304) {
       await prisma.newsSource.update({ where: { id: source.id }, data: { lastFetchAt: now, lastOkAt: now, lastError: null, failCount: 0 } });
       return { sourceId: source.id, name: source.name, ok: true, added: 0, total: source.lastCount, error: null };
@@ -275,7 +295,11 @@ export async function fetchSource(source: SourceRow, keywords: Record<string, st
   }
 }
 
-/** Забрать все включённые ленты по очереди (ленты чужие, параллельно их не дёргаем) */
+/** Сколько лент забираем одновременно: разные сайты, по одному запросу на каждый. При 13 лентах и худшем случае
+ * (таймаут 10 секунд и повтор) забор укладывается примерно в полторы минуты */
+export const FETCH_PARALLEL = 4;
+
+/** Забрать все включённые ленты, не больше FETCH_PARALLEL одновременно. Порядок результатов как в списке источников */
 export async function fetchAll(now = new Date()): Promise<FetchResult[]> {
   const [sources, keywords, directions] = await Promise.all([
     prisma.newsSource.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, url: true, etag: true, lastModified: true, lastCount: true } }),
@@ -283,8 +307,20 @@ export async function fetchAll(now = new Date()): Promise<FetchResult[]> {
     newsDirections(),
   ]);
   const order = directions.filter((d) => d.active).map((d) => d.code);
+  // Скачиваем до FETCH_PARALLEL лент одновременно, сохраняем строго по порядку списка: результат не зависит от того,
+  // какой сайт ответил быстрее
+  const downloads: Promise<Download>[] = new Array(sources.length);
+  let next = 0;
+  const slots = Array.from({ length: Math.min(FETCH_PARALLEL, sources.length) }, async () => {
+    while (next < sources.length) {
+      const i = next++;
+      downloads[i] = download(sources[i]!);
+      await downloads[i];
+    }
+  });
+  await Promise.all(slots);
   const results: FetchResult[] = [];
-  for (const s of sources) results.push(await fetchSource(s, keywords, order, now));
+  for (let i = 0; i < sources.length; i++) results.push(await storeSource(sources[i]!, await downloads[i]!, keywords, order, now));
   await prisma.setting.upsert({ where: { key: LAST_FETCH_KEY }, update: { value: now.toISOString() }, create: { key: LAST_FETCH_KEY, value: now.toISOString() } });
   return results;
 }

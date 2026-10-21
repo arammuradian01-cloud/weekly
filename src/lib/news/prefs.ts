@@ -11,7 +11,8 @@ export const NEWS_FREQUENCY_LABELS: Record<NewsFrequency, string> = {
 };
 
 export type NewsPrefs = { frequency: NewsFrequency; directions: string[] | null };
-export const DEFAULT_NEWS_PREFS: NewsPrefs = { frequency: "weekly", directions: null };
+/** По умолчанию дайджест не приходит: человек включает его в профиле сам (решение Арама 22.10). Продукты по умолчанию свои */
+export const DEFAULT_NEWS_PREFS: NewsPrefs = { frequency: "off", directions: null };
 
 const isFrequency = (v: unknown): v is NewsFrequency => typeof v === "string" && (NEWS_FREQUENCIES as string[]).includes(v);
 

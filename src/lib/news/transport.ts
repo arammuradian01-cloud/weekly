@@ -11,7 +11,7 @@ export type FeedResponse = { status: number; body: string; etag?: string | null;
 export type FeedTransport = (request: FeedRequest) => Promise<FeedResponse>;
 
 /** Сколько ждём ответа одной ленты и сколько байт готовы прочитать */
-export const FETCH_TIMEOUT_MS = 15_000;
+export const FETCH_TIMEOUT_MS = 10_000;
 export const MAX_FEED_BYTES = 5 * 1024 * 1024;
 const RETRY_DELAY_MS = 1500;
 const USER_AGENT = "Weekly Sravni news reader (RSS)";
