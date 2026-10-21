@@ -152,7 +152,8 @@ export function permissions(task: Task, viewer: Viewer | PersonSlug, manageFlag?
     state: manage || (owner && !proposed),
     where: manage || owner || co,
     due: manage || (owner && !proposed),
-    priority: manage || creator,
+    // Важность (этап 56, решение Арама 21.10): кроме режима управления, руководителя команды и автора ещё ответственный
+    priority: manage || creator || (owner && !proposed),
     edit: manage || creator,
     owner: manage,
     coExecutors: manage || directOwner,

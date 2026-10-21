@@ -53,12 +53,17 @@ export function importanceOf(priority: PriorityCode): 0 | 1 | 2 {
 
 export const IMPORTANCE_LABEL: Record<0 | 1 | 2, string> = { 0: "Обычная", 1: "Важная", 2: "Критичная" };
 
+/** Предложенная задача, срок которой уже прошёл: стоит в текущем месяце с пометкой */
+export const proposedLate = (t: Pick<Task, "due" | "status">, today: IsoDate) => t.status === "proposed" && t.due < today;
+
 /** На доске: открытые задачи и предложенные, без архива */
 export const onRoadmap = (t: Pick<Task, "status" | "archived">) => !t.archived && (t.status === "in-progress" || t.status === "clarify" || t.status === "proposed");
 
 export type RoadmapFilter = {
   /** Человек: ответственный или соисполнитель. null: вся команда */
   person: PersonSlug | null;
+  /** Человек лидер: задачи «Все лидеры» тоже его, как в «Моих задачах» */
+  personLeads?: boolean;
   onlyImportant: boolean;
 };
 
@@ -71,12 +76,15 @@ export type Roadmap = { periods: Period[]; rows: RoadmapRow[]; total: number; im
  */
 export function buildRoadmap(tasks: Task[], today: IsoDate, filter: RoadmapFilter, directions: { code: string; label: string }[]): Roadmap {
   const periods = roadmapPeriods(today);
-  const picked = tasks.filter(
-    (t) => onRoadmap(t) && (!filter.person || t.owner === filter.person || t.coExecutors.includes(filter.person)) && (!filter.onlyImportant || importanceOf(t.priority) > 0),
-  );
+  const mine = (t: Task) => !filter.person || t.owner === filter.person || t.coExecutors.includes(filter.person) || (t.owner === "all" && !!filter.personLeads);
+  const picked = tasks.filter((t) => onRoadmap(t) && mine(t) && (!filter.onlyImportant || importanceOf(t.priority) > 0));
   const order = new Map(directions.map((d, i) => [d.code, i]));
   const byDirection = new Map<string, Task[]>();
-  for (const t of picked) byDirection.set(t.direction, [...(byDirection.get(t.direction) ?? []), t]);
+  for (const t of picked) {
+    const list = byDirection.get(t.direction);
+    if (list) list.push(t);
+    else byDirection.set(t.direction, [t]);
+  }
   const rows = [...byDirection.entries()]
     .sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b))
     .map(([direction, list]) => {

@@ -1,6 +1,6 @@
 // Этап 56: roadmap. Столбцы сроков от сегодняшнего дня, место задачи на доске, важность по приоритету, фильтры
 import { describe, expect, it } from "vitest";
-import { buildRoadmap, importanceOf, onRoadmap, periodOf, roadmapPeriods } from "@/lib/tasks/roadmap";
+import { buildRoadmap, importanceOf, onRoadmap, periodOf, proposedLate, roadmapPeriods } from "@/lib/tasks/roadmap";
 import type { Task } from "@/domain/types";
 
 const TODAY = "2026-10-21";
@@ -69,6 +69,20 @@ describe("доска", () => {
     expect(b.rows[2]!.cells.later!.map((t) => t.number)).toEqual([7]);
     expect({ total: b.total, important: b.important, overdue: b.overdue }).toEqual({ total: 6, important: 3, overdue: 1 });
     expect(b.rows[0]).toMatchObject({ total: 4, important: 2 });
+  });
+
+  it("доска лидера: задачи «Все лидеры» тоже его, у сотрудника их нет; без дублей; просроченная предложенная помечена", () => {
+    const withAll = [...tasks, task(8, { owner: "all", direction: "kasko", due: "2026-10-30" })];
+    const leader = buildRoadmap(withAll, TODAY, { person: "tokov", personLeads: true, onlyImportant: false }, DIRS);
+    expect(leader.rows.flatMap((r) => Object.values(r.cells).flat()).map((t) => t.number).sort()).toEqual([4, 5, 8]);
+    const employee = buildRoadmap(withAll, TODAY, { person: "tokov", personLeads: false, onlyImportant: false }, DIRS);
+    expect(employee.total).toBe(2);
+    const both = buildRoadmap([task(9, { owner: "tokov", coExecutors: ["tokov"] })], TODAY, { person: "tokov", onlyImportant: false }, DIRS);
+    expect(both.total).toBe(1);
+    expect(proposedLate(task(1, { status: "proposed", due: "2026-10-01" }), TODAY)).toBe(true);
+    expect(proposedLate(task(1, { status: "in-progress", due: "2026-10-01" }), TODAY)).toBe(false);
+    // Предложенная с прошедшим сроком не считается просроченной
+    expect(buildRoadmap([task(10, { status: "proposed", due: "2026-10-01" })], TODAY, { person: null, onlyImportant: false }, DIRS).overdue).toBe(0);
   });
 
   it("человек: ответственный или соисполнитель; только важные", () => {

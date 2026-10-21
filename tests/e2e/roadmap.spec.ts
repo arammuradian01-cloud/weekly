@@ -50,8 +50,8 @@ test("доска по направлениям и срокам, звёздочк
 
   // Важность меняется звёздочкой: обычная задача КАСКО становится важной
   await board.getByRole("button", { name: `Важность задачи ${c}: обычная. Изменить` }).click();
-  await page.getByRole("menuitem", { name: /^Важная/ }).click();
-  await expect(page.getByText("Приоритет: высокий").first()).toBeVisible();
+  await page.getByRole("menuitemradio", { name: /^Важная/ }).click();
+  await expect(page.getByText(`Важность задачи ${c}: важная`).first()).toBeVisible();
   await expect(board.getByRole("button", { name: `Важность задачи ${c}: важная. Изменить` })).toBeVisible();
   const [changed] = await sql("SELECT priority FROM tasks WHERE number = $1", [c]);
   expect(changed!.priority).toBe("HIGH");
