@@ -14,10 +14,19 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-plan58-${name}.png`, fullPage: true });
 }
 
-test.beforeEach(async () => {
-  await resetDatabase({ weekly: false });
+async function clearPlan() {
   for (const table of ["plan_sk_snapshots", "plan_sk_lines", "plan_partner_adjustments", "plan_partner_totals", "plan_partners", "plan_facts", "plan_checks", "plan_pulls", "plan_adjustments", "plan_lines"]) await sql(`DELETE FROM ${table}`);
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);
+}
+
+test.beforeEach(async () => {
+  await resetDatabase({ weekly: false });
+  await clearPlan();
+});
+
+// Снимки хаба и план по СК не должны доставаться следующим файлам: иначе в карточке ОСАГО у них появляется лишний раздел
+test.afterAll(async () => {
+  await clearPlan();
 });
 
 async function pull(page: Page) {
