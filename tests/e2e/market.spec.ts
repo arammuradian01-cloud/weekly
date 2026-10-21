@@ -117,7 +117,11 @@ test("владелец загружает пакет, вкладка и филь
   await expect(link).toBeVisible();
   await link.click();
   await expect(reva).toHaveURL(/\/market$/);
-  await expect(reva.frameLocator(FRAME).locator("#k-total")).toHaveText("42");
+  const revaFrame = reva.frameLocator(FRAME);
+  await expect(revaFrame.locator("#k-total")).toHaveText("42");
+  await revaFrame.getByRole("tab", { name: "ОСАГО" }).click();
+  await expect(revaFrame.locator("#o-count")).toHaveText("2");
+  await expect(reva).toHaveURL(/\/market\?tab=osago$/);
   await expect(reva.getByTestId("market-upload")).toHaveCount(0);
   await shot(reva, "reva");
 });
