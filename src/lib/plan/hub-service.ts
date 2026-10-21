@@ -21,27 +21,34 @@ import { PARTNER_DEFAULT_OWNERS, PARTNER_OWNER_CODE } from "./partners";
 import {
   HUB_LIMITS,
   HUB_SHEETS,
+  RUN_RATE_FROM_DAY,
   SK_METRICS,
   SK_SENSITIVE,
   SK_TOTAL,
+  aliasKeys,
+  aliasText,
+  aliasesOf,
   daysIn,
   factDay,
   isTotal,
   nameList,
+  parseAliases,
   parseHubSource,
   readSkPlan,
   readVseSk,
   runRate,
+  runRateReady,
   skKey,
   snapshotDayIn,
   snapshotMonths,
+  type SkAliases,
   type SkMetric,
   type SkMonthRow,
   type SkPlanRead,
   type VseSkRead,
 } from "./hub";
 import { hubImitation } from "./hub-imitation";
-import { canSeeNumbers, personalLogin } from "./access";
+import { numbersLevel, personalLogin, type NumbersLevel } from "./access";
 import { LRF_MIRROR_ID, LRF_SHEET_ID, type Grid } from "./lrf";
 
 const fail = (message: string): never => {
@@ -158,8 +165,25 @@ export type HubApplied = {
 type FactPart = HubPart & { rows: SkMonthRow[]; months: string[]; stored: string[] };
 type PlanPart = HubPart & { read: SkPlanRead | null };
 
-/** Снимок «Все СК» на день: месяцы снимка по правилу дня факта (текущий и прошлый для закрытия), проверки листа и сверка с прошлым снимком */
-async function factPart(day: string, sheet: SheetRead): Promise<FactPart> {
+const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Последний снимок до дня day по каждому месяцу снимка: его день и строки (только СК и полисы) */
+async function previousSnapshots(day: string, keep: string[]): Promise<{ month: string; day: string; rows: { sk: string; policies: number }[] }[]> {
+  const last = await prisma.planSkSnapshot.groupBy({ by: ["month"], where: { day: { lt: new Date(`${day}T00:00:00Z`) }, month: { in: keep } }, _max: { day: true } });
+  const pairs = last.filter((l) => l._max.day).map((l) => ({ month: l.month, day: l._max.day! }));
+  if (!pairs.length) return [];
+  const rows = await prisma.planSkSnapshot.findMany({ where: { OR: pairs.map((p) => ({ month: p.month, day: p.day })) }, select: { day: true, month: true, sk: true, policies: true } });
+  return pairs.map((p) => ({ month: p.month, day: iso(p.day), rows: rows.filter((r) => r.month === p.month && r.day.getTime() === p.day.getTime()) }));
+}
+
+/**
+ * Снимок «Все СК» на день: месяцы снимка по правилу дня факта (текущий и прошлый для закрытия), проверки листа и сверка
+ * с прошлым снимком того же месяца. Итог месяца упал больше чем на HUB_LIMITS.factDrop: снимок не пишется (лист мог
+ * обрезаться, а снимок перетёр бы факт и закрытие месяца). Итог не вырос, хотя день факта сдвинулся: источник, похоже, не
+ * обновился. СК из прошлого снимка нет сегодня: предупреждение, в карточке её факт остаётся на прошлом значении
+ */
+async function factPart(day: string, sheet: SheetRead, aliases: SkAliases): Promise<FactPart> {
   const month = day.slice(0, 7);
   const prevMonth = addMonths(month, -1);
   const keep = snapshotMonths(day);
@@ -183,16 +207,26 @@ async function factPart(day: string, sheet: SheetRead): Promise<FactPart> {
     } else if (!current && !previous) problems.push(`В «Все СК» нет строк ни за ${ml(month)}, ни за ${ml(prevMonth)}: снимок не из чего делать`);
     else if (!current) warnings.push(`В «Все СК» нет строк за ${ml(month)}: источник ещё не обновлён. Снимок на ${dd(day)} обновит только ${ml(prevMonth)}, факт текущего месяца не появится`);
   }
-  // СК из прошлого снимка, которых сегодня нет: лист могли обрезать или переименовать СК
+  // Сверка с прошлым снимком каждого месяца: итог и СК, которых сегодня нет
   if (rows.length && !problems.length) {
-    const dayDate = new Date(`${day}T00:00:00Z`);
-    const before = await prisma.planSkSnapshot.findFirst({ where: { day: { lt: dayDate }, month: { in: keep } }, orderBy: { day: "desc" }, select: { day: true } });
-    if (before) {
-      const old = await prisma.planSkSnapshot.findMany({ where: { day: before.day, month: { in: keep } }, select: { month: true, sk: true } });
-      const now = new Set(rows.map((r) => `${r.month}|${skKey(r.sk)}`));
-      const present = new Set(rows.map((r) => r.month));
-      const lost = old.filter((o) => present.has(o.month) && !now.has(`${o.month}|${skKey(o.sk)}`)).map((o) => o.sk);
-      if (lost.length) warnings.push(`В «Все СК» нет СК, которые были в снимке на ${dd(before.day.toISOString().slice(0, 10))}: ${nameList(lost)}. Проверьте, не обрезан ли лист и не переименованы ли СК`);
+    for (const before of await previousSnapshots(day, keep)) {
+      const now = rows.filter((r) => r.month === before.month);
+      if (!now.length) continue;
+      const was = before.rows.reduce((s, r) => s + r.policies, 0);
+      const is = now.reduce((s, r) => s + r.policies, 0);
+      const grows = (snapshotDayIn(day, before.month) ?? "") > (snapshotDayIn(before.day, before.month) ?? "");
+      if (was > 0 && is < was * (1 - HUB_LIMITS.factDrop)) {
+        problems.push(
+          `Итог «Все СК» за ${ml(before.month)} упал против снимка на ${dd(before.day)} больше чем на ${HUB_LIMITS.factDrop * 100}%: было ${fmt(was)} полисов, сейчас ${fmt(is)}. Лист мог обрезаться: снимок не пишется, чтобы не перетереть факт${before.month < month ? " и закрытие месяца" : ""}. Проверьте лист и загрузите снова`,
+        );
+      } else if (grows && is <= was) {
+        warnings.push(`Итог «Все СК» за ${ml(before.month)} не вырос с прошлой загрузки (снимок на ${dd(before.day)}: ${fmt(was)} полисов, сейчас ${fmt(is)}): источник, похоже, не обновился с прошлой загрузки`);
+      }
+      // СК сравниваются так же, как в карточке: по skKey и справочнику соответствий (переименование со строкой справочника не пропажа)
+      const key = aliasKeys(aliases);
+      const today = new Set(now.map((r) => key(r.sk)));
+      const lost = before.rows.filter((r) => !today.has(key(r.sk))).map((r) => r.sk);
+      if (lost.length) warnings.push(`В «Все СК» за ${ml(before.month)} нет СК, которые были в снимке на ${dd(before.day)}: ${nameList(lost)}. В карточке их факт останется на значении того снимка. Проверьте, не обрезан ли лист и не переименованы ли СК`);
     }
   }
   const stored = [...new Set(rows.map((r) => r.month))].sort();
@@ -209,28 +243,34 @@ function planPart(day: string, sheet: SheetRead): PlanPart {
   else if (!sheet.failed) {
     read = readSkPlan(sheet.grid, month);
     problems.push(...read.problems);
+    warnings.push(...read.warnings);
   }
   if (read && !problems.length) {
-    const total = read.rows.find((r) => r.period === month && r.sk === SK_TOTAL && r.metric === "pol");
+    const total = read.rows.find((r) => r.period === month && r.sk === SK_TOTAL && r.metric === "pol")?.value ?? null;
     const skSum = read.rows.filter((r) => r.period === month && r.sk !== SK_TOTAL && r.metric === "pol").reduce((s, r) => s + (r.value ?? 0), 0);
-    if (total?.value && skSum && Math.abs(skSum - total.value) > 0.005 * total.value) warnings.push(`План по СК за ${ml(month)}: сумма СК ${Math.round(skSum).toLocaleString("ru-RU")} не сходится с итогом ${Math.round(total.value).toLocaleString("ru-RU")}`);
+    // Числа только в итоге, у СК нули: такой план затёр бы план по СК нулями
+    if (total !== null && total > 0 && skSum === 0) problems.push(`План по СК за ${ml(month)}: у СК полисов 0, а в итоге ${fmt(total)}. План по СК затёрся бы нулями`);
+    else if (total && skSum && Math.abs(skSum - total) > 0.005 * total) warnings.push(`План по СК за ${ml(month)}: сумма СК ${fmt(skSum)} не сходится с итогом ${fmt(total)}`);
   }
   return { problems: [...new Set(problems)], warnings, ready: problems.length === 0, read };
 }
 
-/** Названия СК, которые не свелись между листами (без учёта регистра и лишних пробелов) за месяц факта */
-function nameMismatch(day: string, fact: FactPart, plan: PlanPart): string[] {
+/** Названия СК, которые не свелись между листами (skKey и справочник соответствий) за месяц факта */
+function nameMismatch(day: string, fact: FactPart, plan: PlanPart, aliases: SkAliases): string[] {
   if (!fact.rows.length || !plan.read?.rows.length) return [];
+  const key = aliasKeys(aliases);
   const factMonth = factDay(day).slice(0, 7);
   const month = plan.read.periods.includes(factMonth) ? factMonth : day.slice(0, 7);
-  const inPlan = new Map(plan.read.rows.filter((r) => r.period === month && r.metric === "pol" && r.value && !isTotal(r.sk)).map((r) => [skKey(r.sk), r.sk]));
-  const inFact = new Map(fact.rows.filter((r) => r.month === month && r.policies > 0).map((r) => [skKey(r.sk), r.sk]));
+  const inPlan = new Map(plan.read.rows.filter((r) => r.period === month && r.metric === "pol" && r.value && !isTotal(r.sk)).map((r) => [key(r.sk), r.sk]));
+  const inFact = new Map(fact.rows.filter((r) => r.month === month && r.policies > 0).map((r) => [key(r.sk), r.sk]));
   if (!inPlan.size || !inFact.size) return [];
   const onlyPlan = [...inPlan].filter(([k]) => !inFact.has(k)).map(([, name]) => name);
   const onlyFact = [...inFact].filter(([k]) => !inPlan.has(k)).map(([, name]) => name);
   if (!onlyPlan.length && !onlyFact.length) return [];
   const parts = [onlyPlan.length ? `есть в плане, нет в «Все СК»: ${nameList(onlyPlan)}` : null, onlyFact.length ? `есть в «Все СК», нет в плане: ${nameList(onlyFact)}` : null].filter(Boolean);
-  return [`Названия СК в двух листах за ${ml(month)} не совпали (регистр и лишние пробелы не в счёт), такие СК будут отдельными строками: ${parts.join("; ")}`];
+  return [
+    `Названия СК в двух листах за ${ml(month)} не совпали (регистр, пробелы, кавычки, ё, дефисы и форма собственности не в счёт), такие СК будут отдельными строками: ${parts.join("; ")}. Если это одна СК, задайте соответствие ниже: «название в «Все СК» = название в плане»`,
+  ];
 }
 
 async function readAll(now: Date) {
@@ -243,9 +283,10 @@ async function readAll(now: Date) {
   } catch (error) {
     return fail(errorText(error));
   }
-  const fact = await factPart(day, sheets.vseSk);
+  const aliases = aliasesOf(await getSetting<unknown>("plan.skAliases", {}));
+  const fact = await factPart(day, sheets.vseSk, aliases);
   const plan = planPart(day, sheets.skPlan);
-  return { day, fact, plan, warnings: nameMismatch(day, fact, plan) };
+  return { day, fact, plan, warnings: nameMismatch(day, fact, plan, aliases) };
 }
 
 /** Что загрузится из хаба: ничего не пишет. Части проверяются отдельно, каждая со своими проблемами */
@@ -277,9 +318,28 @@ export async function previewHub(actor: Actor, now = new Date()): Promise<HubPre
   };
 }
 
+/** Когда и кто загрузил каждую часть хаба: факт и план отдельно, частичная загрузка не выдаёт себя за полную */
+export type HubPulled = { fact: { at: string; by: string; day: string } | null; plan: { at: string; by: string } | null };
+
+const stamp = (v: unknown): { at: string; by: string; day?: string } | null => {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  return o && typeof o.at === "string" ? { at: o.at, by: typeof o.by === "string" ? o.by : "", ...(typeof o.day === "string" ? { day: o.day } : {}) } : null;
+};
+
+/** Настройка plan.hubPulled. Прежний вид { at, by, day, fact: true, plan: false } читается как отметка обеих частей */
+export function hubPulledOf(value: unknown): HubPulled {
+  const o = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  const legacy = stamp(o);
+  const part = (v: unknown) => (v === true ? legacy : stamp(v));
+  const fact = part(o.fact);
+  const plan = part(o.plan);
+  return { fact: fact ? { at: fact.at, by: fact.by, day: fact.day ?? fact.at.slice(0, 10) } : null, plan: plan ? { at: plan.at, by: plan.by } : null };
+}
+
 /**
  * Загрузить что прошло проверку: снимок «Все СК» на сегодня (текущий и прошлый месяц, снимок дня заменяется) и строки
- * плана по СК (заменяются целиком). Не прошла ни одна часть: отказ с причинами обеих
+ * плана по СК (заменяются целиком). Время загрузки каждой части пишется отдельно. Не прошла ни одна часть: отказ с
+ * причинами обеих
  */
 export async function applyHub(actor: Actor, now = new Date()): Promise<HubApplied> {
   requirePull(actor);
@@ -303,13 +363,18 @@ export async function applyHub(actor: Actor, now = new Date()): Promise<HubAppli
         await tx.planSkLine.deleteMany();
         if (lineRows.length) await tx.planSkLine.createMany({ data: lineRows });
       }
+      // Отметка загрузки под той же блокировкой: часть, которая не загрузилась, сохраняет прежнее время
+      const before = hubPulledOf((await tx.setting.findUnique({ where: { key: "plan.hubPulled" } }))?.value);
+      const at = now.toISOString();
+      const pulled: HubPulled = { fact: fact.ready ? { at, by: actor.fullName, day } : before.fact, plan: plan.ready ? { at, by: actor.fullName } : before.plan };
+      const value = pulled as unknown as Prisma.InputJsonValue;
+      await tx.setting.upsert({ where: { key: "plan.hubPulled" }, update: { value }, create: { key: "plan.hubPulled", value } });
       await tx.auditLog.create({
         data: { action: "plan.hub", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: day, field: "Загрузка из хаба", before: Prisma.JsonNull, after: journal, ip: actor.ip ?? null, via: actor.via ?? null },
       });
     },
     { timeout: 30_000 },
   );
-  await setSetting("plan.hubPulled", { at: now.toISOString(), by: actor.fullName, day, fact: fact.ready, plan: plan.ready });
   return {
     day,
     fact: { loaded: fact.ready, rows: snapshotRows.length, months: fact.ready ? fact.stored : [], problem: fact.problems[0] ?? null },
@@ -342,24 +407,60 @@ export async function setHubSource(actor: Actor, input: string): Promise<string>
   return id;
 }
 
+/**
+ * Справочник соответствий названий СК (настройка plan.skAliases): «название в «Все СК» = название в плане» по строке.
+ * Правит владелец в панели хаба, каждая правка в журнале plan.skAliases. Возвращает сохранённый текст
+ */
+export async function setSkAliases(actor: Actor, input: string): Promise<string> {
+  if (!canManagePeople(actor)) fail("Соответствие названий СК задаёт владелец в режиме управления");
+  const { aliases, problems } = parseAliases(String(input ?? ""));
+  if (problems.length) fail(problems.slice(0, 3).join(". "));
+  const after = aliasText(aliases);
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('plan.skAliases'))`;
+    const before = aliasText(aliasesOf((await tx.setting.findUnique({ where: { key: "plan.skAliases" } }))?.value));
+    if (before === after) return;
+    await tx.setting.upsert({ where: { key: "plan.skAliases" }, update: { value: aliases }, create: { key: "plan.skAliases", value: aliases } });
+    await tx.auditLog.create({
+      data: { action: "plan.skAliases", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "skAliases", field: "Соответствие названий СК", before: (before || "пусто").slice(0, 4000), after: (after || "пусто").slice(0, 4000), ip: actor.ip ?? null, via: actor.via ?? null },
+    });
+  });
+  return after;
+}
+
 export type SkRow = {
   sk: string;
   /** План месяца из модели: полисы */
   plan: number | null;
-  /** Факт с начала месяца по последнему снимку */
+  /** Факт с начала месяца по последнему снимку, где есть эта СК */
   mtd: number | null;
   /** Доля пула в факте с начала месяца */
   poolShare: number | null;
+  /** Ранрейт: null, пока дней факта меньше HUB_LIMITS.minRunRateDays */
   forecast: number | null;
   linear: number | null;
   profile: number | null;
   unstable: boolean;
   /** Прогноз к плану: доля */
   vsPlan: number | null;
-  /** Выручка с апсейлом с начала месяца, млн; только для тех, кому видны чувствительные показатели */
+  /** Выручка с апсейлом с начала месяца, млн; только для тех, кому видны чувствительные показатели. null: колонок выручки нет */
   revenueMtd: number | null;
   /** КВ плана месяца, доля; только для тех, кому видны чувствительные показатели */
   kvPlan: number | null;
+  /** СК нет в последнем снимке: её факт на этот день (в итоге она идёт с этим значением) */
+  carriedFrom: string | null;
+};
+
+/** Откуда читается хаб и когда загружены части: для карточки и панели загрузки */
+export type HubSourceView = {
+  sourceId: string;
+  mode: "google" | "imitation" | "off";
+  /** Факт «Все СК» и план по СК загружаются независимо: у каждой части своё время и кто загрузил */
+  fact: { at: string; by: string } | null;
+  plan: { at: string; by: string } | null;
+  serviceEmail: string | null;
+  /** Справочник соответствий названий СК текстом для поля: только тому, кто его правит (владелец в режиме управления) */
+  aliases: string | null;
 };
 
 export type SkView = {
@@ -380,9 +481,11 @@ export type SkView = {
   stale: boolean;
   /** Текущий месяц, но факта за него ещё нет (1-е число): ранрейт не считается, факт появится завтра */
   factTomorrow: boolean;
-  /** Дневных снимков меньше, чем нужно профилю дней недели */
+  /** Факт есть, но дней факта меньше HUB_LIMITS.minRunRateDays: ранрейт и «К плану» появятся с этого числа месяца */
+  runRateFrom: number | null;
+  /** Дней с дневным фактом (снимок за день и за предыдущий день): профилю дней недели нужно HUB_LIMITS.minProfileDays */
   profileDays: number;
-  source: { sourceId: string; mode: "google" | "imitation" | "off"; pulledAt: string | null; pulledBy: string | null; serviceEmail: string | null };
+  source: HubSourceView;
   canPull: boolean;
   canSource: boolean;
 };
@@ -401,36 +504,60 @@ export async function seesSensitive(actor: Actor): Promise<boolean> {
   return osago.includes(actor.slug) || partners.includes(actor.slug);
 }
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+/** Настройки хаба, которые нужны и панели, и карточке: читаются один раз на представление месяца */
+export type HubState = { hubId: string | null; pulled: HubPulled; aliases: SkAliases };
 
-/** Откуда читается хаб: для панели загрузки, даже пока загрузок не было */
-export async function hubSource(actor: Actor): Promise<SkView["source"]> {
-  const [pulled, hubId] = await Promise.all([getSetting<{ at: string; by: string; day: string } | null>("plan.hubPulled", null), getSetting<string | null>("plan.hubId", null)]);
-  const manager = canEditDictionaries(actor);
-  const mode: SkView["source"]["mode"] = imitationOn() ? "imitation" : hubId && serviceAccountFromEnv() ? "google" : "off";
-  return { sourceId: manager ? (hubId ?? "") : "", mode, pulledAt: pulled?.at ?? null, pulledBy: pulled?.by ?? null, serviceEmail: manager ? serviceEmail() : null };
+export async function hubState(): Promise<HubState> {
+  const [hubId, pulled, aliases] = await Promise.all([getSetting<string | null>("plan.hubId", null), getSetting<unknown>("plan.hubPulled", null), getSetting<unknown>("plan.skAliases", {})]);
+  return { hubId, pulled: hubPulledOf(pulled), aliases: aliasesOf(aliases) };
 }
+
+/** Откуда читается хаб: для панели загрузки, даже пока загрузок не было. state: уже прочитанные настройки хаба */
+export async function hubSource(actor: Actor, state?: HubState | Promise<HubState>): Promise<HubSourceView> {
+  const { hubId, pulled, aliases } = await (state ?? hubState());
+  const manager = canEditDictionaries(actor);
+  const mode: HubSourceView["mode"] = imitationOn() ? "imitation" : hubId && serviceAccountFromEnv() ? "google" : "off";
+  return {
+    sourceId: manager ? (hubId ?? "") : "",
+    mode,
+    fact: pulled.fact ? { at: pulled.fact.at, by: pulled.fact.by } : null,
+    plan: pulled.plan,
+    serviceEmail: manager ? serviceEmail() : null,
+    aliases: canManagePeople(actor) ? aliasText(aliases) : null,
+  };
+}
+
+type Acc = { policies: number; pool: number; revenue: number | null };
+const addAcc = (t: Acc, a: Acc): Acc => ({ policies: t.policies + a.policies, pool: t.pool + a.pool, revenue: t.revenue === null && a.revenue === null ? null : (t.revenue ?? 0) + (a.revenue ?? 0) });
 
 /**
  * Ранрейт ОСАГО по СК для карточки продукта. null: загрузок из хаба ещё не было или человеку открыты не все цифры
  * (этап 57). Представление месяца собирается и для сводки уровня «основные цифры», поэтому разрез по СК режется здесь.
- * source: уже собранный источник хаба (monthPlan передаёт свой, чтобы не читать настройки дважды)
+ * opts.state: уже прочитанные настройки хаба (monthPlan читает их один раз); opts.level: уровень доступа, если вызывающий
+ * его уже знает (тогда он не считается заново)
+ *
+ * Названия СК сводятся по skKey и справочнику соответствий. СК, которой нет в последнем снимке, но которая была в
+ * прошлом снимке того же месяца, идёт в итог по дням со своим прошлым значением: нарастающий итог не убывает от того,
+ * что СК пропала из листа. Её собственный ранрейт считается по её последнему снимку
  */
-export async function skView(actor: Actor, month: string, now = new Date(), source?: SkView["source"] | Promise<SkView["source"]>): Promise<SkView | null> {
-  if (!(await canSeeNumbers(actor))) return null;
-  const [snapshots, lines, pulled, lbe] = await Promise.all([
-    prisma.planSkSnapshot.findMany({ where: { month }, orderBy: { day: "asc" } }),
-    prisma.planSkLine.findMany({ where: { period: month } }),
-    getSetting<{ at: string; by: string; day: string } | null>("plan.hubPulled", null),
+export async function skView(actor: Actor, month: string, now = new Date(), opts: { state?: HubState | Promise<HubState>; level?: NumbersLevel } = {}): Promise<SkView | null> {
+  if ((opts.level ?? (await numbersLevel(actor))) !== "full") return null;
+  const statePromise = Promise.resolve(opts.state ?? hubState());
+  const [snapshots, lines, state, lbe] = await Promise.all([
+    prisma.planSkSnapshot.findMany({ where: { month }, select: { day: true, sk: true, pool: true, policies: true, revenue: true } }),
+    prisma.planSkLine.findMany({ where: { period: month, metric: { in: ["pol", "kv_tot", "prem_tot"] } }, select: { sk: true, metric: true, value: true } }),
+    statePromise,
     prisma.planLine.findFirst({ where: { month, version: "LBE", product: "osago", metric: "units" }, select: { value: true } }),
   ]);
-  const anyLoad = pulled !== null || snapshots.length > 0 || lines.length > 0;
+  const anyLoad = state.pulled.fact !== null || state.pulled.plan !== null || snapshots.length > 0 || lines.length > 0;
   if (!anyLoad) return null;
   const sensitive = await seesSensitive(actor);
-  // План по СК: названия сводятся без учёта регистра и лишних пробелов, «Итого» и «Всего» это итог
+  const keyOf = aliasKeys(state.aliases);
+  const totalKey = skKey(SK_TOTAL);
+  // План по СК: «Итого» и «Всего» это итог, названия сводятся по skKey и справочнику
   const plans = new Map<string, { name: string; values: Map<string, number | null> }>();
   for (const l of lines) {
-    const key = isTotal(l.sk) ? skKey(SK_TOTAL) : skKey(l.sk);
+    const key = isTotal(l.sk) ? totalKey : keyOf(l.sk);
     const p = plans.get(key) ?? { name: isTotal(l.sk) ? SK_TOTAL : l.sk, values: new Map<string, number | null>() };
     p.values.set(l.metric, l.value);
     plans.set(key, p);
@@ -444,54 +571,52 @@ export async function skView(actor: Actor, month: string, now = new Date(), sour
     const d = snapshotDayIn(load, month);
     if (d && (latest.get(d) ?? "") < load) latest.set(d, load);
   }
-  type Acc = { policies: number; pool: number; revenue: number };
   const bySk = new Map<string, { name: string; days: Map<string, Acc> }>();
   for (const s of snapshots) {
     const load = iso(s.day);
     const d = snapshotDayIn(load, month);
     if (!d || latest.get(d) !== load || isTotal(s.sk)) continue;
-    const key = skKey(s.sk);
+    const key = keyOf(s.sk);
     const m = bySk.get(key) ?? { name: s.sk, days: new Map<string, Acc>() };
-    const a = m.days.get(d) ?? { policies: 0, pool: 0, revenue: 0 };
-    a.policies += s.policies;
-    if (s.pool) a.pool += s.policies;
-    a.revenue += s.revenue ?? 0;
-    m.days.set(d, a);
+    m.days.set(d, addAcc(m.days.get(d) ?? { policies: 0, pool: 0, revenue: null }, { policies: s.policies, pool: s.pool ? s.policies : 0, revenue: s.revenue }));
     bySk.set(key, m);
   }
-  const totalKey = skKey(SK_TOTAL);
+  const allDays = [...new Set([...bySk.values()].flatMap((m) => [...m.days.keys()]))].sort();
+  const day = allDays[allDays.length - 1] ?? null;
+  const elapsed = day ? Number(day.slice(8, 10)) : 0;
+  const ready = runRateReady(elapsed);
   const keys = [...new Set([...bySk.keys(), ...plans.keys()])].filter((k) => k !== totalKey);
   const row = (sk: string, acc: Map<string, Acc> | undefined, plan: number | null, kvPlan: number | null): SkRow => {
-    const series = acc ? [...acc.entries()].map(([day, a]) => ({ day, mtd: a.policies })) : [];
+    const series = acc ? [...acc.entries()].map(([d, a]) => ({ day: d, mtd: a.policies })) : [];
     const rr = series.length ? runRate(month, series) : null;
     const last = rr ? acc!.get(rr.day)! : null;
-    const forecast = rr?.forecast ?? null;
+    const forecast = ready ? (rr?.forecast ?? null) : null;
     return {
       sk,
       plan,
       mtd: rr?.mtd ?? null,
       poolShare: last && last.policies > 0 ? last.pool / last.policies : null,
       forecast,
-      linear: rr?.linear ?? null,
-      profile: rr?.profile ?? null,
-      unstable: rr?.unstable ?? false,
+      linear: ready ? (rr?.linear ?? null) : null,
+      profile: ready ? (rr?.profile ?? null) : null,
+      unstable: ready && (rr?.unstable ?? false),
       vsPlan: forecast !== null && plan ? forecast / plan : null,
-      revenueMtd: sensitive && last ? last.revenue / 1e6 : null,
+      revenueMtd: sensitive && last && last.revenue !== null ? last.revenue / 1e6 : null,
       kvPlan: sensitive ? kvPlan : null,
+      carriedFrom: rr && day && rr.day < day ? rr.day : null,
     };
   };
   const rows = keys
-    .map((k) => row(bySk.get(k)?.name ?? plans.get(k)!.name, bySk.get(k)?.days, planOf(k, "pol"), planOf(k, "kv_tot")))
-    .sort((a, b) => (b.forecast ?? b.plan ?? 0) - (a.forecast ?? a.plan ?? 0));
-  // Итог: снимки всех СК по дням складываются, чтобы ранрейт итога считался по тем же дням
+    .map((k) => row(plans.get(k)?.name ?? bySk.get(k)!.name, bySk.get(k)?.days, planOf(k, "pol"), planOf(k, "kv_tot")))
+    .sort((a, b) => (b.forecast ?? b.mtd ?? b.plan ?? 0) - (a.forecast ?? a.mtd ?? a.plan ?? 0));
+  // Итог: снимки всех СК по дням складываются, чтобы ранрейт итога считался по тем же дням. СК, которой нет в снимке
+  // дня, но которая была раньше в месяце, идёт со своим последним значением
   const totalAcc = new Map<string, Acc>();
   for (const m of bySk.values()) {
-    for (const [d, a] of m.days) {
-      const t = totalAcc.get(d) ?? { policies: 0, pool: 0, revenue: 0 };
-      t.policies += a.policies;
-      t.pool += a.pool;
-      t.revenue += a.revenue;
-      totalAcc.set(d, t);
+    let carried: Acc | null = null;
+    for (const d of allDays) {
+      carried = m.days.get(d) ?? carried;
+      if (carried) totalAcc.set(d, addAcc(totalAcc.get(d) ?? { policies: 0, pool: 0, revenue: null }, carried));
     }
   }
   const totalPlan = planOf(totalKey, "pol") ?? (rows.some((r) => r.plan !== null) ? rows.reduce((s, r) => s + (r.plan ?? 0), 0) : null);
@@ -503,19 +628,17 @@ export async function skView(actor: Actor, month: string, now = new Date(), sour
     totalKv = prem > 0 ? pairs.reduce((s, [kv, p]) => s + kv * p, 0) / prem : null;
   }
   const total = row(SK_TOTAL, totalAcc.size ? totalAcc : undefined, totalPlan, totalKv);
-  const days = [...totalAcc.keys()].sort();
-  const day = days[days.length - 1] ?? null;
   const loadDay = day ? latest.get(day)! : null;
   const today = moscowToday(now);
   const yesterday = iso(new Date(new Date(`${today}T00:00:00Z`).getTime() - 86_400_000));
   const current = month === today.slice(0, 7);
-  const known = days.filter((d, i) => i > 0 && Number(d.slice(8, 10)) - Number(days[i - 1]!.slice(8, 10)) === 1).length;
+  const known = allDays.filter((d, i) => i > 0 && Number(d.slice(8, 10)) - Number(allDays[i - 1]!.slice(8, 10)) === 1).length;
   const manager = canEditDictionaries(actor);
   return {
     month,
     day,
     loadDay,
-    elapsed: day ? Number(day.slice(8, 10)) : 0,
+    elapsed,
     days: daysIn(month),
     rows,
     total,
@@ -523,8 +646,9 @@ export async function skView(actor: Actor, month: string, now = new Date(), sour
     sensitive,
     stale: current && !!loadDay && loadDay < yesterday,
     factTomorrow: current && snapshotDayIn(today, month) === null,
+    runRateFrom: day && !ready ? RUN_RATE_FROM_DAY : null,
     profileDays: known,
-    source: await (source ?? hubSource(actor)),
+    source: await hubSource(actor, state),
     canPull: manager,
     canSource: canManagePeople(actor),
   };

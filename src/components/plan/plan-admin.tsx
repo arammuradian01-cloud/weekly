@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrototype } from "@/domain/store";
-import { applyFactsAction, applyHubAction, applyPullAction, planPeopleAction, previewFactsAction, previewHubAction, previewPullAction, setHubSourceAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
-import type { HubPreview } from "@/lib/plan/hub-service";
+import { applyFactsAction, applyHubAction, applyPullAction, planPeopleAction, previewFactsAction, previewHubAction, previewPullAction, setHubSourceAction, setPlanOwnersAction, setPlanSourceAction, setSkAliasesAction } from "@/app/(app)/forecast/actions";
+import type { HubPreview, HubSourceView } from "@/lib/plan/hub-service";
 import type { FactsPreview } from "@/lib/plan/processes";
 import { FACT_METRICS } from "@/lib/plan/facts";
 import { addMonths, monthLabel } from "@/lib/forecast/codes";
@@ -19,7 +19,7 @@ import { Drawer } from "@/components/ui/overlays";
 import { FormError } from "@/components/ui/field";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Delta } from "@/components/ui/data";
-import { delta } from "./plan-ui";
+import { delta, when } from "./plan-ui";
 
 export function PullDrawer({
   open,
@@ -488,29 +488,36 @@ function HubPartCard({ title, part, summary, testId }: { title: string; part: Hu
   );
 }
 
-export function HubDrawer({
-  open,
-  onOpenChange,
-  serviceEmail,
-  mode,
-  sourceId,
-  canSource,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  serviceEmail: string | null;
-  mode: "google" | "imitation" | "off";
-  sourceId: string;
-  canSource: boolean;
-}) {
+/** Когда загружена часть хаба: «Факт загружен 22 октября в 09:10, Мурадян Арам» */
+const hubLoaded = (what: string, part: { at: string; by: string } | null) => (part ? `${what} загружен ${when(part.at)}${part.by ? `, ${part.by}` : ""}` : `${what} ещё не загружен`);
+
+export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open: boolean; onOpenChange: (open: boolean) => void; source: HubSourceView; canSource: boolean }) {
   const router = useRouter();
   const { notify } = usePrototype();
+  const { serviceEmail, mode } = hub;
   const [preview, setPreview] = useState<HubPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"check" | "load" | null>(null);
-  const [source, setSource] = useState(sourceId);
+  const [source, setSource] = useState(hub.sourceId);
   const [link, setLink] = useState("");
   const [sourceBusy, setSourceBusy] = useState(false);
+  // Соответствие названий СК (настройка plan.skAliases): правит владелец
+  const [aliases, setAliases] = useState(hub.aliases ?? "");
+  const [savedAliases, setSavedAliases] = useState(hub.aliases ?? "");
+  const [aliasesBusy, setAliasesBusy] = useState(false);
+
+  const saveAliases = async () => {
+    setError(null);
+    setAliasesBusy(true);
+    const r = await setSkAliasesAction(aliases);
+    setAliasesBusy(false);
+    if (!r.ok) return setError(r.error);
+    setAliases(r.value);
+    setSavedAliases(r.value);
+    setPreview(null);
+    notify("Соответствие названий СК сохранено");
+    router.refresh();
+  };
 
   const changeSource = async () => {
     setError(null);
@@ -587,6 +594,9 @@ export function HubDrawer({
             . В хабе листы боевых файлов подтягиваются формулой IMPORTRANGE, руками там ничего не правят.
           </p>
           {mode === "google" && serviceEmail ? <p>Если не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на хаб.</p> : null}
+          <p data-testid="plan-hub-loaded">
+            {hubLoaded("Факт «Все СК»", hub.fact)}. {hubLoaded("План по СК", hub.plan)}.
+          </p>
         </div>
         {canSource ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -594,6 +604,24 @@ export function HubDrawer({
             <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy || !link.trim()} className="sm:shrink-0" data-testid="plan-hub-source-save">
               Задать хаб
             </Button>
+          </div>
+        ) : null}
+        {canSource ? (
+          <div className="flex flex-col gap-2" data-testid="plan-hub-aliases">
+            <TextArea
+              id="plan-hub-aliases-text"
+              label="Соответствие названий СК"
+              rows={4}
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder={"Росгосстрах = РГС\nСбербанк страхование = СберСтрахование"}
+              hint="По строке: название в «Все СК» = название в плане. Регистр, пробелы, кавычки, ё, дефисы и форма собственности (АО, ПАО, САО, СПАО, СК) и так не в счёт: сюда только разные написания одной СК"
+            />
+            <div>
+              <Button variant="secondary" onClick={() => void saveAliases()} loading={aliasesBusy} disabled={aliasesBusy || aliases === savedAliases} data-testid="plan-hub-aliases-save">
+                Сохранить соответствие
+              </Button>
+            </div>
           </div>
         ) : null}
         {mode === "off" ? <p className="sv-alert sv-alert--warning">{source ? "Ключ служебного аккаунта Google не задан на сервере: хаб не прочитать." : "Хаб не задан: вставьте ссылку на таблицу «Единая воронка: данные»."}</p> : null}

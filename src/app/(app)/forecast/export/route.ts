@@ -15,7 +15,8 @@ export async function GET(request: Request) {
     return new Response("Выгрузку прогноза берут владелец, администраторы и команды продуктов при личном входе", { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   }
   const month = new URL(request.url).searchParams.get("month");
-  const view = await monthPlan(actor, isMonth(month) ? month : null);
+  // Выгрузке разрез по СК не нужен
+  const view = await monthPlan(actor, isMonth(month) ? month : null, new Date(), null, { sk: false });
   if (view.empty) return new Response(`Прогноз на ${view.monthLabel} ещё не начат`, { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   const { buffer, file, rows } = await buildPlanExport(view);
   await writeAudit({

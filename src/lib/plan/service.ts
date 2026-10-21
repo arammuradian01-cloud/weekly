@@ -26,8 +26,8 @@ import { notify } from "@/lib/inbox/notify";
 import { closePlanReminders, factsOf, lastPullAt, reviewsOf, waitingReview } from "./status";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_LABEL, PARTNER_OWNER_CODE, PARTNER_PNL_SHEET, PARTNER_SHEETS, PARTNER_SHEET_PREFIX, readPartners, type PartnerPull } from "./partners";
 import { partnerSnapshot, partnerView, writePartners } from "./partners-service";
-import { hubSource, skView } from "./hub-service";
-import { personalLogin } from "./access";
+import { hubSource, hubState, skView } from "./hub-service";
+import { personalLogin, type NumbersLevel } from "./access";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PartnerAdjustInput, PullPreview } from "./types";
@@ -476,9 +476,15 @@ async function linesAt(month: string, at: Date, when: string): Promise<{ lines: 
 
 /**
  * Прогноз месяца для экрана. at (этап 39): прогноз на прошлый момент для отчёта CEO за прошлую неделю: LBE загрузки,
- * которая действовала в тот момент, и корректировки до него. Такой вид только для чтения: без проверки и правки
+ * которая действовала в тот момент, и корректировки до него. Такой вид только для чтения: без проверки и правки.
+ *
+ * opts.sk false: без раздела ОСАГО по СК и источника хаба (skOmitted). Так собирают сводку для отчёта CEO, встречи и
+ * выгрузки, а действия корректировки возвращают экран без разреза по СК: экран оставляет у себя прежний раздел.
+ * opts.level: уровень доступа к цифрам, если вызывающий его уже знает
  */
-export async function monthPlan(actor: Actor, monthInput?: string | null, now = new Date(), asOf?: { at: Date; when: string } | null): Promise<MonthPlanView> {
+export type MonthPlanOptions = { sk?: boolean; level?: NumbersLevel };
+
+export async function monthPlan(actor: Actor, monthInput?: string | null, now = new Date(), asOf?: { at: Date; when: string } | null, opts: MonthPlanOptions = {}): Promise<MonthPlanView> {
   const monthRows = await prisma.planLine.findMany({ distinct: ["month"], select: { month: true }, orderBy: { month: "desc" } });
   const months = monthRows.map((r) => r.month);
   const current = currentMonth(now);
@@ -524,9 +530,11 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     at,
     when: asOf?.when,
   });
-  // По СК: только текущий срез, на прошлый момент не показываем. Источник хаба читается один раз и отдаётся разделу по СК
-  const hubP = hubSource(actor);
-  const [sk, hub] = await Promise.all([at ? null : skView(actor, month, now, hubP), hubP]);
+  // По СК: только текущий срез, на прошлый момент не показываем. Настройки хаба читаются один раз и отдаются и панели, и
+  // разделу по СК. Без раздела (opts.sk false) ни снимки, ни настройки хаба не читаются
+  const withSk = opts.sk !== false;
+  const hubSettings = withSk ? hubState() : null;
+  const [sk, hub] = hubSettings ? await Promise.all([at ? null : skView(actor, month, now, { state: hubSettings, level: opts.level }), hubSource(actor, hubSettings)]) : [null, null];
   return {
     month,
     monthLabel: monthLabel(month),
@@ -548,6 +556,7 @@ export async function monthPlan(actor: Actor, monthInput?: string | null, now = 
     partners,
     sk,
     hubSource: hub,
+    skOmitted: !withSk,
   };
 }
 
@@ -638,7 +647,7 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
       },
     });
   });
-  return monthPlan(actor, month);
+  return monthPlan(actor, month, new Date(), null, { sk: false });
 }
 
 /** Кто корректирует прогноз продукта: владелец и администраторы в режиме управления */

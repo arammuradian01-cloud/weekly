@@ -2,7 +2,10 @@
 // плана ОСАГО по СК, ранрейт по СК в карточке ОСАГО, кто видит выручку и КВ по СК, права на загрузку и смену хаба, журнал.
 // Правки по проверке: сломанный лист плана не затирает план, неполный «Все СК» не проходит молча, повторы, снимок хранит
 // только текущий и прошлый месяц, факт по вчерашний день (решение владельца), выручка с апсейлом, общий логин, названия СК,
-// загрузка двумя независимыми частями
+// загрузка двумя независимыми частями. Второй круг: ошибки ячеек плана не блокируют без нужды, число только в итоге,
+// справочник соответствий названий СК, свежесть источника (итог не вырос, итог упал), время загрузки факта и плана
+// отдельно, пустое название СК, СК пропала из снимка, сводка и корректировка без раздела по СК, ранрейт с 3 дней факта,
+// выручка «нет», пустой лист
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
@@ -10,8 +13,10 @@ import * as plan from "@/lib/plan/service";
 import * as hub from "@/lib/plan/hub-service";
 import { planBrief } from "@/lib/plan/processes";
 import { NUMBERS_ACCESS_KEY, NUMBERS_CLOSED_TEXT, NUMBERS_SUMMARY_TEXT, briefFor, numbersLevel } from "@/lib/plan/access";
-import { HUB_FAKE_SK } from "@/lib/plan/hub-imitation";
+import { HUB_FAKE_SK, hubImitation } from "@/lib/plan/hub-imitation";
 import { HUB_LIMITS, HUB_SHEETS, daysIn } from "@/lib/plan/hub";
+import { derive } from "@/lib/plan/model";
+import type { Values } from "@/lib/plan/lrf";
 import { LRF_MIRROR_ID, LRF_SHEET_ID } from "@/lib/plan/lrf";
 import { addMonths } from "@/lib/forecast/codes";
 import { moscowToday } from "@/lib/tasks/dates";
@@ -19,7 +24,7 @@ import { PROD_SHEET_ID } from "@/lib/sheet/client";
 import * as actions from "@/app/(app)/forecast/actions";
 
 // Действия экрана вызываются напрямую: вход и кеш страниц подменены, человек задаётся тестом
-const runner = vi.hoisted(() => ({ actor: null as tasks.Actor | null, settingReads: [] as string[] }));
+const runner = vi.hoisted(() => ({ actor: null as tasks.Actor | null, settingReads: [] as string[], skViews: [] as unknown[] }));
 vi.mock("next/cache", () => ({ revalidatePath: () => undefined }));
 vi.mock("@/lib/action-runner", async () => {
   const { TaskRuleError } = await import("@/lib/tasks/service");
@@ -32,6 +37,17 @@ vi.mock("@/lib/action-runner", async () => {
         if (error instanceof TaskRuleError) return { ok: false as const, error: error.message };
         throw error;
       }
+    },
+  };
+});
+// Раздел по СК собирается как есть, тест только считает сборки и уровень, который передал вызывающий
+vi.mock("@/lib/plan/hub-service", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/plan/hub-service")>();
+  return {
+    ...real,
+    skView: (...args: Parameters<typeof real.skView>) => {
+      runner.skViews.push(args[3]?.level ?? null);
+      return real.skView(...args);
     },
   };
 });
@@ -76,7 +92,7 @@ const LINK = `https://docs.google.com/spreadsheets/d/${HUB_ID}/edit`;
 /** Листы имитации на день now: тест портит их, как человек портит хаб */
 const grids = (now = NOW) => {
   const fake = hub.imitationHub(now);
-  return { vse: fake.tab(HUB_SHEETS.vseSk), plan: fake.tab(HUB_SHEETS.skPlan) };
+  return { fake, vse: fake.tab(HUB_SHEETS.vseSk), plan: fake.tab(HUB_SHEETS.skPlan) };
 };
 // Колонки имитации «Все СК» и плана
 const V = { month: 0, sk: 1, pool: 2, pol: 4, rev: 7, upsRev: 10 };
@@ -85,6 +101,7 @@ const P = { sk: 0, code: 4, prev: 6, month: 7, fy: 8 };
 const clean = async () => {
   delete (globalThis as { __hubFake?: unknown }).__hubFake;
   runner.settingReads = [];
+  runner.skViews = [];
   await prisma.inboxEvent.deleteMany({ where: { kind: "PLAN" } });
   await prisma.planSkSnapshot.deleteMany();
   await prisma.planSkLine.deleteMany();
@@ -114,6 +131,8 @@ afterAll(async () => {
 });
 
 const totalMonthly = HUB_FAKE_SK.reduce((s, x) => s + x.monthly, 0);
+const ddmmyyyy = (day: string) => day.split("-").reverse().join(".");
+const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const lastJournal = async () => String((await prisma.auditLog.findFirst({ where: { action: "plan.hub" }, orderBy: { at: "desc" } }))?.after ?? "");
 
 describe("проверка и загрузка из хаба", () => {
@@ -174,8 +193,8 @@ describe("проверка и загрузка из хаба", () => {
     const log = await prisma.auditLog.findFirst({ where: { action: "plan.hubSource" }, orderBy: { at: "desc" } });
     expect(log?.after).toBe(id);
     const view = await plan.monthPlan(owner, month);
-    expect(view.hubSource.sourceId).toBe(id);
-    expect(view.hubSource.mode).toBe("imitation");
+    expect(view.hubSource!.sourceId).toBe(id);
+    expect(view.hubSource!.mode).toBe("imitation");
   });
 
   it("боевые таблицы из настроек ресурса хабом стать не могут: Bord задач, зеркало, LRF (и по умолчанию), цифры недели", async () => {
@@ -213,20 +232,21 @@ describe("сломанные листы: загрузка двумя частя�
     for (const row of sheet.grid.slice(3)) for (const j of [P.prev, P.month, P.fy]) row[j] = row[P.code] === "pol" ? "#N/A" : "#REF!";
     const preview = await hub.previewHub(owner, NOW);
     expect(preview.plan.ready).toBe(false);
-    expect(preview.plan.problems.join(" ")).toMatch(/ошибки в ячейках у СК АльфаСтрахование, Ингосстрах/);
-    expect(preview.plan.problems.join(" ")).toMatch(new RegExp(`у полисов за ${month} нет ни одного числа`));
+    expect(preview.plan.problems.join(" ")).toMatch(new RegExp(`ошибки в полисах за ${month} у СК АльфаСтрахование, Ингосстрах`));
+    // Остальные ошибки не блокируют сами по себе: о них предупреждение со счётчиком
+    expect(preview.plan.warnings.join(" ")).toMatch(/ошибки формул в \d+ ячейках у СК АльфаСтрахование/);
     expect(preview.fact.ready).toBe(true);
     expect(preview.ready).toBe(true);
 
     const r = await hub.applyHub(owner, NOW);
     expect(r.fact.loaded).toBe(true);
     expect(r.plan).toMatchObject({ loaded: false, rows: 0 });
-    expect(r.plan.problem).toMatch(/ошибки в ячейках/);
+    expect(r.plan.problem).toMatch(/ошибки в полисах/);
     const after = await prisma.planSkLine.findMany({ orderBy: [{ period: "asc" }, { sk: "asc" }, { metric: "asc" }], select: { period: true, sk: true, metric: true, value: true } });
     expect(after).toEqual(before);
     const journal = await lastJournal();
     expect(journal).toContain(`снимок ${TODAY}: 16 строк`);
-    expect(journal).toContain("план по СК не загружен: Лист «План ОСАГО по СК»: ошибки в ячейках");
+    expect(journal).toContain(`план по СК не загружен: Лист «План ОСАГО по СК»: ошибки в полисах за ${month}`);
   });
 
   it("пропала колонка текущего месяца или у полисов за месяц пусто: план не грузится, причина понятна", async () => {
@@ -238,7 +258,7 @@ describe("сломанные листы: загрузка двумя частя�
     const fresh = grids();
     for (const row of fresh.plan.grid.slice(3)) if (row[P.code] === "pol") row[P.month] = "";
     const preview = await hub.previewHub(owner, NOW);
-    expect(preview.plan.problems).toEqual([`Лист «${HUB_SHEETS.skPlan}»: у полисов за ${month} нет ни одного числа`]);
+    expect(preview.plan.problems).toEqual([`Лист «${HUB_SHEETS.skPlan}»: у полисов за ${month} нет ни одного числа у СК`]);
     expect(preview.fact.ready).toBe(true);
   });
 
@@ -295,6 +315,7 @@ describe("сломанные листы: загрузка двумя частя�
     vse.grid.push(copy);
     const preview = await hub.previewHub(owner, NOW);
     expect(preview.fact.ready).toBe(true);
+    expect(preview.fact.warnings.join(" ")).toMatch(/сложены в одну, повторов: 1 \(например, Росгосстрах, строки/);
     await hub.applyHub(owner, NOW);
     const row = await prisma.planSkSnapshot.findFirstOrThrow({ where: { month, sk: "Росгосстрах", pool: false } });
     expect(row.policies).toBe(2 * Number(vse.grid[i]![V.pol]));
@@ -311,6 +332,67 @@ describe("сломанные листы: загрузка двумя частя�
     const r = await hub.applyHub(owner, NOW);
     expect(r.fact.loaded).toBe(true);
     expect(r.plan.loaded).toBe(false);
+  });
+
+  it("#DIV/0! в КВ за год у одной СК и #N/A в подписи чужого канала не блокируют план: ячейка пустая, предупреждение", async () => {
+    const owner = await actor.owner();
+    const { plan: sheet } = grids();
+    const kv = sheet.grid.find((r) => r[P.sk] === "Ингосстрах" && r[P.code] === "kv_tot")!;
+    kv[P.fy] = "#DIV/0!";
+    // Строка канала b2c в имитации: подпись канала сломана, строка всё равно не нужна (раздел «Каналы»)
+    sheet.grid[sheet.grid.length - 1]![2] = "#N/A";
+    const preview = await hub.previewHub(owner, NOW);
+    expect(preview.plan.problems).toEqual([]);
+    expect(preview.plan.ready).toBe(true);
+    expect(preview.plan.warnings.join(" ")).toMatch(/ошибки формул в 1 ячейке у СК Ингосстрах \(например, Ингосстрах: kv_tot FY\d{4} #DIV\/0!\)/);
+    expect(preview.plan.warnings.join(" ")).toMatch(/подписей строк, которые ресурс не берёт .*Канал #N\/A/);
+    await hub.applyHub(owner, NOW);
+    const cell = await prisma.planSkLine.findFirstOrThrow({ where: { sk: "Ингосстрах", metric: "kv_tot", period: `FY${month.slice(0, 4)}` } });
+    expect(cell.value).toBeNull();
+    expect(await prisma.planSkLine.count({ where: { period: month, metric: "pol" } })).toBe(HUB_FAKE_SK.length + 1);
+  });
+
+  it("у всех СК полисов за месяц 0, а в итоге число: план не грузится, сверка суммы не молчит", async () => {
+    const owner = await actor.owner();
+    await hub.applyHub(owner, NOW);
+    const before = await prisma.planSkLine.count();
+    const { plan: sheet } = grids();
+    for (const row of sheet.grid.slice(3)) if (row[P.code] === "pol" && row[P.sk] !== "ИТОГО") row[P.month] = 0;
+    const preview = await hub.previewHub(owner, NOW);
+    expect(preview.plan.ready).toBe(false);
+    expect(preview.plan.problems[0]).toMatch(/у СК полисов 0, а в итоге .*План по СК затёрся бы нулями/);
+    // Пусто у всех СК, число только в итоге: тоже проблема
+    delete (globalThis as { __hubFake?: unknown }).__hubFake;
+    const fresh = grids();
+    for (const row of fresh.plan.grid.slice(3)) if (row[P.code] === "pol" && row[P.sk] !== "ИТОГО") row[P.month] = "";
+    expect((await hub.previewHub(owner, NOW)).plan.problems).toEqual([`Лист «${HUB_SHEETS.skPlan}»: у полисов за ${month} нет ни одного числа у СК, число есть только в итоге`]);
+    await hub.applyHub(owner, NOW);
+    expect(await prisma.planSkLine.count()).toBe(before);
+  });
+
+  it("строка «Все СК» с пустым PARTNER_NAME при ненулевых полисах блокирует снимок с номером строки", async () => {
+    const owner = await actor.owner();
+    const { vse } = grids();
+    const current = vse.grid[vse.grid.length - 1]![V.month];
+    vse.grid.push([current, "", "False", "False", 42, 0, 0, 0, 0, 0, 0]);
+    const preview = await hub.previewHub(owner, NOW);
+    expect(preview.fact.ready).toBe(false);
+    expect(preview.fact.problems[0]).toBe(`Лист «${HUB_SHEETS.vseSk}»: пустое PARTNER_NAME при ненулевых полисах, строка ${vse.grid.length}. Чьи это полисы, не понять, а без них факт по СК был бы неполным`);
+    expect(preview.plan.ready).toBe(true);
+  });
+
+  it("лист есть, но пустой: «лист пустой», а не «не найден в хабе»", async () => {
+    const owner = await actor.owner();
+    const { vse, plan: sheet } = grids();
+    vse.grid = [];
+    sheet.rows = 0;
+    sheet.grid = [];
+    const preview = await hub.previewHub(owner, NOW);
+    expect(preview.fact.problems).toEqual([`Лист «${HUB_SHEETS.vseSk}» пустой`]);
+    expect(preview.plan.problems).toEqual([`Лист «${HUB_SHEETS.skPlan}» пустой`]);
+    // Листа нет вовсе: «не найден»
+    grids().fake.tabs.delete(HUB_SHEETS.vseSk);
+    expect((await hub.previewHub(owner, NOW)).fact.problems).toEqual([`Лист «${HUB_SHEETS.vseSk}» не найден в хабе`]);
   });
 });
 
@@ -408,14 +490,65 @@ describe("снимок дня: месяцы, закрытие, предупре�
     expect(preview.plan.ready).toBe(true);
   });
 
-  it("СК из прошлого снимка нет сегодня: предупреждение, не блок", async () => {
+  it("источник не обновился: итог за месяц не вырос с прошлого снимка, предупреждение; закрытый месяц расти не обязан", async () => {
+    const owner = await actor.owner();
+    await hub.applyHub(owner, at(21));
+    // На 22-е в хабе тот же лист, что 21-го: факт по 20-е
+    const { vse } = grids(at(22));
+    vse.grid = hubImitation(dayOf(21), prevMonth)[HUB_SHEETS.vseSk]!.map((r) => r.map((c) => c ?? ""));
+    const preview = await hub.previewHub(owner, at(22));
+    expect(preview.fact.ready).toBe(true);
+    const stale = preview.fact.warnings.filter((w) => /не обновился/.test(w));
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toMatch(new RegExp(`Итог «Все СК» за .* не вырос с прошлой загрузки \\(снимок на ${esc(ddmmyyyy(dayOf(21)))}: .*\\): источник, похоже, не обновился с прошлой загрузки`));
+    await expect(hub.applyHub(owner, at(22))).resolves.toMatchObject({ fact: { loaded: true } });
+  });
+
+  it("итог за месяц упал больше чем на 1% (лист обрезан): снимок не пишется, закрытие месяца не перетирается, план грузится", async () => {
     const owner = await actor.owner();
     await hub.applyHub(owner, at(21));
     const { vse } = grids(at(22));
     vse.grid = vse.grid.filter((r) => r[V.sk] !== "СберСтрахование");
     const preview = await hub.previewHub(owner, at(22));
+    expect(preview.fact.ready).toBe(false);
+    expect(preview.fact.problems.join(" ")).toMatch(new RegExp(`упал против снимка на ${esc(ddmmyyyy(dayOf(21)))} больше чем на 1%`));
+    // Прошлый месяц закрыт: его итог тоже упал, это закрытие месяца
+    expect(preview.fact.problems.join(" ")).toMatch(/чтобы не перетереть факт и закрытие месяца/);
+    expect(preview.fact.warnings.join(" ")).toMatch(new RegExp(`нет СК, которые были в снимке на ${esc(ddmmyyyy(dayOf(21)))}: СберСтрахование`));
+    expect(preview.plan.ready).toBe(true);
+    const r = await hub.applyHub(owner, at(22));
+    expect(r.fact.loaded).toBe(false);
+    expect(r.plan.loaded).toBe(true);
+    expect(await prisma.planSkSnapshot.count({ where: { day: new Date(`${dayOf(22)}T00:00:00Z`) } })).toBe(0);
+    // Падение меньше 1% у закрытого месяца (поздние поправки) не блокирует
+    delete (globalThis as { __hubFake?: unknown }).__hubFake;
+    const fresh = grids(at(22));
+    const row = fresh.vse.grid.findIndex((x, k) => k > 0 && x[V.month] === fresh.vse.grid[1]![V.month] && x[V.sk] === "Ингосстрах" && x[V.pool] === "False");
+    fresh.vse.grid[row]![V.pol] = Number(fresh.vse.grid[row]![V.pol]) - 100;
+    expect((await hub.previewHub(owner, at(22))).fact.ready).toBe(true);
+  });
+
+  it("СК пропала из сегодняшнего снимка: в итоге по дням она идёт с прошлым значением, нарастающий итог не убывает; предупреждение в превью", async () => {
+    const owner = await actor.owner();
+    const before = grids(at(21)).vse;
+    const current = before.grid[before.grid.length - 1]![V.month];
+    before.grid.push([current, "Малая СК", "False", "False", 1000, 0, 0, 50_000, 0, 0, 0]);
+    await hub.applyHub(owner, at(21));
+    const preview = await hub.previewHub(owner, at(22));
     expect(preview.fact.ready).toBe(true);
-    expect(preview.fact.warnings.join(" ")).toMatch(new RegExp(`нет СК, которые были в снимке на ${dayOf(21).split("-").reverse().join("\\.")}: СберСтрахование`));
+    expect(preview.fact.warnings.join(" ")).toMatch(new RegExp(`нет СК, которые были в снимке на ${esc(ddmmyyyy(dayOf(21)))}: Малая СК\\. В карточке их факт останется на значении того снимка`));
+    await hub.applyHub(owner, at(22));
+    const sk = (await hub.skView(owner, month, at(22)))!;
+    expect(sk.day).toBe(dayOf(21));
+    const small = sk.rows.find((r) => r.sk === "Малая СК")!;
+    expect(small.mtd).toBe(1000);
+    expect(small.carriedFrom).toBe(dayOf(20));
+    expect(sk.rows.filter((r) => r.sk !== "Малая СК").every((r) => r.carriedFrom === null)).toBe(true);
+    // Итог на 21-е: все СК из снимка на 22-е плюс Малая СК с прошлым значением
+    const sum = async (load: number) => (await prisma.planSkSnapshot.aggregate({ where: { month, day: new Date(`${dayOf(load)}T00:00:00Z`) }, _sum: { policies: true } }))._sum.policies!;
+    expect(sk.total.mtd).toBe((await sum(22)) + 1000);
+    expect(sk.total.mtd).toBe(sk.rows.reduce((s, r) => s + (r.mtd ?? 0), 0));
+    expect(sk.total.mtd!).toBeGreaterThan(await sum(21));
   });
 
   it("выручка-факт с апсейлом; без колонки апсейла предупреждение и выручка без апсейла", async () => {
@@ -535,28 +668,72 @@ describe("ОСАГО по СК в карточке", () => {
     expect((await plan.monthPlan(await actor.golovkin(), month, NOW)).sk!.sensitive).toBe(false);
   });
 
-  it("названия СК сводятся без регистра и пробелов, «Итого» в любом написании это итог; несовпавшие названия в превью", async () => {
+  it("названия СК сводятся без регистра, пробелов, кавычек, ё, дефисов и формы собственности, «Итого» в любом написании это итог; несовпавшие в превью", async () => {
     const owner = await actor.owner();
     const { plan: sheet } = grids();
     for (const row of sheet.grid) {
-      if (row[P.sk] === "Ингосстрах") row[P.sk] = "  ингосстрах ";
-      if (row[P.sk] === "Росгосстрах") row[P.sk] = "Росгосстрах СК";
+      if (row[P.sk] === "Ингосстрах") row[P.sk] = "  СПАО «Ингосстрах» ";
+      if (row[P.sk] === "АльфаСтрахование") row[P.sk] = "АО \"Альфа-Страхование\"";
+      if (row[P.sk] === "Росгосстрах") row[P.sk] = "РГС";
       if (row[P.sk] === "ИТОГО") row[P.sk] = "Итого";
     }
     const preview = await hub.previewHub(owner, NOW);
     expect(preview.plan.ready).toBe(true);
     expect(preview.warnings).toHaveLength(1);
-    expect(preview.warnings[0]).toMatch(/есть в плане, нет в «Все СК»: Росгосстрах СК; есть в «Все СК», нет в плане: Росгосстрах$/);
-    expect(preview.warnings[0]).not.toMatch(/ингосстрах/i);
+    expect(preview.warnings[0]).toMatch(/есть в плане, нет в «Все СК»: РГС; есть в «Все СК», нет в плане: Росгосстрах\. Если это одна СК, задайте соответствие ниже/);
+    expect(preview.warnings[0]).not.toMatch(/ингосстрах|альфа/i);
     await hub.applyHub(owner, NOW);
     const sk = (await hub.skView(owner, month, NOW))!;
     const ingo = sk.rows.filter((r) => /ингосстрах/i.test(r.sk));
     expect(ingo).toHaveLength(1);
     expect(ingo[0]!.plan).not.toBeNull();
     expect(ingo[0]!.mtd).not.toBeNull();
-    expect(sk.rows.map((r) => r.sk)).toContain("Росгосстрах СК");
+    // Название строки из плана
+    expect(sk.rows.map((r) => r.sk)).toEqual(expect.arrayContaining(["АО \"Альфа-Страхование\"", "РГС", "Росгосстрах"]));
     expect(sk.rows.some((r) => /итого/i.test(r.sk))).toBe(false);
     expect(sk.total.plan).toBe(HUB_FAKE_SK.reduce((s, x) => s + Math.round(x.monthly * 1.05), 0));
+  });
+
+  it("справочник соответствий: владелец задаёт «Росгосстрах = РГС» в панели хаба, СК сводятся в превью и карточке, правка в журнале", async () => {
+    const owner = await actor.owner();
+    const { plan: sheet } = grids();
+    for (const row of sheet.grid) if (row[P.sk] === "Росгосстрах") row[P.sk] = "РГС";
+    await hub.applyHub(owner, NOW);
+    expect((await hub.skView(owner, month, NOW))!.rows).toHaveLength(HUB_FAKE_SK.length + 1);
+    // Только владелец; администратор и уровень «основные цифры» получают отказ
+    await expectRule(hub.setSkAliases(await actor.admin(), "Росгосстрах = РГС"), /владелец/);
+    await expectRule(hub.setSkAliases(owner, "Росгосстрах РГС"), /Строка 1: нужно/);
+    expect(await hub.setSkAliases(owner, "  Росгосстрах =  РГС \n")).toBe("Росгосстрах = РГС");
+    const log = await prisma.auditLog.findFirst({ where: { action: "plan.skAliases" }, orderBy: { at: "desc" } });
+    expect(log).toMatchObject({ actorName: owner.fullName, before: "пусто", after: "Росгосстрах = РГС" });
+    // Повтор того же текста в журнал не пишется
+    await hub.setSkAliases(owner, "Росгосстрах = РГС");
+    expect(await prisma.auditLog.count({ where: { action: "plan.skAliases" } })).toBe(1);
+    expect((await hub.previewHub(owner, NOW)).warnings).toEqual([]);
+    const sk = (await hub.skView(owner, month, NOW))!;
+    expect(sk.rows).toHaveLength(HUB_FAKE_SK.length);
+    const rgs = sk.rows.find((r) => r.sk === "РГС")!;
+    expect(rgs.plan).not.toBeNull();
+    expect(rgs.mtd).not.toBeNull();
+    // Поле видит и правит только владелец: текст справочника в источнике хаба
+    expect(sk.source.aliases).toBe("Росгосстрах = РГС");
+    expect((await hub.hubSource(await actor.admin())).aliases).toBeNull();
+    // СК переименовали в «Все СК» на следующий день: со строкой справочника это не пропажа и не двойной счёт в итоге
+    await hub.applyHub(owner, at(21));
+    const renamed = grids(at(22)).vse;
+    for (const row of renamed.grid) if (row[V.sk] === "Росгосстрах") row[V.sk] = "РГС";
+    const next = await hub.previewHub(owner, at(22));
+    expect(next.fact.ready).toBe(true);
+    expect(next.fact.warnings.join(" ")).not.toMatch(/нет СК, которые были в снимке/);
+    await hub.applyHub(owner, at(22));
+    const after = (await hub.skView(owner, month, at(22)))!;
+    expect(after.rows).toHaveLength(HUB_FAKE_SK.length);
+    expect(after.rows.every((r) => r.carriedFrom === null)).toBe(true);
+    expect(after.total.mtd).toBe(after.rows.reduce((s, r) => s + r.mtd!, 0));
+    // Через действие экрана, с уровнем этапа 57
+    runner.actor = owner;
+    expect(await actions.setSkAliasesAction("")).toEqual({ ok: true, value: "" });
+    expect((await hub.skView(owner, month, NOW))!.rows).toHaveLength(HUB_FAKE_SK.length + 1);
   });
 
   it("снимок старше вчерашнего помечается устаревшим, а серия дневных снимков включает профиль дней недели", async () => {
@@ -577,6 +754,98 @@ describe("ОСАГО по СК в карточке", () => {
     // Имитация равномерная по дням: профиль и линейный ранрейт совпадают, месяц стабильный
     expect(fresh.total.profile! / fresh.total.linear!).toBeCloseTo(1, 1);
     expect(fresh.total.unstable).toBe(false);
+  });
+
+  it("ранрейт и «К плану» появляются с 3 дней факта (с 4-го числа): раньше их нет, факт и план есть", async () => {
+    const owner = await actor.owner();
+    await hub.applyHub(owner, at(2));
+    await hub.applyHub(owner, at(3));
+    const early = (await hub.skView(owner, month, at(3)))!;
+    expect(early.elapsed).toBe(2);
+    expect(early.runRateFrom).toBe(4);
+    expect(early.rows.every((r) => r.forecast === null && r.vsPlan === null && r.linear === null && r.mtd !== null && r.plan !== null)).toBe(true);
+    expect(early.total.forecast).toBeNull();
+    await hub.applyHub(owner, at(4));
+    const ready = (await hub.skView(owner, month, at(4)))!;
+    expect(ready.elapsed).toBe(3);
+    expect(ready.runRateFrom).toBeNull();
+    expect(ready.total.forecast).not.toBeNull();
+    expect(ready.rows.every((r) => r.vsPlan !== null)).toBe(true);
+  });
+
+  it("обеих колонок выручки нет: выручка по СК «нет» (null), а не 0", async () => {
+    const owner = await actor.owner();
+    const { vse } = grids();
+    vse.grid[0]![V.rev] = "REVENUE_OTHER";
+    vse.grid[0]![V.upsRev] = "UPSALE_OTHER";
+    const preview = await hub.previewHub(owner, NOW);
+    expect(preview.fact.ready).toBe(true);
+    await hub.applyHub(owner, NOW);
+    expect(await prisma.planSkSnapshot.count({ where: { revenue: { not: null } } })).toBe(0);
+    const sk = (await hub.skView(owner, month, NOW))!;
+    expect(sk.sensitive).toBe(true);
+    expect(sk.rows.every((r) => r.revenueMtd === null)).toBe(true);
+    expect(sk.total.revenueMtd).toBeNull();
+  });
+
+  it("время загрузки факта и плана хранится отдельно: частичная загрузка видна в карточке и в панели; прежний вид отметки читается", async () => {
+    const owner = await actor.owner();
+    const first = new Date(NOW.getTime() - 60 * 60 * 1000);
+    await hub.applyHub(owner, first);
+    const { plan: sheet } = grids();
+    sheet.grid[2]![P.month] = "Комментарий";
+    const r = await hub.applyHub(owner, NOW);
+    expect(r).toMatchObject({ fact: { loaded: true }, plan: { loaded: false } });
+    const view = await plan.monthPlan(owner, month, NOW);
+    expect(view.hubSource!.fact).toEqual({ at: NOW.toISOString(), by: owner.fullName });
+    expect(view.hubSource!.plan).toEqual({ at: first.toISOString(), by: owner.fullName });
+    expect(view.sk!.source).toEqual(view.hubSource);
+    // Прежний вид отметки { at, by, day, fact, plan }: часть, которая тогда загрузилась
+    await prisma.setting.update({ where: { key: "plan.hubPulled" }, data: { value: { at: "2026-10-01T06:00:00.000Z", by: "Мурадян Арам", day: "2026-10-01", fact: true, plan: false } } });
+    const legacy = await hub.hubSource(owner);
+    expect(legacy.fact).toEqual({ at: "2026-10-01T06:00:00.000Z", by: "Мурадян Арам" });
+    expect(legacy.plan).toBeNull();
+  });
+});
+
+describe("производительность: раздел по СК только там, где он нужен", () => {
+  it("сводка для отчёта CEO и встречи и выгрузка без раздела по СК: снимки и настройки хаба не читаются", async () => {
+    const owner = await actor.owner();
+    await plan.applyPull(owner, month);
+    await hub.applyHub(owner, NOW);
+    runner.settingReads = [];
+    runner.skViews = [];
+    expect(await planBrief(owner, month)).not.toBeNull();
+    const quiet = await plan.monthPlan(owner, month, NOW, null, { sk: false });
+    expect(quiet).toMatchObject({ sk: null, hubSource: null, skOmitted: true });
+    expect(runner.skViews).toEqual([]);
+    expect(runner.settingReads.filter((k) => k.startsWith("plan.hub") || k === "plan.skAliases")).toEqual([]);
+  });
+
+  it("корректировка и отметка «Прогноз проверен» возвращают экран без раздела по СК", async () => {
+    const owner = await actor.owner();
+    await plan.applyPull(owner, month);
+    await hub.applyHub(owner, NOW);
+    const golovkin = await actor.golovkin();
+    const v = await plan.monthPlan(golovkin, month);
+    const p = v.products.find((x) => x.code === "osago")!;
+    const seen = p.drivers.crWeb ?? derive(p.lbe as Values).crWeb ?? null;
+    runner.skViews = [];
+    const after = await plan.adjust(golovkin, { month, product: "osago", metric: "crWeb", value: 0.05, seen, reason: "conversion", comment: "Конверсия первой недели ниже плана" });
+    expect(after).toMatchObject({ sk: null, hubSource: null, skOmitted: true });
+    expect(after.products.find((x) => x.code === "osago")!.drivers.crWeb).toBe(0.05);
+    expect(runner.skViews).toEqual([]);
+  });
+
+  it("уровень доступа от вызывающего не считается заново: экран прогноза передаёт свой", async () => {
+    const owner = await actor.owner();
+    await hub.applyHub(owner, NOW);
+    runner.skViews = [];
+    const full = await plan.monthPlan(await actor.fatyanov(), month, NOW, null, { level: "full" });
+    expect(full.sk).not.toBeNull();
+    expect(runner.skViews).toEqual(["full"]);
+    // Переданный уровень решает: «основные цифры» раздела по СК не получают
+    expect((await plan.monthPlan(owner, month, NOW, null, { level: "summary" })).sk).toBeNull();
   });
 });
 

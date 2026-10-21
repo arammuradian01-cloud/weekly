@@ -103,3 +103,9 @@ export async function applyHubAction(): Promise<Result<hub.HubApplied>> {
 export async function setHubSourceAction(input: string): Promise<Result<string>> {
   return runAction("Хаб данных", (a) => numbers(a, () => hub.setHubSource(a, input)));
 }
+
+export async function setSkAliasesAction(input: string): Promise<Result<string>> {
+  const r = await runAction("Соответствие названий СК", (a) => numbers(a, () => hub.setSkAliases(a, String(input ?? ""))));
+  if (r.ok) revalidatePath("/forecast");
+  return r;
+}
