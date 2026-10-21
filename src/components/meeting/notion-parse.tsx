@@ -122,7 +122,9 @@ function Pending({ view }: { view: ParseView }) {
         <p role="status" className="font-medium text-warning-ink">
           Разбор давно не подаёт признаков жизни
         </p>
-        <p className="text-body text-ink">Скорее всего, сервер перезапускался посреди разбора. Можно запустить разбор ещё раз; если результат всё же придёт, страница покажет его сама.</p>
+        <p className="text-body text-ink">
+          Скорее всего, сервер перезапускался посреди разбора.{view.canRetry ? " Можно запустить разбор ещё раз." : ""} Если результат всё же придёт, страница покажет его сама.
+        </p>
         <p className="text-small text-muted" aria-hidden="true">
           С начала разбора {elapsed}
         </p>
@@ -189,7 +191,8 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
   // остаётся на той вкладке, где был человек, а не прыгает на «Итоги»
   const fromUrl = useSearchParams().get("tab");
   const [tab, setTab] = useState<ParseTab>(() => {
-    const wanted = lastTab.get(view.id) ?? tabs.find((t) => t.code === fromUrl)?.code ?? initialTab;
+    // Порядок: вкладка из адреса, потом последняя открытая на этом экране, потом начальная
+    const wanted = tabs.find((t) => t.code === fromUrl)?.code ?? lastTab.get(view.id) ?? initialTab;
     return tabs.some((t) => t.code === wanted) ? wanted : "summary";
   });
   const [ceo, setCeo] = useState<CeoSections>(view.result.ceo);
@@ -442,7 +445,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         </p>
       ) : null}
       <p className="max-w-[760px] text-body text-muted">
-        Черновик weekly для CEO в разделах отчёта CEO за неделю {view.weekNumber}. Каждая мысль отдельной строкой, начинается с «- ». Цифры недели, решения и благодарности отчёт соберёт сам: ниже видно, что получит CEO.
+        Черновик weekly для CEO в разделах отчёта CEO за неделю {view.weekNumber}. Каждая мысль отдельной строкой, начинается с «- ». Цифры недели, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
       </p>
       <div className="grid gap-4">
         {SECTIONS.map((s) => (
@@ -500,6 +503,11 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         </div>
       ) : null}
 
+      {!view.ceoPreview && view.canEdit ? (
+        <p className="text-small text-muted" data-testid="ceo-preview-hidden">
+          Собранный отчёт с цифрами, решениями и благодарностями топ-команды видят те, кто отправляет CEO: владелец и администраторы в режиме управления.
+        </p>
+      ) : null}
       {view.ceoPreview ? (
         <section aria-labelledby="ceo-preview-title" className="flex flex-col gap-3 rounded-xl px-4 py-4 ring-1 ring-line sm:px-5" data-testid="ceo-preview">
           <h2 id="ceo-preview-title" className="text-title-sm font-semibold text-ink">

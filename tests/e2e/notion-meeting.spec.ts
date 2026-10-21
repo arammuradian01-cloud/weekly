@@ -155,6 +155,9 @@ test("этап 61: разбор через Claude (имитация ответа
   await expect(page.getByRole("textbox", { name: "Главное", exact: true })).toHaveValue(/ВЗР: тариф не поднимаем до конца года/);
   await expect(page.getByText(/Отправить CEO может владелец или администратор в режиме управления/)).toBeVisible();
   await expect(page.getByRole("button", { name: /Отправить CEO/ })).toHaveCount(0);
+  // Собранный отчёт с решениями и благодарностями топ-команды только тем, кто отправляет CEO
+  await expect(page.getByTestId("ceo-preview")).toHaveCount(0);
+  await expect(page.getByTestId("ceo-preview-hidden")).toBeVisible();
 
   await page.getByRole("tab", { name: /^Задачи/ }).click();
   const drafts = page.getByTestId("task-draft");

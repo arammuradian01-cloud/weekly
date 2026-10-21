@@ -15,7 +15,7 @@ const REQUEST_TIMEOUT_MS = 20_000;
 const MAX_BLOCKS = 1500;
 const MAX_DEPTH = 4;
 
-export type NotionErrorCode = "no-token" | "bad-url" | "not-shared" | "not-allowed" | "unauthorized" | "rate" | "timeout" | "other";
+export type NotionErrorCode = "no-token" | "bad-url" | "not-shared" | "not-allowed" | "bad-allowed" | "unauthorized" | "rate" | "timeout" | "other";
 
 /** Ошибка Notion словами для экрана: что не так и что сделать. Без ключа и без текста страницы */
 export class NotionError extends Error {
@@ -34,6 +34,8 @@ export const NOTION_MESSAGES: Record<NotionErrorCode, string> = {
     "Notion не отдал страницу: её нет или она не расшарена на интеграцию. Откройте страницу в Notion, меню с тремя точками справа вверху, «Подключения» и добавьте интеграцию ресурса",
   "not-allowed":
     "Эта страница не лежит в разделах Notion, из которых ресурсу разрешено разбирать встречи (переменная NOTION_ALLOWED_PARENTS). Перенесите встречу в такой раздел или попросите владельца добавить раздел",
+  "bad-allowed":
+    "Переменная NOTION_ALLOWED_PARENTS задана, но в ней нет ни одного ID страницы или базы Notion. Разбор закрыт, пока владелец не поправит её в переменных приложения",
   unauthorized: "Notion не принял ключ интеграции. Проверьте переменную NOTION_TOKEN на сервере",
   rate: "Notion просит подождать: слишком много запросов. Повторите через минуту",
   timeout: "Notion не ответил вовремя. Повторите через минуту",
@@ -191,6 +193,8 @@ export type NotionDeps = {
   budgetMs?: number;
   /** Разрешённые разделы (NOTION_ALLOWED_PARENTS): страница должна лежать под одним из них */
   allowedParents?: string[];
+  /** Переменная разделов задана, но ни одного ID в ней нет: разбор закрыт, а не открыт для всех */
+  allowedInvalid?: boolean;
 };
 
 export type NotionPage = {
@@ -203,6 +207,8 @@ export type NotionPage = {
   cutByTime: boolean;
   /** Блоки, которые Notion API не отдаёт текстом */
   unreadable: number;
+  /** Копии синхронизированных блоков с других страниц, которые не читались из-за разрешённых разделов */
+  syncedSkipped: number;
 };
 
 /** Общий срок на чтение Notion: дальше разбор идёт по тому, что успели прочитать */
@@ -218,6 +224,8 @@ async function call(d: Conn, path: string): Promise<unknown> {
   for (let attempt = 0; ; attempt++) {
     const left = d.deadline - Date.now();
     if (left <= 0) throw new OutOfTime();
+    // Остаток общего срока меньше таймаута запроса: обрыв запроса значит, что кончилось время, а не что Notion упал
+    const capped = left < d.timeoutMs;
     let res: Response;
     try {
       res = await d.fetch(`${d.base}${path}`, {
@@ -227,15 +235,23 @@ async function call(d: Conn, path: string): Promise<unknown> {
       });
     } catch (error) {
       if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-        if (d.deadline - Date.now() <= 0) throw new OutOfTime();
+        if (capped || d.deadline - Date.now() <= 0) throw new OutOfTime();
         return failWith("timeout");
       }
       return failWith("other");
     }
-    if (res.ok) return res.json();
+    if (res.ok) {
+      try {
+        return await res.json();
+      } catch (error) {
+        if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError") && capped) throw new OutOfTime();
+        return failWith("other");
+      }
+    }
     if (res.status === 429 && attempt < 2) {
-      const wait = Math.min(Number(res.headers.get("retry-after") ?? "1") || 1, 5);
-      await new Promise((r) => setTimeout(r, wait * 1000));
+      const wait = Math.min((Number(res.headers.get("retry-after") ?? "1") || 1) * 1000, 5000, d.deadline - Date.now());
+      if (wait <= 0) throw new OutOfTime();
+      await new Promise((r) => setTimeout(r, wait));
       continue;
     }
     let code = "";
@@ -289,8 +305,11 @@ async function checkAllowed(d: Conn, pageId: string, page: unknown, allowed: str
     const path = parent.kind === "page" ? `/v1/pages/${encodeURIComponent(parent.id)}` : parent.kind === "database" ? `/v1/databases/${encodeURIComponent(parent.id)}` : `/v1/blocks/${encodeURIComponent(parent.id)}`;
     try {
       cur = await call(d, path);
-    } catch {
-      break;
+    } catch (error) {
+      // Родителя не видно (404 или 403: не расшарен на интеграцию): проверить нельзя, значит нельзя и разбирать.
+      // Таймаут, лимит запросов и сбой Notion остаются ошибкой Notion: повтор может пройти
+      if (error instanceof NotionError && error.code === "not-shared") break;
+      throw error;
     }
   }
   failWith("not-allowed");
@@ -309,20 +328,32 @@ export function fakeAllowed(): boolean {
   return process.env.NODE_ENV !== "production" || process.env.WEEKLY_E2E === "1";
 }
 
+/**
+ * Разрешённые разделы из окружения с проверкой: переменная задана, а ID в ней не разобрать, значит разбор закрыт (fail
+ * closed). В лог предупреждение без значения переменной
+ */
+export function allowedFromEnv(value = process.env.NOTION_ALLOWED_PARENTS): { allowedParents: string[]; allowedInvalid: boolean } {
+  const allowedParents = allowedParentsFromEnv(value);
+  const allowedInvalid = !!String(value ?? "").trim() && !allowedParents.length;
+  if (allowedInvalid) console.warn("NOTION_ALLOWED_PARENTS задана, но в ней нет ни одного ID страницы или базы Notion: разбор встреч закрыт");
+  return { allowedParents, allowedInvalid };
+}
+
 /** Транспорт по умолчанию: имитация по фикстурам, если задан NOTION_FAKE_DIR и это тест, иначе настоящий Notion с ключом из окружения */
 export async function notionDepsFromEnv(): Promise<NotionDeps> {
-  const allowedParents = allowedParentsFromEnv();
+  const allowed = allowedFromEnv();
   if (process.env.NOTION_FAKE_DIR && fakeAllowed()) {
     const { fakeNotionFetch } = await import("./notion-fake");
-    return { fetch: fakeNotionFetch(process.env.NOTION_FAKE_DIR), token: "fake", base: "https://notion.fake", allowedParents };
+    return { fetch: fakeNotionFetch(process.env.NOTION_FAKE_DIR), token: "fake", base: "https://notion.fake", ...allowed };
   }
-  return { fetch: globalThis.fetch, token: process.env.NOTION_TOKEN ?? null, base: process.env.NOTION_API_BASE || DEFAULT_BASE, allowedParents };
+  return { fetch: globalThis.fetch, token: process.env.NOTION_TOKEN ?? null, base: process.env.NOTION_API_BASE || DEFAULT_BASE, ...allowed };
 }
 
 /** Страница целиком: заголовок и текст блоков. Ошибка: NotionError со словами для экрана */
 export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<NotionPage> {
   const token = deps.token?.trim();
   if (!token) return failWith("no-token");
+  if (deps.allowedInvalid) return failWith("bad-allowed");
   const d: Conn = {
     fetch: deps.fetch ?? globalThis.fetch,
     base: (deps.base ?? DEFAULT_BASE).replace(/\/+$/, ""),
@@ -343,6 +374,11 @@ export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<
   let truncated = false;
   let cutByTime = false;
   let unreadable = 0;
+  let syncedSkipped = 0;
+  // С разрешёнными разделами копия синхронизированного блока с другой страницы не читается: её оригинал может лежать
+  // вне разрешённых разделов
+  const restricted = (deps.allowedParents ?? []).length > 0;
+  const foreignCopy = (b: NotionBlock) => b.type === "synced_block" && !!(payload(b).synced_from as { block_id?: string } | null | undefined)?.block_id;
   const children = async (id: string, depth: number): Promise<NotionBlock[]> => {
     const list: NotionBlock[] = [];
     let cursor: string | null = null;
@@ -371,6 +407,11 @@ export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<
       if (res.has_more && count >= max) truncated = true;
     } while (cursor);
     for (const b of list) {
+      if (restricted && foreignCopy(b)) {
+        syncedSkipped++;
+        unreadable++;
+        continue;
+      }
       // Вложенные страницы и базы не читаем: это другие документы
       if (!b.has_children || b.type === "child_page" || b.type === "child_database") continue;
       if (depth >= MAX_DEPTH || count >= max || cutByTime) {
@@ -387,7 +428,7 @@ export async function readNotionPage(pageId: string, deps: NotionDeps): Promise<
     text = text.slice(0, PARSE_LIMITS.pageText);
     truncated = true;
   }
-  return { id: pageId, title: pageTitle(page), text, blocks: count, truncated, cutByTime, unreadable };
+  return { id: pageId, title: pageTitle(page), text, blocks: count, truncated, cutByTime, unreadable, syncedSkipped };
 }
 
 /** Есть ли в тексте что разбирать: без заголовков, значков списков и разметки хотя бы пара слов */

@@ -231,6 +231,7 @@ model Person {
   initiativeChanges      InitiativeChange[]
   /// Разбор встречи из Notion (этап 61): кто запустил, кто отправил CEO, кто создал задачи
   meetingParses          MeetingParse[]          @relation("MeetingParseCreator")
+  meetingParsesStarted   MeetingParse[]          @relation("MeetingParseStarter")
   meetingParsesSent      MeetingParse[]          @relation("MeetingParseCeoSender")
   meetingParsesTasks     MeetingParse[]          @relation("MeetingParseTasksCreator")
 
@@ -1720,6 +1721,9 @@ model MeetingParse {
   result           Json                @default("{}")
   createdById      String?
   createdBy        Person?             @relation("MeetingParseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Кто запустил последнюю попытку (первый запуск или «Повторить»): ему событие о готовности
+  startedById      String?
+  startedBy        Person?             @relation("MeetingParseStarter", fields: [startedById], references: [id], onDelete: SetNull)
   /// Начало последней попытки: зависший разбор после перезапуска сервера виден по нему
   startedAt        DateTime            @default(now()) @db.Timestamptz(3)
   finishedAt       DateTime?           @db.Timestamptz(3)

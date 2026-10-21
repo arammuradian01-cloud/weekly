@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 import type { WeekKey } from "@/domain/types";
 import type { Actor } from "@/lib/tasks/service";
 import { dbDate } from "@/lib/tasks/dates";
-import { TOP_TEAM } from "@/lib/org/scope";
+import { TOP_TEAM, loadScope } from "@/lib/org/scope";
 import { weekNumbers } from "@/lib/numbers/service";
 import type { WeekNumbers } from "@/lib/numbers/text";
 import { briefFor, numbersLevel, type NumbersLevel } from "@/lib/plan/access";
@@ -49,16 +49,26 @@ async function weekThanks(key: WeekKey): Promise<{ name: string; text: string }[
     .map((r) => ({ name: compact(r.author.fullName), text: r.thanks!.trim() }));
 }
 
-/** Живые части отчёта CEO за неделю глазами зрителя: цифры по его уровню, решения и благодарности недели */
-export async function ceoContext(actor: Actor, key: WeekKey): Promise<CeoContext> {
+/** Видит ли человек топ-команду: решения и благодарности отчёта CEO это её данные */
+async function seesTop(actor: Actor): Promise<boolean> {
+  const scope = await loadScope(prisma, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management });
+  return scope.all || scope.visible.includes(TOP_TEAM) || scope.member.includes(TOP_TEAM);
+}
+
+/**
+ * Живые части отчёта CEO за неделю глазами зрителя: цифры по его уровню, решения и благодарности недели. Решения и
+ * благодарности топ-команды получают только те, кто её видит, или получатель отправленного отчёта (recipient): отчёт
+ * отправили ему целиком
+ */
+export async function ceoContext(actor: Actor, key: WeekKey, opts: { recipient?: boolean } = {}): Promise<CeoContext> {
   const level = await numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management });
   const weekNumber = weekNumberOf(key);
-  const reporting = await currentReportingKey();
+  const [reporting, top] = await Promise.all([currentReportingKey(), opts.recipient ? Promise.resolve(true) : seesTop(actor)]);
   const [numbers, plan, decisions, thanks] = await Promise.all([
     level !== "none" ? weekNumbers(key) : Promise.resolve(null),
     level !== "none" ? planBrief(actor, planMonthOfWeek(key), planAsOfWeek(key, reporting, weekNumber)).catch(() => null) : Promise.resolve(null),
-    ceoDecisions(key),
-    weekThanks(key),
+    top ? ceoDecisions(key) : Promise.resolve([]),
+    top ? weekThanks(key) : Promise.resolve([]),
   ]);
   return { week: key, weekNumber, level, numbers: numbers?.figures.length ? numbers : null, plan: briefFor(level, plan), decisions, thanks };
 }

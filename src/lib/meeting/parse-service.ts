@@ -67,6 +67,7 @@ const METHOD: Record<MeetingParseMethod, "ai" | "rules"> = { AI: "ai", RULES: "r
 const parseInclude = {
   meeting: { select: { id: true, date: true, teamId: true, team: { select: { name: true, leaderId: true } }, week: { select: { start: true, isoNumber: true } } } },
   createdBy: { select: { fullName: true } },
+  startedBy: { select: { fullName: true } },
   ceoSentBy: { select: { fullName: true } },
   tasksCreatedBy: { select: { fullName: true } },
 } satisfies Prisma.MeetingParseInclude;
@@ -101,6 +102,8 @@ export type ParseView = {
   /** Разбор давно не подавал признаков жизни: можно повторить, экран всё равно ждёт поздний результат */
   stale: boolean;
   createdBy: string | null;
+  /** Кто запустил последнюю попытку */
+  startedBy: string | null;
   createdAt: string;
   updatedAt: string;
   ceoSentAt: string | null;
@@ -121,7 +124,7 @@ export type ParseView = {
   tasksHint: string | null;
   /** Отчёт CEO за неделю и кому уйдёт: только тем, кто может отправить */
   ceo: { existing: CeoReportView; recipients: string[] } | null;
-  /** Живые части собранного отчёта для предпросмотра: цифры по уровню зрителя, решения, благодарности */
+  /** Живые части собранного отчёта для предпросмотра: цифры, решения и благодарности. Только тем, кто отправляет CEO */
   ceoPreview: CeoContext | null;
 };
 
@@ -203,7 +206,10 @@ export async function startParse(actor: Actor, teamId: string, key: WeekKey, url
     const pending = await tx.meetingParse.findMany({ where: { meetingId, notionPageId: pageId, status: "PENDING" }, select: { id: true, status: true, startedAt: true, lastBeatAt: true } });
     const running = pending.find((p) => !isStale(p, now));
     if (running) return { id: running.id, started: false };
-    const row = await tx.meetingParse.create({ data: { meetingId, notionUrl: notionUrlOf(link) ?? link.slice(0, 500), notionPageId: pageId, createdById: actor.personId, startedAt: now, attempts: 1 } });
+    // Зависшие разборы той же страницы закрываются: иначе они вечно «идут» в списке разборов встречи
+    const stuck = pending.map((p) => p.id);
+    if (stuck.length) await tx.meetingParse.updateMany({ where: { id: { in: stuck }, status: "PENDING" }, data: { status: "FAILED", note: "Прервано: запущен новый разбор этой страницы", finishedAt: now } });
+    const row = await tx.meetingParse.create({ data: { meetingId, notionUrl: notionUrlOf(link) ?? link.slice(0, 500), notionPageId: pageId, createdById: actor.personId, startedById: actor.personId, startedAt: now, attempts: 1 } });
     await tx.meeting.update({ where: { id: meetingId }, data: { notionUrl: notionUrlOf(link) } });
     await audit(tx, actor, "meeting.parse.start", meetingId, `Разбор встречи из Notion, ${rights.teamName}`, `${link.slice(0, 500)}${created.length ? `. Повторный разбор: задачи ${created.join(", ")} уже созданы` : ""}`);
     return { id: row.id, started: true };
@@ -216,9 +222,26 @@ export async function retryParse(actor: Actor, id: string, now = new Date()): Pr
   const rights = await meetingRights(actor, row.meetingId);
   if (!rights.canLead) fail("Повторить разбор может тот, кто ведёт встречу");
   if (row.status === "PENDING" && !isStale(row, now)) fail("Разбор уже идёт: подождите минуту");
-  if (row.tasksCreatedAt || row.ceoSentAt) fail("Из этого разбора уже отправлен weekly или созданы задачи. Чтобы разобрать страницу снова, запустите новый разбор со страницы встречи");
+  const SENT = "Из этого разбора уже отправлен weekly или созданы задачи. Чтобы разобрать страницу снова, запустите новый разбор со страницы встречи";
+  if (row.tasksCreatedAt || row.ceoSentAt) fail(SENT);
+  const cutoff = new Date(now.getTime() - STALE_MS);
   await prisma.$transaction(async (tx) => {
-    await tx.meetingParse.update({ where: { id: row.id }, data: { status: "PENDING", startedAt: now, lastBeatAt: null, finishedAt: null, note: null, attempts: { increment: 1 } } });
+    // Замок строки и условие в самом запросе: одновременные «Создать задачи» или «Отправить CEO» не проскочат между
+    // проверкой и повтором
+    await tx.$queryRaw`SELECT id FROM meeting_parses WHERE id = ${row.id} FOR UPDATE`;
+    const done = await tx.meetingParse.updateMany({
+      where: {
+        id: row.id,
+        tasksCreatedAt: null,
+        ceoSentAt: null,
+        OR: [{ status: { in: ["READY", "FAILED"] } }, { status: "PENDING", startedAt: { lt: cutoff }, OR: [{ lastBeatAt: null }, { lastBeatAt: { lt: cutoff } }] }],
+      },
+      data: { status: "PENDING", startedAt: now, startedById: actor.personId, lastBeatAt: null, finishedAt: null, note: null, attempts: { increment: 1 } },
+    });
+    if (!done.count) {
+      const fresh = await tx.meetingParse.findUniqueOrThrow({ where: { id: row.id }, select: { tasksCreatedAt: true, ceoSentAt: true } });
+      fail(fresh.tasksCreatedAt || fresh.ceoSentAt ? SENT : "Разбор уже идёт: подождите минуту");
+    }
     await audit(tx, actor, "meeting.parse.retry", row.meetingId, `Разбор встречи из Notion, ${rights.teamName}`, `Попытка ${row.attempts + 1}`);
   });
   return { id: row.id };
@@ -268,10 +291,11 @@ const blocksWord = (n: number) => `${n} ${plural(n, "блок", "блока", "�
  * Пока идёт, обновляет отметку «жив»; когда закончил, тому, кто запустил, и руководителю команды событие в «Мне»
  */
 export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> {
-  const row = await prisma.meetingParse.findUnique({ where: { id }, include: { ...parseInclude, createdBy: { select: { id: true, fullName: true, role: true } } } });
+  const row = await prisma.meetingParse.findUnique({ where: { id }, include: { ...parseInclude, createdBy: { select: { id: true, fullName: true, role: true } }, startedBy: { select: { id: true, fullName: true, role: true } } } });
   if (!row || row.status !== "PENDING") return;
   const startedAt = row.startedAt;
   const now = deps.now ?? new Date();
+  const starter = row.startedBy ?? row.createdBy;
   const mine = { id, status: "PENDING" as const, startedAt };
   const beatOnce = () => prisma.meetingParse.updateMany({ where: mine, data: { lastBeatAt: new Date() } }).catch(() => undefined);
   await beatOnce();
@@ -283,11 +307,12 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
       const done = await tx.meetingParse.updateMany({ where: mine, data: { ...data, finishedAt: new Date(), lastBeatAt: new Date() } });
       if (!done.count) return;
       await tx.auditLog.create({
-        data: { action, actorId: row.createdById, actorName: row.createdBy?.fullName ?? null, source: "SYSTEM", entity: "meeting", entityId: row.meetingId, field: `Разбор встречи из Notion, ${row.meeting.team.name}`, after },
+        data: { action, actorId: starter?.id ?? null, actorName: starter?.fullName ?? null, source: "SYSTEM", entity: "meeting", entityId: row.meetingId, field: `Разбор встречи из Notion, ${row.meeting.team.name}`, after },
       });
+      // Событие тому, кто запустил эту попытку (первый запуск или «Повторить»), и руководителю команды
       await notify(tx, {
         kind: "MEETING",
-        recipients: [row.createdById, row.meeting.team.leaderId],
+        recipients: [starter?.id, row.meeting.team.leaderId],
         actor: { personId: SYSTEM_ACTOR_ID, fullName: "Ресурс" },
         subject: `meeting-parse:${id}`,
         text: ok ? `Встреча «${row.meeting.team.name}» разобрана: проверьте итоги, weekly для CEO и задачи` : `Встречу «${row.meeting.team.name}» не разобрали: ${after.slice(0, 160)}`,
@@ -304,7 +329,9 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
       await finish({ status: "FAILED", note: message }, "meeting.parse.fail", message, false);
       return;
     }
-    const unreadNote = page.unreadable ? `${blocksWord(page.unreadable)} не прочитано: например, AI-заметки встречи Notion API не отдаёт. Если итогов там больше, перенесите их обычным текстом на страницу` : null;
+    const unreadNote = page.unreadable
+      ? `${blocksWord(page.unreadable)} не прочитано: например, AI-заметки встречи Notion API не отдаёт${page.syncedSkipped ? `, а копии синхронизированных блоков с других страниц (${page.syncedSkipped}) не читаются, пока задана NOTION_ALLOWED_PARENTS` : ""}. Если итогов там больше, перенесите их обычным текстом на страницу`
+      : null;
     if (!meaningfulText(page.text)) {
       const message = ["На странице нет текста, который можно разобрать", unreadNote].filter(Boolean).join(". ");
       await finish({ status: "FAILED", note: message, title: page.title, pageText: page.text }, "meeting.parse.fail", message, false);
@@ -346,7 +373,7 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
       where: { number: { in: await createdBefore(row.meetingId) }, archivedAt: null },
       select: { number: true, title: true, owner: { select: { slug: true } } },
     });
-    const who = row.createdBy ? { personId: row.createdBy.id, role: row.createdBy.role, management: row.createdBy.role === "OWNER" ? ("OWNER" as const) : row.createdBy.role === "ADMIN" ? ("ADMIN" as const) : null } : null;
+    const who = starter ? { personId: starter.id, role: starter.role, management: starter.role === "OWNER" ? ("OWNER" as const) : starter.role === "ADMIN" ? ("ADMIN" as const) : null } : null;
     const result = await buildResult(raw, {
       meetingDate,
       today,
@@ -439,28 +466,25 @@ export async function resolveGoals(who: GoalWho | null, teamId: string, drafts: 
   const goals = new Map(
     (await prisma.goal.findMany({ where: { id: { in: drafts.map((d) => d.goal).filter((g): g is string => !!g) } }, select: { id: true, title: true, code: true, teamId: true, ownerId: true, source: true, quarter: true, result: true } })).map((g) => [g.id, g]),
   );
-  const out: ParseTaskDraft[] = [];
-  for (const d of drafts) {
-    if (d.goalMode === "none") {
-      out.push({ ...d, goal: null, goalTitle: null });
-      continue;
-    }
-    const g = d.goal ? goals.get(d.goal) : undefined;
-    const people = [d.owner, ...d.coExecutors].map((s) => (s ? ids.get(s) : undefined)).filter((x): x is string => !!x);
-    if (g && g.result !== "DROPPED" && [quarterOf(today), quarterOf(d.due)].includes(g.quarter) && goalFits(g, { teamId }, people, nodes)) {
-      out.push({ ...d, goalTitle: g.code ? `${g.code}. ${g.title}` : g.title });
-      continue;
-    }
-    try {
-      const s = await suggestGoals(who, { team: teamId, due: d.due, title: d.title, outcome: d.outcome, owner: d.owner });
-      const best = s.best ? s.options.find((o) => o.id === s.best) : null;
-      out.push({ ...d, goal: best?.id ?? null, goalTitle: best?.title ?? null });
-    } catch {
-      // Подбор цели не обязателен: без него черновик остаётся
-      out.push({ ...d, goal: null, goalTitle: null });
-    }
-  }
-  return out;
+  // Подбор по тексту для черновиков без годной цели идёт параллельно: на 50 задачах последовательный подбор заметен
+  return Promise.all(
+    drafts.map(async (d): Promise<ParseTaskDraft> => {
+      if (d.goalMode === "none") return { ...d, goal: null, goalTitle: null };
+      const g = d.goal ? goals.get(d.goal) : undefined;
+      const people = [d.owner, ...d.coExecutors].map((s) => (s ? ids.get(s) : undefined)).filter((x): x is string => !!x);
+      if (g && g.result !== "DROPPED" && [quarterOf(today), quarterOf(d.due)].includes(g.quarter) && goalFits(g, { teamId }, people, nodes)) {
+        return { ...d, goalTitle: g.code ? `${g.code}. ${g.title}` : g.title };
+      }
+      try {
+        const s = await suggestGoals(who, { team: teamId, due: d.due, title: d.title, outcome: d.outcome, owner: d.owner });
+        const best = s.best ? s.options.find((o) => o.id === s.best) : null;
+        return { ...d, goal: best?.id ?? null, goalTitle: best?.title ?? null };
+      } catch {
+        // Подбор цели не обязателен: без него черновик остаётся
+        return { ...d, goal: null, goalTitle: null };
+      }
+    }),
+  );
 }
 
 // ---------- Чтение ----------
@@ -504,9 +528,8 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     ceo = { existing, recipients: recipients.map((r) => r.fullName) };
   }
   const stored = resultOf(row.result);
-  // Черновики задач показывают ту же цель, что получит задача у этого ведущего
-  const tasks = rights.canLead && ready && !row.tasksCreatedAt ? await resolveGoals(whoOf(actor), row.meeting.teamId, stored.tasks) : stored.tasks;
-  const result: ParseResult = { ...stored, tasks, ceo: canSeeCeo ? stored.ceo : EMPTY_RESULT.ceo };
+  // Цель в черновике хранится подобранной: пересчёт при сохранении черновика и при создании задач, а не на каждом показе
+  const result: ParseResult = { ...stored, ceo: canSeeCeo ? stored.ceo : EMPTY_RESULT.ceo };
   return {
     id: row.id,
     meetingId: row.meetingId,
@@ -517,7 +540,7 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     notionUrl: row.notionUrl,
     title: row.title,
     status,
-    statusLabel: parseStatusLabel({ status, ceoSentAt: row.ceoSentAt?.toISOString(), tasksCreatedAt: row.tasksCreatedAt?.toISOString() }),
+    statusLabel: parseStatusLabel({ status, stale: isStale(row, now), ceoSentAt: row.ceoSentAt?.toISOString(), tasksCreatedAt: row.tasksCreatedAt?.toISOString() }),
     method: row.method ? METHOD[row.method] : null,
     model: row.model,
     note: row.note,
@@ -528,6 +551,7 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     finishedAt: row.finishedAt?.toISOString() ?? null,
     stale: isStale(row, now),
     createdBy: row.createdBy?.fullName ?? null,
+    startedBy: row.startedBy?.fullName ?? row.createdBy?.fullName ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     ceoSentAt: row.ceoSentAt?.toISOString() ?? null,
@@ -544,7 +568,8 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     sendHint,
     tasksHint,
     ceo,
-    ceoPreview: canSeeCeo && ready ? await ceoContext(actor, key) : null,
+    // Собранный отчёт (цифры, решения и благодарности топ-команды) только тем, кто отправляет CEO
+    ceoPreview: sendAllowed && ready ? await ceoContext(actor, key) : null,
   };
 }
 
@@ -563,10 +588,11 @@ export async function listParses(actor: Actor, teamId: string, key: WeekKey): Pr
   if (!meeting) return [];
   await meetingRights(actor, meeting.id);
   const rows = await prisma.meetingParse.findMany({ where: { meetingId: meeting.id }, include: { createdBy: { select: { fullName: true } } }, orderBy: { createdAt: "desc" }, take: 10 });
+  const now = new Date();
   return rows.map((r) => ({
     id: r.id,
     title: r.title,
-    status: parseStatusLabel({ status: STATUS[r.status], ceoSentAt: r.ceoSentAt?.toISOString(), tasksCreatedAt: r.tasksCreatedAt?.toISOString() }),
+    status: parseStatusLabel({ status: STATUS[r.status], stale: isStale(r, now), ceoSentAt: r.ceoSentAt?.toISOString(), tasksCreatedAt: r.tasksCreatedAt?.toISOString() }),
     createdAt: r.createdAt.toISOString(),
     createdBy: r.createdBy?.fullName ?? null,
   }));
@@ -657,7 +683,8 @@ export async function saveParseDraft(actor: Actor, id: string, patch: DraftPatch
   if (row.status !== "READY") fail("Разбор ещё не готов");
   const current = resultOf(row.result);
   const ceoAllowed = seesCeoDraft(actor) && patch.ceo !== undefined;
-  const tasks = patch.tasks !== undefined && !row.tasksCreatedAt ? await cleanDrafts(patch.tasks, current.tasks) : current.tasks;
+  // Цель пересчитывается здесь: черновик хранит ту цель, что получит задача у этого ведущего
+  const tasks = patch.tasks !== undefined && !row.tasksCreatedAt ? await resolveGoals(whoOf(actor), row.meeting.teamId, await cleanDrafts(patch.tasks, current.tasks)) : current.tasks;
   const decisions = patch.decisions !== undefined && !row.tasksCreatedAt ? await cleanDecisions(patch.decisions, current.decisions) : current.decisions;
   const ceo = ceoAllowed ? cleanCeo(patch.ceo) : current.ceo;
   await prisma.$transaction(async (tx) => {
@@ -711,6 +738,9 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
   await prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM meeting_parses WHERE id = ${row.id} FOR UPDATE`;
+      // Пока ждали замок, разбор могли запустить заново: отправлять можно только готовый
+      const locked = await tx.meetingParse.findUniqueOrThrow({ where: { id: row.id }, select: { status: true } });
+      if (locked.status !== "READY") fail("Разбор запущен заново: дождитесь результата и проверьте черновик");
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${key}`}))`;
       const week = await tx.week.findUnique({ where: { start: dbDate(key) }, select: { id: true } });
       const before = week ? await tx.ceoReport.findUnique({ where: { weekId: week.id } }) : null;
@@ -723,7 +753,8 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
       const saved = await saveCeoReportIn(tx, actor, key, final);
       const savedWeek = await tx.week.findUniqueOrThrow({ where: { start: dbDate(key) }, select: { id: true } });
       const to = recipients.map((r) => ({ id: r.id, name: r.fullName }));
-      const snapshot: Snapshot = { ...final, meetings: saved.meetings };
+      // Снимок из того, что действительно сохранилось: после чистки текста в отчёте
+      const snapshot: Snapshot = { ...(saved.sections ?? final), meetings: saved.meetings };
       // Момент отправки тот же, что момент записи отчёта: правка после отправки видна по более позднему updatedAt.
       // Запрос мимо Prisma, иначе @updatedAt сдвинулся бы ещё раз
       await tx.$executeRaw`UPDATE ceo_reports SET "sentAt" = "updatedAt", "sentById" = ${actor.personId}, "sentTo" = ${JSON.stringify(to)}::jsonb, "sentSnapshot" = ${JSON.stringify(snapshot)}::jsonb WHERE "weekId" = ${savedWeek.id}`;
@@ -787,8 +818,10 @@ export async function createParseTasks(actor: Actor, id: string, input: { tasks?
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM meeting_parses WHERE id = ${row.id} FOR UPDATE`;
       // Второе нажатие ждало первое: задачи уже созданы, отдаём те же номера
-      const fresh = await tx.meetingParse.findUniqueOrThrow({ where: { id: row.id }, select: { tasksCreatedAt: true, taskNumbers: true, decisionsCreated: true } });
+      const fresh = await tx.meetingParse.findUniqueOrThrow({ where: { id: row.id }, select: { status: true, tasksCreatedAt: true, taskNumbers: true, decisionsCreated: true } });
       if (fresh.tasksCreatedAt) return { numbers: fresh.taskNumbers, decisions: fresh.decisionsCreated, already: true };
+      // Пока ждали замок, разбор могли запустить заново: задачи создаются только из готового
+      if (fresh.status !== "READY") fail("Разбор запущен заново: дождитесь результата и проверьте черновики");
       const numbers: number[] = [];
       for (const t of chosen) {
         try {
@@ -875,7 +908,7 @@ export async function ceoSentReports(actor: Actor, key?: string | null): Promise
       sentAt: pick.sentAt!.toISOString(),
       sentBy: pick.sentBy?.fullName ?? null,
       editedAfter: pick.updatedAt.getTime() > pick.sentAt!.getTime(),
-      ctx: await ceoContext(actor, week),
+      ctx: await ceoContext(actor, week, { recipient: true }),
     };
   }
   return { weeks: mine.map((r) => ({ key: isoFromDbDate(r.week.start) as WeekKey, number: r.week.isoNumber, sentAt: r.sentAt!.toISOString() })), current };

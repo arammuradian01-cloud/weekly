@@ -1,8 +1,8 @@
 // Этап 61: разбор встречи из Notion. Ссылка в ID страницы, блоки Notion в текст, чтение страницы с пагинацией и
 // понятными ошибками, разбор правилами, проверка ответа Claude, вызов Claude через подменённый транспорт, черновик
 // weekly для CEO и объединение с отчётом недели. Настоящие Notion и Claude не вызываются.
-import { describe, expect, it } from "vitest";
-import { NotionError, allowedParentsFromEnv, blocksToText, fakeAllowed, meaningfulText, notionPageIdFromUrl, readNotionPage, unreadableBlock, type NotionBlock } from "@/lib/meeting/notion-api";
+import { describe, expect, it, vi } from "vitest";
+import { NotionError, allowedFromEnv, allowedParentsFromEnv, blocksToText, fakeAllowed, meaningfulText, notionPageIdFromUrl, readNotionPage, unreadableBlock, type NotionBlock } from "@/lib/meeting/notion-api";
 import { parseByRules, taskFromLine } from "@/lib/meeting/parse-rules";
 import { ceoDraftOf, cleanText, dueFromText, mergeCeoSections, sameTask, taskTitle, validateRawMeeting } from "@/lib/meeting/parse-types";
 import { ClaudeError, parseWithClaude, userMessage, type ClaudeInput } from "@/lib/meeting/claude";
@@ -34,6 +34,20 @@ describe("ссылка на страницу Notion", () => {
   it("разрешённые разделы из окружения: ID с дефисами и без, ссылки, лишнее отбрасывается", () => {
     expect(allowedParentsFromEnv(`${PAGE}, https://www.notion.so/Vstrechi-${PAGE.replace("1a", "2b")}; мусор`)).toEqual([DASHED, "2b2b3c4d-5e6f-47a8-b9c0-d1e2f3a4b5c6"]);
     expect(allowedParentsFromEnv("")).toEqual([]);
+  });
+
+  it("NOTION_ALLOWED_PARENTS задана, но без единого ID: разбор закрыт, в логе предупреждение без значения переменной", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(allowedFromEnv("секретный-мусор, ещё")).toEqual({ allowedParents: [], allowedInvalid: true });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).not.toContain("секретный-мусор");
+      expect(allowedFromEnv("")).toEqual({ allowedParents: [], allowedInvalid: false });
+      expect(allowedFromEnv(PAGE)).toEqual({ allowedParents: [DASHED], allowedInvalid: false });
+    } finally {
+      warn.mockRestore();
+    }
+    await expect(readNotionPage(DASHED, { token: "t", allowedInvalid: true })).rejects.toMatchObject({ code: "bad-allowed" });
   });
 
   it("имитации Notion и Claude не включаются в рабочем образе без флага сквозных тестов", () => {
@@ -175,6 +189,16 @@ describe("чтение страницы Notion", () => {
     expect(page).toMatchObject({ cutByTime: true, truncated: true });
     expect(page.text).toBe("## Итоги\n- Конверсия выросла");
     await expect(readNotionPage(DASHED, { fetch: fetchFn, token: "t", base: "https://notion.test", budgetMs: 0 })).rejects.toMatchObject({ code: "timeout" });
+  });
+
+  it("ожидание после 429 не дольше остатка срока: страница обрезается по времени, а не висит", async () => {
+    const { fetchFn } = notionStub();
+    const limited = (async (input: string, init: RequestInit) =>
+      input.includes("start_cursor") ? new Response(JSON.stringify({ code: "rate_limited" }), { status: 429, headers: { "retry-after": "5" } }) : fetchFn(input, init)) as unknown as typeof fetch;
+    const started = Date.now();
+    const page = await readNotionPage(DASHED, { fetch: limited, token: "t", base: "https://notion.test", budgetMs: 300 });
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(page).toMatchObject({ cutByTime: true });
   });
 
   it("нечитаемые блоки считаются: AI-заметки, расшифровка, unsupported и незнакомые без текста; картинки и разделители нет", () => {

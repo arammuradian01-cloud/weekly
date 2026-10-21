@@ -347,8 +347,8 @@ export function defaultDue(meetingDate: IsoDate, today: IsoDate): IsoDate {
 }
 
 /** Подпись статуса разбора для экрана и журнала */
-export function parseStatusLabel(p: { status: "pending" | "ready" | "failed"; ceoSentAt?: string | null; tasksCreatedAt?: string | null }): string {
-  if (p.status === "pending") return "Разбираем";
+export function parseStatusLabel(p: { status: "pending" | "ready" | "failed"; stale?: boolean; ceoSentAt?: string | null; tasksCreatedAt?: string | null }): string {
+  if (p.status === "pending") return p.stale ? "Завис" : "Разбираем";
   if (p.status === "failed") return "Не разобрано";
   if (p.ceoSentAt && p.tasksCreatedAt) return "Отправлено CEO, задачи созданы";
   if (p.ceoSentAt) return "Отправлено CEO";

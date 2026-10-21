@@ -21,6 +21,8 @@ import { PROD_SHEET_ID } from "@/lib/sheet/client";
 import { moscowToday } from "@/lib/tasks/dates";
 import { quarterOf } from "@/lib/goals/parse";
 import type { ClaudeDeps } from "@/lib/meeting/claude";
+import { ceoContext } from "@/lib/ceo/assembled";
+import { dbDate } from "@/lib/tasks/dates";
 import type { NotionDeps } from "@/lib/meeting/notion-api";
 import type { WeekKey } from "@/domain/types";
 
@@ -44,6 +46,7 @@ const MISSING_PAGE = "https://www.notion.so/sravni/Ne-rasshareno-9f9f9f9f9f9f49f
 const EMPTY_PAGE = "https://www.notion.so/sravni/AI-zametki-6d7e8f90123445a6b7c8d9e0f1a2b3c4";
 const PARTIAL_PAGE = "https://app.notion.com/p/7e8f9012345647a8b9c0d1e2f3a4b5c6";
 const SECTION = "8f901234-5678-49a0-b1c2-d3e4f5a6b7c8";
+const SYNCED_PAGE = "https://www.notion.so/sravni/Sinhronizirovannyj-a1b2c3d4e5f64a7b8c9d0e1f2a3b4c5d";
 const notion: NotionDeps = { fetch: fakeNotionFetch("tests/fixtures/notion"), token: "fake", base: "https://notion.fake" };
 
 const person = (start: string) => prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: start } } });
@@ -161,12 +164,13 @@ describe("кто запускает и видит разбор", () => {
     const tokov = await parse.getParse(await actorOf("Токов"), id);
     expect(tokov).toMatchObject({ status: "ready", canEdit: false, canCreateTasks: false, canSendCeo: false, canSeeText: false, pageText: "", canSeeCeo: true });
     expect(tokov.result.ceo.main).toContain("Конверсия");
-    expect(tokov.ceoPreview?.week).toBe(key);
+    // Собранный отчёт с цифрами, решениями и благодарностями топ-команды только отправляющим
+    expect(tokov.ceoPreview).toBeNull();
     await expectRule(parse.saveParseDraft(await actorOf("Токов"), id, { ceo: { main: "- Своё", risks: "", next: "" } }), /ведёт встречу/);
     await expectRule(parse.createParseTasks(await actorOf("Токов"), id), /ведёт встречу/);
     await expectRule(parse.getParse(await actorOf("Кацемба"), id), /не видите/);
     const reva = await parse.getParse(await actorOf("Рева"), id);
-    expect(reva).toMatchObject({ canEdit: true, canCreateTasks: true, canSendCeo: false, canSeeText: true });
+    expect(reva).toMatchObject({ canEdit: true, canCreateTasks: true, canSendCeo: false, canSeeText: true, ceoPreview: null });
     expect(reva.pageText).toContain("## Задачи");
     expect(reva.sendHint).toMatch(/владелец или администратор/);
 
@@ -496,6 +500,113 @@ describe("weekly для CEO", () => {
       await prisma.person.update({ where: { slug: "ceo" }, data: { active: false } });
       await prisma.orgUnit.update({ where: { id: company.id }, data: { headId: company.headId } });
     }
+  });
+});
+
+describe("второй круг проверки", () => {
+  it("решения и благодарности топ-команды: в предпросмотре только у отправляющих, рядовой участник их не получает", async () => {
+    const top = await readyParse(await owner(), "top");
+    const meetingId = (await prisma.meetingParse.findUniqueOrThrow({ where: { id: top } })).meetingId;
+    const meeting = await prisma.meeting.findUniqueOrThrow({ where: { id: meetingId } });
+    await prisma.decision.create({ data: { meetingId, teamId: "top", text: "Бюджет КАСКО утверждаем на встрече 28.10", date: meeting.date } });
+    const week = await prisma.week.findUniqueOrThrow({ where: { start: dbDate(key) } });
+    await prisma.weeklyReport.upsert({
+      where: { weekId_authorId: { weekId: week.id, authorId: (await person("Рева")).id } },
+      update: { thanks: "Спасибо финансам за быструю сверку" },
+      create: { weekId: week.id, authorId: (await person("Рева")).id, thanks: "Спасибо финансам за быструю сверку" },
+    });
+    try {
+      const sender = await parse.getParse(await owner(), top);
+      expect(sender.ceoPreview?.decisions.map((d) => d.text)).toContain("Бюджет КАСКО утверждаем на встрече 28.10");
+      expect(sender.ceoPreview?.thanks.map((t) => t.text)).toContain("Спасибо финансам за быструю сверку");
+      // Рядовой участник команды не из топ-команды: ни решений, ни благодарностей топ-команды
+      const tokov = await ceoContext(await actorOf("Токов"), key);
+      expect(tokov).toMatchObject({ decisions: [], thanks: [] });
+      const own = await readyParse();
+      expect((await parse.getParse(await actorOf("Токов"), own)).ceoPreview).toBeNull();
+      expect((await parse.getParse(await actorOf("Рева"), own)).ceoPreview).toBeNull();
+    } finally {
+      await prisma.weeklyReport.deleteMany({ where: { weekId: week.id, authorId: (await person("Рева")).id } });
+    }
+  });
+
+  it("NOTION_ALLOWED_PARENTS без единого ID: разбор закрыт с понятным текстом", async () => {
+    const reva = await actorOf("Рева");
+    const id = await readyParse(reva, revaTeam, RULES_PAGE, { notion: { ...notion, allowedInvalid: true } });
+    const view = await parse.getParse(reva, id);
+    expect(view.status).toBe("failed");
+    expect(view.note).toMatch(/NOTION_ALLOWED_PARENTS задана, но в ней нет ни одного ID/);
+  });
+
+  it("родитель страницы: 404 или 403 значит «не в разрешённом разделе», сбой Notion остаётся сбоем", async () => {
+    const reva = await actorOf("Рева");
+    const parentFails = (status: number): NotionDeps => ({
+      ...notion,
+      allowedParents: [SECTION],
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).includes("/v1/databases/") ? new Response(JSON.stringify({ code: "x" }), { status }) : notion.fetch!(input, init)) as typeof fetch,
+    });
+    const broken = await readyParse(reva, revaTeam, PARTIAL_PAGE, { notion: parentFails(502) });
+    expect((await parse.getParse(reva, broken)).note).toMatch(/^Notion не ответил/);
+    await prisma.meetingParse.deleteMany();
+    const hidden = await readyParse(reva, revaTeam, PARTIAL_PAGE, { notion: parentFails(404) });
+    expect((await parse.getParse(reva, hidden)).note).toMatch(/NOTION_ALLOWED_PARENTS/);
+  });
+
+  it("копия синхронизированного блока с другой страницы: с разрешёнными разделами не читается, без них читается", async () => {
+    const reva = await actorOf("Рева");
+    const open = await readyParse(reva, revaTeam, SYNCED_PAGE);
+    expect((await parse.getParse(reva, open)).pageText).toContain("Текст с другой страницы");
+    await prisma.meetingParse.deleteMany();
+    const closed = await readyParse(reva, revaTeam, SYNCED_PAGE, { notion: { ...notion, allowedParents: [SECTION] } });
+    const view = await parse.getParse(reva, closed);
+    expect(view.status).toBe("ready");
+    expect(view.pageText).not.toContain("Текст с другой страницы");
+    expect(view.result.unreadable).toBe(1);
+    expect(view.note).toMatch(/копии синхронизированных блоков с других страниц \(1\) не читаются, пока задана NOTION_ALLOWED_PARENTS/);
+  });
+
+  it("повтор одновременно с созданием задач или отправкой CEO: проходит что-то одно", async () => {
+    const reva = await actorOf("Рева");
+    const id = await readyParse(reva);
+    const view = await parse.getParse(reva, id);
+    const tokovSlug = (await person("Токов")).slug;
+    const tasks = view.result.tasks.map((t) => (t.ownerText === "Иванов" ? { ...t, owner: tokovSlug } : t));
+    const [retry, create] = await Promise.allSettled([parse.retryParse(reva, id), parse.createParseTasks(reva, id, { tasks })]);
+    expect([retry.status, create.status].filter((x) => x === "fulfilled")).toHaveLength(1);
+    const row = await prisma.meetingParse.findUniqueOrThrow({ where: { id } });
+    if (create.status === "fulfilled") expect(row).toMatchObject({ status: "READY" });
+    else expect(await prisma.task.count()).toBe(0);
+    expect(row.tasksCreatedAt !== null).toBe(create.status === "fulfilled");
+
+    const top = await readyParse(await owner(), "top");
+    const [again, send] = await Promise.allSettled([parse.retryParse(await owner(), top), parse.sendParseToCeo(await owner(), top, { ceo: { main: "- Главное", risks: "", next: "" } })]);
+    expect([again.status, send.status].filter((x) => x === "fulfilled")).toHaveLength(1);
+    const topRow = await prisma.meetingParse.findUniqueOrThrow({ where: { id: top } });
+    expect(topRow.ceoSentAt !== null).toBe(send.status === "fulfilled");
+    expect(await prisma.ceoReport.count()).toBe(send.status === "fulfilled" ? 1 : 0);
+  });
+
+  it("зависший разбор: в списке встречи «Завис», новый разбор той же страницы закрывает его", async () => {
+    const reva = await actorOf("Рева");
+    const old = await start(reva, revaTeam, RULES_PAGE);
+    await prisma.meetingParse.update({ where: { id: old }, data: { startedAt: new Date(Date.now() - 10 * 60_000), lastBeatAt: new Date(Date.now() - 5 * 60_000) } });
+    expect((await parse.listParses(reva, revaTeam, key)).find((p) => p.id === old)?.status).toBe("Завис");
+    const fresh = await start(reva, revaTeam, RULES_PAGE);
+    expect(fresh).not.toBe(old);
+    expect(await prisma.meetingParse.findUniqueOrThrow({ where: { id: old } })).toMatchObject({ status: "FAILED", note: "Прервано: запущен новый разбор этой страницы" });
+  });
+
+  it("событие о готовности после повтора уходит тому, кто нажал «Повторить», и руководителю команды", async () => {
+    const reva = await actorOf("Рева");
+    const id = await readyParse(reva, revaTeam, MISSING_PAGE);
+    await prisma.inboxEvent.deleteMany();
+    const own = await owner();
+    await parse.retryParse(own, id);
+    await parse.runParse(id, { notion, claude: null });
+    const to = (await prisma.inboxEvent.findMany({ where: { subject: `meeting-parse:${id}` }, select: { recipientId: true } })).map((e) => e.recipientId).sort();
+    expect(to).toEqual([own.personId, reva.personId].sort());
+    expect((await parse.getParse(own, id)).startedBy).toBe("Мурадян Арам");
   });
 });
 
