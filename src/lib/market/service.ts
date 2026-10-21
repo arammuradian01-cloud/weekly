@@ -18,20 +18,24 @@ export type MarketMeta = {
   uploadedBy: string;
   datasetsCount: number;
   rowsTotal: number;
-  /** Отпечаток для кэша браузера: меняется с каждой загрузкой */
-  etag: string;
+  /** Отпечаток пакета: номер версии и время загрузки, меняется с каждой загрузкой. По нему окно пересоздаётся */
+  stamp: string;
 };
 
-const etagOf = (version: number, uploadedAt: Date) => `"market-${version}-${uploadedAt.getTime()}"`;
+/**
+ * Номер версии растёт с каждой загрузкой, время загрузки отличает пакет, загруженный заново после очистки базы
+ * (номер тогда снова 1)
+ */
+const stampOf = (version: number, uploadedAt: Date) => `${version}-${uploadedAt.getTime()}`;
 
 /** Сведения о загруженном пакете без кода и цифр. null: пакета ещё нет */
 export async function marketMeta(db: Prisma.TransactionClient | typeof prisma = prisma): Promise<MarketMeta | null> {
   const row = await db.marketBundle.findUnique({ where: { id: BUNDLE_ID }, select: { version: true, uploadedAt: true, uploadedByName: true, datasetsCount: true, rowsTotal: true } });
   if (!row) return null;
-  return { version: row.version, uploadedAt: row.uploadedAt.toISOString(), uploadedBy: row.uploadedByName, datasetsCount: row.datasetsCount, rowsTotal: row.rowsTotal, etag: etagOf(row.version, row.uploadedAt) };
+  return { version: row.version, uploadedAt: row.uploadedAt.toISOString(), uploadedBy: row.uploadedByName, datasetsCount: row.datasetsCount, rowsTotal: row.rowsTotal, stamp: stampOf(row.version, row.uploadedAt) };
 }
 
-export type MarketPayload = { version: number; etag: string; files: Record<string, string>; datasets: Record<string, MarketRow[]> };
+export type MarketPayload = { version: number; stamp: string; files: Record<string, string>; datasets: Record<string, MarketRow[]> };
 
 /** Код страницы и все наборы для окна дашборда, одним снимком базы. Доступ проверяет вызывающий */
 export async function marketPayload(): Promise<MarketPayload | null> {
@@ -45,13 +49,58 @@ export async function marketPayload(): Promise<MarketPayload | null> {
   if (!bundle) return null;
   const datasets: Record<string, MarketRow[]> = {};
   for (const s of sets) datasets[s.name] = s.rows as MarketRow[];
-  return { version: bundle.version, etag: etagOf(bundle.version, bundle.uploadedAt), files: bundle.files as Record<string, string>, datasets };
+  return { version: bundle.version, stamp: stampOf(bundle.version, bundle.uploadedAt), files: bundle.files as Record<string, string>, datasets };
 }
 
-/** Совпадает ли отпечаток из заголовка If-None-Match: браузеру хватит ответа 304 */
-export function etagMatches(header: string | null, etag: string): boolean {
-  if (!header) return false;
-  return header.split(",").some((t) => t.trim().replace(/^W\//, "") === etag || t.trim() === "*");
+// ---------- Готовый ответ с данными в памяти процесса ----------
+// Ответ с кодом и наборами весит мегабайты: каждый раз собирать его заново (JSONB из базы, объекты, JSON.stringify)
+// дорого. Готовый текст ответа держится в памяти по отпечатку пакета. На каждый запрос из базы читаются только
+// номер версии и время загрузки: совпали с памятью, отдаётся готовый текст. В бою процесс один, но проверка по базе
+// не даст отдать старые цифры, если пакет сменился мимо этого процесса. Загрузка пакета сбрасывает память сразу.
+
+type MarketBody = { stamp: string; version: number; body: string };
+
+let bodyCache: { stamp: string; body: Promise<MarketBody | null> } | null = null;
+
+/** Сбросить готовый ответ: новый пакет загружен */
+export function resetMarketBodyCache(): void {
+  bodyCache = null;
+}
+
+async function buildBody(): Promise<MarketBody | null> {
+  const payload = await marketPayload();
+  if (!payload) return null;
+  return { stamp: payload.stamp, version: payload.version, body: JSON.stringify({ ok: true, version: payload.version, files: payload.files, datasets: payload.datasets }) };
+}
+
+/**
+ * Текст ответа для окна дашборда: {ok, version, files, datasets}. null: пакета нет. Доступ проверяет вызывающий.
+ * Одновременные запросы при пустой памяти ждут одну сборку
+ */
+export async function marketDataBody(): Promise<MarketBody | null> {
+  const head = await prisma.marketBundle.findUnique({ where: { id: BUNDLE_ID }, select: { version: true, uploadedAt: true } });
+  if (!head) {
+    bodyCache = null;
+    return null;
+  }
+  const stamp = stampOf(head.version, head.uploadedAt);
+  let entry = bodyCache;
+  if (!entry || entry.stamp !== stamp) {
+    const fresh = { stamp, body: buildBody() };
+    entry = bodyCache = fresh;
+    fresh.body.then(
+      (b) => {
+        if (bodyCache !== fresh) return;
+        // Пока собирали, пакет сменился: в памяти остаётся то, что реально собрано, со своим отпечатком
+        if (!b) bodyCache = null;
+        else if (b.stamp !== stamp) bodyCache = { stamp: b.stamp, body: Promise.resolve(b) };
+      },
+      () => {
+        if (bodyCache === fresh) bodyCache = null;
+      },
+    );
+  }
+  return entry.body;
 }
 
 /** Наборы для подписи «О данных»: имя, название, строки, без самих строк */
@@ -92,5 +141,7 @@ export async function uploadMarketBundle(actor: Actor, bundle: MarketBundleInput
     },
     { timeout: 120_000, maxWait: 30_000 },
   );
+  // Готовый ответ прежнего пакета больше не нужен: следующий запрос соберёт новый
+  resetMarketBodyCache();
   return (await marketMeta())!;
 }

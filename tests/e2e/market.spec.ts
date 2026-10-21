@@ -6,7 +6,8 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 // tests/fixtures/market/bundle.json, цифры выдуманные), дашборд работает в изолированном окне: расчёты, фильтр и
 // вкладка внутри окна, вкладка и фильтр в адресе страницы. Владелец открывает раздел Реве в настройках, Рева видит
 // пункт меню и дашборд. Логинова не из списка и вход по общему логину: пункта меню нет, раздел закрыт, данных нет.
-// На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» только у тех, кому раздел открыт.
+// На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» и подпись пункта (от какого дня
+// данные) только у тех, кому раздел открыт. Данные рынка браузер не кэширует: no-store, без ETag и 304.
 // Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
 const SHOTS = "tests/e2e/screenshots";
@@ -73,6 +74,13 @@ test("владелец загружает пакет, вкладка и филь
   await expect(frame.locator("#k-status")).toHaveText("Расчёт с ошибкой: error, d3: заглушка");
   // Блок обновления данных внутри дашборда спрятан: обновление у нас загрузкой пакета
   await expect(frame.locator("#c-import")).toBeHidden();
+
+  // Данные рынка браузер не сохраняет: ответ всегда полный, без отпечатка, и с If-None-Match тоже 200
+  const data = await page.request.get("/api/market/data", { headers: { "If-None-Match": '"market-1"', "Cache-Control": "max-age=0" } });
+  expect(data.status()).toBe(200);
+  expect(data.headers()["cache-control"]).toBe("no-store");
+  expect(data.headers()["etag"]).toBeUndefined();
+  expect(await data.json()).toMatchObject({ ok: true, version: 1 });
 
   // Фильтр внутри окна пересчитывает и попадает в адрес
   await frame.locator("#metric").selectOption("prem");
@@ -169,6 +177,11 @@ test("первая встреча месяца начинается с разб�
   expect(first!.title).toMatch(/^Рынок КАСКО и ОСАГО: итоги [а-я]+( \d{4})?$/);
   await expect(page.getByRole("heading", { level: 2, name: first!.title })).toBeVisible();
   await expect(page.getByTestId("agenda-market-open")).toHaveAttribute("href", "/market");
+  // Подпись пункта считается при показе из текущего пакета (встреча может быть уже в следующем месяце: тогда
+  // подпись предупреждает, что свежий пакет в этом месяце ещё не загружали)
+  await expect(page.getByText(/^(Данные рынка от|Свежий пакет рынка в этом месяце ещё не загружали: данные от) \d{1,2} [а-я]+\.$/)).toBeVisible();
+  const [{ note }] = await sql(`SELECT note FROM agenda_items WHERE kind = 'MARKET'`);
+  expect(note).toBeNull();
   await shot(page, "meeting");
 
   // Пересборка повестки пункт не дублирует
@@ -183,5 +196,7 @@ test("первая встреча месяца начинается с разб�
   await expect(loginova.getByRole("heading", { level: 2, name: first!.title })).toBeVisible();
   await expect(loginova.getByTestId("agenda-market-closed")).toHaveText("Разбор рынка: открывают участники с доступом");
   await expect(loginova.getByTestId("agenda-market-open")).toHaveCount(0);
+  // Подписи с датой данных у неё нет
+  await expect(loginova.getByText(/Данные рынка от|Свежий пакет рынка/)).toHaveCount(0);
   await shot(loginova, "meeting-closed");
 });

@@ -11,11 +11,16 @@ import type { MarketParams } from "./params";
 /** Политика окна: ни сети, ни внешних файлов. Картинки и шрифты только встроенные */
 export const MARKET_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:";
 
-export type MarketBoot = { link: string | null; params: MarketParams; theme: MarketTheme };
+/** nonce: одноразовая метка окна, окно возвращает её в каждом сообщении родителю (readFrameMessage) */
+export type MarketBoot = { link: string | null; params: MarketParams; theme: MarketTheme; nonce: string };
 
-/** Текст скрипта внутри <script>: закрывающий тег и начало HTML-комментария не должны сломать разбор страницы */
+/**
+ * Текст скрипта внутри <script>: закрывающий тег и начало HTML-комментария не должны сломать разбор страницы.
+ * «<!--» меняется на «<\x21--»: в строке, шаблоне и регулярном выражении (и с флагом u) это тот же «!», а запись
+ * «<\!--» в регулярном выражении с флагом u дала бы SyntaxError
+ */
 export function scriptText(code: string): string {
-  return code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
+  return code.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\x21--");
 }
 
 function styleText(css: string): string {
@@ -68,7 +73,7 @@ export function inlinePage(html: string, files: Record<string, string>): string 
 export function buildSrcdoc(files: Record<string, string>, boot: MarketBoot): string {
   const index = files["index.html"] ?? "";
   const d3 = Object.prototype.hasOwnProperty.call(files, D3_FILE) ? files[D3_FILE]! : null;
-  const config = { link: boot.link, params: boot.params, theme: boot.theme, palettes: MARKET_PALETTES };
+  const config = { link: boot.link, params: boot.params, theme: boot.theme, nonce: boot.nonce, palettes: MARKET_PALETTES };
   return [
     "<!doctype html>",
     `<html lang="ru" data-theme="${boot.theme === "dark" ? "dark" : "light"}">`,

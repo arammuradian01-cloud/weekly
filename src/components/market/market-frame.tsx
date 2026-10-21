@@ -3,12 +3,14 @@
 // Окно дашборда рынка КАСКО и ОСАГО (этап 62). Код дашборда из пакета живёт в изолированном iframe: sandbox только
 // allow-scripts, без allow-same-origin, поэтому у окна непрозрачный источник и ему недоступны cookies и API
 // приложения, а сеть закрыта политикой CSP внутри srcdoc. Данные страница берёт сама (/api/market/data с проверкой
-// доступа) и передаёт окну сообщением. Сообщения от окна принимаются только от него и только по схеме: высота,
-// вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы, чтобы ссылкой можно было поделиться.
+// доступа) и передаёт окну сообщением: один раз на каждое событие load у iframe (повторные ready от окна данные не
+// дублируют). Сообщения от окна принимаются только от него, только с одноразовой меткой этого окна (nonce в
+// __MARKET_BOOT__) и только по схеме: высота, вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы, чтобы
+// ссылкой можно было поделиться.
 
 import { useEffect, useRef, useState } from "react";
 import { buildSrcdoc } from "@/lib/market/srcdoc";
-import { readFrameMessage, searchFromState, type MarketState } from "@/lib/market/params";
+import { createInitGate, marketNonce, readFrameMessage, searchFromState, type MarketState } from "@/lib/market/params";
 import type { MarketTheme } from "@/lib/market/theme";
 import { Skeleton } from "@/components/ui/primitives";
 
@@ -19,7 +21,7 @@ const themeNow = (): MarketTheme => (document.documentElement.getAttribute("data
 async function loadPayload(): Promise<Payload> {
   let res: Response;
   try {
-    res = await fetch("/api/market/data", { credentials: "same-origin" });
+    res = await fetch("/api/market/data", { credentials: "same-origin", cache: "no-store" });
   } catch {
     throw new Error("Нет связи с сервером: данные рынка не загрузились");
   }
@@ -31,22 +33,33 @@ async function loadPayload(): Promise<Payload> {
   return { version: body.version, files: body.files, datasets: body.datasets };
 }
 
-export function MarketFrame({ etag, initial }: { etag: string; initial: MarketState }) {
+/** Данные окну: наборы и фильтры из адреса. Код страницы окно уже получило в srcdoc */
+function postInit(win: Window | null | undefined, p: Payload | null, state: MarketState) {
+  if (win && p) win.postMessage({ type: "init", version: p.version, datasets: p.datasets, params: state.params }, "*");
+}
+
+/** Окно пересоздаётся по отпечатку пакета (stamp): загрузили новый пакет, страница берёт свежие код и данные */
+export function MarketFrame({ stamp, initial }: { stamp: string; initial: MarketState }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const state = useRef<MarketState>(initial);
   const payload = useRef<Payload | null>(null);
+  // Одноразовая метка текущего документа окна и учёт событий load: данные уходят один раз на каждый load
+  const nonce = useRef("");
+  const gate = useRef(createInitGate());
   const [doc, setDoc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState(640);
 
-  // Код и данные пакета. Отпечаток пакета в адресе не нужен: браузер сам сверяет его с сервером (ETag)
+  // Код и данные пакета. Ответ браузер не кэширует (no-store): данные всегда с сервера
   useEffect(() => {
     let alive = true;
     loadPayload()
       .then((p) => {
         if (!alive) return;
         payload.current = p;
-        setDoc(buildSrcdoc(p.files, { link: state.current.link, params: state.current.params, theme: themeNow() }));
+        nonce.current = marketNonce();
+        gate.current = createInitGate();
+        setDoc(buildSrcdoc(p.files, { link: state.current.link, params: state.current.params, theme: themeNow(), nonce: nonce.current }));
       })
       .catch((e: unknown) => {
         if (alive) setError(e instanceof Error ? e.message : "Не получилось загрузить данные рынка");
@@ -54,19 +67,17 @@ export function MarketFrame({ etag, initial }: { etag: string; initial: MarketSt
     return () => {
       alive = false;
     };
-  }, [etag]);
+  }, [stamp]);
 
   useEffect(() => {
-    const send = (msg: unknown) => frame.current?.contentWindow?.postMessage(msg, "*");
     const onMessage = (event: MessageEvent) => {
       const win = frame.current?.contentWindow;
-      // Только своё окно: у изолированного окна источник «null»
+      // Только своё окно: у изолированного окна источник «null», и метка этого окна в сообщении
       if (!win || event.source !== win || event.origin !== "null") return;
-      const msg = readFrameMessage(event.data);
+      const msg = readFrameMessage(event.data, nonce.current);
       if (!msg) return;
       if (msg.type === "ready") {
-        const p = payload.current;
-        if (p) send({ type: "init", version: p.version, datasets: p.datasets, params: state.current.params });
+        if (gate.current.ready()) postInit(win, payload.current, state.current);
         return;
       }
       if (msg.type === "height") {
@@ -78,7 +89,7 @@ export function MarketFrame({ etag, initial }: { etag: string; initial: MarketSt
     };
     window.addEventListener("message", onMessage);
     // Тема приложения сменилась: окно перекрашивается без перезагрузки
-    const observer = new MutationObserver(() => send({ type: "theme", theme: themeNow() }));
+    const observer = new MutationObserver(() => frame.current?.contentWindow?.postMessage({ type: "theme", theme: themeNow() }, "*"));
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     return () => {
       window.removeEventListener("message", onMessage);
@@ -102,5 +113,18 @@ export function MarketFrame({ etag, initial }: { etag: string; initial: MarketSt
       </div>
     );
   }
-  return <iframe ref={frame} title="Рынок КАСКО и ОСАГО" sandbox="allow-scripts" srcDoc={doc} style={{ height }} className="block w-full border-0" data-testid="market-frame" />;
+  return (
+    <iframe
+      ref={frame}
+      title="Рынок КАСКО и ОСАГО"
+      sandbox="allow-scripts"
+      srcDoc={doc}
+      onLoad={() => {
+        if (gate.current.load()) postInit(frame.current?.contentWindow, payload.current, state.current);
+      }}
+      style={{ height }}
+      className="block w-full border-0"
+      data-testid="market-frame"
+    />
+  );
 }

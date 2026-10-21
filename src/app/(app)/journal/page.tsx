@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireManagement } from "@/lib/auth";
 import { JOURNAL_ROLES } from "@/lib/roles";
 import { journalEvents, journalPeople, type JournalFilter, type JournalKind, type JournalQuery } from "@/lib/journal";
+import { canSeeMarket } from "@/lib/market/access";
 import { PageHeader } from "@/components/page-header";
 import { JournalView } from "@/components/admin/journal-view";
 import { moscowToday } from "@/lib/tasks/dates";
@@ -22,7 +23,7 @@ function parse(sp: Record<string, string | undefined>): JournalQuery {
 }
 
 export default async function JournalPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  await requireManagement(JOURNAL_ROLES, "/journal");
+  const ctx = await requireManagement(JOURNAL_ROLES, "/journal");
   const query = parse(await searchParams);
   const filter: JournalFilter = {
     who: query.who || undefined,
@@ -30,6 +31,8 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
     kind: query.kind || undefined,
     source: query.source || undefined,
     limit: query.n,
+    // События рынка (этап 62) только тем, кому открыт раздел «Рынок»: администратор без доступа их не видит
+    market: await canSeeMarket({ personId: ctx.person.id, via: ctx.via }),
   };
   const [page, people] = await Promise.all([journalEvents(filter), journalPeople()]);
 

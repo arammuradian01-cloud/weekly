@@ -3,6 +3,8 @@
 // пунктом встаёт «Рынок КАСКО и ОСАГО: итоги <прошлого месяца>». Команды выбирает владелец в «Настройках», по
 // умолчанию топ-команда. Пункт появляется, когда пакет рынка загружен: без данных разбирать нечего.
 // Пункт автоматический с ключом месяца: пересборка повестки его не дублирует, убранный ведущим не возвращается.
+// Подпись пункта (от какого дня данные, свежие ли они) не хранится: её считает экран встречи при показе из текущих
+// сведений о пакете и показывает только тем, кому открыт раздел «Рынок». В протокол письма она не попадает.
 
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
@@ -13,7 +15,7 @@ import { marketMeta } from "./service";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
-export type MarketAgendaDraft = { autoKey: string; title: string; note: string };
+export type MarketAgendaDraft = { autoKey: string; title: string };
 
 /** Название пункта: итоги прошлого месяца, год только когда он другой (январская встреча разбирает декабрь) */
 export function marketAgendaTitle(meetingDate: IsoDate): string {
@@ -45,5 +47,11 @@ export async function marketAgendaDraft(teamId: string, meetingDate: IsoDate, me
     where: { teamId, date: { gte: dbDate(monthStart), lt: dbDate(meetingDate) }, ...(meetingId ? { id: { not: meetingId } } : {}) },
   });
   if (earlier) return null;
-  return { autoKey: `market:${meetingDate.slice(0, 7)}`, title: marketAgendaTitle(meetingDate), note: marketAgendaNote(meetingDate, new Date(meta.uploadedAt)) };
+  return { autoKey: `market:${meetingDate.slice(0, 7)}`, title: marketAgendaTitle(meetingDate) };
+}
+
+/** Подпись пункта рынка для встречи по текущему пакету или null, если пакета нет. Доступ проверяет вызывающий */
+export async function marketAgendaNoteNow(meetingDate: IsoDate, db: Db = prisma): Promise<string | null> {
+  const meta = await marketMeta(db);
+  return meta ? marketAgendaNote(meetingDate, new Date(meta.uploadedAt)) : null;
 }

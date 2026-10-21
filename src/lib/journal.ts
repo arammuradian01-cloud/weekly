@@ -20,6 +20,11 @@ export type JournalFilter = {
   source?: JournalEvent["source"];
   /** Сколько событий показать, новые сверху */
   limit?: number;
+  /**
+   * Открыт ли смотрящему раздел «Рынок» (этап 62). Нет: события рынка (загрузка пакета со счётом наборов и строк,
+   * список людей с доступом, команды разбора) в журнал не попадают. По умолчанию скрыты
+   */
+  market?: boolean;
 };
 
 const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth."];
@@ -62,6 +67,20 @@ function kindWhere(kind: JournalKind): Prisma.AuditLogWhereInput {
 
 const SOURCE_DB: Record<JournalEvent["source"], ChangeSource> = { app: "APP", sheet: "SHEET", system: "SYSTEM" };
 
+/**
+ * События рынка КАСКО и ОСАГО (этап 62): записи об объекте «рынок» и настройки с ключами market.*, а также их
+ * действия (market.*, settings.market*). Условие только по заполненным полям: записи без объекта под него не
+ * попадают, поэтому NOT не прячет лишнего
+ */
+const MARKET_EVENTS: Prisma.AuditLogWhereInput = {
+  OR: [
+    { action: { startsWith: "market." } },
+    { action: { startsWith: "settings.market" } },
+    { entity: { not: null, equals: "market" } },
+    { AND: [{ entity: { not: null, equals: "settings" } }, { entityId: { not: null, startsWith: "market." } }] },
+  ],
+};
+
 /** Служебные значения событий входа словами, а не как {"role":"OWNER"} */
 const WORDS: Record<string, Record<string, string>> = {
   role: { OWNER: "владелец", ADMIN: "администратор" },
@@ -99,6 +118,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
   if (filter.days) and.push({ at: { gte: new Date(now.getTime() - filter.days * 86_400_000) } });
   if (filter.kind) and.push(kindWhere(filter.kind));
   if (filter.source) and.push({ source: SOURCE_DB[filter.source] });
+  if (!filter.market) and.push({ NOT: MARKET_EVENTS });
   const where: Prisma.AuditLogWhereInput = and.length ? { AND: and } : {};
 
   const [rows, total] = await Promise.all([

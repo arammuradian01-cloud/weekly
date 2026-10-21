@@ -1,6 +1,7 @@
 // Пакет рынка КАСКО и ОСАГО (этап 62): один JSON-файл с кодом страницы дашборда и наборами данных.
 // { "kind": "weekly-market-bundle", "version": 1, "files": { "index.html": "...", "ui.js": "...", "d3.min.js": "..." },
 //   "datasets": { "<имя>": { "title": "...", "description": "...", "rows": [ { ... } ] } } }
+// Файлы index.html и d3.min.js обязательны.
 // Проверка чистая, без базы: её считают и обработчик загрузки, и тесты. Ошибки понятные, по-русски.
 // Цифры и код дашборда живут только в базе: в репозитории их нет.
 
@@ -12,7 +13,7 @@ export const MARKET_MAX_BYTES = 25 * 1024 * 1024;
 export const DATASET_NAME = /^[a-z0-9_]{1,40}$/;
 /** Имя файла кода: латиница, цифры, точка, дефис, подчёркивание; страница, скрипт или стили */
 export const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(html|js|css)$/;
-/** Файл библиотеки графиков: подключается до кода страницы, если он есть в пакете */
+/** Файл библиотеки графиков: обязателен (дашборд вызывает d3 уже в первом скрипте), подключается до кода страницы */
 export const D3_FILE = "d3.min.js";
 
 const MAX_FILES = 30;
@@ -109,6 +110,8 @@ function checkFiles(raw: unknown): Record<string, string> {
     if (external(src)) fail(`index.html подключает внешний адрес ${src.slice(0, 120)}: всё нужное должно лежать в пакете`);
     if (!Object.prototype.hasOwnProperty.call(files, name)) fail(`index.html подключает ${name.slice(0, 80)}, а такого файла в пакете нет`);
   }
+  const d3 = Object.prototype.hasOwnProperty.call(files, D3_FILE) ? files[D3_FILE]! : "";
+  if (!d3.trim()) fail(`В пакете нет библиотеки графиков ${D3_FILE}: без неё дашборд не откроется. Соберите пакет скриптом scripts/market-bundle.mjs, он кладёт d3 сам`);
   return files;
 }
 

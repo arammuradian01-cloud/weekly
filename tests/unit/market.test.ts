@@ -1,11 +1,18 @@
 // Этап 62: рынок КАСКО и ОСАГО. Проверка пакета рынка, параметры в адресе и сообщения окна, страница окна (srcdoc),
 // среда window.dash на поддельном окне (node:vm), уровень доступа и пункт повестки. Пакет синтетический:
 // tests/fixtures/market/bundle.json, цифры выдуманные
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { spawnSync } from "node:child_process";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
+import type { NextConfig } from "next";
+import { config as proxyConfig } from "@/proxy";
 import { MARKET_MAX_BYTES, MarketBundleError, linkedFiles, parseBundle, validateBundle } from "@/lib/market/bundle";
-import { cleanParams, readFrameMessage, searchFromState, stateFromSearch } from "@/lib/market/params";
+import { cleanParams, createInitGate, marketNonce, readFrameMessage, searchFromState, stateFromSearch } from "@/lib/market/params";
 import { MARKET_CSP, buildSrcdoc, inlineJson, inlinePage, scriptText } from "@/lib/market/srcdoc";
 import { MARKET_RUNTIME_JS } from "@/lib/market/runtime";
 import { MARKET_PALETTES, MARKET_THEME_CSS } from "@/lib/market/theme";
@@ -13,6 +20,12 @@ import { canSeeMarketWith, canUploadMarket, marketAccessOf, marketMeetingOf } fr
 import { marketAgendaNote, marketAgendaTitle } from "@/lib/market/meeting";
 import { visibleGroups } from "@/components/shell/nav";
 import { AGENDA_BLOCKS, blockOf } from "@/domain/meeting";
+
+// Сборка шаблона proxy та же, что у самого Next (внутренняя функция, без описания типов)
+const { getMiddlewareMatchers } = createRequire(import.meta.url)("next/dist/build/analysis/get-page-static-info") as {
+  getMiddlewareMatchers: (matcher: string[], config: object) => { regexp: string }[];
+};
+const nextConfig = ((await import(pathToFileURL(join(process.cwd(), "next.config.mjs")).href)) as { default: NextConfig }).default;
 
 const FIXTURE = readFileSync("tests/fixtures/market/bundle.json", "utf8");
 const fixture = () => JSON.parse(FIXTURE) as Record<string, unknown> & { files: Record<string, string>; datasets: Record<string, { rows: unknown[] }> };
@@ -55,6 +68,9 @@ describe("пакет рынка", () => {
     rejects({ ...f, files: { "index.html": '<script src="//cdn.example/x.js"></script>' } }, /внешний адрес/);
     rejects({ ...f, files: { "index.html": '<script src="ui.js"></script>' } }, /подключает ui\.js, а такого файла в пакете нет/);
     rejects({ ...f, files: { "index.html": '<link rel="stylesheet" href="a.css">' } }, /подключает a\.css/);
+    // Библиотека графиков обязательна: дашборд вызывает d3.formatLocale уже в первом скрипте
+    rejects({ ...f, files: { "index.html": f.files["index.html"], "app.js": f.files["app.js"] } }, /В пакете нет библиотеки графиков d3\.min\.js: без неё дашборд не откроется/);
+    rejects({ ...f, files: { ...f.files, "d3.min.js": "  \n" } }, /нет библиотеки графиков d3\.min\.js/);
     // Строка с тегом внутри встроенного скрипта не считается подключением
     expect(linkedFiles('<script>const s = "<script src=x.js>";</script><script src="./app.js"></script>')).toEqual([{ tag: "script", src: "./app.js" }]);
   });
@@ -93,24 +109,51 @@ describe("адрес страницы и сообщения окна", () => {
     expect(Object.keys(cleanParams(Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`k${i}`, "v"]))))).toHaveLength(40);
   });
 
-  it("сообщения окна по схеме, остальное отбрасывается", () => {
-    expect(readFrameMessage({ type: "ready" })).toEqual({ type: "ready" });
-    expect(readFrameMessage({ type: "height", height: 812.4 })).toEqual({ type: "height", height: 812 });
-    expect(readFrameMessage({ type: "height", height: 1e9 })).toEqual({ type: "height", height: 20000 });
-    expect(readFrameMessage({ type: "height", height: "800" })).toBeNull();
-    expect(readFrameMessage({ type: "params", params: { gm: "prem", "x y": "1" } })).toEqual({ type: "params", params: { gm: "prem" } });
-    expect(readFrameMessage({ type: "params", params: [] })).toBeNull();
-    expect(readFrameMessage({ type: "link", link: "insurers" })).toEqual({ type: "link", link: "insurers" });
-    expect(readFrameMessage({ type: "link", link: "javascript:alert(1)" })).toBeNull();
-    expect(readFrameMessage({ type: "navigate", url: "https://example.com" })).toBeNull();
-    expect(readFrameMessage("ready")).toBeNull();
-    expect(readFrameMessage(null)).toBeNull();
+  it("сообщения окна по схеме и с меткой окна, остальное отбрасывается", () => {
+    const n = "a1b2";
+    const read = (m: Record<string, unknown>) => readFrameMessage({ ...m, nonce: n }, n);
+    expect(read({ type: "ready" })).toEqual({ type: "ready" });
+    expect(read({ type: "height", height: 812.4 })).toEqual({ type: "height", height: 812 });
+    expect(read({ type: "height", height: 1e9 })).toEqual({ type: "height", height: 20000 });
+    expect(read({ type: "height", height: "800" })).toBeNull();
+    expect(read({ type: "params", params: { gm: "prem", "x y": "1" } })).toEqual({ type: "params", params: { gm: "prem" } });
+    expect(read({ type: "params", params: [] })).toBeNull();
+    expect(read({ type: "link", link: "insurers" })).toEqual({ type: "link", link: "insurers" });
+    expect(read({ type: "link", link: "javascript:alert(1)" })).toBeNull();
+    expect(read({ type: "navigate", url: "https://example.com" })).toBeNull();
+    expect(readFrameMessage("ready", n)).toBeNull();
+    expect(readFrameMessage(null, n)).toBeNull();
+    // Без метки, с чужой меткой или когда метки у родителя ещё нет: не читается
+    expect(readFrameMessage({ type: "ready" }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", nonce: "other" }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", nonce: 5 }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", nonce: "" }, "")).toBeNull();
+  });
+
+  it("метка окна: 32 шестнадцатеричных знака, каждый раз новая", () => {
+    const a = marketNonce();
+    expect(a).toMatch(/^[0-9a-f]{32}$/);
+    expect(marketNonce()).not.toBe(a);
+  });
+
+  it("данные окну один раз на каждый load, повторные ready их не дублируют", () => {
+    const gate = createInitGate();
+    // ready до первого load: документ ещё разбирается, данные уйдут на load
+    expect(gate.ready()).toBe(false);
+    expect(gate.load()).toBe(true);
+    expect(gate.ready()).toBe(false);
+    expect(gate.ready()).toBe(false);
+    // Документ окна загрузился заново: данные снова один раз
+    expect(gate.ready()).toBe(false);
+    expect(gate.load()).toBe(true);
+    expect(gate.ready()).toBe(false);
+    expect(gate.load()).toBe(true);
   });
 });
 
 describe("страница окна", () => {
   const f = fixture();
-  const doc = buildSrcdoc(f.files, { link: "osago", params: { metric: "prem" }, theme: "dark" });
+  const doc = buildSrcdoc(f.files, { link: "osago", params: { metric: "prem" }, theme: "dark", nonce: "n0nce" });
 
   it("сначала политика CSP, потом стили, среда, d3 и код страницы", () => {
     const at = (s: string) => doc.indexOf(s);
@@ -131,16 +174,32 @@ describe("страница окна", () => {
     expect(doc).toContain("#c-import, #go-imp");
     expect(doc).toContain('<div id="dash-root">');
     expect(doc).toContain('"palettes":');
+    // Одноразовая метка окна в загрузочных данных
+    expect(doc).toContain('"nonce":"n0nce"');
   });
 
   it("закрывающий тег и HTML-комментарий в коде не ломают разбор страницы", () => {
-    expect(scriptText('var s = "</script><script>alert(1)</script>"; var c = "<!--";')).toBe('var s = "<\\/script><script>alert(1)<\\/script>"; var c = "<\\!--";');
+    expect(scriptText('var s = "</script><script>alert(1)</script>"; var c = "<!--";')).toBe('var s = "<\\/script><script>alert(1)<\\/script>"; var c = "<\\x21--";');
     expect(inlineJson({ q: "</script><b>" })).toBe('{"q":"\\u003c/script>\\u003cb>"}');
     const page = inlinePage('<!doctype html><html><head><meta http-equiv="refresh" content="0;url=https://example.com"><title>x</title><link rel="stylesheet" href="a.css"><link rel="icon" href="i.png"></head><body><p>Привет</p><script>var t = "<body>";</script><script src="a.js"></script></body></html>', {
       "a.js": "var x = '</script>';",
       "a.css": "p { color: red } </style>",
     });
     expect(page).toBe('<style>p { color: red } <\\/style></style><p>Привет</p><script>var t = "<body>";</script><script>var x = \'<\\/script>\';</script>');
+  });
+
+  it("замена «<!--» не меняет смысл кода: строка, регулярное выражение с флагом u и шаблон", () => {
+    const run = (code: string) => vm.runInNewContext(scriptText(code));
+    expect(scriptText("<!--")).not.toContain("<!--");
+    expect(run('"<!--"')).toBe("<!--");
+    expect(run("'a<!--b'")).toBe("a<!--b");
+    expect(run("/<!--/u.test('x<!--y')")).toBe(true);
+    expect(run("/^<!--$/.test('<!--')")).toBe(true);
+    expect(run("/[<!--]/u.test('!')")).toBe(true);
+    expect(run("`<!--${1 + 1}`")).toBe("<!--2");
+    expect(run('"</script>"')).toBe("</script>");
+    // Прежняя запись «<\\!--» в регулярном выражении с флагом u ломала код окна
+    expect(() => vm.runInNewContext("/<\\!--/u")).toThrow(/Invalid regular expression/);
   });
 });
 
@@ -182,10 +241,12 @@ describe("среда window.dash", () => {
   ];
 
   it("до данных всё загружается, после init наборы и расчёты готовы, расчёт один раз до смены данных", () => {
-    const w = fakeWindow({ link: "osago", params: { metric: "prem", bad: { x: 1 } }, theme: "light", palettes: MARKET_PALETTES });
-    // Вкладка из адреса стоит в location.hash до кода дашборда, окно просит данные
+    const w = fakeWindow({ link: "osago", params: { metric: "prem", bad: { x: 1 } }, theme: "light", palettes: MARKET_PALETTES, nonce: "n1" });
+    // Вкладка из адреса стоит в location.hash до кода дашборда, окно просит данные с меткой окна
     expect((w.win.location as { href: string }).href).toBe("about:srcdoc#osago");
-    expect(w.posted[0]).toEqual({ type: "ready" });
+    expect(w.posted[0]).toEqual({ type: "ready", nonce: "n1" });
+    // Метка остаётся только в среде: в загрузочных данных её больше нет
+    expect((w.win.__MARKET_BOOT__ as Record<string, unknown>).nonce).toBeUndefined();
     let calls = 0;
     w.dash.calc("total", { inputs: ["k_demo"], fn: (r: { cnt: number }[]) => (calls++, [{ cnt: r.reduce((s, x) => s + x.cnt, 0) }]) });
     expect(w.dash.data("total").status).toBe("loading");
@@ -207,8 +268,9 @@ describe("среда window.dash", () => {
     w.fromParent({ type: "init", version: 2, datasets: { k_demo: [{ cnt: 1 }] } });
     expect(w.dash.data("total").data).toEqual([{ cnt: 1 }]);
     expect(calls).toBe(2);
-    // Высота содержимого ушла родителю
-    expect(w.posted).toContainEqual({ type: "height", height: 481 });
+    // Высота содержимого ушла родителю, каждое сообщение с меткой окна
+    expect(w.posted).toContainEqual({ type: "height", height: 481, nonce: "n1" });
+    expect(w.posted.every((m) => m.nonce === "n1")).toBe(true);
   });
 
   it("ошибка в расчёте и ответ не списком дают error, остальное работает", () => {
@@ -228,7 +290,7 @@ describe("среда window.dash", () => {
   });
 
   it("фильтры сливаются, перерисовывают и уходят родителю; вкладка уходит родителю", () => {
-    const w = fakeWindow({ params: { gm: "cnt" } });
+    const w = fakeWindow({ params: { gm: "cnt" }, nonce: "n2" });
     let draws = 0;
     w.dash.onData(() => draws++);
     w.fromParent({ type: "init", version: 1, datasets: { k_demo: rows } });
@@ -237,11 +299,11 @@ describe("среда window.dash", () => {
     w.dash.setParams({ geo: "top4" });
     w.flush();
     expect(w.dash.params()).toEqual({ gm: "cnt", geo: "top4" });
-    expect(w.posted.filter((m) => m.type === "params")).toEqual([{ type: "params", params: { gm: "cnt", geo: "top4" } }]);
+    expect(w.posted.filter((m) => m.type === "params")).toEqual([{ type: "params", params: { gm: "cnt", geo: "top4" }, nonce: "n2" }]);
     expect(draws).toBe(2);
     w.dash.setLink("o-insurers");
     w.dash.setLink("javascript:alert(1)");
-    expect(w.posted.filter((m) => m.type === "link")).toEqual([{ type: "link", link: "o-insurers" }]);
+    expect(w.posted.filter((m) => m.type === "link")).toEqual([{ type: "link", link: "o-insurers", nonce: "n2" }]);
     expect((w.win.location as { href: string }).href).toBe("about:srcdoc#o-insurers");
   });
 
@@ -331,5 +393,68 @@ describe("пункт повестки", () => {
   it("пункт рынка в своём блоке первым", () => {
     expect(blockOf("market")).toBe("market");
     expect(AGENDA_BLOCKS[0]!.code).toBe("market");
+  });
+});
+
+describe("загрузка пакета мимо proxy", () => {
+  // Шаблон proxy так, как его собирает сам Next: загрузка пакета рынка идёт мимо proxy, остальное за входом
+  const [compiled] = getMiddlewareMatchers(proxyConfig.matcher, {});
+  const gated = new RegExp(compiled!.regexp);
+
+  it("обработчик загрузки исключён из proxy, данные рынка и страницы по-прежнему за входом", () => {
+    expect(gated.test("/api/market/upload")).toBe(false);
+    expect(gated.test("/api/market/upload/")).toBe(false);
+    for (const path of ["/api/market/data", "/api/market/uploads", "/api/market/upload-x", "/market", "/", "/me", "/api/events", "/settings"]) expect(gated.test(path), path).toBe(true);
+  });
+
+  it("предел тела для proxy по умолчанию: настройка убрана", () => {
+    const experimental = (nextConfig.experimental ?? {}) as Record<string, unknown>;
+    expect(experimental.proxyClientMaxBodySize).toBeUndefined();
+    expect(experimental.middlewareClientMaxBodySize).toBeUndefined();
+  });
+});
+
+describe("скрипт сборки пакета", () => {
+  const SCRIPT = join(process.cwd(), "scripts", "market-bundle.mjs");
+  const run = (args: string[]) => spawnSync(process.execPath, [SCRIPT, ...args], { encoding: "utf8" });
+  /** Выгрузка дашборда-артефакта с выдуманными цифрами во временной папке вне репозитория */
+  const exportDir = () => {
+    const root = mkdtempSync(join(tmpdir(), "market-export-"));
+    mkdirSync(join(root, "files"));
+    mkdirSync(join(root, "datasets"));
+    mkdirSync(join(root, "blobs"));
+    writeFileSync(join(root, "files", "index.html"), "<p>Проверка</p>");
+    writeFileSync(join(root, "datasets", "k_demo.json"), JSON.stringify({ title: "Проверка", source: { url: "/_blob/b1" } }));
+    writeFileSync(join(root, "blobs", "b1.json"), JSON.stringify([{ cnt: 1 }]));
+    writeFileSync(join(root, "d3.min.js"), "window.d3 = {};");
+    return root;
+  };
+
+  it("--out внутри репозитория не принимается, и через ссылку на папку тоже; вне репозитория пакет собирается", () => {
+    const src = exportDir();
+    try {
+      const inside = join(process.cwd(), "market-bundle-test.json");
+      const r1 = run([src, "--out", inside, "--d3", join(src, "d3.min.js")]);
+      expect(r1.status).toBe(1);
+      expect(r1.stderr).toContain("внутри репозитория");
+      expect(r1.stderr).toContain("цифры рынка не должны попасть в git");
+      expect(existsSync(inside)).toBe(false);
+      // Ссылка вне репозитория, ведущая в репозиторий
+      const link = join(src, "repo-link");
+      symlinkSync(process.cwd(), link);
+      const r2 = run([src, "--out", join(link, "tests", "market-bundle-test.json"), "--d3", join(src, "d3.min.js")]);
+      expect(r2.status).toBe(1);
+      expect(r2.stderr).toContain("внутри репозитория");
+      expect(existsSync(join(process.cwd(), "tests", "market-bundle-test.json"))).toBe(false);
+
+      const out = join(src, "bundle.json");
+      const ok = run([src, "--out", out, "--d3", join(src, "d3.min.js")]);
+      expect(ok.status, ok.stderr).toBe(0);
+      const b = parseBundle(readFileSync(out, "utf8"));
+      expect(Object.keys(b.files).sort()).toEqual(["d3.min.js", "index.html"]);
+      expect(b.rowsTotal).toBe(1);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
   });
 });

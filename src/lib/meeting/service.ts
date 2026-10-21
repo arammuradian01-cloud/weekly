@@ -24,7 +24,7 @@ import { mailConfigured, sendMail } from "@/lib/mail";
 import { initiativesForAgenda } from "@/lib/initiatives/service";
 import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
-import { marketAgendaDraft } from "@/lib/market/meeting";
+import { marketAgendaDraft, marketAgendaNoteNow } from "@/lib/market/meeting";
 import { canSeeMarket } from "@/lib/market/access";
 
 type Tx = Prisma.TransactionClient;
@@ -107,12 +107,17 @@ export function decisionDto(d: DecisionRow): DecisionView {
   };
 }
 
-function itemDto(i: MeetingRow["items"][number]): AgendaItemView {
+/**
+ * Пункт повестки для экрана. marketNote: подпись пункта рынка (этап 62), посчитанная для смотрящего при показе; у
+ * пункта рынка хранимая заметка не показывается никогда, без доступа к разделу подписи нет
+ */
+function itemDto(i: MeetingRow["items"][number], marketNote: string | null = null): AgendaItemView {
+  const note = i.kind === "MARKET" ? marketNote : i.note;
   return {
     id: i.id,
     kind: KIND_CODE[i.kind],
     title: i.title,
-    ...(i.note ? { note: i.note } : {}),
+    ...(note ? { note } : {}),
     sortOrder: i.sortOrder,
     auto: i.autoKey !== null,
     discussed: i.discussedAt !== null,
@@ -177,6 +182,10 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
   const { meeting } = await weekSettings();
   const key = isoFromDbDate(row.week.start);
   const slot = teamMeeting(key, a.node, meetingOf(key, meeting));
+  // Этап 62: кнопка «Открыть рынок» и подпись пункта рынка (от какого дня данные) только тем, кому открыт раздел.
+  // Подпись считается сейчас из текущего пакета: загрузили свежий, подпись уже новая
+  const canOpenMarket = await canSeeMarket({ personId: a.actor.personId, via: a.actor.via }, db);
+  const marketNote = canOpenMarket && row.items.some((i) => i.kind === "MARKET") ? await marketAgendaNoteNow(isoFromDbDate(row.date), db) : null;
   return {
     id: row.id,
     week: key,
@@ -195,12 +204,11 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
     ...(row.protocol ? { protocol: row.protocol } : {}),
     ...(row.protocolSentAt ? { protocolSentAt: row.protocolSentAt.toISOString() } : {}),
     ...(row.notionUrl ? { notionUrl: row.notionUrl } : {}),
-    items: row.items.map(itemDto),
+    items: row.items.map((i) => itemDto(i, marketNote)),
     decisions: row.decisions.map(decisionDto),
     participants: people.map((p) => p.slug as PersonSlug),
     canLead: canLead(a),
-    // Этап 62: кнопка «Открыть рынок» у пункта разбора рынка только тем, кому открыт раздел
-    canOpenMarket: await canSeeMarket({ personId: a.actor.personId, via: a.actor.via }, db),
+    canOpenMarket,
     version: row.updatedAt.toISOString(),
   };
 }

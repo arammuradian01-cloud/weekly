@@ -10,9 +10,14 @@
 // Библиотека графиков d3 берётся из node_modules/d3/dist/d3.min.js, иначе из пути --d3.
 //
 // Скрипт только читает файлы выгрузки как данные (JSON.parse) и ничего из них не запускает. Пакет с цифрами
-// в репозиторий не кладём: имя market-bundle*.json в .gitignore, путь задаётся явно.
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+// в репозиторий не кладём: путь --out внутри папки репозитория скрипт не принимает (и через ссылки на папки тоже),
+// имя market-bundle*.json вдобавок в .gitignore.
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/** Папка репозитория: на уровень выше папки scripts, где лежит этот скрипт */
+const REPO = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 
 const DATASET_NAME = /^[a-z0-9_]{1,40}$/;
 const FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}\.(html|js|css)$/;
@@ -35,6 +40,19 @@ function args(argv) {
   if (!out.dir) fail("укажите папку выгрузки: node scripts/market-bundle.mjs <папка> --out <файл.json> [--d3 <d3.min.js>]");
   if (!out.out) fail("укажите, куда сохранить пакет: --out <файл.json> (не в папку репозитория)");
   return out;
+}
+
+/** Файл пакета вне репозитория: настоящий путь папки (ссылки на папки раскрыты) не внутри REPO */
+function outsideRepo(out) {
+  const path = resolve(out);
+  const dir = dirname(path);
+  if (!existsSync(dir)) fail(`папки ${dir} нет: создайте её или укажите другую для --out`);
+  const real = join(realpathSync(dir), basename(path));
+  const rel = relative(REPO, real);
+  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+    fail(`--out ${path} внутри репозитория ${REPO}: цифры рынка не должны попасть в git. Сохраните пакет вне папки проекта, например в домашнюю папку`);
+  }
+  return real;
 }
 
 function readJson(path, what) {
@@ -78,6 +96,8 @@ function d3Source(explicit) {
 
 function main() {
   const opt = args(process.argv.slice(2));
+  // Куда сохранять, проверяется до чтения выгрузки
+  const out = outsideRepo(opt.out);
   const dir = resolve(opt.dir);
   const codeDir = [join(dir, "files2", "files"), join(dir, "files")].find((p) => existsSync(p));
   if (!codeDir) fail(`в папке ${dir} нет files2/files или files с кодом страницы`);
@@ -107,8 +127,8 @@ function main() {
   const text = JSON.stringify({ kind: "weekly-market-bundle", version: 1, files, datasets });
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_BYTES) fail(`пакет ${(bytes / 1024 / 1024).toFixed(1)} МБ, на ресурс загружается не больше 25 МБ`);
-  writeFileSync(resolve(opt.out), text);
-  console.log(`Пакет рынка собран: ${resolve(opt.out)}`);
+  writeFileSync(out, text);
+  console.log(`Пакет рынка собран: ${out}`);
   console.log(`Файлов кода ${Object.keys(files).length} (${Object.keys(files).join(", ")}), наборов ${Object.keys(datasets).length}, строк ${rowsTotal}, ${(bytes / 1024 / 1024).toFixed(1)} МБ`);
 }
 

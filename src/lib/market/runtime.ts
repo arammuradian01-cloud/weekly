@@ -10,7 +10,9 @@
 // - setParams сливает фильтры, перерисовывает через подписчиков onData и сообщает родителю: он пишет их в адрес;
 // - setLink сообщает родителю вкладку; при открытии окна вкладка из адреса ставится в location.hash до кода дашборда;
 // - высоту содержимого окно сообщает родителю ({type:"height"}), ResizeObserver следит за изменениями;
-// - смена ширины окна перерисовывает графики; тема приходит сообщением {type:"theme"}.
+// - смена ширины окна перерисовывает графики; тема приходит сообщением {type:"theme"};
+// - каждое сообщение родителю несёт одноразовую метку окна (nonce из __MARKET_BOOT__): родитель сверяет её и
+//   читает только свои сообщения; метка остаётся в замыкании среды, из загрузочных данных она убирается.
 // Родитель принимает сообщения только от этого окна и проверяет их схему. Окно без allow-same-origin: у него
 // непрозрачный источник, cookies и API приложения ему недоступны, сеть закрыта политикой CSP.
 //
@@ -21,6 +23,10 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
   "use strict";
   var doc = win.document;
   var boot = win.__MARKET_BOOT__ || {};
+  var nonce = typeof boot.nonce === "string" ? boot.nonce : "";
+  try {
+    delete boot.nonce;
+  } catch (e) {}
   var KEY = /^[A-Za-z0-9_]{1,40}$/;
   var LINK = /^[A-Za-z0-9_-]{1,60}$/;
   var palettes = boot.palettes || {};
@@ -58,6 +64,7 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
   var link = typeof boot.link === "string" && LINK.test(boot.link) ? boot.link : "";
 
   function post(msg) {
+    msg.nonce = nonce;
     try {
       win.parent.postMessage(msg, "*");
     } catch (e) {}

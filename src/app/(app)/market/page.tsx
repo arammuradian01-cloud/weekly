@@ -48,7 +48,7 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
         {upload ? <MarketUpload /> : null}
       </PageHeader>
       {meta ? (
-        <MarketFrame key={meta.etag} etag={meta.etag} initial={stateFromSearch(sp)} />
+        <MarketFrame key={meta.stamp} stamp={meta.stamp} initial={stateFromSearch(sp)} />
       ) : (
         <EmptyState icon={ChartLine} title="Данных рынка пока нет" centered className="mx-auto max-w-xl">
           {upload ? "Загрузите пакет рынка: один файл JSON с кодом дашборда и наборами данных. Новый пакет целиком заменяет прежний." : "Владелец ещё не загрузил пакет рынка. Когда загрузит, дашборд появится здесь."}

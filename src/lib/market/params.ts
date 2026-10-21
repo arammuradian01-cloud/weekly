@@ -69,10 +69,22 @@ export function searchFromState(state: MarketState): string {
 /** Сообщения окна дашборда родителю */
 export type FrameMessage = { type: "ready" } | { type: "height"; height: number } | { type: "params"; params: MarketParams } | { type: "link"; link: string };
 
-/** Сообщение из окна дашборда или null, если оно не по схеме */
-export function readFrameMessage(data: unknown): FrameMessage | null {
+/** Одноразовая метка окна: 128 случайных бит в шестнадцатеричном виде. Работает и без HTTPS (randomUUID там нет) */
+export function marketNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Сообщение из окна дашборда или null, если оно не по схеме. nonce: одноразовая метка, которую родитель положил в
+ * загрузочные данные этого окна (__MARKET_BOOT__); окно возвращает её в каждом сообщении. Без неё или с чужой меткой
+ * сообщение не читается
+ */
+export function readFrameMessage(data: unknown, nonce: string): FrameMessage | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const m = data as Record<string, unknown>;
+  if (!nonce || typeof m.nonce !== "string" || m.nonce !== nonce) return null;
   switch (m.type) {
     case "ready":
       return { type: "ready" };
@@ -91,4 +103,31 @@ export function readFrameMessage(data: unknown): FrameMessage | null {
     default:
       return null;
   }
+}
+
+/**
+ * Когда отдавать окну данные (init, мегабайты): один раз на каждое событие load у iframe. load приходит, когда
+ * документ окна разобран и его среда уже слушает сообщения. ready от окна данные не дублирует: в пределах одного load
+ * они уже ушли, а ready до первого load ждёт его. Каждая новая загрузка документа окна (новый srcdoc, перезагрузка
+ * изнутри) получает данные заново
+ */
+export function createInitGate() {
+  let loads = 0;
+  let sentFor = 0;
+  const take = () => {
+    if (loads === 0 || sentFor === loads) return false;
+    sentFor = loads;
+    return true;
+  };
+  return {
+    /** Событие load у iframe: true, если данные надо отправить */
+    load(): boolean {
+      loads++;
+      return take();
+    },
+    /** Сообщение ready от окна: true, только если в этом load данные ещё не уходили */
+    ready(): boolean {
+      return take();
+    },
+  };
 }
