@@ -7,6 +7,7 @@ import { runAction, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/forecast/service";
 import * as plan from "@/lib/plan/service";
 import * as processes from "@/lib/plan/processes";
+import * as hub from "@/lib/plan/hub-service";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import type { WeekKey } from "@/domain/types";
 import { TaskRuleError } from "@/lib/tasks/service";
@@ -84,4 +85,20 @@ export async function adjustPartnerAction(input: plan.PartnerAdjustInput): Promi
   const r = await runAction("Корректировка партнёра", (a) => numbers(a, () => processes.adjustPartner(a, input)));
   if (r.ok) revalidatePath("/forecast");
   return r;
+}
+
+// Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» на день и план ОСАГО по СК, ранрейт по СК
+
+export async function previewHubAction(): Promise<Result<hub.HubPreview>> {
+  return runAction("Проверка хаба", (a) => hub.previewHub(a));
+}
+
+export async function applyHubAction(): Promise<Result<{ day: string; snapshots: number; lines: number }>> {
+  const r = await runAction("Загрузка из хаба", (a) => hub.applyHub(a));
+  if (r.ok) revalidatePath("/forecast");
+  return r;
+}
+
+export async function setHubSourceAction(input: string): Promise<Result<string>> {
+  return runAction("Хаб данных", (a) => hub.setHubSource(a, input));
 }

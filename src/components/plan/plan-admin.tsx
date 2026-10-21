@@ -6,7 +6,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrototype } from "@/domain/store";
-import { applyFactsAction, applyPullAction, planPeopleAction, previewFactsAction, previewPullAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
+import { applyFactsAction, applyHubAction, applyPullAction, planPeopleAction, previewFactsAction, previewHubAction, previewPullAction, setHubSourceAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
+import type { HubPreview } from "@/lib/plan/hub-service";
 import type { FactsPreview } from "@/lib/plan/processes";
 import { FACT_METRICS } from "@/lib/plan/facts";
 import { addMonths, monthLabel } from "@/lib/forecast/codes";
@@ -451,6 +452,150 @@ export function FactsDrawer({ open, onOpenChange }: { open: boolean; onOpenChang
                 </table>
               </div>
             ) : null}
+          </div>
+        ) : null}
+      </div>
+    </Drawer>
+  );
+}
+
+// Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» на сегодня и план ОСАГО по СК. Два шага: проверить и загрузить
+
+export function HubDrawer({
+  open,
+  onOpenChange,
+  serviceEmail,
+  mode,
+  sourceId,
+  canSource,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  serviceEmail: string | null;
+  mode: "google" | "imitation" | "off";
+  sourceId: string;
+  canSource: boolean;
+}) {
+  const router = useRouter();
+  const { notify } = usePrototype();
+  const [preview, setPreview] = useState<HubPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"check" | "load" | null>(null);
+  const [source, setSource] = useState(sourceId);
+  const [link, setLink] = useState("");
+  const [sourceBusy, setSourceBusy] = useState(false);
+
+  const changeSource = async () => {
+    setError(null);
+    setSourceBusy(true);
+    const r = await setHubSourceAction(link);
+    setSourceBusy(false);
+    if (!r.ok) return setError(r.error);
+    setSource(r.value);
+    setLink("");
+    setPreview(null);
+    notify("Хаб данных задан");
+  };
+
+  const check = async () => {
+    setError(null);
+    setPreview(null);
+    setBusy("check");
+    const r = await previewHubAction();
+    setBusy(null);
+    if (!r.ok) return setError(r.error);
+    setPreview(r.value);
+  };
+
+  const load = async () => {
+    setError(null);
+    setBusy("load");
+    const r = await applyHubAction();
+    setBusy(null);
+    if (!r.ok) return setError(r.error);
+    notify(`Снимок «Все СК» на ${r.value.day.split("-").reverse().join(".")} загружен`);
+    onOpenChange(false);
+    setPreview(null);
+    router.refresh();
+  };
+
+  const n = (v: number | null) => (v === null ? "нет" : Math.round(v).toLocaleString("ru-RU"));
+
+  return (
+    <Drawer
+      open={open}
+      onOpenChange={onOpenChange}
+      wide
+      title="ОСАГО по СК из хаба"
+      description="Ресурс читает хаб «Единая воронка: данные» только на чтение: лист «Все СК» даёт факт по СК с начала месяца, лист плана по СК даёт план месяца из модели. Снимок делается на сегодня, повторная загрузка в тот же день его заменяет"
+      footer={
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => void check()} loading={busy === "check"} disabled={busy !== null} data-testid="plan-hub-check">
+            Проверить хаб
+          </Button>
+          <Button onClick={() => void load()} loading={busy === "load"} disabled={busy !== null || !preview?.ready} data-testid="plan-hub-load">
+            Загрузить
+          </Button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4 py-4">
+        <div className="flex flex-col gap-1 text-caption text-text-secondary">
+          <p>
+            Источник:{" "}
+            {source ? (
+              <a href={`https://docs.google.com/spreadsheets/d/${source}/edit`} target="_blank" rel="noreferrer" className="font-semibold text-link underline-offset-2 hover:underline" data-testid="plan-hub-link">
+                хаб «Единая воронка: данные»
+              </a>
+            ) : (
+              <span data-testid="plan-hub-link">хаб ещё не задан</span>
+            )}
+            . В хабе листы боевых файлов подтягиваются формулой IMPORTRANGE, руками там ничего не правят.
+          </p>
+          {mode === "google" && serviceEmail ? <p>Если не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на хаб.</p> : null}
+        </div>
+        {canSource ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <TextInput id="plan-hub-source" label="Таблица хаба" placeholder="Ссылка на Google-таблицу" value={link} onChange={(e) => setLink(e.target.value)} autoComplete="off" className="min-w-0 flex-1" />
+            <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy || !link.trim()} className="sm:shrink-0" data-testid="plan-hub-source-save">
+              Задать хаб
+            </Button>
+          </div>
+        ) : null}
+        {mode === "off" ? <p className="sv-alert sv-alert--warning">{source ? "Ключ служебного аккаунта Google не задан на сервере: хаб не прочитать." : "Хаб не задан: вставьте ссылку на таблицу «Единая воронка: данные»."}</p> : null}
+        <FormError message={error ?? undefined} />
+        {preview ? (
+          <div className="flex flex-col gap-3" data-testid="plan-hub-preview">
+            {preview.problems.length ? (
+              <div className="sv-alert sv-alert--danger" role="alert">
+                <p className="font-semibold">Загрузить нельзя</p>
+                <ul className="list-disc pl-5">
+                  {preview.problems.map((p) => (
+                    <li key={p}>{p}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="sv-alert sv-alert--success">
+                Всё читается. Снимок на {preview.day.split("-").reverse().join(".")}
+                {preview.replaces ? " заменит сегодняшний" : ""}.
+              </p>
+            )}
+            {preview.warnings.map((w) => (
+              <p key={w} className="text-caption text-warning-ink">
+                {w}
+              </p>
+            ))}
+            <dl className="grid gap-2 text-body sm:grid-cols-2">
+              <div className="rounded-card border border-border p-3">
+                <dt className="text-caption text-text-secondary">«Все СК»: факт по СК</dt>
+                <dd>{preview.vseSk ? `СК за текущий месяц: ${preview.vseSk.companies}, полисов с начала месяца: ${n(preview.vseSk.policiesMtd)}, месяцев на листе: ${preview.vseSk.months.length}` : "не прочитано"}</dd>
+              </div>
+              <div className="rounded-card border border-border p-3">
+                <dt className="text-caption text-text-secondary">План ОСАГО по СК</dt>
+                <dd>{preview.skPlan ? `СК: ${preview.skPlan.companies}, план полисов на месяц: ${n(preview.skPlan.planUnits)}, периодов: ${preview.skPlan.periods.length}` : "не прочитано"}</dd>
+              </div>
+            </dl>
           </div>
         ) : null}
       </div>
