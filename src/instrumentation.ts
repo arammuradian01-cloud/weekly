@@ -1,6 +1,8 @@
 // Запуск сервера: фоновые циклы.
 // - Выгрузка в Google-таблицу и забор из Bord (этапы 6 и 12). Выключается переменной SHEET_SYNC=off.
 // - Письма: адресные события, напоминания о сдаче, дайджест (этап 20). Выключается переменной MAIL_LOOP=off.
+// - Новости (этап 60): забор лент, уточнение, дайджесты новостей и очистка, свой цикл со своей арендой.
+//   Шлёт письма, поэтому выключается той же переменной MAIL_LOOP=off.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.SHEET_SYNC !== "off") {
@@ -10,5 +12,7 @@ export async function register() {
   if (process.env.MAIL_LOOP !== "off") {
     const { startMailLoop } = await import("./lib/letters/service");
     startMailLoop();
+    const { startNewsLoop } = await import("./lib/news/loop");
+    startNewsLoop();
   }
 }

@@ -135,10 +135,16 @@ export async function listInbox(personId: string, now = new Date(), viewer?: Sco
   return { items: [...bySubject.values()], snoozed: snoozed.filter((s) => !openSubjects.has(s.subject)).length };
 }
 
-/** Счётчик в меню: сколько предметов ждут */
+/**
+ * Тихие события (этап 60): дайджест новостей виден в «Мне» строкой, но не ждёт ответа. Его нет в счётчике меню
+ * и в «ждут вашего внимания» дайджеста к встрече и главной
+ */
+export const QUIET_KINDS: InboxKind[] = ["NEWS"];
+
+/** Счётчик в меню: сколько предметов ждут. Тихие события не считаются */
 export async function inboxCount(personId: string, now = new Date(), viewer?: ScopeSubject): Promise<number> {
-  if (viewer?.limited) return (await listInbox(personId, now, viewer)).items.length;
-  const subjects = await prisma.inboxEvent.groupBy({ by: ["subject"], where: open(personId, now, viewer) });
+  if (viewer?.limited) return (await listInbox(personId, now, viewer)).items.filter((i) => !QUIET_KINDS.includes(i.kind)).length;
+  const subjects = await prisma.inboxEvent.groupBy({ by: ["subject"], where: { AND: [open(personId, now, viewer), { kind: { notIn: QUIET_KINDS } }] } });
   return subjects.length;
 }
 

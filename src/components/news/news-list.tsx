@@ -1,5 +1,6 @@
 // Список новостей (этап 60): серверный компонент. Карточка: продукты, заголовок ссылкой на источник, источник и дата,
-// короткое описание. Группы по дню публикации по Москве: сегодня, вчера, дата
+// короткое описание. Группы по дню публикации по Москве: сегодня, вчера, дата.
+// Описание подписано честно: без Claude это начало анонса источника дословно, с Claude его короткий пересказ
 
 import { ExternalLink, Newspaper } from "lucide-react";
 import type { NewsItemView } from "@/lib/news/service";
@@ -7,6 +8,9 @@ import { moscowDate, type CalendarDate } from "@/lib/week";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
+
+/** Подпись описания: чьё оно */
+export const SUMMARY_LABELS: Record<NewsItemView["summaryBy"], string> = { source: "Начало анонса источника", claude: "Пересказ Claude" };
 
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
@@ -49,7 +53,12 @@ export function NewsCard({ item, labels, compact = false, now }: { item: NewsIte
           <span className="sr-only">, откроется на сайте источника</span>
         </a>
       </h3>
-      {item.summary && !compact ? <p className="text-body text-ink [overflow-wrap:anywhere]">{item.summary}</p> : null}
+      {item.summary && !compact ? (
+        <p className="text-body text-ink [overflow-wrap:anywhere]" data-testid="news-summary">
+          <span className="text-caption text-muted">{SUMMARY_LABELS[item.summaryBy]}: </span>
+          {item.summary}
+        </p>
+      ) : null}
     </article>
   );
 }

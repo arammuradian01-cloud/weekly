@@ -1,7 +1,7 @@
 "use client";
 
-// Дайджест новостей в профиле (этап 60): частота и продукты. По умолчанию продукты своего направления раз в неделю.
-// Сохраняется только при личном входе
+// Дайджест новостей в профиле (этап 60): частота и продукты. По умолчанию продукты своего направления раз в неделю,
+// без направления в карточке дайджест выключен. Сохраняется только при личном входе
 
 import { useState } from "react";
 import { saveNewsPrefsAction } from "@/app/(app)/news/actions";
@@ -48,7 +48,10 @@ export function NewsPrefsForm({
             <span className="text-body text-ink">{NEWS_FREQUENCY_LABELS[f]}</span>
           </label>
         ))}
-        <p className="text-small text-muted">Дайджест приходит утром по Москве в «Мне» и письмом, если почта настроена. Без новостей по вашим продуктам не приходит.</p>
+        <p className="text-small text-muted">
+          Дайджест приходит утром по Москве в «Мне» и письмом, если почта настроена. Без новостей по вашим продуктам не приходит. Пока вы не выбрали сами: с направлением в карточке раз в
+          неделю, без направления не присылать.
+        </p>
       </fieldset>
       <fieldset disabled={locked || busy || frequency === "off"} className="flex flex-col gap-2">
         <legend className="text-body font-medium text-ink">Какие продукты</legend>

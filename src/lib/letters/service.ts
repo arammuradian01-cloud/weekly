@@ -395,12 +395,7 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       const { repeatPass } = await import("@/lib/tasks/service");
       return { sent: await repeatPass(now), skipped: 0, failed: 0 };
     });
-    // Новости (этап 60): забор лент раз в час, уточнение через Claude после забора, дайджесты утром в своё окно
-    await safe("Новости", async () => {
-      const { newsPass } = await import("@/lib/news/service");
-      const r = await newsPass(now);
-      return r.digest;
-    });
+    // Новости (этап 60) идут своим циклом со своей арендой (src/lib/news/loop.ts): долгий забор лент не задерживает письма
     const reminders = await safe("Напоминания о сдаче", () => reminderPass(now));
     const digest = await safe("Дайджест", () => digestPass(now));
     const events = await safe("Письма о событиях", () => eventMailPass(now));

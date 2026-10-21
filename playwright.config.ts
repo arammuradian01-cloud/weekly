@@ -52,9 +52,10 @@ export default defineConfig({
       // есть файл ответа. Остальные страницы разбираются правилами, как без ключа Claude. Настоящие сервисы не вызываются
       NOTION_FAKE_DIR: "tests/fixtures/notion",
       ANTHROPIC_FAKE_DIR: "tests/fixtures/claude",
-      // Сервер e2e запущен с NODE_ENV=production: имитации Notion и Claude работают в нём только с этим флагом
+      // Сервер e2e запущен с NODE_ENV=production: имитации Notion, Claude и лент новостей работают в нём только с этим флагом
       WEEKLY_E2E: "1",
-      // Этап 60: ленты новостей из фикстур tests/fixtures/news вместо сети
+      // Этап 60: ленты новостей из фикстур tests/fixtures/news вместо сети. next start идёт с NODE_ENV=production,
+      // где фикстуры работают только вместе с WEEKLY_E2E=1: на боевом сервере случайный NEWS_FAKE ничего не включит
       NEWS_FAKE: "1",
     },
   },
