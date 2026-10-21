@@ -17,6 +17,7 @@ import { MonthPlan } from "@/components/plan/month-plan";
 import { PlanCompare } from "@/components/plan/plan-compare";
 import { Module } from "@/components/ui/data";
 import { compareVersions } from "@/lib/plan/processes";
+import { NUMBERS_CLOSED_TEXT, canSeeNumbers } from "@/lib/plan/access";
 
 export const metadata: Metadata = { title: "Прогноз" };
 
@@ -49,6 +50,17 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
     />
   );
   const actor = await currentActor();
+  // Этап 57: раздел видят все, цифры пока только департамент страхования и инвестиций и топ-команда
+  if (!(await canSeeNumbers(actor))) {
+    return (
+      <>
+        <PageHeader title="Прогноз" description="Прогноз месяца и цифры недели по продуктам" />
+        <div data-testid="forecast-closed">
+          <Module title="Прогноз по вашему направлению появится позже" description={NUMBERS_CLOSED_TEXT} />
+        </div>
+      </>
+    );
+  }
 
   if (compareTab) {
     const compare = await compareVersions(month, one(params.a), one(params.b));
