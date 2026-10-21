@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import { requireManagement } from "@/lib/auth";
+import { requireContext, requireManagement } from "@/lib/auth";
+import { ceoSentReports } from "@/lib/meeting/parse-service";
+import { CeoSentReport } from "@/components/ceo/ceo-sent";
 import { ceoDecisions, ceoReportHistory, getCeoReport, getWeekView } from "@/lib/weekly/service";
 import { promiseHistory, weekPromises } from "@/lib/weekly/promise-service";
 import { isWeekKey, shiftWeek, weekNumberOf } from "@/lib/weekly/weeks";
@@ -14,8 +16,21 @@ import { planAsOfWeek, planBrief, planMonthOfWeek } from "@/lib/plan/processes";
 export const metadata: Metadata = { title: "Отчёт CEO" };
 
 export default async function CeoReportPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
-  const ctx = await requireManagement(["OWNER", "ADMIN"], "/ceo-report");
   const { week } = await searchParams;
+  // Этап 61: CEO видит отправленные ему weekly только для чтения. Остальным без режима управления страница закрыта, как раньше
+  const base = await requireContext();
+  if (base.management?.role !== "OWNER" && base.management?.role !== "ADMIN") {
+    const sent = await ceoSentReports(base.person.id, isWeekKey(week) ? week : null);
+    if (sent) {
+      return (
+        <>
+          <PageHeader title="Отчёт CEO" description="Weekly, которые вам отправили из приложения по итогам встреч" />
+          <CeoSentReport view={sent} />
+        </>
+      );
+    }
+  }
+  const ctx = await requireManagement(["OWNER", "ADMIN"], "/ceo-report");
   // Отчёт CEO собирается из weekly топ-команды, какая бы команда ни была выбрана
   const audience = await topAudience();
   const view = await getWeekView(isWeekKey(week) ? week : null, new Date(), audience);

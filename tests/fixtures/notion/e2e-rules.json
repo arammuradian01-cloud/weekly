@@ -1,0 +1,251 @@
+{
+ "page": {
+  "object": "page",
+  "id": "3a4b5c6d-7e8f-40a1-b2c3-d4e5f6a7b8c9",
+  "properties": {
+   "Название": {
+    "id": "title",
+    "type": "title",
+    "title": [
+     {
+      "type": "text",
+      "text": {
+       "content": "Встреча топ-команды 20.10"
+      },
+      "plain_text": "Встреча топ-команды 20.10"
+     }
+    ]
+   }
+  }
+ },
+ "children": {
+  "3a4b5c6d-7e8f-40a1-b2c3-d4e5f6a7b8c9": [
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000003",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Итоги"
+       },
+       "plain_text": "Итоги"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000004",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Конверсия ОСАГО выросла до 12%"
+       },
+       "plain_text": "Конверсия ОСАГО выросла до 12%"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000005",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Партнёрский канал отстаёт от плана на 8%"
+       },
+       "plain_text": "Партнёрский канал отстаёт от плана на 8%"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000006",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Решения"
+       },
+       "plain_text": "Решения"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000007",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Решили: пилот КАСКО для такси запускаем в ноябре"
+       },
+       "plain_text": "Решили: пилот КАСКО для такси запускаем в ноябре"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000008",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Задачи"
+       },
+       "plain_text": "Задачи"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000009",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Логинова: прислать выгрузку по убыткам ВЗР до пятницы"
+       },
+       "plain_text": "Логинова: прислать выгрузку по убыткам ВЗР до пятницы"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000010",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Подготовить план пилота КАСКО для такси. Ответственный: Фатьянов"
+       },
+       "plain_text": "Подготовить план пилота КАСКО для такси. Ответственный: Фатьянов"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000011",
+    "type": "to_do",
+    "has_children": false,
+    "to_do": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Иванов: созвониться с СК по API"
+       },
+       "plain_text": "Иванов: созвониться с СК по API"
+      }
+     ],
+     "checked": false
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000012",
+    "type": "heading_2",
+    "has_children": false,
+    "heading_2": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Риски"
+       },
+       "plain_text": "Риски"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000013",
+    "type": "bulleted_list_item",
+    "has_children": false,
+    "bulleted_list_item": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Задержка данных от СК"
+       },
+       "plain_text": "Задержка данных от СК"
+      }
+     ]
+    }
+   },
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000001",
+    "type": "toggle",
+    "has_children": true,
+    "toggle": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Детали по рискам"
+       },
+       "plain_text": "Детали по рискам"
+      }
+     ]
+    }
+   }
+  ],
+  "3a4b5c6d-0000-4000-8000-000000000001": [
+   {
+    "object": "block",
+    "id": "3a4b5c6d-0000-4000-8000-000000000002",
+    "type": "paragraph",
+    "has_children": false,
+    "paragraph": {
+     "rich_text": [
+      {
+       "type": "text",
+       "text": {
+        "content": "Нужна помощь финансов с выгрузкой"
+       },
+       "plain_text": "Нужна помощь финансов с выгрузкой"
+      }
+     ]
+    }
+   }
+  ]
+ }
+}

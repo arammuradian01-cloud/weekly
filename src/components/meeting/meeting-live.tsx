@@ -44,9 +44,18 @@ import { NotionIntake } from "./notion-intake";
 
 const DECISIONS = "decisions";
 
-type Props = { view: WeekView; meeting: MeetingView | null; canLead: boolean; team: { id: string; name: string }; /** Цифры недели из недельного отчёта (этап 24): в шапке встречи, если выбраны */ numbers?: React.ReactNode };
+type Props = {
+  view: WeekView;
+  meeting: MeetingView | null;
+  canLead: boolean;
+  team: { id: string; name: string };
+  /** Цифры недели из недельного отчёта (этап 24): в шапке встречи, если выбраны */
+  numbers?: React.ReactNode;
+  /** Разбор встречи из Notion (этап 61): кнопка и прошлые разборы под шапкой */
+  notion?: React.ReactNode;
+};
 
-export function MeetingLive({ view, meeting: initial, canLead, team, numbers }: Props) {
+export function MeetingLive({ view, meeting: initial, canLead, team, numbers, notion }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const projector = params.get("screen") === "projector";
@@ -80,7 +89,7 @@ export function MeetingLive({ view, meeting: initial, canLead, team, numbers }: 
 
   if (!meeting) return null;
 
-  return <LiveBody view={view} meeting={meeting} canLead={meeting.canLead || canLead} projector={projector} busy={busy} run={run} me={me.slug} team={team} numbers={numbers} />;
+  return <LiveBody view={view} meeting={meeting} canLead={meeting.canLead || canLead} projector={projector} busy={busy} run={run} me={me.slug} team={team} numbers={numbers} notion={projector ? null : notion} />;
 }
 
 function Header({ view, team, meeting, projector, children }: { view: WeekView; team: { id: string; name: string }; meeting: MeetingView | null; projector: boolean; children?: React.ReactNode }) {
@@ -125,7 +134,7 @@ function Header({ view, team, meeting, projector, children }: { view: WeekView; 
 
 type Run = (fn: () => Promise<{ ok: true; value: MeetingView } | { ok: false; error: string }>, done?: string) => Promise<boolean>;
 
-function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode }) {
+function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers, notion }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode; notion?: React.ReactNode }) {
   const steps = useMemo(() => [...meeting.items.map((i) => i.id), DECISIONS], [meeting.items]);
   const leading = canLead && meeting.status === "live" && meeting.leader === me;
   // Участник идёт за ведущим, пока сам не перелистнёт. Ведущий всегда на своём пункте
@@ -229,6 +238,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       </Header>
       {/* Цифры недели после заголовка встречи (этап 47): на телефоне они стояли над названием встречи */}
       {numbers}
+      {notion}
 
       {meeting.status === "live" && !leading ? (
         <p className="flex flex-wrap items-center gap-3 sv-card sv-card--soft px-4 py-2 text-small text-ink">

@@ -177,7 +177,9 @@ model Person {
   weeks                  Week[]
   weeklyReports          WeeklyReport[]
   weeklyEntries          WeeklyEntry[]
-  ceoReports             CeoReport[]
+  ceoReports             CeoReport[]             @relation("CeoReportUpdatedBy")
+  /// Отчёты CEO, отправленные этим человеком (этап 61)
+  ceoReportsSent         CeoReport[]             @relation("CeoReportSentBy")
   loginLinks             LoginLink[]
   devices                DeviceSession[]
   pushSubscriptions      PushSubscription[]
@@ -227,6 +229,10 @@ model Person {
   initiatives            Initiative[]            @relation("InitiativeOwner")
   initiativesCreated     Initiative[]            @relation("InitiativeCreator")
   initiativeChanges      InitiativeChange[]
+  /// Разбор встречи из Notion (этап 61): кто запустил, кто отправил CEO, кто создал задачи
+  meetingParses          MeetingParse[]          @relation("MeetingParseCreator")
+  meetingParsesSent      MeetingParse[]          @relation("MeetingParseCeoSender")
+  meetingParsesTasks     MeetingParse[]          @relation("MeetingParseTasksCreator")
 
   @@map("people")
 }
@@ -865,8 +871,13 @@ model CeoReport {
   /// «Мои встречи недели» (этап 27): [{ title, text }], по 4-5 предложений на встречу от первого лица
   meetings    Json     @default("[]")
   updatedById String?
-  updatedBy   Person?  @relation(fields: [updatedById], references: [id])
+  updatedBy   Person?  @relation("CeoReportUpdatedBy", fields: [updatedById], references: [id])
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  /// Отправлен CEO (этап 61): только в приложении. Когда, кем и кому: [{ id, name }]. Пусто: ещё не отправляли
+  sentAt      DateTime? @db.Timestamptz(3)
+  sentById    String?
+  sentBy      Person?   @relation("CeoReportSentBy", fields: [sentById], references: [id], onDelete: SetNull)
+  sentTo      Json      @default("[]")
 
   @@map("ceo_reports")
 }
@@ -1558,6 +1569,8 @@ model Meeting {
 
   items     AgendaItem[]
   decisions Decision[]
+  /// Разборы заметки встречи из Notion (этап 61)
+  parses    MeetingParse[]
 
   @@unique([weekId, teamId])
   @@index([teamId, date])
@@ -1667,6 +1680,63 @@ model DecisionTask {
 
   @@id([decisionId, taskId])
   @@map("decision_tasks")
+}
+
+/// Разбор встречи из Notion (этап 61): идёт, готов к проверке или не получился
+enum MeetingParseStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+/// Кто разобрал текст встречи: Claude по API или запасные правила
+enum MeetingParseMethod {
+  AI
+  RULES
+}
+
+/// Разбор заметки встречи из Notion (этап 61). Ресурс читает страницу через внутреннюю интеграцию Notion, разбирает текст
+/// (Claude по API или правилами) и хранит итоги встречи, черновик weekly для CEO и черновики задач. Ведущий правит
+/// черновики, отправляет weekly CEO и создаёт задачи разом. Видят участники команды встречи
+model MeetingParse {
+  id               String              @id @default(cuid())
+  meetingId        String
+  meeting          Meeting             @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  notionUrl        String
+  notionPageId     String
+  /// Заголовок страницы Notion
+  title            String              @default("")
+  /// Текст страницы с заголовками и списками: по нему видно, что разбирали
+  pageText         String              @default("")
+  status           MeetingParseStatus  @default(PENDING)
+  method           MeetingParseMethod?
+  /// Модель Claude, если разбирал Claude
+  model            String?
+  /// Пояснение для экрана: почему разобрано правилами или почему не разобрано
+  note             String?
+  /// Итоги встречи, черновик weekly для CEO и черновики задач (src/lib/meeting/parse-types.ts)
+  result           Json                @default("{}")
+  createdById      String?
+  createdBy        Person?             @relation("MeetingParseCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  /// Начало последней попытки: зависший разбор после перезапуска сервера виден по нему
+  startedAt        DateTime            @default(now()) @db.Timestamptz(3)
+  finishedAt       DateTime?           @db.Timestamptz(3)
+  attempts         Int                 @default(0)
+  /// Weekly для CEO отправлен: когда и кем
+  ceoSentAt        DateTime?           @db.Timestamptz(3)
+  ceoSentById      String?
+  ceoSentBy        Person?             @relation("MeetingParseCeoSender", fields: [ceoSentById], references: [id], onDelete: SetNull)
+  /// Задачи созданы: повторное нажатие возвращает те же номера и ничего не создаёт
+  tasksCreatedAt   DateTime?           @db.Timestamptz(3)
+  tasksCreatedById String?
+  tasksCreatedBy   Person?             @relation("MeetingParseTasksCreator", fields: [tasksCreatedById], references: [id], onDelete: SetNull)
+  taskNumbers      Int[]               @default([])
+  decisionsCreated Int                 @default(0)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime            @updatedAt @db.Timestamptz(3)
+
+  @@index([meetingId, createdAt])
+  @@map("meeting_parses")
 }
 
 /// Подписка устройства на уведомления в браузере (этап 26). Живёт, пока жив личный вход на этом устройстве

@@ -7,7 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { canManagePeople } from "@/lib/admin/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { GoogleSheetsError, serviceAccountFromEnv } from "@/lib/sheet/google";
-import { PULL_EVERY_MS, PULL_RETRY_MS, bordConnection, serviceEmail } from "@/lib/sheet/runner";
+import { BORD_PULL_ON, PULL_EVERY_MS, PULL_RETRY_MS, bordConnection, bordPullOn, serviceEmail } from "@/lib/sheet/runner";
 import { BORD_TAB } from "./parse";
 import { pullState, runPull, type PullReport, type PullState } from "./pull";
 
@@ -49,6 +49,9 @@ export async function setBordSource(actor: Actor, input: string): Promise<{ id: 
       await tx.setting.upsert({ where: { key: "bord.sourceId" }, update: { value: id ?? Prisma.JsonNull }, create: { key: "bord.sourceId", value: id ?? Prisma.JsonNull } });
       // Другой Bord: прошлые значения полей к нему не относятся, первый забор возьмёт из него всё
       if (before && id) await tx.setting.deleteMany({ where: { key: { in: ["bord.snapshot", "bord.pull"] } } });
+      // Владелец сам вставил ссылку: забор по расписанию включается. Выключил забор: расписание тоже выключено (этап 61)
+      if (id) await tx.setting.upsert({ where: { key: BORD_PULL_ON }, update: { value: true }, create: { key: BORD_PULL_ON, value: true } });
+      else await tx.setting.deleteMany({ where: { key: BORD_PULL_ON } });
       await tx.auditLog.create({
         data: {
           action: "sync.bord",
@@ -77,6 +80,38 @@ export async function setBordSource(actor: Actor, input: string): Promise<{ id: 
   }
 }
 
+/**
+ * Забор по расписанию: включить или остановить, ссылка на Bord остаётся (этап 61). По умолчанию выключен: главное
+ * приложение. Только владелец, смена в журнале
+ */
+export async function setBordPull(actor: Actor, on: boolean): Promise<{ on: boolean }> {
+  requireOwner(actor);
+  const sourceId = await getSetting<string | null>("bord.sourceId", null);
+  if (on && !sourceId) fail("Сначала вставьте ссылку на Bord");
+  const before = await bordPullOn();
+  if (before === on) return { on };
+  await prisma.$transaction(async (tx) => {
+    if (on) await tx.setting.upsert({ where: { key: BORD_PULL_ON }, update: { value: true }, create: { key: BORD_PULL_ON, value: true } });
+    else await tx.setting.deleteMany({ where: { key: BORD_PULL_ON } });
+    await tx.auditLog.create({
+      data: {
+        action: "sync.bord",
+        actorId: actor.personId,
+        actorName: actor.fullName,
+        source: "APP",
+        entity: "sheet",
+        entityId: "bord",
+        field: "Забор задач из Bord по расписанию",
+        before: before ? "включён" : "выключен",
+        after: on ? "включён" : "выключен",
+        ip: actor.ip,
+        via: actor.via ?? null,
+      },
+    });
+  });
+  return { on };
+}
+
 /** «Забрать сейчас»: забор вне расписания, ошибка показывается сразу */
 export async function pullBordNow(actor: Actor): Promise<PullReport> {
   requireOwner(actor);
@@ -91,6 +126,8 @@ export async function pullBordNow(actor: Actor): Promise<PullReport> {
 export type BordStatus = {
   sourceId: string | null;
   connected: boolean;
+  /** Забор по расписанию включён (этап 61: по умолчанию выключен) */
+  auto: boolean;
   hasKey: boolean;
   serviceEmail: string | null;
   state: PullState;
@@ -100,12 +137,13 @@ export type BordStatus = {
 
 /** Всё про забор для страницы «Синхронизация» */
 export async function bordStatus(now = new Date()): Promise<BordStatus> {
-  const [sourceId, state, conn] = await Promise.all([getSetting<string | null>("bord.sourceId", null), pullState(), bordConnection()]);
+  const [sourceId, state, conn, auto] = await Promise.all([getSetting<string | null>("bord.sourceId", null), pullState(), bordConnection(), bordPullOn()]);
   const wait = state.ok === false ? PULL_RETRY_MS : PULL_EVERY_MS;
-  const nextAt = !conn ? null : state.lastAttemptAt ? new Date(Math.max(now.getTime(), new Date(state.lastAttemptAt).getTime() + wait)).toISOString() : now.toISOString();
+  const nextAt = !conn || !auto ? null : state.lastAttemptAt ? new Date(Math.max(now.getTime(), new Date(state.lastAttemptAt).getTime() + wait)).toISOString() : now.toISOString();
   return {
     sourceId,
     connected: conn !== null,
+    auto,
     hasKey: process.env.SHEET_FAKE === "1" || serviceAccountFromEnv() !== null,
     serviceEmail: serviceEmail(),
     state,
