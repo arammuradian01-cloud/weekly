@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, initials as personInitials, ownerName } from "@/domain/people";
+import { avatarPhoto, compactName, initials as personInitials, ownerName } from "@/domain/people";
 import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -366,7 +366,7 @@ export function TaskTable({
                           <span className="sv-cell-person text-text-secondary">Все лидеры</span>
                         ) : (
                           <span className="sv-cell-person min-w-0">
-                            <Avatar text={personInitials(t.owner)} name={ownerName(t.owner)} size="sm" />
+                            <Avatar text={personInitials(t.owner)} name={ownerName(t.owner)} size="sm" photo={avatarPhoto(t.owner)} />
                             <span className="truncate">{compactName(t.owner)}</span>
                           </span>
                         )}

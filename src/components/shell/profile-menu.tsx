@@ -9,7 +9,8 @@ import { endViewAsForLogoutAction, stopViewAsAction } from "@/app/actions/view-a
 import { markTabSelf, openViewAs } from "./view-as";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
-import { avatarTone } from "@/components/ui/primitives";
+import { AvatarImage, avatarTone } from "@/components/ui/primitives";
+import type { AvatarPhoto } from "@/domain/people";
 import { forgetThisDevice } from "@/lib/offline/sign-out";
 import { usePrototype } from "@/domain/store";
 
@@ -29,6 +30,8 @@ type Props = {
   /** Короткое имя владельца, который смотрит: при выходе из ресурса отправляются и стираются его черновики */
   ownerSlug?: string | null;
   tone?: "dark" | "light";
+  /** Фото профиля (этап 80): без него инициалы */
+  photo?: AvatarPhoto | null;
 };
 
 function initials(fullName: string) {
@@ -39,7 +42,7 @@ function initials(fullName: string) {
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
 const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark", photo = null }: Props) {
   const [pending, startTransition] = useTransition();
   const { me, notify } = usePrototype();
   const dark = tone === "dark";
@@ -55,6 +58,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
       >
         <span className={cn("sv-avatar relative", `sv-avatar--${avatarTone(fullName)}`)} aria-hidden="true">
           {initials(fullName)}
+          {photo ? <AvatarImage photo={photo} size="small" /> : null}
           {/* На телефоне в шапке видна только аватарка: значок глаза говорит, что идёт просмотр (этап 63) */}
           {viewing ? (
             <span className={cn("absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-navy text-white ring-2 ring-surface", tone === "light" ? "sm:hidden" : "hidden")} data-testid="view-as-badge">

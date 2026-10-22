@@ -9,6 +9,7 @@ import { ArrowLeft, CalendarClock, Pencil, UserCog, UserPlus } from "lucide-reac
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/primitives";
+import { avatarPhoto } from "@/domain/people";
 import { PersonName, initialsOf } from "@/components/people/person-card";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { cancelRequestAction, removeMemberAction } from "@/app/(app)/people/teams/actions";
@@ -28,7 +29,7 @@ function MemberRow({ person, role, external, busy, onRemove }: { person: TeamPer
   const where = [person.position, person.unit].filter(Boolean).join(", ");
   return (
     <li className="flex items-center gap-3 py-2.5" data-testid={`member-${person.slug}`}>
-      <Avatar text={initialsOf(person.fullName)} name={person.fullName} size="sm" />
+      <Avatar text={initialsOf(person.fullName)} name={person.fullName} size="sm" photo={avatarPhoto(person.slug)} />
       <div className="min-w-0 flex-1">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-body text-ink">
           <PersonName slug={person.slug} name={person.fullName} className="font-medium" />

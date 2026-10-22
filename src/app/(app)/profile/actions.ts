@@ -1,6 +1,6 @@
 "use server";
 
-// Профиль: свои устройства и «выйти везде» (этап 9)
+// Профиль: свои устройства и «выйти везде» (этап 9), фото и «О себе» (этап 80)
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -8,12 +8,13 @@ import { baseUrl, clearSession, readSession, requestUserAgent } from "@/lib/auth
 import { createFeed, feedUrl, revokeFeed, setFeedTitles } from "@/lib/calendar/service";
 import { changePassword } from "@/lib/login/password";
 import { cancelEmailBinding, requestEmailBinding } from "@/lib/login/email";
-import { runAction } from "@/lib/action-runner";
+import { runAction, runRead } from "@/lib/action-runner";
 import { revokeAllDevices, revokeDevice } from "@/lib/login/service";
 import { removeAbsence, setAbsence } from "@/lib/weekly/service";
 import type { WeekKey } from "@/domain/types";
 import { saveMailPrefs } from "@/lib/letters/service";
 import { removeSubscription, removeSubscriptionById, savePushPrefs, saveSubscription, sendTestPush, syncSubscription } from "@/lib/push/service";
+import { personProfile, removePhoto, saveAbout } from "@/lib/profile/service";
 
 export async function revokeDeviceAction(id: string) {
   const session = await readSession();
@@ -135,4 +136,26 @@ export async function cancelEmailBindingAction() {
   const result = await runAction("Рабочая почта", (a) => cancelEmailBinding(a));
   if (result.ok) revalidatePath("/profile");
   return result;
+}
+
+// ---------- Фото и «О себе» (этап 80). Сам человек при личном входе или владелец в режиме управления ----------
+// Загрузка фото идёт обработчиком /api/profile/photo: у серверного действия предел тела 1 МБ
+
+/** Убрать фото: снова инициалы. person: чьё (владелец в режиме управления), без него своё */
+export async function removePhotoAction(person?: string | null) {
+  const result = await runAction("Фото профиля", (a) => removePhoto(a, typeof person === "string" ? person : null));
+  if (result.ok) revalidatePath("/", "layout");
+  return result;
+}
+
+/** «О себе», «Чем могу помочь коллегам» и Telegram */
+export async function saveAboutAction(person: string | null, input: unknown) {
+  const result = await runAction("О себе", (a) => saveAbout(a, typeof person === "string" ? person : null, input));
+  if (result.ok) revalidatePath("/", "layout");
+  return result;
+}
+
+/** Карточка человека: фото и «О себе». Только чтение: работает и в режиме «Смотреть как» */
+export async function personProfileAction(slug: string) {
+  return runRead("Карточка человека", () => personProfile(String(slug ?? "")));
 }

@@ -3,7 +3,7 @@
 import { cn } from "@/lib/cn";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { compactName, initials } from "@/domain/people";
+import { avatarPhoto, compactName, initials } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
 import type { Comment, PersonSlug, ReactionCode } from "@/domain/types";
 import { Avatar } from "@/components/ui/primitives";
@@ -64,7 +64,7 @@ export function CommentList({
         const editable = !readOnly && canEditComment(c, me, now);
         return (
           <li key={c.id} className={cn("sv-comment", mine && "sv-comment--mine")}>
-            <Avatar text={initials(c.author)} name={c.author} />
+            <Avatar text={initials(c.author)} name={c.author} photo={avatarPhoto(c.author)} />
             <div className="min-w-0 flex-1">
               <p className="sv-comment__head">
                 <span className="sv-comment__author">{compactName(c.author)}</span>

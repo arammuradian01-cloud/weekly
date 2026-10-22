@@ -13,7 +13,8 @@ export const PEOPLE: Person[] = [
   { slug: "cheychenets", fullName: "Чейченец Евгений", shortName: "Евгений Ч.", role: "LEADER", zone: "Депозиты и инвестиции", direction: "deposits" },
 ];
 
-export type PersonEntry = Person & { active: boolean; position?: string | null };
+/** avatar: версия фото профиля (этап 80) или null, если фото нет: тогда инициалы */
+export type PersonEntry = Person & { active: boolean; position?: string | null; avatar?: number | null };
 
 const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
 
@@ -21,7 +22,7 @@ const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
 export function applyPeople(list: PersonEntry[]) {
   if (!list.length) return;
   ALL_PEOPLE.splice(0, ALL_PEOPLE.length, ...list);
-  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, position: _position, ...p }) => p));
+  PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, position: _position, avatar: _avatar, ...p }) => p));
 }
 
 /** Включённые люди из списка слагов в порядке из настроек: люди выбранной команды (этап 14) */
@@ -59,6 +60,20 @@ export function compactName(slug: PersonSlug): string {
 export function initials(slug: PersonSlug): string {
   const [last, first] = personOf(slug).fullName.split(" ");
   return first ? `${first.charAt(0)}${last!.charAt(0)}` : last!.slice(0, 2);
+}
+
+/** Фото профиля для аватара (этап 80): короткое имя и версия, или null, если фото нет */
+export type AvatarPhoto = { slug: string; version: number };
+
+export function avatarPhoto(slug: PersonSlug | null | undefined): AvatarPhoto | null {
+  if (!slug) return null;
+  const version = ALL_PEOPLE.find((p) => p.slug === slug)?.avatar;
+  return typeof version === "number" ? { slug, version } : null;
+}
+
+/** Адрес картинки: крупная 256 для карточки и больших аватаров, мелкая 64 для списков */
+export function avatarSrc(photo: AvatarPhoto, size: "large" | "small"): string {
+  return `/api/avatar/${encodeURIComponent(photo.slug)}?v=${photo.version}${size === "small" ? "&size=64" : ""}`;
 }
 
 export function isPersonSlug(value: string | null | undefined): value is PersonSlug {

@@ -11,6 +11,7 @@ import { Avatar, Segmented, TextInput } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
 import { PersonDetails, initialsOf, reportsText } from "@/components/people/person-card";
+import { avatarPhoto } from "@/domain/people";
 import { plural } from "@/domain/dates";
 import { groupReports, unitTitle, type ReportGroup } from "@/lib/org/tree-groups";
 
@@ -259,7 +260,7 @@ function UnitBlock({ group, depth, tree, me, onOpen }: { group: ReportGroup; dep
 function TreePersonButton({ person: p, me, onOpen }: { person: TreePerson; me: string; onOpen: (slug: string) => void }) {
   return (
     <button type="button" className={cn("sv-person", p.reports.length > 0 && "sv-person--lead")} onClick={() => onOpen(p.slug)} aria-label={`${p.fullName}${p.position ? `, ${p.position}` : ""}. ${reportsText(p)}`} data-testid={`person-${p.slug}`}>
-      <Avatar text={initialsOf(p.fullName)} name={p.fullName} />
+      <Avatar text={initialsOf(p.fullName)} name={p.fullName} photo={avatarPhoto(p.slug)} />
       <span className="sv-person__body">
         <span className="sv-person__name">
           {p.fullName}

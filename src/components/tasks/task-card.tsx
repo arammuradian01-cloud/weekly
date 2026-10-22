@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, MoreHorizontal, Pencil, History as HistoryIcon } from "lucide-react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { usePrototype } from "@/domain/store";
-import { authorName, compactName, ownerName, personOf } from "@/domain/people";
+import { authorName, avatarPhoto, compactName, ownerName, personOf } from "@/domain/people";
 import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort, plural } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
@@ -118,7 +118,7 @@ export function TaskCard({
     <dl className={cn("grid gap-x-6 gap-y-5", standalone ? "grid-cols-1" : "sm:grid-cols-2")}>
       <Meta label="Ответственный">
         <span className="inline-flex items-center gap-2">
-          {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" /> : null}
+          {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" photo={avatarPhoto(task.owner)} /> : null}
           {ownerName(task.owner)}
         </span>
       </Meta>

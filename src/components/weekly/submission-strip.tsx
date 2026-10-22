@@ -5,7 +5,8 @@ import type { PersonWeekly } from "@/domain/types";
 import type { WeeklyStateCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
 import { substituteText } from "./absence";
-import { avatarTone } from "@/components/ui/primitives";
+import { AvatarImage, avatarTone } from "@/components/ui/primitives";
+import { avatarPhoto } from "@/domain/people";
 import { initialsOf } from "@/components/people/person-card";
 
 // Точка состояния на аватаре, как в дизайн-системе (weekly/SubmissionBar.jsx)
@@ -51,12 +52,15 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
           // Слово спрятано только у сдавших вовремя: опоздание, черновик и «не начат» видны словом, не одной точкой
           const sentNow = state === "submitted";
           const word = away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`;
+          // Фото профиля (этап 80) поверх инициалов, точка состояния поверх фото
+          const photo = avatarPhoto(person.slug);
           return (
             // Этап 50: не начавшие и отсутствующие приглушены серой точкой и цветом имени, а не прозрачностью строки:
             // слово «не начат» при 70% прозрачности падало ниже 3:1 на белом, инициалы ниже 4,5:1
             <li key={person.slug} className="inline-flex items-center gap-2 text-small" title={`${person.shortName}: ${word}`}>
               <span className={cn("sv-avatar sv-avatar--sm", `sv-avatar--${avatarTone(person.fullName)}`)} aria-hidden="true">
                 {initialsOf(person.fullName)}
+                {photo ? <AvatarImage photo={photo} size="small" /> : null}
                 <span className={cn("sv-avatar__status", away ? "sv-avatar__status--neutral" : DOT[state])} />
               </span>
               <span className={cn("font-semibold", away || state === "not-started" ? "text-text-secondary" : "text-ink")}>{person.shortName}</span>

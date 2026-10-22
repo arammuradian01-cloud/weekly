@@ -156,6 +156,13 @@ model Person {
   /// Дайджест новостей (этап 60): { frequency: daily | weekly | off, directions: коды продуктов или null }. Нет ключа: по умолчанию
   /// (с направлением в карточке раз в неделю продукты направления, без направления не присылать)
   newsPrefs           Json            @default("{}")
+  /// «О себе» (этап 80): до 500 знаков, видят все коллеги в карточке человека. Меняет сам человек при личном входе
+  /// или владелец в режиме управления
+  about               String?
+  /// «Чем могу помочь коллегам» (этап 80): до 300 знаков
+  helpWith            String?
+  /// Ник в Telegram без @ (этап 80): 5-32 знака, латиница, цифры и подчёркивание. В карточке ссылка https://t.me/<ник>
+  telegram            String?
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
 
@@ -238,8 +245,31 @@ model Person {
   meetingParsesStarted   MeetingParse[]          @relation("MeetingParseStarter")
   meetingParsesSent      MeetingParse[]          @relation("MeetingParseCeoSender")
   meetingParsesTasks     MeetingParse[]          @relation("MeetingParseTasksCreator")
+  /// Фото профиля (этап 80): отдельная таблица, чтобы списки людей не тянули картинки
+  avatar                 PersonAvatar?
 
   @@map("people")
+}
+
+/// Фото профиля (этап 80). Картинки уже готовые: квадрат по центру 256×256 и копия 64×64 в WebP, без EXIF и геопозиции.
+/// Хранятся только в базе: диск контейнера у хостинга временный. Строка остаётся и после «Убрать фото» (картинки null,
+/// bytes 0): версия растёт дальше и не повторяется, иначе браузер показал бы из кэша прежнее фото с той же версией
+model PersonAvatar {
+  personId    String   @id
+  person      Person   @relation(fields: [personId], references: [id], onDelete: Cascade)
+  /// Растёт с каждой загрузкой и удалением: адрес картинки /api/avatar/<slug>?v=<версия>, браузер держит её по версии
+  version     Int      @default(1)
+  /// 256×256 WebP: карточка человека и крупные аватары. null: фото убрано
+  large       Bytes?
+  /// 64×64 WebP: мелкие аватары в списках
+  small       Bytes?
+  /// Сколько байт занимают обе картинки; 0: фото нет
+  bytes       Int      @default(0)
+  /// Кто загрузил или убрал последним: сам человек или владелец
+  updatedById String?
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("person_avatars")
 }
 
 /// Все справочники: направления, блоки, типы записей, статусы, приоритеты, состояния.

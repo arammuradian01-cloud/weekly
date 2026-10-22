@@ -81,6 +81,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Состояние просмотра для остальных вкладок этого браузера: сменилось, и вкладка с прежним состоянием перезагружается
   const viewAsState = viewAsTabState({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null });
 
+  // Фото профиля (этап 80): версия из снимка людей, без неё инициалы. В просмотре фото выбранного человека
+  const myAvatar = registry.people.find((p) => p.slug === ctx.person.slug)?.avatar;
   const profile = {
     fullName: ctx.person.fullName,
     shortName: ctx.person.shortName,
@@ -94,6 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     canViewAs: viewAsOpen,
     viewing: !!viewAs,
     ownerSlug: viewAs?.ownerSlug ?? null,
+    photo: typeof myAvatar === "number" ? { slug: ctx.person.slug, version: myAvatar } : null,
   };
 
   return (

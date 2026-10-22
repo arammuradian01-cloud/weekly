@@ -55,7 +55,9 @@ export async function proxy(request: NextRequest) {
 // Загрузка пакета рынка (этап 62, /api/market/upload) и пакета наполнения (этап 67, /api/content-import) идёт мимо
 // proxy: для запросов с телом Next копит всё тело в памяти до вызова proxy и обработчика, а пакет бывает до 25 МБ и
 // 5 МБ. Вход, права, адрес страницы и размер обработчик проверяет сам до чтения тела. Обновлять cookie сессии на этом
-// POST не нужно: proxy делает это только на GET
+// POST не нужно: proxy делает это только на GET.
+// Этап 80: загрузка фото профиля (/api/profile/photo, до 10 МБ) по той же причине, а отдача фото (/api/avatar/...)
+// потому, что без входа она отвечает отказом 401, а не переходом на экран входа; вход проверяет обработчик
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/|icons/|manifest.webmanifest|sw.js|offline.html|api/market/upload/?$|api/content-import/?$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/|icons/|manifest.webmanifest|sw.js|offline.html|api/market/upload/?$|api/content-import/?$|api/profile/photo/?$|api/avatar/).*)"],
 };
