@@ -46,10 +46,10 @@ async function othersTask(): Promise<number> {
   return rows[0]!.number as number;
 }
 
-/** Две открытые задачи Фатьянова из выгрузки Bord: их он ведёт сам */
+/** Две открытые задачи Фатьянова из выгрузки Bord: их он ведёт сам. Первые две в списке «Мои задачи» (по сроку): видны без прокрутки */
 async function ownTasks(): Promise<[number, number]> {
   const rows = await sql(
-    `SELECT number FROM tasks WHERE "ownerId" = (SELECT id FROM people WHERE slug = 'fatyanov') AND status IN ('IN_PROGRESS', 'CLARIFY') AND "archivedAt" IS NULL ORDER BY number LIMIT 2`,
+    `SELECT number FROM tasks WHERE "ownerId" = (SELECT id FROM people WHERE slug = 'fatyanov') AND status IN ('IN_PROGRESS', 'CLARIFY') AND "archivedAt" IS NULL ORDER BY due, number LIMIT 2`,
   );
   expect(rows.length, "у Фатьянова в выгрузке две открытые задачи").toBe(2);
   return [rows[0]!.number as number, rows[1]!.number as number];
@@ -57,15 +57,21 @@ async function ownTasks(): Promise<[number, number]> {
 
 const goalOf = async (number: number) => ((await sql(`SELECT "goalId" FROM tasks WHERE number = $1`, [number]))[0]!.goalId as string | null) ?? null;
 
-/** Перетаскивание мышью: dnd-kit начинает после сдвига на 6 точек */
-async function drag(page: Page, from: Locator, to: Locator) {
+/**
+ * Перетаскивание мышью: dnd-kit начинает после сдвига на 6 точек. Перетаскивание началось, когда диктор сказал «Взяли»
+ * (taken: что именно взяли). Отпускаем, только когда цель уже под задачей («Над: …»): иначе отпускание могло бы
+ * опередить перерисовку и уйти мимо цели
+ */
+async function drag(page: Page, from: Locator, to: Locator, over: string, taken: string | RegExp = /^Взяли: /) {
   await from.scrollIntoViewIfNeeded();
   const a = (await from.boundingBox())!;
   await page.mouse.move(a.x + 8, a.y + a.height / 2);
   await page.mouse.down();
   await page.mouse.move(a.x + 30, a.y + a.height / 2, { steps: 5 });
+  await expect(page.getByText(taken)).toBeAttached();
   const b = (await to.boundingBox())!;
   await page.mouse.move(b.x + b.width / 2, b.y + Math.min(b.height / 2, 30), { steps: 15 });
+  await expect(page.getByText(`Над: ${over}`)).toBeAttached();
   await page.mouse.up();
 }
 
@@ -114,7 +120,7 @@ test("лидер перетаскивает задачи к целям: прив
   // Одна задача мышью на цель: тост сразу, связь в базе
   await search(page, String(a));
   await expect(page.getByTestId(`link-task-${a}`)).toBeVisible();
-  await drag(page, page.getByTestId(`drag-task-${a}`), d1);
+  await drag(page, page.getByTestId(`drag-task-${a}`), d1, `цель «${name(D1)}»`, new RegExp(`^Взяли: задача ${a},`));
   await expect(status).toContainText(`Задача ${a} привязана к цели «${name(D1)}»`);
   await expect.poll(() => goalOf(a)).toBe(D1.id);
   // В «Без цели» задачи больше нет
@@ -144,7 +150,9 @@ test("лидер перетаскивает задачи к целям: прив
   await page.getByLabel(`Отметить задачу ${b}`, { exact: true }).check();
   await expect(page.getByTestId("link-selection")).toContainText("Отмечено 2 задачи");
   await shot(page, "selected");
-  await drag(page, page.getByTestId(`drag-task-${b}`), d1);
+  // Обе строки и цель видны без прокрутки страницы: тянем вторую отмеченную, диктор говорит, что взяли обе
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await drag(page, page.getByTestId(`drag-task-${b}`), d1, `цель «${name(D1)}»`, /^Взяли: отмеченные задачи, 2\./);
   await expect(status).toContainText(`2 задачи привязаны к цели «${name(D1)}»`);
   await expect.poll(() => goalOf(a)).toBe(D1.id);
   await expect.poll(() => goalOf(b)).toBe(D1.id);
@@ -156,14 +164,14 @@ test("лидер перетаскивает задачи к целям: прив
   await expect(d1.getByTestId(`link-goal-task-${a}`)).toBeVisible();
   await expect(d1.getByTestId(`link-goal-task-${b}`)).toBeVisible();
   await shot(page, "goal-open");
-  await drag(page, d1.getByTestId(`drag-goal-task-${a}`), d2);
+  await drag(page, d1.getByTestId(`drag-goal-task-${a}`), d2, `цель «${name(D2)}»`, new RegExp(`^Взяли: задача ${a},`));
   await expect(status).toContainText(`Задача ${a} привязана к цели «${name(D2)}»`);
   await expect.poll(() => goalOf(a)).toBe(D2.id);
   await expect(d1.getByTestId(`link-goal-task-${a}`)).toHaveCount(0);
 
   // В «Без цели» задача отвязывается
   await d2.getByRole("button", { name: new RegExp(`^Задачи 1, цель «${D2.code}`) }).click();
-  await drag(page, d2.getByTestId(`drag-goal-task-${a}`), page.getByTestId("link-none"));
+  await drag(page, d2.getByTestId(`drag-goal-task-${a}`), page.getByTestId("link-none"), "без цели, цель снимется");
   await expect(status).toContainText(`Задача ${a} отвязана от цели`);
   await expect.poll(() => goalOf(a)).toBeNull();
 
@@ -234,6 +242,7 @@ test("колонка целей длиннее экрана: задача дое
   await expect.poll(() => column.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2), { timeout: 15_000 }).toBe(true);
   const target = (await page.getByTestId(`link-goal-${last.id}`).boundingBox())!;
   await page.mouse.move(target.x + target.width / 2, target.y + Math.min(target.height / 2, 30), { steps: 8 });
+  await expect(page.getByText(`Над: цель «${name(last)}»`)).toBeAttached();
   await page.mouse.up();
   await expect(status).toContainText(`Задача ${a} привязана к цели «${name(last)}»`);
   await expect.poll(() => goalOf(a)).toBe(last.id);
@@ -254,6 +263,7 @@ test("колонка целей длиннее экрана: задача дое
   await expect.poll(() => column.evaluate((el) => el.scrollTop)).toBe(0);
   const first = (await page.getByTestId(`link-goal-${D1.id}`).boundingBox())!;
   await page.mouse.move(first.x + first.width / 2, first.y + Math.min(first.height / 2, 30), { steps: 8 });
+  await expect(page.getByText(`Над: цель «${name(D1)}»`)).toBeAttached();
   await page.mouse.up();
   await expect(status).toContainText(`Задача ${b} привязана к цели «${name(D1)}»`);
   await expect.poll(() => goalOf(b)).toBe(D1.id);
