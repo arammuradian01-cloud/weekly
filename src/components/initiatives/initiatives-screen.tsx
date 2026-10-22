@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/overlays";
-import { markSeenAction } from "@/app/(app)/me/actions";
+import { markSeenAction } from "@/app/actions/inbox";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 import { Figures } from "@/components/ui/data";

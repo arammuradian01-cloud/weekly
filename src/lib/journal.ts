@@ -172,6 +172,11 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     // Этап 67: импорт наполнения и решения, загруженные без встречи
     if (entity === "content") return `Импорт наполнения${id ? `: ${id}` : ""}`;
     if (entity === "decision") return "Решение";
+    // Этап 76: раздел удалён вместе с данными. Старые записи о встречах один на один (если попадутся) читаются словами,
+    // без ссылки на страницу, которой больше нет
+    if (entity === "one-on-one" || action.startsWith("oneOnOne.") || action.startsWith("one-on-one.")) {
+      return action === "system.oneOnOne.removed" ? (AUDIT_ACTION_LABELS[action] ?? action) : "Встреча один на один (раздел удалён)";
+    }
     if (entity === "export") return "Выгрузка в Excel";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";

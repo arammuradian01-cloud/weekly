@@ -14,7 +14,7 @@ import type { HistoryItem, Task } from "@/domain/types";
 import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, setTaskStartAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { CommentList } from "@/components/discuss/comment-list";
 import { MentionArea } from "@/components/discuss/mention-area";
-import { markSeenAction } from "@/app/(app)/me/actions";
+import { markSeenAction } from "@/app/actions/inbox";
 import { teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";

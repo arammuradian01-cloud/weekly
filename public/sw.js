@@ -95,20 +95,21 @@ self.addEventListener("push", (event) => {
   }
   const title = data.title || "Weekly";
   const options = {
-    body: data.body || "Новое событие в «Мне»",
+    body: data.body || "Новое событие ждёт вас на «Моей неделе»",
     tag: data.tag || "inbox",
     renotify: true,
     icon: "/icons/icon-192.png",
     badge: "/icons/badge-96.png",
     lang: "ru",
-    data: { url: data.url || "/me" },
+    // Этап 76: раздела «Мне» нет, очередь «Ждёт вас» на «Моей неделе»
+    data: { url: data.url || "/#me-queue" },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/me", self.location.origin);
+  const target = new URL((event.notification.data && event.notification.data.url) || "/#me-queue", self.location.origin);
   if (target.origin !== self.location.origin) return;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {

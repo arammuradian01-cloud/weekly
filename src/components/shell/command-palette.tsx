@@ -7,7 +7,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Map as MapIcon, type LucideIcon } from "lucide-react";
+import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -137,8 +137,8 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
     if (!observer) list.push({ id: "new-task", label: "Новая задача", hint: "N", icon: Plus, keywords: "создать поставить задачу", run: () => { setOpen(false); openNewTask(); } });
     if (!observer) list.push({ id: "submit", label: "Сдать weekly", icon: Newspaper, keywords: "weekly сдача отчёт неделя", run: () => go("/weekly/submit") });
     const sections: [string, string, LucideIcon, string][] = [
-      ["/", "Моя неделя", CalendarCheck2, "главная домой"],
-      ["/me", "Мне", Inbox, "входящие события уведомления"],
+      // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе»: по старым словам находится она
+      ["/", "Моя неделя", CalendarCheck2, "главная домой мне ждёт вас входящие события уведомления просьбы ко мне разобрать"],
       ["/weekly", "Weekly", Newspaper, "лента записи"],
       ["/weekly/meeting", "Встреча", Users, "повестка встреча вторник"],
       ["/tasks", "Задачи", ListChecks, "список задач"],
@@ -150,7 +150,6 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
       ["/forecast?tab=week", "Цифры недели", TrendingUp, "цифры недели прогноз лидеров"],
       ["/people/leader", "Люди, вкладка «Руководителю»", LayoutDashboard, "панель руководителя мои команды"],
       ["/people/analytics", "Люди, вкладка «Аналитика»", BarChart3, "панель директора weekly просрочка переносы просьбы лидеры"],
-      ["/one-on-one", "Один на один", Users, "встреча один на один 1:1 повестка руководитель"],
       ["/meeting-rating", "Оценка встреч", Users, "оценка встреч анонимно опрос полезность что убрать"],
       ["/initiatives", "Инициативы", Target, "крупные инициативы шкала готовности ищем делаем проекты"],
       ["/people", "Люди, вкладка «Команда»", Users, "команда люди состав"],

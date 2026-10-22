@@ -1,6 +1,6 @@
 // Этап 44: очередь «Мне» по срочности. Задачи делятся на «срок прошёл» и «сегодня или завтра», просьбы на четыре группы
 import { describe, expect, it } from "vitest";
-import { hotTasks, meFigureLabels, splitRequests, withoutRequestEvents } from "@/components/inbox/me-tasks";
+import { QUEUE_GROUPS, hotTasks, queueCounts, queueFigures, splitRequests, withoutRequestEvents } from "@/components/inbox/me-tasks";
 import type { RequestView } from "@/domain/requests";
 import type { Task } from "@/domain/types";
 
@@ -95,12 +95,27 @@ describe("просьбы ко мне по группам", () => {
   });
 });
 
-describe("строка цифр и события", () => {
-  it("подписи согласуются с числом", () => {
-    expect(meFigureLabels({ late: 13, soon: 1, answer: 2, events: 5 })).toEqual({ late: "просрочено", soon: "срок сегодня или завтра", answer: "просьбы ждут ответа", events: "событий" });
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).soon).toBe("срока сегодня или завтра");
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).answer).toBe("просьба ждёт ответа");
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).events).toBe("событие");
+describe("счётчики очереди «Ждёт вас» и события", () => {
+  it("этап 76: счётчики ведут якорем к группам на той же странице, подписи согласуются с числом, нулей нет", () => {
+    const figures = queueFigures({ late: 13, soon: 1, answer: 2, events: 5 });
+    expect(figures.map((f) => [f.n, f.label, f.href])).toEqual([
+      [13, "срок прошёл", "#me-late"],
+      [1, "сегодня и завтра", "#me-soon"],
+      [2, "просьбы без ответа", "#me-answer"],
+      [5, "новых событий", "#me-read"],
+    ]);
+    // Ни один счётчик не ведёт в убранный раздел «Мне»
+    for (const f of figures) expect(f.href.startsWith("#")).toBe(true);
+    const some = queueFigures({ late: 0, soon: 0, answer: 1, events: 21 });
+    expect(some.map((f) => f.label)).toEqual(["просьба без ответа", "новое событие"]);
+    expect(queueFigures({ late: 0, soon: 0, answer: 0, events: 0 })).toEqual([]);
+    // Якоря групп прежние: старые ссылки /me#me-late после перехода на «Мою неделю» находят ту же группу
+    expect(QUEUE_GROUPS).toEqual({ late: "me-late", soon: "me-soon", answer: "me-answer", read: "me-read", later: "me-later" });
+  });
+  it("этап 76: числа групп считают задачи и просьбы вместе, как строки в группах", () => {
+    const t = { late: [{}, {}], soon: [{}] } as unknown as Parameters<typeof queueCounts>[0];
+    const r = { late: [{}], soon: [{}, {}], answer: [{}, {}, {}], later: [{}] } as unknown as Parameters<typeof queueCounts>[1];
+    expect(queueCounts(t, r, 4)).toEqual({ late: 3, soon: 3, answer: 3, events: 4 });
   });
   it("событие о просьбе, которая уже в очереди, не показывается второй раз", () => {
     const items = [{ requestNumber: 7 }, { requestNumber: null }, { requestNumber: 9 }];

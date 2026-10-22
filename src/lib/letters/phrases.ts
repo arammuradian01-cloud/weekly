@@ -1,4 +1,4 @@
-// Тексты событий «Мне» для писем и уведомлений в браузере: кто и что, без содержимого (этапы 20 и 26). Чистые функции.
+// Тексты событий очереди «Ждёт вас» (до этапа 76 раздел «Мне») для писем и уведомлений в браузере: кто и что, без содержимого (этапы 20 и 26). Чистые функции.
 
 import { planHref } from "@/lib/plan/links";
 import type { InboxKind } from "@/generated/prisma/enums";
@@ -42,8 +42,6 @@ export function eventPhrase(e: EventLine): string {
       return `${who}изменения по связанной задаче${n}`;
     case "REQUEST_ANSWER":
       return `${who}изменения по просьбе`;
-    case "ONE_ON_ONE":
-      return `${who}встреча один на один`;
     case "INITIATIVE":
       return `${who}крупная инициатива`;
     case "PLAN":
@@ -61,10 +59,14 @@ export function eventPhrase(e: EventLine): string {
   }
 }
 
-/** Адрес предмета события внутри ресурса: просьба, задача, запись weekly или «Мне» */
+/**
+ * Очередь «Ждёт вас» на «Моей неделе» (этап 76, раньше раздел «Мне»): адрес для писем и уведомлений, когда у события
+ * нет своей страницы или их несколько
+ */
+export const QUEUE_PATH = "/#me-queue";
+
+/** Адрес предмета события внутри ресурса: просьба, задача, запись weekly или очередь «Ждёт вас» на «Моей неделе» */
 export function pathOf(e: { taskNumber: number | null; entryId: string | null; requestNumber?: number | null; subject?: string }): string {
-  // Встреча один на один (этап 28): страница пары откроется только у её участника
-  if (e.subject?.startsWith("1on1:")) return `/one-on-one?pair=${encodeURIComponent(e.subject.slice(5))}`;
   // Крупная инициатива (этап 30): карточка на странице инициатив
   if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
   // Прогноз месяца (этап 35): страница прогноза на месяц события
@@ -77,7 +79,7 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;
-  return "/me";
+  return QUEUE_PATH;
 }
 
 /** Склонение по числу: 1 событие, 2 события, 5 событий */

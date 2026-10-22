@@ -43,7 +43,7 @@ import * as viewAs from "@/app/actions/view-as";
 import { enterManagement, exitManagement, login, logout } from "@/app/actions/auth";
 import { PASSWORD_SETTING_KEYS, hashPassword } from "@/lib/passwords";
 import { setTeamAction } from "@/app/actions/team";
-import { markSeenAction, markDoneAction } from "@/app/(app)/me/actions";
+import { markSeenAction, markDoneAction } from "@/app/actions/inbox";
 import { getTaskAction } from "@/app/(app)/tasks/actions";
 import { searchAction } from "@/app/(app)/search/actions";
 import { weekViewAction } from "@/app/(app)/weekly/actions";

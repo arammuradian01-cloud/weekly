@@ -9,7 +9,7 @@
 import type { InboxKind } from "@/generated/prisma/enums";
 import { WORK_HOURS, prefOfKind } from "@/lib/letters/schedule";
 import { moscowDate, moscowDateTime } from "@/lib/week";
-import { eventPhrase, pathOf, plural, type EventLine } from "@/lib/letters/phrases";
+import { QUEUE_PATH, eventPhrase, pathOf, plural, type EventLine } from "@/lib/letters/phrases";
 
 /** Через сколько после события уходит уведомление: серия правок за минуту приходит одним уведомлением */
 export const PUSH_DELAY_MS = 60_000;
@@ -61,7 +61,8 @@ export type PushPayload = { title: string; body: string; url: string; tag: strin
 
 /**
  * Одно уведомление на человека за проход. Один предмет: «кто: что» и ссылка на предмет, повтор по тому же предмету
- * заменяет прежнее уведомление (tag). Несколько предметов: «N событий ждут вас» и ссылка на «Мне»
+ * заменяет прежнее уведомление (tag). Несколько предметов: «N событий ждут вас» и ссылка на очередь «Ждёт вас» на
+ * «Моей неделе» (этап 76, раньше «Мне»)
  */
 export function pushPayload(items: (EventLine & { subject: string; createdAt: Date })[]): PushPayload | null {
   if (!items.length) return null;
@@ -76,7 +77,7 @@ export function pushPayload(items: (EventLine & { subject: string; createdAt: Da
     const [subject, g] = groups[0]!;
     return { title: "Weekly", body: `${eventPhrase(g.last)}${g.count > 1 ? ` (и ещё ${g.count - 1})` : ""}`, url: pathOf({ ...g.last, subject }), tag: subject };
   }
-  return { title: "Weekly", body: `${groups.length} ${plural(groups.length, ["событие ждёт", "события ждут", "событий ждут"])} вас в «Мне»`, url: "/me", tag: "inbox" };
+  return { title: "Weekly", body: `${groups.length} ${plural(groups.length, ["событие ждёт", "события ждут", "событий ждут"])} вас на «Моей неделе»`, url: QUEUE_PATH, tag: "inbox" };
 }
 
 /** Подписка, которую прислал браузер: адрес службы уведомлений https и два ключа */

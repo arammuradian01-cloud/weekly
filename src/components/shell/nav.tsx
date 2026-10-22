@@ -5,7 +5,6 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   CalendarDays,
-  Inbox,
   ScrollText,
   SquareCheck,
   Newspaper,
@@ -16,7 +15,6 @@ import {
   Gavel,
   TrendingUp,
   Mail,
-  MessagesSquare,
   Rocket,
   Menu,
   Map as MapIcon,
@@ -50,10 +48,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Моё",
     items: [
+      // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе» (счётчик «ждут N» у этого пункта), «Один на один» удалён
       { href: "/", label: "Моя неделя", icon: CalendarDays },
-      { href: "/me", label: "Мне", icon: Inbox },
-      // Встречи один на один (этап 28): у руководителей и у людей их команд, только при личном входе
-      { href: "/one-on-one", label: "Один на один", icon: MessagesSquare },
     ],
   },
   {
@@ -100,14 +96,20 @@ export const MANAGEMENT_NAV: NavItem[] = [
   { href: "/settings", label: "Настройки", icon: Settings },
 ];
 
-/** Четыре пункта нижнего меню телефона, пятый «Ещё» */
-const MOBILE_MAIN = ["/", "/me", "/weekly", "/tasks"];
+/**
+ * Четыре пункта нижнего меню телефона, пятый «Ещё». Этап 76: место «Мне» заняли «Люди» (в дизайн-системе у
+ * руководителя здесь «Мои команды»): команда, панель руководителя и структура в одно нажатие
+ */
+const MOBILE_MAIN = ["/", "/weekly", "/tasks", "/people"];
+
+/** Пункт меню со счётчиком очереди «Ждёт вас»: «Моя неделя» (этап 76, раньше «Мне») */
+export const COUNTER_HREF = "/";
 
 function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
-/** Счётчик рядом с «Мне»: число словами для экранного диктора */
+/** Счётчик рядом с «Моей неделей»: число словами для экранного диктора */
 function countLabel(n: number) {
   return n ? `, ждут ${n}` : "";
 }
@@ -120,7 +122,7 @@ export function SidebarNav({ management, access = { market: false } }: { managem
   const link = (item: NavItem) => {
     const active = isActive(pathname, item.href);
     const Icon = item.icon;
-    const count = item.href === "/me" ? inbox : 0;
+    const count = item.href === COUNTER_HREF ? inbox : 0;
     return (
       <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={cn("sv-sidebar__item", active && "is-active")} title={item.label}>
         <Icon className="h-5 w-5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
@@ -180,7 +182,7 @@ export function MobileNav({ management = null, access = { market: false } }: { m
           {mobileItems().map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
-            const count = item.href === "/me" ? inbox : 0;
+            const count = item.href === COUNTER_HREF ? inbox : 0;
             return (
               <li key={item.href} className="contents">
                 <Link href={item.href} aria-current={active ? "page" : undefined} className={cn("sv-bottom-nav__item", active && "is-active")}>

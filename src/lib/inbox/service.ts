@@ -1,4 +1,4 @@
-// Раздел «Мне» (этап 11, модуль М2 плана Weekly 2.0): одно место, где видно, чего ждут от человека.
+// Очередь «Ждёт вас» (этап 11 как раздел «Мне», с этапа 76 блок на «Моей неделе»): одно место, где видно, чего ждут от человека.
 //
 // События пишутся в той же транзакции, что и правка задачи: правка прошла, значит адресат увидит событие.
 // Предмет (subject) склеивает события одной задачи в одну строку. «Разобрано» закрывает строку, новое событие
@@ -49,16 +49,11 @@ export type InboxItem = {
 export type InboxView = { items: InboxItem[]; snoozed: number };
 
 /**
- * События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления. Прогноз месяца
- * (этап 35) тоже: его проверяют и корректируют при личном входе
+ * Прогноз месяца (этап 35), состав команд (этап 53) и согласования (этап 54) общему логину не показываем совсем, даже
+ * в режиме управления: их проверяют и решают при личном входе. Встречи один на один ушли на этапе 76 вместе с событиями
  */
 const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput =>
-  viewer?.shared || viewer?.limited
-    ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM", "APPROVAL"] } }
-    : // «Смотреть как» (этап 63): встречи один на один видят только двое участников, владельцу в просмотре их нет
-      viewer?.viewAs
-      ? { kind: { notIn: ["ONE_ON_ONE"] } }
-      : {};
+  viewer?.shared || viewer?.limited ? { kind: { notIn: ["PLAN", "TEAM", "APPROVAL"] } } : {};
 
 const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxEventWhereInput => ({
   recipientId: personId,
@@ -86,8 +81,6 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
     // Просьбы по общему логину: только между людьми топ-команды (этап 21). Благодарности так же: от людей топ-команды
     if (r.request) return top.has(r.request.authorId) && top.has(r.request.addresseeId);
     if (r.kind === "THANKS" || r.kind === "MEETING") return !!r.actorId && top.has(r.actorId);
-    // Встречи один на один (этап 28) только при личном входе: по общему логину профиль выбирают сами
-    if (r.kind === "ONE_ON_ONE") return false;
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;
@@ -191,8 +184,6 @@ function viewerOf(actor: Actor): ScopeSubject {
 /** Общий логин трогает только предметы, которые ему показаны в «Мне» */
 async function requireVisible(actor: Actor, subjects: string[], now: Date): Promise<void> {
   const viewer = viewerOf(actor);
-  // Встречи один на один общий логин не трогает, даже в режиме управления
-  if (viewer.shared && subjects.some((s) => s.startsWith("1on1:"))) fail("Это уже разобрано");
   if (!viewer.limited) return;
   const shown = new Set((await listInbox(actor.personId, now, viewer)).items.map((i) => i.subject));
   if (subjects.some((s) => !shown.has(s))) fail("Это уже разобрано");

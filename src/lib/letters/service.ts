@@ -24,7 +24,7 @@ import type { WeekKey } from "@/domain/types";
 import { readersOf, seesEntry } from "@/lib/discuss/access";
 import { inboxCount } from "@/lib/inbox/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import { eventPhrase, pathOf, plural, type EventLine } from "./phrases";
+import { QUEUE_PATH, eventPhrase, pathOf, plural, type EventLine } from "./phrases";
 import { EVENT_DELAY_MS, EVENT_MAX_AGE_MS, PREF_LABELS, digestDue, inWorkHours, outsideWorkHours, prefOfKind, prefsOf, reminderDue, type MailPrefs } from "./schedule";
 
 export { eventPhrase, plural, type EventLine } from "./phrases";
@@ -57,7 +57,7 @@ export function eventsMail(person: { shortName: string }, items: (EventLine & { 
   const lines = groups.map((g) => `${eventPhrase(g.last)}${g.count > 1 ? ` (и ещё ${g.count - 1})` : ""}\n${linkOf(g.last)}`);
   const subject = groups.length === 1 ? `Weekly: ${eventPhrase(groups[0]!.last)}` : `Weekly: ${groups.length} ${plural(groups.length, ["событие", "события", "событий"])} ждут вас`;
   const head = night ? "Пока вас не было в ресурсе:" : "Вас ждут в ресурсе:";
-  const text = `Здравствуйте, ${person.shortName}.\n\n${head}\n\n${lines.join("\n\n")}\n\nВсё, что ждёт вас: ${appUrl()}/me${footer()}`;
+  const text = `Здравствуйте, ${person.shortName}.\n\n${head}\n\n${lines.join("\n\n")}\n\nВсё, что ждёт вас: ${appUrl()}${QUEUE_PATH}${footer()}`;
   return { subject, text };
 }
 
@@ -343,7 +343,7 @@ async function digestForWeek(key: WeekKey, candidates: DigestPerson[], nodes: Te
     }
     const lines = [
       `Сегодня встреча по неделе ${week.isoNumber}.`,
-      ...(open ? [`В «Мне» ждут вашего внимания: ${open}.\n${appUrl()}/me`] : []),
+      ...(open ? [`На «Моей неделе» ждут вашего внимания: ${open}.\n${appUrl()}${QUEUE_PATH}`] : []),
       ...(asked ? [`Вопросов к встрече: ${asked}.\n${appUrl()}/weekly/meeting?week=${key}`] : []),
       ...(missing.length ? [`Не сдали weekly в ваших командах: ${missing.map((id) => names.get(id)).join(", ")}.\n${appUrl()}/weekly?week=${key}`] : []),
     ];

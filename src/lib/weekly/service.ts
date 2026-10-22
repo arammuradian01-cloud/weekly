@@ -287,6 +287,46 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
   };
 }
 
+/** Сколько прошлых недель перед отчётной смотреть для строк «Не сдан weekly за неделю N» (этап 76) */
+export const MISSED_WEEKS_BACK = 4;
+
+export type MissedWeek = { key: WeekKey; number: number; start: IsoDate; end: IsoDate };
+
+/**
+ * Прошлые недели, за которые человек не сдал weekly, хотя ещё может (этап 76, строки на «Моей неделе»). До четырёх
+ * недель перед отчётной, свежие сверху. Неделя считается, если срок департамента прошёл, неделя открыта для weekly
+ * человека (не закрыта департаментом и не закрыта всеми командами, которые его ждут), человек был в ресурсе к сроку,
+ * не отмечен отсутствующим и weekly от него ждут. Недели без строки в базе ресурс не вёл: их не создаём и не считаем
+ */
+export async function missedWeeks(personId: string, now = new Date()): Promise<MissedWeek[]> {
+  const reporting = await currentReportingKey(now);
+  const [person, nodes] = await Promise.all([
+    prisma.person.findUnique({ where: { id: personId }, select: { active: true, role: true, createdAt: true } }),
+    loadTeamNodes(prisma),
+  ]);
+  if (!person?.active || person.role === "OBSERVER") return [];
+  const leaders = leadersOf(nodes);
+  if (!expectingTeams(personId, nodes, leaders).length) return [];
+  const rows = await prisma.week.findMany({
+    where: { start: { gte: dbDate(shiftWeek(reporting, -MISSED_WEEKS_BACK)), lt: dbDate(reporting) }, closedAt: null, deadline: { lt: now, gt: person.createdAt } },
+    orderBy: { start: "desc" },
+    select: {
+      start: true,
+      isoNumber: true,
+      reports: { where: { authorId: personId }, select: { state: true } },
+      absences: { where: { personId }, select: { id: true } },
+      teamCloses: { select: { teamId: true } },
+    },
+  });
+  return rows
+    .filter((w) => !w.reports.some((r) => r.state !== "DRAFT") && !w.absences.length && !closedFor(personId, nodes, false, new Set(w.teamCloses.map((c) => c.teamId)), leaders))
+    .slice(0, MISSED_WEEKS_BACK)
+    .map((w) => {
+      const key = isoFromDbDate(w.start);
+      return { key, number: w.isoNumber, start: key, end: weekEndOf(key) };
+    });
+}
+
 /** Состояние сдачи у всех за неделю: для «Команды» и «Моей недели» */
 export async function weeklyStates(key: WeekKey, audience?: WeekAudience): Promise<PersonWeekly[]> {
   const view = await getWeekView(key, new Date(), audience);

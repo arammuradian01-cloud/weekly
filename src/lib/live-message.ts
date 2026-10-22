@@ -24,9 +24,10 @@ export function parseLive(payload: string | undefined): LiveMessage | null {
 export function relevant(kind: "inbox" | "tasks" | "weekly" | "meeting", path: string): boolean {
   if (path.startsWith("/weekly/submit") || path.startsWith("/weekly/team-report")) return false;
   const home = path === "/";
-  if (kind === "inbox") return home || path.startsWith("/me");
+  // Очередь «Ждёт вас» живёт на «Моей неделе» (этап 76, раньше отдельный раздел «Мне»)
+  if (kind === "inbox") return home;
   // Встреча 2.0 (этап 23): экраны участников идут за ведущим, журнал решений обновляется
   if (kind === "meeting") return path.startsWith("/weekly/meeting") || path.startsWith("/decisions");
-  if (kind === "tasks") return home || ["/tasks", "/me", "/people", "/goals", "/requests", "/roadmap"].some((p) => path.startsWith(p));
+  if (kind === "tasks") return home || ["/tasks", "/people", "/goals", "/requests", "/roadmap"].some((p) => path.startsWith(p));
   return home || ["/weekly", "/people"].some((p) => path.startsWith(p));
 }

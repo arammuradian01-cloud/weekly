@@ -154,7 +154,9 @@ describe("какие экраны обновлять", () => {
     // Отчёт команды по блокам (этап 66) не пересобирается на каждую правку weekly
     expect(relevant("weekly", "/weekly/team-report?team=x")).toBe(false);
     expect(relevant("weekly", "/weekly")).toBe(true);
-    expect(relevant("inbox", "/me")).toBe(true);
+    // Этап 76: очередь «Ждёт вас» на «Моей неделе», раздела «Мне» нет
+    expect(relevant("inbox", "/")).toBe(true);
+    expect(relevant("inbox", "/me")).toBe(false);
     expect(relevant("inbox", "/tasks")).toBe(false);
     expect(relevant("weekly", "/")).toBe(true);
     // Этап 41: страница «Люди» обновляется и по задачам, и по weekly
