@@ -265,26 +265,45 @@ describe("обёртки над сервисами", () => {
     expect(aram).toBeUndefined();
   });
 
-  it("создать сразу с руководителем: владелец в режиме управления назначает другого, остальным нельзя", async () => {
+  it("создать сразу с руководителем одной транзакцией: место в дереве, ветка и события по руководителю, владелец может войти участником", async () => {
     const owner = await ownerMode();
     const kotov = await person("Котов");
     const lisina = await person("Лисина");
-    const created = await teams.createTeam(owner, "Пилот кредитов", [kotov.slug, lisina.slug], lisina.slug);
+    const sedov = await person("Седов");
+    const aram = await person("Мурадян");
+    const credit = await teamOf("Управление кредитных продуктов");
+    const before = await prisma.inboxEvent.count();
+    const created = await teams.createTeam(owner, "Пилот кредитов", [kotov.slug, lisina.slug, sedov.slug, aram.slug], lisina.slug);
     expect(created.leader).toBe("Лисина Анна");
-    expect(created.leaderError).toBeNull();
     const row = await prisma.team.findUniqueOrThrow({ where: { id: created.id }, include: { members: { include: { person: true } } } });
     expect(row.leaderId).toBe(lisina.id);
     expect(row.project).toBe(true);
-    // Новый руководитель не числится участником своей команды
-    expect(row.members.map((m) => m.person.fullName)).toEqual(["Котов Игорь"]);
-    expect(await prisma.auditLog.findFirst({ where: { entityId: created.id, field: "Руководитель: Пилот кредитов" } })).not.toBeNull();
+    // Под командой руководителя по структуре, а не под топ-командой владельца
+    expect(row.parentId).toBe(credit.id);
+    // Руководитель не числится участником; Котов из её ветки свой, Седов и сам владелец из других веток
+    const members = Object.fromEntries(row.members.map((m) => [m.person.fullName, m.external]));
+    expect(members).toEqual({ "Котов Игорь": false, "Седов Максим": true, "Мурадян Арам": true });
+    // Один шаг в журнале: команда создана сразу с этим руководителем, без смены руководителя
+    expect(await prisma.auditLog.findFirst({ where: { entityId: created.id, field: "Weekly-проект создан", after: { equals: "Пилот кредитов, руководитель Лисина Анна" } } })).not.toBeNull();
+    expect(await prisma.auditLog.count({ where: { entityId: created.id, field: { startsWith: "Руководитель:" } } })).toBe(0);
+    // События называют нового руководителя: человеку из другой ветки и его руководителю
+    const events = await prisma.inboxEvent.findMany({ where: { subject: { startsWith: `team:${created.id}:` } }, include: { recipient: true }, orderBy: { createdAt: "asc" } });
+    expect(events.length).toBeGreaterThan(0);
+    expect(await prisma.inboxEvent.count()).toBeGreaterThan(before);
+    expect(events.find((e) => e.recipient.fullName === "Седов Максим")?.text).toBe("Вы в команде «Пилот кредитов», руководитель Лисина Анна");
+    expect(events.find((e) => e.recipient.fullName === "Белова Ольга")?.text).toBe("Седов Максим в команде «Пилот кредитов», руководитель Лисина Анна");
+    // Дубль названия и предел своих команд считаются по руководителю
+    await expectRule(teams.createTeam(owner, "Пилот кредитов", [], lisina.slug), /у Лисина Анна уже есть/);
+    expect(await prisma.team.count({ where: { name: "Пилот кредитов" } })).toBe(1);
     // Руководитель не владелец: другого руководителя сразу не назначить, команда не создаётся
     const ershov = await personal("Ершов");
     await expectRule(teams.createTeam(ershov, "Чужой руководитель", [], lisina.slug), /владелец в режиме управления/);
     expect(await prisma.team.count({ where: { name: "Чужой руководитель" } })).toBe(0);
-    // Себя руководителем можно указать: это обычное создание
+    // Себя руководителем можно указать: это обычное создание, место под своей командой
     const own = await teams.createTeam(ershov, "Своя команда Ершова", [], ershov.slug);
     expect(own.leader).toBeNull();
-    expect((await prisma.team.findUniqueOrThrow({ where: { id: own.id } })).leaderId).toBe(ershov.personId);
+    const ownRow = await prisma.team.findUniqueOrThrow({ where: { id: own.id } });
+    expect(ownRow.leaderId).toBe(ershov.personId);
+    expect(ownRow.parentId).toBe((await teamOf(MONEY)).id);
   });
 });

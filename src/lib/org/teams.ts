@@ -198,27 +198,16 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
   };
 }
 
-export type CreatedTeam = { id: string; name: string; result: projects.AddPeopleResult | null; leader: string | null; leaderError: string | null };
+export type CreatedTeam = { id: string; name: string; result: projects.AddPeopleResult | null; /** Другой руководитель, если его сразу назначили */ leader: string | null };
 
 /**
- * Новая команда сразу с людьми (createProjectWith), затем, если владелец в режиме управления выбрал другого
- * руководителя, смена руководителя (updateTeam). Это две транзакции: не вышло назначить руководителя, команда
- * остаётся у создателя, экран говорит почему
+ * Новая команда сразу с людьми одной транзакцией (createProjectWith). Владелец в режиме управления может сразу
+ * назначить другого руководителя: команда создаётся с ним, место в дереве и ветка людей считаются по нему
  */
 export async function createTeam(actor: Actor, name: string, slugs: string[], leader?: string | null): Promise<CreatedTeam> {
   const other = leader && leader !== actor.slug ? String(leader) : null;
-  if (other && !canManagePeople(actor)) fail("Другого руководителя назначает владелец в режиме управления: создайте команду и назначьте его в карточке");
-  if (other && !(await prisma.person.findUnique({ where: { slug: other }, select: { id: true } }))) fail("Такого человека нет");
-  const created = await projects.createProjectWith(actor, name, slugs);
-  if (!other) return { ...created, leader: null, leaderError: null };
-  try {
-    await org.updateTeam(actor, created.id, { leader: other });
-    const row = await prisma.team.findUniqueOrThrow({ where: { id: created.id }, select: { leader: { select: { fullName: true } } } });
-    return { ...created, leader: row.leader?.fullName ?? null, leaderError: null };
-  } catch (error) {
-    if (error instanceof TaskRuleError) return { ...created, leader: null, leaderError: error.message };
-    throw error;
-  }
+  const created = await projects.createProjectWith(actor, name, slugs, { leader: other });
+  return { id: created.id, name: created.name, result: created.result, leader: other ? created.leader : null };
 }
 
 async function liveTeam(teamId: string) {

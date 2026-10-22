@@ -106,7 +106,7 @@ export function TeamCard({ team, view, onAction, onBack, className }: { team: We
         ) : null}
         {note ? (
           note.manage ? (
-            <ManageHint text={note.text} />
+            <ManageHint text={note.text} next={`/people/teams?team=${encodeURIComponent(team.id)}`} />
           ) : (
             <p className="text-small text-muted" data-testid="team-card-readonly">
               {note.text}

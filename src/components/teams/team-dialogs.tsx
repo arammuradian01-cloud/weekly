@@ -60,7 +60,7 @@ const rule = (direct: boolean) =>
 
 /**
  * Новая команда сразу с людьми. Руководит ею тот, кто создаёт; владелец в режиме управления сразу выбирает другого
- * руководителя (команда создаётся, затем назначается руководитель), остальным окно говорит, где его назначают
+ * руководителя (одной транзакцией: команда сразу с ним, ветка людей по нему), остальным окно говорит, где его назначают
  */
 export function CreateTeamModal({
   open,
@@ -87,11 +87,8 @@ export function CreateTeamModal({
   const [slugs, setSlugs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const head = direct && leader ? leader : me;
-  const blocked = useMemo(() => {
-    const m = new Map([[me, head === me ? "вы руководитель" : "вы создаёте команду"]]);
-    if (head !== me) m.set(head, "руководитель команды");
-    return m;
-  }, [me, head]);
+  // Руководитель в команде и так. Выбрали другого руководителя: себя можно добавить участником
+  const blocked = useMemo(() => new Map([[head, head === me ? "вы руководитель" : "руководитель команды"]]), [me, head]);
   const options = useOptions(all, head, direct, blocked);
   const external = options.filter((o) => o.note && slugs.includes(o.slug)).length;
   const leaders = useMemo(() => all.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null })), [all]);
@@ -116,7 +113,6 @@ export function CreateTeamModal({
           setBusy(false);
           if (!r) return;
           notify(addSummary(r.name, r.result) + (r.leader ? `. Руководитель: ${r.leader}` : ""));
-          if (r.leaderError) notify(`Руководителя не назначили: ${r.leaderError}. Команда создана, руководитель пока вы`, "error");
           setName("");
           setLeader("");
           setSlugs([]);
@@ -205,7 +201,7 @@ export function CloseModal({ team, onClose, onClosed }: { team: WeeklyTeam; onCl
   const blocked = team.openTasks > 0;
   const text = blocked
     ? `В команде открытых задач: ${team.openTasks}. Сначала передайте их в другую команду или закройте, потом закройте команду.`
-    : `Команда пропадёт из переключателя команд и из списка.${team.project ? " Ожидающие запросы отменятся." : ""} Задачи, weekly и журнал остаются.`;
+    : "Команда пропадёт из переключателя команд и из списка. Ожидающие запросы на согласие отменятся. Задачи, weekly и журнал остаются.";
   return (
     <Modal open onOpenChange={(o) => !o && !busy && onClose()} title={`Закрыть команду «${team.name}»?`} description={text}>
       <form

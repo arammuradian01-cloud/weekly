@@ -80,9 +80,9 @@ export async function unitPeople(unitId: string): Promise<string[]> {
   return people.map((p) => p.slug);
 }
 
-/** Куда встаёт новый проект: под команду руководителя по структуре, иначе под команду генерального директора */
-async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
-  const own = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, kind: { in: ["TOP", "UNIT"] } }, orderBy: [{ kind: "asc" }, { sortOrder: "asc" }], select: { id: true } });
+/** Куда встаёт новый проект: под команду его руководителя по структуре, иначе под команду генерального директора */
+async function parentFor(tx: Tx, leaderId: string): Promise<string | null> {
+  const own = await tx.team.findFirst({ where: { leaderId, active: true, kind: { in: ["TOP", "UNIT"] } }, orderBy: [{ kind: "asc" }, { sortOrder: "asc" }], select: { id: true } });
   if (own) return own.id;
   const company = await tx.orgUnit.findFirst({ where: { kind: "COMPANY", active: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
   // Структура одного департамента, как до этапа 53: команды без команды выше стоят под топ-командой
@@ -91,23 +91,41 @@ async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
   return companyTeam?.id ?? null;
 }
 
-async function createIn(tx: Tx, actor: Actor, rawName: unknown): Promise<{ id: string; name: string }> {
+/**
+ * Новый проект. Руководит им тот, кто создаёт, либо (этап 64) человек, которого сразу назначил владелец в режиме
+ * управления: тогда место в дереве, дубль названия, предел своих команд и очередь считаются по руководителю, как
+ * будто он создал команду сам
+ */
+async function createIn(tx: Tx, actor: Actor, rawName: unknown, leaderSlug?: string | null): Promise<{ id: string; name: string; leaderName: string }> {
   if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Команду собирают, войдя лично, со своим логином и паролем" : "Команды собирают руководители");
   const name = cleanName(rawName);
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${actor.personId}`}))`;
-  const same = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, name } });
-  if (same) fail(`Команда «${name}» у вас уже есть`);
-  const mine = await tx.team.count({ where: { leaderId: actor.personId, active: true, project: true } });
-  if (mine >= PROJECTS_MAX) fail(`У вас уже ${PROJECTS_MAX} своих команд: закройте те, что больше не нужны`);
+  let leader = { id: actor.personId, fullName: actor.fullName };
+  if (leaderSlug && leaderSlug !== actor.slug) {
+    if (!canManagePeople(actor)) fail("Другого руководителя назначает владелец в режиме управления: создайте команду и назначьте его в карточке");
+    const p = await tx.person.findUnique({ where: { slug: String(leaderSlug) }, select: { id: true, fullName: true, active: true, role: true } });
+    if (!p) fail("Такого человека нет");
+    if (!p!.active) fail(`${p!.fullName} выключен`);
+    if (p!.role === "OBSERVER") fail("Наблюдатель командой не руководит");
+    leader = { id: p!.id, fullName: p!.fullName };
+  }
+  const own = leader.id === actor.personId;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${leader.id}`}))`;
+  const same = await tx.team.findFirst({ where: { leaderId: leader.id, active: true, name } });
+  if (same) fail(own ? `Команда «${name}» у вас уже есть` : `Команда «${name}» у ${leader.fullName} уже есть`);
+  const mine = await tx.team.count({ where: { leaderId: leader.id, active: true, project: true } });
+  if (mine >= PROJECTS_MAX) fail(own ? `У вас уже ${PROJECTS_MAX} своих команд: закройте те, что больше не нужны` : `У ${leader.fullName} уже ${PROJECTS_MAX} своих команд: пусть закроет те, что больше не нужны`);
   const count = await tx.team.count();
-  const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: actor.personId, parentId: await parentFor(tx, actor), sortOrder: (count + 1) * 10 } });
-  await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${actor.fullName}`);
-  return { id: team.id, name };
+  const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: leader.id, parentId: await parentFor(tx, leader.id), sortOrder: (count + 1) * 10 } });
+  await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${leader.fullName}`);
+  return { id: team.id, name, leaderName: leader.fullName };
 }
 
 /** Новый weekly-проект: команда, которой руководит тот, кто её собирает */
 export async function createProject(actor: Actor, input: { name: string }): Promise<{ id: string; name: string }> {
-  return prisma.$transaction((tx) => createIn(tx, actor, input?.name));
+  return prisma.$transaction(async (tx) => {
+    const { id, name } = await createIn(tx, actor, input?.name);
+    return { id, name };
+  });
 }
 
 export type AddPeopleResult = {
@@ -271,13 +289,22 @@ export async function addProjectPeople(actor: Actor, teamId: string, slugs: stri
   return prisma.$transaction((tx) => addIn(tx, actor, teamId, slugs, now), { timeout: 30_000 }).catch(concurrent);
 }
 
-/** Новый проект сразу с людьми: одна транзакция, без пустого проекта при сбое */
-export async function createProjectWith(actor: Actor, name: string, slugs: string[], now = new Date()): Promise<{ id: string; name: string; result: AddPeopleResult | null }> {
+/**
+ * Новый проект сразу с людьми: одна транзакция, без пустого проекта при сбое. leader: другой руководитель (только
+ * владелец в режиме управления, этап 64): команда сразу с ним, люди добавляются по его ветке, события называют его
+ */
+export async function createProjectWith(
+  actor: Actor,
+  name: string,
+  slugs: string[],
+  opts: { leader?: string | null; now?: Date } = {},
+): Promise<{ id: string; name: string; leader: string; result: AddPeopleResult | null }> {
+  const now = opts.now ?? new Date();
   return prisma
     .$transaction(
       async (tx) => {
-        const team = await createIn(tx, actor, name);
-        return { ...team, result: slugs.length ? await addIn(tx, actor, team.id, slugs, now) : null };
+        const team = await createIn(tx, actor, name, opts.leader);
+        return { id: team.id, name: team.name, leader: team.leaderName, result: slugs.length ? await addIn(tx, actor, team.id, slugs, now) : null };
       },
       { timeout: 30_000 },
     )

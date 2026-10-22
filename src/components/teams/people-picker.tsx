@@ -62,16 +62,16 @@ export function PeoplePicker({ id, label, people, value, onChange, limit = 30 }:
           <p className="text-small text-muted" aria-live="polite">
             Выбрано: {value.length}
           </p>
-          <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0" aria-label="Выбранные люди">
+          <ul className="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Выбранные люди">
             {value.map((slug) => {
               const p = bySlug.get(slug);
               const name = p?.fullName ?? slug;
               return (
-                <li key={slug} className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-field py-0.5 pl-2.5 pr-0.5 text-caption text-ink">
+                <li key={slug} className="inline-flex min-h-11 max-w-full items-center gap-0.5 rounded-full bg-field pl-3 text-small text-ink sm:min-h-9">
                   <span className="truncate">{name}</span>
                   {p?.note ? <span className="shrink-0 text-muted">, {p.note}</span> : null}
-                  {/* Поле нажатия 44 точки, а плашка остаётся низкой: кнопка выходит за неё отрицательными отступами */}
-                  <button type="button" onClick={() => toggle(slug, false)} className="group -my-2.5 -mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink" aria-label={`Убрать из выбора: ${name}`}>
+                  {/* Поле нажатия внутри плашки: на телефоне плашка 44 точки в высоту и крестик 44 на 44, соседний ряд он не перекрывает */}
+                  <button type="button" onClick={() => toggle(slug, false)} className="group inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink sm:h-9 sm:w-9" aria-label={`Убрать из выбора: ${name}`}>
                     <span className="inline-flex h-6 w-6 items-center justify-center rounded-full group-hover:bg-surface">
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </span>

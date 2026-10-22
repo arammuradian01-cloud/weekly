@@ -112,6 +112,28 @@ function JoinRequests({ list }: { list: JoinRequestView[] }) {
 
 type Focus = { to: "card" } | { to: "row"; id: string };
 
+/** Карточку открыли шагом из списка: помним и после обновления страницы, пока длина истории та же (только этот браузер) */
+const PUSHED_KEY = "weekly.teams.pushed";
+
+function rememberPush(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(PUSHED_KEY, JSON.stringify({ id, len: window.history.length }));
+    else sessionStorage.removeItem(PUSHED_KEY);
+  } catch {
+    // Хранилище недоступно (частный режим): «К списку команд» просто заменит адрес
+  }
+}
+
+function pushedBefore(id: string | null): string | null {
+  if (!id) return null;
+  try {
+    const v = JSON.parse(sessionStorage.getItem(PUSHED_KEY) ?? "null") as { id?: string; len?: number } | null;
+    return v?.id === id && v.len === window.history.length ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const pathname = usePathname();
   // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку
@@ -123,25 +145,35 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const [dialog, setDialog] = useState<{ action: CardAction; team: WeeklyTeam } | null>(null);
   const [busy, setBusy] = useState(false);
   // Карточку, открытую из списка, мы положили в историю шагом: «К списку команд» тогда равна кнопке «Назад».
-  // Помним это здесь, а не в history.state: обновление данных роутером переписывает state записи
+  // Помним это здесь и в sessionStorage, а не в history.state: обновление данных роутером переписывает state записи
   const pushedRef = useRef<string | null>(null);
-  // Куда поставить фокус после смены экрана: на заголовок карточки или обратно на строку списка
+  // Куда поставить фокус после смены экрана: на заголовок карточки или обратно на строку списка (только узкий экран)
   const focusRef = useRef<Focus | null>(null);
 
   useEffect(() => {
+    // Страницу обновили на карточке, открытой из списка: «К списку команд» по-прежнему шаг назад
+    pushedRef.current = pushedBefore(new URL(window.location.href).searchParams.get("team"));
     const onPop = () => {
       // Системная «Назад» с карточки: к списку, фокус на строку команды
       if (pushedRef.current) focusRef.current = { to: "row", id: pushedRef.current };
       pushedRef.current = null;
+      rememberPush(null);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // Карточка: выбранная команда, иначе на ноутбуке первая в списке. На телефоне без выбора только список
+  // Карточка: выбранная в адресе команда. На ноутбуке без выбора честно выбирается первая (адрес тоже), на телефоне
+  // без выбора только список, и в нём ничего не подсвечено
   const selected = picked ? (view.teams.find((t) => t.id === picked) ?? (view.extra?.id === picked ? view.extra : null)) : null;
-  const shown = selected ?? view.teams[0] ?? null;
+  const first = view.teams[0] ?? null;
+  const shown = selected ?? first;
   const cardMode = !!selected;
+
+  useEffect(() => {
+    if (picked || !first || window.matchMedia(NARROW).matches) return;
+    window.history.replaceState(null, "", `${pathname}?team=${encodeURIComponent(first.id)}${window.location.hash}`);
+  }, [picked, first, pathname]);
 
   useEffect(() => {
     const f = focusRef.current;
@@ -166,29 +198,34 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   /**
    * Открыть карточку. Из списка шаг в истории (на телефоне «Назад» вернёт к списку), из открытой карточки замена:
    * перебор команд на ноутбуке не копит историю. Адрес меняется через history: роутер Next подхватывает его сразу,
-   * а обновление данных после действия, начатое раньше, отменяется переходом и повторяется уже по новому адресу
+   * а обновление данных после действия, начатое раньше, отменяется переходом и повторяется уже по новому адресу.
+   * Фокус на заголовок карточки только на узком экране, где карточка заменяет список; на ноутбуке он остаётся в списке
    */
   const open = (id: string) => {
     if (picked === id) return;
     const url = `${pathname}?team=${encodeURIComponent(id)}`;
+    const narrow = window.matchMedia(NARROW).matches;
     if (picked) window.history.replaceState(null, "", url);
     else {
       window.history.pushState(null, "", url);
       pushedRef.current = id;
+      rememberPush(id);
     }
-    focusRef.current = { to: "card" };
-    if (window.matchMedia(NARROW).matches) window.scrollTo({ top: 0 });
+    focusRef.current = narrow ? { to: "card" } : null;
+    if (narrow) window.scrollTo({ top: 0 });
   };
-  /** К списку: если карточку открыли из списка, это шаг назад по истории, иначе адрес без команды */
+  /** Карточку убрать: если её открыли из списка, это шаг назад по истории, иначе адрес без команды */
+  const leave = () => {
+    const wasPushed = !!pushedRef.current && pushedRef.current === picked;
+    pushedRef.current = null;
+    rememberPush(null);
+    if (wasPushed) window.history.back();
+    else window.history.replaceState(null, "", `${pathname}${window.location.hash}`);
+  };
+  /** К списку (телефон): фокус возвращается на строку команды */
   const back = () => {
     if (picked) focusRef.current = { to: "row", id: picked };
-    if (pushedRef.current && pushedRef.current === picked) {
-      pushedRef.current = null;
-      window.history.back();
-      return;
-    }
-    pushedRef.current = null;
-    window.history.replaceState(null, "", pathname);
+    leave();
   };
   const act = (action: CardAction) => {
     if (shown) setDialog({ action, team: shown });
@@ -231,7 +268,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
           </div>
         </div>
 
-        {hint ? <ManageHint text={hint} /> : null}
+        {hint ? <ManageHint text={hint} next={picked ? `${pathname}?team=${encodeURIComponent(picked)}` : pathname} /> : null}
 
         {view.toApprove.length ? <JoinRequests list={view.toApprove} /> : null}
 
@@ -279,7 +316,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
               {found.length ? (
                 <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
                   {found.map((t) => (
-                    <TeamRow key={t.id} team={t} selected={shown?.id === t.id} onOpen={open} />
+                    <TeamRow key={t.id} team={t} selected={selected?.id === t.id} onOpen={open} />
                   ))}
                 </ul>
               ) : (
@@ -318,10 +355,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
         <CloseModal
           team={dialog.team}
           onClose={() => setDialog(null)}
-          onClosed={() => {
-            pushedRef.current = null;
-            window.history.replaceState(null, "", pathname);
-          }}
+          onClosed={leave}
         />
       ) : null}
       {dialog?.action === "leader" ? <LeaderModal team={dialog.team} all={view.people} owners={view.owners} parents={view.parents} onClose={() => setDialog(null)} /> : null}

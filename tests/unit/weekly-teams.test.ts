@@ -138,7 +138,11 @@ describe("подсказки владельцу и пояснения в кар�
   it("своя команда: действия есть, пояснение только о недостающем", () => {
     expect(teamNote({ mode: "mine", off: null }, { id: "t", relation: "leader", rights: edit })).toBeNull();
     expect(teamNote({ mode: "mine", off: "owner" }, { id: "t", relation: "leader", rights: edit })).toEqual({ text: "Назначить другого руководителя можно в режиме управления.", manage: true });
-    expect(teamNote({ mode: "mine", off: null }, { id: "t", relation: "below", rights: { ...NO_RIGHTS, rhythm: true } })?.text).toContain("Команда ниже вашей");
+    expect(teamNote({ mode: "mine", off: null }, { id: "t", relation: "below", rights: { ...NO_RIGHTS, rhythm: true }, leader: { fullName: "Лисина Анна" } })?.text).toBe("Команда ниже вашей: вы задаёте, кто сдаёт weekly и срок, состав меняет её руководитель.");
+    // Команда ниже без руководителя: не обещаем руководителя, которого нет
+    const leaderless = teamNote({ mode: "mine", off: null }, { id: "t", relation: "below", rights: { ...NO_RIGHTS, rhythm: true }, leader: null })!.text;
+    expect(leaderless).toContain("Руководителя у неё нет");
+    expect(leaderless).not.toContain("состав меняет её руководитель");
   });
 
   it("чужая команда: только просмотр; общий логин: войти лично", () => {

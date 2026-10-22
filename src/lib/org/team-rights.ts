@@ -130,11 +130,14 @@ export function managementHint(off: ManagementOff): string | null {
  * Пояснение в карточке: почему кнопок нет или чего не хватает. manage: рядом ссылка на включение режима управления.
  * Руководителю своей команды не пишем «только просмотр»: у него есть действия, ему объясняем только недостающее
  */
-export function teamNote(c: { mode: "all" | "mine" | "shared"; off: ManagementOff }, t: { id: string; relation: TeamRelation; rights: TeamRights }): { text: string; manage: boolean } | null {
+export function teamNote(c: { mode: "all" | "mine" | "shared"; off: ManagementOff }, t: { id: string; relation: TeamRelation; rights: TeamRights; leader?: unknown | null }): { text: string; manage: boolean } | null {
   const r = t.rights;
   if (r.members || r.rename || r.close || r.leader || r.rhythm) {
     if (c.off === "owner" && t.relation === "leader") return { text: "Назначить другого руководителя можно в режиме управления.", manage: true };
-    if (t.relation === "below" && !r.members) return { text: "Команда ниже вашей: вы задаёте, кто сдаёт weekly и срок, состав меняет её руководитель.", manage: false };
+    if (t.relation === "below" && !r.members)
+      return t.leader
+        ? { text: "Команда ниже вашей: вы задаёте, кто сдаёт weekly и срок, состав меняет её руководитель.", manage: false }
+        : { text: "Команда ниже вашей: вы задаёте, кто сдаёт weekly и срок. Руководителя у неё нет, состав меняет владелец в режиме управления.", manage: false };
     return null;
   }
   if (c.mode === "shared") return { text: "Под общим входом только просмотр. Чтобы управлять своей командой, войдите со своим логином и паролем.", manage: false };

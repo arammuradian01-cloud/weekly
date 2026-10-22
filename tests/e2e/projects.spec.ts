@@ -80,7 +80,7 @@ test("помощник «Собрать из структуры»: руково�
   const reva = await personal(browser, page, "Рева");
   await reva.goto("/people");
   await reva.getByTestId("people-tab-teams").click();
-  await expect(reva).toHaveURL(/\/people\/teams$/);
+  await expect(reva).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
   // Этап 64: перетаскивание осталось помощником, свёрнутым по умолчанию
   const helper = reva.getByTestId("assemble");
   await expect(helper.getByRole("heading", { name: "Готовые команды по структуре" })).toBeHidden();
@@ -173,7 +173,7 @@ test("сотрудник Money: цифры прогноза закрыты, ко
   expect(exported.status()).toBe(403);
   // Этап 64: вкладку команд видят все; прежний адрес проектов ведёт туда же. Своя команда только для просмотра
   await kotov.goto("/people/projects");
-  await expect(kotov).toHaveURL(/\/people\/teams$/);
+  await expect(kotov).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
   await expect(kotov.getByTestId("people-tab-teams")).toBeVisible();
   await expect(kotov.getByTestId("teams-list")).toContainText("Управление кредитных продуктов");
   await expect(kotov.getByTestId("team-create")).toHaveCount(0);
@@ -181,7 +181,7 @@ test("сотрудник Money: цифры прогноза закрыты, ко
   // Одна команда: переключателя в шапке нет, на его месте ссылка на экран команд
   await kotov.goto("/tasks");
   await kotov.getByTestId(isPhone() ? "team-manage-link-m" : "team-manage-link").click();
-  await expect(kotov).toHaveURL(/\/people\/teams$/);
+  await expect(kotov).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
 
   // Сотрудник страхования с ролью сотрудника видит все цифры
   const tokov = await personal(browser, page, "Токов");
