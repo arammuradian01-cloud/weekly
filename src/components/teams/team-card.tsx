@@ -1,23 +1,28 @@
 "use client";
 
 // Карточка weekly-команды (этап 64): панель справа на ноутбуке, отдельный экран на телефоне. Участники списком с ролью
-// и подразделением, ждущие согласия, руководитель, сдача weekly и срок. Кнопки только те, что разрешает сервер.
+// и подразделением, ждущие согласия, руководитель, сдача weekly и срок. Кнопки только те, что разрешает сервер;
+// чего нет и почему, говорит одна строка под заголовком (например, что руководителя назначают в режиме управления).
 
 import { useState } from "react";
-import { ArrowLeft, Pencil, UserPlus } from "lucide-react";
+import { ArrowLeft, CalendarClock, Pencil, UserCog, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/ui/primitives";
 import { PersonName, initialsOf } from "@/components/people/person-card";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { cancelRequestAction, removeMemberAction } from "@/app/(app)/people/teams/actions";
-import type { TeamPerson, WeeklyTeam } from "@/lib/org/teams";
-import { teamKindLabel } from "@/lib/org/team-rights";
+import type { TeamPerson, WeeklyTeam, WeeklyTeamsView } from "@/lib/org/teams";
+import { sizeText, teamKindLabel, teamNote, teamSize } from "@/lib/org/team-rights";
 import { plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { WeeklyLine, rhythmText } from "./weekly-line";
+import { ManageHint } from "./manage-hint";
 
 export type CardAction = "add" | "rename" | "close" | "leader" | "rhythm";
+
+/** Кнопки на телефоне не ниже 44 точек: в них попадают пальцем */
+const touch = "max-sm:min-h-11";
 
 function MemberRow({ person, role, external, busy, onRemove }: { person: TeamPerson; role: string; external?: boolean; busy?: boolean; onRemove?: () => void }) {
   const where = [person.position, person.unit].filter(Boolean).join(", ");
@@ -37,7 +42,7 @@ function MemberRow({ person, role, external, busy, onRemove }: { person: TeamPer
         <p className="truncate text-small text-muted">{where || "Должность не указана"}</p>
       </div>
       {onRemove ? (
-        <Button size="sm" variant="ghost" disabled={busy} onClick={onRemove} aria-label={`Убрать из команды: ${person.fullName}`}>
+        <Button size="sm" variant="ghost" className={touch} disabled={busy} onClick={onRemove} aria-label={`Убрать из команды: ${person.fullName}`}>
           Убрать
         </Button>
       ) : null}
@@ -45,12 +50,12 @@ function MemberRow({ person, role, external, busy, onRemove }: { person: TeamPer
   );
 }
 
-export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTeam; onAction: (action: CardAction) => void; /** Телефон: вернуться к списку */ onBack: () => void; className?: string }) {
+export function TeamCard({ team, view, onAction, onBack, className }: { team: WeeklyTeam; view: Pick<WeeklyTeamsView, "mode" | "managementOff">; onAction: (action: CardAction) => void; /** Телефон: вернуться к списку */ onBack: () => void; className?: string }) {
   const run = useRunWeekly();
   const [busy, setBusy] = useState(false);
   const r = team.rights;
-  const editable = r.members || r.rename || r.close || r.leader || r.rhythm;
-  const count = team.members.length;
+  const note = teamNote({ mode: view.mode, off: view.managementOff }, team);
+  const size = teamSize(team);
 
   const remove = async (slug: string, fullName: string) => {
     setBusy(true);
@@ -65,54 +70,61 @@ export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTe
 
   return (
     <section aria-labelledby="team-card-title" className={cn("sv-card bg-surface p-4 sm:p-5", className)} data-testid="team-card">
-      <button type="button" onClick={onBack} className="mb-3 inline-flex min-h-9 items-center gap-1.5 text-small font-medium text-link hover:underline lg:hidden">
+      <button type="button" onClick={onBack} className="-ml-1 mb-2 inline-flex min-h-11 items-center gap-1.5 px-1 text-small font-medium text-link hover:underline lg:hidden">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />К списку команд
       </button>
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-2 text-caption text-muted">
           <Badge tone={team.kind === "CUSTOM" ? "blue" : "gray"}>{teamKindLabel(team)}</Badge>
+          {team.relation === "below" ? <span>Команда ниже вашей</span> : null}
           {team.parent ? <span>Команда выше: {team.parent.name}</span> : null}
         </div>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <h2 id="team-card-title" className="min-w-0 break-words text-title font-semibold text-ink">
-            {team.name}
-          </h2>
-          {r.rename ? (
-            <Button size="sm" variant="secondary" onClick={() => onAction("rename")}>
-              <Pencil className="h-4 w-4" aria-hidden="true" />
-              Переименовать
-            </Button>
-          ) : null}
-        </div>
-        {!editable ? (
-          <p className="text-small text-muted" data-testid="team-card-readonly">
-            Только просмотр: состав меняют руководитель команды и владелец в режиме управления.
-          </p>
+        <h2 id="team-card-title" tabIndex={-1} className="min-w-0 break-words text-title font-semibold text-ink outline-none focus-visible:rounded-control focus-visible:ring-2 focus-visible:ring-focus">
+          {team.name}
+        </h2>
+        {r.rename || r.leader || r.rhythm ? (
+          <div className="flex flex-wrap gap-2" data-testid="team-card-actions">
+            {r.leader ? (
+              <Button size="sm" variant="secondary" className={touch} onClick={() => onAction("leader")}>
+                <UserCog className="h-4 w-4" aria-hidden="true" />
+                Назначить руководителя
+              </Button>
+            ) : null}
+            {r.rhythm ? (
+              <Button size="sm" variant="secondary" className={touch} onClick={() => onAction("rhythm")}>
+                <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                Кто сдаёт и срок
+              </Button>
+            ) : null}
+            {r.rename ? (
+              <Button size="sm" variant="secondary" className={touch} onClick={() => onAction("rename")}>
+                <Pencil className="h-4 w-4" aria-hidden="true" />
+                Переименовать
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {note ? (
+          note.manage ? (
+            <ManageHint text={note.text} />
+          ) : (
+            <p className="text-small text-muted" data-testid="team-card-readonly">
+              {note.text}
+            </p>
+          )
         ) : null}
       </header>
 
       <dl className="mt-4 grid gap-4 rounded-control-lg border border-line p-3 sm:p-4">
         <div className="min-w-0">
           <dt className="text-caption text-muted">Руководитель</dt>
-          <dd className="mt-1 flex flex-col items-start gap-1">
-            <span className="text-body text-ink">{team.leader ? team.leader.fullName : "Не назначен"}</span>
-            {r.leader ? (
-              <button type="button" onClick={() => onAction("leader")} className="min-h-7 text-small font-medium text-link hover:underline">
-                Назначить руководителя
-              </button>
-            ) : null}
-          </dd>
+          <dd className="mt-1 text-body text-ink">{team.relation === "leader" && team.leader ? `${team.leader.fullName}, это вы` : team.leader ? team.leader.fullName : "Не назначен"}</dd>
         </div>
         <div className="min-w-0">
           <dt className="text-caption text-muted">Weekly за отчётную неделю</dt>
           <dd className="mt-1 flex flex-col items-start gap-1">
             <WeeklyLine weekly={team.weekly} />
             <span className="text-small text-muted">{rhythmText(team)}</span>
-            {r.rhythm ? (
-              <button type="button" onClick={() => onAction("rhythm")} className="min-h-7 text-small font-medium text-link hover:underline">
-                Кто сдаёт и срок
-              </button>
-            ) : null}
           </dd>
         </div>
       </dl>
@@ -120,10 +132,10 @@ export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTe
       <section className="mt-5" aria-labelledby="team-members-title">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="team-members-title" className="text-title-sm font-semibold text-ink">
-            Участники <span className="font-normal text-muted">{count + (team.leader ? 1 : 0)}</span>
+            Участники <span className="text-small font-normal text-muted">{sizeText(size)}, с руководителем</span>
           </h3>
           {r.members ? (
-            <Button size="sm" onClick={() => onAction("add")}>
+            <Button size="sm" className={touch} onClick={() => onAction("add")}>
               <UserPlus className="h-4 w-4" aria-hidden="true" />
               Добавить участников
             </Button>
@@ -135,7 +147,7 @@ export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTe
             <MemberRow key={m.slug} person={m} role="участник" external={m.external} busy={busy} onRemove={r.members ? () => void remove(m.slug, m.fullName) : undefined} />
           ))}
         </ul>
-        {!count ? <p className="mt-2 text-small text-muted">{r.members ? "Участников пока нет: нажмите «Добавить участников»." : "Участников пока нет."}</p> : null}
+        {!team.members.length ? <p className="mt-2 text-small text-muted">{r.members ? "Участников пока нет: нажмите «Добавить участников»." : "Участников пока нет."}</p> : null}
       </section>
 
       {team.waiting.length ? (
@@ -155,7 +167,7 @@ export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTe
                   </p>
                 </div>
                 {w.canCancel ? (
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => void cancel(w.id, w.fullName)} aria-label={`Отменить запрос: ${w.fullName}`}>
+                  <Button size="sm" variant="ghost" className={touch} disabled={busy} onClick={() => void cancel(w.id, w.fullName)} aria-label={`Отменить запрос: ${w.fullName}`}>
                     Отменить
                   </Button>
                 ) : null}
@@ -167,7 +179,7 @@ export function TeamCard({ team, onAction, onBack, className }: { team: WeeklyTe
 
       {r.close ? (
         <footer className="mt-6 flex flex-col gap-1 border-t border-line pt-4">
-          <Button size="sm" variant="danger" className="self-start" onClick={() => onAction("close")}>
+          <Button size="sm" variant="danger" className={cn("self-start", touch)} onClick={() => onAction("close")}>
             Закрыть команду
           </Button>
           {team.openTasks ? (

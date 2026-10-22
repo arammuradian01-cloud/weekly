@@ -97,6 +97,12 @@ describe("список команд по тому, кто смотрит", () =>
     expect(view.units.some((u) => u.kind === "COMPANY")).toBe(true);
     expect(view.owners).toContain("muradyan");
     expect(view.parents.length).toBe(active);
+    expect(view.managementOff).toBeNull();
+    // Тот же владелец без режима управления: только свои команды, экран говорит, что режим управления выключен
+    const plain = await teams.teamsView({ ...(await ownerMode()), management: null });
+    expect(plain.mode).toBe("mine");
+    expect(plain.managementOff).toBe("owner");
+    expect(plain.teams.find((t) => t.id === TOP_TEAM)?.rights).toEqual(NO_RIGHTS);
   });
 
   it("администратор в режиме управления видит все команды, но меняет только свои: правила сервисов те же", async () => {
@@ -109,18 +115,33 @@ describe("список команд по тому, кто смотрит", () =>
     expect(own.relation).toBe("leader");
     expect(own.rights).toMatchObject({ members: true, rename: false, close: false, leader: false });
     expect(view.closed).toEqual([]);
+    expect(view.managementOff).toBeNull();
+    expect((await teams.teamsView(await personal("Головкин"))).managementOff).toBe("admin");
   });
 
-  it("руководитель из файла: свои команды и команды, где участник; люди для поиска приходят", async () => {
-    const view = await teams.teamsView(await personal("Ершов"));
+  it("руководитель из файла: свои команды, команды ниже своих и команды, где участник; люди для поиска приходят", async () => {
+    const ershov = await personal("Ершов");
+    const view = await teams.teamsView(ershov);
     expect(view.mode).toBe("mine");
     expect(view.canCreate).toBe(true);
+    expect(view.managementOff).toBeNull();
     expect(view.teams.map((t) => [t.name, t.relation])).toEqual([
       [MONEY, "leader"],
+      ["Управление кредитных продуктов", "below"],
       [org.COMPANY_TEAM_NAME, "member"],
     ]);
     expect(view.teams[0]!.rights).toEqual({ members: true, rename: false, close: false, leader: false, rhythm: true });
-    expect(view.teams[1]!.rights).toEqual(NO_RIGHTS);
+    // Команда ниже: ритм weekly задаёт руководитель выше (как раньше в «Структуре»), состав меняет её руководитель
+    expect(view.teams[1]!.rights).toEqual({ members: false, rename: false, close: false, leader: false, rhythm: true });
+    expect(view.teams[2]!.rights).toEqual(NO_RIGHTS);
+    const credit = view.teams[1]!;
+    await org.setTeamRhythm(ershov, credit.id, { deadline: null, meeting: null, specialists: true });
+    expect((await teams.teamsView(ershov)).teams.find((t) => t.id === credit.id)?.rhythm.specialists).toBe(true);
+    await org.setTeamRhythm(ershov, credit.id, { deadline: null, meeting: null, specialists: false });
+    // По ссылке на карточку права те же, что в списке
+    const focused = await teams.teamsView(ershov, { focus: credit.id });
+    expect(focused.extra).toBeNull();
+    expect(focused.teams.find((t) => t.id === credit.id)?.rights.rhythm).toBe(true);
     expect(view.teams[0]!.members.map((m) => [m.fullName, m.position, m.unit])).toEqual([["Лисина Анна", "Head of Credit", "Управление кредитных продуктов"]]);
     expect(view.people.length).toBeGreaterThan(0);
   });
@@ -214,11 +235,16 @@ describe("обёртки над сервисами", () => {
     expect(await prisma.teamJoinRequest.count({ where: { teamId: p.id, status: "PENDING" } })).toBe(0);
     await expectRule(teams.closeTeam(ershov, p.id), /нет или она закрыта/);
 
-    // Команду по структуре руководитель не закрывает, владелец закрывает и возвращает
+    // Команду по структуре руководитель не закрывает, владелец закрывает и возвращает. Ожидающие запросы отменяются,
+    // как при закрытии проекта
     const credit = await teamOf("Управление кредитных продуктов");
+    await projects.addProjectPeople(await personal("Лисина"), credit.id, [sedov.slug]);
+    expect(await prisma.teamJoinRequest.count({ where: { teamId: credit.id, status: "PENDING" } })).toBe(1);
     await expectRule(teams.closeTeam(await personal("Лисина"), credit.id), /только владелец/);
     await teams.closeTeam(await ownerMode(), credit.id);
     expect(await prisma.auditLog.findFirst({ where: { entityId: credit.id, action: "team.off" } })).not.toBeNull();
+    expect(await prisma.teamJoinRequest.count({ where: { teamId: credit.id, status: "PENDING" } })).toBe(0);
+    expect(await prisma.teamJoinRequest.count({ where: { teamId: credit.id, status: "CANCELLED" } })).toBe(1);
     const view = await teams.teamsView(await ownerMode());
     expect(view.closed.map((t) => t.name)).toEqual(expect.arrayContaining(["Управление кредитных продуктов", "Кредиты - страхование"]));
     expect(view.teams.some((t) => t.id === credit.id)).toBe(false);
@@ -237,5 +263,28 @@ describe("обёртки над сервисами", () => {
     expect(belova.rights).toMatchObject({ members: true, rename: true, close: true });
     const aram = (await teams.teamsView({ ...owner, management: null })).teams.find((t) => t.id === created.id);
     expect(aram).toBeUndefined();
+  });
+
+  it("создать сразу с руководителем: владелец в режиме управления назначает другого, остальным нельзя", async () => {
+    const owner = await ownerMode();
+    const kotov = await person("Котов");
+    const lisina = await person("Лисина");
+    const created = await teams.createTeam(owner, "Пилот кредитов", [kotov.slug, lisina.slug], lisina.slug);
+    expect(created.leader).toBe("Лисина Анна");
+    expect(created.leaderError).toBeNull();
+    const row = await prisma.team.findUniqueOrThrow({ where: { id: created.id }, include: { members: { include: { person: true } } } });
+    expect(row.leaderId).toBe(lisina.id);
+    expect(row.project).toBe(true);
+    // Новый руководитель не числится участником своей команды
+    expect(row.members.map((m) => m.person.fullName)).toEqual(["Котов Игорь"]);
+    expect(await prisma.auditLog.findFirst({ where: { entityId: created.id, field: "Руководитель: Пилот кредитов" } })).not.toBeNull();
+    // Руководитель не владелец: другого руководителя сразу не назначить, команда не создаётся
+    const ershov = await personal("Ершов");
+    await expectRule(teams.createTeam(ershov, "Чужой руководитель", [], lisina.slug), /владелец в режиме управления/);
+    expect(await prisma.team.count({ where: { name: "Чужой руководитель" } })).toBe(0);
+    // Себя руководителем можно указать: это обычное создание
+    const own = await teams.createTeam(ershov, "Своя команда Ершова", [], ershov.slug);
+    expect(own.leader).toBeNull();
+    expect((await prisma.team.findUniqueOrThrow({ where: { id: own.id } })).leaderId).toBe(ershov.personId);
   });
 });

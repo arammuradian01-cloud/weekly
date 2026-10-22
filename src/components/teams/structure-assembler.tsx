@@ -11,7 +11,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, ChevronRight, GripVertical, Plus, UserPlus, Users } from "lucide-react";
 import { addPeopleAction, createTeamAction } from "@/app/(app)/people/teams/actions";
 import type { PickPerson, PickUnit, WeeklyTeam } from "@/lib/org/teams";
-import { addSummary, teamSearchKey } from "@/lib/org/team-rights";
+import { addSummary, sizeText, teamSearchKey, teamSize } from "@/lib/org/team-rights";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { usePrototype } from "@/domain/store";
 import { plural } from "@/domain/dates";
@@ -172,7 +172,6 @@ function UnitNode({ unit, depth, tree, where, open, toggle, leaf = false }: { un
 /** Карточка команды, куда можно бросить подразделение или человека */
 function TargetCard({ team }: { team: WeeklyTeam }) {
   const { setNodeRef, isOver } = useDroppable({ id: `t:${team.id}` });
-  const n = team.members.length;
   return (
     <section ref={setNodeRef} aria-labelledby={`as-${team.id}`} className={cn("sv-card bg-surface p-3 transition-shadow", isOver && "ring-2 ring-blue")} data-testid={`assemble-target-${team.id}`}>
       <h3 id={`as-${team.id}`} className="flex items-center gap-2 text-body font-semibold text-ink">
@@ -180,7 +179,7 @@ function TargetCard({ team }: { team: WeeklyTeam }) {
         {team.name}
       </h3>
       <p className="mt-0.5 text-caption text-muted">
-        {n} {plural(n, "участник", "участника", "участников")}
+        {sizeText(teamSize(team))}
         {team.waiting.length ? `, ждут согласия ${team.waiting.length}` : ""}
       </p>
     </section>

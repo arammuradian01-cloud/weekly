@@ -7,7 +7,8 @@
 //
 // Кто что видит в списке:
 // - владелец и администратор в режиме управления: все команды компании;
-// - руководитель: команды, которыми он руководит (по структуре и свои проекты), и команды, где он участник;
+// - руководитель: команды, которыми он руководит (по структуре и свои проекты), команды ниже своих (им он задаёт
+//   ритм weekly) и команды, где он участник;
 // - остальные: команды, где они участники, только для просмотра;
 // - общий логин без режима управления: как в остальном ресурсе, только топ-команда и только просмотр.
 
@@ -19,7 +20,7 @@ import * as projects from "./projects";
 import { TOP_TEAM, loadTeamNodes, orderTeams, scopeOf } from "./scope";
 import { weeklyLights, type WeeklyLight } from "./panel";
 import type { TeamRhythm } from "./rhythm";
-import { NO_RIGHTS, canCancelRequest, sortTeams, teamRights, type RightsSubject, type TeamRights } from "./team-rights";
+import { canCancelRequest, sortTeams, teamRights, type ManagementOff, type RightsSubject, type TeamRelation, type TeamRights } from "./team-rights";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -48,7 +49,7 @@ export type WeeklyTeam = {
   /** Сдача weekly за отчётную неделю: тот же счёт, что в «Структуре» и панели руководителя */
   weekly: WeeklyLight;
   openTasks: number;
-  relation: "leader" | "member" | "other";
+  relation: TeamRelation;
   rights: TeamRights;
 };
 
@@ -61,7 +62,7 @@ export type JoinRequestView = org.JoinRequestView;
 
 export type WeeklyTeamsView = {
   teams: WeeklyTeam[];
-  /** Команда из адреса, которой нет в списке (ссылка из «Мне» руководителю человека): карточка только для просмотра */
+  /** Команда из адреса, которой нет в списке (ссылка из «Мне» руководителю человека). Права те же, что везде: обычно только просмотр */
   extra: WeeklyTeam | null;
   /** Закрытые команды: владелец может вернуть */
   closed: { id: string; name: string; kind: "TOP" | "UNIT" | "CUSTOM" }[];
@@ -77,6 +78,8 @@ export type WeeklyTeamsView = {
   mode: "all" | "mine" | "shared";
   /** Владелец в режиме управления: люди других веток входят сразу, команды можно пересобрать по структуре */
   owner: boolean;
+  /** Режим управления доступен, но выключен: экран объясняет, что в нём станет видно и доступно */
+  managementOff: ManagementOff;
   canCreate: boolean;
   me: string;
 };
@@ -116,7 +119,9 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
   // Общий логин без режима управления видит только топ-команду и ничем не руководит (как везде в ресурсе)
   const scope = scopeOf(nodes, { id: actor.personId, role: actor.role, limited: shared });
   const active = nodes.filter((n) => n.active);
-  const listed = orderTeams(all ? active : active.filter((n) => scope.member.includes(n.id))).map((x) => x.node);
+  // Команды ниже своих тоже в списке: их руководитель задаёт им ритм weekly (setTeamRhythm, scope.leads)
+  const mine = new Set([...scope.member, ...scope.leads]);
+  const listed = orderTeams(all ? active : active.filter((n) => mine.has(n.id))).map((x) => x.node);
   const focusNode = opts.focus && !listed.some((n) => n.id === opts.focus) ? active.find((n) => n.id === opts.focus) : undefined;
   const lights = listed.length || focusNode ? await weeklyLights(nodes) : null;
   const byId = new Map(rows.map((r) => [r.id, r]));
@@ -124,7 +129,8 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
   const openBy = new Map(open.map((o) => [o.teamId, o._count._all]));
   const subject: RightsSubject = { me: actor.personId, owner, personal, leads: new Set(scope.leads) };
 
-  const view = (row: (typeof rows)[number], viewOnly: boolean): WeeklyTeam => {
+  const leads = new Set(scope.leads);
+  const view = (row: (typeof rows)[number]): WeeklyTeam => {
     const node = nodeById.get(row.id)!;
     const parent = row.parentId ? byId.get(row.parentId) : undefined;
     // Ждущих согласия видят те же, кому их показывали раньше: руководитель команды, просивший, согласующий, владелец
@@ -147,18 +153,19 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
         fullName: r.person.fullName,
         approver: r.approver.fullName,
         requestedBy: r.requestedBy?.fullName ?? null,
-        canCancel: !viewOnly && canCancelRequest(subject, row, r.requestedById),
+        canCancel: canCancelRequest(subject, row, r.requestedById),
       })),
       rhythm: node.rhythm,
       weekly: lights!.light(node),
       openTasks: openBy.get(row.id) ?? 0,
-      relation: row.leaderId === actor.personId ? "leader" : row.members.some((m) => m.personId === actor.personId) ? "member" : "other",
-      rights: viewOnly ? NO_RIGHTS : teamRights(subject, row),
+      relation: row.leaderId === actor.personId ? "leader" : leads.has(row.id) ? "below" : row.members.some((m) => m.personId === actor.personId) ? "member" : "other",
+      // Права всегда по правилам сервисов, и для команды из адреса: руководитель выше задаёт ритм и по ссылке
+      rights: teamRights(subject, row),
     };
   };
 
-  const teams = sortTeams(listed.map((n) => view(byId.get(n.id)!, false)));
-  const extra = focusNode ? view(byId.get(focusNode.id)!, true) : null;
+  const teams = sortTeams(listed.map((n) => view(byId.get(n.id)!)));
+  const extra = focusNode ? view(byId.get(focusNode.id)!) : null;
   // Люди и подразделения нужны только тем, кто добавляет людей или собирает команды: остальным не отправляем
   const picks = canCreate || teams.some((t) => t.rights.members);
   const [people, units, toApprove] = await Promise.all([
@@ -185,9 +192,33 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
     toApprove,
     mode: shared ? "shared" : all ? "all" : "mine",
     owner,
+    managementOff: actor.management ? null : actor.role === "OWNER" ? "owner" : actor.role === "ADMIN" ? "admin" : null,
     canCreate,
     me: actor.slug,
   };
+}
+
+export type CreatedTeam = { id: string; name: string; result: projects.AddPeopleResult | null; leader: string | null; leaderError: string | null };
+
+/**
+ * Новая команда сразу с людьми (createProjectWith), затем, если владелец в режиме управления выбрал другого
+ * руководителя, смена руководителя (updateTeam). Это две транзакции: не вышло назначить руководителя, команда
+ * остаётся у создателя, экран говорит почему
+ */
+export async function createTeam(actor: Actor, name: string, slugs: string[], leader?: string | null): Promise<CreatedTeam> {
+  const other = leader && leader !== actor.slug ? String(leader) : null;
+  if (other && !canManagePeople(actor)) fail("Другого руководителя назначает владелец в режиме управления: создайте команду и назначьте его в карточке");
+  if (other && !(await prisma.person.findUnique({ where: { slug: other }, select: { id: true } }))) fail("Такого человека нет");
+  const created = await projects.createProjectWith(actor, name, slugs);
+  if (!other) return { ...created, leader: null, leaderError: null };
+  try {
+    await org.updateTeam(actor, created.id, { leader: other });
+    const row = await prisma.team.findUniqueOrThrow({ where: { id: created.id }, select: { leader: { select: { fullName: true } } } });
+    return { ...created, leader: row.leader?.fullName ?? null, leaderError: null };
+  } catch (error) {
+    if (error instanceof TaskRuleError) return { ...created, leader: null, leaderError: error.message };
+    throw error;
+  }
 }
 
 async function liveTeam(teamId: string) {
@@ -205,7 +236,7 @@ export async function renameTeam(actor: Actor, teamId: string, name: string): Pr
   return { id: team.id, name: after.name };
 }
 
-/** Закрыть: свой проект через сервис проектов (ожидающие запросы отменяются), остальные команды выключает владелец */
+/** Закрыть: свой проект через сервис проектов, остальные команды выключает владелец. Ожидающие запросы отменяются в обоих случаях */
 export async function closeTeam(actor: Actor, teamId: string): Promise<void> {
   const team = await liveTeam(teamId);
   if (team.project) return projects.closeProject(actor, team.id);

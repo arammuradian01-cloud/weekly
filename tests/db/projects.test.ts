@@ -156,7 +156,7 @@ describe("свой weekly-проект по образцу", () => {
     await expectRule(projects.addProjectPeople(ershov, golovkinTeam.id, [(await person("Седов")).slug]), /меняют её руководитель/);
     const kotov = await personal("Котов");
     expect(await projects.canCreateProject(kotov)).toBe(false);
-    await expectRule(projects.createProject(kotov, { name: "Мой проект" }), /Проекты собирают руководители/);
+    await expectRule(projects.createProject(kotov, { name: "Мой проект" }), /Команды собирают руководители/);
     const viaTeam = { ...(await personal("Головкин")), via: "TEAM" as const };
     expect(await projects.canCreateProject(viaTeam)).toBe(false);
     await expectRule(projects.createProject(viaTeam, { name: "Ещё проект" }), /войдя лично/);
@@ -170,7 +170,7 @@ describe("пачки, гонки и границы после проверки �
   it("одна транзакция на пачку: несуществующий и закрытый проект отказывают сразу, вся компания и больше 150 человек нет", async () => {
     const ershov = await personal("Ершов");
     const kotov = await person("Котов");
-    await expectRule(projects.addProjectPeople(ershov, "нет-такого", [kotov.slug]), /нет или он закрыт/);
+    await expectRule(projects.addProjectPeople(ershov, "нет-такого", [kotov.slug]), /нет или она закрыта/);
     const company = await prisma.orgUnit.findFirstOrThrow({ where: { kind: "COMPANY", active: true } });
     await expectRule(projects.unitPeople(company.id), /Всю компанию/);
     const many = Array.from({ length: projects.BATCH_MAX + 1 }, (_, i) => `slug-${i}`);
@@ -216,7 +216,7 @@ describe("пачки, гонки и границы после проверки �
     const golovkin = await personal("Головкин");
     await expectRule(projects.renameProject(golovkin, own.id, "Чужое"), /руководитель/);
     const unitTeam = await prisma.team.findFirstOrThrow({ where: { leaderId: ershov.personId, kind: "UNIT" } });
-    await expectRule(projects.closeProject(ershov, unitTeam.id), /нет или он закрыт/);
+    await expectRule(projects.closeProject(ershov, unitTeam.id), /нет или она закрыта/);
     // Открытая задача держит проект
     const kotov = await person("Котов");
     await svc.createTask(ershov, { title: "Отчёт по кредитам", outcome: "Отчёт готов", owner: kotov.slug, direction: "department", due: "2027-01-15", team: own.id });
@@ -224,7 +224,7 @@ describe("пачки, гонки и границы после проверки �
     await prisma.task.deleteMany({ where: { teamId: own.id } });
     await projects.closeProject(ershov, own.id);
     expect((await prisma.team.findUniqueOrThrow({ where: { id: own.id } })).active).toBe(false);
-    await expectRule(projects.addProjectPeople(ershov, own.id, [kotov.slug]), /нет или он закрыт/);
+    await expectRule(projects.addProjectPeople(ershov, own.id, [kotov.slug]), /нет или она закрыта/);
     // Ожидающий запрос отменяет тот, кто просил
     const cross = await prisma.team.findFirstOrThrow({ where: { name: "Кредиты и страхование" } });
     const req = await prisma.teamJoinRequest.findFirstOrThrow({ where: { teamId: cross.id, status: "PENDING" } });
@@ -277,8 +277,8 @@ describe("второй круг проверки кода", () => {
     const ownerActor = await owner();
     const t = await org.createTeam(ownerActor, { name: "Команда владельца", leader: (await person("Ершов")).slug });
     const ershov = await personal("Ершов");
-    await expectRule(projects.renameProject(ershov, t.id, "Моё название"), /нет или он закрыт/);
-    await expectRule(projects.closeProject(ershov, t.id), /нет или он закрыт/);
+    await expectRule(projects.renameProject(ershov, t.id, "Моё название"), /нет или она закрыта/);
+    await expectRule(projects.closeProject(ershov, t.id), /нет или она закрыта/);
     const view = await teams.teamsView(ershov);
     const row = view.teams.find((x) => x.id === t.id)!;
     expect(row.project).toBe(false);

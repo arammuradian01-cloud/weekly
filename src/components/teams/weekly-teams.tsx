@@ -2,17 +2,16 @@
 
 // Экран «Weekly-команды» (этап 64). Решение Арама 22.10: один экран вместо вкладки «Команды» в «Структуре» и
 // «Weekly-проектов». Слева список команд с поиском по названию и людям, справа карточка выбранной команды: состав,
-// ждущие согласия, руководитель, сдача weekly. На телефоне карточка открывается отдельным экраном, кнопка «Назад»
-// браузера возвращает к списку. Выбранная команда живёт в адресе (?team=), ссылкой на карточку можно поделиться.
+// ждущие согласия, руководитель, сдача weekly. На телефоне карточка открывается отдельным экраном. Выбранная команда
+// живёт в адресе (?team=): ссылкой на карточку можно поделиться, переход на вкладку возвращает к списку.
 // Перетаскивание подразделений и людей осталось помощником «Собрать из структуры», свёрнутым по умолчанию.
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Users } from "lucide-react";
 import type { WeeklyTeam, WeeklyTeamsView } from "@/lib/org/teams";
-import { matchTeam, teamKindLabel } from "@/lib/org/team-rights";
-import { plural } from "@/domain/dates";
+import { managementHint, matchTeam, sizeText, teamKindLabel, teamSize } from "@/lib/org/team-rights";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
@@ -26,8 +25,10 @@ import { TeamCard, type CardAction } from "./team-card";
 import { WeeklyLine } from "./weekly-line";
 import { AddPeopleModal, CloseModal, CreateTeamModal, LeaderModal, RenameModal, RhythmModal } from "./team-dialogs";
 import { StructureAssembler } from "./structure-assembler";
+import { ManageHint } from "./manage-hint";
 
-const LIST_STATE = "weeklyTeam";
+/** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
+const NARROW = "(max-width: 1023.98px)";
 
 function intro(view: WeeklyTeamsView): string {
   if (view.mode === "shared") return "Под общим входом команды только для просмотра. Чтобы управлять своей командой, войдите со своим логином и паролем.";
@@ -35,13 +36,14 @@ function intro(view: WeeklyTeamsView): string {
     return view.owner
       ? "Все weekly-команды компании. В режиме управления вы меняете состав любой команды, люди других веток входят сразу."
       : "Все weekly-команды компании. Состав меняют руководитель команды и владелец в режиме управления.";
-  if (view.canCreate || view.teams.some((t) => t.rights.members))
-    return "Ваши команды по структуре и проекты, а также команды, где вы участник. Люди вашей ветки входят сразу, из других веток после согласия их руководителя.";
+  if (view.canCreate || view.teams.some((t) => t.rights.members || t.rights.rhythm))
+    return "Ваши команды по структуре и проекты, команды ниже ваших и команды, где вы участник. Люди вашей ветки входят сразу, из других веток после согласия их руководителя.";
   return "Команды, в которых вы участник. Состав меняет руководитель команды.";
 }
 
 function TeamRow({ team, selected, onOpen }: { team: WeeklyTeam; selected: boolean; onOpen: (id: string) => void }) {
-  const n = team.members.length;
+  const who = team.relation === "leader" ? "Руководитель: вы" : team.leader ? `Руководитель: ${team.leader.fullName}` : "Руководитель не назначен";
+  const tail = team.relation === "member" ? ", вы участник" : team.relation === "below" ? ", команда ниже вашей" : "";
   return (
     <li>
       <a
@@ -60,9 +62,8 @@ function TeamRow({ team, selected, onOpen }: { team: WeeklyTeam; selected: boole
           <Badge tone={team.kind === "CUSTOM" ? "blue" : "gray"}>{teamKindLabel(team)}</Badge>
         </span>
         <span className="text-small text-muted">
-          {team.relation === "leader" ? "Руководитель: вы" : team.leader ? `Руководитель: ${team.leader.fullName}` : "Руководитель не назначен"}
-          {`, ${n} ${plural(n, "участник", "участника", "участников")}`}
-          {team.relation === "member" ? ", вы участник" : ""}
+          {who}, {sizeText(teamSize(team))}
+          {tail}
         </span>
         <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <WeeklyLine weekly={team.weekly} />
@@ -95,10 +96,10 @@ function JoinRequests({ list }: { list: JoinRequestView[] }) {
               <span className="font-semibold">{r.person.fullName}</span> в команду «{r.team.name}»{r.requestedBy ? <span className="text-muted">, просит {r.requestedBy}</span> : null}
             </p>
             <div className="flex gap-2">
-              <Button size="sm" disabled={busy} onClick={() => void decide(r, true)}>
+              <Button size="sm" className="max-sm:min-h-11" disabled={busy} onClick={() => void decide(r, true)}>
                 Согласовать
               </Button>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => void decide(r, false)}>
+              <Button size="sm" variant="secondary" className="max-sm:min-h-11" disabled={busy} onClick={() => void decide(r, false)}>
                 Отказать
               </Button>
             </div>
@@ -109,37 +110,49 @@ function JoinRequests({ list }: { list: JoinRequestView[] }) {
   );
 }
 
+type Focus = { to: "card" } | { to: "row"; id: string };
+
 export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const pathname = usePathname();
-  const fromUrl = useSearchParams().get("team");
+  // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку
+  const picked = useSearchParams().get("team");
   const run = useRunWeekly();
   const { notify } = usePrototype();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [dialog, setDialog] = useState<{ action: CardAction; team: WeeklyTeam } | null>(null);
   const [busy, setBusy] = useState(false);
-  // Выбранная команда живёт здесь, адрес её только повторяет. Обновление данных после действия возвращает в адрес
-  // тот путь, что был при его запуске (так устроен роутер), и карточка не должна от этого прыгать. Из адреса команда
-  // берётся при открытии экрана и по кнопкам «Назад» и «Вперёд» браузера
-  const [picked, setPicked] = useState<string | null>(fromUrl);
+  // Карточку, открытую из списка, мы положили в историю шагом: «К списку команд» тогда равна кнопке «Назад».
+  // Помним это здесь, а не в history.state: обновление данных роутером переписывает state записи
+  const pushedRef = useRef<string | null>(null);
+  // Куда поставить фокус после смены экрана: на заголовок карточки или обратно на строку списка
+  const focusRef = useRef<Focus | null>(null);
+
   useEffect(() => {
-    const onPop = () => setPicked(new URL(window.location.href).searchParams.get("team"));
+    const onPop = () => {
+      // Системная «Назад» с карточки: к списку, фокус на строку команды
+      if (pushedRef.current) focusRef.current = { to: "row", id: pushedRef.current };
+      pushedRef.current = null;
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
-  // Адрес повторяет выбор после каждого обновления данных: ссылкой на карточку можно поделиться
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    if (url.searchParams.get("team") === picked) return;
-    if (picked) url.searchParams.set("team", picked);
-    else url.searchParams.delete("team");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [picked, view]);
 
   // Карточка: выбранная команда, иначе на ноутбуке первая в списке. На телефоне без выбора только список
   const selected = picked ? (view.teams.find((t) => t.id === picked) ?? (view.extra?.id === picked ? view.extra : null)) : null;
   const shown = selected ?? view.teams[0] ?? null;
   const cardMode = !!selected;
+
+  useEffect(() => {
+    const f = focusRef.current;
+    if (!f) return;
+    const el = f.to === "card" ? document.getElementById("team-card-title") : document.querySelector<HTMLElement>(`[data-testid="team-row-${f.id}"]`);
+    // Элемент ещё не на экране (данные новой команды не пришли): попробуем после следующего обновления
+    if (!el || !el.getClientRects().length) return;
+    focusRef.current = null;
+    el.focus({ preventScroll: f.to === "row" ? false : true });
+  }, [selected, view]);
+
   const found = useMemo(() => view.teams.filter((t) => matchTeam(t, query)), [view.teams, query]);
   const targets = useMemo(() => {
     const own = view.teams.filter((t) => t.rights.members && t.relation === "leader");
@@ -148,17 +161,34 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     return own;
   }, [view.teams, shown]);
   const assemble = view.people.length > 0 && (targets.length > 0 || view.canCreate);
+  const hint = managementHint(view.managementOff);
 
-  /** Открыть карточку. push: шаг в истории, чтобы на телефоне «Назад» вернул к списку (выбор в списке) */
-  const open = (id: string, push = false) => {
+  /**
+   * Открыть карточку. Из списка шаг в истории (на телефоне «Назад» вернёт к списку), из открытой карточки замена:
+   * перебор команд на ноутбуке не копит историю. Адрес меняется через history: роутер Next подхватывает его сразу,
+   * а обновление данных после действия, начатое раньше, отменяется переходом и повторяется уже по новому адресу
+   */
+  const open = (id: string) => {
     if (picked === id) return;
-    setPicked(id);
-    if (push) window.history.pushState({ [LIST_STATE]: true }, "", `${pathname}?team=${encodeURIComponent(id)}`);
-    if (window.matchMedia("(max-width: 1023.98px)").matches) window.scrollTo({ top: 0 });
+    const url = `${pathname}?team=${encodeURIComponent(id)}`;
+    if (picked) window.history.replaceState(null, "", url);
+    else {
+      window.history.pushState(null, "", url);
+      pushedRef.current = id;
+    }
+    focusRef.current = { to: "card" };
+    if (window.matchMedia(NARROW).matches) window.scrollTo({ top: 0 });
   };
+  /** К списку: если карточку открыли из списка, это шаг назад по истории, иначе адрес без команды */
   const back = () => {
-    if ((window.history.state as Record<string, unknown> | null)?.[LIST_STATE]) window.history.back();
-    else setPicked(null);
+    if (picked) focusRef.current = { to: "row", id: picked };
+    if (pushedRef.current && pushedRef.current === picked) {
+      pushedRef.current = null;
+      window.history.back();
+      return;
+    }
+    pushedRef.current = null;
+    window.history.replaceState(null, "", pathname);
   };
   const act = (action: CardAction) => {
     if (shown) setDialog({ action, team: shown });
@@ -187,7 +217,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             {view.owner ? (
-              <Button variant="secondary" size="sm" disabled={busy} onClick={() => void sync()}>
+              <Button variant="secondary" size="sm" className="max-sm:min-h-11" disabled={busy} onClick={() => void sync()}>
                 <RefreshCw className="h-4 w-4" aria-hidden="true" />
                 Создать команды по структуре
               </Button>
@@ -201,6 +231,8 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
           </div>
         </div>
 
+        {hint ? <ManageHint text={hint} /> : null}
+
         {view.toApprove.length ? <JoinRequests list={view.toApprove} /> : null}
 
         {assemble ? (
@@ -210,77 +242,88 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
         ) : null}
       </div>
 
-      {empty && !view.extra ? (
-        view.canCreate ? (
-          <EmptyState title="Weekly-команд пока нет" icon={Users} tone="accent" centered action={<Button onClick={() => setCreating(true)}>Создать команду</Button>}>
-            Соберите команду из людей любых подразделений: у неё будет своё weekly и свои задачи.
-          </EmptyState>
-        ) : (
-          <EmptyState
-            title="Вы пока не в weekly-команде"
-            icon={Users}
-            centered
-            action={
-              <Link href="/people/structure" className={buttonClass("secondary", "sm")}>
-                Открыть структуру
-              </Link>
-            }
-          >
-            {view.mode === "shared" ? "Под общим входом видна только топ-команда. Войдите со своим логином и паролем, чтобы увидеть свои команды." : "В команду добавляет её руководитель. Пока можно посмотреть, кто с кем работает, в структуре компании."}
-          </EmptyState>
-        )
-      ) : (
-        <div className={cn("grid gap-5", shown && "lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]")}>
-          <section aria-label="Список команд" className={cn("min-w-0 flex-col gap-3", cardMode ? "hidden lg:flex" : "flex")}>
-            {view.teams.length > 3 ? (
-              <div className="sv-field">
-                <label htmlFor="teams-search" className="sv-label">
-                  Найти команду или человека
-                </label>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon" aria-hidden="true" />
-                  <input id="teams-search" type="search" className="sv-control w-full pl-9" autoComplete="off" placeholder="Название команды, руководитель или участник" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <div className={cn("grid gap-5", shown && "lg:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]")}>
+        <section aria-label="Список команд" className={cn("min-w-0 flex-col gap-3", cardMode ? "hidden lg:flex" : "flex")}>
+          {empty ? (
+            view.canCreate ? (
+              <EmptyState title="Weekly-команд пока нет" icon={Users} tone="accent" centered action={<Button onClick={() => setCreating(true)}>Создать команду</Button>}>
+                Соберите команду из людей любых подразделений: у неё будет своё weekly и свои задачи.
+              </EmptyState>
+            ) : (
+              <EmptyState
+                title="Вы пока не в weekly-команде"
+                icon={Users}
+                centered
+                action={
+                  <Link href="/people/structure" className={buttonClass("secondary", "sm", "max-sm:min-h-11")}>
+                    Открыть структуру
+                  </Link>
+                }
+              >
+                {view.mode === "shared" ? "Под общим входом видна только топ-команда. Войдите со своим логином и паролем, чтобы увидеть свои команды." : "В команду добавляет её руководитель. Пока можно посмотреть, кто с кем работает, в структуре компании."}
+              </EmptyState>
+            )
+          ) : (
+            <>
+              {view.teams.length > 3 ? (
+                <div className="sv-field">
+                  <label htmlFor="teams-search" className="sv-label">
+                    Найти команду или человека
+                  </label>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon" aria-hidden="true" />
+                    <input id="teams-search" type="search" className="sv-control w-full pl-9" autoComplete="off" placeholder="Название команды, руководитель или участник" value={query} onChange={(e) => setQuery(e.target.value)} />
+                  </div>
                 </div>
-              </div>
-            ) : null}
-            {found.length ? (
-              <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
-                {found.map((t) => (
-                  <TeamRow key={t.id} team={t} selected={shown?.id === t.id} onOpen={(id) => open(id, true)} />
-                ))}
-              </ul>
-            ) : view.teams.length ? (
-              <p className="sv-card bg-surface p-4 text-small text-muted" aria-live="polite">
-                Ничего не нашли: проверьте написание или очистите поиск
-              </p>
-            ) : null}
-            {view.closed.length ? (
-              <Collapsible id="closed-teams" title="Закрытые команды" hint={`${view.closed.length}: можно вернуть`} headingLevel={3} testId="closed-teams">
-                <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
-                  {view.closed.map((t) => (
-                    <li key={t.id} className="flex items-center justify-between gap-3 py-2">
-                      <span className="min-w-0 text-body text-ink">{t.name}</span>
-                      <Button size="sm" variant="secondary" disabled={busy} onClick={() => void reopen(t.id, t.name)} aria-label={`Вернуть команду: ${t.name}`}>
-                        Вернуть
-                      </Button>
-                    </li>
+              ) : null}
+              {found.length ? (
+                <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
+                  {found.map((t) => (
+                    <TeamRow key={t.id} team={t} selected={shown?.id === t.id} onOpen={open} />
                   ))}
                 </ul>
-              </Collapsible>
-            ) : null}
-          </section>
-          {shown ? (
-            <aside aria-label="Карточка команды" className={cn("min-w-0 self-start lg:sticky lg:top-20", cardMode ? "block" : "hidden lg:block")}>
-              <TeamCard key={shown.id} team={shown} onAction={act} onBack={back} />
-            </aside>
+              ) : (
+                <p className="sv-card bg-surface p-4 text-small text-muted" aria-live="polite">
+                  Ничего не нашли: проверьте написание или очистите поиск
+                </p>
+              )}
+            </>
+          )}
+          {view.closed.length ? (
+            <Collapsible id="closed-teams" title="Закрытые команды" hint={`${view.closed.length}: можно вернуть`} headingLevel={3} testId="closed-teams">
+              <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+                {view.closed.map((t) => (
+                  <li key={t.id} className="flex items-center justify-between gap-3 py-2">
+                    <span className="min-w-0 text-body text-ink">{t.name}</span>
+                    <Button size="sm" variant="secondary" className="max-sm:min-h-11" disabled={busy} onClick={() => void reopen(t.id, t.name)} aria-label={`Вернуть команду: ${t.name}`}>
+                      Вернуть
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            </Collapsible>
           ) : null}
-        </div>
-      )}
+        </section>
+        {shown ? (
+          <aside aria-label="Карточка команды" className={cn("min-w-0 self-start lg:sticky lg:top-20", cardMode ? "block" : "hidden lg:block")}>
+            <TeamCard key={shown.id} team={shown} view={view} onAction={act} onBack={back} />
+          </aside>
+        ) : null}
+      </div>
 
-      <CreateTeamModal open={creating} onOpenChange={setCreating} all={view.people} me={view.me} direct={view.owner} onCreated={open} />
+      <CreateTeamModal open={creating} onOpenChange={setCreating} all={view.people} me={view.me} direct={view.owner} managementOff={view.managementOff} onCreated={open} />
       {dialog?.action === "add" ? <AddPeopleModal team={dialog.team} all={view.people} direct={view.owner} onClose={() => setDialog(null)} /> : null}
       {dialog?.action === "rename" ? <RenameModal team={dialog.team} onClose={() => setDialog(null)} /> : null}
-      {dialog?.action === "close" ? <CloseModal team={dialog.team} onClose={() => setDialog(null)} onClosed={() => setPicked(null)} /> : null}
+      {dialog?.action === "close" ? (
+        <CloseModal
+          team={dialog.team}
+          onClose={() => setDialog(null)}
+          onClosed={() => {
+            pushedRef.current = null;
+            window.history.replaceState(null, "", pathname);
+          }}
+        />
+      ) : null}
       {dialog?.action === "leader" ? <LeaderModal team={dialog.team} all={view.people} owners={view.owners} parents={view.parents} onClose={() => setDialog(null)} /> : null}
       {dialog?.action === "rhythm" ? <RhythmModal team={dialog.team} onClose={() => setDialog(null)} /> : null}
     </div>

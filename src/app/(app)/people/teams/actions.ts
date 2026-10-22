@@ -22,9 +22,12 @@ async function slugsOf(who: Who | null | undefined): Promise<string[]> {
   return Array.isArray(who?.slugs) ? who!.slugs!.map(String) : [];
 }
 
-/** Новая команда сразу с людьми, одной транзакцией. Руководит ею тот, кто создаёт (weekly-проект этапа 57) */
-export async function createTeamAction(name: string, who?: Who | null): Promise<Result<{ id: string; name: string; result: projects.AddPeopleResult | null }>> {
-  return done(await runAction("Новая weekly-команда", async (a) => projects.createProjectWith(a, String(name ?? ""), await slugsOf(who))));
+/**
+ * Новая команда сразу с людьми, одной транзакцией. Руководит ею тот, кто создаёт (weekly-проект этапа 57); владелец в
+ * режиме управления может сразу назначить другого руководителя
+ */
+export async function createTeamAction(name: string, who?: Who | null, leader?: string | null): Promise<Result<teams.CreatedTeam>> {
+  return done(await runAction("Новая weekly-команда", async (a) => teams.createTeam(a, String(name ?? ""), await slugsOf(who), leader ? String(leader) : null)));
 }
 
 /** Люди в команду пачкой: своя ветка сразу, другие ветки после согласия руководителя (этапы 53 и 57) */

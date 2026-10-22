@@ -70,8 +70,11 @@ export function PeoplePicker({ id, label, people, value, onChange, limit = 30 }:
                 <li key={slug} className="inline-flex max-w-full items-center gap-0.5 rounded-full bg-field py-0.5 pl-2.5 pr-0.5 text-caption text-ink">
                   <span className="truncate">{name}</span>
                   {p?.note ? <span className="shrink-0 text-muted">, {p.note}</span> : null}
-                  <button type="button" onClick={() => toggle(slug, false)} className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface hover:text-ink" aria-label={`Убрать из выбора: ${name}`}>
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  {/* Поле нажатия 44 точки, а плашка остаётся низкой: кнопка выходит за неё отрицательными отступами */}
+                  <button type="button" onClick={() => toggle(slug, false)} className="group -my-2.5 -mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted hover:text-ink" aria-label={`Убрать из выбора: ${name}`}>
+                    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full group-hover:bg-surface">
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    </span>
                   </button>
                 </li>
               );

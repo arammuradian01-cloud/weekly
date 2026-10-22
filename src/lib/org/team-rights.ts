@@ -3,6 +3,7 @@
 // при каждом действии, здесь только подсказка экрану, какие кнопки показывать, по тем же правилам.
 
 import { TOP_TEAM } from "@/domain/teams";
+import { plural } from "@/domain/dates";
 
 /** Кто смотрит. owner: владелец в режиме управления (canManagePeople). personal: не общий логин без режима управления и не наблюдатель */
 export type RightsSubject = { me: string; owner: boolean; personal: boolean; leads: ReadonlySet<string> };
@@ -88,9 +89,12 @@ export function addSummary(name: string, r: AddResult | null): string {
   return `Команда «${name}»: ${parts.join(", ")}`;
 }
 
-/** Порядок списка: где человек руководитель, потом где участник, потом остальные; внутри порядок дерева команд */
-export function sortTeams<T extends { relation: "leader" | "member" | "other" }>(teams: T[]): T[] {
-  const rank = { leader: 0, member: 1, other: 2 } as const;
+/** Кем человек приходится команде: руководитель, участник, руководитель команды выше («команда ниже») или никем */
+export type TeamRelation = "leader" | "below" | "member" | "other";
+
+/** Порядок списка: свои команды, команды ниже своих, где участник, остальные; внутри порядок дерева команд */
+export function sortTeams<T extends { relation: TeamRelation }>(teams: T[]): T[] {
+  const rank = { leader: 0, below: 1, member: 2, other: 3 } as const;
   return teams.map((t, i) => ({ t, i })).sort((a, b) => rank[a.t.relation] - rank[b.t.relation] || a.i - b.i).map((x) => x.t);
 }
 
@@ -102,4 +106,39 @@ export function weeklyStatus(w: WeeklyState): "none" | "done" | "overdue" | "wai
   const done = w.submitted + w.late;
   if (done >= w.expected) return "done";
   return w.passed ? "overdue" : "waiting";
+}
+
+/** Сколько человек в команде вместе с руководителем: одно число в строке списка, в карточке и в помощнике */
+export function teamSize(team: { leader: unknown | null; members: unknown[] }): number {
+  return team.members.length + (team.leader ? 1 : 0);
+}
+
+/** «в команде 3 человека»: одно и то же число в строке списка, в карточке и в помощнике, вместе с руководителем */
+export const sizeText = (n: number) => `в команде ${n} ${plural(n, "человек", "человека", "человек")}`;
+
+/** Режим управления доступен (владелец или администратор), но выключен: экран объясняет, чего из-за этого не видно */
+export type ManagementOff = "owner" | "admin" | null;
+
+/** Подсказка в шапке экрана, когда режим управления доступен, но выключен */
+export function managementHint(off: ManagementOff): string | null {
+  if (off === "owner") return "Сейчас видны только ваши команды. Включите режим управления, чтобы видеть все команды и назначать руководителей.";
+  if (off === "admin") return "Сейчас видны только ваши команды. Включите режим управления, чтобы видеть все команды компании.";
+  return null;
+}
+
+/**
+ * Пояснение в карточке: почему кнопок нет или чего не хватает. manage: рядом ссылка на включение режима управления.
+ * Руководителю своей команды не пишем «только просмотр»: у него есть действия, ему объясняем только недостающее
+ */
+export function teamNote(c: { mode: "all" | "mine" | "shared"; off: ManagementOff }, t: { id: string; relation: TeamRelation; rights: TeamRights }): { text: string; manage: boolean } | null {
+  const r = t.rights;
+  if (r.members || r.rename || r.close || r.leader || r.rhythm) {
+    if (c.off === "owner" && t.relation === "leader") return { text: "Назначить другого руководителя можно в режиме управления.", manage: true };
+    if (t.relation === "below" && !r.members) return { text: "Команда ниже вашей: вы задаёте, кто сдаёт weekly и срок, состав меняет её руководитель.", manage: false };
+    return null;
+  }
+  if (c.mode === "shared") return { text: "Под общим входом только просмотр. Чтобы управлять своей командой, войдите со своим логином и паролем.", manage: false };
+  if (t.id === TOP_TEAM) return c.off === "owner" ? { text: "Состав топ-команды меняют в режиме управления.", manage: true } : { text: "Состав топ-команды меняет владелец в режиме управления.", manage: false };
+  if (c.off === "owner") return { text: "Чтобы менять эту команду, включите режим управления.", manage: true };
+  return { text: "Только просмотр: состав меняют руководитель команды и владелец в режиме управления.", manage: false };
 }

@@ -51,7 +51,7 @@ export async function canCreateProject(actor: Pick<Actor, "personId" | "role" | 
 /** Название: пробелы схлопнуты, длинное тире заменено, длина ограничена */
 function cleanName(value: unknown): string {
   const name = String(value ?? "").replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
-  if (!name) fail("Напишите название проекта");
+  if (!name) fail("Напишите название команды");
   if (name.length > NAME_MAX) fail(`Название длиннее ${NAME_MAX} знаков`);
   return name;
 }
@@ -65,7 +65,7 @@ export async function unitPeople(unitId: string): Promise<string[]> {
   const units = await prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, parentId: true, kind: true } });
   const root = units.find((u) => u.id === unitId);
   if (!root) fail("Такого подразделения нет");
-  if (root!.kind === "COMPANY") fail("Всю компанию в проект не добавить: выберите департамент или подразделение");
+  if (root!.kind === "COMPANY") fail("Всю компанию в команду не добавить: выберите департамент или подразделение");
   const below = new Set<string>([unitId]);
   let grew = true;
   while (grew) {
@@ -92,13 +92,13 @@ async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
 }
 
 async function createIn(tx: Tx, actor: Actor, rawName: unknown): Promise<{ id: string; name: string }> {
-  if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Проект собирают, войдя лично, со своим логином и паролем" : "Проекты собирают руководители");
+  if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Команду собирают, войдя лично, со своим логином и паролем" : "Команды собирают руководители");
   const name = cleanName(rawName);
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${actor.personId}`}))`;
   const same = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, name } });
-  if (same) fail(`Проект «${name}» у вас уже есть`);
+  if (same) fail(`Команда «${name}» у вас уже есть`);
   const mine = await tx.team.count({ where: { leaderId: actor.personId, active: true, project: true } });
-  if (mine >= PROJECTS_MAX) fail(`У вас уже ${PROJECTS_MAX} проектов: закройте те, что больше не нужны`);
+  if (mine >= PROJECTS_MAX) fail(`У вас уже ${PROJECTS_MAX} своих команд: закройте те, что больше не нужны`);
   const count = await tx.team.count();
   const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: actor.personId, parentId: await parentFor(tx, actor), sortOrder: (count + 1) * 10 } });
   await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${actor.fullName}`);
@@ -133,7 +133,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
   // Права на команду один раз, до людей
   const team = await tx.team.findUnique({ where: { id: String(teamId) }, include: { leader: { select: { fullName: true } } } });
-  if (!team || !team.active) fail("Такого проекта нет или он закрыт");
+  if (!team || !team.active) fail("Такой команды нет или она закрыта");
   if (!owner && (team!.id === TOP_TEAM || team!.leaderId !== actor.personId)) fail("Состав команды меняют её руководитель и владелец в режиме управления");
 
   // По очереди: внутри транзакции запросы и так идут одним соединением
@@ -262,7 +262,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
 
 /** Повтор в ту же секунду из другой вкладки: второй ожидающий запрос запрещён индексом, говорим понятно */
 function concurrent(error: unknown): never {
-  if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") fail("Состав проекта только что поменялся: обновите страницу и повторите");
+  if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") fail("Состав команды только что поменялся: обновите страницу и повторите");
   throw error;
 }
 
@@ -289,10 +289,10 @@ async function ownProject(tx: Tx, actor: Actor, teamId: string) {
   // Та же блокировка, что у пачки людей: закрытие не разойдётся с добавлением
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
   const team = await tx.team.findUnique({ where: { id: String(teamId) } });
-  if (!team || !team.active || !team.project) fail("Такого проекта нет или он закрыт");
+  if (!team || !team.active || !team.project) fail("Такой команды нет или она закрыта");
   if (!canManagePeople(actor)) {
-    if (teamLogin(actor)) fail("Проект меняют, войдя лично, со своим логином и паролем");
-    if (team!.leaderId !== actor.personId) fail("Проект меняет его руководитель и владелец в режиме управления");
+    if (teamLogin(actor)) fail("Команду меняют, войдя лично, со своим логином и паролем");
+    if (team!.leaderId !== actor.personId) fail("Команду меняют её руководитель и владелец в режиме управления");
   }
   return team!;
 }
@@ -303,7 +303,7 @@ export async function renameProject(actor: Actor, teamId: string, rawName: strin
     const name = cleanName(rawName);
     if (name === team.name) return { id: team.id, name };
     const same = await tx.team.findFirst({ where: { leaderId: team.leaderId, active: true, name, id: { not: team.id } } });
-    if (same) fail(`Проект «${name}» у вас уже есть`);
+    if (same) fail(`Команда «${name}» у вас уже есть`);
     await tx.team.update({ where: { id: team.id }, data: { name } });
     await audit(tx, actor, "team.update", team.id, "Название проекта", team.name, name);
     return { id: team.id, name };
@@ -315,7 +315,7 @@ export async function closeProject(actor: Actor, teamId: string, now = new Date(
   await prisma.$transaction(async (tx) => {
     const team = await ownProject(tx, actor, teamId);
     const open = await tx.task.count({ where: { teamId: team.id, status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } });
-    if (open) fail(`В проекте ${open} открытых задач: сначала передайте их в другую команду или закройте`);
+    if (open) fail(`В команде ${open} открытых задач: сначала передайте их в другую команду или закройте`);
     await tx.teamJoinRequest.updateMany({ where: { teamId: team.id, status: "PENDING" }, data: { status: "CANCELLED", decidedAt: now } });
     await tx.team.update({ where: { id: team.id }, data: { active: false } });
     await audit(tx, actor, "team.off", team.id, `Проект закрыт: ${team.name}`, null, null);

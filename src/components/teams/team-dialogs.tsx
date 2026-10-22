@@ -14,7 +14,7 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { plural } from "@/domain/dates";
 import { addPeopleAction, closeTeamAction, createTeamAction, renameTeamAction, setRhythmAction, updateTeamAction } from "@/app/(app)/people/teams/actions";
 import type { PickPerson, WeeklyTeam } from "@/lib/org/teams";
-import { addSummary, inBranch } from "@/lib/org/team-rights";
+import { addSummary, inBranch, type ManagementOff } from "@/lib/org/team-rights";
 import { WEEKDAY_NAMES, type Slot } from "@/lib/org/rhythm";
 import { TOP_TEAM } from "@/domain/teams";
 import { PeoplePicker, type PickOption } from "./people-picker";
@@ -58,39 +58,74 @@ const rule = (direct: boolean) =>
     ? "В режиме управления люди других веток входят сразу, их руководители получат событие в «Мне»."
     : "Люди ветки руководителя команды входят сразу. Люди других веток войдут, когда согласится их руководитель: ему придёт запрос в «Мне».";
 
-/** Новая команда сразу с людьми: руководит ею тот, кто создаёт. Владелец потом может назначить другого руководителя */
-export function CreateTeamModal({ open, onOpenChange, all, me, direct, onCreated }: { open: boolean; onOpenChange: (open: boolean) => void; all: PickPerson[]; me: string; direct: boolean; onCreated: (id: string) => void }) {
+/**
+ * Новая команда сразу с людьми. Руководит ею тот, кто создаёт; владелец в режиме управления сразу выбирает другого
+ * руководителя (команда создаётся, затем назначается руководитель), остальным окно говорит, где его назначают
+ */
+export function CreateTeamModal({
+  open,
+  onOpenChange,
+  all,
+  me,
+  direct,
+  managementOff,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  all: PickPerson[];
+  me: string;
+  /** Владелец в режиме управления: поле «Руководитель», люди других веток входят сразу */
+  direct: boolean;
+  managementOff: ManagementOff;
+  onCreated: (id: string) => void;
+}) {
   const run = useRunWeekly();
   const { notify } = usePrototype();
   const [name, setName] = useState("");
+  const [leader, setLeader] = useState("");
   const [slugs, setSlugs] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const blocked = useMemo(() => new Map([[me, "вы руководитель"]]), [me]);
-  const options = useOptions(all, me, direct, blocked);
+  const head = direct && leader ? leader : me;
+  const blocked = useMemo(() => {
+    const m = new Map([[me, head === me ? "вы руководитель" : "вы создаёте команду"]]);
+    if (head !== me) m.set(head, "руководитель команды");
+    return m;
+  }, [me, head]);
+  const options = useOptions(all, head, direct, blocked);
   const external = options.filter((o) => o.note && slugs.includes(o.slug)).length;
+  const leaders = useMemo(() => all.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null })), [all]);
+  const whoLeads = direct
+    ? "Руководителя выберите ниже, пусто: руководите вы."
+    : managementOff === "owner"
+      ? "Руководите командой вы. Другого руководителя назначите в карточке команды, включив режим управления."
+      : "Руководите командой вы. Другого руководителя назначает владелец в режиме управления.";
   const close = () => {
     if (busy) return;
     onOpenChange(false);
   };
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())} title="Новая weekly-команда" description={`У команды будет своё weekly и свои задачи, руководите ею вы. ${rule(direct)}`} wide>
+    <Modal open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())} title="Новая weekly-команда" description={`У команды будет своё weekly и свои задачи. ${whoLeads} ${rule(direct)}`} wide>
       <form
         className="flex flex-col gap-4"
         onSubmit={async (e) => {
           e.preventDefault();
           if (busy || !name.trim()) return;
           setBusy(true);
-          const r = await run(() => createTeamAction(name, { slugs }));
+          const r = await run(() => createTeamAction(name, { slugs: slugs.filter((s) => s !== head) }, direct && leader ? leader : null));
           setBusy(false);
           if (!r) return;
-          notify(addSummary(r.name, r.result));
+          notify(addSummary(r.name, r.result) + (r.leader ? `. Руководитель: ${r.leader}` : ""));
+          if (r.leaderError) notify(`Руководителя не назначили: ${r.leaderError}. Команда создана, руководитель пока вы`, "error");
           setName("");
+          setLeader("");
           setSlugs([]);
           onOpenChange(false);
           onCreated(r.id);
         }}
       >
         <TextInput label="Название команды" id="team-new-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Например, Кросс-продажи с кредитами" autoFocus />
+        {direct && all.length ? <SearchPicker id="team-new-leader" label="Руководитель" value={leader} onChange={setLeader} options={leaders} placeholder="Вы" hint="Пусто: руководите командой вы. Руководитель ведёт weekly и задачи команды" /> : null}
         {all.length ? <PeoplePicker id="team-new-people" label="Участники, можно добавить и позже" people={options} value={slugs} onChange={setSlugs} /> : null}
         {external ? <p className="text-small text-muted">Из других веток: {people(external)}. Они войдут после согласия своего руководителя.</p> : null}
         {slugs.length > BATCH_MAX ? <p className="text-small text-danger-ink">За раз можно добавить до {BATCH_MAX} человек.</p> : null}
