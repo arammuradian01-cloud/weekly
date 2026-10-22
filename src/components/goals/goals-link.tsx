@@ -434,7 +434,10 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   const targetOf = (id: UniqueIdentifier) => {
     if (id === "none") return "без цели, цель снимется";
     const g = goalById.get(String(id).slice(5));
-    return g ? `цель «${goalName(g)}»` : "цель";
+    if (!g) return "цель";
+    // Задачу взяли из карточки её же цели: отпускание здесь ничего не меняет
+    const already = draggedTasks.length > 0 && draggedTasks.every((t) => goalOf(t) === g.id);
+    return already ? `цель «${goalName(g)}», ${draggedTasks.length > 1 ? "задачи уже у неё" : "задача уже у неё"}` : `цель «${goalName(g)}»`;
   };
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Взяли: ${subjectOf(active.id)}. Стрелками выберите цель, пробел или Enter привязывает, Escape отменяет`,
@@ -527,6 +530,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
                         onToggle={toggleGoal}
                         dragging={isDragging}
                         fits={draggedTasks.length > 0 && draggedTasks.some((t) => goalFitsTask(goal, t))}
+                        already={draggedTasks.length > 0 && draggedTasks.every((t) => goalOf(t) === goal.id)}
                         interactive={interactive}
                         onUnlink={unlink}
                       />
@@ -675,7 +679,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
       {/* Карточка под курсором не ловит колесо мыши: колонка целей крутится колесом прямо во время перетаскивания */}
       <DragOverlay dropAnimation={null} style={{ pointerEvents: "none" }}>
         {draggedTasks.length ? (
-          <div className="sv-card max-w-72 bg-surface px-3 py-2 text-small font-medium text-ink shadow-medium">
+          <div className="sv-card max-w-72 bg-surface px-3 py-2 text-small font-medium text-ink shadow-medium" data-testid="link-drag-overlay">
             {draggedTasks.length > 1 ? `Отмеченные задачи: ${draggedTasks.length}` : `${draggedTasks[0]!.number}. ${draggedTasks[0]!.title}`}
           </div>
         ) : null}
@@ -736,6 +740,7 @@ const GoalCard = memo(function GoalCard({
   onToggle,
   dragging,
   fits,
+  already,
   interactive,
   onUnlink,
 }: {
@@ -747,6 +752,8 @@ const GoalCard = memo(function GoalCard({
   dragging: boolean;
   /** Цель подходит хотя бы одной перетаскиваемой задаче */
   fits: boolean;
+  /** Все перетаскиваемые задачи уже у этой цели: отпускание ничего не меняет */
+  already: boolean;
   interactive: boolean;
   /** Отвязать задачу; focus: куда перевести фокус, когда её строка пропадёт из карточки */
   onUnlink: (number: number, focus: Finder) => void;
@@ -805,7 +812,7 @@ const GoalCard = memo(function GoalCard({
         {/* Подсказки поверх карточки, а не новой строкой: карточки не прыгают, когда задачу берут */}
         {isOver ? (
           <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[inherit] bg-surface/85 px-3 text-center text-small font-semibold text-blue-700" aria-hidden="true">
-            Отпустите, чтобы привязать
+            {already ? "Уже у этой цели" : "Отпустите, чтобы привязать"}
           </span>
         ) : dragging && !fits ? (
           <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-field px-2 py-0.5 text-caption font-medium text-ink" aria-hidden="true">
