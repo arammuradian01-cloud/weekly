@@ -424,25 +424,30 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
     void commit(numbers, target.kind === "goal" ? target.id : null, { kind: "drag" });
   };
 
-  const subjectOf = (id: UniqueIdentifier) => {
+  /** Что взяли: по id перетаскиваемого, а не по состоянию экрана (первое «Над» приходит раньше перерисовки) */
+  const takenOf = (id: UniqueIdentifier) => {
     const n = Number(String(id).slice(2));
-    const numbers = dragNumbers({ number: n, from: String(id).startsWith("t:") ? "list" : "goal" });
+    return { n, numbers: dragNumbers({ number: n, from: String(id).startsWith("t:") ? "list" : "goal" }) };
+  };
+  const subjectOf = (id: UniqueIdentifier) => {
+    const { n, numbers } = takenOf(id);
     if (numbers.length > 1) return `отмеченные задачи, ${numbers.length}`;
     const t = byNumber.get(n);
     return t ? `задача ${t.number}, «${t.title}»` : `задача ${n}`;
   };
-  const targetOf = (id: UniqueIdentifier) => {
+  const targetOf = (id: UniqueIdentifier, active: UniqueIdentifier) => {
     if (id === "none") return "без цели, цель снимется";
     const g = goalById.get(String(id).slice(5));
     if (!g) return "цель";
     // Задачу взяли из карточки её же цели: отпускание здесь ничего не меняет
-    const already = draggedTasks.length > 0 && draggedTasks.every((t) => goalOf(t) === g.id);
-    return already ? `цель «${goalName(g)}», ${draggedTasks.length > 1 ? "задачи уже у неё" : "задача уже у неё"}` : `цель «${goalName(g)}»`;
+    const taken = takenOf(active).numbers.map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
+    const already = taken.length > 0 && taken.every((t) => goalOf(t) === g.id);
+    return already ? `цель «${goalName(g)}», ${taken.length > 1 ? "задачи уже у неё" : "задача уже у неё"}` : `цель «${goalName(g)}»`;
   };
   const announcements: Announcements = {
     onDragStart: ({ active }) => `Взяли: ${subjectOf(active.id)}. Стрелками выберите цель, пробел или Enter привязывает, Escape отменяет`,
-    onDragOver: ({ over }) => (over ? `Над: ${targetOf(over.id)}` : "Вне целей"),
-    onDragEnd: ({ over }) => (over ? `Отпущено на: ${targetOf(over.id)}` : "Отпущено вне целей, связь не изменилась"),
+    onDragOver: ({ active, over }) => (over ? `Над: ${targetOf(over.id, active.id)}` : "Вне целей"),
+    onDragEnd: ({ active, over }) => (over ? `Отпущено на: ${targetOf(over.id, active.id)}` : "Отпущено вне целей, связь не изменилась"),
     onDragCancel: () => "Перетаскивание отменено, связь не изменилась",
   };
 
