@@ -70,8 +70,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
     loadMarketAccess(),
   ]);
-  // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел. Этап 72: по общему логину всем
-  const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via }, marketAccess) };
+  // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел. Этап 72: по общему логину и в режиме
+  // управления всем
+  const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess) };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
   // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
   const viewAs = ctx.viewAs

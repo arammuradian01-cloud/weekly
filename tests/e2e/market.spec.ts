@@ -6,8 +6,9 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 // tests/fixtures/market/bundle.json, цифры выдуманные), дашборд работает в изолированном окне: расчёты, фильтр и
 // вкладка внутри окна, вкладка и фильтр в адресе страницы. Владелец открывает раздел Реве в настройках, Рева видит
 // пункт меню и дашборд. Логинова не из списка при личном входе: пункта меню нет, раздел закрыт, данных нет.
-// Этап 72 (решение Арама 23.10): по общему логину раздел открыт любому выбранному профилю (меню, страница, данные,
-// командная строка, кнопка на встрече), загрузка пакета по-прежнему только у владельца при личном входе. В настройках
+// Этап 72 (решения Арама 23.10): по общему логину раздел открыт любому выбранному профилю, в режиме управления любому
+// (в том числе администратору не из списка): меню, страница, данные, командная строка, кнопка на встрече. Загрузка
+// пакета по-прежнему только у владельца при личном входе. В настройках
 // под людьми строка «Не сохранено» с «Сохранить доступ» и «Отменить», уход со страницы с правками переспрашивается.
 // На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» и подпись пункта (от какого дня
 // данные) только у тех, кому раздел открыт. Данные рынка браузер не кэширует: no-store, без ETag и 304.
@@ -127,7 +128,7 @@ test("владелец загружает пакет, вкладка и филь
   await unsaved.getByRole("button", { name: "Сохранить доступ" }).click();
   await expect(page.getByText("Доступ к рынку сохранён: раздел видят 2 человека").first()).toBeVisible();
   await expect(unsaved).toHaveCount(0);
-  await expect(section.getByTestId("market-settings-count")).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс все, кто входит по общему логину.");
+  await expect(section.getByTestId("market-settings-count")).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
   await shot(page, "settings");
   const [setting] = await sql(`SELECT value FROM settings WHERE key = 'market.access'`);
   expect(setting!.value).toEqual({ people: ["reva"] });
@@ -147,8 +148,8 @@ test("владелец загружает пакет, вкладка и филь
   await shot(reva, "reva");
 });
 
-test("человек не из списка при личном входе: пункта меню нет, раздел закрыт; по общему логину тот же человек видит раздел, но не загружает", async ({ page, browser }) => {
-  test.setTimeout(120_000);
+test("человек не из списка при личном входе: пункта меню нет, раздел закрыт; режим управления и общий логин видят раздел, но не загружают", async ({ page, browser }) => {
+  test.setTimeout(180_000);
   const owner = await personal(browser, page, "muradyan");
   expect((await upload(owner)).status()).toBe(200);
   await sql(`INSERT INTO settings (key, value, "updatedAt") VALUES ('market.access', '{"people": ["reva"]}'::jsonb, now())`);
@@ -165,6 +166,22 @@ test("человек не из списка при личном входе: пу
   expect(await data.text()).not.toContain("k_demo");
   expect((await upload(page)).status()).toBe(403);
   await shot(page, "closed");
+
+  // Этап 72: Головкин (администратор, не из списка) без режима управления раздела не видит, в режиме видит, но не
+  // загружает
+  const admin = await personal(browser, page, "golovkin");
+  await expect(await marketLinks(admin)).toHaveCount(0);
+  if (isPhone()) await admin.keyboard.press("Escape");
+  expect((await admin.request.get("/api/market/data")).status()).toBe(403);
+  await enterManagement(admin, "admin");
+  const adminLink = await marketLinks(admin);
+  await expect(adminLink).toBeVisible();
+  await adminLink.click();
+  await expect(admin).toHaveURL(/\/market$/);
+  await expect(admin.frameLocator(FRAME).locator("#k-total")).toHaveText("42");
+  await expect(admin.getByTestId("market-upload")).toHaveCount(0);
+  expect((await admin.request.get("/api/market/data")).status()).toBe(200);
+  expect((await upload(admin)).status()).toBe(403);
 
   // Этап 72: Логинова по общему логину (её нет в списке): пункт меню, дашборд с данными, без загрузки
   const team = await teamLogin(browser, page, "Логинова Светлана");
@@ -208,8 +225,8 @@ test("настройки: «Не сохранено» под людьми, «О�
   await page.goto("/settings#market");
   const section = page.getByTestId("market-settings");
   const count = section.getByTestId("market-settings-count");
-  await expect(count).toHaveText("Сейчас раздел видит 1 человек, из них владельцев 1, плюс все, кто входит по общему логину.");
-  await expect(section.getByText("Раздел «Рынок» всегда видят владельцы и все, кто входит по общему логину.", { exact: false })).toBeVisible();
+  await expect(count).toHaveText("Сейчас раздел видит 1 человек, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
+  await expect(section.getByText("Владельцы, все в режиме управления и все, кто входит по общему логину, видят раздел «Рынок» всегда.", { exact: false })).toBeVisible();
   const add = async (query: string, name: RegExp) => {
     // Точное имя: список плашек подписан «Люди с доступом к рынку»
     await section.getByLabel("Люди с доступом", { exact: true }).fill(query);
@@ -277,7 +294,7 @@ test("настройки: «Не сохранено» под людьми, «О�
   await unsaved.getByRole("button", { name: "Сохранить доступ" }).click();
   await expect(page.getByText("Доступ к рынку сохранён: раздел видят 2 человека").first()).toBeVisible();
   await expect(unsaved).toHaveCount(0);
-  await expect(count).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс все, кто входит по общему логину.");
+  await expect(count).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
   await expect.poll(async () => (await sql(`SELECT value FROM settings WHERE key = 'market.access'`))[0]?.value).toEqual({ people: ["reva"] });
   expect(await sql(`SELECT value FROM settings WHERE key = 'market.meeting'`)).toEqual([]);
   // Несохранённой осталась только правка команд

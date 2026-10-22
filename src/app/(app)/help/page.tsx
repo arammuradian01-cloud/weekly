@@ -33,7 +33,7 @@ export default async function HelpPage() {
   // Абзац про «Смотреть как» (этап 63) только владельцу: остальным эта возможность недоступна
   const owner = ctx.person.role === "OWNER";
   // Ссылка на раздел «Рынок» (этап 72) только тем, кому он открыт: остальным она привела бы к закрытой странице
-  const [rhythm, teamLogin, topName, market] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName(), canSeeMarket({ personId: ctx.person.id, via: ctx.via })]);
+  const [rhythm, teamLogin, topName, market] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName(), canSeeMarket({ personId: ctx.person.id, via: ctx.via, management: ctx.management?.role ?? null })]);
   const mail = mailConfigured();
   const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
   const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
@@ -369,8 +369,8 @@ export default async function HelpPage() {
             загрузкой пакета рынка. На первой встрече месяца у выбранных команд первым пунктом идёт разбор рынка.
           </p>
           <p className="text-muted">
-            {teamLogin === "on" ? "Раздел всегда видят владельцы и все, кто входит по общему логину." : "Раздел всегда видят владельцы."} При личном входе
-            остальные видят его по списку, который ведёт владелец в настройках.
+            {teamLogin === "on" ? "Раздел всегда видят владельцы, все в режиме управления и все, кто входит по общему логину." : "Раздел всегда видят владельцы и все в режиме управления."}{" "}
+            При личном входе без режима управления остальные видят его по списку, который ведёт владелец в настройках.
           </p>
         </Block>
 
@@ -380,7 +380,8 @@ export default async function HelpPage() {
             <li>Свой weekly и свои задачи правит каждый, чужие только владелец и администраторы в режиме управления.</li>
             <li>Журнал всех изменений, отчёт CEO и настройки видят владелец и администраторы.</li>
             <li>
-              Раздел «Рынок» видят владельцы{teamLogin === "on" ? " и все, кто входит по общему логину" : ""}, при личном входе остальные по списку владельца.
+              Раздел «Рынок» видят владельцы, все в режиме управления{teamLogin === "on" ? " и все, кто входит по общему логину" : ""}, при личном входе остальные по
+              списку владельца.
             </li>
           </ul>
           <p className="text-muted">Таблица для просмотра «Weekly: все задачи ресурса» обновляется сама. Ручные правки в ней ночная сверка возвращает обратно.</p>

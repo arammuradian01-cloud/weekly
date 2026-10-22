@@ -466,6 +466,16 @@ describe("доступ к рынку", () => {
     expect(canSeeMarketWith({ slug: "loginova", role: "LEADER", via: "TEAM", active: false }, access)).toBe(false);
   });
 
+  it("этап 72: режим управления открывает раздел и администратору не из списка; без режима только по списку", () => {
+    expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: "PASSWORD", management: "ADMIN" }, access)).toBe(true);
+    expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: "PASSWORD", management: null }, access)).toBe(false);
+    expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: "PASSWORD" }, { people: ["golovkin"] })).toBe(true);
+    expect(canSeeMarketWith({ slug: "muradyan", role: "OWNER", via: "EMAIL", management: "OWNER" }, { people: [] })).toBe(true);
+    // Выключенный профиль и неизвестный способ входа режим не спасает
+    expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: "PASSWORD", management: "ADMIN", active: false }, access)).toBe(false);
+    expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: null, management: "ADMIN" }, access)).toBe(false);
+  });
+
   it("загружает владелец при личном входе; команды встречи по умолчанию топ-команда", () => {
     expect(canUploadMarket({ role: "OWNER", via: "PASSWORD" })).toBe(true);
     expect(canUploadMarket({ role: "OWNER", via: "EMAIL" })).toBe(true);

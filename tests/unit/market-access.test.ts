@@ -1,6 +1,6 @@
-// Этап 72: рынок по общему логину и сохранение доступа. Решение Арама 23.10: вход по общему логину открывает раздел
-// «Рынок» любому выбранному профилю, при личном входе видят владельцы и люди из списка, загружает пакет только
-// владелец при личном входе. Страница и обработчик данных проверяют доступ сами по настоящему правилу (база
+// Этап 72: рынок по общему логину и сохранение доступа. Решения Арама 23.10: раздел «Рынок» всегда видят владельцы,
+// любой в режиме управления (в том числе администратор) и любой выбранный профиль при входе по общему логину; при
+// личном входе без режима остальные по списку; загружает пакет только владелец при личном входе. Страница и обработчик данных проверяют доступ сами по настоящему правилу (база
 // подменена), а не по меню. Тексты строки «Не сохранено», счётчика и уведомления, ссылки, которые уводят со страницы
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { isValidElement, type ReactNode } from "react";
@@ -10,7 +10,7 @@ type Person = { slug: string; role: string; active: boolean };
 const state = vi.hoisted(() => ({
   people: {} as Record<string, Person>,
   access: null as null | { people: string[] },
-  ctx: null as null | { person: { id: string; role: string }; via: string },
+  ctx: null as null | { person: { id: string; role: string }; via: string; management?: { role: string } | null },
   body: { stamp: "1-1", version: 1, body: '{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}' } as null | { stamp: string; version: number; body: string },
   reads: [] as string[],
 }));
@@ -98,11 +98,19 @@ describe("правило по базе", () => {
     expect(await canSeeMarket({ personId: "p4", via: "PASSWORD" })).toBe(true);
   });
 
-  it("события рынка в журнале по правилу личного входа: общий логин их не видит", async () => {
+  it("режим управления: администратор не из списка видит, без режима нет; список не читается", async () => {
+    expect(await canSeeMarket({ personId: "p4", via: "PASSWORD", management: "ADMIN" })).toBe(true);
+    expect(state.reads.filter((r) => r.startsWith("setting:"))).toEqual([]);
+    expect(await canSeeMarket({ personId: "p4", via: "PASSWORD", management: null })).toBe(false);
+    expect(await canSeeMarket({ personId: "p6", via: "PASSWORD", management: "ADMIN" })).toBe(false);
+  });
+
+  it("события рынка в журнале по правилу личного входа: ни общий логин, ни режим управления их не открывают", async () => {
     expect(await canSeeMarketEvents({ personId: "p1", via: "PASSWORD" })).toBe(true);
     expect(await canSeeMarketEvents({ personId: "p2", via: "PASSWORD" })).toBe(true);
     expect(await canSeeMarketEvents({ personId: "p1", via: "TEAM" })).toBe(false);
     expect(await canSeeMarketEvents({ personId: "p3", via: "PASSWORD" })).toBe(false);
+    expect(await canSeeMarketEvents({ personId: "p4", via: "PASSWORD", management: "ADMIN" })).toBe(false);
   });
 });
 
@@ -121,6 +129,12 @@ describe("обработчик данных и страница сами про�
 
     // Выключенный профиль по общему логину тоже 403
     state.ctx = { person: { id: "p6", role: "LEADER" }, via: "TEAM" };
+    expect((await GET()).status).toBe(403);
+
+    // Администратор не из списка: в режиме управления 200, без режима 403
+    state.ctx = { person: { id: "p4", role: "ADMIN" }, via: "PASSWORD", management: { role: "ADMIN" } };
+    expect((await GET()).status).toBe(200);
+    state.ctx = { person: { id: "p4", role: "ADMIN" }, via: "PASSWORD", management: null };
     expect((await GET()).status).toBe(403);
   });
 
@@ -146,6 +160,15 @@ describe("обработчик данных и страница сами про�
     expect(tree.some((e) => typeName(e.type) === "MarketFrame")).toBe(false);
     // Подписи «только при личном входе» больше нет
     expect(tree.some((e) => typeof e.props.stage === "string")).toBe(false);
+
+    // Администратор в режиме управления: дашборд без загрузки; без режима раздел закрыт
+    state.ctx = { person: { id: "p4", role: "ADMIN" }, via: "PASSWORD", management: { role: "ADMIN" } };
+    tree = await page();
+    expect(tree.some((e) => typeName(e.type) === "MarketFrame")).toBe(true);
+    expect(tree.some((e) => typeName(e.type) === "MarketUpload")).toBe(false);
+    state.ctx = { person: { id: "p4", role: "ADMIN" }, via: "PASSWORD", management: null };
+    tree = await page();
+    expect(tree.some((e) => e.props["data-testid"] === "market-closed")).toBe(true);
   });
 });
 
@@ -161,10 +184,10 @@ describe("строка «Не сохранено» и тексты", () => {
     expect(unsavedText({ add: 2, remove: 1 })).toBe("Не сохранено: добавить 2, убрать 1");
   });
 
-  it("счётчик про личный вход, общий логин отдельно и только пока он включён; уведомление после сохранения", () => {
-    expect(marketCountText(2, 1, true)).toBe("Сейчас раздел видят 2 человека, из них владельцев 1, плюс все, кто входит по общему логину.");
-    expect(marketCountText(7, 1, false)).toBe("Сейчас раздел видят 7 человек, из них владельцев 1.");
-    expect(marketCountText(1, 1, false)).toBe("Сейчас раздел видит 1 человек, из них владельцев 1.");
+  it("счётчик про личный вход без режима управления, общий логин отдельно и только пока он включён; уведомление после сохранения", () => {
+    expect(marketCountText(2, 1, true)).toBe("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
+    expect(marketCountText(7, 1, false)).toBe("Сейчас раздел видят 7 человек, из них владельцев 1, плюс администраторы в режиме управления.");
+    expect(marketCountText(1, 1, false)).toBe("Сейчас раздел видит 1 человек, из них владельцев 1, плюс администраторы в режиме управления.");
     expect(marketSavedText(7)).toBe("Доступ к рынку сохранён: раздел видят 7 человек");
     expect(marketSavedText(21)).toBe("Доступ к рынку сохранён: раздел видит 21 человек");
     for (const text of [marketCountText(2, 1, true), marketSavedText(3), unsavedText({ add: 1, remove: 1 }), LEAVE_TEXT]) expect(text).not.toMatch(/[—–→·]/);

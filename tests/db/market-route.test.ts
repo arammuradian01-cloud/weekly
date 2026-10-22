@@ -1,11 +1,11 @@
 // Этап 72: обработчик данных рынка на настоящей базе. Вход подменён, правило доступа и пакет настоящие: по общему
-// логину данные получает и человек не из списка, при личном входе он получает 403 без цифр. Пакет синтетический:
-// tests/fixtures/market/bundle.json
+// логину и в режиме управления данные получает и человек не из списка, при личном входе без режима 403 без цифр.
+// Пакет синтетический: tests/fixtures/market/bundle.json
 import { readFileSync } from "node:fs";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { redirect } from "next/navigation";
 
-const state = vi.hoisted(() => ({ ctx: null as null | { person: { id: string; role: string }; via: string } }));
+const state = vi.hoisted(() => ({ ctx: null as null | { person: { id: string; role: string }; via: string; management?: { role: string } | null } }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({
   requireContext: async () => {
@@ -57,5 +57,12 @@ describe("данные рынка по общему логину", () => {
 
     state.ctx = { person: { id: owner.personId, role: "OWNER" }, via: "PASSWORD" };
     expect((await GET()).status).toBe(200);
+
+    // Администратор не из списка: в режиме управления 200, без режима 403
+    const golovkin = await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" }, select: { id: true, role: true } });
+    state.ctx = { person: golovkin, via: "PASSWORD", management: { role: "ADMIN" } };
+    expect((await GET()).status).toBe(200);
+    state.ctx = { person: golovkin, via: "PASSWORD", management: null };
+    expect((await GET()).status).toBe(403);
   });
 });

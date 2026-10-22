@@ -13,14 +13,15 @@ import { MarketUpload } from "@/components/market/market-upload";
 export const metadata: Metadata = { title: "Рынок" };
 
 /**
- * Рынок КАСКО и ОСАГО (этап 62): дашборд из пакета рынка, который загружает владелец при личном входе. Раздел открыт
- * всем, кто вошёл по общему логину (этап 72), а при личном входе владельцам и людям из списка в «Настройках».
+ * Рынок КАСКО и ОСАГО (этап 62): дашборд из пакета рынка, который загружает владелец при личном входе. Раздел всегда
+ * открыт владельцам, всем в режиме управления и всем, кто вошёл по общему логину (этап 72), а при личном входе без
+ * режима управления людям из списка в «Настройках».
  * Остальным страница пишет, что раздел закрыт, без цифр.
  * Вкладки КАСКО и ОСАГО внутри самого дашборда, вкладка и фильтры в адресе
  */
 export default async function MarketPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requireContext();
-  if (!(await canSeeMarket({ personId: ctx.person.id, via: ctx.via }))) {
+  if (!(await canSeeMarket({ personId: ctx.person.id, via: ctx.via, management: ctx.management?.role ?? null }))) {
     return (
       <>
         <PageHeader title="Рынок" />

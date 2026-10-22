@@ -1,14 +1,16 @@
 // Кто видит раздел «Рынок» (этап 62, этап 72). Решение Арама 22.10: рынок КАСКО и ОСАГО открыт отдельным людям.
-// Решение Арама 23.10 (этап 72): вход по общему логину открывает раздел любому выбранному профилю. При личном входе
-// видят владельцы всегда (и те, кто станет владельцем позже: роль читается из базы на каждом запросе) и люди из
-// списка, который ведёт владелец в «Настройках». Тех, кому раздел закрыт, не пускают ни страница, ни обработчик
-// данных. Загружает пакет по-прежнему только владелец при личном входе. События рынка в журнале и выгрузке остаются
-// по правилу личного входа: права журнала этап 72 не меняет.
+// Решение Арама 23.10 (этап 72): раздел всегда видят владельцы (и те, кто станет владельцем позже: роль читается из
+// базы на каждом запросе), любой, кто сейчас в режиме управления (в том числе администратор), и любой выбранный
+// профиль при входе по общему логину. При личном входе без режима управления остальные видят раздел по списку, который
+// ведёт владелец в «Настройках». Тех, кому раздел закрыт, не пускают ни страница, ни обработчик данных. Загружает
+// пакет по-прежнему только владелец при личном входе. События рынка в журнале и выгрузке остаются по правилу личного
+// входа без режима управления: права журнала этап 72 не меняет.
 // Там же владелец выбирает команды, у которых на первой встрече месяца первым пунктом встаёт разбор рынка: по
 // умолчанию топ-команда.
 
 import type { Prisma } from "@/generated/prisma/client";
 import type { LoginMethod, Role } from "@/generated/prisma/enums";
+import type { ManagementRole } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { TOP_TEAM } from "@/domain/teams";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
@@ -44,37 +46,41 @@ export async function loadMarketMeeting(db: Db = prisma): Promise<MarketMeeting>
   return marketMeetingOf((await db.setting.findUnique({ where: { key: MARKET_MEETING_KEY } }))?.value);
 }
 
-export type MarketViewer = { slug: string; role: Role; active?: boolean; via?: LoginMethod | null };
+/** management: режим управления, который действует сейчас (роль режима или null) */
+export type MarketViewer = { slug: string; role: Role; active?: boolean; via?: LoginMethod | null; management?: ManagementRole | null };
+type ViewerRef = { personId: string; via?: LoginMethod | null; management?: ManagementRole | null };
 
 /**
- * Открыт ли раздел. Общий логин: да любому включённому профилю (этап 72). Личный вход: владелец или человек из
- * списка. Способ входа неизвестен или профиль выключен: нет
+ * Открыт ли раздел (этап 72). Владелец, режим управления и общий логин: всегда. Личный вход без режима управления:
+ * человек из списка. Способ входа неизвестен или профиль выключен: нет
  */
 export function canSeeMarketWith(viewer: MarketViewer, access: MarketAccess): boolean {
   if (!viewer.via) return false;
   if (viewer.active === false) return false;
-  if (viewer.via === "TEAM") return true;
+  if (viewer.via === "TEAM" || viewer.management) return true;
   return viewer.role === "OWNER" || access.people.includes(viewer.slug);
 }
 
 /** То же по базе: профиль перечитывается, выключенный человек раздел не видит, новая роль владельца действует сразу */
-export async function canSeeMarket(viewer: { personId: string; via?: LoginMethod | null }, db: Db = prisma): Promise<boolean> {
+export async function canSeeMarket(viewer: ViewerRef, db: Db = prisma): Promise<boolean> {
   if (!viewer.via) return false;
+  const always = viewer.via === "TEAM" || !!viewer.management;
   const [person, access] = await Promise.all([
     db.person.findUnique({ where: { id: viewer.personId }, select: { slug: true, role: true, active: true } }),
-    viewer.via === "TEAM" ? Promise.resolve({ people: [] }) : loadMarketAccess(db),
+    always ? Promise.resolve({ people: [] }) : loadMarketAccess(db),
   ]);
   if (!person) return false;
-  return canSeeMarketWith({ ...person, via: viewer.via }, access);
+  return canSeeMarketWith({ ...person, via: viewer.via, management: viewer.management ?? null }, access);
 }
 
 /**
  * События рынка в журнале и в выгрузке в Excel (этап 62): по правилу личного входа, владелец или человек из списка.
- * Общий логин открывает сам раздел (этап 72), но права журнала не меняются: по общему логину событий рынка нет
+ * Общий логин и режим управления открывают сам раздел (этап 72), но права журнала не меняются: журнал открывается
+ * только в режиме управления, и режим сам по себе событий рынка не показывает, по общему логину их нет
  */
-export async function canSeeMarketEvents(viewer: { personId: string; via?: LoginMethod | null }, db: Db = prisma): Promise<boolean> {
+export async function canSeeMarketEvents(viewer: ViewerRef, db: Db = prisma): Promise<boolean> {
   if (!viewer.via || viewer.via === "TEAM") return false;
-  return canSeeMarket(viewer, db);
+  return canSeeMarket({ personId: viewer.personId, via: viewer.via, management: null }, db);
 }
 
 /** Загружает пакет рынка владелец при личном входе: режим управления не нужен, общий логин не годится */
@@ -90,7 +96,8 @@ export type MarketSettingsView = {
   /** Все включённые люди для выбора */
   options: { slug: string; name: string; hint: string | null }[];
   teams: { id: string; name: string }[];
-  /** Сколько человек видят раздел при личном входе: владельцы и люди из списка. По общему логину видят все */
+  /** Сколько человек видят раздел при личном входе без режима управления: владельцы и люди из списка. По общему
+   *  логину и в режиме управления видят все */
   count: number;
   owners: number;
   /** Люди и команды из настройки, которых больше нет или они выключены: доступ и пункт у них молча не работают */

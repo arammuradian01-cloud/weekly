@@ -1,5 +1,5 @@
-// Этап 62: рынок КАСКО и ОСАГО на настоящей базе. Кто видит раздел (этап 72: общий логин любым профилем; при личном
-// входе владелец, в том числе новый, и люди из списка), настройка в журнале и устаревшие люди, сохранение одного
+// Этап 62: рынок КАСКО и ОСАГО на настоящей базе. Кто видит раздел (этап 72: владелец, в том числе новый, любой в
+// режиме управления, общий логин любым профилем; при личном входе без режима люди из списка), настройка в журнале и устаревшие люди, сохранение одного
 // списка без другого, события рынка в журнале только тем, кому раздел открыт, загрузка
 // пакета владельцем с заменой прежнего одной транзакцией, данные для окна и готовый ответ в памяти по версии пакета,
 // пункт повестки на первой встрече месяца у выбранных команд без дублей, подпись пункта при показе и только тем, у
@@ -23,7 +23,7 @@ const FIXTURE = readFileSync("tests/fixtures/market/bundle.json", "utf8");
 const bundle = (): MarketBundleInput => parseBundle(FIXTURE);
 const personal = async (slug: string, management: "OWNER" | "ADMIN" | null = null): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug, management)), via: "PASSWORD" });
 const team = async (slug: string, management: "OWNER" | "ADMIN" | null = null): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug, management)), via: "TEAM" });
-const sees = async (a: tasks.Actor) => canSeeMarket({ personId: a.personId, via: a.via });
+const sees = async (a: tasks.Actor) => canSeeMarket({ personId: a.personId, via: a.via, management: a.management });
 const expectRule = async (p: Promise<unknown>, message: RegExp) => {
   await expect(p).rejects.toBeInstanceOf(tasks.TaskRuleError);
   await expect(p).rejects.toThrow(message);
@@ -60,9 +60,11 @@ afterAll(async () => {
 });
 
 describe("доступ к разделу", () => {
-  it("личный вход: владелец видит, остальные только из списка; общий логин видит любым профилем (этап 72)", async () => {
+  it("личный вход: владелец видит, остальные только из списка; режим управления и общий логин видят всегда (этап 72)", async () => {
     expect(await sees(await personal("muradyan"))).toBe(true);
-    expect(await sees(await personal("golovkin", "ADMIN"))).toBe(false);
+    // Администратор не из списка: в режиме управления видит, без режима нет
+    expect(await sees(await personal("golovkin", "ADMIN"))).toBe(true);
+    expect(await sees(await personal("golovkin"))).toBe(false);
     expect(await sees(await personal("reva"))).toBe(false);
     // Общий логин: раздел открыт всем выбранным профилям, список не нужен
     for (const slug of ["muradyan", "golovkin", "reva", "loginova", "fatyanov"]) expect(await sees(await team(slug)), slug).toBe(true);
@@ -383,6 +385,9 @@ describe("разбор рынка на встрече", () => {
     expect(teamLoginova?.canOpenMarket).toBe(true);
     expect(teamLoginova?.items[0]).toMatchObject({ kind: "market", note: "Свежий пакет рынка в этом месяце ещё не загружали: данные от 20 сентября." });
     expect((await m.getMeeting(await personal("loginova"), TOP_TEAM, FIRST))?.canOpenMarket).toBe(false);
+    // Администратор не из списка: кнопка в режиме управления есть, без режима нет
+    expect((await m.getMeeting(await personal("golovkin", "ADMIN"), TOP_TEAM, FIRST))?.canOpenMarket).toBe(true);
+    expect((await m.getMeeting(await personal("golovkin"), TOP_TEAM, FIRST))?.canOpenMarket).toBe(false);
     expect((await m.getMeeting(await personal("muradyan"), revaTeam, FIRST))?.canOpenMarket).toBe(true);
 
     // Загрузили свежий пакет: подпись уже новая без пересборки повестки
