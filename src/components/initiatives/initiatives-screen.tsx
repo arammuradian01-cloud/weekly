@@ -438,13 +438,16 @@ function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeV
   const id = useId();
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
   // Продукт выбран: ответственным встаёт руководитель направления, если ответственного ещё не выбирали руками
+  // У правки ответственный уже выбран: продукт его не меняет. У новой, пока ответственного не выбирали руками
+  const [ownerTouched, setOwnerTouched] = useState(!!item);
   const headOf = (code: string) => data.directions.find((d) => d.code === code)?.head ?? "";
   const setDirection = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const code = e.target.value;
     const head = headOf(code);
-    const auto = !form.owner || form.owner === headOf(form.direction);
-    setForm({ ...form, direction: code, owner: auto && head && data.people.some((p) => p.slug === head) ? head : form.owner });
+    setForm({ ...form, direction: code, owner: !ownerTouched && head && data.people.some((p) => p.slug === head) ? head : form.owner });
   };
+  // Продукт, скрытый в справочнике, у правленой инициативы остаётся в списке
+  const directions = item?.direction && !data.directions.some((d) => d.code === item.direction!.code) ? [...data.directions, { ...item.direction, head: null }] : data.directions;
   // Цель из прошлого квартала в списке не показывается, но у инициативы остаётся
   const goals = item?.goal && !data.goals.some((g) => g.id === item.goal!.id) ? [{ id: item.goal.id, label: `${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` }, ...data.goals] : data.goals;
   return (
@@ -474,7 +477,7 @@ function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeV
           </label>
           <select id={`${id}-p`} className="sv-control" value={form.direction} onChange={setDirection}>
             <option value="">{GENERAL}</option>
-            {data.directions.map((d) => (
+            {directions.map((d) => (
               <option key={d.code} value={d.code}>
                 {d.label}
               </option>
@@ -487,7 +490,16 @@ function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeV
             <label htmlFor={`${id}-o`} className="sv-label">
               Ответственный
             </label>
-            <select id={`${id}-o`} className="sv-control" value={form.owner} onChange={set("owner")} required>
+            <select
+              id={`${id}-o`}
+              className="sv-control"
+              value={form.owner}
+              onChange={(e) => {
+                setOwnerTouched(true);
+                set("owner")(e);
+              }}
+              required
+            >
               <option value="">Выберите</option>
               {data.people.map((p) => (
                 <option key={p.slug} value={p.slug}>

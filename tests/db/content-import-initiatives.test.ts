@@ -38,6 +38,9 @@ async function base(): Promise<Item[]> {
 
 async function reset() {
   await prisma.contentImportKey.deleteMany();
+  await prisma.task.updateMany({ data: { goalId: null } });
+  await prisma.initiative.updateMany({ data: { goalId: null } });
+  await prisma.goal.deleteMany({ where: { code: { in: ["ТИ-1", "ТИ-2"] } } });
   await prisma.decisionTask.deleteMany();
   await prisma.decision.deleteMany();
   await prisma.agendaItem.deleteMany({ where: { initiativeId: { not: null } } });
@@ -116,6 +119,46 @@ describe("загрузка инициатив", () => {
     expect((await byKey("ini.osago.sub"))!.title).toBe("Подписка ОСАГО: своё название");
   });
 
+  it("цель и итог, поменянные в ресурсе, загрузка не трогает; пустая заметка пакета не стирает заметку", async () => {
+    const goal = { key: "goal.ini.1", quarter: "2026-Q4", team: "top", owner: "Мурадян Арам", code: "ТИ-1", title: "Цель для инициатив" };
+    const items = await base();
+    items[0] = { ...items[0], goal: { key: "goal.ini.1" } };
+    await applyContentImport(await owner(), pkgOf(items, { goals: [goal] }));
+    const sub = (await byKey("ini.osago.sub"))!;
+    const goalId = sub.goalId!;
+    expect(goalId).toBeTruthy();
+    // В ресурсе цель сняли, итог закрытой поправили, заметку написали
+    await prisma.initiative.update({ where: { id: sub.id }, data: { goalId: null, note: "Своя заметка" } });
+    const cjm = (await byKey("ini.dep.cjm"))!;
+    await prisma.initiative.update({ where: { id: cjm.id }, data: { resultNote: "Итог поправили в ресурсе" } });
+
+    items[0] = { ...items[0], title: "Подписка: другое название", note: undefined };
+    items[2] = { ...items[2], state: "doing", result: undefined };
+    const preview = await previewContentImport(await owner(), pkgOf(items, { goals: [goal] }));
+    expect(texts(preview.notes)).toMatch(/итог закрытой инициативы правили в ресурсе: загрузка её не открывает/);
+    await applyContentImport(await owner(), pkgOf(items, { goals: [goal] }));
+    const after = (await byKey("ini.osago.sub"))!;
+    expect(after).toMatchObject({ title: "Подписка: другое название", goalId: null, note: "Своя заметка" });
+    expect((await byKey("ini.dep.cjm"))!).toMatchObject({ resultNote: "Итог поправили в ресурсе", result: "DONE" });
+    expect((await byKey("ini.dep.cjm"))!.closedAt).not.toBeNull();
+  });
+
+  it("пакет ставит новую цель пакета, а цель в ресурсе уже поменяли: загрузка её не трогает", async () => {
+    const items = await base();
+    await applyContentImport(await owner(), pkgOf(items));
+    const own = await prisma.goal.create({ data: { quarter: "2026-Q4", teamId: TOP_TEAM, title: "Цель, поставленная руками", code: "ТИ-1" } });
+    const sub = (await byKey("ini.osago.sub"))!;
+    await prisma.initiative.update({ where: { id: sub.id }, data: { goalId: own.id } });
+    items[0] = { ...items[0], goal: { key: "goal.ini.2" } };
+    const goals = [{ key: "goal.ini.2", quarter: "2026-Q4", team: "top", owner: "Мурадян Арам", code: "ТИ-2", title: "Новая цель пакета" }];
+    const preview = await previewContentImport(await owner(), pkgOf(items, { goals }));
+    expect(texts(preview.notes)).toMatch(/поле «Цель» правили в ресурсе/);
+    await applyContentImport(await owner(), pkgOf(items, { goals }));
+    expect((await byKey("ini.osago.sub"))!.goalId).toBe(own.id);
+    await prisma.initiative.update({ where: { id: sub.id }, data: { goalId: null } });
+    await prisma.goal.deleteMany({ where: { code: { in: ["ТИ-1", "ТИ-2"] } } });
+  });
+
   it("кадровые сведения, неизвестный продукт и человек не грузятся; итог закрытой обязателен", async () => {
     const pkg = pkgOf([
       { key: "ini.hr", title: "Пересмотр окладов команды продаж", owner: await nameOf("reva") },
@@ -185,6 +228,70 @@ describe("стирание решений", () => {
     const { problems } = parsePackage(JSON.stringify({ format: "weekly-napolnenie/1", decisions: [dec("dec.keep", "А")], remove: [{ kind: "decision", key: "dec.keep" }, { kind: "task", key: "task.x" }] }));
     expect(problems.join("\n")).toMatch(/и загружается, и стирается/);
     expect(problems.join("\n")).toMatch(/стереть можно только решения/);
+  });
+});
+
+describe("weekly для CEO за прошедшие недели", () => {
+  const W1 = "2026-09-07";
+  const W2 = "2026-09-14";
+  const report = (key: string, week: string, extra = "") => ({
+    key,
+    week,
+    blocks: [
+      { key: "news", lines: [{ text: `Собрали структуру разработки${extra}` }] },
+      { key: "wow", lines: [{ text: "Трафик 465 тыс., минус 2%", product: "osago" }] },
+      { key: "nope", lines: [{ text: "Блок, которого нет" }] },
+      { key: "risks", lines: [{ text: "Вклады ниже бюджета", product: "deposits" }] },
+    ],
+    meetings: [{ title: "Встреча по вкладам", text: "Договорились о целевой модели" }],
+  });
+  const weekOf = (start: string) => prisma.week.findUnique({ where: { start: new Date(`${start}T00:00:00Z`) }, include: { ceoReport: true } });
+  const cleanCeo = async () => {
+    await prisma.ceoReport.deleteMany({ where: { week: { start: { in: [new Date(`${W1}T00:00:00Z`), new Date(`${W2}T00:00:00Z`)] } } } });
+  };
+
+  it("ставит отчёт блоками и встречами, правленый в ресурсе и чужой не трогает, будущую неделю не берёт", async () => {
+    await cleanCeo();
+    try {
+      // Отчёт за вторую неделю уже написан в ресурсе руками
+      const w2 = await prisma.week.upsert({ where: { start: new Date(`${W2}T00:00:00Z`) }, update: {}, create: { start: new Date(`${W2}T00:00:00Z`), isoYear: 2026, isoNumber: 38, deadline: new Date(`${W2}T15:00:00Z`), meetingDate: new Date(`${W2}T00:00:00Z`) } });
+      await prisma.ceoReport.create({ data: { weekId: w2.id, main: "Своё главное" } });
+      const pkg = pkgOf([], { ceoReports: [report("ceo.w37", W1), report("ceo.w38", W2), report("ceo.future", "2030-01-07")] });
+      const preview = await previewContentImport(await owner(), pkg);
+      expect(preview.ceoReports).toEqual({ add: 1, update: 0, skip: 2 });
+      expect(texts(preview.warnings)).toMatch(/отчёт за эту неделю уже есть в ресурсе/);
+      expect(texts(preview.errors)).toMatch(/неделя ещё не началась/);
+      expect(texts(preview.notes)).toMatch(/блоков nope в отчёте CEO нет/);
+
+      const res = await applyContentImport(await owner(), pkg);
+      expect(res.applied.ceoReports).toBe(1);
+      const r1 = (await weekOf(W1))!.ceoReport!;
+      const blocks = r1.blocks as { key: string; edited?: boolean; lines: { text: string; product: string | null }[] }[];
+      expect(blocks.map((b) => b.key)).toEqual(["news", "wow", "risks"]);
+      expect(blocks.every((b) => b.edited)).toBe(true);
+      expect(blocks[1]!.lines[0]).toMatchObject({ text: "Трафик 465 тыс., минус 2%", product: "osago" });
+      expect(r1.main).toMatch(/Собрали структуру разработки/);
+      expect(r1.risks).toMatch(/Вклады ниже бюджета/);
+      expect(r1.meetings).toEqual([{ title: "Встреча по вкладам", text: "Договорились о целевой модели" }]);
+      expect((await weekOf(W2))!.ceoReport!.main).toBe("Своё главное");
+
+      // Повтор ничего не меняет; новая версия пакета обновляет; правку в ресурсе следующая загрузка не затирает
+      expect((await previewContentImport(await owner(), pkg)).ceoReports).toEqual({ add: 0, update: 0, skip: 3 });
+      const v2 = pkgOf([], { ceoReports: [report("ceo.w37", W1, " и команд")] });
+      expect((await previewContentImport(await owner(), v2)).ceoReports).toEqual({ add: 0, update: 1, skip: 0 });
+      await applyContentImport(await owner(), v2);
+      expect((await weekOf(W1))!.ceoReport!.main).toMatch(/Собрали структуру разработки и команд/);
+      await prisma.ceoReport.update({ where: { id: r1.id }, data: { meetings: [{ title: "Правка", text: "Своя" }] } });
+      const v3 = pkgOf([], { ceoReports: [report("ceo.w37", W1, " третий раз")] });
+      const p3 = await previewContentImport(await owner(), v3);
+      expect(p3.ceoReports).toEqual({ add: 0, update: 0, skip: 1 });
+      expect(texts(p3.warnings)).toMatch(/отчёт правили в ресурсе после загрузки/);
+      // Отправленный CEO отчёт не трогается
+      await prisma.ceoReport.update({ where: { id: r1.id }, data: { sentAt: new Date() } });
+      expect(texts((await previewContentImport(await owner(), v3)).notes)).toMatch(/уже отправлен CEO/);
+    } finally {
+      await cleanCeo();
+    }
   });
 });
 

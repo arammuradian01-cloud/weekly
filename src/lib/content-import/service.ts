@@ -3,7 +3,8 @@
 // одной транзакцией.
 //
 // Правила:
-// - загрузка только добавляет и обновляет записи с тем же внешним ключом, ничего не удаляет;
+// - загрузка добавляет и обновляет записи с тем же внешним ключом; стирает только решения, которые сама ставила и
+//   которые пакет перечислил в remove (этап 67г);
 // - задачи ставятся через службу задач с её правилами (автор: тот, кто загружает), цели через службу целей,
 //   связь задачи с целью через ту же проверку, что в карточке;
 // - повторная загрузка того же пакета ничего не меняет: ключ и отпечаток записи совпадают;
@@ -33,7 +34,10 @@
 //   идут по тем же трём значениям, что у задач: правку в ресурсе загрузка не затирает. Событий «Мне» о загруженных
 //   инициативах нет, как и о старых решениях: ответственных назначили не сегодня, а в рабочем файле;
 // - этап 67г: пакет может стереть решения, которые ставила загрузка (remove по ключу). Решение, поставленное не загрузкой,
-//   и решение, текст которого правили в ресурсе, не стираются. Стёртое решение остаётся в журнале с текстом.
+//   и решение, текст которого правили в ресурсе, не стираются. Стёртое решение остаётся в журнале с текстом;
+// - этап 67г: weekly для CEO за прошедшие недели. Пишется в отчёт CEO недели блоками (каждый помечен правленым руками:
+//   живые цифры его не пересобирают). Отчёт, который уже есть в ресурсе и не загрузкой поставлен, отправленный CEO и
+//   правленный после загрузки, загрузка не трогает.
 
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -49,7 +53,10 @@ import { statusCode } from "@/lib/tasks/codes";
 import { addDays, diffDays, formatLong, plural, toCalendar, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
 import { sameTask } from "@/lib/meeting/parse-types";
-import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageInitiative, type PackageLink, type PackageRemoval, type PackageTask } from "./package";
+import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageCeoReport, type PackageInitiative, type PackageLink, type PackageRemoval, type PackageTask } from "./package";
+import { ensureWeek } from "@/lib/weekly/service";
+import { cleanMeetings } from "@/lib/ceo/text";
+import { blocksToLegacy, cleanBlocks, standardOf, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { SOFT_MAX as INITIATIVES_SOFT_MAX } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
@@ -108,6 +115,8 @@ export type ImportPreview = {
   initiatives: ImportCounts;
   /** Стирание решений, которые ставила загрузка (этап 67г): сколько сотрётся и сколько пропустится */
   removals: { remove: number; skip: number };
+  /** Weekly для CEO за прошедшие недели (этап 67г) */
+  ceoReports: ImportCounts;
   /** Привяжутся к ресурсу: запись уже есть в ресурсе и совпадает с пакетом, загрузка только запомнит её ключ */
   bound: ImportLine[];
   /** Вероятные дубли того, что уже есть в ресурсе: по умолчанию пропускаются, по одному или все можно включить */
@@ -123,9 +132,9 @@ export type ImportPreview = {
   /** Сколько человек узнают о новых открытых задачах в «Мне»: ответственные, соисполнители, согласующие */
   notified: number;
 };
-export type ImportResult = ImportPreview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives: number; removed: number } };
+export type ImportResult = ImportPreview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives: number; removed: number; ceoReports: number } };
 
-type Kind = "task" | "decision" | "goal" | "link" | "initiative";
+type Kind = "task" | "decision" | "goal" | "link" | "initiative" | "ceo";
 type KeyRow = { kind: string; key: string; entityId: string; hash: string; payload: Prisma.JsonValue };
 type Person = { id: string; slug: string; fullName: string; shortName: string; active: boolean; role: string };
 
@@ -370,7 +379,9 @@ type InitiativePlan = Step & {
 
 type RemovalPlan = Step & { r: PackageRemoval; existingId?: string; text?: string };
 
-type Plan = { goals: GoalPlan[]; tasks: TaskPlan[]; decisions: DecisionPlan[]; links: LinkPlan[]; initiatives: InitiativePlan[]; removals: RemovalPlan[] };
+type CeoPlan = Step & { c: PackageCeoReport; blocks?: ReportBlock[]; meetings?: { title: string; text: string }[] };
+
+type Plan = { goals: GoalPlan[]; tasks: TaskPlan[]; decisions: DecisionPlan[]; links: LinkPlan[]; initiatives: InitiativePlan[]; removals: RemovalPlan[]; ceo: CeoPlan[] };
 
 const GOAL_FIELDS = ["title", "description", "metric", "base", "target", "link", "code"] as const;
 /** Поля, которые replace приводит к пакету: всё, кроме номера */
@@ -1143,11 +1154,13 @@ async function planInitiatives(ctx: Ctx, pkg: ContentPackage, goals: GoalPlan[])
       out.push({ x, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
-    if (x.direction && !ctx.directions.has(x.direction)) {
+    const known = ctx.keys.get(key("initiative", x.key));
+    // Скрытый продукт: новая инициатива с ним не встаёт, у загруженной он ошибка, только если пакет его поменял
+    const changedDirection = !known || !same(recordOf(asRecord(known.payload))?.direction ?? null, x.direction);
+    if (x.direction && changedDirection && !ctx.directions.has(x.direction)) {
       out.push({ x, action: "skip", level: "error", reason: `продукта «${x.direction}» нет в справочнике направлений или он скрыт` });
       continue;
     }
-    const known = ctx.keys.get(key("initiative", x.key));
     if (known) {
       const cur = await ctx.db.initiative.findUnique({ where: { id: known.entityId } });
       if (!cur) {
@@ -1228,7 +1241,8 @@ async function planInitiativeUpdate(
   const next: InitiativeFields = {
     title: x.title,
     why: x.why ?? "",
-    directionId: x.direction ? ctx.directionIds.get(x.direction)! : null,
+    // Скрытый продукт, который пакет не менял: остаётся тот, что загрузка поставила раньше
+    directionId: x.direction ? (ctx.directionIds.get(x.direction) ?? (old.directionId as string | null | undefined) ?? cur.directionId) : null,
     ownerId,
     teamId,
     goalId,
@@ -1247,23 +1261,40 @@ async function planInitiativeUpdate(
     note: cur.note,
     result: cur.closedAt ? cur.resultNote : null,
   };
+  // Заметки в пакете нет: загрузка её не стирает (как «Где сейчас» у задач)
+  if (x.note === null) next.note = (old.note as string | undefined) ?? cur.note;
   const kept: Record<string, unknown> = { ...next };
   const write: Partial<InitiativeFields> = {};
+  const ways: Partial<Record<keyof InitiativeFields, ReturnType<typeof threeWay>>> = {};
+  let goalPending: { key: string } | undefined;
   for (const f of Object.keys(INITIATIVE_LABELS) as (keyof InitiativeFields)[]) {
-    // Новая цель пакета (ещё без id): пишется после целей, база запомнит её id
+    // Новая цель пакета (ещё без id): пишется после целей, база запомнит её id. Цель, которую в ресурсе поменяли или
+    // сняли после прошлой загрузки, не трогаем
     if (f === "goalId" && goal && "key" in goal) {
-      if (!cur.goalId || same(cur.goalId, old.goalId ?? null)) Object.assign(write, { goalId: null });
-      else notes.push(`поле «${INITIATIVE_LABELS[f]}» правили в ресурсе, загрузка его не тронет`);
+      if (same(cur.goalId ?? null, old.goalId ?? null)) goalPending = goal;
+      else {
+        kept.goalId = old.goalId ?? null;
+        notes.push(`поле «${INITIATIVE_LABELS[f]}» правили в ресурсе, загрузка его не тронет`);
+      }
       continue;
     }
     const way = threeWay(old[f] ?? null, now[f], next[f]);
+    ways[f] = way;
     if (way === "keep" || way === "edited") kept[f] = old[f] ?? null;
     if (way === "edited") notes.push(`поле «${INITIATIVE_LABELS[f]}» правили в ресурсе, загрузка его не тронет`);
     if (way === "apply") Object.assign(write, { [f]: next[f] });
   }
-  // Итог без закрытия не пишется: у открытой инициативы итога нет
-  if ("result" in write && !CLOSED_INITIATIVE.includes((write.state ?? now.state) as string)) delete write.result;
-  const goalPending = goal && "key" in goal ? goal : undefined;
+  // Пакет открывает закрытую инициативу, а итог в ресурсе правили: закрытие с итогом остаётся как в ресурсе
+  if (write.state && !CLOSED_INITIATIVE.includes(write.state) && now.state !== "searching" && now.state !== "doing" && ways.result === "edited") {
+    delete write.state;
+    kept.state = old.state ?? null;
+    notes.push("итог закрытой инициативы правили в ресурсе: загрузка её не открывает");
+  }
+  // Итог без закрытия не пишется: у открытой инициативы итога нет, база итога остаётся прежней
+  if ("result" in write && !CLOSED_INITIATIVE.includes((write.state ?? now.state) as string)) {
+    delete write.result;
+    kept.result = old.result ?? null;
+  }
   const step: InitiativePlan = { x, existingId: cur.id, write, kept, notes, goal: goalPending ?? (goalId ? { id: goalId } : null), action: "update" };
   return Object.keys(write).length || goalPending ? step : { ...step, action: "skip", reason: ONLY_OTHER, remember: true };
 }
@@ -1293,6 +1324,60 @@ async function planRemovals(ctx: Ctx, pkg: ContentPackage): Promise<RemovalPlan[
   return out;
 }
 
+/** Блоки отчёта из пакета: ключи этапа 66, названия стандартных блоков, продукты из справочника; все правлены руками */
+function ceoBlocksOf(ctx: Ctx, c: PackageCeoReport): ReportBlock[] {
+  const raw = c.blocks.map((b) => ({ key: b.key, title: standardOf(b.key)?.title ?? "", lines: b.lines.map((l) => ({ text: l.text, product: l.product })), edited: true }));
+  return cleanBlocks(raw, ctx.directions).map((b) => ({ ...b, edited: true }));
+}
+
+const hasCeoText = (r: { main: string; risks: string; next: string; meetings: unknown; blocks: unknown }) =>
+  !!(r.main.trim() || r.risks.trim() || r.next.trim() || (Array.isArray(r.meetings) && r.meetings.length) || (Array.isArray(r.blocks) && r.blocks.length));
+
+async function planCeoReports(ctx: Ctx, pkg: ContentPackage): Promise<CeoPlan[]> {
+  const out: CeoPlan[] = [];
+  for (const c of pkg.ceoReports ?? []) {
+    const hr = ctx.excluded.get(key("ceo", c.key));
+    if (hr) {
+      out.push({ c, action: "skip", level: "error", label: hr.what, reason: hr.text });
+      continue;
+    }
+    if (c.week > ctx.today) {
+      out.push({ c, action: "skip", level: "error", reason: "неделя ещё не началась: загрузка ставит отчёты прошедших недель" });
+      continue;
+    }
+    const blocks = ceoBlocksOf(ctx, c);
+    const unknown = c.blocks.filter((b) => !blocks.some((x) => x.key === b.key)).map((b) => b.key);
+    const notes = unknown.length ? [`блоков ${unknown.join(", ")} в отчёте CEO нет, они не загрузятся`] : [];
+    const meetings = cleanMeetings(c.meetings);
+    const week = await ctx.db.week.findUnique({ where: { start: dbDate(c.week) }, select: { ceoReport: true } });
+    const cur = week?.ceoReport ?? null;
+    const known = ctx.keys.get(key("ceo", c.key));
+    if (known && known.hash === recordHash(c)) {
+      out.push({ c, action: "skip", reason: UNCHANGED });
+      continue;
+    }
+    if (cur?.sentAt) {
+      out.push({ c, action: "skip", reason: "отчёт за эту неделю уже отправлен CEO, загрузка его не трогает" });
+      continue;
+    }
+    if (known) {
+      const old = asRecord(known.payload);
+      if (cur && !(same(cur.blocks ?? null, old.blocks ?? null) && same(cur.meetings ?? [], old.meetings ?? []))) {
+        out.push({ c, action: "skip", level: "warning", reason: "отчёт правили в ресурсе после загрузки, загрузка его не трогает" });
+        continue;
+      }
+      out.push({ c, action: "update", blocks, meetings, notes });
+      continue;
+    }
+    if (cur && hasCeoText(cur)) {
+      out.push({ c, action: "skip", level: "warning", reason: "отчёт за эту неделю уже есть в ресурсе, загрузка его не трогает" });
+      continue;
+    }
+    out.push({ c, action: "add", blocks, meetings, notes });
+  }
+  return out;
+}
+
 async function buildPlan(ctx: Ctx, pkg: ContentPackage): Promise<Plan> {
   const goals = await planGoals(ctx, pkg);
   await planParents(ctx, goals);
@@ -1301,7 +1386,8 @@ async function buildPlan(ctx: Ctx, pkg: ContentPackage): Promise<Plan> {
   const links = await planLinks(ctx, pkg, tasks, goals);
   const initiatives = await planInitiatives(ctx, pkg, goals);
   const removals = await planRemovals(ctx, pkg);
-  return { goals, tasks, decisions, links, initiatives, removals };
+  const ceo = await planCeoReports(ctx, pkg);
+  return { goals, tasks, decisions, links, initiatives, removals, ceo };
 }
 
 /** Привязка к ресурсу (bind) в эти числа не входит: она в своём списке */
@@ -1350,6 +1436,7 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
   for (const p of plan.decisions) put(`Решение «${short(p.d.text)}»`, p);
   for (const p of plan.links) put(`Связь ${p.l.key}`, p);
   for (const p of plan.initiatives) put(`Инициатива «${short(p.x.title)}»`, p);
+  for (const p of plan.ceo) put(`Weekly для CEO за неделю с ${formatLong(p.c.week)}`, p);
   for (const p of plan.removals) if (p.action === "skip") put(p.text ? `Стереть решение «${short(p.text)}»` : `Стереть решение ${p.r.key}`, p);
   const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links, ...plan.initiatives].filter((p) => p.reason === UNCHANGED).length;
   if (unchanged) lists.notes.unshift({ what: "Без изменений", text: `${unchanged} ${unchanged === 1 ? "запись уже загружена" : "записей уже загружено"} в том же виде` });
@@ -1360,6 +1447,7 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
     goals: counts(plan.goals),
     links: counts(plan.links),
     initiatives: counts(plan.initiatives),
+    ceoReports: counts(plan.ceo),
     removals: { remove: plan.removals.filter((p) => p.action === "add").length, skip: plan.removals.filter((p) => p.action === "skip").length },
     missingPeople: [...ctx.missingPeople].sort((a, b) => a.localeCompare(b, "ru")),
     missingTeams: [...ctx.missingTeams].sort((a, b) => a.localeCompare(b, "ru")),
@@ -1680,6 +1768,28 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
 
   const initiativesDone = await applyInitiatives(tx, actor, plan, goalIds);
 
+  // Weekly для CEO: блоки и прежние разделы из них (их читают выгрузка и всё, что знает отчёт в прежнем виде)
+  let ceoDone = 0;
+  if (plan.ceo.some((p) => p.action !== "skip")) {
+    const dict = await tx.dictionaryItem.findMany({ where: { kind: "DIRECTION" }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { code: true, label: true } });
+    const labels = Object.fromEntries(dict.map((d) => [d.code, d.label]));
+    const order = dict.map((d) => d.code);
+    for (const p of plan.ceo) {
+      if (p.action === "skip") continue;
+      const week = await ensureWeek(tx, p.c.week);
+      const legacy = blocksToLegacy(p.blocks!, labels, order);
+      const data = { ...legacy, blocks: p.blocks as unknown as Prisma.InputJsonValue, meetings: p.meetings as unknown as Prisma.InputJsonValue, updatedById: actor.personId };
+      const saved = await tx.ceoReport.upsert({ where: { weekId: week.id }, update: data, create: { ...data, weekId: week.id } });
+      await tx.auditLog.create({
+        data: { action: "ceo.save", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "ceo-report", entityId: p.c.week, field: "Отчёт CEO из пакета наполнения", after: legacy.main.slice(0, 2000), ip: actor.ip ?? null, via: actor.via ?? null },
+      });
+      // База: блоки и встречи, какими их записала загрузка (из базы, в том виде, в каком их хранит jsonb)
+      const row = await tx.ceoReport.findUniqueOrThrow({ where: { id: saved.id }, select: { blocks: true, meetings: true } });
+      await remember(tx, "ceo", p.c.key, saved.id, p.c, { blocks: row.blocks, meetings: row.meetings });
+      ceoDone += 1;
+    }
+  }
+
   // Стирание решений: запись в журнале с текстом раньше самого стирания, ключ забывается
   let removed = 0;
   for (const p of plan.removals) {
@@ -1695,7 +1805,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
     removed += 1;
   }
 
-  const result: ImportResult = { ...(await summarize(ctx, pkg, plan)), applied: { tasks: created, goals: goalsDone, decisions: decisionsDone, links: linksDone, initiatives: initiativesDone, removed } };
+  const result: ImportResult = { ...(await summarize(ctx, pkg, plan)), applied: { tasks: created, goals: goalsDone, decisions: decisionsDone, links: linksDone, initiatives: initiativesDone, removed, ceoReports: ceoDone } };
   await tx.auditLog.create({
     data: {
       action: "content.import",
@@ -1705,7 +1815,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       entity: "content",
       entityId: pkg.title ?? "пакет наполнения",
       field: "Загружено наполнение",
-      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
+      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.ceoReports ?? []).length ? `. Weekly для CEO: новых ${result.ceoReports.add}, обновлено ${result.ceoReports.update}, пропущено ${result.ceoReports.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
       ip: actor.ip ?? null,
       via: actor.via ?? null,
     },

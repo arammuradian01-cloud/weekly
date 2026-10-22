@@ -185,7 +185,7 @@ async function audit(tx: Tx, actor: Actor, action: string, id: string, title: st
 /** direction: код продукта, пусто: общая для департамента, не передан: при правке продукт не меняется */
 export type InitiativeInput = { title: unknown; why?: unknown; owner: unknown; team?: unknown; goal?: unknown; note?: unknown; direction?: unknown };
 
-async function resolveRefs(tx: Tx, input: InitiativeInput) {
+async function resolveRefs(tx: Tx, input: InitiativeInput, keep: string | null = null) {
   const title = cleanTitle(input.title) || fail("Назовите инициативу одной мыслью");
   const why = cleanWhy(input.why);
   const owner = (await tx.person.findUnique({ where: { slug: String(input.owner ?? "") } })) ?? fail("Выберите ответственного");
@@ -199,7 +199,9 @@ async function resolveRefs(tx: Tx, input: InitiativeInput) {
   let directionId: string | null | undefined;
   if (input.direction !== undefined && input.direction !== null) {
     const code = String(input.direction);
-    directionId = code ? ((await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code, active: true }, select: { id: true } }))?.id ?? fail("Такого продукта нет в справочнике")) : null;
+    // Скрытый в справочнике продукт можно оставить у инициативы, у которой он уже стоит (keep: его id), но не выбрать заново
+    const item = code ? await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code }, select: { id: true, active: true } }) : null;
+    directionId = !code ? null : item && (item.active || item.id === keep) ? item.id : fail("Такого продукта нет в справочнике");
   }
   return { title, why, owner, teamId: team.id, goalId, directionId };
 }
@@ -242,7 +244,7 @@ export async function editInitiative(actor: Actor, id: string, input: Initiative
     await lockRow(tx, String(id));
     const cur = (await tx.initiative.findUnique({ where: { id: String(id) }, include: { owner: true } })) ?? fail("Инициативы уже нет");
     if (cur.closedAt) fail("Инициатива закрыта: верните её, чтобы править");
-    const ref = await resolveRefs(tx, input);
+    const ref = await resolveRefs(tx, input, cur.directionId);
     await tx.initiative.update({ where: { id: cur.id }, data: { title: ref.title, why: ref.why, ownerId: ref.owner.id, teamId: ref.teamId, goalId: ref.goalId, ...(ref.directionId !== undefined ? { directionId: ref.directionId } : {}) } });
     const ownerChanged = cur.ownerId !== ref.owner.id;
     await tx.initiativeChange.create({

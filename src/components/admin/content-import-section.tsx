@@ -5,7 +5,7 @@
 // и пропустится, кого и каких команд нет в ресурсе, что не загрузится и почему, открытые задачи без актуального срока
 // (одна дата на все, по умолчанию через две недели), вероятные дубли того, что уже есть в ресурсе (по умолчанию
 // пропускаются, их можно включить по одному или все). Потом загрузка по подтверждению с теми же настройками. Загрузка
-// ничего не удаляет, повторная загрузка того же пакета ничего не дублирует
+// стирает только решения, которые сама ставила и которые пакет перечислил для стирания, повторная загрузка того же пакета ничего не дублирует
 
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,6 +26,8 @@ type Preview = {
   links: Counts;
   /** Крупные инициативы (этап 67г). Сервер до этапа 67г их не присылал */
   initiatives?: Counts;
+  /** Weekly для CEO за прошедшие недели (этап 67г) */
+  ceoReports?: Counts;
   /** Стирание решений, которые ставила загрузка (этап 67г) */
   removals?: { remove: number; skip: number };
   missingPeople: string[];
@@ -45,7 +47,7 @@ type Line = { what: string; text: string };
 /** Настройки загрузки: все дубли, выбранные дубли, срок для задач без актуального срока (null: по умолчанию) */
 type Options = { all: boolean; picked: string[]; due: string | null };
 const DEFAULTS: Options = { all: false, picked: [], due: null };
-type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives?: number; removed?: number } };
+type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives?: number; removed?: number; ceoReports?: number } };
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; problems?: string[] };
 
 const SIGNED_OUT = "Вход больше не действует: войдите заново и загрузите пакет ещё раз";
@@ -71,12 +73,13 @@ async function post<T>(mode: "preview" | "apply", text: string, o: Options): Pro
   }
 }
 
-const KINDS: { key: "tasks" | "decisions" | "goals" | "links" | "initiatives"; label: string }[] = [
+const KINDS: { key: "tasks" | "decisions" | "goals" | "links" | "initiatives" | "ceoReports"; label: string }[] = [
   { key: "tasks", label: "Задачи" },
   { key: "decisions", label: "Решения" },
   { key: "goals", label: "Цели" },
   { key: "links", label: "Связи задач с целями" },
   { key: "initiatives", label: "Крупные инициативы" },
+  { key: "ceoReports", label: "Weekly для CEO по неделям" },
 ];
 
 function line(c: Counts): string {
@@ -170,7 +173,7 @@ export function ContentImportSection() {
     // Поле файла с чистого листа: тот же файл можно выбрать снова и увидеть, что загружать нечего
     setRound((x) => x + 1);
     const n = r.value.applied.tasks.length;
-    notify(`Наполнение загружено: ${n} ${plural(n, "новая задача", "новые задачи", "новых задач")}, решений ${r.value.applied.decisions}, целей ${r.value.applied.goals}, связей ${r.value.applied.links}${r.value.applied.initiatives ? `, инициатив ${r.value.applied.initiatives}` : ""}${r.value.applied.removed ? `, стёрто решений ${r.value.applied.removed}` : ""}`);
+    notify(`Наполнение загружено: ${n} ${plural(n, "новая задача", "новые задачи", "новых задач")}, решений ${r.value.applied.decisions}, целей ${r.value.applied.goals}, связей ${r.value.applied.links}${r.value.applied.initiatives ? `, инициатив ${r.value.applied.initiatives}` : ""}${r.value.applied.ceoReports ? `, weekly для CEO ${r.value.applied.ceoReports}` : ""}${r.value.applied.removed ? `, стёрто решений ${r.value.applied.removed}` : ""}`);
     router.refresh();
   };
 
@@ -185,8 +188,8 @@ export function ContentImportSection() {
           Импорт наполнения
         </h2>
         <p className="mt-1 text-small text-muted">
-          Пакет с задачами, решениями, целями, связями задач с целями и крупными инициативами, собранный из истории проекта. Сначала ресурс покажет, что добавится, обновится и пропустится. Загрузка
-          ничего не удаляет, поля, которые поменяли в ресурсе, не трогает, повторная загрузка того же пакета ничего не дублирует. Файл пакета храните у себя, в общие папки не
+          Пакет с задачами, решениями, целями, связями задач с целями, крупными инициативами и weekly для CEO за прошедшие недели, собранный из истории проекта. Сначала ресурс покажет, что добавится, обновится и пропустится. Загрузка
+          стирает только решения, которые сама ставила и которые пакет перечислил для стирания, поля, которые поменяли в ресурсе, не трогает, повторная загрузка того же пакета ничего не дублирует. Файл пакета храните у себя, в общие папки не
           кладите.
         </p>
       </div>

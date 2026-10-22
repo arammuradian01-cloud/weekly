@@ -11,6 +11,9 @@
 //
 // Этап 67г: удаление (remove). Пакет перечисляет по ключам решения, которые загрузка ставила раньше и которые нужно
 // стереть: раздел решений собирают заново. Стирается только то, что поставила сама загрузка.
+//
+// Этап 67г: weekly для CEO за прошедшие недели (ceoReports): неделя понедельником, блоки отчёта (ключи этапа 66) со
+// строками и «Мои встречи недели».
 
 import { createHash } from "node:crypto";
 import type { IsoDate } from "@/domain/dates";
@@ -117,7 +120,17 @@ export type PackageInitiative = {
 };
 
 /** Запись пакета, которая не загрузится, пока её не исправят в файле: например, в ней кадровые сведения */
-export type ExcludedRecord = { kind: "task" | "decision" | "goal" | "link" | "initiative"; key: string; what: string; text: string };
+export type ExcludedRecord = { kind: "task" | "decision" | "goal" | "link" | "initiative" | "ceo"; key: string; what: string; text: string };
+
+/** Строка блока отчёта CEO: текст и код продукта (пусто: общая строка) */
+export type PackageCeoLine = { text: string; product: string | null };
+export type PackageCeoReport = {
+  key: string;
+  /** Понедельник недели */
+  week: IsoDate;
+  blocks: { key: string; lines: PackageCeoLine[] }[];
+  meetings: { title: string; text: string }[];
+};
 
 export const REMOVABLE = ["decision"] as const;
 /** Запись, которую прошлая загрузка поставила и которую этот пакет стирает */
@@ -133,6 +146,7 @@ export type ContentPackage = {
   links: PackageLink[];
   initiatives: PackageInitiative[];
   remove: PackageRemoval[];
+  ceoReports: PackageCeoReport[];
   /** Записи с кадровыми сведениями: в пакете остаются (на них могут ссылаться другие записи), но не загружаются */
   excluded: ExcludedRecord[];
 };
@@ -412,6 +426,12 @@ const FIELD_LABELS: Record<string, string> = {
   "goal.code": "Цель",
   confidence: "Уверенность",
   reason: "Причина связи",
+  "blocks.key": "Блок отчёта",
+  "blocks.lines.text": "Строка отчёта",
+  "blocks.lines.product": "Продукт строки",
+  "meetings.title": "Встреча",
+  "meetings.text": "Текст о встрече",
+  week: "Неделя",
   why: "Зачем",
   note: "Что сейчас происходит",
   result: "Итог",
@@ -426,14 +446,14 @@ function stringsOf(value: unknown, path = ""): [string, string][] {
   }
   return [];
 }
-const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь", initiative: "Инициатива" };
+const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь", initiative: "Инициатива", ceo: "Weekly для CEO" };
 
 /**
  * Записи пакета с кадровыми сведениями в любой строке (кроме ФИО и названий команд). Запись подписывается без её текста:
  * вид, номер по порядку в пакете и ключ (если в ключе нет кадрового); маркер не показывается. names: основы фамилий
  * людей ресурса, служба импорта передаёт их из базы
  */
-export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" | "decisions" | "links"> & { initiatives?: PackageInitiative[] }, names: Surnames = []): ExcludedRecord[] {
+export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" | "decisions" | "links"> & { initiatives?: PackageInitiative[]; ceoReports?: PackageCeoReport[] }, names: Surnames = []): ExcludedRecord[] {
   const out: ExcludedRecord[] = [];
   const scan = (kind: ExcludedRecord["kind"], records: { key: string }[]) =>
     records.forEach((record, i) => {
@@ -448,6 +468,7 @@ export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" 
   scan("decision", pkg.decisions);
   scan("link", pkg.links);
   scan("initiative", pkg.initiatives ?? []);
+  scan("ceo", pkg.ceoReports ?? []);
   return out;
 }
 
@@ -747,6 +768,37 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     return [{ kind: kind as PackageRemoval["kind"], key }];
   });
 
+  const ceoKeys = new Set<string>();
+  const ceoWeeks = new Set<string>();
+  const ceoReports: PackageCeoReport[] = list(r0, "ceoReports", problems).map((raw, i) => {
+    const r = new Reader(`weekly для CEO ${i + 1}${typeof raw.key === "string" ? ` (${raw.key})` : ""}`);
+    const key = keyOf(raw, r, `weekly для CEO ${i + 1}`, ceoKeys, problems);
+    const week = r.date(raw, "week", "Неделя", true) ?? "";
+    if (week && new Date(`${week}T00:00:00Z`).getUTCDay() !== 1) r.problems.push(`weekly для CEO ${key}: неделя задаётся понедельником`);
+    if (week && ceoWeeks.has(week)) r.problems.push(`weekly для CEO ${key}: неделя ${week} уже есть в пакете`);
+    ceoWeeks.add(week);
+    const blocksRaw = Array.isArray(raw.blocks) ? (raw.blocks as unknown[]).slice(0, 24) : [];
+    const blocks = blocksRaw.flatMap((b) => {
+      if (!b || typeof b !== "object" || Array.isArray(b) || typeof (b as Raw).key !== "string") return [];
+      const linesRaw = Array.isArray((b as Raw).lines) ? ((b as Raw).lines as unknown[]).slice(0, 60) : [];
+      const lines = linesRaw.flatMap((l) => {
+        if (!l || typeof l !== "object" || Array.isArray(l)) return [];
+        const text = r.str(l as Raw, "text", "Строка отчёта", 600);
+        return text ? [{ text, product: r.str(l as Raw, "product", "Продукт строки", 40) }] : [];
+      });
+      return [{ key: String((b as Raw).key).trim(), lines }];
+    });
+    if (!blocks.some((b) => b.lines.length)) r.problems.push(`weekly для CEO ${key}: в отчёте нет ни одной строки`);
+    const meetingsRaw = Array.isArray(raw.meetings) ? (raw.meetings as unknown[]).slice(0, 20) : [];
+    const meetings = meetingsRaw.flatMap((m) => {
+      if (!m || typeof m !== "object" || Array.isArray(m)) return [];
+      const text = r.str(m as Raw, "text", "Текст о встрече", 2000, { lines: true });
+      return text ? [{ title: r.str(m as Raw, "title", "Встреча", 120) ?? "", text }] : [];
+    });
+    problems.push(...r.problems);
+    return { key, week, blocks, meetings };
+  });
+
   // Ссылки по ключам должны вести на записи этого же пакета
   for (const g of goals) if (g.parent && "key" in g.parent && !goalKeys.has(g.parent.key)) problems.push(`цель ${g.key}: цели выше с ключом «${g.parent.key}» в пакете нет`);
   for (const d of decisions) for (const t of d.tasks) if ("key" in t && !taskKeys.has(t.key)) problems.push(`решение ${d.key}: задачи с ключом «${t.key}» в пакете нет`);
@@ -782,7 +834,7 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   }
   problems.unshift(...head.problems);
 
-  const pkg: ContentPackage = { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, initiatives, remove, excluded: [] };
+  const pkg: ContentPackage = { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, initiatives, remove, ceoReports, excluded: [] };
   pkg.excluded = personnelExclusions(pkg);
   return { pkg, problems };
 }
