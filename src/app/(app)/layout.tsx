@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
 import { personRoleLabel } from "@/lib/roles";
@@ -29,9 +30,20 @@ import { TeamSwitcher } from "@/components/shell/team-switcher";
 import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
 import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
+import { canViewAs } from "@/lib/view-as-service";
+import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
+import { VIEW_AS_END_TEXTS, viewAsTabState, viewAsTitleMark } from "@/lib/view-as";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
+/** В просмотре «Смотреть как» (этап 63) в названии вкладки пометка «Как <ФИО>»: вкладки просмотра не спутать с обычными */
+export async function generateMetadata(): Promise<Metadata> {
+  const ctx = await requireContext();
+  if (!ctx.viewAs) return {};
+  const mark = viewAsTitleMark(ctx.person.fullName);
+  return { title: { default: `${mark} | Weekly`, template: `${mark}: %s | Weekly` } };
+}
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const ctx = await requireContext();
@@ -61,6 +73,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел, и только при личном входе
   const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via }, marketAccess) };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
+  // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
+  const viewAs = ctx.viewAs
+    ? { name: ctx.person.fullName, shortName: ctx.person.shortName, until: formatTime(new Date(ctx.viewAs.until)), remainingMs: ctx.viewAs.remainingMs, ownerSlug: ctx.viewAs.owner.slug }
+    : null;
+  const viewAsOpen = !ctx.viewAs && canViewAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: false });
+  // Состояние просмотра для остальных вкладок этого браузера: сменилось, и вкладка с прежним состоянием перезагружается
+  const viewAsState = viewAsTabState({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null });
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -71,6 +90,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     management: ctx.management?.role ?? null,
     managementUntil,
     personal: ctx.via !== "TEAM",
+    canViewAs: viewAsOpen,
+    viewing: !!viewAs,
+    ownerSlug: viewAs?.ownerSlug ?? null,
   };
 
   return (
@@ -80,6 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
       limited={subject.limited}
+      viewing={!!viewAs || !!ctx.viewAsEnded}
       initialTasks={tasks}
       registry={registry}
       team={teamView}
@@ -123,6 +146,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
 
       <div className="flex min-w-0 flex-col lg:col-start-2">
+        {viewAs ? <ViewAsBanner name={viewAs.name} shortName={viewAs.shortName} until={viewAs.until} remainingMs={viewAs.remainingMs} /> : null}
+        {ctx.viewAsEnded ? <ViewAsEndedBanner name={ctx.viewAsEnded.target?.fullName ?? null} reason={VIEW_AS_END_TEXTS[ctx.viewAsEnded.reason]} /> : null}
         {lagging ? (
           <div role="status" className="sv-alert sv-alert--warning rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]">
             <span>
@@ -147,9 +172,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} market={nav.market} />
+    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} />
     <RequestDialogHost />
-    <DeviceSync />
+    {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются */}
+    {viewAs || ctx.viewAsEnded ? null : <DeviceSync />}
+    {viewAsOpen ? <ViewAsDialog /> : null}
+    <ViewAsSync state={viewAsState} />
     </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>

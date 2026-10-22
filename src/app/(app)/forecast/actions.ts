@@ -3,7 +3,7 @@
 // Прогноз до конца месяца (этап 24): права и правила проверяет сервис
 
 import { revalidatePath } from "next/cache";
-import { runAction, type Result } from "@/lib/action-runner";
+import { runAction, runRead, type Result } from "@/lib/action-runner";
 import * as svc from "@/lib/forecast/service";
 import * as plan from "@/lib/plan/service";
 import * as processes from "@/lib/plan/processes";
@@ -26,7 +26,7 @@ export async function saveForecastAction(key: string, lines: svc.ForecastLineInp
 }
 
 export async function myForecastAction(key: string): Promise<Result<svc.MyForecast>> {
-  return runAction("Прогноз месяца", (a) => numbers(a, () => svc.myForecast(a, weekOf(key))));
+  return runRead("Прогноз месяца", (a) => numbers(a, () => svc.myForecast(a, weekOf(key))));
 }
 
 // Прогноз месяца по драйверам (этап 32): права, границы значений и обоснование проверяет сервис
@@ -54,7 +54,7 @@ export async function setPlanOwnersAction(product: string, slugs: string[]): Pro
 }
 
 export async function planPeopleAction(): Promise<Result<{ slug: string; name: string }[]>> {
-  return runAction("Люди", (a) => numbers(a, () => plan.planPeople(a)));
+  return runRead("Люди", (a) => numbers(a, () => plan.planPeople(a)));
 }
 
 export async function setPlanSourceAction(input: string): Promise<Result<string>> {

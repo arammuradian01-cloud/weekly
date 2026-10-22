@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { unstable_rethrow } from "next/navigation";
-import { currentActor } from "@/lib/action-runner";
+import { writingActor } from "@/lib/action-runner";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
 import { TaskRuleError } from "@/lib/tasks/service";
 import { applyLeaderBoard, canLoadLeaderBoard, LEADER_FILE_MAX, LEADER_MANAGE_ONLY, previewLeaderBoard, tabsFromXlsx } from "@/lib/goals/leader-board-service";
 
@@ -16,7 +17,8 @@ export async function POST(request: Request) {
     // Запрос только со страницы ресурса: чужой сайт не отправит форму от имени вошедшего человека
     const origin = request.headers.get("origin");
     if (origin && !sameSite(origin, request.url)) return NextResponse.json({ ok: false, error: "Запрос с чужого сайта" }, { status: 403 });
-    const actor = await currentActor();
+    // В режиме «Смотреть как» загрузка отказывает до чтения файла (этап 63)
+    const actor = await writingActor();
     if (!canLoadLeaderBoard(actor)) return NextResponse.json({ ok: false, error: LEADER_MANAGE_ONLY }, { status: 403 });
     // Размер по заголовку до чтения тела: большой файл не держим в памяти
     const length = Number(request.headers.get("content-length") ?? 0);
@@ -31,6 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, value }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     unstable_rethrow(error);
+    if (error instanceof ViewAsReadOnlyError) return NextResponse.json({ ok: false, error: error.message }, { status: 403 });
     if (error instanceof TaskRuleError) return NextResponse.json({ ok: false, error: error.message });
     // Содержимое файла в лог не пишем: в борде бывают личные данные
     console.error("Цели из борда лидера: не прошло", error instanceof Error ? error.message : "ошибка");

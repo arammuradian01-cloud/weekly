@@ -124,6 +124,8 @@ export type ScopeSubject = {
   limited?: boolean;
   /** Вход по общему логину team, даже с режимом управления: профиль в нём выбирают сами. Встречи один на один такому входу не видны (этап 28) */
   shared?: boolean;
+  /** Владелец смотрит глазами этого человека («Смотреть как», этап 63): встречи один на один ему не видны */
+  viewAs?: boolean;
 };
 
 export function scopeOf(nodes: TeamNode[], person: ScopeSubject, functional: string[] = []): Scope {

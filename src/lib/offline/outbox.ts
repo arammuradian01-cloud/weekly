@@ -3,13 +3,15 @@
 
 import { saveEntryAction, saveHeadlineAction } from "@/app/(app)/weekly/actions";
 import type { PersonWeekly, WeekKey, WeeklyEntry } from "@/domain/types";
+import { isViewAsRefusal } from "@/lib/view-as-texts";
 import { ACTIVE_DRAFTS, allEntryDrafts, allHeadlineDrafts, dropEntryDraft, dropHeadlineDraft, isNetworkError, settleEntryDraft, settleHeadlineDraft } from "./drafts";
 
 /** Событие окна: черновик дошёл до сервера. Экран сдачи обновляет список без перезагрузки */
 export const DRAFT_SENT = "weekly-draft-sent";
 export type DraftSentDetail = { entry?: WeeklyEntry; headline?: PersonWeekly };
 
-export type FlushResult = { sent: number; rejected: string[]; offline: boolean };
+/** blocked: сервер ответил отказом режима «Смотреть как» (этап 63): черновики остались на устройстве до следующего раза */
+export type FlushResult = { sent: number; rejected: string[]; offline: boolean; blocked?: boolean };
 
 let running: Promise<FlushResult> | null = null;
 
@@ -45,6 +47,9 @@ async function flush(person: string): Promise<FlushResult> {
         settleEntryDraft(person, d.key, r.value.id, sentAt);
         result.sent += 1;
         announce({ entry: r.value });
+      } else if (isViewAsRefusal(r.error)) {
+        // Отказ просмотра «Смотреть как»: черновик не выбрасываем, уйдёт после выхода из просмотра
+        return { ...result, blocked: true };
       } else {
         // Правило не пускает (неделя закрыта, запись удалили, изменили на другом устройстве): повтор не поможет
         dropEntryDraft(person, d.key);
@@ -62,6 +67,8 @@ async function flush(person: string): Promise<FlushResult> {
         settleHeadlineDraft(person, h.week, h.value);
         result.sent += 1;
         announce({ headline: r.value });
+      } else if (isViewAsRefusal(r.error)) {
+        return { ...result, blocked: true };
       } else {
         dropHeadlineDraft(person, h.week);
         result.rejected.push(`Главная фраза: ${r.error}`);

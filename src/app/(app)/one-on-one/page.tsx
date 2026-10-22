@@ -28,6 +28,15 @@ export default async function OneOnOnePage({ searchParams }: { searchParams: Pro
       </>
     );
   }
+  // «Смотреть как» (этап 63): встречи один на один видят только двое участников, владельцу они не открываются
+  if (ctx.viewAs) {
+    return (
+      <>
+        {header}
+        <EmptyState title="Встречи один на один в просмотре закрыты">Их видят только двое участников. Роль владельца и режим «Смотреть как» их не открывают.</EmptyState>
+      </>
+    );
+  }
   const actor = await currentActor();
   // Ссылка из «Мне» и уведомлений: по id пары открываем страницу собеседника
   if (pair) {

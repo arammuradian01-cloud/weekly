@@ -75,7 +75,7 @@ export function WeeklySubmit({
   /** Ключи фактов, которые уже записи или скрыты, в этой и прошлой неделе */
   skippedFacts?: string[];
 }) {
-  const { data, me, notify, notifyUndo } = usePrototype();
+  const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
   const [weekly, setWeekly] = useState<PersonWeekly>(initialReport);
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
@@ -85,7 +85,8 @@ export function WeeklySubmit({
   // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
   const setHeadline = (value: string) => {
     setHeadlineState(value);
-    if (canEdit) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
+    // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
+    if (canEdit && !viewing) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
   };
   const [offline, setOffline] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -127,20 +128,21 @@ export function WeeklySubmit({
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
-    if (!canEdit || headline === savedHeadline.current) return;
+    // В просмотре автосохранения нет (этап 63): сервер всё равно откажет
+    if (!canEdit || viewing || headline === savedHeadline.current) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void saveHeadline(), 2000);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [headline, canEdit, saveHeadline]);
+  }, [headline, canEdit, viewing, saveHeadline]);
   useEffect(() => {
     const flush = () => {
-      if (document.visibilityState === "hidden") void saveHeadline();
+      if (document.visibilityState === "hidden" && !viewing) void saveHeadline();
     };
     document.addEventListener("visibilitychange", flush);
     return () => document.removeEventListener("visibilitychange", flush);
-  }, [saveHeadline]);
+  }, [saveHeadline, viewing]);
 
   // Обещания недели (этап 22): планы прошлого weekly и мои задачи со сроком на этой неделе
   const [promises, setPromises] = useState<EntryPromise[]>(initialPromises);
@@ -211,7 +213,7 @@ export function WeeklySubmit({
     ACTIVE_DRAFTS.add(headlineKey);
     // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама. Если на сервере
     // её уже изменили на другом устройстве, черновик устарел: не возвращаем и говорим об этом
-    const kept = canEdit ? headlineDraft(me.slug, week.key) : null;
+    const kept = canEdit && !viewing ? headlineDraft(me.slug, week.key) : null;
     if (kept && kept.value !== savedHeadline.current) {
       if (kept.base !== undefined && kept.base !== savedHeadline.current) {
         dropHeadlineDraft(me.slug, week.key);
@@ -230,7 +232,7 @@ export function WeeklySubmit({
     if (missed.length) setEntries((prev) => [...prev, ...missed.filter((m) => !prev.some((e) => e.id === m.id))]);
     const back = () => {
       setOffline(false);
-      void saveHeadline();
+      if (!viewing) void saveHeadline();
     };
     const gone = () => setOffline(true);
     if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);

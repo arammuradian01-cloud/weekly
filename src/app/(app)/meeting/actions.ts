@@ -2,7 +2,7 @@
 
 // Действия встречи 2.0 (этап 23). Права и правила проверяет сервис.
 
-import { runAction, type Result } from "@/lib/action-runner";
+import { runAction, runRead, type Result } from "@/lib/action-runner";
 import type { DecisionView, MeetingView } from "@/domain/meeting";
 import type { WeekKey } from "@/domain/types";
 import * as svc from "@/lib/meeting/service";
@@ -56,11 +56,11 @@ export async function reopenMeetingAction(meetingId: string): Promise<Result<Mee
 }
 
 export async function meetingAction(team: string, week: WeekKey): Promise<Result<MeetingView | null>> {
-  return runAction("Встреча", (a) => svc.getMeeting(a, String(team), week));
+  return runRead("Встреча", (a) => svc.getMeeting(a, String(team), week));
 }
 
 export async function searchDecisionsAction(query: string, status: "active" | "cancelled" | "all", teamIds?: string[]): Promise<Result<DecisionView[]>> {
-  return runAction("Поиск решений", (a) => svc.listDecisions(a, { query: String(query ?? ""), status, teamIds: teamIds?.map(String) }));
+  return runRead("Поиск решений", (a) => svc.listDecisions(a, { query: String(query ?? ""), status, teamIds: teamIds?.map(String) }));
 }
 
 export async function intakeAction(meetingId: string, items: svc.IntakeItem[], notionUrl?: string | null): Promise<Result<{ meeting: MeetingView; tasks: number[]; decisions: number }>> {

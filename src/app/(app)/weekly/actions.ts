@@ -3,7 +3,7 @@
 // Действия weekly из экранов. Права и правила проверяет сервис.
 
 import { unstable_rethrow } from "next/navigation";
-import { requestIp, requireContext } from "@/lib/auth";
+import { requestIp, requireContext, requireWriteContext } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
 import { carryPromise, dropWeekSnapshot, reopenWeekly, reviewPromise, takeWeekSnapshot } from "@/lib/weekly/promise-service";
@@ -16,8 +16,9 @@ import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** Кто меняет weekly: в режиме «Смотреть как» отказ (этап 63) */
 async function actor(): Promise<Actor> {
-  const ctx = await requireContext();
+  const ctx = await requireWriteContext();
   return {
     personId: ctx.person.id,
     slug: ctx.person.slug as PersonSlug,
@@ -134,8 +135,10 @@ export async function setWeekClosedAction(week: WeekKey, closed: boolean): Promi
  * Без него сервер не может проверить, что сохранение не затрёт чужое: такой запрос шлёт только старая вкладка
  */
 export async function saveCeoReportAction(week: WeekKey, sections: CeoSections, meetings: unknown, expected: string | null): Promise<Result<svc.CeoReportView>> {
-  if (expected !== null && typeof expected !== "string") return { ok: false, error: "Страница устарела: обновите её, чтобы сохранить отчёт. Свои правки сначала скопируйте" };
-  return run((a) => svc.saveCeoReport(a, week, sections, meetings, expected));
+  return run((a) => {
+    if (expected !== null && typeof expected !== "string") throw new TaskRuleError("Страница устарела: обновите её, чтобы сохранить отчёт. Свои правки сначала скопируйте");
+    return svc.saveCeoReport(a, week, sections, meetings, expected);
+  });
 }
 
 /** Неделя для режима встречи и ленты без перезагрузки страницы */
