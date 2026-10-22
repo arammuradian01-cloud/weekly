@@ -57,8 +57,8 @@ type Store = {
   createTask: (input: NewTaskInput) => Promise<{ number: number } | { error: string }>;
   toast: Toast | null;
   notify: (text: string, tone?: "error") => void;
-  /** Тост с кнопкой «Отменить» для правок не по задачам, например удаления записи weekly */
-  notifyUndo: (text: string, onUndo: () => void) => void;
+  /** Тост с кнопкой «Отменить» для правок не по задачам, например удаления записи weekly. tone error: часть не прошла */
+  notifyUndo: (text: string, onUndo: () => void, tone?: "error") => void;
   dismissToast: () => void;
   undo: () => void;
 };
@@ -237,7 +237,7 @@ export function PrototypeProvider({
       },
       toast,
       notify: (text, tone) => showToast(text, tone ? { tone } : undefined),
-      notifyUndo: (text, onUndo) => showToast(text, { onUndo }),
+      notifyUndo: (text, onUndo, tone) => showToast(text, { onUndo, ...(tone ? { tone } : {}) }),
       dismissToast: () => setToast(null),
       undo: () => {
         if (toast?.onUndo) {

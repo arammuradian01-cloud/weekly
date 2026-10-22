@@ -1,12 +1,14 @@
 "use client";
 
 // Связать задачи с целями (этап 65). Задача Арама 22.10: сотрудник перетаскивает к каждой цели задачи, которыми
-// занимался или которые видел. Слева (на телефоне сверху) цели человека и его команд на квартал, справа «Мои задачи».
+// занимался или которые видел. Слева (на телефоне сверху) цели человека, его команд и команд ниже на квартал, справа
+// «Мои задачи». На ноутбуке колонка целей закреплена и прокручивается сама: задачу не тащат через всю страницу.
 // Мышью тянут строку задачи, пальцем долгим нажатием, с клавиатуры: пробел берёт задачу, стрелки выбирают цель,
 // пробел отпускает, Escape отменяет. Без перетаскивания то же кнопкой «К цели» у задачи и «Привязать к цели» для
-// отмеченных. Правка видна сразу, при ошибке возвращается; в тосте «Отменить».
+// отмеченных. Правка видна сразу, при ошибке возвращается; в тосте «Отменить». Задачи, которые человек только видит,
+// лежат отдельно в свёрнутом блоке «Только посмотреть».
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   DndContext,
@@ -15,6 +17,7 @@ import {
   MouseSensor,
   TouchSensor,
   pointerWithin,
+  useDndContext,
   useDraggable,
   useDroppable,
   useSensor,
@@ -30,17 +33,20 @@ import { ChevronDown, ChevronRight, GripVertical, Search, Target, X } from "luci
 import type { GoalLinkBoard } from "@/lib/goals/link-board";
 import {
   REASON_LABEL,
+  WHO_LINKS,
+  dragSet,
   failedText,
   filterCounts,
-  filterTasks,
+  focusAfter,
   goalFitsTask,
   goalName,
   groupGoals,
-  groupTasks,
-  linkedText,
+  linkToast,
+  listTasks,
   nothingToMove,
   planLink,
   stepTarget,
+  tallyText,
   tasksByGoal,
   type GoalOf,
   type LinkFilter,
@@ -55,6 +61,7 @@ import { usePrototype } from "@/domain/store";
 import { linkTasksToGoalAction, undoGoalLinksAction } from "@/app/(app)/goals/actions";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { Collapsible } from "@/components/ui/collapsible";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
 
@@ -62,18 +69,41 @@ import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
 const dragArea = "cursor-grab select-none [-webkit-touch-callout:none]";
 /** Сколько задач показывать сразу, дальше «Показать ещё» */
 const PAGE = { open: 40, closed: 20 };
+const TASKS_TITLE = "link-tasks-title";
 
 type DragData = { number: number; from: "list" | "goal" };
 type DropData = { kind: "goal"; id: string; order: number } | { kind: "none"; order: number };
 /** Правка, которая ещё не пришла с сервера: pending, пока сервер не ответил. seq отличает повторную правку той же задачи */
 type Override = { goal: string | null; pending: boolean; seq: number };
+type Finder = () => HTMLElement | null;
+/** Откуда правка: перетаскивание, окно «К цели», крестик в карточке цели, кнопки отмеченных */
+type Source = { kind: "drag" | "picker" | "bar" } | { kind: "card"; focus: Finder };
 
 const statusLabel = (code: LinkTask["status"]) => STATUSES.find((s) => s.code === code)?.label ?? "";
+const rowFinder = (n: number): Finder => () => document.querySelector<HTMLElement>(`[data-testid="drag-task-${n}"]`);
+const titleFinder: Finder = () => document.getElementById(TASKS_TITLE);
 
-/** Отмеченные задачи тянутся вместе, если тянут одну из них; иначе одна задача */
-function dragNumbers(data: DragData | undefined, selected: Set<number>): number[] {
-  if (!data) return [];
-  return data.from === "list" && selected.has(data.number) && selected.size > 1 ? [...selected] : [data.number];
+/**
+ * Колонка целей на ноутбуке закреплена и прокручивается сама. Пока задачу тянут, после любой прокрутки (страницы или
+ * колонки) места целей перемеряются: иначе dnd-kit считал бы закреплённую колонку уехавшей вместе со страницей
+ */
+function RemeasureOnScroll() {
+  const { active, measureDroppableContainers } = useDndContext();
+  const dragging = active !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    let frame = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => measureDroppableContainers([]));
+    };
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, [dragging, measureDroppableContainers]);
+  return null;
 }
 
 export function GoalsLink({ board }: { board: GoalLinkBoard }) {
@@ -90,9 +120,27 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   const [dragging, setDragging] = useState<number[] | null>(null);
   const [limit, setLimit] = useState(PAGE);
   const seq = useRef(0);
+  // Куда перевести фокус после перерисовки: строка задачи пропала из списка «Без цели», крестик в карточке цели
+  const pendingFocus = useRef<Finder | null>(null);
+  // Окно «К цели»: откуда открыли и куда вернуть фокус, если строки с кнопкой больше нет
+  const pickerReturn = useRef<Finder | null>(null);
+  const pickerFocus = useRef<Finder | null>(null);
   // Цель, к которой задачу подвели стрелками. С клавиатуры «над чем задача» решает выбор стрелкой, а не геометрия:
   // dnd-kit при стрелках ещё и прокручивает страницу, и пересчёт по координатам мог бы попасть на соседнюю цель
   const keyTarget = useRef<UniqueIdentifier | null>(null);
+  // Свежие данные с сервера: правки, на которые сервер уже ответил, в них есть. Ждущие ответа правки остаются
+  const [seen, setSeen] = useState(board);
+  if (seen !== board) {
+    setSeen(board);
+    setOverrides((m) => new Map([...m].filter(([, o]) => o.pending)));
+  }
+  useEffect(() => {
+    const find = pendingFocus.current;
+    if (!find) return;
+    pendingFocus.current = null;
+    find()?.focus();
+  });
+
   /** Мышь и палец: цель под курсором. Клавиатура: цель, выбранная стрелками */
   const collision: CollisionDetection = (args) => {
     if (args.pointerCoordinates) return pointerWithin(args);
@@ -117,16 +165,12 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
     if (next < 0) return undefined;
     const target = targets[next]!;
     keyTarget.current = target.id;
+    // Цель в закреплённой колонке может быть ниже края: колонка прокручивается к ней
+    target.node.current?.scrollIntoView({ block: "nearest" });
     // Карточка задачи встаёт посередине цели: видно, куда она ляжет
     const rect = droppableRects.get(target.id)!;
     return { x: rect.left + rect.width / 2 - collisionRect.width / 2, y: rect.top + rect.height / 2 - collisionRect.height / 2 };
   };
-  // Свежие данные с сервера: правки, на которые сервер уже ответил, в них есть. Ждущие ответа правки остаются
-  const [seen, setSeen] = useState(board);
-  if (seen !== board) {
-    setSeen(board);
-    setOverrides((m) => new Map([...m].filter(([, o]) => o.pending)));
-  }
   // Мышь и палец отдельно: пальцем перетаскивание начинается долгим нажатием, свайп прокручивает страницу
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
@@ -148,11 +192,17 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   };
 
   const counts = filterCounts(board.tasks, goalOf);
-  const shown = groupTasks(filterTasks(board.tasks, filter, query, goalOf));
+  const shown = listTasks(board.tasks, filter, query, goalOf);
   const linked = tasksByGoal(board.tasks, goalOf);
   const groups = groupGoals(board.goals);
   const orderOf = new Map(board.goals.map((g, i) => [g.id, i + 1]));
   const draggedTasks = (dragging ?? []).map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
+  const openShown = shown.open.slice(0, limit.open);
+  const closedShown = shown.closed.slice(0, limit.closed);
+  // Видимые строки, которые можно привязать: по ним считаются отмеченные и фокус после привязки
+  const visible = [...openShown, ...closedShown].map((t) => t.number);
+  const selectedVisible = visible.filter((n) => selected.has(n));
+  const hiddenSelected = [...selected].filter((n) => !visible.includes(n)).length;
 
   const toggle = (n: number) =>
     setSelected((s) => {
@@ -193,7 +243,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   };
 
   /** Связать задачи с целью (goalId null: снять цель). Экран меняется сразу, при ошибке возвращается */
-  const commit = async (numbers: number[], goalId: string | null) => {
+  const commit = async (numbers: number[], goalId: string | null, source: Source) => {
     const goal = goalId ? (goalById.get(goalId) ?? null) : null;
     const list = numbers.map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
     const plan = planLink(list, goal, goalOf);
@@ -202,14 +252,28 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
       if (plan.unfit.length || plan.locked.length) notify(nothingToMove(plan, goal), "error");
       return;
     }
+    // Фокус: строки пропадут из «Без цели», если их привязали. Тогда на следующую строку или на заголовок списка
+    const removed = filter === "nogoal" && goalId !== null ? plan.move.filter((n) => visible.includes(n)) : [];
+    const after = removed.length ? focusAfter(visible, removed) : undefined;
+    const finder: Finder | null = after === undefined ? null : after === null ? titleFinder : rowFinder(after);
+    if (source.kind === "card") pendingFocus.current = source.focus;
+    else if (source.kind === "picker") pickerFocus.current = finder && removed.length ? finder : null;
+    else if (finder) {
+      const active = document.activeElement;
+      const row = active instanceof HTMLElement ? active.closest<HTMLElement>("[data-link-row]") : null;
+      if (row && removed.includes(Number(row.dataset.linkRow))) pendingFocus.current = finder;
+    }
+
     const before = new Map(plan.move.map((n) => [n, goalOf(byNumber.get(n)!)]));
+    const wasSelected = plan.move.filter((n) => selected.has(n));
     const mine = ++seq.current;
     setOverrides((m) => {
       const next = new Map(m);
       for (const n of plan.move) next.set(n, { goal: goalId, pending: true, seq: mine });
       return next;
     });
-    setSelected(new Set());
+    // Отметка снимается только с задач, которые сдвинулись или уже стояли у этой цели
+    setSelected((s) => new Set([...s].filter((n) => !plan.move.includes(n) && !plan.same.includes(n))));
     let r: Awaited<ReturnType<typeof linkTasksToGoalAction>>;
     try {
       r = await linkTasksToGoalAction(plan.move, goalId);
@@ -226,40 +290,38 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
       }
       return next;
     });
+    // Не прошедшие задачи возвращаются в выбор: их можно привязать ещё раз
+    const back = wasSelected.filter((n) => failed.has(n));
+    if (back.length) setSelected((s) => new Set([...s, ...back]));
     if (!r.ok) {
       notify(r.error, "error");
       return;
     }
     const done = r.value.done;
-    // Не подошли цели или без права: говорим одной фразой после главного
-    const skipped = [...plan.unfit, ...plan.locked];
-    const tail = [failedText(r.value.failed), skipped.length ? `Не подошли к цели: ${skipped.join(", ")}` : ""].filter(Boolean);
-    if (!done.length) notify(tail.join(". "), "error");
-    else {
-      const text = [linkedText(done.map((d) => d.number), goal), ...tail].join(". ");
-      const tokens = done.filter((d) => d.undo).map((d) => ({ number: d.number, token: d.undo!, goal: before.get(d.number) ?? null }));
-      if (tokens.length) notifyUndo(text, () => void revert(tokens));
-      else notify(text);
-    }
+    const toast = linkToast({ done: done.map((d) => d.number), failed: r.value.failed, unfit: plan.unfit, locked: plan.locked }, goal);
+    const tokens = done.filter((d) => d.undo).map((d) => ({ number: d.number, token: d.undo!, goal: before.get(d.number) ?? null }));
+    if (tokens.length) notifyUndo(toast.text, () => void revert(tokens), toast.error ? "error" : undefined);
+    else notify(toast.text, toast.error ? "error" : undefined);
     router.refresh();
   };
 
+  const dragNumbers = (data: DragData | undefined) => (data ? dragSet(data.number, data.from === "list", selectedVisible) : []);
   const onDragStart = (e: DragStartEvent) => {
     keyTarget.current = null;
-    setDragging(dragNumbers(e.active.data.current as DragData | undefined, selected));
+    setDragging(dragNumbers(e.active.data.current as DragData | undefined));
   };
   const onDragEnd = (e: DragEndEvent) => {
-    const numbers = dragNumbers(e.active.data.current as DragData | undefined, selected);
+    const numbers = dragNumbers(e.active.data.current as DragData | undefined);
     keyTarget.current = null;
     setDragging(null);
     const target = e.over?.data.current as DropData | undefined;
     if (!target || !numbers.length) return;
-    void commit(numbers, target.kind === "goal" ? target.id : null);
+    void commit(numbers, target.kind === "goal" ? target.id : null, { kind: "drag" });
   };
 
   const subjectOf = (id: UniqueIdentifier) => {
     const n = Number(String(id).slice(2));
-    const numbers = dragNumbers({ number: n, from: String(id).startsWith("t:") ? "list" : "goal" }, selected);
+    const numbers = dragNumbers({ number: n, from: String(id).startsWith("t:") ? "list" : "goal" });
     if (numbers.length > 1) return `отмеченные задачи, ${numbers.length}`;
     const t = byNumber.get(n);
     return t ? `задача ${t.number}, «${t.title}»` : `задача ${n}`;
@@ -276,12 +338,16 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
     onDragCancel: () => "Перетаскивание отменено, связь не изменилась",
   };
 
+  /** returnTo: кнопка, с которой открыли окно; ищется заново после закрытия, строку могли перерисовать */
+  const openPicker = (numbers: number[], returnTo: Finder) => {
+    pickerReturn.current = returnTo;
+    pickerFocus.current = null;
+    setPicker(numbers);
+  };
   // Задача могла пропасть после обновления (её перенесли в другую команду): окно выбора без задач не открывается
   const pickerTasks = (picker ?? []).map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
-  const selectedTasks = [...selected].map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
+  const selectedTasks = selectedVisible.map((n) => byNumber.get(n)).filter((t): t is LinkTask => !!t);
   const quarterName = quarterLabel(board.quarter);
-  const openShown = shown.open.slice(0, limit.open);
-  const closedShown = shown.closed.slice(0, limit.closed);
 
   const row = (t: LinkTask) => (
     <TaskRow
@@ -293,7 +359,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
       selected={selected.has(t.number)}
       pending={!!overrides.get(t.number)?.pending}
       onSelect={() => toggle(t.number)}
-      onPick={() => setPicker([t.number])}
+      onPick={() => openPicker([t.number], () => document.querySelector<HTMLElement>(`[data-testid="link-task-${t.number}"] [aria-label="К цели: задача ${t.number}"]`))}
     />
   );
 
@@ -314,6 +380,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
         },
       }}
     >
+      <RemeasureOnScroll />
       <div className="flex flex-col gap-5" data-testid="goals-link">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <SelectField
@@ -328,11 +395,15 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
             К моим задачам: без цели {counts.nogoal}
           </a>
         </div>
-        {board.observer ? <p className="sv-alert sv-alert--info">Наблюдатель только смотрит: связи задач с целями меняют ответственные и руководители команд.</p> : null}
-        {board.limited ? <p className="sv-alert sv-alert--info">Вход по общему логину: цель можно сменить только у задач, которые вы ведёте или поставили. Задачи команды привязывают, войдя по своей ссылке.</p> : null}
+        {board.observer ? <p className="sv-alert sv-alert--info">Наблюдатель только смотрит: связи задач с целями меняют {WHO_LINKS}.</p> : null}
+        {board.limited ? <p className="sv-alert sv-alert--info">Вход по общему логину: цель можно сменить только у задач, которые вы ведёте, поставили или где вы соисполнитель. Задачи команды привязывают, войдя по своей ссылке.</p> : null}
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <section aria-labelledby="link-goals-title" className="flex min-w-0 flex-col gap-3">
+          <section
+            aria-labelledby="link-goals-title"
+            data-testid="link-goals"
+            className="flex min-w-0 flex-col gap-3 lg:sticky lg:top-20 lg:-m-1 lg:max-h-[calc(100dvh-6rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:p-1"
+          >
             <div>
               <h2 id="link-goals-title" className="text-title font-semibold text-ink">
                 Цели на {quarterName}
@@ -363,7 +434,7 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
                         dragging={dragging !== null}
                         fits={draggedTasks.length > 0 && draggedTasks.some((t) => goalFitsTask(goal, t))}
                         interactive={interactive}
-                        onUnlink={(n) => void commit([n], null)}
+                        onUnlink={(n, focus) => void commit([n], null, { kind: "card", focus })}
                       />
                     ))}
                   </ul>
@@ -376,12 +447,12 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
             )}
           </section>
 
-          <section id="link-tasks" aria-labelledby="link-tasks-title" className="flex min-w-0 scroll-mt-20 flex-col gap-3">
+          <section id="link-tasks" aria-labelledby={TASKS_TITLE} className="flex min-w-0 scroll-mt-20 flex-col gap-3">
             <div>
-              <h2 id="link-tasks-title" className="text-title font-semibold text-ink">
+              <h2 id={TASKS_TITLE} tabIndex={-1} className="text-title font-semibold text-ink">
                 Мои задачи
               </h2>
-              <p className="mt-1 text-small text-muted">Что вы ведёте или поставили, и что видели: задачи ваших команд, где вы комментировали, где вас упомянули и за которыми следите.</p>
+              <p className="mt-1 text-small text-muted">Что вы ведёте, поставили или где вы соисполнитель, и задачи ваших команд и команд ниже. То, что вы только видели и привязать не можете, ниже в блоке «Только посмотреть».</p>
             </div>
             <div className="flex flex-wrap items-end gap-3">
               <Segmented
@@ -399,16 +470,21 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
                 <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
               </div>
             </div>
-            {selectedTasks.length ? (
+            {selected.size ? (
               <div className="flex flex-wrap items-center gap-2 rounded-control-lg bg-blue-soft px-3 py-2" role="group" aria-label="Отмеченные задачи" data-testid="link-selection">
                 <span className="text-small font-medium text-ink">
-                  Отмечено {selectedTasks.length} {plural(selectedTasks.length, "задача", "задачи", "задач")}
+                  {selectedTasks.length ? `Отмечено ${selectedTasks.length} ${plural(selectedTasks.length, "задача", "задачи", "задач")}` : "Отмеченные задачи не видны"}
+                  {hiddenSelected ? (
+                    <span className="block text-caption font-normal text-muted">
+                      {selectedTasks.length ? "Ещё" : "Все"} {hiddenSelected} {plural(hiddenSelected, "скрыта", "скрыты", "скрыты")} поиском или фильтром: их не тронем
+                    </span>
+                  ) : null}
                 </span>
-                <Button size="sm" className="max-sm:h-11" onClick={() => setPicker(selectedTasks.map((t) => t.number))}>
+                <Button size="sm" className="max-sm:h-11" disabled={!selectedTasks.length} onClick={() => openPicker(selectedTasks.map((t) => t.number), () => document.querySelector<HTMLElement>('[data-testid="link-selection"] button'))}>
                   Привязать к цели…
                 </Button>
                 {selectedTasks.some((t) => goalOf(t) !== null) ? (
-                  <Button size="sm" variant="secondary" className="max-sm:h-11" onClick={() => void commit(selectedTasks.map((t) => t.number), null)}>
+                  <Button size="sm" variant="secondary" className="max-sm:h-11" onClick={() => void commit(selectedTasks.map((t) => t.number), null, { kind: "bar" })}>
                     Снять цель
                   </Button>
                 ) : null}
@@ -418,11 +494,17 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
               </div>
             ) : null}
 
-            {!counts.all ? (
+            {!board.tasks.some((t) => t.mine) ? (
               <p className="sv-card sv-card--soft px-4 py-3 text-small text-muted">Задач, которые вы ведёте или видели, на {quarterName} нет.</p>
             ) : !shown.open.length && !shown.closed.length ? (
               <p className="sv-card sv-card--soft px-4 py-3 text-small text-muted" data-testid="link-tasks-empty">
-                {query.trim() ? "Под поиск ничего не подходит: проверьте номер или слова." : filter === "nogoal" ? "Все ваши задачи уже работают на цели. Нажмите «Все», чтобы перевязать задачу." : "Задач нет."}
+                {query.trim()
+                  ? "Под поиск ничего не подходит: проверьте номер или слова."
+                  : !counts.all
+                    ? `Задач, которые вы можете привязать, нет: цель меняют ${WHO_LINKS}.`
+                    : filter === "nogoal"
+                      ? "Все ваши задачи уже работают на цели. Нажмите «Все», чтобы перевязать задачу."
+                      : "Задач нет."}
               </p>
             ) : (
               <>
@@ -456,6 +538,15 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
                 ) : null}
               </>
             )}
+            {shown.viewOnly.length ? (
+              <Collapsible id="link-view-only" testId="link-view-only" headingLevel={3} title={`Только посмотреть: ${shown.viewOnly.length}`} hint={`Цель этих задач меняют ${WHO_LINKS}`}>
+                <ul className="m-0 flex list-none flex-col p-0">
+                  {shown.viewOnly.map((t) => (
+                    <TaskRow key={t.number} task={t} goal={goalShown(t)} today={today} interactive={false} selected={false} pending={false} onSelect={() => undefined} onPick={() => undefined} />
+                  ))}
+                </ul>
+              </Collapsible>
+            ) : null}
             {board.truncated ? <p className="text-caption text-muted">Показаны не все задачи: остальные найдутся в разделе «Задачи».</p> : null}
           </section>
         </div>
@@ -478,7 +569,16 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
           onChoose={(goalId) => {
             const numbers = pickerTasks.map((t) => t.number);
             setPicker(null);
-            void commit(numbers, goalId);
+            void commit(numbers, goalId, { kind: "picker" });
+          }}
+          onCloseAutoFocus={(e) => {
+            // Строка с кнопкой «К цели» могла пропасть из «Без цели»: тогда на следующую строку или на заголовок
+            e.preventDefault();
+            const find = pickerFocus.current;
+            pickerFocus.current = null;
+            const back = pickerReturn.current;
+            pickerReturn.current = null;
+            (find?.() ?? back?.() ?? titleFinder())?.focus();
           }}
         />
       ) : null}
@@ -486,14 +586,18 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   );
 }
 
-/** Зона «Без цели»: задача, отпущенная сюда, теряет цель */
+/** Зона «Без цели»: задача, отпущенная сюда, теряет цель. На ноутбуке прилипает к верху колонки целей: она всегда под рукой */
 function NoneZone({ dragging, enabled }: { dragging: boolean; enabled: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: "none", data: { kind: "none", order: 0 } satisfies DropData, disabled: dragging && !enabled });
   return (
     <div
       ref={setNodeRef}
       data-testid="link-none"
-      className={cn("rounded-panel border border-dashed border-border-strong px-4 py-3 text-small text-muted transition-colors", isOver && "bg-blue-soft text-ink ring-2 ring-blue", dragging && !enabled && "opacity-50")}
+      className={cn(
+        "rounded-panel border border-dashed border-border-strong px-4 py-3 text-small text-muted transition-colors lg:sticky lg:top-0 lg:z-10",
+        isOver ? "bg-blue-soft text-ink ring-2 ring-blue" : "bg-canvas",
+        dragging && !enabled && "opacity-50",
+      )}
     >
       <span className="font-semibold text-ink">Без цели.</span> Перетащите сюда задачу, чтобы снять с неё цель
     </div>
@@ -520,19 +624,27 @@ function GoalCard({
   /** Цель подходит хотя бы одной перетаскиваемой задаче */
   fits: boolean;
   interactive: boolean;
-  onUnlink: (number: number) => void;
+  /** Отвязать задачу; focus: куда перевести фокус, когда её строка пропадёт из карточки */
+  onUnlink: (number: number, focus: Finder) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `goal:${goal.id}`, data: { kind: "goal", id: goal.id, order } satisfies DropData, disabled: dragging && !fits });
   const name = goalName(goal);
   const context = [goal.owner ?? "владелец не задан", goal.personal ? "личная цель" : null, goal.result].filter(Boolean).join(", ");
   const pct = progressLabel(goal.numeric);
+  const toggleId = `link-goal-toggle-${goal.id}`;
+  /** После крестика: следующий крестик в карточке, иначе предыдущий, иначе кнопка «Задачи» */
+  const focusAfterUnlink = (n: number): Finder => {
+    const rest = tasks.filter((t) => t.canLink && interactive).map((t) => t.number);
+    const next = focusAfter(rest, [n]);
+    return () => (next !== null ? document.querySelector<HTMLElement>(`[aria-label="Отвязать задачу ${next} от цели"]`) : null) ?? document.getElementById(toggleId);
+  };
   return (
     <li>
       <section
         ref={setNodeRef}
         aria-labelledby={`link-goal-title-${goal.id}`}
         data-testid={`link-goal-${goal.id}`}
-        className={cn("sv-card bg-surface p-3 transition-shadow", isOver && "ring-2 ring-blue", dragging && !fits && "opacity-50")}
+        className={cn("sv-card relative bg-surface p-3 transition-shadow", isOver ? "ring-2 ring-blue" : dragging && fits && "ring-1 ring-blue/50", dragging && !fits && "opacity-50")}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -542,6 +654,7 @@ function GoalCard({
             <p className="mt-0.5 text-caption text-muted">{context}</p>
           </div>
           <button
+            id={toggleId}
             type="button"
             onClick={onToggle}
             aria-expanded={open}
@@ -554,7 +667,7 @@ function GoalCard({
           </button>
         </div>
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted">
-          <span>{goal.progress.total ? `закрыто ${goal.progress.done} из ${goal.progress.total}` : "задач пока нет"}</span>
+          <span data-testid={`link-goal-tally-${goal.id}`}>{tallyText(tasks)}</span>
           {goal.fact ? (
             <span>
               факт {goal.fact}
@@ -565,17 +678,22 @@ function GoalCard({
             <span>целевое {goal.target}</span>
           ) : null}
         </p>
-        {dragging ? (
-          <p className={cn("mt-2 text-caption font-medium", fits ? "text-blue-700" : "text-muted")} aria-hidden="true">
-            {fits ? "Отпустите здесь, чтобы привязать" : "Не подходит этой задаче"}
-          </p>
+        {/* Подсказки поверх карточки, а не новой строкой: карточки не прыгают, когда задачу берут */}
+        {isOver ? (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-[inherit] bg-surface/85 px-3 text-center text-small font-semibold text-blue-700" aria-hidden="true">
+            Отпустите, чтобы привязать
+          </span>
+        ) : dragging && !fits ? (
+          <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-field px-2 py-0.5 text-caption font-medium text-ink" aria-hidden="true">
+            Не подходит этой задаче
+          </span>
         ) : null}
         {open ? (
           <div id={`link-goal-tasks-${goal.id}`} className="mt-2 border-t border-line pt-2">
             {tasks.length ? (
               <ul className="m-0 flex list-none flex-col p-0" aria-label={`Задачи цели «${name}»`}>
                 {tasks.map((t) => (
-                  <LinkedRow key={t.number} task={t} interactive={interactive} onUnlink={() => onUnlink(t.number)} />
+                  <LinkedRow key={t.number} task={t} interactive={interactive} onUnlink={() => onUnlink(t.number, focusAfterUnlink(t.number))} />
                 ))}
               </ul>
             ) : (
@@ -645,13 +763,17 @@ function TaskRow({
   const when = task.closed ? (task.closedAt ? `закрыта ${formatShort(task.closedAt)}` : "закрыта") : `до ${formatShort(task.due)}`;
   const reason = task.reasons[0] ? REASON_LABEL[task.reasons[0]] : null;
   return (
-    <li className={cn("flex items-start gap-1 rounded-control py-1 pr-1", selected ? "bg-field ring-1 ring-inset ring-blue" : "hover:bg-field", isDragging && "opacity-40")} data-testid={`link-task-${task.number}`}>
+    <li
+      className={cn("flex items-start gap-1 rounded-control py-1 pr-1", selected ? "bg-field ring-1 ring-inset ring-blue" : "hover:bg-field", isDragging && "opacity-40")}
+      data-testid={`link-task-${task.number}`}
+      data-link-row={task.number}
+    >
       {draggable ? (
         <label className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center sm:h-9 sm:w-9">
           <input type="checkbox" checked={selected} onChange={onSelect} aria-label={`Отметить задачу ${task.number}`} className="h-4 w-4 accent-blue-700" />
         </label>
       ) : (
-        <span className="w-11 shrink-0 sm:w-9" aria-hidden="true" />
+        <span className="w-3 shrink-0" aria-hidden="true" />
       )}
       <div
         ref={setNodeRef}
@@ -670,7 +792,7 @@ function TaskRow({
           <span className="mt-0.5 block text-caption text-muted">
             {statusLabel(task.status)}, <span className={cn(overdue && "font-semibold text-danger-ink")}>{overdue ? `просрочена, срок был ${formatShort(task.due)}` : when}</span>
             {reason ? `, ${reason}` : ""}
-            {!task.canLink && interactive ? ", цель меняют ответственный и руководитель" : ""}
+            {!draggable ? `, ${task.owner}` : ""}
           </span>
           {goal ? (
             <span className={cn("sv-badge sv-badge--info mt-1 inline-flex max-w-full items-center gap-1", pending && "opacity-60")}>
@@ -697,12 +819,14 @@ function GoalPicker({
   goalOf,
   onChoose,
   onClose,
+  onCloseAutoFocus,
 }: {
   tasks: LinkTask[];
   goals: LinkGoal[];
   goalOf: GoalOf;
   onChoose: (goalId: string | null) => void;
   onClose: () => void;
+  onCloseAutoFocus: (event: Event) => void;
 }) {
   const [query, setQuery] = useState("");
   const q = query.toLowerCase().replace(/ё/g, "е").trim();
@@ -715,6 +839,7 @@ function GoalPicker({
     <Modal
       open
       onOpenChange={(o) => !o && onClose()}
+      onCloseAutoFocus={onCloseAutoFocus}
       title={one ? `Задача ${tasks[0]!.number}: к цели` : `Отмеченные задачи: ${tasks.length}, к цели`}
       description="Подходят цели команды задачи, команд выше и личные цели её людей на квартал срока"
     >

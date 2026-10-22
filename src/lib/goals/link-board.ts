@@ -1,13 +1,14 @@
 // Экран «Связать задачи с целями» (этап 65): цели человека и его команд на квартал и «Мои задачи», которые он ведёт
 // или видел. Только чтение: связь меняет сервис задач (setTaskGoal), права те же.
 //
-// Цели: личные цели человека, цели команд, где он участник или руководитель, и цели команд выше, на которые они
-// работают. Чужие личные цели из бордов лидеров видны только руководителю их команды. Снятые цели не показываем:
-// к ним задачу не привязать.
+// Цели: личные цели человека, цели команд, где он участник или руководитель, цели команд ниже (руководитель видит
+// подчинённые команды по структуре и привязывает их задачи по правилам сервиса задач) и цели команд выше, на которые
+// они работают. Чужие личные цели из бордов лидеров видны только руководителю их команды или команды выше. Снятые
+// цели не показываем: к ним задачу не привязать.
 //
-// «Мои задачи»: что человек ведёт или вёл (ответственный, соисполнитель, поставил) и что он видел: задачи его команд,
-// задачи, где он комментировал, где его упомянули, и задачи, за которыми он следит. Всё только среди задач, которые
-// он видит по правилам сервиса задач. Открытые все, закрытые только за квартал, без отменённых и архива.
+// «Мои задачи»: что человек ведёт или вёл (ответственный, соисполнитель, поставил) и что он видел: задачи его команд
+// и команд ниже, задачи, где он комментировал, где его упомянули, и задачи, за которыми он следит. Всё только среди
+// задач, которые он видит по правилам сервиса задач. Открытые все, закрытые только за квартал, без отменённых и архива.
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
@@ -72,15 +73,17 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const order = new Map(orderTeams(nodes).map((x, i) => [x.node.id, i]));
   const member = scope.member;
-  const above = [...new Set(member.flatMap((t) => ancestorsOf(nodes, t)))].filter((t) => !member.includes(t));
+  // Команды ниже: подчинённые команды руководителя по структуре (scope.leads без своих команд). Общий логин без
+  // режима управления ничем не руководит, у него их нет
+  const below = scope.leads.filter((t) => !member.includes(t)).sort((a, b) => (order.get(a) ?? 9999) - (order.get(b) ?? 9999));
+  const above = [...new Set(member.flatMap((t) => ancestorsOf(nodes, t)))].filter((t) => !member.includes(t) && !below.includes(t));
 
   // ---------- Цели ----------
   const rows = await prisma.goal.findMany({
-    where: { quarter, result: { not: "DROPPED" }, OR: [{ teamId: { in: [...member, ...above] } }, { ownerId: me }] },
+    where: { quarter, result: { not: "DROPPED" }, OR: [{ teamId: { in: [...member, ...below, ...above] } }, { ownerId: me }] },
     include: {
       owner: { select: { id: true, slug: true, fullName: true } },
       facts: { orderBy: [{ at: "desc" }, { id: "desc" }], take: 1, select: { value: true } },
-      tasks: { where: { archivedAt: null }, select: { status: true } },
     },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { createdAt: "asc" }],
   });
@@ -91,14 +94,13 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
       const personal = !!boardOwner && g.ownerId !== (team?.leaderId ?? null);
       return { g, team, boardOwner, personal };
     })
-    // Чужая личная цель из борда лидера: только руководителю её команды
-    .filter(({ g, team, personal }) => g.ownerId === me || !personal || team?.leaderId === me)
+    // Чужая личная цель из борда лидера: только руководителю её команды или команды выше
+    .filter(({ g, team, personal }) => g.ownerId === me || !personal || team?.leaderId === me || scope.leads.includes(g.teamId))
     .map(({ g, team, boardOwner, personal }) => {
-      const counted = g.tasks.filter((t) => t.status !== "CANCELLED" && t.status !== "PROPOSED");
       const fact = g.facts[0]?.value ?? null;
       // «Мои цели»: цели, где человек владелец не как руководитель команды (личные). Цели своей команды у руководителя
       // остаются в группе команды: так видно, чья это цель
-      const group: LinkGoal["group"] = g.ownerId === me && team?.leaderId !== me ? "mine" : member.includes(g.teamId) ? "team" : "above";
+      const group: LinkGoal["group"] = g.ownerId === me && team?.leaderId !== me ? "mine" : member.includes(g.teamId) ? "team" : below.includes(g.teamId) ? "below" : "above";
       return {
         goal: {
           id: g.id,
@@ -109,14 +111,13 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
           owner: g.owner?.fullName ?? null,
           group,
           result: g.result === "IN_PROGRESS" ? null : RESULT_LABELS[g.result],
-          progress: { done: counted.filter((t) => t.status === "DONE").length, total: counted.length },
           fact,
           target: g.target,
           numeric: goalProgress(g.base, g.target, fact),
           boardOwner,
           personal,
         },
-        rank: [{ mine: 0, team: 1, above: 2 }[group], order.get(g.teamId) ?? 9999] as const,
+        rank: [{ mine: 0, team: 1, below: 2, above: 3 }[group], order.get(g.teamId) ?? 9999] as const,
       };
     })
     .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1])
@@ -130,7 +131,7 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
       { ownerId: me },
       { createdById: me },
       { coExecutors: { some: { personId: me } } },
-      ...(member.length ? [{ teamId: { in: member } }] : []),
+      ...(member.length || below.length ? [{ teamId: { in: [...member, ...below] } }] : []),
       { comments: { some: { OR: [{ authorId: me }, { mentions: { has: me } }] } } },
       { watchers: { some: { personId: me } } },
     ],
@@ -148,7 +149,8 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
       orderBy: [{ closedAt: "desc" }, { number: "desc" }],
       take: LIMITS.closed + 1,
     }),
-    goals.length ? prisma.task.findMany({ where: { goalId: { in: goals.map((g) => g.id) }, archivedAt: null }, select: taskSelect }) : Promise.resolve([]),
+    // Задачи под целями экрана: цифры карточки и раскрытый список из одного набора, без отменённых
+    goals.length ? prisma.task.findMany({ where: { goalId: { in: goals.map((g) => g.id) }, archivedAt: null, status: { not: "CANCELLED" } }, select: taskSelect }) : Promise.resolve([]),
   ]);
   const truncated = open.length > LIMITS.open || closed.length > LIMITS.closed;
 
@@ -184,6 +186,7 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
       mention: t.comments.some((c) => c.authorId !== me),
       watch: t.watchers.length > 0,
       team: member.includes(t.teamId),
+      below: below.includes(t.teamId),
     };
     tasks.set(t.number, toLink(t, true, REASON_ORDER.filter((r) => has[r])));
   }

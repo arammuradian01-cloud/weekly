@@ -3,20 +3,25 @@
 import { describe, expect, it } from "vitest";
 import {
   canChangeGoal,
+  dragSet,
   failedText,
   filterCounts,
   filterTasks,
+  focusAfter,
   goalFitsTask,
   goalName,
   groupGoals,
   groupTasks,
+  linkToast,
   linkedText,
+  listTasks,
   matchTask,
   nothingToMove,
   numbersText,
   planLink,
   quarterRange,
   stepTarget,
+  tallyText,
   tasksByGoal,
   type GoalOf,
   type LinkGoal,
@@ -31,7 +36,6 @@ const goal = (over: Partial<LinkGoal> & { id: string }): LinkGoal => ({
   owner: "Антонов Дмитрий",
   group: "team",
   result: null,
-  progress: { done: 0, total: 0 },
   fact: null,
   target: null,
   numeric: null,
@@ -59,15 +63,17 @@ const task = (over: Partial<LinkTask> & { number: number }): LinkTask => ({
 });
 
 describe("кто меняет цель задачи", () => {
-  const t = { ownerId: "alisa", createdById: "anton", teamId: "sector" };
-  it("ответственный, тот, кто поставил, руководитель команды и режим управления", () => {
+  const t = { ownerId: "alisa", createdById: "anton", teamId: "sector", coExecutors: [{ personId: "co" }] };
+  it("ответственный, соисполнитель, тот, кто поставил, руководитель команды и режим управления", () => {
+    expect(canChangeGoal(t, { personId: "co", role: "EMPLOYEE" }, { leads: [] })).toBe(true);
     expect(canChangeGoal(t, { personId: "alisa", role: "EMPLOYEE" }, { leads: [] })).toBe(true);
     expect(canChangeGoal(t, { personId: "anton", role: "LEADER" }, { leads: [] })).toBe(true);
     expect(canChangeGoal(t, { personId: "reva", role: "LEADER" }, { leads: ["sector"] })).toBe(true);
     expect(canChangeGoal(t, { personId: "admin", role: "ADMIN", management: "ADMIN" }, { leads: [] })).toBe(true);
   });
-  it("соисполнитель, чужой руководитель и наблюдатель нет; общий логин без управления ничем не руководит", () => {
-    expect(canChangeGoal(t, { personId: "co", role: "EMPLOYEE" }, { leads: [] })).toBe(false);
+  it("участник команды без роли в задаче, чужой руководитель и наблюдатель нет; общий логин без управления ничем не руководит", () => {
+    expect(canChangeGoal(t, { personId: "member", role: "EMPLOYEE" }, { leads: [] })).toBe(false);
+    expect(canChangeGoal({ ...t, coExecutors: undefined }, { personId: "co", role: "EMPLOYEE" }, { leads: [] })).toBe(false);
     expect(canChangeGoal(t, { personId: "tokov", role: "LEADER" }, { leads: ["analytics"] })).toBe(false);
     expect(canChangeGoal(t, { personId: "alisa", role: "OBSERVER", management: "ADMIN" }, { leads: ["sector"] })).toBe(false);
     // Общий логин: scope.leads пустой, поэтому только свои задачи
@@ -124,10 +130,23 @@ describe("«Мои задачи»: поиск, фильтры, группы", ()
     expect(g.open.map((t) => t.number)).toEqual([15, 12]);
     expect(g.closed.map((t) => t.number)).toEqual([18, 17]);
   });
-  it("под целью все задачи экрана, открытые выше закрытых", () => {
-    const by = tasksByGoal([...tasks, task({ number: 40, closed: true, status: "done", goal: { id: "s1", title: "Новая форма", code: "1", quarter: "2026-Q4" } })]);
+  it("под целью все задачи экрана, открытые выше закрытых, без отменённых; цифры карточки из того же списка", () => {
+    const s1 = { id: "s1", title: "Новая форма", code: "1", quarter: "2026-Q4" };
+    const by = tasksByGoal([...tasks, task({ number: 40, closed: true, status: "done", goal: s1 }), task({ number: 41, closed: true, status: "cancelled", goal: s1 })]);
     expect(by.get("s1")!.map((t) => t.number)).toEqual([15, 30, 40]);
     expect(by.has("none")).toBe(false);
+    expect(tallyText(by.get("s1")!)).toBe("задач 3, закрыто 1");
+    expect(tallyText([])).toBe("задач пока нет");
+    expect(tallyText([{ closed: true, status: "cancelled" }])).toBe("задач пока нет");
+  });
+  it("задачи, которые человек привязать не может, отдельно в «Только посмотреть» и не в счётчиках", () => {
+    const list = [...tasks, task({ number: 50, title: "Задача команды", canLink: false, reasons: ["team"], due: "2026-10-01" }), task({ number: 51, title: "Закрытая чужая", canLink: false, closed: true, status: "done", closedAt: "2026-10-03" })];
+    const r = listTasks(list, "nogoal", "");
+    expect(r.open.map((t) => t.number)).toEqual([12]);
+    expect(r.closed.map((t) => t.number)).toEqual([18, 17]);
+    expect(r.viewOnly.map((t) => t.number)).toEqual([50, 51]);
+    expect(filterCounts(list)).toEqual({ nogoal: 3, all: 4 });
+    expect(listTasks(list, "all", "чужая").viewOnly.map((t) => t.number)).toEqual([51]);
   });
 });
 
@@ -146,6 +165,8 @@ describe("группы целей и названия", () => {
       ["Команда «Топ-команда»", ["t1"]],
       ["Цели выше: «Управление развития продуктов»", ["u1"]],
     ]);
+    const below = groupGoals([goal({ id: "s1" }), goal({ id: "a1", group: "below", team: { id: "analytics", name: "Аналитика" } })]);
+    expect(below.map((g) => g.label)).toEqual(["Команда «Сектор автострахования»", "Команды ниже: «Аналитика»"]);
   });
   it("код перед названием один раз", () => {
     expect(goalName({ code: "D1", title: "Маржа" })).toBe("D1. Маржа");
@@ -171,7 +192,7 @@ describe("что сделает перетаскивание", () => {
   });
   it("когда двигать нечего, уведомление объясняет почему", () => {
     expect(nothingToMove(planLink([list[3]!], s1), s1)).toMatch(/^Задача 4 не подходит цели «1\. Новая форма»: задачу привязывают к цели своей команды/);
-    expect(nothingToMove(planLink([list[2]!], s1), s1)).toMatch(/меняют её ответственный/);
+    expect(nothingToMove(planLink([list[2]!], s1), s1)).toBe("Нет прав менять цель: её меняют ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды");
     expect(nothingToMove(planLink([list[1]!], s1), s1)).toBe("Задача уже работает на цель «1. Новая форма»");
     expect(nothingToMove(planLink([list[0]!], null), null)).toBe("У задачи и так нет цели");
   });
@@ -195,6 +216,31 @@ describe("тексты уведомлений", () => {
   it("в текстах нет длинного тире, стрелок и точки-разделителя", () => {
     const all = [linkedText([1], { code: "D1", title: "Маржа" }), linkedText([1, 2], null), nothingToMove({ move: [], same: [], locked: [], unfit: [3] }, goal({ id: "x" })), failedText([{ number: 1, error: "x" }])].join(" ");
     expect(all).not.toMatch(/[—→←·]/);
+  });
+});
+
+describe("тост, фокус и отмеченные", () => {
+  const g = { code: "D1", title: "Маржа" };
+  it("всё прошло: обычный тост; часть не прошла: тост ошибки с причинами, нет прав называется прямо", () => {
+    expect(linkToast({ done: [12, 15], failed: [], unfit: [], locked: [] }, g)).toEqual({ text: "2 задачи привязаны к цели «D1. Маржа»", error: false });
+    const partial = linkToast({ done: [12], failed: [{ number: 15, error: "Цель снята: выберите другую" }], unfit: [17], locked: [18, 19] }, g);
+    expect(partial.error).toBe(true);
+    expect(partial.text).toBe("Задача 12 привязана к цели «D1. Маржа». Не получилось с задачей 15: Цель снята: выберите другую. Задача 17 не подходит цели «D1. Маржа». Нет прав менять цель: задачи 18 и 19");
+    expect(partial.text).not.toMatch(/не подошли/i);
+    expect(linkToast({ done: [], failed: [], unfit: [], locked: [3] }, null)).toEqual({ text: "Нет прав менять цель: задача 3", error: true });
+  });
+  it("фокус после пропавших строк: следующая, иначе предыдущая, иначе заголовок", () => {
+    expect(focusAfter([1, 2, 3, 4], [2])).toBe(3);
+    expect(focusAfter([1, 2, 3, 4], [2, 3])).toBe(4);
+    expect(focusAfter([1, 2, 3, 4], [4])).toBe(3);
+    expect(focusAfter([1, 2, 3], [1, 2, 3])).toBeNull();
+    expect(focusAfter([1, 2], [9])).toBeNull();
+  });
+  it("тянутся только видимые отмеченные задачи; не отмеченная тянется одна", () => {
+    expect(dragSet(2, true, [1, 2])).toEqual([1, 2]);
+    expect(dragSet(3, true, [1, 2])).toEqual([3]);
+    expect(dragSet(2, false, [1, 2])).toEqual([2]);
+    expect(dragSet(2, true, [2])).toEqual([2]);
   });
 });
 

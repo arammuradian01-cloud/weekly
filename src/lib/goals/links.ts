@@ -8,10 +8,10 @@ import { plural } from "@/domain/dates";
 import type { GoalProgress } from "./progress";
 
 /** Почему задача в списке «Мои задачи»: человек её ведёт, поставил или видел */
-export type LinkReason = "owner" | "co" | "author" | "comment" | "mention" | "watch" | "team";
+export type LinkReason = "owner" | "co" | "author" | "comment" | "mention" | "watch" | "team" | "below";
 
 /** Порядок важности: в строке задачи показывается первая причина */
-export const REASON_ORDER: LinkReason[] = ["owner", "co", "author", "comment", "mention", "watch", "team"];
+export const REASON_ORDER: LinkReason[] = ["owner", "co", "author", "comment", "mention", "watch", "team", "below"];
 
 export const REASON_LABEL: Record<LinkReason, string> = {
   owner: "вы ответственный",
@@ -21,10 +21,14 @@ export const REASON_LABEL: Record<LinkReason, string> = {
   mention: "вас упомянули",
   watch: "вы следите",
   team: "задача вашей команды",
+  below: "задача команды ниже",
 };
 
-/** Группа целей на экране: свои цели, цели своих команд, цели команд выше */
-export type LinkGoalGroup = "mine" | "team" | "above";
+/** Кто меняет цель задачи: для подсказок у задач, которые человек привязать не может */
+export const WHO_LINKS = "ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды";
+
+/** Группа целей на экране: свои цели, цели своих команд, цели команд ниже (у руководителя), цели команд выше */
+export type LinkGoalGroup = "mine" | "team" | "below" | "above";
 
 export type LinkGoal = {
   id: string;
@@ -36,8 +40,6 @@ export type LinkGoal = {
   group: LinkGoalGroup;
   /** Итог квартала, если цель уже не идёт: «Достигнута», «Частично» */
   result: string | null;
-  /** Задачи самой цели: сколько закрыто из скольких (без отменённых и предложенных) */
-  progress: { done: number; total: number };
   fact: string | null;
   target: string | null;
   numeric: GoalProgress | null;
@@ -71,18 +73,20 @@ export type LinkTask = {
 };
 
 /**
- * Кто меняет цель задачи (этап 17, тем же правилом сервис задач): ответственный, тот, кто поставил задачу, руководитель
- * команды задачи или команды выше и режим управления. Наблюдатель только смотрит. Общий логин без режима управления
- * ничем не руководит (этап 14): там цель меняют только у своих задач
+ * Кто меняет цель задачи (этап 17, тем же правилом сервис задач): ответственный, соисполнитель (он тоже занимается
+ * задачей, решение после проверки этапа 65), тот, кто поставил задачу, руководитель команды задачи или команды выше
+ * и режим управления. Наблюдатель только смотрит. Общий логин без режима управления ничем не руководит (этап 14):
+ * там цель меняют только у своих задач
  */
 export function canChangeGoal(
-  task: { ownerId: string | null; createdById: string | null; teamId: string },
+  task: { ownerId: string | null; createdById: string | null; teamId: string; coExecutors?: { personId: string }[] },
   who: { personId: string; role: string; management?: string | null },
   scope: { leads: string[] },
 ): boolean {
   if (who.role === "OBSERVER") return false;
   if (who.management) return true;
-  return scope.leads.includes(task.teamId) || task.ownerId === who.personId || task.createdById === who.personId;
+  if (scope.leads.includes(task.teamId) || task.ownerId === who.personId || task.createdById === who.personId) return true;
+  return !!task.coExecutors?.some((c) => c.personId === who.personId);
 }
 
 /**
@@ -138,26 +142,44 @@ export function groupTasks(tasks: LinkTask[]): { open: LinkTask[]; closed: LinkT
   return { open, closed };
 }
 
-/** Сколько задач в фильтрах: для счётчиков «Без цели» и «Все» */
+/** Сколько задач в фильтрах «Без цели» и «Все»: только те, что человек может привязать */
 export function filterCounts(tasks: LinkTask[], goalOf: GoalOf = serverGoal): Record<LinkFilter, number> {
-  const mine = tasks.filter((t) => t.mine);
+  const mine = tasks.filter((t) => t.mine && t.canLink);
   return { nogoal: mine.filter((t) => goalOf(t) === null).length, all: mine.length };
 }
 
-/** Задачи под каждой целью: все задачи экрана, а не только «Мои задачи» */
+/**
+ * Список «Мои задачи» по фильтру и поиску: задачи, которые человек может привязать, открытые сверху и закрытые за
+ * квартал ниже, и отдельно те, что он только видит (блок «Только посмотреть», по сроку)
+ */
+export function listTasks(tasks: LinkTask[], filter: LinkFilter, query: string, goalOf: GoalOf = serverGoal): { open: LinkTask[]; closed: LinkTask[]; viewOnly: LinkTask[] } {
+  const found = filterTasks(tasks, filter, query, goalOf);
+  const { open, closed } = groupTasks(found.filter((t) => t.canLink));
+  const viewOnly = found.filter((t) => !t.canLink).sort((a, b) => Number(a.closed) - Number(b.closed) || a.due.localeCompare(b.due) || a.number - b.number);
+  return { open, closed, viewOnly };
+}
+
+/** Задачи под каждой целью: все задачи экрана, а не только «Мои задачи». Отменённые не считаются и не показываются */
 export function tasksByGoal(tasks: LinkTask[], goalOf: GoalOf = serverGoal): Map<string, LinkTask[]> {
   const out = new Map<string, LinkTask[]>();
   for (const t of tasks) {
     const g = goalOf(t);
-    if (g) out.set(g, [...(out.get(g) ?? []), t]);
+    if (g && t.status !== "cancelled") out.set(g, [...(out.get(g) ?? []), t]);
   }
   for (const list of out.values()) list.sort((a, b) => Number(a.closed) - Number(b.closed) || a.due.localeCompare(b.due) || a.number - b.number);
   return out;
 }
 
+/** Цифры карточки цели из того же списка, что под кнопкой «Задачи»: «задач 3, закрыто 1» */
+export function tallyText(tasks: Pick<LinkTask, "closed" | "status">[]): string {
+  const counted = tasks.filter((t) => t.status !== "cancelled");
+  if (!counted.length) return "задач пока нет";
+  return `задач ${counted.length}, закрыто ${counted.filter((t) => t.closed).length}`;
+}
+
 export type GoalGroupView = { key: string; label: string; goals: LinkGoal[] };
 
-/** Группы целей по порядку с сервера: «Мои цели», цели каждой своей команды, «Цели выше» по командам */
+/** Группы целей по порядку с сервера: «Мои цели», цели каждой своей команды, команд ниже, «Цели выше» по командам */
 export function groupGoals(goals: LinkGoal[]): GoalGroupView[] {
   const out: GoalGroupView[] = [];
   const at = (k: string, label: string) => {
@@ -171,6 +193,7 @@ export function groupGoals(goals: LinkGoal[]): GoalGroupView[] {
   for (const g of goals) {
     if (g.group === "mine") at("mine", "Мои цели").goals.push(g);
     else if (g.group === "team") at(`team:${g.team.id}`, `Команда «${g.team.name}»`).goals.push(g);
+    else if (g.group === "below") at(`below:${g.team.id}`, `Команды ниже: «${g.team.name}»`).goals.push(g);
     else at(`above:${g.team.id}`, `Цели выше: «${g.team.name}»`).goals.push(g);
   }
   return out;
@@ -197,7 +220,7 @@ export function planLink(tasks: LinkTask[], goal: LinkGoal | null, goalOf: GoalO
 /** Почему ничего не изменилось: текст уведомления, когда двигать нечего */
 export function nothingToMove(plan: ReturnType<typeof planLink>, goal: LinkGoal | null): string {
   if (plan.unfit.length) return `${numbersText(plan.unfit)} не ${plural(plan.unfit.length, "подходит", "подходят", "подходят")} цели «${goal ? goalName(goal) : ""}»: задачу привязывают к цели своей команды, команды выше или к личной цели её людей на квартал срока`;
-  if (plan.locked.length) return "Цель задачи меняют её ответственный, тот, кто поставил задачу, руководитель команды и режим управления";
+  if (plan.locked.length) return `Нет прав менять цель: её меняют ${WHO_LINKS}`;
   return goal ? `Задача уже работает на цель «${goalName(goal)}»` : "У задачи и так нет цели";
 }
 
@@ -209,6 +232,42 @@ export function stepTarget(count: number, at: number, forward: boolean): number 
   if (count <= 0) return -1;
   if (at < 0 || at >= count) return forward ? 0 : count - 1;
   return Math.min(count - 1, Math.max(0, at + (forward ? 1 : -1)));
+}
+
+/**
+ * Тост после связи. Получилось у всех: обычный тост. Часть не прошла (ошибка сервера, не подходит цель, нет прав):
+ * тост ошибки, где сказано, что получилось и что нет. Задачи, у которых цель уже была такой, считаются успехом
+ */
+export function linkToast(r: { done: number[]; failed: { number: number; error: string }[]; unfit: number[]; locked: number[] }, goal: { code: string | null; title: string } | null): { text: string; error: boolean } {
+  const parts = [
+    r.done.length ? linkedText(r.done, goal) : "",
+    failedText(r.failed),
+    r.unfit.length ? `${numbersText(r.unfit)} не ${plural(r.unfit.length, "подходит", "подходят", "подходят")} ${goal ? `цели «${goalName(goal)}»` : "цели"}` : "",
+    r.locked.length ? `Нет прав менять цель: ${numbersText(r.locked).replace(/^З/, "з")}` : "",
+  ].filter(Boolean);
+  return { text: parts.join(". "), error: r.failed.length + r.unfit.length + r.locked.length > 0 };
+}
+
+/**
+ * Куда перевести фокус, когда строки задач пропали из списка (привязали при фильтре «Без цели»): на строку после
+ * первой пропавшей, иначе на ближайшую выше. null: строк не осталось, фокус на заголовок «Мои задачи»
+ */
+export function focusAfter(visible: number[], removed: number[]): number | null {
+  const gone = new Set(removed);
+  const first = visible.findIndex((n) => gone.has(n));
+  if (first < 0) return null;
+  const after = visible.slice(first + 1).find((n) => !gone.has(n));
+  if (after !== undefined) return after;
+  const before = visible.slice(0, first).reverse().find((n) => !gone.has(n));
+  return before ?? null;
+}
+
+/**
+ * Какие задачи тянутся: отмеченные и видимые на экране, если тянут одну из них, иначе одна эта задача. Отмеченные,
+ * которые сейчас скрыты поиском или фильтром, незаметно не уезжают
+ */
+export function dragSet(number: number, fromList: boolean, selectedVisible: number[]): number[] {
+  return fromList && selectedVisible.includes(number) && selectedVisible.length > 1 ? selectedVisible : [number];
 }
 
 /** «Задача 12» или «Задачи 12, 15 и 17» */

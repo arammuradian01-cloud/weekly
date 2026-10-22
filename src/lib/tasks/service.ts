@@ -44,6 +44,9 @@ export type Actor = {
 /** Ошибка правила: текст показывается человеку как есть */
 export class TaskRuleError extends Error {}
 
+/** Цель у задачи уже та, что выбрали (этап 65): для нескольких задач разом это успех, а не отказ */
+export class SameGoalError extends TaskRuleError {}
+
 /** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
 export type TaskResult = { task: Task; undo?: string; warning?: string };
 
@@ -1439,8 +1442,8 @@ export async function requestUpdate(actor: Actor, number: number, now = new Date
 // ---------- Цель задачи (этап 17, перетаскиванием с этапа 65) ----------
 
 /**
- * Привязать задачу к цели, перевязать или отвязать (goalId null). Цель меняют ответственный, тот, кто поставил задачу,
- * руководитель команды задачи или команды выше и режим управления (canChangeGoal). Цель своей команды или команды выше,
+ * Привязать задачу к цели, перевязать или отвязать (goalId null). Цель меняют ответственный, соисполнитель, тот, кто
+ * поставил задачу, руководитель команды задачи или команды выше и режим управления (canChangeGoal). Цель своей команды или команды выше,
  * или личная цель ответственного и соисполнителей из борда лидера, на квартал сегодня или квартал срока; снятая цель
  * не подходит. Такие цели человек и так видит: цели видны всем людям департамента. Журнал пишет было и стало,
  * отмена на 5 секунд возвращает прежнюю цель, если задачу с тех пор не трогали.
@@ -1452,7 +1455,7 @@ export async function setTaskGoal(actor: Actor, number: number, goalId: string |
   if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
   return mutate(actor, number, async (row, _can, tx, scope) => {
     if (row.archivedAt) fail(`Задача ${number} в архиве`);
-    if (!canChangeGoal(row, actor, scope)) fail("Цель задаче выбирают ответственный, тот, кто поставил задачу, руководитель команды и режим управления");
+    if (!canChangeGoal(row, actor, scope)) fail("Цель задаче выбирают ответственный, соисполнители, тот, кто поставил задачу, руководитель команды и режим управления");
     let goal: { id: string; title: string } | null = null;
     if (goalId) {
       const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
@@ -1462,17 +1465,18 @@ export async function setTaskGoal(actor: Actor, number: number, goalId: string |
       if (![quarterOf(moscowToday()), quarterOf(isoFromDbDate(row.due))].includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
       goal = g;
     }
-    if ((row.goalId ?? null) === (goal?.id ?? null)) fail("Цель уже такая");
+    if ((row.goalId ?? null) === (goal?.id ?? null)) throw new SameGoalError("Цель уже такая");
     return { data: { goalId: goal?.id ?? null }, changes: [{ field: "Цель", before: row.goal?.title ?? null, after: goal?.title ?? null }] };
   });
 }
 
-export type GoalLinkOutcome = { done: { number: number; task: Task; undo?: string }[]; failed: { number: number; error: string }[] };
+/** done: связь стоит; task и undo только у задач, которые поменялись (у задачи с той же целью отменять нечего) */
+export type GoalLinkOutcome = { done: { number: number; task?: Task; undo?: string }[]; failed: { number: number; error: string }[] };
 
 /**
  * Несколько задач к одной цели (этап 65): отметили и перетащили или нажали «Привязать к цели». Каждая задача проходит
  * те же права и правила, что и поодиночке, в своей транзакции: задача без права не останавливает остальные, а попадает
- * в неудачи с причиной. У каждой своя отмена
+ * в неудачи с причиной. У каждой своя отмена. Цель уже такая (её успел поставить кто-то другой): это успех без отмены
  */
 export async function setTasksGoal(actor: Actor, numbers: number[], goalId: string | null): Promise<GoalLinkOutcome> {
   const unique = [...new Set(numbers.filter((n) => Number.isInteger(n)))];
@@ -1485,6 +1489,10 @@ export async function setTasksGoal(actor: Actor, numbers: number[], goalId: stri
       const r = await setTaskGoal(actor, number, goalId);
       out.done.push({ number, task: r.task, undo: r.undo });
     } catch (error) {
+      if (error instanceof SameGoalError) {
+        out.done.push({ number });
+        continue;
+      }
       out.failed.push({ number, error: error instanceof TaskRuleError ? error.message : "Не получилось сохранить" });
     }
   }

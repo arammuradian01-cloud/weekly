@@ -4,6 +4,7 @@ import { enter, resetDatabase, sql } from "./helpers";
 
 // Этап 65: задачи к целям перетаскиванием. Лидер на ноутбуке тянет задачу мышью на цель, отменяет, тянет две
 // отмеченные задачи разом, перевязывает на другую цель, отвязывает в «Без цели» и кнопкой, привязывает с клавиатуры.
+// Колонка целей закреплена, чужие задачи в блоке «Только посмотреть», фокус после привязки не теряется.
 // На телефоне без перетаскивания: «К цели» у задачи и выбор цели из списка. Ноутбук 1440 и телефон 360
 
 const SHOTS = "tests/e2e/screenshots";
@@ -32,6 +33,17 @@ async function shot(page: Page, label: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${label}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-gl-${label}.png`, fullPage: true });
+}
+
+/** Открытая задача топ-команды, которую Фатьянов только видит: не он ответственный, не соисполнитель и не автор */
+async function othersTask(): Promise<number> {
+  const rows = await sql(
+    `SELECT t.number FROM tasks t WHERE t."teamId" = 'top' AND t.status IN ('IN_PROGRESS', 'CLARIFY') AND t."archivedAt" IS NULL
+       AND t."ownerId" IS DISTINCT FROM (SELECT id FROM people WHERE slug = 'fatyanov') AND t."createdById" IS DISTINCT FROM (SELECT id FROM people WHERE slug = 'fatyanov')
+       AND NOT EXISTS (SELECT 1 FROM task_co_executors c WHERE c."taskId" = t.id AND c."personId" = (SELECT id FROM people WHERE slug = 'fatyanov'))
+     ORDER BY t.number LIMIT 1`,
+  );
+  return rows[0]!.number as number;
 }
 
 /** Две открытые задачи Фатьянова из выгрузки Bord: их он ведёт сам */
@@ -83,6 +95,19 @@ test("лидер перетаскивает задачи к целям: прив
   const d1 = page.getByTestId(`link-goal-${D1.id}`);
   const d2 = page.getByTestId(`link-goal-${D2.id}`);
   await expect(page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Без цели/ })).toHaveAttribute("aria-checked", "true");
+  // Колонка целей закреплена на ноутбуке: задачу не тащат через всю страницу
+  await expect(page.getByTestId("link-goals")).toHaveCSS("position", "sticky");
+  // Задачи, которые Фатьянов только видит, не среди доступных, а в свёрнутом блоке с пояснением, кто может привязать
+  const other = await othersTask();
+  await expect(page.getByTestId("link-open").getByTestId(`link-task-${other}`)).toHaveCount(0);
+  const viewOnly = page.getByTestId("link-view-only");
+  await expect(viewOnly).toContainText("Только посмотреть");
+  await expect(viewOnly).toContainText("Цель этих задач меняют ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды");
+  await expect(viewOnly.getByTestId(`link-task-${other}`)).toBeHidden();
+  await viewOnly.getByRole("heading", { name: /Только посмотреть/ }).click();
+  await expect(viewOnly.getByTestId(`link-task-${other}`)).toBeVisible();
+  await expect(viewOnly.getByRole("button", { name: `К цели: задача ${other}` })).toHaveCount(0);
+  await expect(viewOnly.getByLabel(`Отметить задачу ${other}`, { exact: true })).toHaveCount(0);
   await shot(page, "start");
 
   // Одна задача мышью на цель: тост сразу, связь в базе
@@ -100,10 +125,15 @@ test("лидер перетаскивает задачи к целям: прив
   await expect.poll(() => goalOf(a)).toBeNull();
   await expect(page.getByTestId(`link-task-${a}`)).toBeVisible();
 
-  // Две отмеченные задачи тянутся вместе
+  // Две отмеченные задачи тянутся вместе. Отмеченная, но скрытая поиском задача незаметно не уезжает: экран об этом говорит
+  await search(page, "");
   await page.getByLabel(`Отметить задачу ${a}`, { exact: true }).check();
-  await search(page, String(b));
   await page.getByLabel(`Отметить задачу ${b}`, { exact: true }).check();
+  await expect(page.getByTestId("link-selection")).toContainText("Отмечено 2 задачи");
+  await search(page, String(b));
+  await expect(page.getByTestId("link-selection")).toContainText("Отмечено 1 задача");
+  await expect(page.getByTestId("link-selection")).toContainText("Ещё 1 скрыта поиском или фильтром: их не тронем");
+  await search(page, "");
   await expect(page.getByTestId("link-selection")).toContainText("Отмечено 2 задачи");
   await shot(page, "selected");
   await drag(page, page.getByTestId(`drag-task-${b}`), d1);
@@ -114,6 +144,7 @@ test("лидер перетаскивает задачи к целям: прив
 
   // Карточка цели раскрывается задачами; задачу тянут на другую цель
   await d1.getByRole("button", { name: new RegExp(`^Задачи 2, цель «${D1.code}`) }).click();
+  await expect(d1.getByTestId(`link-goal-tally-${D1.id}`)).toHaveText("задач 2, закрыто 0");
   await expect(d1.getByTestId(`link-goal-task-${a}`)).toBeVisible();
   await expect(d1.getByTestId(`link-goal-task-${b}`)).toBeVisible();
   await shot(page, "goal-open");
@@ -128,10 +159,12 @@ test("лидер перетаскивает задачи к целям: прив
   await expect(status).toContainText(`Задача ${a} отвязана от цели`);
   await expect.poll(() => goalOf(a)).toBeNull();
 
-  // Кнопкой в карточке цели
+  // Кнопкой в карточке цели; строки больше нет, фокус на кнопке «Задачи» этой цели
   await d1.getByRole("button", { name: `Отвязать задачу ${b} от цели` }).click();
   await expect(status).toContainText(`Задача ${b} отвязана от цели`);
   await expect.poll(() => goalOf(b)).toBeNull();
+  await expect(d1.getByRole("button", { name: new RegExp(`^Задачи 0, цель «${D1.code}`) })).toBeFocused();
+  await expect(d1.getByTestId(`link-goal-tally-${D1.id}`)).toHaveText("задач пока нет");
 
   // С клавиатуры: пробел берёт задачу, стрелка ведёт к первой подходящей цели, пробел отпускает
   await search(page, String(a));
@@ -144,9 +177,11 @@ test("лидер перетаскивает задачи к целям: прив
   await page.keyboard.press("Space");
   await expect(status).toContainText(`Задача ${a} привязана к цели «${name(D1)}»`);
   await expect.poll(() => goalOf(a)).toBe(D1.id);
+  // Строка ушла из «Без цели», других строк под поиском нет: фокус на заголовке «Мои задачи», а не потерян
+  await expect(page.getByRole("heading", { name: "Мои задачи" })).toBeFocused();
 
   // Журнал: каждая связь и отмена записаны в истории задачи
-  const [{ n }] = await sql(`SELECT count(*)::int AS n FROM audit_logs WHERE entity = 'task' AND "entityId" = $1 AND field IN ('Цель', 'Цель (отмена)')`, [String(a)]);
+  const [{ n }] = await sql(`SELECT count(*)::int AS n FROM audit_log WHERE entity = 'task' AND "entityId" = $1 AND field IN ('Цель', 'Цель (отмена)')`, [String(a)]);
   expect(n).toBeGreaterThanOrEqual(6);
   await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Все/ }).click();
   await search(page, "");
@@ -179,6 +214,8 @@ test("на телефоне задача к цели кнопкой «К цел�
   await expect(dialog).toHaveCount(0);
   await expect(status).toContainText(`Задача ${a} привязана к цели «${name(D1)}»`);
   await expect.poll(() => goalOf(a)).toBe(D1.id);
+  // Строка с кнопкой ушла из «Без цели»: фокус на заголовке «Мои задачи»
+  await expect(page.getByRole("heading", { name: "Мои задачи" })).toBeFocused();
 
   // Во «Все» задача видна с целью; снова «К цели» и «Без цели»
   await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Все/ }).click();
@@ -187,6 +224,8 @@ test("на телефоне задача к цели кнопкой «К цел�
   await page.getByRole("dialog", { name: `Задача ${a}: к цели` }).getByRole("button", { name: /^Без цели/ }).click();
   await expect(status).toContainText(`Задача ${a} отвязана от цели`);
   await expect.poll(() => goalOf(a)).toBeNull();
+  // Во «Все» строка осталась: фокус вернулся на её кнопку «К цели»
+  await expect(row.getByRole("button", { name: `К цели: задача ${a}` })).toBeFocused();
 
   // Карточка цели на телефоне раскрывается и тоже без горизонтальной прокрутки
   const d1 = page.getByTestId(`link-goal-${D1.id}`);

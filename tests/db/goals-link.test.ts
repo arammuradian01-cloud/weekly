@@ -97,17 +97,28 @@ describe("права на связь задачи с целью", () => {
     await expectRule(svc.setTaskGoal(alisa, t.own, null), /Цель уже такая/);
   });
 
-  it("участник команды без роли в задаче, соисполнитель, чужая ветка и наблюдатель цель не меняют", async () => {
+  it("участник команды без роли в задаче, чужая ветка и наблюдатель цель не меняют", async () => {
     const alisa = await actor("Чемоданова");
-    await expectRule(svc.setTaskGoal(alisa, t.leader, g.s1), /Цель задаче выбирают ответственный, тот, кто поставил задачу, руководитель команды/);
-    // Соисполнитель ведёт задачу вместе с ответственным, но цель выбирает не он
-    await svc.setCoExecutors(await actor("Антонов"), t.leader, [alisa.slug]);
-    await expectRule(svc.setTaskGoal(alisa, t.leader, g.s1), /Цель задаче выбирают/);
-    await svc.setCoExecutors(await actor("Антонов"), t.leader, []);
+    await expectRule(svc.setTaskGoal(alisa, t.leader, g.s1), /Цель задаче выбирают ответственный, соисполнители, тот, кто поставил задачу, руководитель команды/);
     // Чужая ветка задачу не видит: номер не подтверждаем
     await expectRule(svc.setTaskGoal(await actor("Токов"), t.leader, g.s1), new RegExp(`Задачи ${t.leader} нет`));
     await expectRule(svc.setTaskGoal(await svc.actorFor("ceo"), t.leader, g.s1), /Наблюдатель только смотрит/);
     expect(await goalIdOf(t.leader)).toBeNull();
+  });
+
+  it("соисполнитель занимается задачей и меняет её цель; убрали из соисполнителей: уже нет", async () => {
+    const alisa = await actor("Чемоданова");
+    const antonov = await actor("Антонов");
+    await svc.setCoExecutors(antonov, t.leader, [alisa.slug]);
+    await svc.setTaskGoal(alisa, t.leader, g.s1);
+    expect(await goalIdOf(t.leader)).toBe(g.s1);
+    expect((await goalLog(t.leader)).at(-1)!.actorId).toBe(alisa.personId);
+    // На экране «Связать задачи с целями» задача у соисполнителя среди тех, что можно привязать
+    const row = (await goalLinkBoard(who(alisa), { quarter: Q })).tasks.find((x) => x.number === t.leader)!;
+    expect([row.reasons[0], row.canLink]).toEqual(["co", true]);
+    await svc.setCoExecutors(antonov, t.leader, []);
+    await expectRule(svc.setTaskGoal(alisa, t.leader, null), /Цель задаче выбирают/);
+    await svc.setTaskGoal(antonov, t.leader, null);
   });
 
   it("руководитель команды выше и режим управления меняют цель задачи команды", async () => {
@@ -201,6 +212,9 @@ describe("отмена и несколько задач разом", () => {
     expect(r.failed[0]!.error).toMatch(/Цель задаче выбирают/);
     expect(r.failed[1]!.error).toBe("Задачи 999999 нет");
     expect(await goalIdOf(second)).toBe(g.s1);
+    // Цель уже такая (её успел поставить кто-то другой): успех без отмены, а не отказ
+    const again = await svc.setTasksGoal(alisa, [second], g.s1);
+    expect(again).toEqual({ done: [{ number: second }], failed: [] });
     await expectRule(svc.setTasksGoal(alisa, [], g.s1), /Выберите задачи/);
     await expectRule(svc.setTasksGoal(await svc.actorFor("ceo"), [t.own], null), /Наблюдатель/);
   });
@@ -300,17 +314,50 @@ describe("данные экрана «Связать задачи с целям�
     expect(board.observer).toBe(false);
   });
 
+  it("руководитель видит цели и задачи команд ниже и привязывает задачи подчинённых команд к их целям", async () => {
+    const reva = await svc.actorFor("reva");
+    const sector = await teamOf("Антонов");
+    const analytics = await teamOf("Токов");
+    const board = await goalLinkBoard(who(reva), { quarter: Q });
+    const group = (id: string) => board.goals.find((x) => x.id === id)?.group;
+    // Свои команды (управление и топ-команда), ниже сектор и аналитика вместе с личными целями их людей
+    expect([group(g.p1), group(g.d1), group(g.s1), group(g.a1), group(g.alisaOwn), group(g.ivanova)]).toEqual(["team", "team", "below", "below", "below", "below"]);
+    const order = board.goals.map((x) => x.group);
+    expect(order.indexOf("below")).toBeGreaterThan(order.lastIndexOf("team"));
+    const row = board.tasks.find((x) => x.number === t.own)!;
+    expect([row.mine, row.reasons, row.canLink]).toEqual([true, ["below"], true]);
+    expect(row.chain).toContain(sector.id);
+    // Привязка по правилам сервиса: руководитель команды выше меняет цель задачи сектора на цель сектора
+    await svc.setTaskGoal(reva, t.own, null);
+    await svc.setTaskGoal(reva, t.own, g.s1);
+    expect(await goalIdOf(t.own)).toBe(g.s1);
+    // Руководитель сектора аналитику не видит: ни целей, ни задач
+    const antonovBoard = await goalLinkBoard(who(await actor("Антонов")), { quarter: Q });
+    expect(antonovBoard.goals.some((x) => x.team.id === analytics.id)).toBe(false);
+    expect(antonovBoard.goals.some((x) => x.group === "below")).toBe(false);
+  });
+
   it("задача под целью, которую человек видит, но не ведёт, видна в карточке цели, а не в «Моих задачах»", async () => {
     const reva = await svc.actorFor("reva");
     const alisa = await actor("Чемоданова");
-    await svc.setTaskGoal(alisa, t.own, g.p1);
-    const board = await goalLinkBoard(who(reva), { quarter: Q });
-    const row = board.tasks.find((x) => x.number === t.own)!;
+    const tokov = await actor("Токов");
+    const ivanova = await actor("Иванова");
+    const analytics = await teamOf("Токов");
+    // Алиса функциональный руководитель Ивановой: видит её задачи в аналитике, но не ведёт их и не в той команде
+    await prisma.person.update({ where: { id: ivanova.personId }, data: { functionalManagerId: alisa.personId } });
+    const elsewhere = (await newTask(tokov, "Дашборд воронки для формы", ivanova.slug, analytics.id)).number;
+    await svc.setTaskGoal(tokov, elsewhere, g.p1);
+    const board = await goalLinkBoard(who(alisa), { quarter: Q });
+    const row = board.tasks.find((x) => x.number === elsewhere)!;
     expect(row.mine).toBe(false);
     expect(row.goal?.id).toBe(g.p1);
-    // Рева руководит управлением выше сектора: цель задачи меняет
-    expect(row.canLink).toBe(true);
-    expect(board.goals.find((x) => x.id === g.p1)?.group).toBe("team");
+    // Цель этой задачи меняют Иванова, Токов, Рева и режим управления, не Алиса
+    expect(row.canLink).toBe(false);
+    expect(board.goals.find((x) => x.id === g.p1)?.group).toBe("above");
+    // Карточка цели считает задачи из того же набора, что видит человек, отменённые не приходят вовсе
+    await svc.changeStatus(tokov, elsewhere, "cancelled", "Не нужна");
+    expect((await goalLinkBoard(who(alisa), { quarter: Q })).tasks.some((x) => x.number === elsewhere)).toBe(false);
+    await prisma.person.update({ where: { id: ivanova.personId }, data: { functionalManagerId: null } });
     // Общий логин Ревы видит только топ-команду: задачи сектора и цели управления к нему не приходят как свои
     const shared = await goalLinkBoard(who(reva, true), { quarter: Q });
     expect(shared.limited).toBe(true);
