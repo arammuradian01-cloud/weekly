@@ -6,6 +6,14 @@
 
 import { GROUPS, PRODUCTS, lrfMonth, type GroupSpec, type MetricKey, type ProductSpec } from "./spec";
 
+/**
+ * Боевой LRF «INSURANCE & INVEST: 5Y_LRF (CURRENT)». Доступ служебному аккаунту на него не дают, поэтому ресурс читает
+ * таблицу-связку: в ней четыре листа с формулой IMPORTRANGE на листы боевого LRF. Владелец может указать другой источник
+ */
+export const LRF_SHEET_ID = "1NyXreA9PYUC-CTeUmIvh_w1L7kIggCxhjpo5-f5vK7k";
+/** Таблица-связка «LRF для Weekly (только чтение, связь с LRF INSURANCE & INVEST)»: источник по умолчанию (plan.sourceId) */
+export const LRF_MIRROR_ID = "1KFYKwsRcxC98rHwxbAnV2s29IxQCicq4PVnB0AOEzsg";
+
 export type Cell = string | number | null | undefined;
 export type Grid = Cell[][];
 export type Version = "LBE" | "BUD";

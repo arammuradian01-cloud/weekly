@@ -10,7 +10,11 @@ const nextConfig = {
   poweredByHeader: false,
   // next dev не дописывает в репозиторий свои AGENTS.md и CLAUDE.md
   agentRules: false,
-  experimental: allowedOrigins.length ? { serverActions: { allowedOrigins } } : {},
+  // Предел тела запроса для proxy не поднимаем: обработчик загрузки пакета рынка (этап 62) исключён из proxy
+  // (src/proxy.ts) и сам проверяет вход, права и размер до чтения тела
+  experimental: {
+    ...(allowedOrigins.length ? { serverActions: { allowedOrigins } } : {}),
+  },
   serverExternalPackages: ["pg", "pg-boss", "nodemailer"],
   // Прежние адреса страниц про людей (до этапа 41): постоянное перенаправление на страницу «Люди» до отрисовки,
   // параметры адреса (?team=) переносятся сами

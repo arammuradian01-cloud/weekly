@@ -1,7 +1,7 @@
 // Этап 60: разбор лент RSS и Atom из фикстур, без сети
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { cleanText, decodeEntities, parseDate, parseFeed, urlKeyOf } from "@/lib/news/feed";
+import { MAX_FEED_ITEMS, cleanText, decodeEntities, parseDate, parseFeed, urlKeyOf } from "@/lib/news/feed";
 
 const fixture = (name: string) => readFileSync(`tests/fixtures/news/${name}`, "utf8");
 
@@ -27,6 +27,16 @@ describe("разбор RSS 2.0", () => {
     expect(parseDate("не дата")).toBeNull();
     expect(parseDate(null)).toBeNull();
   });
+
+  it("дата без часового пояса читается как UTC, пояс словом GMT+3 понимается", () => {
+    expect(parseDate("2026-10-20T10:30:00")?.toISOString()).toBe("2026-10-20T10:30:00.000Z");
+    expect(parseDate("2026-10-20 10:30")?.toISOString()).toBe("2026-10-20T10:30:00.000Z");
+    expect(parseDate("Tue, 20 Oct 2026 10:30:00")?.toISOString()).toBe("2026-10-20T10:30:00.000Z");
+    expect(parseDate("Tue, 20 Oct 2026 10:30:00 GMT+3")?.toISOString()).toBe("2026-10-20T07:30:00.000Z");
+    expect(parseDate("Tue, 20 Oct 2026 10:30:00 GMT+03:00")?.toISOString()).toBe("2026-10-20T07:30:00.000Z");
+    expect(parseDate("2026-10-20T10:30:00+03:00")?.toISOString()).toBe("2026-10-20T07:30:00.000Z");
+    expect(parseDate("2026-10-20")?.toISOString()).toBe("2026-10-20T00:00:00.000Z");
+  });
 });
 
 describe("разбор Atom", () => {
@@ -43,6 +53,59 @@ describe("разбор Atom", () => {
   it("без published берётся updated, content вместо summary", () => {
     expect(feed.items[1]!.publishedAt?.toISOString()).toBe("2026-10-20T08:00:00.000Z");
     expect(feed.items[1]!.description).toContain("Перепечатка пресс-релиза");
+  });
+});
+
+describe("патологические ленты: разбор линейный, веб-процесс не зависает", () => {
+  const head = '<?xml version="1.0"?><rss version="2.0"><channel><title>Лента</title>';
+  const timed = (xml: string) => {
+    const t = performance.now();
+    const feed = parseFeed(xml);
+    return { feed, ms: performance.now() - t };
+  };
+
+  it("незакрытые item на 500 КБ разбираются меньше чем за секунду", () => {
+    const xml = head + "<item><title>Страхование".repeat(Math.ceil(500_000 / 24));
+    expect(xml.length).toBeGreaterThan(500_000);
+    const { feed, ms } = timed(xml);
+    expect(ms).toBeLessThan(1000);
+    expect(feed.title).toBe("Лента");
+    expect(feed.items).toEqual([]);
+  });
+
+  it("незакрытые теги, одиночные скобки, CDATA и комментарии без конца не тянут разбор", () => {
+    for (const filler of ["<title>а", "<", "< a", "<![CDATA[x", "<!-- x", "&#x41", "<item><link>https://x.ru/", "<a<b<c"]) {
+      const xml = head + "<item><title>Новость</title><link>https://x.ru/1</link><description>" + filler.repeat(Math.ceil(400_000 / filler.length));
+      const { ms } = timed(xml);
+      expect(ms, filler).toBeLessThan(1000);
+    }
+  });
+
+  it("лента на 8000 записей: берутся первые 200, быстро", () => {
+    const items = Array.from({ length: 8000 }, (_, i) => `<item><title>Новость про ОСАГО ${i}</title><link>https://x.ru/${i}</link><guid>g${i}</guid><pubDate>Tue, 20 Oct 2026 10:30:00 +0300</pubDate><description>Анонс ${i}</description></item>`).join("");
+    const { feed, ms } = timed(head + items + "</channel></rss>");
+    expect(ms).toBeLessThan(1000);
+    expect(feed.items).toHaveLength(MAX_FEED_ITEMS);
+    expect(feed.items[0]).toMatchObject({ guid: "g0", url: "https://x.ru/0", title: "Новость про ОСАГО 0", description: "Анонс 0" });
+    expect(feed.items[199]!.guid).toBe("g199");
+  });
+
+  it("незакрытая запись кончается там, где начинается следующая; разбор не дальше 1 МБ", () => {
+    const xml = head + "<item><title>Первая</title><link>https://x.ru/1</link><item><title>Вторая</title><link>https://x.ru/2</link></item>";
+    expect(parseFeed(xml).items.map((i) => i.title)).toEqual(["Первая", "Вторая"]);
+    const big = head + "<item><title>Ранняя</title><link>https://x.ru/1</link></item>" + " ".repeat(1_100_000) + "<item><title>Поздняя</title><link>https://x.ru/2</link></item>";
+    expect(parseFeed(big).items.map((i) => i.title)).toEqual(["Ранняя"]);
+  });
+
+  it("заголовок ленты берётся до первой записи, а не из записей", () => {
+    const xml = '<rss><channel><item><title>Запись</title><link>https://x.ru/1</link></item><title>Поздний заголовок</title></channel></rss>';
+    expect(parseFeed(xml).title).toBe("");
+    expect(parseFeed(xml).items[0]!.title).toBe("Запись");
+  });
+
+  it("сущности DTD не раскрываются", () => {
+    const xml = '<?xml version="1.0"?><!DOCTYPE rss [<!ENTITY a "AAAAAAAAAA"><!ENTITY b "&a;&a;&a;&a;">]><rss><channel><item><title>Тест &b;</title><link>https://x.ru/1</link></item></channel></rss>';
+    expect(parseFeed(xml).items[0]!.title).toBe("Тест &b;");
   });
 });
 

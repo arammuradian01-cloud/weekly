@@ -21,6 +21,7 @@ import {
   Menu,
   Map as MapIcon,
   Rss,
+  ChartLine,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -36,6 +37,8 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
+  /** Раздел открыт отдельным людям (этап 62): пункт видят только они */
+  restricted?: "market";
   /** Подпись в нижнем меню телефона, если полная не влезает */
   shortLabel?: string;
 };
@@ -73,11 +76,21 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/forecast", label: "Прогноз", icon: TrendingUp },
       // Новости по продуктам (этап 60)
       { href: "/news", label: "Новости", icon: Rss },
+      // Рынок КАСКО и ОСАГО (этап 62): только тем, кому владелец открыл раздел, и только при личном входе
+      { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },
     ],
   },
 ];
 
 export const MAIN_NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
+
+/** Что открыто человеку из закрытых разделов */
+export type NavAccess = { market: boolean };
+
+/** Группы меню без закрытых разделов, которые человеку не открыты */
+export function visibleGroups(access: NavAccess): NavGroup[] {
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.restricted || access[i.restricted]) })).filter((g) => g.items.length);
+}
 
 export const MANAGEMENT_NAV: NavItem[] = [
   { href: "/ceo-report", label: "Отчёт CEO", icon: Mail },
@@ -99,7 +112,7 @@ function countLabel(n: number) {
 }
 
 /** Пункты бокового меню группами и «Управление» (в режиме управления) */
-export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | null }) {
+export function SidebarNav({ management, access = { market: false } }: { management: "OWNER" | "ADMIN" | null; access?: NavAccess }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
   const managementItems = MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER");
@@ -125,7 +138,7 @@ export function SidebarNav({ management }: { management: "OWNER" | "ADMIN" | nul
 
   return (
     <nav aria-label="Разделы" className="flex flex-col">
-      {NAV_GROUPS.map((g) => (
+      {visibleGroups(access).map((g) => (
         <div key={g.label}>
           <div className="sv-sidebar__group">{g.label}</div>
           <div className="sv-sidebar__nav">{g.items.map(link)}</div>
@@ -146,7 +159,7 @@ export function mobileItems(): NavItem[] {
   return MOBILE_MAIN.map((href) => MAIN_NAV.find((i) => i.href === href)!);
 }
 
-export function MobileNav({ management = null }: { management?: "OWNER" | "ADMIN" | null }) {
+export function MobileNav({ management = null, access = { market: false } }: { management?: "OWNER" | "ADMIN" | null; access?: NavAccess }) {
   const pathname = usePathname();
   const inbox = useInboxCount();
   // Открытое состояние привязано к адресу: смена страницы (в том числе «Назад» в браузере) закрывает панель.
@@ -155,7 +168,7 @@ export function MobileNav({ management = null }: { management?: "OWNER" | "ADMIN
   if (more.at !== pathname) setMoreState({ open: false, at: pathname });
   const setMore = (open: boolean) => setMoreState({ open, at: pathname });
   const rest: NavGroup[] = [
-    ...NAV_GROUPS.map((g) => ({ label: g.label, items: g.items.filter((i) => !MOBILE_MAIN.includes(i.href)) })).filter((g) => g.items.length),
+    ...visibleGroups(access).map((g) => ({ label: g.label, items: g.items.filter((i) => !MOBILE_MAIN.includes(i.href)) })).filter((g) => g.items.length),
     ...(management ? [{ label: "Управление", items: MANAGEMENT_NAV.filter((i) => !i.ownerOnly || management === "OWNER") }] : []),
   ];
   const moreActive = rest.some((g) => g.items.some((i) => isActive(pathname, i.href)));

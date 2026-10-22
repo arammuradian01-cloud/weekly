@@ -154,6 +154,7 @@ model Person {
   /// Какие уведомления в браузере человек получает (этап 26): { tasks, mentions, reactions }. Нет ключа: по умолчанию
   pushPrefs           Json            @default("{}")
   /// Дайджест новостей (этап 60): { frequency: daily | weekly | off, directions: коды продуктов или null }. Нет ключа: по умолчанию
+  /// (с направлением в карточке раз в неделю продукты направления, без направления не присылать)
   newsPrefs           Json            @default("{}")
   createdAt           DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime        @updatedAt @db.Timestamptz(3)
@@ -632,7 +633,8 @@ model PlanFact {
 }
 
 /// Снимок «Все СК» из хаба данных (этап 58): полисы, премия и выручка ОСАГО по СК, пул и апсейл за месяц нарастающим
-/// итогом на день снимка. Дневной факт считается как разница снимков соседних дней. Повторная загрузка дня заменяет снимок
+/// итогом, факт по вчерашний день от дня снимка. Дневной факт считается как разница снимков соседних дней. Повторная
+/// загрузка дня заменяет снимок. Хранятся только текущий месяц и прошлый (закрытие)
 model PlanSkSnapshot {
   id       String   @id @default(cuid())
   /// День снимка по Москве
@@ -643,7 +645,7 @@ model PlanSkSnapshot {
   pool     Boolean
   upsale   Boolean
   policies Float
-  /// Премия и выручка без НДС в рублях, как в «Все СК»
+  /// Премия и выручка без НДС в рублях из «Все СК»; выручка с апсейлом (REVENUE_FACT_COLUMNS в src/lib/plan/hub.ts)
   premium  Float?
   revenue  Float?
   loadedAt DateTime @default(now()) @db.Timestamptz(3)
@@ -1643,6 +1645,8 @@ enum AgendaKind {
   INITIATIVE
   /// Пункт, добавленный руками
   MANUAL
+  /// Разбор рынка КАСКО и ОСАГО на первой встрече месяца (этап 62)
+  MARKET
 }
 
 model AgendaItem {
@@ -2028,6 +2032,8 @@ model NewsSource {
   name         String
   url          String     @unique
   active       Boolean    @default(true)
+  /// Строгая привязка для общих деловых лент (Интерфакс, ТАСС, РБК): к продукту нужно два разных признака
+  strict       Boolean    @default(false)
   sortOrder    Int        @default(0)
   lastFetchAt  DateTime?  @db.Timestamptz(3)
   lastOkAt     DateTime?  @db.Timestamptz(3)
@@ -2035,6 +2041,7 @@ model NewsSource {
   lastError    String?
   /// Сколько записей было в ленте при последнем удачном заборе
   lastCount    Int        @default(0)
+  /// Сбоев подряд: источник с ошибками опрашивается реже (2, 4, 8 часов, не реже раза в сутки)
   failCount    Int        @default(0)
   /// Условные запросы: лента не изменилась, и сервер отвечает 304 без тела
   etag         String?
@@ -2077,7 +2084,8 @@ enum NewsDigestKind {
   WEEKLY
 }
 
-/// Отправленный дайджест новостей (этап 60): один на человека, вид и период. По нему же открывается страница дайджеста
+/// Отправленный дайджест новостей (этап 60): один на человека, вид и период. По нему же открывается страница дайджеста.
+/// Пустой ежедневный не записывается, пустой еженедельный записывается (защита от повтора) и чистится через 8 дней
 model NewsDigest {
   id         String         @id @default(cuid())
   personId   String
@@ -2088,10 +2096,43 @@ model NewsDigest {
   directions String[]       @default([])
   itemIds    String[]       @default([])
   sentAt     DateTime       @default(now()) @db.Timestamptz(3)
-  /// Письмо ушло. null: почта не настроена или у человека нет адреса
+  /// Письмо ушло или уже отправляется (строку захватил процесс). null: почта не настроена, у человека нет адреса
+  /// или почта лежала, и письмо повторит следующий проход
   mailedAt   DateTime?      @db.Timestamptz(3)
 
   @@unique([personId, kind, periodKey])
   @@index([personId, sentAt])
+  @@index([sentAt])
   @@map("news_digests")
+}
+
+/// Пакет рынка КАСКО и ОСАГО (этап 62): код страницы дашборда. Одна строка: загрузка пакета заменяет её вместе с
+/// наборами данных одной транзакцией. Цифры живут только в базе, в репозиторий не попадают
+model MarketBundle {
+  id             String   @id @default("current")
+  /// Растёт с каждой загрузкой: по нему и моменту загрузки браузер понимает, что данные сменились
+  version        Int
+  /// Код страницы: имя файла и текст (index.html, ui.js и другие)
+  files          Json
+  datasetsCount  Int
+  rowsTotal      Int
+  /// Размер загруженного файла пакета, байт
+  bytes          Int
+  uploadedAt     DateTime @default(now()) @db.Timestamptz(3)
+  uploadedById   String?
+  uploadedByName String
+
+  @@map("market_bundles")
+}
+
+/// Набор данных рынка (этап 62): строки таблицы как массив простых объектов. Дашборд берёт их по имени
+model MarketDataset {
+  name        String   @id
+  title       String
+  description String   @default("")
+  rows        Json
+  rowCount    Int
+  updatedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("market_datasets")
 }

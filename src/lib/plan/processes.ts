@@ -105,7 +105,7 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
       },
     });
   });
-  return monthPlan(actor, month);
+  return monthPlan(actor, month, new Date(), null, { sk: false });
 }
 
 // ---------- Партнёрский канал (этап 35б) ----------
@@ -181,7 +181,7 @@ export async function adjustPartner(actor: Actor, input: PartnerAdjustInput): Pr
       },
     });
   });
-  return monthPlan(actor, month);
+  return monthPlan(actor, month, new Date(), null, { sk: false });
 }
 
 // ---------- Факт по дням ----------
@@ -471,7 +471,8 @@ export async function planForTeam(actor: Actor, teamId: string, month: string, a
  */
 export async function planBrief(actor: Actor, month: string, asOf?: { at: Date; when: string } | null): Promise<PlanBrief | null> {
   if (!isMonth(month)) return null;
-  const view = await monthPlan(actor, month, new Date(), asOf ?? null);
+  // Сводке разрез по СК не нужен: ни снимки, ни настройки хаба не читаются
+  const view = await monthPlan(actor, month, new Date(), asOf ?? null, { sk: false });
   if (view.empty || view.month !== month) return null;
   return briefOf(view);
 }

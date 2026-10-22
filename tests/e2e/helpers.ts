@@ -73,6 +73,10 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM settings WHERE key LIKE 'bord.%'");
   // Этапы 54 и 57: правила согласования и доступ к цифрам ссылаются на подразделения, которые тесты создают заново
   await client.query("DELETE FROM settings WHERE key IN ('tasks.crossDepartment', 'numbers.access')");
+  // Этап 62: пакет рынка и настройки раздела «Рынок» с чистого листа, без пакета пункт рынка в повестке не встаёт
+  await client.query("DELETE FROM market_datasets");
+  await client.query("DELETE FROM market_bundles");
+  await client.query("DELETE FROM settings WHERE key IN ('market.access', 'market.meeting')");
   await client.query("DELETE FROM sheet_runs");
   await client.end();
   const env = { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL };

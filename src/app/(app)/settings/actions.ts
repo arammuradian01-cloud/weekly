@@ -5,6 +5,7 @@
 
 import { saveApprovalSetting } from "@/lib/tasks/approval-settings";
 import { saveNumbersAccess, type NumbersAccessView } from "@/lib/plan/access";
+import { saveMarketSettings, type MarketSettingsView } from "@/lib/market/access";
 import type { ApprovalMode } from "@/lib/tasks/approval";
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
@@ -120,4 +121,9 @@ export async function saveApprovalAction(input: { default: string; departments: 
 /** Доступ к цифрам прогноза (этап 57): владелец в режиме управления */
 export async function saveNumbersAccessAction(input: { full: { units: string[]; people: string[] }; summary: { topManagement: boolean; units: string[]; people: string[] } }): Promise<Result<NumbersAccessView>> {
   return done(await runAction("Доступ к цифрам", (a) => saveNumbersAccess(a, input)));
+}
+
+/** Рынок КАСКО и ОСАГО (этап 62): кто видит раздел и у каких команд разбор на первой встрече месяца */
+export async function saveMarketSettingsAction(input: { people: string[]; teamIds: string[] }): Promise<Result<MarketSettingsView>> {
+  return done(await runAction("Настройка рынка", (a) => saveMarketSettings(a, { people: Array.isArray(input?.people) ? input.people : [], teamIds: Array.isArray(input?.teamIds) ? input.teamIds : [] })));
 }

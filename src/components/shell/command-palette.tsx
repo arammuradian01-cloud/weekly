@@ -49,7 +49,7 @@ export function Highlight({ text, className }: { text: string; className?: strin
 
 const DEBOUNCE_MS = 180;
 
-export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" | null }) {
+export function CommandPalette({ management, market = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const { observer } = usePrototype();
@@ -155,12 +155,14 @@ export function CommandPalette({ management }: { management: "OWNER" | "ADMIN" |
       ["/people/projects", "Люди, вкладка «Weekly-проекты»", Users, "проекты weekly-проект готовые команды money партнёрка собрать команду перетащить"],
     ];
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
+    // Рынок КАСКО и ОСАГО (этап 62): только тем, кому открыт раздел
+    if (market) list.push({ id: "go:/market", label: "Открыть: Рынок КАСКО и ОСАГО", icon: TrendingUp, keywords: "рынок каско осаго нсис доля страховые регионы", run: () => go("/market") });
     if (management) {
       list.push({ id: "go:/ceo-report", label: "Открыть: Отчёт CEO", icon: FileText, keywords: "отчёт ceo", run: () => go("/ceo-report") });
       list.push({ id: "go:/journal", label: "Открыть: Журнал", icon: FileText, keywords: "журнал аудит история", run: () => go("/journal") });
     }
     return list;
-  }, [observer, management, go]);
+  }, [observer, management, market, go]);
 
   const query = q.trim().toLowerCase();
   const shownCommands = useMemo(() => {

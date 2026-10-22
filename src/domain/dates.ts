@@ -51,6 +51,11 @@ export function formatShort(iso: IsoDate): string {
   return `${d.day} ${MONTHS_SHORT[d.month - 1]}`;
 }
 
+/** Месяц в родительном падеже по номеру 1-12: «итоги сентября» */
+export function monthGenitive(month: number): string {
+  return MONTHS_GENITIVE[(((month - 1) % 12) + 12) % 12]!;
+}
+
 /** «5 октября» */
 export function formatLong(iso: IsoDate): string {
   const d = toCalendar(iso);

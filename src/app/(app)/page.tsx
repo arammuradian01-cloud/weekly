@@ -25,7 +25,7 @@ import { shiftWeek } from "@/lib/weekly/weeks";
 import { addDays, formatLong, fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
-import { listInbox } from "@/lib/inbox/service";
+import { QUIET_KINDS, listInbox } from "@/lib/inbox/service";
 import { withoutRequestEvents } from "@/components/inbox/me-tasks";
 import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
@@ -57,7 +57,8 @@ export default async function MyWeekPage() {
     // События для «Требует внимания» (этап 44): без просьб, которые и так в списке своей строкой
     listInbox(person.id, now, subjectOf(ctx)),
   ]);
-  const events = withoutRequestEvents(inbox.items, requests.incoming).length;
+  // Дайджест новостей (этап 60) тихий: в «Требует внимания» не считается
+  const events = withoutRequestEvents(inbox.items, requests.incoming).filter((i) => !QUIET_KINDS.includes(i.kind)).length;
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
