@@ -8,7 +8,7 @@ import { getEpochs, getSetting } from "@/lib/settings";
 import { PASSWORD_SETTING_KEYS, verifyPassword } from "@/lib/passwords";
 import { LOCK_MS } from "@/lib/rate-limit";
 import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "@/lib/login/attempts";
-import { managementPasswordKind } from "@/lib/roles";
+import { MANAGEMENT_TEAM_REFUSAL, managementPasswordKind } from "@/lib/roles";
 import { MANAGEMENT_TTL_MS } from "@/lib/session";
 import { formatTime } from "@/lib/week";
 import {
@@ -148,8 +148,9 @@ async function managementContext(): Promise<{ ctx: AppContext; error?: undefined
   // после конца входа сначала возврат в свой профиль
   if (ctx.ownerAs) return { error: OWNER_AS_TEXTS.management };
   if (ctx.ownerAsEnded) return { error: OWNER_AS_ENDED };
-  // Поправка 23.10: владелец есть в списке общего логина, но права владельца только при личном входе
-  if (ctx.via === "TEAM" && ctx.person.role === "OWNER") return { error: OWNER_AS_TEXTS.teamOwner };
+  // Этап 71: режим управления только при личном входе. По общему логину можно выбрать владельца или администратора без
+  // личного пароля: ни пароль управления, ни ссылка на почту такому входу режим не включают
+  if (ctx.via === "TEAM") return { error: MANAGEMENT_TEAM_REFUSAL };
   return { ctx };
 }
 

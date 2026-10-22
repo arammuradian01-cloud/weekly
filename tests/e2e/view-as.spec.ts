@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 63: «Смотреть как». Владелец при личном входе в режиме управления выбирает Реву в меню профиля, видит его
 // «Мою неделю» и его черновик weekly, плашку «Вы смотрите как Рева Тарас. Изменения недоступны». Сдать weekly и
@@ -147,13 +148,19 @@ test("владелец смотрит как Рева: его неделя и we
   await shot(page, "back");
 });
 
-test("общий логин не видит «Смотреть как» ни в меню, ни в командной строке, даже в режиме управления", async ({ page }) => {
-  // Этап 71: владелец по общему логину режим управления не включает, поэтому общий логин здесь у администратора в режиме
-  // управления
-  await enter(page, "Головкин Владислав");
-  await enterManagement(page, "admin");
+test("общий логин не видит «Смотреть как» ни в меню, ни в командной строке и режим управления не включает", async ({ page }) => {
+  // Этап 71: по общему логину режим управления не включается ни владельцу без пароля, ни администратору
+  await page.goto("/login");
+  await page.getByLabel("Логин").fill("team");
+  await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
+  await page.getByRole("button", { name: "Войти" }).click();
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("мурадян");
+  await page.getByRole("button", { name: /Мурадян Арам/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.goto("/manage");
+  await expect(page).toHaveURL(/\/$/);
   await openProfileMenu(page);
-  await expect(page.getByRole("menuitem", { name: "Выключить режим управления" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Включить режим управления" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "Смотреть как…" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 

@@ -100,13 +100,13 @@ export async function sql(text: string, values: unknown[] = []) {
 }
 
 /**
- * Вход под человеком. Этап 71: люди с личным паролем по общему логину не выбираются, а владелец по общему логину не
- * получает режим управления, который нужен сценариям: оба входят своим логином и паролем (enterPersonal). Остальные:
- * общий логин team и выбор себя поиском на экране «Выберите себя»
+ * Вход под человеком. Этап 71: люди с личным паролем по общему логину не выбираются, а режим управления, который нужен
+ * сценариям владельца и администратора, по общему логину не включается: они входят своим логином и паролем
+ * (enterPersonal). Остальные: общий логин team и выбор себя поиском на экране «Выберите себя»
  */
 export async function enter(page: Page, fullName: string) {
   const [row] = await sql(`SELECT slug, role, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" = $1 AND active`, [fullName]);
-  if (row && (row.role === "OWNER" || row.personal)) return enterPersonal(page, row.slug as string);
+  if (row && (row.role === "OWNER" || row.role === "ADMIN" || row.personal)) return enterPersonal(page, row.slug as string);
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");
   await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);

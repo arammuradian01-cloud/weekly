@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { getEpochs } from "./settings";
-import { managementRoleFor } from "./roles";
+import { managementRoleFor, managementRoleOf } from "./roles";
 import {
   SESSION_COOKIE,
   SESSION_TTL_SEC,
@@ -226,9 +226,9 @@ export async function requireContext(): Promise<AppContext> {
     };
   }
 
-  // Этап 71 (поправка 23.10): владелец, выбранный по общему логину, режима управления не включает: права владельца
-  // только при личном входе. Администратор по общему логину включает режим, как и раньше
-  const managementRole = via === "TEAM" && person.role === "OWNER" ? null : managementRoleFor(person.role);
+  // Этап 71: режим управления только при личном входе. По общему логину профиль выбирают из списка (там бывает и
+  // владелец без личного пароля), поэтому режима управления у такого входа нет, даже если он остался в cookie
+  const managementRole = managementRoleOf(person.role, via);
   const grant = activeManagement(session, managementEpoch);
   // Режим управления действует, только если он выдан этой же роли профиля
   const management = grant && managementRole === grant.role ? grant : null;

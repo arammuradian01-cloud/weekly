@@ -32,6 +32,18 @@ export function roleLabelOf(person: { slug: string; role: Role }, owners: OwnerL
   return personRoleLabel(person.role, person.role === "OWNER" && person.slug === owners.primary, titleOf(owners.titles, person.slug));
 }
 
+/**
+ * Этап 71: режим управления только при личном входе. По общему логину team профиль выбирают из списка, и выбрать можно
+ * владельца или администратора без личного пароля: режим управления (паролем или ссылкой на почту) и всё, что он
+ * открывает, такому входу закрыты на сервере
+ */
+export const MANAGEMENT_TEAM_REFUSAL = "Режим управления включается только при личном входе: войдите своим логином и паролем";
+
+/** Какой режим управления может включить вход: при общем логине никакой (этап 71), иначе по роли профиля */
+export function managementRoleOf(role: Role, via: string | null | undefined): ManagementRole | null {
+  return via === "TEAM" ? null : managementRoleFor(role);
+}
+
 /** Режим управления доступен только профилям владельца и администраторов */
 export function managementRoleFor(role: Role): ManagementRole | null {
   if (role === "OWNER") return "OWNER";

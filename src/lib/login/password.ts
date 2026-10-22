@@ -289,7 +289,8 @@ export async function checkCurrentPassword(actor: Actor, person: Pick<Person, "i
 }
 
 function ownerOnly(actor: Actor) {
-  if (actor.management !== "OWNER" || actor.role === "OBSERVER") fail("Это делает только владелец в режиме управления");
+  // Этап 71: сброс паролей и ссылки всем только из личного входа владельца, не по общему логину
+  if (actor.via === "TEAM" || actor.management !== "OWNER" || actor.role === "OBSERVER") fail("Это делает только владелец в режиме управления при личном входе");
 }
 
 /** Владелец сбрасывает пароль: старый перестаёт работать, все входы и неиспользованные ссылки человека гаснут */

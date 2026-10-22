@@ -26,11 +26,11 @@ type Db = Prisma.TransactionClient | typeof prisma;
 type Who = { personId: string; role: string; management?: string | null; slug?: string };
 
 /**
- * Человек, которого видно: личный вход или режим владельца (пароль владельца знает только он). Пароль администраторов
- * общий, поэтому общий логин с режимом администратора не подходит: под ним можно выбрать чужой профиль. Так решаются
- * корректировка и выгрузка прогноза и показ выручки и КВ по СК (этап 58)
+ * Человек, которого видно: личный вход. По общему логину можно выбрать чужой профиль, а с этапа 71 и режима управления
+ * у него нет, поэтому прежнее исключение «общий логин в режиме владельца» убрано. Так решаются корректировка и выгрузка
+ * прогноза и показ выручки и КВ по СК (этап 58)
  */
-export const personalLogin = (actor: Pick<Actor, "role" | "via" | "management">): boolean => actor.role !== "OBSERVER" && (actor.via !== "TEAM" || actor.management === "OWNER");
+export const personalLogin = (actor: Pick<Actor, "role" | "via" | "management">): boolean => actor.role !== "OBSERVER" && actor.via !== "TEAM";
 
 export type NumbersLevel = "full" | "summary" | "none";
 export const NUMBERS_ACCESS_KEY = "numbers.access";

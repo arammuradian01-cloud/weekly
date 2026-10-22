@@ -131,8 +131,12 @@ test("владелец включает режим управления толь
 });
 
 test("администратор не видит разделы владельца", async ({ page }) => {
+  // Этап 71: по общему логину режим управления не включается: администратор входит своим логином и паролем
   await signIn(page);
   await chooseMe(page, "Головкин Владислав");
+  await page.goto("/manage");
+  await expect(page).toHaveURL(/\/$/);
+  await enterPersonal(page, "golovkin");
   await page.goto("/manage");
   await page.getByLabel("Пароль администраторов").fill(E2E_PASSWORDS.admin);
   await page.getByRole("button", { name: "Включить на 12 часов" }).click();

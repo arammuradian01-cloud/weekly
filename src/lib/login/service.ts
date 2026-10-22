@@ -134,6 +134,8 @@ export function maskEmail(email: string): string {
 /** Владелец выдаёт человеку ссылку для входа: показывается один раз, отправляется лично */
 export async function issueInvite(actor: Actor, slug: string, now = new Date()): Promise<{ token: string; expiresAt: Date; fullName: string }> {
   refuseOwnerAs(actor);
+  // Этап 71: ссылка для входа только из личного входа владельца, не по общему логину
+  if (actor.via === "TEAM") fail("Ссылку для входа выдаёт только владелец при личном входе");
   if (actor.management !== "OWNER" || actor.role === "OBSERVER") fail("Ссылку для входа выдаёт только владелец в режиме управления");
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
@@ -378,7 +380,7 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
   const own = person!.id === actor.personId;
-  if (!own && (actor.management !== "OWNER" || actor.role === "OBSERVER")) fail("Чужие входы завершает только владелец в режиме управления");
+  if (!own && (actor.via === "TEAM" || actor.management !== "OWNER" || actor.role === "OBSERVER")) fail("Чужие входы завершает только владелец в режиме управления при личном входе");
   if (!own) await guardPrimary(prisma, actor.slug, person!.slug, "завершает его входы");
   // По общему логину любой может выбрать чужое имя: завершать «свои» личные входы так нельзя
   if (own && actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
