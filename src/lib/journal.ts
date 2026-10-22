@@ -27,7 +27,7 @@ export type JournalFilter = {
   market?: boolean;
 };
 
-const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth."];
+const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth.", "viewAs."];
 const SETTINGS_PREFIXES = ["password", "setup", "settings", "export"];
 const KNOWN_PREFIXES = ["task.", "request.", "weekly.", "ceo.", "meeting.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
 
@@ -158,7 +158,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return `Справочник «${DICT_TITLES[kind as EditableDictKind] ?? kind}»${item ? `: ${item.label}` : ""}`;
     }
     // Входы и ссылки: что случилось и с кем, «Человек: ...» здесь ничего не говорит
-    if (entity === "person" && id && action.startsWith("auth.")) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
+    if (entity === "person" && id && (action.startsWith("auth.") || action.startsWith("viewAs."))) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
     if (entity === "person" && id) return `Человек: ${nameOf(id)}`;
     if (entity === "settings") {
       if (id === "stand.banner") return "Плашка над страницами";

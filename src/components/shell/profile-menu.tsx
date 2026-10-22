@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, Eye, EyeOff, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
+import { stopViewAsAction } from "@/app/actions/view-as";
+import { openViewAs } from "./view-as";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
@@ -20,6 +22,10 @@ type Props = {
   managementUntil: string | null;
   /** Личный вход: профиль не выбирается из списка, «Сменить профиль» не нужен */
   personal: boolean;
+  /** Владелец может открыть «Смотреть как…» (этап 63): личный вход, режим управления владельца */
+  canViewAs?: boolean;
+  /** Идёт просмотр «Смотреть как»: меню показывает выбранного человека и выход из просмотра */
+  viewing?: boolean;
   tone?: "dark" | "light";
 };
 
@@ -31,7 +37,7 @@ function initials(fullName: string) {
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
 const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
   const { me } = usePrototype();
   const dark = tone === "dark";
@@ -50,7 +56,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
         </span>
         <span className={cn("min-w-0 flex-1", tone === "light" && "hidden sm:block")}>
           <span className="sv-sidebar__profile__name block">{shortName}</span>
-          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-text-secondary")}>{management ? "Режим управления" : roleLabel}</span>
+          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-text-secondary")}>{viewing ? "Просмотр, только чтение" : management ? "Режим управления" : roleLabel}</span>
         </span>
         <ChevronDown className={cn("h-4 w-4 shrink-0", dark ? "text-sidebar-muted" : "text-text-secondary")} strokeWidth={1.5} aria-hidden="true" />
       </Menu.Trigger>
@@ -67,7 +73,17 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             {management && managementUntil ? (
               <div className="mt-1 text-caption text-blue-700">Режим управления до {managementUntil}</div>
             ) : null}
+            {viewing ? <div className="mt-1 text-caption text-blue-700">Вы смотрите как этот человек, изменения недоступны</div> : null}
           </div>
+          {viewing ? (
+            <>
+              <Menu.Separator className="my-1 h-px bg-line" />
+              <Menu.Item className={itemClass} disabled={pending} onSelect={() => startTransition(() => stopViewAsAction())}>
+                <EyeOff className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+                Выйти из просмотра
+              </Menu.Item>
+            </>
+          ) : null}
           <Menu.Separator className="my-1 h-px bg-line" />
           <div className="py-1.5" onKeyDown={(e) => e.stopPropagation()}>
             <ThemeSwitch />
@@ -108,7 +124,15 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             </Menu.Item>
           )}
 
-          {canManage && !management ? (
+          {canViewAs ? (
+            <Menu.Item className={itemClass} onSelect={() => openViewAs()}>
+              <Eye className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+              Смотреть как…
+            </Menu.Item>
+          ) : null}
+
+          {/* В просмотре режим управления выключен: включить его можно только после выхода из просмотра */}
+          {canManage && !management && !viewing ? (
             <Menu.Item asChild>
               <Link href="/manage" className={itemClass}>
                 <KeyRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
@@ -129,7 +153,8 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             disabled={pending}
             onSelect={() =>
               startTransition(async () => {
-                await forgetThisDevice(me.slug);
+                // В просмотре черновики на устройстве не трогаем: отправить их сервер сейчас не даст, а стёртые пропадут
+                if (!viewing) await forgetThisDevice(me.slug);
                 await logout();
               })
             }

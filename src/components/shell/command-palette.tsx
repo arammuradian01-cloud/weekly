@@ -4,10 +4,10 @@
 // общего поиска по задачам, записям weekly, решениям, комментариям и людям. Стрелки ходят по списку, Enter открывает.
 // На телефоне открывается кнопкой поиска в шапке и занимает весь экран
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Map as MapIcon, type LucideIcon } from "lucide-react";
+import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -16,6 +16,8 @@ import { cn } from "@/lib/cn";
 import { MARK_END, MARK_START, SEARCH_MIN, hitHref, hitId, type SearchHit } from "@/lib/search/common";
 import { searchAction } from "@/app/(app)/search/actions";
 import { openNewTask } from "@/components/prototype/new-task";
+import { stopViewAsAction } from "@/app/actions/view-as";
+import { openViewAs } from "./view-as";
 
 const OPEN_EVENT = "weekly:command-palette";
 
@@ -49,7 +51,8 @@ export function Highlight({ text, className }: { text: string; className?: strin
 
 const DEBOUNCE_MS = 180;
 
-export function CommandPalette({ management, market = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean }) {
+/** canViewAs: владелец может открыть «Смотреть как…», viewing: идёт просмотр, есть «Выйти из просмотра» (этап 63) */
+export function CommandPalette({ management, market = false, canViewAs = false, viewing = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const { observer } = usePrototype();
@@ -157,12 +160,14 @@ export function CommandPalette({ management, market = false }: { management: "OW
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
     // Рынок КАСКО и ОСАГО (этап 62): только тем, кому открыт раздел
     if (market) list.push({ id: "go:/market", label: "Открыть: Рынок КАСКО и ОСАГО", icon: TrendingUp, keywords: "рынок каско осаго нсис доля страховые регионы", run: () => go("/market") });
+    if (canViewAs) list.push({ id: "view-as", label: "Смотреть как…", icon: Eye, keywords: "смотреть как просмотр глазами человека профиль чужой права проверить", run: () => { setOpen(false); openViewAs(); } });
+    if (viewing) list.push({ id: "view-as-stop", label: "Выйти из просмотра", icon: EyeOff, keywords: "смотреть как просмотр выйти вернуться к себе", run: () => { setOpen(false); startTransition(() => stopViewAsAction()); } });
     if (management) {
       list.push({ id: "go:/ceo-report", label: "Открыть: Отчёт CEO", icon: FileText, keywords: "отчёт ceo", run: () => go("/ceo-report") });
       list.push({ id: "go:/journal", label: "Открыть: Журнал", icon: FileText, keywords: "журнал аудит история", run: () => go("/journal") });
     }
     return list;
-  }, [observer, management, market, go]);
+  }, [observer, management, market, canViewAs, viewing, go]);
 
   const query = q.trim().toLowerCase();
   const shownCommands = useMemo(() => {

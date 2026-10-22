@@ -3,7 +3,7 @@
 // Действия страницы «Цели» и карточки задачи (этап 17). Права проверяет сервис целей.
 
 import { revalidatePath } from "next/cache";
-import { runAction, type Result } from "@/lib/action-runner";
+import { runAction, runRead, type Result } from "@/lib/action-runner";
 import * as goals from "@/lib/goals/service";
 import { applyBordGoals, previewBordGoals } from "@/lib/goals/bord";
 import type { GoalResult } from "@/generated/prisma/enums";
@@ -47,12 +47,12 @@ export async function applyBordGoalsAction(tab: string, team: string, quarter: s
 }
 
 export async function goalOptionsAction(number: number): Promise<Result<goals.GoalOption[]>> {
-  return runAction("Цели для задачи", (a) => goals.goalOptions({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, Number(number)));
+  return runRead("Цели для задачи", (a) => goals.goalOptions({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, Number(number)));
 }
 
 /** Цель для новой задачи по тексту (этап 55): лучшая подставляется в форму, остальные в поиске */
 export async function suggestGoalsAction(input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<Result<{ options: goals.GoalOption[]; best: string | null }>> {
-  return runAction("Цели для новой задачи", (a) =>
+  return runRead("Цели для новой задачи", (a) =>
     goals.suggestGoals({ personId: a.personId, role: a.role, management: a.management, limited: a.via === "TEAM" && !a.management }, { team: String(input?.team ?? ""), due: String(input?.due ?? ""), title: String(input?.title ?? ""), outcome: String(input?.outcome ?? ""), owner: input?.owner ? String(input.owner) : null }),
   );
 }

@@ -14,14 +14,19 @@ import { formatTime } from "@/lib/week";
 import {
   baseUrl,
   clearSession,
+  clearViewAs,
   readSession,
+  readViewAsToken,
   requestIp,
   requestUserAgent,
-  requireContext,
   requireSignedIn,
+  requireWriteContext,
   writeSession,
+  type AppContext,
 } from "@/lib/auth";
-import { currentActor } from "@/lib/action-runner";
+import { writingActor } from "@/lib/action-runner";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
+import { endViewAs } from "@/lib/view-as-service";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { confirmEmail } from "@/lib/login/email";
@@ -121,8 +126,19 @@ export async function chooseProfile(formData: FormData): Promise<void> {
   redirect("/");
 }
 
+/** Действия входа, которые меняют сессию или режим управления: в режиме «Смотреть как» отказ текстом (этап 63) */
+async function writeContext(): Promise<{ ctx: AppContext; error?: undefined } | { ctx?: undefined; error: string }> {
+  try {
+    return { ctx: await requireWriteContext() };
+  } catch (error) {
+    if (error instanceof ViewAsReadOnlyError) return { error: error.message };
+    throw error;
+  }
+}
+
 export async function enterManagement(_prev: FormState, formData: FormData): Promise<FormState> {
-  const ctx = await requireContext();
+  const { ctx, error } = await writeContext();
+  if (!ctx) return { error };
   const ip = await requestIp();
   const actor = { actorId: ctx.person.id, actorName: ctx.person.fullName, ip, via: ctx.via };
   if (!ctx.managementRole) {
@@ -160,7 +176,7 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
 }
 
 export async function exitManagement(): Promise<void> {
-  const ctx = await requireContext();
+  const ctx = await requireWriteContext();
   const { management: _dropped, ...rest } = ctx.session;
   await writeSession(rest);
   await writeAudit({
@@ -178,6 +194,14 @@ export async function logout(): Promise<void> {
   const person = session?.personId
     ? await prisma.person.findUnique({ where: { id: session.personId } })
     : null;
+  // Выход во время «Смотреть как» (этап 63): просмотр заканчивается, в журнале кого смотрели
+  const viewing = await readViewAsToken();
+  if (viewing) {
+    if (person && session?.sid === viewing.sid && viewing.ownerId === person.id) {
+      await endViewAs(person, viewing.targetId, "logout", { ip: await requestIp(), via: session.via ?? null });
+    }
+    await clearViewAs();
+  }
   // Личный вход завершается и в базе: cookie с этого устройства больше не откроет ресурс
   if (session?.sid) {
     await prisma.deviceSession.updateMany({ where: { id: session.sid, revokedAt: null }, data: { revokedAt: new Date(), revokedBy: "self" } });
@@ -278,8 +302,8 @@ export async function requestEmailLinkAction(_prev: EmailFormState, formData: Fo
 /** Режим управления по ссылке на почту вместо пароля */
 export async function requestStepUpAction(_prev: EmailFormState): Promise<EmailFormState> {
   try {
-    const ctx = await requireContext();
-    await requestStepUp(await currentActor(), ctx.deviceId, await baseUrl());
+    const ctx = await requireWriteContext();
+    await requestStepUp(await writingActor(), ctx.deviceId, await baseUrl());
     return { sent: true };
   } catch (error) {
     const message = ruleError(error);
@@ -291,10 +315,11 @@ export async function requestStepUpAction(_prev: EmailFormState): Promise<EmailF
 
 /** Ссылка подтверждения из письма: включает режим управления на 12 часов */
 export async function confirmStepUpAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const ctx = await requireContext();
+  const { ctx, error: denied } = await writeContext();
+  if (!ctx) return { error: denied };
   if (!ctx.managementRole) return { error: "Режим управления доступен только владельцу и администраторам" };
   try {
-    await consumeStepUp(String(formData.get("token") ?? ""), await currentActor(), ctx.deviceId);
+    await consumeStepUp(String(formData.get("token") ?? ""), await writingActor(), ctx.deviceId);
   } catch (error) {
     const message = ruleError(error);
     if (!message) {

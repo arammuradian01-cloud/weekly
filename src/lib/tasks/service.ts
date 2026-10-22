@@ -25,6 +25,7 @@ import { foreignGoal, goalFits, taskPeople } from "@/lib/goals/personal";
 import { quarterOf } from "@/lib/goals/parse";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval";
+import { TaskRuleError } from "@/lib/rule-error";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -40,8 +41,8 @@ export type Actor = {
   via?: LoginMethod | null;
 };
 
-/** Ошибка правила: текст показывается человеку как есть */
-export class TaskRuleError extends Error {}
+/** Ошибка правила: текст показывается человеку как есть. Живёт в отдельном модуле без базы (этап 63) */
+export { TaskRuleError };
 
 /** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
 export type TaskResult = { task: Task; undo?: string; warning?: string };

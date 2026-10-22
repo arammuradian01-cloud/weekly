@@ -29,6 +29,8 @@ import { TeamSwitcher } from "@/components/shell/team-switcher";
 import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
 import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
+import { canViewAs } from "@/lib/view-as-service";
+import { ViewAsBanner, ViewAsDialog } from "@/components/shell/view-as";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +63,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел, и только при личном входе
   const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via }, marketAccess) };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
+  // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
+  const viewAs = ctx.viewAs ? { name: ctx.person.fullName, until: formatTime(new Date(ctx.viewAs.until)) } : null;
+  const viewAsOpen = !ctx.viewAs && canViewAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: false });
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -71,6 +76,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     management: ctx.management?.role ?? null,
     managementUntil,
     personal: ctx.via !== "TEAM",
+    canViewAs: viewAsOpen,
+    viewing: !!viewAs,
   };
 
   return (
@@ -123,6 +130,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
 
       <div className="flex min-w-0 flex-col lg:col-start-2">
+        {viewAs ? <ViewAsBanner name={viewAs.name} until={viewAs.until} /> : null}
         {lagging ? (
           <div role="status" className="sv-alert sv-alert--warning rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]">
             <span>
@@ -147,9 +155,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} market={nav.market} />
+    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} />
     <RequestDialogHost />
-    <DeviceSync />
+    {/* В просмотре черновики с устройства и подписка на уведомления не сверяются: это записи от имени человека */}
+    {viewAs ? null : <DeviceSync />}
+    {viewAsOpen ? <ViewAsDialog /> : null}
     </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>

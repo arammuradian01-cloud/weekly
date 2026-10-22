@@ -17,6 +17,7 @@ import {
 import { clientIp } from "./client-ip";
 import { sessionSecretFromEnv } from "./database-url";
 import { getTeamLogin, loadDevice, touchDevice } from "./login/service";
+import { VIEW_AS_COOKIE, ViewAsReadOnlyError, signViewAs, verifyViewAs, viewAsHolds, type ViewAsToken } from "./view-as";
 import type { LoginMethod, Person } from "@/generated/prisma/client";
 
 export function sessionSecret(): string {
@@ -53,17 +54,27 @@ export async function requestIp(): Promise<string> {
   return clientIp(await headers());
 }
 
+/** Кто смотрит в режиме «Смотреть как» (этап 63) и до какого момента */
+export type ViewAsInfo = {
+  owner: { id: string; slug: string; fullName: string };
+  /** До какого момента действует просмотр, мс с 1970 года */
+  until: number;
+};
+
 export type AppContext = {
   session: SessionData;
+  /** Чьими глазами показывается приложение: вошедший профиль, а в режиме «Смотреть как» выбранный человек */
   person: Person;
-  /** Активный режим управления или null */
+  /** Активный режим управления или null. В режиме «Смотреть как» всегда null */
   management: ManagementGrant | null;
   /** Роль, которую может включить профиль, или null для лидеров и наблюдателей */
   managementRole: ManagementRole | null;
-  /** Как вошли: общий логин team или личная ссылка (этап 9) */
+  /** Как вошли: общий логин team или личная ссылка (этап 9). В режиме «Смотреть как» личный вход владельца */
   via: LoginMethod;
-  /** Запись устройства при личном входе, иначе null */
+  /** Запись устройства при личном входе, иначе null. В режиме «Смотреть как» null: устройство не выбранного человека */
   deviceId: string | null;
+  /** Режим «Смотреть как» (этап 63): владелец смотрит глазами person, изменения недоступны. Иначе null */
+  viewAs: ViewAsInfo | null;
 };
 
 /** Адрес ресурса для ссылок в письмах и приглашениях: APP_URL или адрес текущего запроса */
@@ -122,7 +133,64 @@ export async function requireContext(): Promise<AppContext> {
   const grant = activeManagement(session, managementEpoch);
   // Режим управления действует, только если он выдан этой же роли профиля
   const management = grant && managementRole === grant.role ? grant : null;
-  return { session, person, management, managementRole, via, deviceId };
+  // «Смотреть как» (этап 63): проверяется на каждом запросе. Владелец вышел, потерял роль или режим управления,
+  // выбранного человека выключили, срок вышел: просмотр гаснет, человек снова видит себя
+  const viewing = await viewAsFor(session, person, via, management);
+  if (viewing) {
+    const target = viewing.target;
+    return { session, person: target, management: null, managementRole: managementRoleFor(target.role), via, deviceId: null, viewAs: viewing.info };
+  }
+  return { session, person, management, managementRole, via, deviceId, viewAs: null };
+}
+
+/** Подписанная cookie просмотра, если она есть и подпись верна. Проверку на сессию делает viewAsFor */
+export async function readViewAsToken(): Promise<ViewAsToken | null> {
+  const store = await cookies();
+  return verifyViewAs(store.get(VIEW_AS_COOKIE)?.value, sessionSecret());
+}
+
+async function viewAsFor(session: SessionData, owner: Person, via: LoginMethod, management: ManagementGrant | null): Promise<{ target: Person; info: ViewAsInfo } | null> {
+  const token = await readViewAsToken();
+  if (!token) return null;
+  const holds = viewAsHolds(token, { sid: session.sid, personId: owner.id, role: owner.role, personal: !!session.sid && via !== "TEAM", management: management?.role ?? null, managementUntil: management?.until ?? null });
+  if (!holds) return null;
+  const target = await prisma.person.findUnique({ where: { id: token.targetId } });
+  if (!target || !target.active) return null;
+  return { target, info: { owner: { id: owner.id, slug: owner.slug, fullName: owner.fullName }, until: token.until } };
+}
+
+/**
+ * Единственная проверка записи в режиме «Смотреть как» (этап 63): всё, что меняет данные, проходит через неё
+ * (runAction и writingActor в src/lib/action-runner.ts, requireWriteContext, обработчики загрузок). Отказ одним
+ * текстом, ошибкой правила: экраны показывают его как есть
+ */
+export function assertWritable(ctx: Pick<AppContext, "viewAs">): void {
+  if (ctx.viewAs) throw new ViewAsReadOnlyError();
+}
+
+/** Контекст для действий, которые меняют данные: в режиме «Смотреть как» отказ */
+export async function requireWriteContext(): Promise<AppContext> {
+  const ctx = await requireContext();
+  assertWritable(ctx);
+  return ctx;
+}
+
+/** cookie просмотра: подписана как сессия, живёт до конца просмотра */
+export async function writeViewAs(token: ViewAsToken, now = Date.now()): Promise<void> {
+  const value = await signViewAs(token, sessionSecret(), now);
+  const store = await cookies();
+  store.set(VIEW_AS_COOKIE, value, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: secureCookie(),
+    path: "/",
+    maxAge: Math.max(1, Math.ceil((token.until - now) / 1000)),
+  });
+}
+
+export async function clearViewAs(): Promise<void> {
+  const store = await cookies();
+  store.delete(VIEW_AS_COOKIE);
 }
 
 /** Страницы режима управления. roles сужает доступ, например только владельцу */
