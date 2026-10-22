@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
+import { goalBucket, type GoalBucket } from "@/lib/goals/quarter";
 import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
@@ -47,29 +48,29 @@ const RESULTS: { value: GoalResult; label: string }[] = [
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
 // Этап 68: карточки по командам видом по умолчанию, таблица и дерево рядом
 type ViewMode = "cards" | "table" | "tree";
-type Filter = "all" | "risk" | "stale" | "notasks" | "done";
+type Filter = "all" | GoalBucket;
 
-/**
- * Где цель на шкале квартала (этап 68). Отборы взаимоисключающие, по старшинству: достигнута, в риске, без задач, без
- * свежего факта; остальное «в работе» (и закрытые без итога «Достигнута»). Поэтому число на кнопке совпадает с числом
- * целей после нажатия, а отрезки шкалы в сумме дают все цели
- */
-export function goalBucket(g: GoalNode): Exclude<Filter, "all"> | "rest" {
-  if (g.result === "ACHIEVED") return "done";
-  if (g.result !== "IN_PROGRESS") return "rest";
-  if (g.risk) return "risk";
-  if (g.progress.total === 0) return "notasks";
-  if (g.factStale) return "stale";
-  return "rest";
-}
-
-const FILTERS: { value: Filter; label: string; test: (g: GoalNode) => boolean }[] = [
-  { value: "all", label: "Все", test: () => true },
-  { value: "done", label: "Достигнуты", test: (g) => goalBucket(g) === "done" },
-  { value: "risk", label: "В риске", test: (g) => goalBucket(g) === "risk" },
-  { value: "notasks", label: "Без задач", test: (g) => goalBucket(g) === "notasks" },
-  { value: "stale", label: "Без свежего факта", test: (g) => goalBucket(g) === "stale" },
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "Все" },
+  { value: "done", label: "Достигнуты" },
+  { value: "risk", label: "В риске" },
+  { value: "notasks", label: "Без задач" },
+  { value: "stale", label: "Без свежего факта" },
+  { value: "closed", label: "Закрыты не полностью" },
+  { value: "work", label: "В работе" },
 ];
+
+const inFilter = (g: GoalNode, f: Filter) => f === "all" || goalBucket(g) === f;
+
+/** Цвет отрезка шкалы: токены, серый «в работе» держит 3:1 к дорожке шкалы в обеих темах */
+const SLICE_COLOR: Record<GoalBucket, string> = {
+  done: "bg-green",
+  risk: "bg-danger",
+  notasks: "bg-info",
+  stale: "bg-warning",
+  closed: "bg-link",
+  work: "bg-steel",
+};
 
 export function GoalsScreen({
   view,
@@ -119,7 +120,7 @@ export function GoalsScreen({
       }
     });
 
-  const count = (f: Filter) => view.goals.filter(FILTERS.find((x) => x.value === f)!.test).length;
+  const count = (f: Filter) => view.goals.filter((g) => inFilter(g, f)).length;
   // Подпись на шкале квартала включает отбор в карточках или в таблице и ведёт к списку целей
   const show = (f: Filter) => {
     setFilter(f);
@@ -129,7 +130,7 @@ export function GoalsScreen({
   };
   const q = query.trim().toLowerCase();
   const shown = view.goals.filter(
-    (g) => FILTERS.find((x) => x.value === filter)!.test(g) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
+    (g) => inFilter(g, filter) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
   );
 
   return (
@@ -163,18 +164,15 @@ export function GoalsScreen({
       {view.goals.length ? (
         <>
           {/* Этап 68: шкала квартала вместо строки цифр. Отрезки и подписи-кнопки по взаимоисключающим отборам (goalBucket),
-              ширина отрезка по доле целей; серый остаток: цели в работе без риска, с задачами и свежим фактом */}
+              ширина отрезка по доле целей, сумма по кнопкам равна числу целей */}
           <QuarterBar
             total={view.goals.length}
             allActive={filter === "all"}
             onAll={() => show("all")}
-            rest={view.goals.filter((g) => goalBucket(g) === "rest").length}
-            slices={[
-              { key: "done", label: "Достигнуты", count: count("done"), color: "bg-green", active: filter === "done", onClick: () => show("done") },
-              { key: "risk", label: "В риске", count: count("risk"), color: "bg-danger", active: filter === "risk", onClick: () => show("risk") },
-              { key: "notasks", label: "Без задач", count: count("notasks"), color: "bg-steel", active: filter === "notasks", onClick: () => show("notasks") },
-              { key: "stale", label: "Без свежего факта", count: count("stale"), color: "bg-warning", active: filter === "stale", onClick: () => show("stale") },
-            ]}
+            slices={FILTERS.filter((f) => f.value !== "all").map((f) => {
+              const key = f.value as GoalBucket;
+              return { key, label: f.label, count: count(key), color: SLICE_COLOR[key], active: filter === key, onClick: () => show(key) };
+            })}
           />
 
           <Module
