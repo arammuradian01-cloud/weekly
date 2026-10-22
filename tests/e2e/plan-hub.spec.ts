@@ -17,8 +17,6 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-plan58-${name}.png`, fullPage: true });
 }
 
-const isPhone = () => test.info().project.name === "phone";
-
 /** Блок по ширине внутри контейнера: левый и правый края не выходят за его края (полпикселя на округление) */
 async function within(inner: Locator, outer: Locator, what: string) {
   const a = (await inner.boundingBox())!;
@@ -39,7 +37,7 @@ async function fits(table: Locator, what: string) {
 /**
  * Раскрытая карточка ОСАГО с блоком по СК в границах раздела «По продуктам»: таблица продуктов помещается, карточка,
  * блок по СК и его таблица не шире своих контейнеров, кнопки «Изменить» и метка «ждёт проверки» видны целиком, на
- * кнопку не наезжает отклонение. Таблица по СК прокручивается внутри своего контейнера, колонка СК при этом на месте
+ * кнопку не наезжает отклонение. Таблица по СК помещается или прокручивается внутри своего контейнера, колонка СК на месте
  */
 async function skLayout(page: Page) {
   const products = page.locator("#plan-products");
@@ -58,15 +56,21 @@ async function skLayout(page: Page) {
     const row = card.locator("tr", { has: button });
     for (const pill of await row.locator(".sv-delta").all()) expect(overlaps((await button.boundingBox())!, (await pill.boundingBox())!), `кнопка ${await button.getAttribute("data-testid")} наезжает на отклонение`).toBe(false);
   }
-  // Колонка СК закреплена: таблица прокручена до конца, а название СК у левого края контейнера (рамка 1 px)
+  // Таблица по СК либо помещается в контейнер целиком, либо прокручивается в нём (страницу проверяет shot). У лидера
+  // КАСКО колонок меньше, на телефоне таблица может поместиться. Если прокрутка есть, колонка СК закреплена: таблица
+  // прокручена до конца, а название СК у левого края контейнера (рамка 1 px)
   const first = sk.getByTestId("plan-sk-row").first().locator("td").first();
   await expect(first).toHaveCSS("position", "sticky");
-  const scrolled = await scroller.evaluate((el) => {
-    el.scrollLeft = el.scrollWidth;
-    return el.scrollLeft;
-  });
-  // На телефоне колонки не помещаются: прокрутка внутри контейнера, а не страницы
-  if (isPhone()) expect(scrolled, "таблица по СК на телефоне прокручивается в своём контейнере").toBeGreaterThan(0);
+  const hidden = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+  if (hidden > 0) {
+    const scrolled = await scroller.evaluate((el) => {
+      el.scrollLeft = el.scrollWidth;
+      return el.scrollLeft;
+    });
+    expect(scrolled, "таблица по СК шире контейнера, но не прокручивается в нём").toBeGreaterThan(0);
+  } else {
+    await fits(sk.getByTestId("plan-sk-table"), "таблица по СК");
+  }
   const box = (await scroller.boundingBox())!;
   const cell = (await first.boundingBox())!;
   expect(Math.abs(cell.x - box.x), "колонка СК уехала при прокрутке").toBeLessThanOrEqual(1.5);
