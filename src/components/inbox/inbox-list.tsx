@@ -203,7 +203,7 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                         <Menu.Item
                           key={choice}
                           onSelect={() => void act(item.subject, () => snoozeAction(item.subject, choice), `Напомним: ${label.toLowerCase()}`)}
-                          className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field"
+                          className="sv-menu__item cursor-pointer select-none outline-none"
                         >
                           {label}
                         </Menu.Item>

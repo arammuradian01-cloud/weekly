@@ -361,10 +361,11 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
       } catch (error) {
         const reason = error instanceof ClaudeError ? error.message : "непредвиденная ошибка";
         if (!(error instanceof ClaudeError)) console.error("Разбор встречи: сбой вызова Claude", error instanceof Error ? error.name : "ошибка");
-        note = `Claude не разобрал встречу: ${reason}. Разобрано правилами, проверьте итоги и задачи внимательнее`;
+        note = `Claude не разобрал встречу: ${reason}. Разобрано упрощённо, проверьте итоги и задачи внимательнее`;
       }
     } else {
-      note = "Ключ Claude не задан на сервере (ANTHROPIC_API_KEY): разобрано правилами по заголовкам и спискам. Проверьте итоги и задачи внимательнее";
+      // Ведущему без имён переменных сервера (этап 59, С5): подключает Claude владелец, ему это видно в настройках
+      note = "Claude не подключён: разобрано упрощённо, по заголовкам и спискам страницы. Проверьте итоги и задачи внимательнее";
     }
     raw ??= parseByRules(page.text, { base: meetingDate, knows: names.knows });
     note = [note, page.cutByTime ? "Notion отвечал долго: текст обрезан по времени, разобрано начало страницы" : page.truncated ? "Страница длинная: разобрано начало" : null, unreadNote].filter(Boolean).join(". ");

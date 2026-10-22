@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { Figures } from "@/components/ui/data";
+import { SECTION_FIGURES_MAX, decisionFigures } from "@/components/ui/section-figures";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, TextArea } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
@@ -72,15 +73,18 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
   const weekAgo = addDays(data.today, -6);
   return (
     <div className="flex flex-col gap-4">
+      {/* Этап 59: строкой, как на Задачах и Weekly, не больше трёх, нули не показываются */}
       {base.length ? (
         <Figures
           label="Решения в цифрах"
-          items={[
-            { label: "В силе", value: base.filter((d) => d.status === "active").length, testId: "dec-fig-active" },
-            { label: "Отменено", value: base.filter((d) => d.status === "cancelled").length, testId: "dec-fig-cancelled" },
-            { label: "За последние 7 дней", value: base.filter((d) => d.date >= weekAgo).length, testId: "dec-fig-week" },
-            { label: "Без владельца", value: base.filter((d) => d.status === "active" && !d.owner).length, tone: "warning", testId: "dec-fig-noowner" },
-          ]}
+          inline
+          max={SECTION_FIGURES_MAX}
+          items={decisionFigures({
+            active: base.filter((d) => d.status === "active").length,
+            cancelled: base.filter((d) => d.status === "cancelled").length,
+            week: base.filter((d) => d.date >= weekAgo).length,
+            noOwner: base.filter((d) => d.status === "active" && !d.owner).length,
+          })}
         />
       ) : null}
       {base.length >= DECISIONS_LIMIT ? <p className="text-caption text-text-secondary">Цифры по последним {DECISIONS_LIMIT} решениям: более ранние находит поиск.</p> : null}

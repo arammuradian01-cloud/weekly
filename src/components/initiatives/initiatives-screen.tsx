@@ -4,8 +4,9 @@
 // ответственный, одна фраза о том, что сейчас происходит, и сколько инициатива в этом делении. Долго ищем или давно без
 // новостей: метка словами, такие инициативы сами встают в повестку встречи команды ответственного.
 
+import Link from "next/link";
 import { useEffect, useId, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Rocket } from "lucide-react";
 import type { InitiativeView, InitiativesPage } from "@/lib/initiatives/service";
 import { NOTE_MAX, NOTE_PROMPTS, RESULT_LABELS, STATE_LABELS, TITLE_MAX, WHY_MAX, weeksText, type ResultCode, type StateCode } from "@/lib/initiatives/rules";
 import {
@@ -16,13 +17,15 @@ import {
   reopenInitiativeAction,
   setInitiativeStateAction,
 } from "@/app/(app)/initiatives/actions";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/overlays";
 import { markSeenAction } from "@/app/(app)/me/actions";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 import { Figures } from "@/components/ui/data";
+import { SECTION_FIGURES_MAX, initiativeFigures } from "@/components/ui/section-figures";
 
 const when = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date(iso));
 /** Фраза с точкой в конце, без двойной: «...в ноябре.» и «Почему?» остаются как есть */
@@ -45,7 +48,17 @@ const CHANGE_WORDS: Record<string, string> = {
   reopen: "Возвращена в работу",
 };
 
-export function InitiativesScreen({ data }: { data: InitiativesPage }) {
+/** Кнопка заведения инициативы: над колонками или в пустом состоянии */
+function NewButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button size="sm" className="shrink-0 self-start" onClick={onClick}>
+      <Plus className="h-4 w-4" aria-hidden="true" />
+      Новая инициатива
+    </Button>
+  );
+}
+
+export function InitiativesScreen({ data, canEnterManage = false }: { data: InitiativesPage; /** Может завести, но режим управления выключен */ canEnterManage?: boolean }) {
   const run = useRunAction();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
@@ -86,61 +99,74 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Этап 36: шкала в цифрах плитками вместо фразы */}
+      {/* Этап 36: шкала в цифрах вместо фразы. Этап 59: строкой, не больше трёх, нули не показываются */}
       {data.active.length || data.closed.length ? (
         <Figures
           label="Инициативы в цифрах"
-          items={[
-            { label: "Уже делаем", value: doing.length, testId: "ini-fig-doing" },
-            { label: "Ещё ищем, как сделать", value: searching.length, testId: "ini-fig-searching" },
-            { label: "Долго ищут", value: longSearch, tone: "warning", testId: "ini-fig-long" },
-            { label: "Без новостей 2 недели", value: stale, tone: "warning", testId: "ini-fig-stale" },
-            { label: "Закрыто", value: data.closed.length, testId: "ini-fig-closed" },
-          ]}
+          inline
+          max={SECTION_FIGURES_MAX}
+          items={initiativeFigures({ open: data.active.length, longSearch, stale, closed: data.closed.length })}
         />
       ) : null}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <p className="text-body text-text-secondary" aria-live="polite">
-          {data.active.length
-            ? "Две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
-            : "Крупных инициатив пока нет."}
-        </p>
-        {data.canManage ? (
-          <Button size="sm" className="shrink-0 self-start" onClick={() => setDialog({ kind: "edit", item: null })}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            Новая инициатива
-          </Button>
-        ) : null}
-      </div>
+      {data.active.length ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <p className="text-body text-text-secondary">
+            Две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды.
+          </p>
+          {data.canManage ? <NewButton onClick={() => setDialog({ kind: "edit", item: null })} /> : null}
+        </div>
+      ) : (
+        // Этап 59: при нуле открытых одно пустое состояние вместо двух колонок, которые спорили друг с другом
+        // («Все инициативы уже в работе» и «Пока ни одна не перешла в работу»). Сказано, кто заводит инициативы
+        <EmptyState
+          title={data.closed.length ? "Открытых инициатив нет" : "Крупных инициатив пока нет"}
+          icon={Rocket}
+          action={
+            data.canManage ? (
+              <NewButton onClick={() => setDialog({ kind: "edit", item: null })} />
+            ) : canEnterManage ? (
+              <Link href="/manage?next=%2Finitiatives" className={buttonClass("secondary", "sm")}>
+                Включить режим управления
+              </Link>
+            ) : null
+          }
+        >
+          {data.canManage
+            ? `Заведите ${data.closed.length ? "новую" : "первую"}: что за инициатива, зачем и кто отвечает. Дальше ответственный сам отмечает, ищем ли ещё, как сделать, или уже делаем.`
+            : "Заводят владелец и администраторы в режиме управления. Если есть большая идея для департамента, расскажите им."}
+        </EmptyState>
+      )}
       {data.active.length > data.softMax ? (
         <p className="text-small text-warning-ink">
           Открытых инициатив {data.active.length}, а шкала задумана для {data.softMax} самых крупных. Мелкие удобнее вести задачами.
         </p>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {(["searching", "doing"] as const).map((state) => {
-          const list = state === "searching" ? searching : doing;
-          return (
-            <section key={state} aria-labelledby={`col-${state}`} className="flex min-w-0 flex-col gap-3">
-              <h2 id={`col-${state}`} className="text-title font-semibold text-ink">
-                {STATE_LABELS[state]} <span className="text-muted">{list.length}</span>
-              </h2>
-              {list.length ? (
-                <ul className="flex flex-col gap-3">
-                  {list.map((i) => (
-                    <li key={i.id}>
-                      <Card item={i} highlighted={target === `i-${i.id}`} canManage={data.canManage} busy={busy} onDialog={setDialog} />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-small text-muted">{state === "searching" ? "Все инициативы уже в работе." : "Пока ни одна инициатива не перешла в работу."}</p>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      {data.active.length ? (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {(["searching", "doing"] as const).map((state) => {
+            const list = state === "searching" ? searching : doing;
+            return (
+              <section key={state} aria-labelledby={`col-${state}`} className="flex min-w-0 flex-col gap-3">
+                <h2 id={`col-${state}`} className="text-title font-semibold text-ink">
+                  {STATE_LABELS[state]} <span className="text-muted">{list.length}</span>
+                </h2>
+                {list.length ? (
+                  <ul className="flex flex-col gap-3">
+                    {list.map((i) => (
+                      <li key={i.id}>
+                        <Card item={i} highlighted={target === `i-${i.id}`} canManage={data.canManage} busy={busy} onDialog={setDialog} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-small text-muted">{state === "searching" ? "Все инициативы уже в работе." : "Пока ни одна инициатива не перешла в работу."}</p>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
 
       {data.closed.length ? (
         <details className="sv-card sv-card--soft px-5 py-4" open={closedOpen} onToggle={(e) => setClosedOpen(e.currentTarget.open)}>

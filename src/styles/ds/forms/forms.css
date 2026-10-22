@@ -56,7 +56,11 @@
 .sv-menu__group { padding: 8px 10px 4px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
 .sv-menu__item { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 36px; padding: 6px 10px; box-sizing: border-box; border: 0; border-radius: var(--radius-control);
   background: transparent; color: var(--color-text); font: inherit; font-size: var(--text-body); line-height: var(--leading-body); text-align: left; cursor: pointer; }
-.sv-menu__item:hover, .sv-menu__item.is-active { background: var(--color-field); }
+.sv-menu__item:hover, .sv-menu__item.is-active, .sv-menu__item[data-highlighted] { background: var(--color-field); }
+/* Пункт меню под фокусом с клавиатуры (этап 59, С10): заливка поля на белом почти не видна (1,09:1, в тёмной 1,25:1),
+   поэтому фон акцента и полоса слева 2 px цвета фокуса (5,2:1 в светлой, 6,9:1 в тёмной). Радикс ставит фокус на пункт
+   стрелками; в списке с полем поиска фокус остаётся в поле, активный вариант помечен is-active */
+.sv-menu__item:focus-visible, .sv-menu__item[role="option"].is-active { outline: none; background: var(--color-accent-soft); box-shadow: inset 2px 0 0 var(--color-focus); }
 .sv-menu__item.is-selected { background: var(--color-accent-soft); color: var(--color-link); font-weight: var(--font-weight-semibold); }
 .sv-menu__item.is-danger { color: var(--color-danger-text); }
 .sv-menu__item:disabled { color: var(--color-text-disabled); cursor: not-allowed; background: transparent; }

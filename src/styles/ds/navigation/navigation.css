@@ -40,10 +40,12 @@
 .sv-topbar__search:hover { border-color: var(--color-text-secondary); }
 .sv-topbar__search .sv-kbd { margin-left: auto; }
 .sv-topbar__search > span:nth-child(2) { flex: 1; }
+/* Отчётная неделя в шапке (этап 59): текстом без рамки, она не нажимается */
+.sv-topbar__week { font-size: var(--text-body); line-height: var(--leading-body); font-weight: var(--font-weight-semibold); color: var(--color-text); white-space: nowrap; cursor: default; }
 @media (max-width: 767px) { .sv-topbar { padding: 0 var(--content-pad-phone); height: 56px; } }
 
 /* Нижнее меню на телефоне */
-.sv-bottom-nav { display: grid; grid-template-columns: repeat(5, 1fr); height: 64px; padding: 4px 0 8px; box-sizing: border-box; background: var(--color-surface); border-top: 1px solid var(--color-border); }
+.sv-bottom-nav { display: grid; grid-template-columns: repeat(5, 1fr); height: var(--bottom-nav-height); padding: 4px 0 8px; box-sizing: border-box; background: var(--color-surface); border-top: 1px solid var(--color-border); }
 .sv-bottom-nav__item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: var(--touch-min); border: 0; background: transparent; color: var(--color-text-secondary); font: inherit; font-size: 11px; line-height: 14px; font-weight: var(--font-weight-semibold); cursor: pointer; position: relative; text-decoration: none; }
 .sv-bottom-nav__item.is-active { color: var(--color-link); }
 .sv-bottom-nav__item:focus-visible { outline: var(--focus-outline); outline-offset: -2px; border-radius: var(--radius-control); }
@@ -109,8 +111,12 @@
 .sv-week__dates { color: var(--color-text-secondary); font-weight: 400; font-variant-numeric: tabular-nums; }
 .sv-week__now { color: var(--color-link); font-size: var(--text-caption); font-weight: var(--font-weight-semibold); border: 0; background: transparent; cursor: pointer; padding: 0 8px; height: 30px; border-radius: 6px; font-family: inherit; }
 .sv-week__now:hover { background: var(--color-accent-soft); }
+.sv-week__now:focus-visible { outline: var(--focus-outline); outline-offset: var(--focus-offset); }
 .sv-week .sv-icon-btn { width: 30px; height: 30px; border-radius: 6px; }
 .sv-week .sv-badge { margin-right: 4px; }
+/* Переключатель недели и рядом возврат к отчётной неделе (этап 59) */
+.sv-week-nav { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); max-width: 100%; }
+.sv-week-nav .sv-week__now { height: var(--control-sm); font-size: var(--text-small); }
 
 /* Хлебные крошки в карточке и путь по структуре */
 .sv-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); margin: 0; padding: 0; list-style: none; }

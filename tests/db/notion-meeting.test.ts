@@ -200,7 +200,9 @@ describe("разбор", () => {
     const id = await readyParse();
     const view = await parse.getParse(await actorOf("Рева"), id);
     expect(view).toMatchObject({ status: "ready", method: "rules", title: "Встреча управления продукта 20.10" });
-    expect(view.note).toMatch(/ANTHROPIC_API_KEY/);
+    // Ведущему без имён переменных сервера (этап 59)
+    expect(view.note).toMatch(/^Claude не подключён: разобрано упрощённо/);
+    expect(view.note).not.toMatch(/ANTHROPIC|[A-Z]{3,}_[A-Z]{3,}/);
     expect(view.result.summary).toEqual(["Конверсия в покупку ОСАГО выросла до 12%"]);
     expect(view.result.decisions).toMatchObject([{ text: "запускаем тест новой формы расчёта в ноябре", on: false }]);
     expect(view.result.risks).toEqual(["Задержка выгрузки от финансов"]);

@@ -75,9 +75,13 @@ test("люди: команда и руководителю: цифры и таб
 test("инициативы и решения: цифры, таблица решений, пустой поиск", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await page.goto("/initiatives");
-  // Инициатив нет: цифр нет, понятная фраза и кнопка заведения у управления
-  await expect(page.getByText("Крупных инициатив пока нет.")).toBeVisible();
+  // Инициатив нет: цифр нет, одно пустое состояние без противоречий (этап 59). Владельцу без режима управления
+  // сказано, кто заводит, и дана ссылка на включение режима
+  await expect(page.getByRole("heading", { name: "Крупных инициатив пока нет" })).toBeVisible();
   await expect(page.getByRole("list", { name: "Инициативы в цифрах" })).toHaveCount(0);
+  await expect(page.getByText(/Все инициативы уже в работе|Пока ни одна инициатива не перешла в работу/)).toHaveCount(0);
+  await expect(page.getByText("Заводят владелец и администраторы в режиме управления.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Включить режим управления" })).toHaveAttribute("href", "/manage?next=%2Finitiatives");
   await shot(page, "initiatives-empty");
 
   await page.goto("/decisions");

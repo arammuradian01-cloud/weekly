@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { usePrototype } from "@/domain/store";
 import { teamOf } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { useStickyBottom } from "@/components/ui/sticky-bottom";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
 import { EntryItem } from "./entry-item";
@@ -42,6 +43,9 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
   // а пропавший шаг (ушёл последний вопрос) открывает соседний
   const [current, setCurrent] = useState<string>(slides[0]!);
   const [lastIndex, setLastIndex] = useState(0);
+  // Тост встаёт над нижней панелью «Назад, Дальше» и не закрывает её кнопки (этап 59, С7)
+  const bar = useRef<HTMLDivElement>(null);
+  useStickyBottom(bar);
   const found = slides.indexOf(current);
   const index = found >= 0 ? found : Math.min(lastIndex, slides.length - 1);
   const slide = slides[index]!;
@@ -172,7 +176,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
         )}
       </section>
 
-      <div className="sticky bottom-20 mt-10 flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0">
+      <div ref={bar} className="sticky bottom-20 mt-10 flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0" data-testid="meeting-steps-bar">
         <Button variant="secondary" onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={index === 0}>
           <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Назад

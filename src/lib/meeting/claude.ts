@@ -123,9 +123,10 @@ export async function parseWithClaude(input: ClaudeInput, deps: ClaudeDeps): Pro
     throw new ClaudeError("нет связи с Claude");
   }
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) throw new ClaudeError("Claude не принял ключ ANTHROPIC_API_KEY");
+    // Слова для экрана ведущего без имён переменных сервера (этап 59, С5): что проверить, знает владелец
+    if (res.status === 401 || res.status === 403) throw new ClaudeError("Claude не принял ключ доступа, сообщите владельцу ресурса");
     if (res.status === 400) throw new ClaudeError("Claude не принял запрос: проверьте модель или длину страницы");
-    if (res.status === 404) throw new ClaudeError("Claude не нашёл модель: проверьте ANTHROPIC_MODEL");
+    if (res.status === 404) throw new ClaudeError("Claude не нашёл модель, сообщите владельцу ресурса");
     if (res.status === 429) throw new ClaudeError("у Claude превышен лимит запросов");
     if (res.status === 529 || res.status >= 500) throw new ClaudeError("Claude перегружен или недоступен");
     throw new ClaudeError(`Claude ответил ошибкой ${res.status}`);

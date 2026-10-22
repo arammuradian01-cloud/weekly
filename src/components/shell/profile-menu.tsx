@@ -37,7 +37,7 @@ function initials(fullName: string) {
 }
 
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
-const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
+const itemClass = "sv-menu__item cursor-pointer select-none outline-none";
 
 export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();

@@ -311,7 +311,7 @@ function MethodNote({ view }: { view: ParseView }) {
       <div className="flex gap-3 sv-card sv-card--soft bg-warning-soft px-5 py-4" data-testid="parse-method">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning-ink" aria-hidden="true" />
         <div className="min-w-0">
-          <p className="font-medium text-warning-ink">Разобрано правилами</p>
+          <p className="font-medium text-warning-ink">Разобрано упрощённо</p>
           <p className="mt-0.5 break-words text-body text-ink">{view.note ?? "Разбор по заголовкам и спискам страницы: проверьте итоги и задачи внимательнее"}</p>
         </div>
       </div>

@@ -78,3 +78,14 @@ export function plural(n: number, one: string, few: string, many: string): strin
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
 }
+
+/**
+ * Подпись недели одним форматом во всех местах (этап 59, С4): «Неделя 43, отчётная» для недели, за которую сейчас
+ * пишут weekly, иначе «Неделя 39». Возврат к отчётной неделе подписан действием «К отчётной неделе», а не «Текущая»
+ */
+export function weekTitle(number: number, reporting: boolean): string {
+  return reporting ? `Неделя ${number}, отчётная` : `Неделя ${number}`;
+}
+
+/** Кнопка возврата с прошлой недели на отчётную */
+export const BACK_TO_REPORTING_WEEK = "К отчётной неделе";

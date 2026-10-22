@@ -37,6 +37,9 @@ const VIA_WORD: Record<NonNullable<JournalEvent["via"]>, string> = { personal: "
 
 const SOURCE_WORD = { app: "ресурс", sheet: "таблица", system: "система" } as const;
 
+/** Адрес входа показываем, только когда он настоящий: служебные «local» и «unknown» без прокси ничего не говорят (этап 59, С5) */
+const realIp = (ip: string | null | undefined) => (ip && ip !== "local" && ip !== "unknown" ? ip : null);
+
 const plural = (n: number) => {
   const d = n % 10;
   const t = n % 100;
@@ -162,7 +165,7 @@ export function JournalView({ page, people, query, today }: { page: JournalPage;
                   </td>
                   <td data-label="Откуда" className="text-muted">
                     {SOURCE_WORD[e.source]}
-                    {e.ip ? <span className="block text-tiny max-sm:hidden">{e.ip}</span> : null}
+                    {realIp(e.ip) ? <span className="block text-tiny max-sm:hidden">{realIp(e.ip)}</span> : null}
                   </td>
                 </tr>
                 </Fragment>

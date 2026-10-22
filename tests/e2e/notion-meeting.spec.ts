@@ -58,8 +58,10 @@ test("этап 61: разбор встречи правилами, weekly для
   await startParse(page, RULES_URL);
   // Разбор идёт после ответа экрану: страница сама обновляется, пока статус не сменится
   const method = page.getByTestId("parse-method");
-  await expect(method).toContainText("Разобрано правилами", { timeout: 30_000 });
-  await expect(method).toContainText("ANTHROPIC_API_KEY");
+  await expect(method).toContainText("Разобрано упрощённо", { timeout: 30_000 });
+  // Ведущему без имён переменных сервера (этап 59, С5)
+  await expect(method).toContainText("Claude не подключён");
+  await expect(method).not.toContainText("ANTHROPIC");
   const summary = page.getByRole("tabpanel", { name: "Итоги" });
   await expect(summary.getByRole("listitem").filter({ hasText: "Конверсия ОСАГО выросла до 12%" })).toBeVisible();
   await expect(summary.getByRole("listitem").filter({ hasText: "пилот КАСКО для такси запускаем в ноябре" })).toBeVisible();

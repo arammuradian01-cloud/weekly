@@ -99,7 +99,7 @@ function ReactionMenu({ reactions, me, disabled, onPick, icon = false }: { react
                   if (code === "discuss" && !mine) keepFocus.current = true;
                   onPick(code, mine);
                 }}
-                className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field"
+                className="sv-menu__item cursor-pointer select-none outline-none"
               >
                 <Icon className="h-4 w-4" aria-hidden="true" />
                 {mine ? `Убрать «${label}»` : label}

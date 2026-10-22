@@ -75,7 +75,7 @@ export function ImportanceMenu({ priority, subject, onChange }: { priority: Prio
           <Menu.Label className="sv-menu__group">Важность</Menu.Label>
           <Menu.RadioGroup value={priority} onValueChange={(v) => v !== priority && onChange(v as PriorityCode)}>
             {CHOICES.map((c) => (
-              <Menu.RadioItem key={c.priority} value={c.priority} className="sv-menu__item cursor-pointer select-none justify-between outline-none data-[highlighted]:bg-field data-[state=checked]:font-semibold">
+              <Menu.RadioItem key={c.priority} value={c.priority} className="sv-menu__item cursor-pointer select-none justify-between outline-none data-[state=checked]:font-semibold">
                 <span className="inline-flex items-center gap-2">
                   {c.label}
                   <Stars n={c.stars} />

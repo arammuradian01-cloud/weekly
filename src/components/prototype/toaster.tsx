@@ -3,11 +3,14 @@
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 
-/** Тост по дизайн-системе (system/Toast.jsx, sv-toast). «Сохранено» после каждой правки и отмена последнего действия в течение 5 секунд (раздел 7 ТЗ). Ошибки сервера здесь же */
+/**
+ * Тост по дизайн-системе (system/Toast.jsx, sv-toast). «Сохранено» после каждой правки и отмена последнего действия в течение 5 секунд (раздел 7 ТЗ). Ошибки сервера здесь же.
+ * Место тоста (sv-toaster, этап 59) поднимается над липкой панелью страницы: её высоту сообщает useStickyBottom
+ */
 export function Toaster() {
   const { toast, undo, dismissToast } = usePrototype();
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 lg:bottom-6 lg:justify-end lg:px-10" role="status" aria-live="polite">
+    <div className="sv-toaster" role="status" aria-live="polite" data-testid="toaster">
       {toast ? (
         <div
           key={toast.id}

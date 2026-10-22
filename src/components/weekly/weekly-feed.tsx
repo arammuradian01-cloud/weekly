@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { formatLong, plural } from "@/domain/dates";
+import { BACK_TO_REPORTING_WEEK, formatLong, plural, weekTitle } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
@@ -43,24 +43,27 @@ export function WeekSwitcher({ view, basePath = "/weekly", query = "" }: { view:
   const router = useRouter();
   // query: что ещё сохранить при смене недели, например отбор по автору в ленте weekly
   const go = (key: string) => router.push(`${basePath}?week=${key}${query}`, { scroll: false });
-  // Вид по дизайн-системе (navigation/WeekSwitcher.jsx, sv-week): стрелки, номер, «отчётная», «Текущая»
+  // Вид по дизайн-системе (navigation/WeekSwitcher.jsx, sv-week): стрелки и неделя. Этап 59: подпись одним форматом
+  // с шапкой («Неделя 43, отчётная»), возврат с прошлой недели действием «К отчётной неделе» рядом, а не «Текущая»
+  // внутри рамки: «Неделя 39 Текущая» читалось как свойство недели 39
   return (
-    <div className="sv-week" role="group" aria-label="Выбор недели">
-      <button type="button" onClick={() => go(view.prev)} className="sv-icon-btn sv-icon-btn--sm" aria-label="Предыдущая неделя">
-        <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-      </button>
-      <span className="sv-week__label cursor-default hover:bg-transparent" aria-live="polite">
-        <span>Неделя {view.week.number}</span>
-        {view.week.reporting ? <span className="sv-week__dates">отчётная</span> : null}
-      </span>
+    <div className="sv-week-nav">
+      <div className="sv-week" role="group" aria-label="Выбор недели">
+        <button type="button" onClick={() => go(view.prev)} className="sv-icon-btn sv-icon-btn--sm" aria-label="Предыдущая неделя">
+          <ChevronLeft className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+        </button>
+        <span className="sv-week__label cursor-default hover:bg-transparent" aria-live="polite" data-testid="week-title">
+          {weekTitle(view.week.number, view.week.reporting)}
+        </span>
+        <button type="button" onClick={() => view.next && go(view.next)} disabled={!view.next} className="sv-icon-btn sv-icon-btn--sm" aria-label="Следующая неделя">
+          <ChevronRight className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
       {!view.week.reporting ? (
         <button type="button" className="sv-week__now" onClick={() => go(view.reportingKey)}>
-          Текущая
+          {BACK_TO_REPORTING_WEEK}
         </button>
       ) : null}
-      <button type="button" onClick={() => view.next && go(view.next)} disabled={!view.next} className="sv-icon-btn sv-icon-btn--sm" aria-label="Следующая неделя">
-        <ChevronRight className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
-      </button>
     </div>
   );
 }

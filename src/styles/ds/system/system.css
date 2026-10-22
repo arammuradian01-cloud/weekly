@@ -1,6 +1,13 @@
 /* Системные */
 .sv-toasts { position: fixed; right: var(--space-6); bottom: var(--space-6); display: flex; flex-direction: column; gap: 8px; z-index: 100; max-width: 420px; }
 .sv-toasts--static { position: static; }
+/* Место тостов ресурса (этап 59, С7): на телефоне и планшете над нижним меню по центру, на ноутбуке справа внизу.
+   Липкая панель у низа экрана (useStickyBottom) пишет в --sticky-bottom, где её верхний край: тост встаёт выше него
+   и не ложится на «Назад, Дальше» встречи или полосу выбранных задач */
+.sv-toaster { --toast-base: calc(var(--bottom-nav-height) + var(--space-4) + env(safe-area-inset-bottom, 0px));
+  position: fixed; left: 0; right: 0; bottom: max(var(--toast-base), calc(var(--sticky-bottom) + var(--space-2))); z-index: 50;
+  display: flex; justify-content: center; padding: 0 var(--space-4); pointer-events: none; }
+@media (min-width: 1024px) { .sv-toaster { --toast-base: var(--space-6); justify-content: flex-end; padding: 0 var(--space-10); } }
 .sv-toast { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 10px 10px 10px 14px; border-radius: var(--radius-control-lg); background: var(--color-brand-dark); color: #FFFFFF; box-shadow: var(--shadow-sticky); font-size: var(--text-body); line-height: var(--leading-body); }
 [data-theme="dark"] .sv-toast { background: var(--color-field); color: var(--color-text); border: 1px solid var(--color-border); }
 .sv-toast__icon { flex: none; display: inline-flex; }
@@ -55,7 +62,7 @@
 .sv-cmdk__group { padding: 10px 10px 4px; font-size: var(--text-caption); color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
 .sv-cmdk__item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 8px 10px; box-sizing: border-box; border: 0; border-radius: var(--radius-control); background: transparent; font: inherit; font-size: var(--text-body); color: var(--color-text); text-align: left; cursor: pointer; }
 .sv-cmdk__item:hover, .sv-cmdk__item.is-active { background: var(--color-field); }
-.sv-cmdk__item.is-active { box-shadow: inset 0 0 0 1px var(--color-border); }
+.sv-cmdk__item.is-active { background: var(--color-accent-soft); box-shadow: inset 2px 0 0 var(--color-focus); }
 .sv-cmdk__item .sv-icon { color: var(--color-text-secondary); flex: none; }
 .sv-cmdk__body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .sv-cmdk__body > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

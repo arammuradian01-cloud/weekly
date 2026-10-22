@@ -91,6 +91,10 @@ test("один на один: цифры встреч при личном вхо
   } else {
     await expect(figures).toBeVisible();
     await expect(page.getByTestId("oo-fig-pairs")).not.toContainText(/^0/);
+    // Этап 59 (С3): строкой, как на Задачах и Weekly, не больше трёх, нулей нет
+    await expect(figures).toHaveClass(/sv-figures--inline/);
+    expect(await figures.locator("li").count()).toBeLessThanOrEqual(3);
+    expect(await figures.locator(".sv-figure__value").allTextContents()).not.toContain("0");
   }
   await shot(page, "one-on-one");
 });

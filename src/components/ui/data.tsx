@@ -108,11 +108,12 @@ export function pickFigures(items: Figure[], max?: number): Figure[] {
 }
 
 /**
- * Ключевые цифры раздела. Плитками (по умолчанию) или строкой под заголовком (inline, этап 42): в строке цифры
- * компактные, нули не показываются, кроме отмеченных keepZero. Правило ревизии: не больше трёх заметных цифр,
- * ноль не тревожит. max ограничивает строку: остаются самые важные по оттенку, порядок исходный
+ * Ключевые цифры раздела строкой под заголовком (inline, этап 42): цифры компактные, нули не показываются, кроме
+ * отмеченных keepZero. Правило ревизии: не больше трёх заметных цифр, ноль не тревожит. max ограничивает строку:
+ * остаются самые важные по оттенку, порядок исходный. Этап 59: строка по умолчанию, все разделы перешли на неё,
+ * плитки только явным inline={false}
  */
-export function Figures({ items, label, className, inline = false, max }: { items: Figure[]; label: string; className?: string; inline?: boolean; max?: number }) {
+export function Figures({ items, label, className, inline = true, max }: { items: Figure[]; label: string; className?: string; inline?: boolean; max?: number }) {
   const shown = inline ? pickFigures(items, max) : items;
   if (inline && !shown.length) return null;
   return (

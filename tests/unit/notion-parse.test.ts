@@ -364,7 +364,9 @@ describe("вызов Claude", () => {
   it("ответ без инструмента, ошибка ключа и обрезанный ответ дают ClaudeError: разбор уйдёт в правила", async () => {
     const deps = (r: unknown, s = 200) => ({ fetch: claudeStub(r, s).fetchFn, apiKey: "k", model: "m", base: "https://claude.test" });
     await expect(parseWithClaude(INPUT, deps({ content: [{ type: "text", text: "Вот итоги" }] }))).rejects.toBeInstanceOf(ClaudeError);
-    await expect(parseWithClaude(INPUT, deps({ error: {} }, 401))).rejects.toThrow(/ANTHROPIC_API_KEY/);
+    // Текст уходит ведущему: без имён переменных сервера (этап 59)
+    await expect(parseWithClaude(INPUT, deps({ error: {} }, 401))).rejects.toThrow(/^Claude не принял ключ доступа, сообщите владельцу ресурса$/);
+    await expect(parseWithClaude(INPUT, deps({ error: {} }, 404))).rejects.toThrow(/^Claude не нашёл модель, сообщите владельцу ресурса$/);
     await expect(parseWithClaude(INPUT, deps({ stop_reason: "max_tokens", content: [] }))).rejects.toThrow(/слишком длинная/);
     await expect(parseWithClaude(INPUT, deps({ content: [{ type: "tool_use", name: "meeting_result", input: { summary: "не список" } }] }))).rejects.toThrow(/не прошёл проверку/);
     await expect(parseWithClaude(INPUT, deps({ error: {} }, 400))).rejects.toThrow("Claude не принял запрос: проверьте модель или длину страницы");

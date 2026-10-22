@@ -72,12 +72,12 @@ function AddMenu({ targets, canCreate, onPick, subject }: { targets: WeeklyTeam[
         <Menu.Content align="end" sideOffset={4} className="z-50 max-h-80 min-w-56 overflow-y-auto rounded-control-lg border border-line bg-surface p-1.5 shadow-medium">
           <Menu.Label className="sv-menu__group">В команду</Menu.Label>
           {targets.map((t) => (
-            <Menu.Item key={t.id} onSelect={() => onPick({ kind: "team", id: t.id, name: t.name })} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+            <Menu.Item key={t.id} onSelect={() => onPick({ kind: "team", id: t.id, name: t.name })} className="sv-menu__item cursor-pointer select-none outline-none">
               {t.name}
             </Menu.Item>
           ))}
           {canCreate ? (
-            <Menu.Item onSelect={() => onPick({ kind: "new" })} className="sv-menu__item cursor-pointer select-none font-medium text-blue-700 outline-none data-[highlighted]:bg-field">
+            <Menu.Item onSelect={() => onPick({ kind: "new" })} className="sv-menu__item cursor-pointer select-none font-medium text-blue-700 outline-none">
               <Plus className="h-4 w-4" aria-hidden="true" />
               Новая команда
             </Menu.Item>

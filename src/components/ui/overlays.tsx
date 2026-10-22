@@ -168,7 +168,7 @@ export function InlineSelect<V extends string>({
             <Menu.Item
               key={o.value}
               onSelect={() => o.value !== value && onChange(o.value)}
-              className={cn("sv-menu__item cursor-pointer select-none justify-between outline-none data-[highlighted]:bg-field", o.value === value && "!bg-accent-soft")}
+              className={cn("sv-menu__item cursor-pointer select-none justify-between outline-none", o.value === value && "!bg-accent-soft")}
             >
               {render(o.value)}
               {o.value === value ? <Check className="sv-menu__item__check h-[18px] w-[18px] text-link" strokeWidth={1.75} aria-hidden="true" /> : null}

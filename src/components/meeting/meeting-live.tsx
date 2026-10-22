@@ -40,6 +40,7 @@ import { openNewTask } from "@/components/prototype/new-task";
 import { PersonSelect } from "@/components/requests/request-parts";
 import { EntryItem } from "@/components/weekly/entry-item";
 import { cn } from "@/lib/cn";
+import { useStickyBottom } from "@/components/ui/sticky-bottom";
 import { NotionIntake } from "./notion-intake";
 
 const DECISIONS = "decisions";
@@ -201,6 +202,9 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
   const [adding, setAdding] = useState(false);
   const [confirmClose, setConfirmClose] = useState(false);
   const discussedCount = meeting.items.filter((i) => i.discussed).length;
+  // Тост встаёт над нижней панелью «Назад, Дальше» и не закрывает её кнопки (этап 59, С7)
+  const bar = useRef<HTMLDivElement>(null);
+  useStickyBottom(bar, meeting.status !== "done");
 
   return (
     <div className={cn("flex min-h-[70vh] flex-col gap-6", projector && "meeting-projector")} data-scale={projector ? "projector" : undefined}>
@@ -287,7 +291,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       )}
 
       {meeting.status !== "done" ? (
-        <div className="sticky bottom-20 mt-auto flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0">
+        <div ref={bar} className="sticky bottom-20 mt-auto flex items-center justify-between gap-3 border-t border-line bg-surface/95 py-3 lg:bottom-0" data-testid="meeting-steps-bar">
           <Button variant="secondary" onClick={() => step(-1)} disabled={index === 0}>
             <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             Назад

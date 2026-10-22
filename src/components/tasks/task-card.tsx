@@ -191,20 +191,20 @@ export function TaskCard({
             </Menu.Trigger>
             <Menu.Portal>
               <Menu.Content align="end" sideOffset={4} className="z-50 min-w-56 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium">
-                <Menu.Item onSelect={() => void copyLink()} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                <Menu.Item onSelect={() => void copyLink()} className="sv-menu__item cursor-pointer select-none outline-none">
                   <Link2 className="h-4 w-4" aria-hidden="true" />
                   Скопировать ссылку
                 </Menu.Item>
                 {!standalone ? (
                   <Menu.Item asChild>
-                    <Link href={`/tasks/${task.number}`} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                    <Link href={`/tasks/${task.number}`} className="sv-menu__item cursor-pointer select-none outline-none">
                       <HistoryIcon className="h-4 w-4" aria-hidden="true" />
                       Открыть отдельной страницей
                     </Link>
                   </Menu.Item>
                 ) : null}
                 {can.archive && !task.archived ? (
-                  <Menu.Item onSelect={() => void runTask(() => archiveTaskAction(task.number, true), `Задача ${task.number} в архиве`)} className="sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                  <Menu.Item onSelect={() => void runTask(() => archiveTaskAction(task.number, true), `Задача ${task.number} в архиве`)} className="sv-menu__item cursor-pointer select-none outline-none">
                     <Archive className="h-4 w-4" aria-hidden="true" />
                     В архив
                   </Menu.Item>

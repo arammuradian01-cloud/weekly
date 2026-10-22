@@ -9,6 +9,7 @@ import { formatShort } from "@/domain/dates";
 import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { Figures } from "@/components/ui/data";
+import { SECTION_FIGURES_MAX, oneOnOneFigures } from "@/components/ui/section-figures";
 
 export const metadata: Metadata = { title: "Один на один" };
 
@@ -55,7 +56,7 @@ export default async function OneOnOnePage({ searchParams }: { searchParams: Pro
         </span>
         <span className="flex flex-wrap gap-x-4 gap-y-1 text-small text-muted sm:justify-end">
           <span className={p.next ? "text-ink" : undefined}>{p.next ? `Следующая: ${formatShort(p.next)}` : "Встреча не назначена"}</span>
-          <span>В повестке: {p.openTopics}</span>
+          {p.openTopics ? <span>В повестке: {p.openTopics}</span> : null}
           {p.lastDone ? <span>Прошлая: {formatShort(p.lastDone)}</span> : null}
         </span>
       </Link>
@@ -68,15 +69,17 @@ export default async function OneOnOnePage({ searchParams }: { searchParams: Pro
         description={description}
         figures={
           pairs.length ? (
-            // Этап 37: встречи в цифрах
+            // Этап 37: встречи в цифрах. Этап 59: строкой, не больше трёх, нули не показываются
             <Figures
               label="Встречи в цифрах"
-              items={[
-                { label: "Собеседников", value: pairs.length, testId: "oo-fig-pairs" },
-                { label: "Следующая встреча назначена", value: pairs.filter((p) => p.next).length, testId: "oo-fig-next" },
-                { label: "Без назначенной встречи", value: pairs.filter((p) => !p.next).length, tone: "warning", testId: "oo-fig-nonext" },
-                { label: "Тем в повестке", value: pairs.reduce((s, p) => s + p.openTopics, 0), testId: "oo-fig-topics" },
-              ]}
+              inline
+              max={SECTION_FIGURES_MAX}
+              items={oneOnOneFigures({
+                pairs: pairs.length,
+                withNext: pairs.filter((p) => p.next).length,
+                withoutNext: pairs.filter((p) => !p.next).length,
+                topics: pairs.reduce((s, p) => s + p.openTopics, 0),
+              })}
             />
           ) : null
         }

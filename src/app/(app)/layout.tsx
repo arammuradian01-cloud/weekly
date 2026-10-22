@@ -162,8 +162,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
           </div>
         ) : null}
-        <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} />
-        <main className="sv-shell__main flex-1 max-lg:pb-28" id="content" tabIndex={-1}>
+        {/* Сменить вид плашки может только владелец: ссылка на настройки только ему (этап 59) */}
+        <PrototypeBanner mode={banner} ownerName={owner?.fullName ?? null} canSwitch={ctx.person.role === "OWNER"} />
+        <main className="sv-shell__main flex-1" id="content" tabIndex={-1}>
           <div className="sv-shell__content">{children}</div>
         </main>
       </div>

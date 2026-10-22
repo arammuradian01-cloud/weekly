@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import pg from "pg";
 import { E2E_PASSWORDS } from "./global-setup";
 
@@ -154,4 +154,27 @@ export async function enterByLink(page: Page, slug: string) {
   }).toString();
   const link = out.split("\n").find((l) => l.startsWith("http"))!;
   await setPasswordByLink(page, link);
+}
+
+/**
+ * Тост виден и не перекрывает липкую полосу внизу (этап 59, С7): прямоугольники не пересекаются, а кнопка полосы
+ * в своей середине нажимается, а не прячется под тостом
+ */
+export async function expectToastAbove(page: Page, panel: Locator, button: Locator) {
+  const toast = page.getByTestId("toaster").locator(".sv-toast");
+  await expect(toast).toBeVisible();
+  await expect(panel).toBeVisible();
+  await expect
+    .poll(
+      async () => {
+        const t = (await toast.boundingBox())!;
+        const p = (await panel.boundingBox())!;
+        return t.y + t.height <= p.y || t.y >= p.y + p.height || t.x + t.width <= p.x || t.x >= p.x + p.width;
+      },
+      { message: "тост лежит на полосе внизу" },
+    )
+    .toBe(true);
+  const box = (await button.boundingBox())!;
+  const hit = await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest("button, a")?.textContent ?? "", [box.x + box.width / 2, box.y + box.height / 2]);
+  expect(hit).toBe(await button.textContent());
 }

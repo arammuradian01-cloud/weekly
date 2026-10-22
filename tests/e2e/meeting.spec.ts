@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterManagement, expectToastAbove, resetDatabase, sql } from "./helpers";
 
 // Этап 23: встреча 2.0. Владелец собирает повестку, ведёт встречу, участник идёт за ним, решение записывается,
 // протокол собирается при закрытии, журнал решений ищет по словоформам. И на ноутбуке, и на телефоне
@@ -54,6 +54,10 @@ test("владелец собирает повестку, ведёт встре�
   // Ведущий начинает и переходит к пункту про задачу 28
   await page.getByRole("button", { name: "Начать встречу" }).click();
   await expect(page.getByText("Встреча началась").first()).toBeVisible();
+  // Этап 59 (С7): тост встаёт над панелью «Назад, Дальше» и не закрывает «Дальше»
+  const stepsBar = page.getByTestId("meeting-steps-bar");
+  await expectToastAbove(page, stepsBar, stepsBar.getByRole("button", { name: "Дальше", exact: true }));
+  await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-mt-live-toast.png` });
   await expect(page.getByText(/Вы ведёте/)).toBeVisible();
   await openAgenda(page);
 
@@ -117,6 +121,14 @@ test("владелец собирает повестку, ведёт встре�
   // Журнал решений: поиск по словоформе
   await page.goto("/decisions");
   await expect(page.getByText("Доступ от СК запрашивает Тарас до пятницы")).toBeVisible();
+  // Этап 59 (С3): цифры строкой, не больше трёх, нулей нет. У решения есть владелец, отменённых нет
+  const figures = page.getByRole("list", { name: "Решения в цифрах" });
+  await expect(figures).toHaveClass(/sv-figures--inline/);
+  await expect(page.getByTestId("dec-fig-active")).toHaveText(/^[1-9]\d*\s*в силе$/);
+  await expect(page.getByTestId("dec-fig-noowner")).toHaveCount(0);
+  await expect(page.getByTestId("dec-fig-cancelled")).toHaveCount(0);
+  expect(await figures.locator("li").count()).toBeLessThanOrEqual(3);
+  expect(await figures.locator(".sv-figure__value").allTextContents()).not.toContain("0");
   await page.getByPlaceholder("Поиск по словам").fill("доступа");
   await expect(page.getByText("Доступ от СК запрашивает Тарас до пятницы")).toBeVisible();
   await page.getByPlaceholder("Поиск по словам").fill("ипотека");

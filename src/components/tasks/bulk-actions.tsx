@@ -3,7 +3,7 @@
 // Массовые действия (этап 25, модуль М10): статус, ответственный, срок с причиной и приоритет сразу у нескольких
 // задач. По каждой задаче сервер проверяет те же права и правила, что и поодиночке, и возвращает, что не прошло
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
@@ -18,6 +18,7 @@ import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea } from "@/components/ui/primitives";
 import { DueField, PersonSelect } from "@/components/requests/request-parts";
 import { FormError } from "@/components/ui/field";
+import { useStickyBottom } from "@/components/ui/sticky-bottom";
 import type { Selection } from "./task-list";
 
 export function useBulkSelection(visible: Task[]): Selection {
@@ -66,6 +67,9 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<{ done: number; failed: { number: number; error: string }[] } | null>(null);
   const count = selection.selected.size;
+  // Тост встаёт над полосой выбранных задач и не закрывает её кнопки (этап 59, С7)
+  const bar = useRef<HTMLDivElement>(null);
+  useStickyBottom(bar, count > 0);
   if (!count && !report) return null;
   const numbers = [...selection.selected];
   const picked = tasks.filter((t) => selection.selected.has(t.number));
@@ -116,7 +120,7 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
   return (
     <>
       {count ? (
-        <div role="region" aria-label="Выбранные задачи" className="fixed inset-x-0 bottom-16 z-20 px-3 lg:bottom-4 lg:left-[248px]">
+        <div ref={bar} role="region" aria-label="Выбранные задачи" className="fixed inset-x-0 bottom-16 z-20 px-3 lg:bottom-4 lg:left-[248px]">
           <div className="mx-auto flex max-w-page flex-wrap items-center gap-2 rounded-xl bg-navy px-4 py-2.5 text-small text-white shadow-modal">
             <span className="mr-1 font-semibold">Выбрано: {count}</span>
             <Button size="sm" variant="secondary" onClick={() => openKind("status")}>Статус</Button>

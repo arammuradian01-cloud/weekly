@@ -67,8 +67,8 @@
   .sv-shell__top .sv-topbar__search { min-width: 0; width: var(--control-sm); padding: 0; justify-content: center; }
   .sv-shell__top .sv-topbar__search > *:not(.sv-icon) { display: none; }
   .sv-shell__top .sv-team-switch__role, .sv-shell__top .sv-week__dates { display: none; }
-  .sv-shell__top .sv-btn--dark > span:not(.sv-icon) { display: none; }
-  .sv-shell__top .sv-btn--dark { padding-inline: 10px; }
+  .sv-shell__top .sv-topbar__new > span:not(.sv-icon) { display: none; }
+  .sv-shell__top .sv-topbar__new { padding-inline: 10px; }
 }
 /* Планшет 768-1023: шапка как на сайте, разделы в прокручиваемой строке, бокового меню нет */
 @media (max-width: 1023px) {
@@ -85,6 +85,10 @@
   .sv-shell__header .sv-site-header__nav { display: none; }
   .sv-shell__header .sv-site-header__row { height: 56px; }
 }
+/* Низ страницы выше места тостов (этап 59, С7): последний блок, например «Сдать weekly», прокручивается над тостом.
+   До 1023 под страницей ещё нижнее меню */
+.sv-shell__main { padding-bottom: var(--toast-zone); }
+@media (max-width: 1023px) { .sv-shell__main { padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px) + var(--toast-zone)); } }
 
 /* Шапка как на сайте Сравни: логотип, разделы в строку, справа действия */
 .sv-site-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); position: relative; z-index: 30; }

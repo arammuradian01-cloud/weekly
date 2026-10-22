@@ -29,7 +29,9 @@ test("владелец заводит инициативу, ответствен
     await page.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Инициативы", exact: true }).click();
   } else await page.getByRole("link", { name: "Инициативы" }).locator("visible=true").first().click();
   await expect(page.getByRole("heading", { name: "Крупные инициативы", level: 1 })).toBeVisible();
-  await expect(page.getByText("Крупных инициатив пока нет.")).toBeVisible();
+  // Этап 59: при нуле одно пустое состояние, кнопка в нём; противоречивых строк двух колонок нет
+  await expect(page.getByRole("heading", { name: "Крупных инициатив пока нет" })).toBeVisible();
+  await expect(page.getByText(/Все инициативы уже в работе|Пока ни одна инициатива не перешла в работу/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Новая инициатива" }).click();
   const create = page.getByRole("dialog", { name: "Новая инициатива" });
@@ -43,6 +45,11 @@ test("владелец заводит инициативу, ответствен
   await expect(card).toBeVisible();
   await expect(card.getByText("Заметки пока нет")).toBeVisible();
   await expect(card.getByText("Ищем меньше недели")).toBeVisible();
+  // Цифры строкой (этап 59): открытая одна, нулей и повтора колонок нет
+  const figures = page.getByRole("list", { name: "Инициативы в цифрах" });
+  await expect(figures).toHaveClass(/sv-figures--inline/);
+  await expect(page.getByTestId("ini-fig-open")).toHaveText(/^1\s*открыто$/);
+  expect(await figures.locator(".sv-figure__value").allTextContents()).toEqual(["1"]);
   await shot(page, "owner-new");
 
   // Рева узнаёт из «Мне» и переходит к карточке. Деление шкалы меняют при личном входе
@@ -117,4 +124,7 @@ test("без режима управления инициативу не зав�
   await page.goto("/initiatives");
   await expect(page.getByRole("heading", { name: "Крупные инициативы", level: 1 })).toBeVisible();
   await expect(page.getByRole("button", { name: "Новая инициатива" })).toHaveCount(0);
+  // Этап 59: пустое состояние говорит, кто заводит инициативы; включить режим управления лидеру нечего
+  await expect(page.getByText("Заводят владелец и администраторы в режиме управления.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Включить режим управления" })).toHaveCount(0);
 });
