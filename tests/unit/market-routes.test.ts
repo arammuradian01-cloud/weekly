@@ -16,6 +16,9 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
+  // Этап 63: выгрузка проверяет конец просмотра «Смотреть как»; здесь просмотра нет
+  assertWritable: () => undefined,
+  requestViewAsTab: async () => null,
   readSession: async () => state.session,
   requestIp: async () => "127.0.0.1",
   requireManagement: async () => ({ person: { id: "p1", fullName: "Мурадян Арам", role: "OWNER" }, via: "PASSWORD", management: { role: "OWNER" } }),

@@ -9,8 +9,9 @@ import { flushOfflineDrafts } from "./outbox";
  * выход не теряет написанное, если есть сеть
  */
 export async function forgetThisDevice(person?: string): Promise<void> {
-  if (person) await Promise.race([flushOfflineDrafts(person).catch(() => null), new Promise((r) => setTimeout(r, 5000))]);
-  clearOfflineDrafts();
+  const flushed = person ? await Promise.race([flushOfflineDrafts(person).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 5000))]) : null;
+  // Сервер отказал из-за просмотра «Смотреть как» (этап 63): черновики не стираем, иначе написанное пропадёт
+  if (!flushed?.blocked) clearOfflineDrafts();
   try {
     localStorage.removeItem("weekly-push-owner");
   } catch {

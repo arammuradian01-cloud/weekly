@@ -56,9 +56,11 @@ export async function startViewAsAction(personId: string): Promise<ViewAsResult<
  * Запись в журнал, кого смотрели и почему кончилось, cookie снимается, владелец снова видит себя и может вносить
  * изменения. Режим управления остаётся, если его срок не вышел
  */
-export async function stopViewAsAction(): Promise<void> {
+export async function stopViewAsAction(back?: string): Promise<void> {
   await closeViewAs("stop");
-  redirect("/");
+  // «Вернуться к себе» остаётся на той же странице, «Выйти из просмотра» ведёт на «Мою неделю»
+  const path = typeof back === "string" && back.startsWith("/") && !back.startsWith("//") && !back.includes("\\") ? back : "/";
+  redirect(path);
 }
 
 /**

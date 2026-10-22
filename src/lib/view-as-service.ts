@@ -87,8 +87,22 @@ export async function beginViewAs(owner: ViewAsOwner, target: { id: string; slug
  * этого просмотра уже записан, второй записи нет
  */
 export async function endViewAs(owner: { id: string; fullName: string }, token: Pick<ViewAsToken, "id" | "targetId">, reason: ViewAsEnd, meta: { ip?: string | null; via?: LoginMethod | null } = {}): Promise<void> {
-  const recorded = await prisma.auditLog.findFirst({ where: { action: "viewAs.stop", actorId: owner.id, before: { equals: token.id } }, select: { id: true } });
-  if (recorded) return;
+  // Закончившийся просмотр видит каждый запрос (вход пишет конец первым из них): одновременные запросы этого процесса
+  // ждут одну запись, уже записанные номера в базу больше не ходят
+  if (ENDED.has(token.id)) return;
+  const running = WRITING.get(token.id);
+  if (running) return running;
+  const write = recordEnd(owner, token, reason, meta).finally(() => WRITING.delete(token.id));
+  WRITING.set(token.id, write);
+  return write;
+}
+
+/** Номера просмотров, конец которых уже записан этим процессом, и записи, которые идут сейчас */
+const ENDED = new Map<string, ViewAsEnd>();
+const WRITING = new Map<string, Promise<void>>();
+
+async function recordEnd(owner: { id: string; fullName: string }, token: Pick<ViewAsToken, "id" | "targetId">, reason: ViewAsEnd, meta: { ip?: string | null; via?: LoginMethod | null }): Promise<void> {
+  if (await viewAsEndRecorded(owner.id, token)) return;
   const target = await prisma.person.findUnique({ where: { id: token.targetId }, select: { slug: true, fullName: true } });
   const entityId = target?.slug ?? token.targetId;
   await writeAudit({
@@ -103,4 +117,19 @@ export async function endViewAs(owner: { id: string; fullName: string }, token: 
     ip: meta.ip ?? null,
     via: meta.via ?? null,
   });
+  ENDED.set(token.id, reason);
+}
+
+/**
+ * Записан ли уже конец этого просмотра, и с какой причиной. Записанный конец окончателен: если причина ушла (роль
+ * вернули, человека включили), просмотр не продолжается, журналу и экрану не расходиться
+ */
+export async function viewAsEndRecorded(ownerId: string, token: Pick<ViewAsToken, "id" | "targetId">): Promise<ViewAsEnd | null> {
+  const known = ENDED.get(token.id);
+  if (known) return known;
+  const row = await prisma.auditLog.findFirst({ where: { action: "viewAs.stop", actorId: ownerId, entity: "person", before: { equals: token.id } }, select: { field: true } });
+  if (!row) return null;
+  const reason = (Object.entries(VIEW_AS_END_TEXTS) as [ViewAsEnd, string][]).find(([, text]) => text === row.field)?.[0] ?? "stop";
+  ENDED.set(token.id, reason);
+  return reason;
 }

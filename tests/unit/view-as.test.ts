@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MANAGEMENT_TTL_MS, signSession, verifySession } from "@/lib/session";
 import { TaskRuleError } from "@/lib/rule-error";
+import { labelRequest } from "@/lib/view-as-fetch";
+import { isViewAsRefusal } from "@/lib/view-as-texts";
 import {
   VIEW_AS_DENIED,
   VIEW_AS_ENDED,
@@ -21,6 +23,9 @@ import {
   viewAsOwnSession,
   viewAsStartError,
   viewAsUntil,
+  parseViewAsTab,
+  viewAsTabState,
+  viewAsWriteRefusal,
   type ViewAsHolder,
   type ViewAsStarter,
   type ViewAsToken,
@@ -136,6 +141,63 @@ describe("отказ записи", () => {
   });
 });
 
+describe("метка вкладки (второй круг)", () => {
+  const viewing = { viewing: "v1", ended: null };
+  const ended = { viewing: null, ended: "v1" };
+  const none = { viewing: null, ended: null };
+
+  it("разбор и сборка метки", () => {
+    expect(parseViewAsTab("self")).toEqual({ kind: "self" });
+    expect(parseViewAsTab("view:3f2a-11")).toEqual({ kind: "view", id: "3f2a-11" });
+    expect(parseViewAsTab("ended:3f2a")).toEqual({ kind: "ended", id: "3f2a" });
+    for (const bad of [null, "", "view:", "view:a b", "other:1", "self "]) expect(parseViewAsTab(bad)).toBeNull();
+    expect(viewAsTabState(viewing)).toBe("view:v1");
+    expect(viewAsTabState(ended)).toBe("ended:v1");
+    expect(viewAsTabState(none)).toBe("self");
+  });
+
+  it("кто может записывать: вкладка просмотра, закончившегося просмотра, обычная и без метки", () => {
+    // Идёт просмотр v1
+    expect(viewAsWriteRefusal(viewing, { kind: "view", id: "v1" })).toBe(VIEW_AS_DENIED);
+    expect(viewAsWriteRefusal(viewing, { kind: "view", id: "old" })).toBe(VIEW_AS_ENDED);
+    expect(viewAsWriteRefusal(viewing, { kind: "self" })).toBe(VIEW_AS_DENIED);
+    expect(viewAsWriteRefusal(viewing, null)).toBe(VIEW_AS_DENIED);
+    // Просмотр v1 закончился сам, cookie ещё есть: блокируются только вкладки просмотра
+    expect(viewAsWriteRefusal(ended, { kind: "view", id: "v1" })).toBe(VIEW_AS_ENDED);
+    expect(viewAsWriteRefusal(ended, { kind: "ended", id: "v1" })).toBe(VIEW_AS_ENDED);
+    expect(viewAsWriteRefusal(ended, { kind: "self" })).toBeNull();
+    expect(viewAsWriteRefusal(ended, null)).toBe(VIEW_AS_ENDED);
+    // Просмотра нет совсем (вышли кнопкой в другой вкладке): старая вкладка просмотра всё равно не пишет
+    expect(viewAsWriteRefusal(none, { kind: "view", id: "v1" })).toBe(VIEW_AS_ENDED);
+    expect(viewAsWriteRefusal(none, { kind: "ended", id: "v1" })).toBe(VIEW_AS_ENDED);
+    expect(viewAsWriteRefusal(none, { kind: "self" })).toBeNull();
+    expect(viewAsWriteRefusal(none, null)).toBeNull();
+  });
+
+  it("метка уходит с серверными действиями и изменениями через /api, но не с чтением и не на чужой адрес", () => {
+    const page = { origin: "https://weekly.example.ru", href: "https://weekly.example.ru/tasks" };
+    const action = labelRequest("https://weekly.example.ru/tasks", { method: "POST", headers: { "next-action": "abc", Accept: "text/x-component" }, body: "[]" }, "view:v1", page);
+    expect(new Headers(action!.headers).get("x-weekly-view")).toBe("view:v1");
+    expect(new Headers(action!.headers).get("next-action")).toBe("abc");
+    expect(action!.body).toBe("[]");
+    const upload = labelRequest("/api/market/upload", { method: "POST", body: "{}" }, "self", page);
+    expect(new Headers(upload!.headers).get("x-weekly-view")).toBe("self");
+    const fromRequest = labelRequest(new Request("https://weekly.example.ru/api/goals/leader-board", { method: "POST", headers: { origin: page.origin } }), undefined, "ended:v1", page);
+    expect(new Headers(fromRequest!.headers).get("x-weekly-view")).toBe("ended:v1");
+    expect(new Headers(fromRequest!.headers).get("origin")).toBe(page.origin);
+    expect(labelRequest("/api/inbox/count", undefined, "view:v1", page)).toBeNull();
+    expect(labelRequest("https://example.com/api/x", { method: "POST" }, "view:v1", page)).toBeNull();
+    expect(labelRequest("/tasks?_rsc=1", { headers: { RSC: "1" } }, "view:v1", page)).toBeNull();
+    expect(labelRequest("/api/market/upload", { method: "POST" }, null, page)).toBeNull();
+  });
+
+  it("отказ просмотра отличается от отказа правила: черновик с устройства не выбрасывается", () => {
+    expect(isViewAsRefusal(VIEW_AS_DENIED)).toBe(true);
+    expect(isViewAsRefusal(VIEW_AS_ENDED)).toBe(true);
+    expect(isViewAsRefusal("Неделя закрыта")).toBe(false);
+  });
+});
+
 function files(dir: string, test: (name: string) => boolean): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -180,9 +242,14 @@ describe("по коду: изменения идут через проверку
       "myForecastAction",
       "planPeopleAction",
       "taskRequestsAction",
+      // Режим управления: свой отказ во время просмотра в managementContext, после конца просмотра можно (этап 63)
+      "enterManagement",
+      "exitManagement",
+      "requestStepUpAction",
+      "confirmStepUpAction",
     ]);
     /** Помощники внутри файла, которые читают вход без проверки записи: их вызов тоже чтение */
-    const READ_HELPERS = new Set(["reader"]);
+    const READ_HELPERS = new Set(["reader", "managementContext"]);
     const actions = files("src", (n) => /\.(ts|tsx)$/.test(n)).filter((f) => /^"use server";/m.test(readFileSync(f, "utf8")));
     expect(actions.length).toBeGreaterThan(10);
     const problems: string[] = [];
@@ -207,5 +274,9 @@ describe("по коду: изменения идут через проверку
     expect(problems).toEqual([]);
     // Список не устарел: каждое имя действительно читает вход
     for (const name of READ_FUNCTIONS) expect(seen.has(name), name).toBe(true);
+    // Помощник режима управления сам отказывает во время просмотра
+    const auth = readFileSync("src/app/actions/auth.ts", "utf8");
+    const helper = auth.slice(auth.indexOf("async function managementContext"), auth.indexOf("export async function enterManagement"));
+    expect(helper).toMatch(/if \(ctx\.viewAs\) return \{ error: VIEW_AS_DENIED \}/);
   });
 });

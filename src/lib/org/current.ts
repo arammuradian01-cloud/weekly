@@ -13,6 +13,7 @@ export { orderTeams };
 import { ALL_TEAMS } from "@/domain/teams";
 import type { WeekAudience } from "@/lib/weekly/service";
 import { teamOptions, type CurrentTeam, type TeamOption } from "./audience";
+import { TEAM_VIEW_COOKIE } from "@/lib/view-as";
 
 export { audienceOf, feedTeamFor, teamOptions, type CurrentTeam, type TeamOption } from "./audience";
 
@@ -45,7 +46,8 @@ export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
   ]);
   const scope = scopeOf(nodes, person, functional.map((p) => p.id));
   const options = teamOptions(nodes, scope, person.id);
-  const id = pickCurrent(options, jar.get(TEAM_COOKIE)?.value);
+  // «Смотреть как» (этап 63): команда, выбранная в просмотре, живёт в своей cookie и не трогает выбор владельца
+  const id = pickCurrent(options, jar.get(person.viewAs ? TEAM_VIEW_COOKIE : TEAM_COOKIE)?.value);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   let people: string[];
   let name: string;

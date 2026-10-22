@@ -8,6 +8,8 @@ import type { ManagementRole } from "./session";
 import { TaskRuleError } from "./rule-error";
 
 export const VIEW_AS_COOKIE = "wk_view_as";
+/** Команда, выбранная в просмотре: отдельно от cookie команды владельца, снимается вместе с просмотром */
+export const TEAM_VIEW_COOKIE = "team_view";
 /** Просмотр живёт 2 часа и не дольше режима управления */
 export const VIEW_AS_TTL_MS = 2 * 60 * 60 * 1000;
 /**
@@ -16,10 +18,10 @@ export const VIEW_AS_TTL_MS = 2 * 60 * 60 * 1000;
  * («Вернуться к себе»), выход из ресурса, новый вход и новый просмотр
  */
 export const VIEW_AS_KEEP_AFTER_MS = 12 * 60 * 60 * 1000;
-/** Ответ на любое изменение в режиме просмотра */
-export const VIEW_AS_DENIED = "В режиме «Смотреть как» изменения недоступны";
-/** Ответ на изменение из вкладки, которая осталась от закончившегося просмотра */
-export const VIEW_AS_ENDED = "Просмотр закончился, обновите страницу";
+import { VIEW_AS_DENIED, VIEW_AS_ENDED } from "./view-as-texts";
+import { VIEW_AS_TAB_HEADER_NAME } from "./view-as-fetch";
+
+export { VIEW_AS_DENIED, VIEW_AS_ENDED };
 
 /**
  * Отказ записи в режиме просмотра и после его конца. Наследник ошибки правила: все действия экранов уже показывают
@@ -154,4 +156,44 @@ export function viewAsEndReason(token: ViewAsToken, who: ViewAsHolder, targetAct
 /** Просмотр действует: cookie этой сессии и причины конца нет (включённость выбранного человека проверяет вход) */
 export function viewAsHolds(token: ViewAsToken, who: ViewAsHolder, now = Date.now()): boolean {
   return viewAsOwnSession(token, who) && viewAsEndReason(token, who, true, now) === null && token.targetId !== who.personId;
+}
+
+/**
+ * Метка вкладки (этап 63, второй круг): в каком состоянии сервер показал эту вкладку. Клиент кладёт её в заголовок
+ * X-Weekly-View каждого серверного действия и каждого изменения через /api, сервер по ней отличает вкладку, оставшуюся
+ * от просмотра, от обычной вкладки владельца. view:<номер просмотра>, ended:<номер>, self
+ */
+export const VIEW_AS_TAB_HEADER = VIEW_AS_TAB_HEADER_NAME;
+
+export type ViewAsTab = { kind: "view"; id: string } | { kind: "ended"; id: string } | { kind: "self" };
+
+/** Разбор метки вкладки из заголовка. null: заголовка нет или он не по форме (тогда прежнее правило без метки) */
+export function parseViewAsTab(value: string | null | undefined): ViewAsTab | null {
+  if (!value) return null;
+  if (value === "self") return { kind: "self" };
+  const m = /^(view|ended):([A-Za-z0-9-]{1,80})$/.exec(value);
+  if (!m) return null;
+  return m[1] === "view" ? { kind: "view", id: m[2]! } : { kind: "ended", id: m[2]! };
+}
+
+/** Метка вкладки по состоянию, в котором её показал сервер */
+export function viewAsTabState(state: { viewing: string | null; ended: string | null }): string {
+  return state.viewing ? `view:${state.viewing}` : state.ended ? `ended:${state.ended}` : "self";
+}
+
+/**
+ * Можно ли записывать из этой вкладки. null: можно, иначе текст отказа. viewing: номер идущего просмотра, ended:
+ * номер закончившегося просмотра, cookie которого ещё есть.
+ * - вкладка view:X: идёт тот же просмотр X, отказ «изменения недоступны»; просмотра X больше нет (вышли в другой
+ *   вкладке, срок, новый просмотр), отказ «просмотр закончился»: вкладка показывает чужие данные;
+ * - вкладка ended: отказ «просмотр закончился», пока владелец не вернётся к себе;
+ * - вкладка self (обычная вкладка владельца): отказ только во время просмотра, конец просмотра её не блокирует;
+ * - без метки (запрос без скрипта страницы): во время просмотра отказ, после его конца «просмотр закончился»
+ */
+export function viewAsWriteRefusal(state: { viewing: string | null; ended: string | null }, tab: ViewAsTab | null): string | null {
+  if (tab?.kind === "view") return state.viewing === tab.id ? VIEW_AS_DENIED : VIEW_AS_ENDED;
+  if (tab?.kind === "ended") return VIEW_AS_ENDED;
+  if (state.viewing) return VIEW_AS_DENIED;
+  if (tab?.kind === "self") return null;
+  return state.ended ? VIEW_AS_ENDED : null;
 }

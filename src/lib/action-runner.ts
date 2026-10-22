@@ -5,7 +5,8 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
-function actorOf(ctx: AppContext, ip: string): Actor {
+/** Кто действует по контексту входа: для действий, которые сами решают, что можно в режиме просмотра (режим управления) */
+export function actorOf(ctx: AppContext, ip: string): Actor {
   return {
     personId: ctx.person.id,
     slug: ctx.person.slug,

@@ -5,7 +5,7 @@
 // На телефоне выбор занимает весь экран, на ноутбуке окно по центру. Список прокручивается, поиск по ФИО, должности
 // и подразделению, Enter в поле поиска выбирает первого из найденных.
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Eye, Search, X } from "lucide-react";
@@ -15,6 +15,7 @@ import { matchOption } from "@/components/ui/search-picker";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { plural } from "@/domain/dates";
+import { labelRequest } from "@/lib/view-as-fetch";
 
 const OPEN_EVENT = "weekly:view-as";
 /** Сколько строк показывать сразу: остальных находит поиск */
@@ -35,19 +36,29 @@ export function ViewAsDialog() {
   const [error, setError] = useState<string | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  /** Список, который сейчас загружается: Enter, нажатый до его прихода, выбирает первого найденного, когда он придёт */
+  const loading$ = useRef<Promise<ViewAsPerson[] | null> | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     setLoading(true);
     setError(null);
-    try {
-      const r = await viewAsPeopleAction();
-      if (r.ok) setPeople(r.value);
-      else setError(r.error);
-    } catch {
-      setError("Нет связи с сервером. Закройте окно и попробуйте ещё раз");
-    } finally {
-      setLoading(false);
-    }
+    const run = (async () => {
+      try {
+        const r = await viewAsPeopleAction();
+        if (r.ok) {
+          setPeople(r.value);
+          return r.value;
+        }
+        setError(r.error);
+      } catch {
+        setError("Нет связи с сервером. Закройте окно и попробуйте ещё раз");
+      } finally {
+        setLoading(false);
+      }
+      return null;
+    })();
+    loading$.current = run;
+    return run;
   }, []);
 
   useEffect(() => {
@@ -123,9 +134,16 @@ export function ViewAsDialog() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && shown[0]) {
-                  e.preventDefault();
-                  choose(shown[0]);
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (shown[0]) choose(shown[0]);
+                else if (!people && loading$.current) {
+                  // Список ещё не пришёл: выбор случится, как только он загрузится, по тому, что уже набрано
+                  const typed = e.currentTarget.value;
+                  void loading$.current.then((list) => {
+                    const first = list?.find((p) => matchOption({ value: p.id, label: p.fullName, hint: hintOf(p) }, typed));
+                    if (first) choose(first);
+                  });
                 }
               }}
             />
@@ -178,43 +196,90 @@ function reloadPage() {
   window.location.reload();
 }
 
+const RELOAD_KEY = "weekly-view-as-reload";
+/** Сам просмотр перезагружает вкладку не чаще раза в 30 секунд: часы устройства и сервера могут расходиться */
+const RELOAD_GAP_MS = 30_000;
+
+function lastReload(): number {
+  try {
+    return Number(sessionStorage.getItem(RELOAD_KEY) ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+function reloadByTimer() {
+  try {
+    sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
+  } catch {
+    // Хранилище запрещено: перезагрузка всё равно нужна
+  }
+  reloadPage();
+}
+
 /**
- * Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе. На телефоне и
- * планшете прилипает под шапкой. В срок вкладка перезагружается сама (и при возврате на вкладку, если срок вышел,
- * пока она спала): вкладка, оставшаяся от просмотра, не должна выглядеть живой
+ * Высота липкой плашки в переменной --view-as-h: липкие шапки страниц (столбцы Roadmap) встают под плашкой, а не
+ * наезжают на неё
  */
-export function ViewAsBanner({ name, until, untilMs }: { name: string; until: string; untilMs: number }) {
-  const [pending, startTransition] = useTransition();
+function useStickyHeight() {
+  const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    const check = () => {
-      if (Date.now() >= untilMs) reloadPage();
+    const el = ref.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty("--view-as-h", `${el.offsetHeight}px`);
+    set();
+    const observer = new ResizeObserver(set);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--view-as-h");
     };
-    // Таймер в спящей вкладке или на уснувшем ноутбуке может опоздать: срок проверяется и при возврате на вкладку
-    const timer = window.setTimeout(reloadPage, Math.max(0, untilMs - Date.now()) + 1000);
+  }, []);
+  return ref;
+}
+
+const STICKY = "sticky top-14 z-[15] lg:top-16";
+
+/**
+ * Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе. Липкая под шапкой
+ * и на телефоне, и на ноутбуке. На телефоне короткая строка, кнопка уходит вниз. В срок вкладка перезагружается сама
+ * (и при возврате на вкладку, если срок вышел, пока она спала). Срок считается по остатку, который прислал сервер,
+ * а не по часам устройства; если после перезагрузки просмотр всё ещё идёт, следующая попытка не раньше чем через 30 с
+ */
+export function ViewAsBanner({ name, shortName, until, remainingMs }: { name: string; shortName: string; until: string; remainingMs: number }) {
+  const [pending, startTransition] = useTransition();
+  const ref = useStickyHeight();
+  useEffect(() => {
+    const deadline = Date.now() + Math.max(0, remainingMs);
+    const due = () => Math.max(deadline, lastReload() + RELOAD_GAP_MS);
+    const check = () => {
+      if (Date.now() >= due()) reloadByTimer();
+    };
+    const timer = window.setTimeout(reloadByTimer, due() - Date.now() + 1000);
     const onVisible = () => {
       if (document.visibilityState === "visible") check();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", check);
-    window.addEventListener("pageshow", check);
     return () => {
       window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", check);
-      window.removeEventListener("pageshow", check);
     };
-  }, [untilMs]);
+  }, [remainingMs]);
   return (
-    <div
-      role="status"
-      data-testid="view-as-banner"
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-accent bg-navy px-4 py-3 text-white max-lg:sticky max-lg:top-14 max-lg:z-10 sm:px-6 lg:px-[var(--content-pad)]"
-    >
-      <Eye className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-      <p className="min-w-0 flex-1 text-body">
-        <strong className="font-semibold">Вы смотрите как {name}. Изменения недоступны</strong>
-        <span className="block text-small text-white/75 sm:inline sm:pl-2">Просмотр до {until}</span>
-      </p>
+    <div ref={ref} role="status" data-testid="view-as-banner" className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-accent bg-navy px-4 py-3 text-white sm:px-6 lg:px-[var(--content-pad)]", STICKY)}>
+      <div className="flex min-w-0 basis-full items-center gap-2.5 sm:basis-0 sm:flex-1">
+        <Eye className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <p className="m-0 min-w-0 text-body">
+          <strong className="hidden font-semibold sm:inline">Вы смотрите как {name}. Изменения недоступны</strong>
+          <span className="hidden text-small text-white/75 sm:inline sm:pl-2">Просмотр до {until}</span>
+          <strong className="font-semibold sm:hidden">
+            Как {shortName}, до {until}. Только просмотр
+          </strong>
+        </p>
+      </div>
       <button
         type="button"
         className={buttonClass("secondary", "sm", "shrink-0 border-transparent bg-white text-navy hover:bg-white/90")}
@@ -230,16 +295,24 @@ export function ViewAsBanner({ name, until, untilMs }: { name: string; until: st
 
 /**
  * Просмотр закончился сам (срок, режим управления, роль, человека выключили), а владелец ещё не вернулся к себе:
- * страницы показывают его самого, но изменения закрыты, пока он не нажмёт «Вернуться к себе»
+ * страница показывает его самого, но изменения из неё закрыты, пока он не нажмёт «Вернуться к себе». Кнопка
+ * возвращает на эту же страницу
  */
 export function ViewAsEndedBanner({ name, reason }: { name: string | null; reason: string }) {
   const [pending, startTransition] = useTransition();
+  const ref = useStickyHeight();
   return (
-    <div role="status" data-testid="view-as-ended" className="sv-alert sv-alert--warning flex-wrap items-center rounded-none border-b border-warning-line px-4 max-lg:sticky max-lg:top-14 max-lg:z-10 sm:px-6 lg:px-[var(--content-pad)]">
-      <p className="min-w-0 flex-1">
+    <div ref={ref} role="status" data-testid="view-as-ended" className={cn("sv-alert sv-alert--warning flex-wrap items-center rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]", STICKY)}>
+      <p className="m-0 min-w-0 basis-full sm:basis-0 sm:flex-1">
         <strong className="font-semibold">Просмотр{name ? ` как ${name}` : ""} закончился: {reason.toLowerCase()}.</strong> Изменения откроются, когда вы вернётесь к себе.
       </p>
-      <button type="button" className={buttonClass("secondary", "sm", "shrink-0")} disabled={pending} aria-busy={pending || undefined} onClick={() => startTransition(() => stopViewAsAction())}>
+      <button
+        type="button"
+        className={buttonClass("secondary", "sm", "shrink-0")}
+        disabled={pending}
+        aria-busy={pending || undefined}
+        onClick={() => startTransition(() => stopViewAsAction(`${window.location.pathname}${window.location.search}`))}
+      >
         Вернуться к себе
       </button>
     </div>
@@ -249,25 +322,68 @@ export function ViewAsEndedBanner({ name, reason }: { name: string | null; reaso
 const CHANNEL = "weekly-view-as";
 const SIGNAL_KEY = "weekly-view-as-state";
 
+/** Метка этой вкладки для запросов: в каком состоянии просмотра её показал сервер */
+let tabState: string | null = null;
+let fetchLabelled = false;
+
+/** После снятия просмотра перед выходом из ресурса вкладка уже своя: черновики владельца сервер примет */
+export function markTabSelf() {
+  tabState = "self";
+}
+
+/**
+ * Один раз на страницу: к серверным действиям (заголовок Next-Action) и к изменениям через /api добавляется
+ * заголовок X-Weekly-View с меткой вкладки. Роутер Next отправляет действия через глобальный fetch, загрузки файлов
+ * идут через него же. По метке сервер отказывает вкладке, оставшейся от просмотра, и не блокирует обычные вкладки
+ */
+function labelFetch() {
+  if (fetchLabelled || typeof window === "undefined" || typeof window.fetch !== "function") return;
+  fetchLabelled = true;
+  const original = window.fetch.bind(window);
+  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+    try {
+      const labelled = labelRequest(input, init, tabState, window.location);
+      if (labelled) return original(input, labelled);
+    } catch {
+      // Не разобрали запрос: уходит как есть, сервер применит правило без метки
+    }
+    return original(input, init);
+  };
+}
+
 /**
  * Начало и конец просмотра для остальных вкладок этого браузера (BroadcastChannel, запасной путь событие storage).
- * Каждая вкладка при открытии объявляет, в каком состоянии её показал сервер. Вкладка с другим состоянием
- * перезагружается: вкладка, оставшаяся от просмотра, не запишет ничего от чужого имени, а вкладка владельца сразу
- * покажет начатый просмотр
+ * Каждая вкладка при открытии и при возврате из кэша браузера (bfcache) объявляет, в каком состоянии её показал
+ * сервер: view:<номер просмотра>, ended:<номер>, self. Вкладка просмотра или закончившегося просмотра с другим
+ * состоянием перезагружается. Обычную вкладку владельца сами не перезагружаем: она закрывается плашкой «В другой
+ * вкладке начат просмотр» с кнопкой «Обновить», чтобы не потерять набранный текст
  */
 export function ViewAsSync({ state }: { state: string }) {
+  const [elsewhere, setElsewhere] = useState(false);
   useEffect(() => {
+    tabState = state;
+    labelFetch();
     const other = (value: unknown) => {
-      if (typeof value === "string" && value !== state) reloadPage();
+      if (typeof value !== "string" || value === state) return;
+      if (state !== "self") reloadPage();
+      // Обычная вкладка владельца: закрывается плашкой, только если в другой вкладке идёт просмотр
+      else if (value.startsWith("view:")) setElsewhere(true);
     };
     let channel: BroadcastChannel | null = null;
     try {
       channel = new BroadcastChannel(CHANNEL);
       channel.onmessage = (e: MessageEvent<{ state?: unknown }>) => other(e.data?.state);
-      channel.postMessage({ state });
     } catch {
       channel = null;
     }
+    const announce = () => {
+      channel?.postMessage({ state });
+      try {
+        localStorage.setItem(SIGNAL_KEY, JSON.stringify({ state, at: Date.now() }));
+      } catch {
+        // Хранилище запрещено: остаётся BroadcastChannel
+      }
+    };
     const onStorage = (e: StorageEvent) => {
       if (e.key !== SIGNAL_KEY || !e.newValue) return;
       try {
@@ -276,16 +392,35 @@ export function ViewAsSync({ state }: { state: string }) {
         // Чужое значение в хранилище: не наше дело
       }
     };
+    // Вкладка вернулась из кэша браузера: страница просмотра могла устареть, её проще показать заново
+    const onShow = (e: PageTransitionEvent) => {
+      if (!e.persisted) return;
+      if (state === "self") announce();
+      else reloadPage();
+    };
     window.addEventListener("storage", onStorage);
-    try {
-      localStorage.setItem(SIGNAL_KEY, JSON.stringify({ state, at: Date.now() }));
-    } catch {
-      // Хранилище запрещено: остаётся BroadcastChannel
-    }
+    window.addEventListener("pageshow", onShow);
+    announce();
     return () => {
       channel?.close();
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener("pageshow", onShow);
     };
   }, [state]);
-  return null;
+  if (!elsewhere) return null;
+  return (
+    <div role="alertdialog" aria-modal="true" aria-labelledby="view-as-elsewhere" data-testid="view-as-elsewhere" className="fixed inset-0 z-50 flex items-center justify-center bg-overlay px-4">
+      <div className="w-full max-w-[420px] rounded-panel bg-surface p-5 shadow-medium">
+        <h2 id="view-as-elsewhere" className="sv-modal__title">
+          В другой вкладке начат просмотр
+        </h2>
+        <p className="mt-2 text-body text-text-secondary">В этой вкладке страница показана до начала просмотра. Обновите её, чтобы увидеть то же, что в остальных вкладках.</p>
+        <div className="mt-4 flex justify-end">
+          <button type="button" className={buttonClass("primary", "sm")} onClick={reloadPage} autoFocus>
+            Обновить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }

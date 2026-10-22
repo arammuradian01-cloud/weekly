@@ -40,7 +40,9 @@ import * as tasks from "@/lib/tasks/service";
 import { moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
 import * as viewAs from "@/app/actions/view-as";
-import { logout } from "@/app/actions/auth";
+import { enterManagement, exitManagement, login, logout } from "@/app/actions/auth";
+import { PASSWORD_SETTING_KEYS, hashPassword } from "@/lib/passwords";
+import { setTeamAction } from "@/app/actions/team";
 import { markSeenAction, markDoneAction } from "@/app/(app)/me/actions";
 import { getTaskAction } from "@/app/(app)/tasks/actions";
 import { searchAction } from "@/app/(app)/search/actions";
@@ -48,6 +50,7 @@ import { weekViewAction } from "@/app/(app)/weekly/actions";
 import { POST as leaderBoardPost } from "@/app/api/goals/leader-board/route";
 import { POST as marketUploadPost } from "@/app/api/market/upload/route";
 import { GET as forecastExportGet } from "@/app/(app)/forecast/export/route";
+import { GET as exportExcelGet } from "@/app/(app)/settings/export/route";
 
 const SECRET = process.env.SESSION_SECRET!;
 const person = (slug: string) => prisma.person.findUniqueOrThrow({ where: { slug } });
@@ -184,33 +187,82 @@ describe("кто включает «Смотреть как»", () => {
 async function expectEnded(reason: string) {
   const ctx = await requireContext();
   expect([ctx.person.slug, ctx.viewAs, ctx.viewAsEnded?.reason, ctx.viewAsEnded?.target?.fullName]).toEqual(["muradyan", null, reason, "Рева Тарас"]);
-  // Вкладка, оставшаяся от просмотра, не запишет правку от имени владельца
+  // Запрос без метки вкладки и вкладки просмотра не запишут правку от имени владельца
   expect(await markSeenAction()).toEqual({ ok: false, error: VIEW_AS_ENDED });
+  expect(await withTab(`view:${ctx.viewAsEnded!.id}`, () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_ENDED });
+  expect(await withTab(`ended:${ctx.viewAsEnded!.id}`, () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_ENDED });
   await expect(requireWriteContext()).rejects.toThrow(VIEW_AS_ENDED);
+  // Обычная вкладка владельца не блокируется
+  expect((await withTab("self", () => markSeenAction())).ok).toBe(true);
+  return ctx.viewAsEnded!;
 }
 
+/** Метка вкладки в заголовке запроса, как её ставит страница (ViewAsSync) */
+async function withTab<T>(tab: string, run: () => Promise<T>): Promise<T> {
+  http.headers.set("x-weekly-view", tab);
+  try {
+    return await run();
+  } finally {
+    http.headers.delete("x-weekly-view");
+  }
+}
+
+const stops = async () => (await viewAsAudit()).filter((r) => r.action === "viewAs.stop").map((r) => r.field);
+
 describe("просмотр закончился сам", () => {
-  it("роль, человек выключен, режим управления сменили или включили заново: изменения закрыты, «Вернуться к себе» пишет конец с причиной", async () => {
-    await signIn("muradyan", { management: true });
+  it("снята роль: конец записан первым запросом и один раз, роль вернули, просмотр не продолжается; «Вернуться к себе» остаётся на странице", async () => {
+    const { person: owner } = await signIn("muradyan", { management: true });
     expect(await startAs("reva")).toBe("redirect");
-    expect((await requireContext()).person.slug).toBe("reva");
+    const id = (await requireContext()).viewAs!.id;
 
     await prisma.person.update({ where: { slug: "muradyan" }, data: { role: "ADMIN" } });
     try {
-      await expectEnded("role");
+      expect((await expectEnded("role")).id).toBe(id);
+      await requireContext();
+      expect(await stops()).toEqual(["Снята роль владельца"]);
     } finally {
       await prisma.person.update({ where: { slug: "muradyan" }, data: { role: "OWNER" } });
     }
-    // Конец не записан и cookie на месте: роль вернули, просмотр идёт дальше
-    expect((await requireContext()).person.slug).toBe("reva");
+    // Конец записан: роль вернули, а просмотр не продолжается, журнал и экран не расходятся
+    await expectEnded("role");
 
+    expect(await settle(() => viewAs.stopViewAsAction("/tasks?view=board"))).toBe("redirect");
+    expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+    const back = await requireWriteContext();
+    expect([back.person.slug, back.viewAs, back.viewAsEnded, back.management?.role]).toEqual(["muradyan", null, null, "OWNER"]);
+    expect(await stops()).toEqual(["Снята роль владельца"]);
+    const [stop] = (await viewAsAudit()).filter((r) => r.action === "viewAs.stop");
+    expect(stop).toMatchObject({ actorId: owner.id, entityId: "reva", after: "Рева Тарас", before: id });
+  });
+
+  it("«Вернуться к себе» возвращает на ту же страницу, чужой адрес не принимается", async () => {
+    await signIn("muradyan", { management: true });
+    const digest = async (back?: string) => {
+      try {
+        await viewAs.stopViewAsAction(back);
+      } catch (error) {
+        return (error as { digest?: string }).digest ?? "";
+      }
+      return "";
+    };
+    expect(await digest("/tasks?view=board")).toContain(";/tasks?view=board;");
+    expect(await digest("//evil.example")).toContain(";/;");
+    expect(await digest(undefined)).toContain(";/;");
+  });
+
+  it("человек выключен, режим управления сменили или включили заново: изменения закрыты; режим управления можно выключить", async () => {
+    await signIn("muradyan", { management: true });
+    expect(await startAs("reva")).toBe("redirect");
     await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
     try {
       await expectEnded("inactive");
     } finally {
       await prisma.person.update({ where: { slug: "reva" }, data: { active: true } });
     }
+    expect(await stops()).toEqual(["Человек выключен"]);
 
+    auditMark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    expect(await startAs("reva")).toBe("redirect");
     const { epoch, managementEpoch } = await getEpochs();
     await prisma.setting.upsert({ where: { key: "auth.managementEpoch" }, update: { value: managementEpoch + 1 }, create: { key: "auth.managementEpoch", value: managementEpoch + 1 } });
     try {
@@ -218,23 +270,22 @@ describe("просмотр закончился сам", () => {
     } finally {
       await prisma.setting.update({ where: { key: "auth.managementEpoch" }, data: { value: managementEpoch } });
     }
-    expect((await requireContext()).person.slug).toBe("reva");
+    expect(await stops()).toEqual(["Закончился режим управления"]);
 
     // Режим управления включили заново на том же устройстве: это другой режим, просмотр не оживает
+    auditMark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    await settle(() => viewAs.stopViewAsAction());
+    expect(await startAs("reva")).toBe("redirect");
     const owner = await person("muradyan");
     const sid = (await requireContext()).session.sid!;
     http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: owner.id, sid, via: "PASSWORD", management: { role: "OWNER", until: Date.now() + MANAGEMENT_TTL_MS + 5000, epoch: managementEpoch } }, SECRET));
     await expectEnded("management");
-    expect(await viewAsAudit()).toHaveLength(1);
 
-    // «Вернуться к себе»: конец с причиной, cookie снята, изменения снова открыты
-    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    // Выключить режим управления после конца просмотра можно из любой вкладки: владелец не застревает
+    expect(await withTab(`view:${(await requireContext()).viewAsEnded!.id}`, () => settle(() => exitManagement()))).toBe("redirect");
     expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
-    const back = await requireWriteContext();
-    expect([back.person.slug, back.viewAs, back.viewAsEnded, back.management?.role]).toEqual(["muradyan", null, null, "OWNER"]);
-    expect((await markSeenAction()).ok).toBe(true);
-    const [, stop] = await viewAsAudit();
-    expect(stop).toMatchObject({ action: "viewAs.stop", actorId: owner.id, entityId: "reva", field: "Закончился режим управления", after: "Рева Тарас" });
+    expect((await requireContext()).management).toBeNull();
+    expect(await stops()).toEqual(["Закончился режим управления"]);
   });
 
   it("срок вышел: изменения закрыты; новый просмотр сначала записывает конец прежнего", async () => {
@@ -421,17 +472,22 @@ describe("только просмотр", () => {
     const before = await fingerprint();
     const wrong: string[] = [];
     const seen = new Set<string>();
-    for (const { file, mod } of modules) {
-      for (const [name, fn] of Object.entries(mod)) {
-        if (typeof fn !== "function" || PUBLIC.has(name)) continue;
-        seen.add(name);
-        if (SPECIAL.has(name)) continue;
-        // Чтение без аргументов: ответ «не найдено» вместо шума в логе, запись с любыми аргументами
-        const outcome = await outcomeOf(fn as never, READ.has(name) ? [] : undefined);
-        if (READ.has(name)) {
-          if (outcome === "denied") wrong.push(`${file} ${name}: чтение отказало в просмотре`);
-        } else if (outcome !== "denied") wrong.push(`${file} ${name}: ${outcome}`);
+    // Без метки вкладки и с меткой обычной вкладки владельца: во время просмотра отказ одинаковый
+    for (const tab of [null, "self"]) {
+      if (tab) http.headers.set("x-weekly-view", tab);
+      for (const { file, mod } of modules) {
+        for (const [name, fn] of Object.entries(mod)) {
+          if (typeof fn !== "function" || PUBLIC.has(name)) continue;
+          seen.add(name);
+          if (SPECIAL.has(name)) continue;
+          // Чтение без аргументов: ответ «не найдено» вместо шума в логе, запись с любыми аргументами
+          const outcome = await outcomeOf(fn as never, READ.has(name) ? [] : undefined);
+          if (READ.has(name)) {
+            if (outcome === "denied") wrong.push(`${file} ${name} (${tab ?? "без метки"}): чтение отказало в просмотре`);
+          } else if (outcome !== "denied") wrong.push(`${file} ${name} (${tab ?? "без метки"}): ${outcome}`);
+        }
       }
+      http.headers.delete("x-weekly-view");
     }
     expect(wrong).toEqual([]);
     // Списки чтения и особых действий не устарели: каждое имя есть среди действий
@@ -478,6 +534,94 @@ describe("только просмотр", () => {
       expect([after.seenAt, after.doneAt]).toEqual([null, null]);
     } finally {
       await prisma.inboxEvent.delete({ where: { id: event.id } });
+    }
+  });
+});
+
+describe("метка вкладки в запросах", () => {
+  it("во время просмотра отказ и с меткой обычной вкладки; после «Выйти из просмотра» старая вкладка просмотра не пишет, обычная пишет", async () => {
+    await signIn("muradyan", { management: true });
+    expect(await startAs("reva")).toBe("redirect");
+    const id = (await requireContext()).viewAs!.id;
+    expect(await withTab(`view:${id}`, () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_DENIED });
+    expect(await withTab("self", () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_DENIED });
+    expect(await withTab(`view:${id}`, () => exitManagement())).toEqual({ error: VIEW_AS_DENIED });
+
+    // Выход кнопкой в другой вкладке: cookie снята, а старая вкладка с меткой просмотра всё ещё открыта
+    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    expect(await withTab(`view:${id}`, () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_ENDED });
+    await expect(withTab(`view:${id}`, () => requireWriteContext())).rejects.toThrow(VIEW_AS_ENDED);
+    // Новый просмотр: вкладка прежнего просмотра тоже не пишет
+    expect(await startAs("fatyanov")).toBe("redirect");
+    expect(await withTab(`view:${id}`, () => markSeenAction())).toEqual({ ok: false, error: VIEW_AS_ENDED });
+    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    // Обычная вкладка и запрос без метки пишут как раньше
+    expect((await withTab("self", () => markSeenAction())).ok).toBe(true);
+    expect((await markSeenAction()).ok).toBe(true);
+  });
+
+  it("включить режим управления после конца просмотра не мешает отказ просмотра; выгрузка в Excel после конца закрыта", async () => {
+    const { person: owner, sid, grant } = await signIn("muradyan", { management: true });
+    const reva = await person("reva");
+    const past = Date.now() - 60_000;
+    http.cookies.set(VIEW_AS_COOKIE, await signViewAs({ id: "view-manage", ownerId: owner.id, sid: sid!, targetId: reva.id, until: past, grant }, SECRET, past - 3_600_000));
+    await expectEnded("expired");
+    const form = new FormData();
+    form.set("password", "не тот пароль");
+    const entered = await enterManagement(null, form);
+    expect([VIEW_AS_DENIED, VIEW_AS_ENDED]).not.toContain(entered?.error);
+    const exported = await exportExcelGet();
+    expect(exported.status).toBe(403);
+    expect(await exported.text()).toBe(VIEW_AS_ENDED);
+  });
+
+  it("команда, выбранная в просмотре, не меняет команду владельца и уходит вместе с просмотром", async () => {
+    await signIn("muradyan", { management: true });
+    http.cookies.set("team", "top");
+    expect(await startAs("reva")).toBe("redirect");
+    expect(await setTeamAction("top")).toEqual({ ok: true });
+    expect([http.cookies.get("team"), http.cookies.get("team_view")]).toEqual(["top", "top"]);
+    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    expect([http.cookies.get("team"), http.cookies.has("team_view")]).toEqual(["top", false]);
+  });
+});
+
+describe("вход общим логином", () => {
+  it("ведёт на выбор профиля и без cookie просмотра, и после просмотра владельца в этом браузере (просмотр закрывается)", async () => {
+    const key = PASSWORD_SETTING_KEYS.team;
+    const previous = await prisma.setting.findUnique({ where: { key } });
+    await prisma.setting.upsert({ where: { key }, update: { value: await hashPassword("общий пароль для проверки") }, create: { key, value: await hashPassword("общий пароль для проверки") } });
+    const form = () => {
+      const f = new FormData();
+      f.set("login", "team");
+      f.set("password", "общий пароль для проверки");
+      return f;
+    };
+    const target = async () => {
+      try {
+        await login(null, form());
+      } catch (error) {
+        return (error as { digest?: string }).digest ?? "";
+      }
+      return "не было перехода";
+    };
+    try {
+      // Новый браузер: никаких cookie
+      http.cookies.clear();
+      expect(await target()).toContain(";/choose;");
+      expect(http.cookies.has(SESSION_COOKIE)).toBe(true);
+      expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+
+      // В этом браузере владелец смотрел как Рева: общий вход закрывает просмотр и тоже ведёт на выбор профиля
+      await signIn("muradyan", { management: true });
+      expect(await startAs("reva")).toBe("redirect");
+      expect(await target()).toContain(";/choose;");
+      expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+      expect(await stops()).toEqual(["Вход завершён"]);
+    } finally {
+      if (previous) await prisma.setting.update({ where: { key }, data: { value: previous.value as string } });
+      else await prisma.setting.delete({ where: { key } });
+      await prisma.loginAttempt.deleteMany({ where: { kind: "TEAM" } });
     }
   });
 });

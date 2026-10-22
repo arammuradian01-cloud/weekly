@@ -17,8 +17,23 @@ import {
 import { clientIp } from "./client-ip";
 import { sessionSecretFromEnv } from "./database-url";
 import { getTeamLogin, loadDevice, touchDevice } from "./login/service";
-import { VIEW_AS_COOKIE, VIEW_AS_ENDED, ViewAsReadOnlyError, signViewAs, verifyViewAs, viewAsEndReason, viewAsKeepUntil, viewAsOwnSession, type ViewAsEnd, type ViewAsToken } from "./view-as";
-import { endViewAs } from "./view-as-service";
+import {
+  TEAM_VIEW_COOKIE,
+  VIEW_AS_COOKIE,
+  VIEW_AS_TAB_HEADER,
+  ViewAsReadOnlyError,
+  parseViewAsTab,
+  signViewAs,
+  verifyViewAs,
+  viewAsEndReason,
+  viewAsKeepUntil,
+  viewAsOwnSession,
+  viewAsWriteRefusal,
+  type ViewAsEnd,
+  type ViewAsTab,
+  type ViewAsToken,
+} from "./view-as";
+import { endViewAs, viewAsEndRecorded } from "./view-as-service";
 import type { LoginMethod, Person } from "@/generated/prisma/client";
 
 export function sessionSecret(): string {
@@ -57,13 +72,17 @@ export async function requestIp(): Promise<string> {
 
 /** Кто смотрит в режиме «Смотреть как» (этап 63) и до какого момента */
 export type ViewAsInfo = {
+  /** Номер просмотра: метка вкладки и связь начала и конца в журнале */
+  id: string;
   owner: { id: string; slug: string; fullName: string };
   /** До какого момента действует просмотр, мс с 1970 года */
   until: number;
+  /** Сколько просмотру осталось по часам сервера: страница ставит таймер по остатку, а не по часам устройства */
+  remainingMs: number;
 };
 
 /** Просмотр этой сессии закончился сам, а cookie ещё есть: кого смотрели и почему кончилось */
-export type ViewAsEndedInfo = { target: { id: string; fullName: string } | null; reason: ViewAsEnd };
+export type ViewAsEndedInfo = { id: string; target: { id: string; fullName: string } | null; reason: ViewAsEnd };
 
 export type AppContext = {
   session: SessionData;
@@ -150,6 +169,10 @@ export async function requireContext(): Promise<AppContext> {
     const target = state.target;
     return { session, person: target, management: null, managementRole: managementRoleFor(target.role), via, deviceId: null, viewAs: state.info, viewAsEnded: null };
   }
+  if (state.kind === "ended") {
+    // Конец просмотра пишется первым запросом, который его увидел; повтор исключён по номеру просмотра
+    await endViewAs(person, state.token, state.ended.reason, { ip: await requestIp(), via });
+  }
   return { session, person, management, managementRole, via, deviceId, viewAs: null, viewAsEnded: state.kind === "ended" ? state.ended : null };
 }
 
@@ -170,9 +193,9 @@ async function viewAsState(session: SessionData, owner: Person, via: LoginMethod
   if (!token || !viewAsOwnSession(token, { sid: session.sid, personId: owner.id })) return { kind: "none" };
   const target = await prisma.person.findUnique({ where: { id: token.targetId } });
   const who = { sid: session.sid, personId: owner.id, role: owner.role, personal: !!session.sid && via !== "TEAM", management: management?.role ?? null, managementUntil: management?.until ?? null };
-  const reason = deviceOk ? viewAsEndReason(token, who, !!target?.active) : "session";
-  if (!reason && target) return { kind: "active", token, target, info: { owner: { id: owner.id, slug: owner.slug, fullName: owner.fullName }, until: token.until } };
-  return { kind: "ended", token, ended: { target: target ? { id: target.id, fullName: target.fullName } : null, reason: reason ?? "inactive" } };
+  const reason = deviceOk ? (viewAsEndReason(token, who, !!target?.active) ?? (await viewAsEndRecorded(owner.id, token))) : "session";
+  if (!reason && target) return { kind: "active", token, target, info: { id: token.id, owner: { id: owner.id, slug: owner.slug, fullName: owner.fullName }, until: token.until, remainingMs: token.until - Date.now() } };
+  return { kind: "ended", token, ended: { id: token.id, target: target ? { id: target.id, fullName: target.fullName } : null, reason: reason ?? "inactive" } };
 }
 
 /**
@@ -208,15 +231,20 @@ export async function closeViewAs(how: "stop" | "logout" | "login" | "start"): P
  * этой сессии ещё есть: «просмотр закончился, обновите страницу», иначе вкладка, оставшаяся от просмотра, записала бы
  * правку выбранного человека от имени владельца
  */
-export function assertWritable(ctx: Pick<AppContext, "viewAs" | "viewAsEnded">): void {
-  if (ctx.viewAs) throw new ViewAsReadOnlyError();
-  if (ctx.viewAsEnded) throw new ViewAsReadOnlyError(VIEW_AS_ENDED);
+export function assertWritable(ctx: Pick<AppContext, "viewAs" | "viewAsEnded">, tab: ViewAsTab | null = null): void {
+  const refusal = viewAsWriteRefusal({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null }, tab);
+  if (refusal) throw new ViewAsReadOnlyError(refusal);
 }
 
-/** Контекст для действий, которые меняют данные: в режиме «Смотреть как» отказ */
+/** Метка вкладки из заголовка запроса X-Weekly-View: её добавляет страница (ViewAsSync) к действиям и изменениям через /api */
+export async function requestViewAsTab(): Promise<ViewAsTab | null> {
+  return parseViewAsTab((await headers()).get(VIEW_AS_TAB_HEADER));
+}
+
+/** Контекст для действий, которые меняют данные: в режиме «Смотреть как» и из вкладки, оставшейся от просмотра, отказ */
 export async function requireWriteContext(): Promise<AppContext> {
   const ctx = await requireContext();
-  assertWritable(ctx);
+  assertWritable(ctx, await requestViewAsTab());
   return ctx;
 }
 
@@ -236,6 +264,8 @@ export async function writeViewAs(token: ViewAsToken, now = Date.now()): Promise
 export async function clearViewAs(): Promise<void> {
   const store = await cookies();
   store.delete(VIEW_AS_COOKIE);
+  // Команда, выбранная в просмотре, живёт отдельно от команды владельца и уходит вместе с просмотром
+  store.delete(TEAM_VIEW_COOKIE);
 }
 
 /** Страницы режима управления. roles сужает доступ, например только владельцу */

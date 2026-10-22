@@ -6,7 +6,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, KeyRound, CircleHelp, Eye, EyeOff, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { endViewAsForLogoutAction, stopViewAsAction } from "@/app/actions/view-as";
-import { openViewAs } from "./view-as";
+import { markTabSelf, openViewAs } from "./view-as";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
@@ -28,8 +28,6 @@ type Props = {
   viewing?: boolean;
   /** Короткое имя владельца, который смотрит: при выходе из ресурса отправляются и стираются его черновики */
   ownerSlug?: string | null;
-  /** Есть cookie просмотра этой сессии (просмотр идёт или закончился сам): выход сначала снимает её */
-  viewAsCookie?: boolean;
   tone?: "dark" | "light";
 };
 
@@ -41,9 +39,9 @@ function initials(fullName: string) {
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
 const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, viewAsCookie = false, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
-  const { me } = usePrototype();
+  const { me, notify } = usePrototype();
   const dark = tone === "dark";
 
   return (
@@ -152,7 +150,16 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           ) : null}
 
           {management ? (
-            <Menu.Item className={itemClass} disabled={pending} onSelect={() => startTransition(() => exitManagement())}>
+            <Menu.Item
+              className={itemClass}
+              disabled={pending}
+              onSelect={() =>
+                startTransition(async () => {
+                  const r = await exitManagement();
+                  if (r?.error) notify(r.error, "error");
+                })
+              }
+            >
               <ShieldCheck className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
               Выключить режим управления
             </Menu.Item>
@@ -163,9 +170,10 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             disabled={pending}
             onSelect={() =>
               startTransition(async () => {
-                // В просмотре (этап 63) сначала просмотр снимается: тогда сервер примет черновики самого владельца с
-                // устройства, потом они уходят и всё стирается, черновики выбранного человека тоже
-                if (viewAsCookie) await endViewAsForLogoutAction();
+                // «Смотреть как» (этап 63): сначала снимается просмотр, если он был (сервер это знает сам), и вкладка
+                // становится своей: сервер примет черновики самого владельца с устройства. Отказал: черновики остаются
+                await endViewAsForLogoutAction();
+                markTabSelf();
                 await forgetThisDevice(viewing ? (ownerSlug ?? undefined) : me.slug);
                 await logout();
               })

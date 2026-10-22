@@ -1,7 +1,8 @@
 // Выгрузка всех данных в Excel: только владелец в режиме управления. Каждая выгрузка пишется в журнал. События рынка
 // в выгрузку попадают только при доступе к разделу «Рынок» (по общему логину его нет).
 
-import { requestIp, requireManagement } from "@/lib/auth";
+import { assertWritable, requestIp, requestViewAsTab, requireManagement } from "@/lib/auth";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
 import { OWNER_ROLES } from "@/lib/roles";
 import { writeAudit } from "@/lib/audit";
 import { buildExport } from "@/lib/admin/export";
@@ -12,6 +13,14 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const ctx = await requireManagement(OWNER_ROLES, "/settings");
+  // Выгрузка пишется в журнал от имени выгружающего: после конца просмотра «Смотреть как», пока владелец не вернулся
+  // к себе, её нет (этап 63)
+  try {
+    assertWritable(ctx, await requestViewAsTab());
+  } catch (error) {
+    if (error instanceof ViewAsReadOnlyError) return new Response(error.message, { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+    throw error;
+  }
   // События рынка (этап 62) в листе «Журнал» только тому, кому открыт раздел «Рынок», как и в журнале на экране
   const { buffer, summary } = await buildExport({ market: await canSeeMarket({ personId: ctx.person.id, via: ctx.via }) });
   await writeAudit({
