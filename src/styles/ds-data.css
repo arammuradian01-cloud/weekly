@@ -64,6 +64,17 @@
 /* Раскрытая под строкой карточка (этап 46): таблица продуктов как аккордеон, карточка продукта внутри ячейки на всю ширину */
 .sv-datatable__row--expanded > td { padding-top: var(--space-3); padding-bottom: var(--space-5); background: var(--color-page); white-space: normal; height: auto; box-shadow: inset 3px 0 0 var(--color-accent); }
 .sv-datatable__row--expanded .sv-module { margin: 0; width: 100%; }
+/* Содержимое раскрытой строки (этап 59) не расширяет таблицу: ширину ячейки задают колонки, а широкая таблица внутри
+   карточки прокручивается в своём контейнере и не выталкивает колонки и кнопки за край раздела. Ячейке таблицы
+   ограничение размера не задать, поэтому обёртка */
+.sv-datatable__expanded { contain: inline-size; min-width: 0; }
+/* Широкая таблица прокручивается вбок внутри своего контейнера, страница остаётся на месте */
+.sv-table-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.sv-table-scroll:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+/* Закреплённая первая колонка (этап 59): при прокрутке вбок название строки остаётся на месте. У закреплённой ячейки
+   свой фон, иначе под ней просвечивают цифры; линия справа отделяет её от прокручиваемой части */
+.sv-datatable--sticky-first th:first-child, .sv-datatable--sticky-first td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); box-shadow: inset -1px 0 0 var(--color-border); }
+.sv-datatable--sticky-first thead th:first-child, .sv-datatable--sticky-first .sv-datatable__row--total td:first-child { background: var(--color-page); }
 .sv-datatable__row--edit td { background: var(--color-accent-soft); }
 .sv-datatable__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .sv-datatable__hint { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
@@ -118,10 +129,17 @@
   .sv-datatable--stack tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-border); }
   .sv-datatable--stack tbody tr:last-child { border-bottom: 0; }
   .sv-datatable--stack td { display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; gap: 0; min-width: 0; height: auto; padding: 0 !important; border: 0; background: transparent !important; box-shadow: none !important; text-align: left; white-space: normal; }
-  .sv-datatable--stack td[data-label]::before { content: attr(data-label); font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-weight: var(--font-weight-regular); }
+  /* Подпись над значением переносится, а не обрезается краем карточки: у цифровой ячейки запрет переноса для цифр */
+  .sv-datatable--stack td[data-label]::before { content: attr(data-label); font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); font-weight: var(--font-weight-regular); white-space: normal; }
   .sv-datatable--stack td.is-num { text-align: left; }
   .sv-datatable--stack td:first-child, .sv-datatable--stack td.is-wide { grid-column: 1 / -1; }
-  .sv-datatable--stack td.is-action { align-items: flex-end; }
+  /* Кнопка строки (этап 59) отдельной строкой карточки: в колонке сетки она шире колонки и наезжала на отклонение */
+  .sv-datatable--stack td.is-action { grid-column: 1 / -1; align-items: flex-end; }
+  /* Отклонение шире своей колонки: процент уходит на вторую строку, а не под соседнюю колонку */
+  .sv-datatable--stack td .sv-delta { flex-wrap: wrap; max-width: 100%; white-space: normal; }
+  /* Закреплённая колонка на телефоне узкая: название переносится, цифрам остаётся место */
+  .sv-datatable--sticky-first th:first-child, .sv-datatable--sticky-first td:first-child { width: 132px; padding-left: var(--space-3); white-space: normal; overflow-wrap: anywhere; }
+  .sv-datatable--sticky-first th:last-child, .sv-datatable--sticky-first td:last-child { padding-right: var(--space-3); }
   .sv-datatable--stack td:empty, .sv-datatable--stack td.is-desktop { display: none; }
   /* Задачи по людям (этап 36): плашки задач во всю ширину карточки человека */
   .sv-datatable--stack td.sv-task-people__chips { grid-column: 1 / -1; width: auto; }

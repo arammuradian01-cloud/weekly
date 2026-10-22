@@ -427,6 +427,16 @@ describe("оформление окна", () => {
       expect(MARKET_PALETTES[theme][1]).toBe(value(app, "--color-chart-2"));
     }
   });
+
+  it("заголовок дашборда в окне меньше заголовка страницы приложения (этап 59)", () => {
+    const px = (css: string, name: string) => Number(new RegExp(`${name}:\\s*(\\d+)px`).exec(css)?.[1]);
+    const title = px(MARKET_THEME_CSS, "--cds-font-size-title");
+    expect(title).toBeGreaterThan(0);
+    // Первое значение --text-page в tokens.css: заголовок страницы на ноутбуке (28 px); на телефоне и проекторе свои
+    expect(title).toBeLessThan(px(tokens, "--text-page"));
+    // Правило сильнее стилей пакета: через #dash-root, и для заголовка первого уровня, и для .kx-title
+    expect(MARKET_THEME_CSS).toMatch(/#dash-root h1, #dash-root \.kx-title \{ font-size: var\(--cds-font-size-title\)/);
+  });
 });
 
 describe("доступ к рынку", () => {

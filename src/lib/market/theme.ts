@@ -86,6 +86,11 @@ body { font-family: var(--font-anthropic-sans); font-size: 14px; line-height: 1.
 #dash-root { padding: 4px; }
 :focus-visible { outline-color: var(--market-focus); }
 .kx-title, .kx-tv { font-weight: 700; }
+/* Заголовок дашборда ниже заголовка страницы приложения (этап 59): над окном уже стоит заголовок страницы 28 px
+   (на телефоне 25 px), внутри окна заголовок размера раздела, 22 px и 20 px. Правило с #dash-root перекрывает
+   размер из стилей пакета, которые идут после темы */
+#dash-root h1, #dash-root .kx-title { font-size: var(--cds-font-size-title); line-height: 1.25; margin: var(--cds-gap-sm) 0 var(--cds-gap-xs); letter-spacing: 0; }
+@media (max-width: 639px) { #dash-root h1, #dash-root .kx-title { font-size: 20px; } }
 .dash-skeleton { color: transparent !important; border-radius: 6px; background: linear-gradient(90deg, var(--color-border-line) 0%, var(--color-panel) 50%, var(--color-border-line) 100%); background-size: 200% 100%; animation: dash-shimmer 1.2s ease-in-out infinite; }
 @keyframes dash-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .dash-skeleton { animation: none; } }

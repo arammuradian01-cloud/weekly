@@ -100,8 +100,10 @@ export function PlanSk({ sk }: { sk: SkView }) {
           Прогноз линейный по дням. Профиль дней недели включится, когда в месяце наберётся {HUB_LIMITS.minProfileDays} дней с дневным фактом (есть снимок за день и за предыдущий день), сейчас {sk.profileDays}.
         </p>
       ) : null}
-      <div className="overflow-x-auto rounded-card border border-border">
-        <table className="sv-datatable sv-datatable--stack" data-testid="plan-sk-table">
+      {/* Таблица по СК широкая (этап 59): прокручивается вбок внутри своего контейнера, колонка СК закреплена. На телефоне
+          тоже таблица, а не карточки: СК сравниваются между собой по строкам */}
+      <div className="sv-table-scroll rounded-card border border-border" tabIndex={0} role="region" aria-label="Таблица ОСАГО по СК" data-testid="plan-sk-scroll">
+        <table className="sv-datatable sv-datatable--sticky-first" data-testid="plan-sk-table">
           <caption className="sr-only">ОСАГО по страховым компаниям: план месяца, факт с начала месяца{rate ? ", ранрейт и прогноз к плану" : ""}</caption>
           <thead>
             <tr>
@@ -109,7 +111,7 @@ export function PlanSk({ sk }: { sk: SkView }) {
               <th scope="col" className="is-num">
                 План, полисы
               </th>
-              <th scope="col" className="is-num">
+              <th scope="col" className="is-num whitespace-normal py-1.5">
                 Факт с начала месяца
               </th>
               <th scope="col" className="is-num">
@@ -127,7 +129,7 @@ export function PlanSk({ sk }: { sk: SkView }) {
               ) : null}
               {sk.sensitive ? (
                 <>
-                  <th scope="col" className="is-num">
+                  <th scope="col" className="is-num whitespace-normal py-1.5">
                     Выручка с апсейлом с начала месяца, млн
                   </th>
                   <th scope="col" className="is-num">

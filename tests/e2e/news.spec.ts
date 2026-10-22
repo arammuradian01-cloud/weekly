@@ -3,12 +3,15 @@
 // включает строгую привязку, удаляет источник
 // с подтверждением; раздел «Новости» с фильтром в адресе и честной подписью описания; блок на главной;
 // дайджест настраивается в профиле при личном входе; «Мои продукты» без продуктов пустые с подсказкой.
-// Ноутбук 1440 и телефон 360
+// Этап 59: лента компактная: описание страницы в одну строку, описание новости не длиннее двух строк, подпись начала
+// анонса только для диктора, продукты фильтра в одну строку (на телефоне с прокруткой), в карточке на телефоне два
+// продукта и «+N». Ноутбук 1440 и телефон 360
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
+const isPhone = () => test.info().project.name === "phone";
 mkdirSync(SHOTS, { recursive: true });
 
 async function shot(page: Page, name: string) {
@@ -114,8 +117,32 @@ test("владелец ведёт источники и забирает лен�
   const link = page.getByRole("link", { name: /Страховщики подвели итоги продаж КАСКО/ });
   await expect(link).toHaveAttribute("href", "https://www.asn-news.ru/news/1?utm_campaign=rss");
   await expect(link).toHaveAttribute("target", "_blank");
-  // Без Claude описание честно подписано: это начало анонса источника
+  // Без Claude описание честно подписано: это начало анонса источника. Подпись для диктора, глазу она не видна
   await expect(page.getByTestId("news-summary").first()).toContainText("Начало анонса источника:");
+  const label = page.getByTestId("news-summary").first().getByText("Начало анонса источника:");
+  expect((await label.boundingBox())!.width, "подпись «Начало анонса источника» видна глазу").toBeLessThanOrEqual(1);
+  // Описание страницы одной фразой со временем обновления без секунд
+  await expect(page.getByTestId("news-updated")).toHaveText(/^Новости рынка по продуктам\. Обновлено (сегодня|вчера|\d{1,2} [а-я]+( \d{4})?) в \d{2}:\d{2}\.$/);
+  // Описание новости не длиннее двух строк: у длинного анонса на телефоне было четыре
+  for (const summary of await page.getByTestId("news-summary").all()) {
+    const lines = await summary.evaluate((el) => el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight));
+    expect(lines, "описание новости длиннее двух строк").toBeLessThanOrEqual(2.05);
+  }
+  // Продукты фильтра в одну строку: на телефоне строка прокручивается вбок, страница нет (проверяет shot)
+  const tops = await page.getByTestId("news-filter").locator("a").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size, "продукты фильтра не в одну строку").toBe(1);
+  // Новость с четырьмя продуктами: на ноутбуке все четыре, на телефоне два и «+2»
+  const tags = page.getByTestId("news-item").filter({ hasText: "Маркетплейс Сравни запустил" }).getByTestId("news-tags");
+  const products = tags.locator(".sv-badge--accent");
+  await expect(products).toHaveCount(4);
+  if (isPhone()) {
+    await expect(products.filter({ visible: true })).toHaveCount(2);
+    await expect(tags.getByTestId("news-more")).toHaveText("+2");
+    await expect(tags).toContainText("ещё Продукт и CJM, Страхование в целом");
+  } else {
+    await expect(products.filter({ visible: true })).toHaveCount(4);
+    await expect(tags.getByTestId("news-more")).toBeHidden();
+  }
   await shot(page, "list");
   // Повтор параметра не роняет страницу: берётся первый
   await page.goto("/news?d=deposits&d=kasko");
