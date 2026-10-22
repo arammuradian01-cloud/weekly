@@ -88,6 +88,8 @@ export function RoadmapTimeline({
 
   const commit = async (task: Task, before: Span, after: Span, why?: string) => {
     const plan = spanPlan(before, after);
+    // Подсказка диктору о несохранённом сдвиге больше не нужна: дальше говорит окно причины или всплывающее сообщение
+    setLive("");
     if (!plan.kind) return cancel(task.number);
     if (plan.kind !== "start" && why === undefined) {
       setPending({ task, before, after });

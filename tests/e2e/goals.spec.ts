@@ -150,8 +150,11 @@ test("факт и целевое значение в таблице целей: 
   await modal.getByLabel("Целевое значение").fill("150");
   await modal.getByRole("button", { name: "Завести цель" }).click();
   await expect(page.getByText("Цель заведена").first()).toBeVisible();
-  // Этап 68: отборы шкалы взаимоисключающие, «Без задач» старше «Без свежего факта»: у цели теста есть задача
-  await sql(`UPDATE tasks SET "goalId" = (SELECT id FROM goals WHERE code = 'D1') WHERE number = (SELECT min(number) FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`);
+  // Этап 68: отборы шкалы взаимоисключающие, «Без задач» и «В риске» старше «Без свежего факта»: у цели теста есть
+  // задача, и она в срок (просроченная задача сама ставит цель в риск)
+  await sql(
+    `UPDATE tasks SET "goalId" = (SELECT id FROM goals WHERE code = 'D1'), due = (now() AT TIME ZONE 'Europe/Moscow')::date + 10 WHERE number = (SELECT min(number) FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`,
+  );
   await page.reload();
   await page.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" }).click();
 

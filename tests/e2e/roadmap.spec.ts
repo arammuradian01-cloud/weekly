@@ -158,8 +158,8 @@ test("карта сроков: начало с клавиатуры, срок з
   await expect(dialog).toContainText("Начало");
   await dialog.getByLabel("Причина переноса").fill("Партнёр сдвинул запуск");
   await dialog.getByRole("button", { name: "Перенести срок" }).click();
-  const toast = page.getByText(new RegExp(`^Задача ${n}: с .+ по .+`)).first();
-  await expect(toast).toBeVisible();
+  // Всплывающее сообщение, а не скрытая строка для диктора: сообщение приходит после ответа сервера
+  await expect(page.getByRole("status").filter({ hasText: new RegExp(`Задача ${n}: с .+ по .+`) })).toBeVisible();
   const shifted = await state();
   expect(shifted.start! > moved.start!).toBe(true);
   expect(shifted.due > moved.due).toBe(true);
@@ -194,7 +194,10 @@ test("карта сроков: без прав на срок и в «Смотр�
     const box = (await bar.boundingBox())!;
     await dragBy(p, box.x + box.width / 2, box.y + box.height / 2, 80);
     await expect(p.getByRole("dialog", { name: /Перенести срок задачи/ })).toHaveCount(0);
-    // Нажатие открыло задачу, правки нет
+    // Полоса осталась на месте: предпросмотра сдвига нет
+    expect((await bar.boundingBox())!.x).toBeCloseTo(box.x, 0);
+    // Нажатие открывает задачу
+    await bar.click();
     await expect(p).toHaveURL(new RegExp(`task=${number}`));
     await p.keyboard.press("Escape");
   };
