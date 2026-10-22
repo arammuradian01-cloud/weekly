@@ -25,8 +25,12 @@ const FORBIDDEN: [RegExp, string][] = [
   [/\bleading-\[/, "межстрочный интервал числом: заведите токен --leading-*"],
 ];
 
-/** Где цвет числом уместен: образец компонентов показывает значения, браузеру нужен цвет шапки (layout) и цвета приложения на экране «Домой» (manifest, этап 26) */
-const HEX_ALLOWED = new Set(["src/components/ui-sample/ui-sample.tsx", "src/app/layout.tsx", "src/app/manifest.ts"]);
+/**
+ * Где цвет числом уместен: образец компонентов показывает значения, браузеру нужен цвет шапки (layout) и цвета приложения
+ * на экране «Домой» (manifest, этап 26). Окно дашборда рынка (этап 62) изолировано и стилей приложения не видит: его
+ * токены повторяют tokens.css, совпадение проверяет tests/unit/market.test.ts
+ */
+const HEX_ALLOWED = new Set(["src/components/ui-sample/ui-sample.tsx", "src/app/layout.tsx", "src/app/manifest.ts", "src/lib/market/theme.ts"]);
 
 describe("токены оформления", () => {
   it("каждая роль шрифта из списка ведёт к роли дизайн-системы с тем же размером и своим межстрочным", () => {

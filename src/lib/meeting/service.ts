@@ -24,6 +24,8 @@ import { mailConfigured, sendMail } from "@/lib/mail";
 import { initiativesForAgenda } from "@/lib/initiatives/service";
 import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
+import { marketAgendaDraft, marketAgendaNoteNow } from "@/lib/market/meeting";
+import { canSeeMarket } from "@/lib/market/access";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -49,11 +51,12 @@ const KIND_CODE: Record<AgendaKind, AgendaKindCode> = {
   PERSON: "person",
   MANUAL: "manual",
   INITIATIVE: "initiative",
+  MARKET: "market",
 };
 const DECISION_CODE: Record<DecisionStatus, "active" | "cancelled"> = { ACTIVE: "active", CANCELLED: "cancelled" };
 
-/** Порядок блоков: поручения прошлой встречи, риски и помощь, лидеры, ручные пункты в конце блока «риски» */
-const KIND_ORDER: Record<AgendaKind, number> = { FOLLOW_UP: 0, REQUEST: 10, TASK_STATE: 11, TASK_ATTENTION: 12, PROPOSAL: 13, QUESTION: 14, INITIATIVE: 15, MANUAL: 20, PERSON: 30 };
+/** Порядок блоков: рынок в начале месяца (этап 62), поручения прошлой встречи, риски и помощь, лидеры, ручные пункты в конце блока «риски» */
+const KIND_ORDER: Record<AgendaKind, number> = { MARKET: -1, FOLLOW_UP: 0, REQUEST: 10, TASK_STATE: 11, TASK_ATTENTION: 12, PROPOSAL: 13, QUESTION: 14, INITIATIVE: 15, MANUAL: 20, PERSON: 30 };
 
 /** Просрочка, с которой задача попадает на встречу сама */
 const OVERDUE_DAYS = 7;
@@ -104,12 +107,17 @@ export function decisionDto(d: DecisionRow): DecisionView {
   };
 }
 
-function itemDto(i: MeetingRow["items"][number]): AgendaItemView {
+/**
+ * Пункт повестки для экрана. marketNote: подпись пункта рынка (этап 62), посчитанная для смотрящего при показе; у
+ * пункта рынка хранимая заметка не показывается никогда, без доступа к разделу подписи нет
+ */
+function itemDto(i: MeetingRow["items"][number], marketNote: string | null = null): AgendaItemView {
+  const note = i.kind === "MARKET" ? marketNote : i.note;
   return {
     id: i.id,
     kind: KIND_CODE[i.kind],
     title: i.title,
-    ...(i.note ? { note: i.note } : {}),
+    ...(note ? { note } : {}),
     sortOrder: i.sortOrder,
     auto: i.autoKey !== null,
     discussed: i.discussedAt !== null,
@@ -174,6 +182,10 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
   const { meeting } = await weekSettings();
   const key = isoFromDbDate(row.week.start);
   const slot = teamMeeting(key, a.node, meetingOf(key, meeting));
+  // Этап 62: кнопка «Открыть рынок» и подпись пункта рынка (от какого дня данные) только тем, кому открыт раздел.
+  // Подпись считается сейчас из текущего пакета: загрузили свежий, подпись уже новая
+  const canOpenMarket = await canSeeMarket({ personId: a.actor.personId, via: a.actor.via }, db);
+  const marketNote = canOpenMarket && row.items.some((i) => i.kind === "MARKET") ? await marketAgendaNoteNow(isoFromDbDate(row.date), db) : null;
   return {
     id: row.id,
     week: key,
@@ -192,10 +204,11 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
     ...(row.protocol ? { protocol: row.protocol } : {}),
     ...(row.protocolSentAt ? { protocolSentAt: row.protocolSentAt.toISOString() } : {}),
     ...(row.notionUrl ? { notionUrl: row.notionUrl } : {}),
-    items: row.items.map(itemDto),
+    items: row.items.map((i) => itemDto(i, marketNote)),
     decisions: row.decisions.map(decisionDto),
     participants: people.map((p) => p.slug as PersonSlug),
     canLead: canLead(a),
+    canOpenMarket,
     version: row.updatedAt.toISOString(),
   };
 }
@@ -264,6 +277,11 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   const { meeting } = await weekSettings();
   const prevDate = prev ? isoFromDbDate(prev.date) : teamMeeting(prevKey, team, meetingOf(prevKey, meeting)).date;
   const thisDate = teamMeeting(key, team, meetingOf(key, meeting)).date;
+  // Рынок КАСКО и ОСАГО (этап 62): на первой встрече месяца первым пунктом. День встречи берём у самой встречи, если
+  // она уже собрана: её дата не меняется при пересборке
+  const current = await prisma.meeting.findFirst({ where: { teamId: team.id, week: { start: dbDate(key) } }, select: { id: true, date: true } });
+  const market = await marketAgendaDraft(team.id, current ? isoFromDbDate(current.date) : thisDate, current?.id ?? null);
+  if (market) drafts.push({ kind: "MARKET", ...market });
   // Поручения: задачи с источником «встреча», поставленные с прошлой встречи до этой (и на следующий день после разбора
   // в Notion), и задачи, созданные за время прошлой встречи в живом режиме
   const followUps = await prisma.task.findMany({
@@ -379,7 +397,8 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
           title: d.title.slice(0, MEETING_LIMITS.title),
           note: d.note?.slice(0, MEETING_LIMITS.note) ?? null,
           autoKey: d.autoKey,
-          sortOrder: KIND_ORDER[d.kind] * 1000 + order++,
+          // Разбор рынка встаёт первым и при пересборке уже собранной повестки
+          sortOrder: d.kind === "MARKET" ? Math.min(0, ...m.items.map((i) => i.sortOrder)) - 1000 : KIND_ORDER[d.kind] * 1000 + order++,
           taskId: d.taskId ?? null,
           entryId: d.entryId ?? null,
           requestId: d.requestId ?? null,

@@ -1645,6 +1645,8 @@ enum AgendaKind {
   INITIATIVE
   /// Пункт, добавленный руками
   MANUAL
+  /// Разбор рынка КАСКО и ОСАГО на первой встрече месяца (этап 62)
+  MARKET
 }
 
 model AgendaItem {
@@ -2102,4 +2104,35 @@ model NewsDigest {
   @@index([personId, sentAt])
   @@index([sentAt])
   @@map("news_digests")
+}
+
+/// Пакет рынка КАСКО и ОСАГО (этап 62): код страницы дашборда. Одна строка: загрузка пакета заменяет её вместе с
+/// наборами данных одной транзакцией. Цифры живут только в базе, в репозиторий не попадают
+model MarketBundle {
+  id             String   @id @default("current")
+  /// Растёт с каждой загрузкой: по нему и моменту загрузки браузер понимает, что данные сменились
+  version        Int
+  /// Код страницы: имя файла и текст (index.html, ui.js и другие)
+  files          Json
+  datasetsCount  Int
+  rowsTotal      Int
+  /// Размер загруженного файла пакета, байт
+  bytes          Int
+  uploadedAt     DateTime @default(now()) @db.Timestamptz(3)
+  uploadedById   String?
+  uploadedByName String
+
+  @@map("market_bundles")
+}
+
+/// Набор данных рынка (этап 62): строки таблицы как массив простых объектов. Дашборд берёт их по имени
+model MarketDataset {
+  name        String   @id
+  title       String
+  description String   @default("")
+  rows        Json
+  rowCount    Int
+  updatedAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  @@map("market_datasets")
 }
