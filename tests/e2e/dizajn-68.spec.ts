@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 import { contrastReport } from "./contrast";
 
 // Этап 68: новый дизайн страниц из дизайн-сессии (в пакете он назван этапами 61-64). Снимки светлой и тёмной темы на
@@ -217,7 +217,8 @@ test("люди: «сдают все» в подсказке и у команды
   await sql(`INSERT INTO teams (id, name, kind, "leaderId", "specialistsWeekly", "updatedAt") VALUES ('e2e-team68', 'Тест 68: команда вкладов', 'CUSTOM', ${person("reva")}, true, now()) ON CONFLICT (id) DO NOTHING`);
   await sql(`INSERT INTO team_members ("teamId", "personId") SELECT 'e2e-team68', id FROM people WHERE slug = 'cheychenets' ON CONFLICT DO NOTHING`);
   try {
-    await enter(page, "Рева Тарас");
+    // Личный вход: общий логин без режима управления видит только топ-команду
+    await enterByLink(page, "reva");
     await page.context().addCookies([{ name: "team", value: "e2e-team68", url: "http://localhost:3100" }]);
     await page.goto("/people");
     await expect(page.getByRole("heading", { name: "Тест 68: команда вкладов", level: 2 })).toBeVisible();
