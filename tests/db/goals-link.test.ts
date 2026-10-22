@@ -1,7 +1,7 @@
 // Этап 65: задачи к целям перетаскиванием. Права на связь по правилам сервиса задач, перевязка, отвязка, журнал,
 // отмена, несколько задач разом, подбор цели по тексту не перетирает связь, поставленную руками, и данные экрана
 // «Связать задачи с целями»: цели человека и его команд, «Мои задачи» с причинами, видимость и квартал.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, beforeEach } from "vitest";
 import { prisma } from "@/lib/db";
 import * as svc from "@/lib/tasks/service";
 import * as org from "@/lib/org/service";
@@ -38,7 +38,11 @@ const expectRule = async (p: Promise<unknown>, message: RegExp) => {
 const newTask = async (a: svc.Actor, title: string, ownerSlug: string, team?: string, extra: Partial<svc.NewTaskInput> = {}) =>
   (await svc.createTask(a, { title, outcome: "Результат", owner: ownerSlug, direction: "department", due: future, team, ...extra })).task;
 const goalIdOf = async (number: number) => (await prisma.task.findUniqueOrThrow({ where: { number }, select: { goalId: true } })).goalId;
-const goalLog = (number: number) => prisma.auditLog.findMany({ where: { entity: "task", entityId: String(number), field: { in: ["Цель", "Цель (отмена)"] } }, orderBy: { id: "asc" } });
+// Журнал общий на весь прогон: номера задач повторяются в разных файлах тестов (импорт наполнения тоже пишет «Цель»),
+// поэтому записи берутся только после начала теста
+let logMark = BigInt(0);
+const goalLog = (number: number) =>
+  prisma.auditLog.findMany({ where: { id: { gt: logMark }, entity: "task", entityId: String(number), field: { in: ["Цель", "Цель (отмена)"] } }, orderBy: { id: "asc" } });
 
 async function clean() {
   await prisma.task.deleteMany();
@@ -76,6 +80,10 @@ beforeAll(async () => {
 afterAll(async () => {
   await clean();
   await prisma.$disconnect();
+});
+
+beforeEach(async () => {
+  logMark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
 });
 
 describe("права на связь задачи с целью", () => {

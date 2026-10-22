@@ -330,6 +330,11 @@ function link(value: string | null | undefined): string | null {
   return v;
 }
 
+/** Своя транзакция или чужая (этап 67, импорт наполнения: всё одной транзакцией) */
+function inTx<T>(db: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db ? fn(db) : prisma.$transaction(fn);
+}
+
 async function audit(tx: Tx, actor: Actor, goalId: string, field: string, before?: string | null, after?: string | null, action = "goal.update") {
   await tx.auditLog.create({
     data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: goalId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
@@ -355,10 +360,11 @@ async function checkParent(tx: Tx, nodes: TeamNode[], parentId: string, teamId: 
   return parent;
 }
 
-export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: string }> {
+/** opts.source: откуда цель (этап 67: цели из бордов, загруженные импортом наполнения, как при загрузке борда) */
+export async function createGoal(actor: Actor, input: GoalInput, db?: Tx, opts: { source?: string } = {}): Promise<{ id: string }> {
   const quarter = input.quarter && QUARTER.test(input.quarter) ? input.quarter : quarterOf(moscowToday());
   const title = text(input.title, LIMITS.title, "Цель") ?? fail("Напишите цель одной мыслью");
-  return prisma.$transaction(async (tx) => {
+  return inTx(db, async (tx) => {
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const teamId = input.team ?? fail("Выберите команду цели");
     const team = nodes.find((n) => n.id === teamId && n.active) ?? fail("Такой команды нет");
@@ -386,6 +392,7 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
         link: link(input.link),
         sortOrder: (count + 1) * 10,
         createdById: actor.personId,
+        ...(opts.source ? { source: opts.source } : {}),
       },
     });
     await audit(tx, actor, goal.id, "Цель заведена", null, `${quarterLabel(quarter)}, ${team.name}: ${title}`, "goal.create");
@@ -393,8 +400,8 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
   });
 }
 
-export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }, db?: Tx): Promise<void> {
+  await inTx(db, async (tx) => {
     const goal = (await tx.goal.findUnique({ where: { id }, include: { team: true, owner: true, parent: true } })) ?? fail("Цели уже нет");
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const who = { personId: actor.personId, role: actor.role, management: actor.management };
@@ -576,11 +583,12 @@ export async function suggestGoals(who: Who, input: { team: string; due: string;
 
 /**
  * Привязать задачу к цели или отвязать из карточки задачи. С этапа 65 связь пишет сервис задач (setTaskGoal): те же
- * права и правила, что у перетаскивания на странице «Цели», журнал и блокировка строки задачи
+ * права и правила, что у перетаскивания на странице «Цели», журнал и блокировка строки задачи. db: внутри чужой
+ * транзакции (этап 67, импорт наполнения), название цели для ответа читается тем же клиентом
  */
-export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null): Promise<{ goal: string | null }> {
-  await setTaskGoal(actor, number, goalId);
-  const goal = goalId ? await prisma.goal.findUnique({ where: { id: goalId }, select: { title: true } }) : null;
+export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<{ goal: string | null }> {
+  await setTaskGoal(actor, number, goalId, db);
+  const goal = goalId ? await (db ?? prisma).goal.findUnique({ where: { id: goalId }, select: { title: true } }) : null;
   return { goal: goal?.title ?? null };
 }
 

@@ -77,6 +77,8 @@ export async function resetDatabase({ tasks = true, weekly = true } = {}) {
   await client.query("DELETE FROM market_datasets");
   await client.query("DELETE FROM market_bundles");
   await client.query("DELETE FROM settings WHERE key IN ('market.access', 'market.meeting')");
+  // Этап 67: ключи импорта наполнения ведут на задачи и цели, которых после сброса нет
+  await client.query("DELETE FROM content_import_keys");
   await client.query("DELETE FROM sheet_runs");
   await client.end();
   const env = { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL };
