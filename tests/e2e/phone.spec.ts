@@ -56,7 +56,9 @@ test("приложение на экран «Домой»: описание, з�
   await expect(page.getByRole("heading", { name: "Нет сети" })).toBeVisible();
   await expect(page.getByText("Страница откроется, когда телефон снова будет в сети")).toBeVisible();
   await shot(page, "offline");
-  await page.context().setOffline(false);
+  // Связь вернулась: страница перезагружается сама, дожидаемся загрузки, чтобы тест не обрывался посреди перезагрузки
+  await Promise.all([page.waitForEvent("load"), page.context().setOffline(false)]);
+  await expect(page.getByRole("heading", { name: "Ошибка 503" })).toBeVisible();
 });
 
 test("черновик weekly без сети: запись не теряется, уходит сама, когда связь вернулась, и не задваивается", async ({ page }) => {

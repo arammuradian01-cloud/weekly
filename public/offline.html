@@ -89,15 +89,54 @@
         show();
         window.addEventListener("offline", show);
         window.addEventListener("online", function () { location.reload(); });
-        // Сеть есть, а сервер не отвечал: раз в 15 секунд спрашиваем проверку живости и, когда он вернулся, открываем
-        // страницу заново. На самой странице /offline.html не перезагружаемся: она и так откроется снова
+        // Сеть есть, а сервер не отвечал: спрашиваем проверку здоровья (с базой) и, когда сервер вернулся, открываем
+        // страницу заново. Интервал растёт 15, 30, 60, 120 секунд с разбросом, чтобы после выкладки вкладки не приходили
+        // все разом. После четырёх автоматических перезагрузок одной страницы за 10 минут сами больше не перезагружаем:
+        // страница могла сама ронять сервер, остаётся кнопка «Попробовать снова». На /offline.html опроса нет
         if (location.pathname !== "/offline.html") {
-          setInterval(function () {
-            if (navigator.onLine === false) return;
-            fetch("/api/live", { cache: "no-store" })
-              .then(function (r) { if (r.ok) location.reload(); })
-              .catch(function () {});
-          }, 15000);
+          var KEY = "weekly-error-reloads:" + location.pathname;
+          var STEPS = [15, 30, 60, 120];
+          var polls = 0;
+          var busy = false;
+          var timer = null;
+          var recent = function () {
+            try {
+              var now = Date.now();
+              return JSON.parse(sessionStorage.getItem(KEY) || "[]").filter(function (t) { return now - t < 600000; });
+            } catch (e) { return []; }
+          };
+          var reloadNow = function () {
+            var list = recent();
+            list.push(Date.now());
+            try { sessionStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
+            location.reload();
+          };
+          var schedule = function () {
+            if (timer || recent().length >= 4) return;
+            var base = STEPS[Math.min(polls + recent().length, STEPS.length - 1)];
+            timer = setTimeout(check, Math.max(5, base + Math.random() * 10 - 5) * 1000);
+          };
+          var check = function () {
+            timer = null;
+            if (busy || recent().length >= 4) return;
+            if (document.hidden || navigator.onLine === false) return;
+            busy = true;
+            polls += 1;
+            var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+            var stop = ctrl ? setTimeout(function () { ctrl.abort(); }, 8000) : null;
+            fetch("/api/health", { cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+              .then(function (r) { return r.ok; }, function () { return false; })
+              .then(function (ok) {
+                busy = false;
+                if (stop) clearTimeout(stop);
+                if (ok) reloadNow(); else schedule();
+              });
+          };
+          // Скрытая вкладка не опрашивает, при возвращении на неё проверяем сразу
+          document.addEventListener("visibilitychange", function () {
+            if (!document.hidden && !timer && !busy) check();
+          });
+          schedule();
         }
       })();
     </script>

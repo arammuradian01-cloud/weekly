@@ -53,15 +53,26 @@ async function trim(cache) {
 /** Ответы прокси хостинга, когда приложение не отвечает (перезапуск, выкладка): вместо его страницы показываем свою */
 const GATEWAY = [502, 503, 504];
 
+/** Заголовки безопасности, как у страниц Next: своя страница ошибки собирается здесь и их не наследует */
+const SAFE_HEADERS = {
+  "Cache-Control": "no-store",
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "X-Robots-Tag": "noindex, nofollow",
+};
+
 /**
  * Своя страница ошибки: без сети на ней «Нет сети», при живой сети «Ошибка <код>». Код 503, если сервер не ответил
- * вовсе, или код прокси хостинга
+ * вовсе, или код прокси хостинга. Код ответа совпадает с кодом в заголовке страницы
  */
 const offlinePage = (code = 503) =>
   caches.match(OFFLINE_URL).then(async (hit) => {
-    if (!hit) return new Response(`Ошибка ${code}`, { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
-    const html = (await hit.text()).replace('data-code="503"', `data-code="${code}"`);
-    return new Response(html, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (!hit) {
+      return new Response(`Ошибка ${code}`, { status: code, headers: { ...SAFE_HEADERS, "Content-Type": "text/plain; charset=utf-8" } });
+    }
+    const html = (await hit.text()).replace('<main data-code="503">', `<main data-code="${code}">`);
+    return new Response(html, { status: code, headers: { ...SAFE_HEADERS, "Content-Type": "text/html; charset=utf-8" } });
   });
 
 self.addEventListener("fetch", (event) => {
@@ -71,11 +82,18 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Переход по странице: всегда в сеть. Сети нет или сервер не отвечает: своя страница, а не ошибка браузера или хостинга
-  if (request.mode === "navigate") {
+  // Ответы самого приложения по адресам /api/ (например /api/health при недоступной базе) не подменяем: там важен
+  // настоящий ответ, а не страница ошибки с автоперезагрузкой
+  if (request.mode === "navigate" && !url.pathname.startsWith("/api/")) {
     event.respondWith(
-      fetch(request)
-        .then((res) => (GATEWAY.includes(res.status) ? offlinePage(res.status) : res))
-        .catch(() => offlinePage()),
+      fetch(request).then(
+        (res) => {
+          if (!GATEWAY.includes(res.status)) return res;
+          res.body?.cancel();
+          return offlinePage(res.status).catch(() => res);
+        },
+        () => offlinePage().catch(() => Response.error()),
+      ),
     );
     return;
   }
