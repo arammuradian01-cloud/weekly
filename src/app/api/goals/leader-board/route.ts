@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   try {
     // Запрос только со страницы ресурса: чужой сайт не отправит форму от имени вошедшего человека
     const origin = request.headers.get("origin");
-    if (origin && !sameSiteOrigin(origin, request.url)) return NextResponse.json({ ok: false, error: "Запрос с чужого сайта" }, { status: 403 });
+    if (origin && !sameSiteOrigin(origin, request)) return NextResponse.json({ ok: false, error: "Запрос с чужого сайта" }, { status: 403 });
     // В режиме «Смотреть как» загрузка отказывает до чтения файла (этап 63)
     const actor = await writingActor();
     if (!canLoadLeaderBoard(actor)) return NextResponse.json({ ok: false, error: LEADER_MANAGE_ONLY }, { status: 403 });

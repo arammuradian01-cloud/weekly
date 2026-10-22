@@ -5,7 +5,7 @@
 import { fillMissingLogins, lockPeopleNames, loginProblem, reservedLogins, takenNames } from "@/lib/login/logins";
 import { refreshApprovals } from "@/lib/tasks/approval";
 import { guardPrimary, ownerTitles, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
-import { checkOwnerTitle, OWNER_TITLES_KEY } from "@/lib/owner-title";
+import { checkOwnerTitle, OWNER_TITLES_KEY, titleOf } from "@/lib/owner-title";
 import { personalLogin } from "@/lib/one-on-one/rules";
 import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
@@ -188,8 +188,6 @@ export type PersonView = {
   primaryOwner: boolean;
   /** Подпись роли владельца, которую задал главный владелец (этап 69). null: подпись по умолчанию */
   ownerTitle: string | null;
-  /** Подпись роли на экранах: своя подпись владельца или правило по умолчанию */
-  roleLabel: string;
 };
 
 export async function listPeople(): Promise<PersonView[]> {
@@ -220,8 +218,7 @@ export async function listPeople(): Promise<PersonView[]> {
     pendingEmail: p.pendingEmail,
     inviteUntil: inviteBy.get(p.id)?.toISOString() ?? null,
     primaryOwner: p.role === "OWNER" && p.slug === primary,
-    ownerTitle: p.role === "OWNER" ? (titles[p.slug] ?? null) : null,
-    roleLabel: personRoleLabel(p.role, p.role === "OWNER" && p.slug === primary, titles[p.slug]),
+    ownerTitle: p.role === "OWNER" ? titleOf(titles, p.slug) : null,
   }));
 }
 
@@ -286,8 +283,17 @@ export async function setPrimaryOwner(actor: Actor, slug: string) {
 export const OWNER_TITLE_RULES = {
   personal: "Подпись роли задаётся при личном входе: по общему логину можно выбрать чужой профиль",
   primaryOnly: "Подпись роли владельцев задаёт только главный владелец",
-  ownerOnly: "Подпись роли бывает только у включённого владельца",
+  ownerOnly: "Подпись роли бывает только у владельца",
+  inactive: "Выключенному владельцу подпись роли можно только снять: оставьте поле пустым",
 } as const;
+
+/**
+ * Подписи ролей лежат одной настройкой: каждая правка читает и перезаписывает её целиком. Замок до конца транзакции,
+ * иначе две одновременные правки (подпись и снятие роли владельца) затрут друг друга
+ */
+async function lockOwnerTitles(tx: Tx): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${OWNER_TITLES_KEY}))::text`;
+}
 
 /** Подпись в журнале: своя подпись или правило по умолчанию с пометкой */
 const titleForLog = (title: string | null, primary: boolean) => title ?? `${personRoleLabel("OWNER", primary)}, по умолчанию`;
@@ -295,7 +301,8 @@ const titleForLog = (title: string | null, primary: boolean) => title ?? `${pers
 /**
  * Подпись роли владельца (этап 69): например «ex-Владелец» главному и «Владелец» совладельцу. Задаёт только главный
  * владелец при личном входе в режиме управления, себе и совладельцам. Пустая подпись возвращает правило по
- * умолчанию. Подпись только текст: права решают роль и главный владелец. Журнал пишет, что было и что стало
+ * умолчанию; у выключенного владельца подпись можно только снять. Подпись только текст: права решают роль и главный
+ * владелец. Журнал пишет, что было и что стало
  */
 export async function setOwnerTitle(actor: Actor, slug: string, input: string | null) {
   requirePeople(actor);
@@ -304,14 +311,15 @@ export async function setOwnerTitle(actor: Actor, slug: string, input: string | 
   if (!check.ok) return fail(check.error);
   const title = check.title;
   return prisma.$transaction(async (tx) => {
-    // Две правки подряд из разных вкладок не теряют друг друга: подписи лежат одной настройкой
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${OWNER_TITLES_KEY}))::text`;
+    // Замок до чтения людей и подписей: снятие роли владельца ждёт эту правку или она ждёт его
+    await lockOwnerTitles(tx);
     const primary = await primaryOwnerSlug(tx);
     if (primary !== actor.slug) fail(OWNER_TITLE_RULES.primaryOnly);
     const p = await tx.person.findUnique({ where: { slug } });
-    if (!p || !p.active || p.role !== "OWNER") return fail(OWNER_TITLE_RULES.ownerOnly);
+    if (!p || p.role !== "OWNER") return fail(OWNER_TITLE_RULES.ownerOnly);
+    if (!p.active && title !== null) fail(OWNER_TITLE_RULES.inactive);
     const titles = await ownerTitles(tx);
-    const before = titles[slug] ?? null;
+    const before = titleOf(titles, slug);
     const isPrimary = slug === primary;
     const label = personRoleLabel("OWNER", isPrimary, title);
     if (before === title) return { slug, title, label, changed: false };
@@ -399,9 +407,12 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
         }
         // Подпись роли владельца (этап 69) уходит вместе с ролью: снова став владельцем, человек не вернёт её молча
         if (p.role === "OWNER") {
+          // Тот же замок, что у правки подписи: иначе одновременная правка вернула бы снятую подпись или затёрла свою
+          await lockOwnerTitles(tx);
           const titles = await ownerTitles(tx);
-          if (titles[slug]) {
-            changes.push(["Подпись роли", titles[slug], "снята вместе с ролью владельца"]);
+          const title = titleOf(titles, slug);
+          if (title) {
+            changes.push(["Подпись роли", title, "снята вместе с ролью владельца"]);
             delete titles[slug];
             await tx.setting.update({ where: { key: OWNER_TITLES_KEY }, data: { value: titles } });
           }

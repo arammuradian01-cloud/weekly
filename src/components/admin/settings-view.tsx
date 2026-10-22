@@ -576,7 +576,8 @@ function PeopleSection({
                       Сделать главным
                     </Button>
                   ) : null}
-                  {canTitle && p.active && p.role === "OWNER" ? (
+                  {/* У выключенного владельца подпись можно только снять: кнопка, только если подпись есть */}
+                  {canTitle && p.role === "OWNER" && (p.active || p.ownerTitle) ? (
                     <Button size="sm" variant="ghost" aria-label={`Подпись роли: ${p.fullName}`} onClick={() => setTitleFor(p)}>
                       <Tag className="h-4 w-4" aria-hidden="true" />
                       Подпись роли
@@ -754,18 +755,39 @@ function OwnerTitleForm({ person, onClose }: { person: PersonView; onClose: () =
   const [value, setValue] = useState(person.ownerTitle ?? "");
   const [busy, setBusy] = useState(false);
   const fallback = person.primaryOwner ? "Владелец" : "Совладелец";
+  const save = async (title: string) => {
+    setBusy(true);
+    const r = await run(() => setOwnerTitleAction(person.slug, title));
+    setBusy(false);
+    if (r) {
+      notify(r.changed ? `${person.fullName}: подпись роли «${r.label}»` : "Ничего не изменилось");
+      onClose();
+    }
+  };
+  if (!person.active) {
+    // Выключенный владелец: подпись видна в списке, её можно только снять
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-body text-ink">
+          Человек выключен. Подпись «{person.ownerTitle}» можно только снять: вернётся подпись по умолчанию «{fallback}».
+        </p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button type="button" disabled={busy} onClick={() => void save("")}>
+            {busy ? "Снимаю…" : "Снять подпись"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <form
       className="flex flex-col gap-4"
       onSubmit={async (e) => {
         e.preventDefault();
-        setBusy(true);
-        const r = await run(() => setOwnerTitleAction(person.slug, value));
-        setBusy(false);
-        if (r) {
-          notify(r.changed ? `${person.fullName}: подпись роли «${r.label}»` : "Ничего не изменилось");
-          onClose();
-        }
+        await save(value);
       }}
     >
       <TextInput

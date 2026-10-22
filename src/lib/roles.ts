@@ -1,6 +1,7 @@
 import type { Role } from "@/generated/prisma/enums";
 import type { ManagementRole } from "./session";
 import type { PasswordKind } from "./passwords";
+import { titleOf } from "./owner-title";
 
 export const ROLE_LABELS: Record<Role, string> = {
   OWNER: "Владелец",
@@ -16,7 +17,7 @@ export const ROLE_LABELS: Record<Role, string> = {
  */
 export function personRoleLabel(role: Role, primaryOwner: boolean, title?: string | null): string {
   if (role === "OWNER") {
-    const own = title?.trim();
+    const own = typeof title === "string" ? title.trim() : "";
     if (own) return own;
     if (!primaryOwner) return "Совладелец";
   }
@@ -28,7 +29,7 @@ export type OwnerLabels = { primary: string | null; titles: Record<string, strin
 
 /** Подпись роли человека по главному владельцу и подписям владельцев */
 export function roleLabelOf(person: { slug: string; role: Role }, owners: OwnerLabels): string {
-  return personRoleLabel(person.role, person.role === "OWNER" && person.slug === owners.primary, owners.titles[person.slug]);
+  return personRoleLabel(person.role, person.role === "OWNER" && person.slug === owners.primary, titleOf(owners.titles, person.slug));
 }
 
 /** Режим управления доступен только профилям владельца и администраторов */

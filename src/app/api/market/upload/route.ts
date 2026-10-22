@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   try {
     // Запрос только со страницы ресурса: чужой сайт не отправит файл от имени вошедшего человека
     const origin = request.headers.get("origin");
-    if (origin && !sameSiteOrigin(origin, request.url)) return answer(403, "Запрос с чужого сайта");
+    if (origin && !sameSiteOrigin(origin, request)) return answer(403, "Запрос с чужого сайта");
     // Вход: без действующей cookie сразу ответ, а не перенаправление на вход (браузер повторил бы POST с файлом)
     if (!(await readSession())) return answer(401, MARKET_SIGNED_OUT);
     const actor = await actorOrNull();

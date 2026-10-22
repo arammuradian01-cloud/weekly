@@ -1,47 +1,63 @@
 // Адрес приложения (этап 69). Основной адрес задаёт APP_URL: по нему строятся ссылки в письмах, приглашениях,
 // календаре, уведомлениях и таблице. Дополнительные адреса, с которых тоже открывают ресурс (например технический
-// адрес хостинга, пока к приложению привязан свой домен), перечисляет APP_ALIASES через запятую. С ними загрузки
-// файлов не отвечают «Запрос с чужого сайта». REDIRECT_TO_APP_URL=1 включает постоянный переход 308 со всех других
-// адресов на основной для обычных открытий страниц. Модуль без базы и без Node: его зовут proxy, обработчики загрузок
-// и модульные тесты.
+// адрес хостинга, пока к приложению привязан свой домен), перечисляет APP_ALIASES через запятую, только точные адреса.
+// С ними загрузки файлов не отвечают «Запрос с чужого сайта». REDIRECT_TO_APP_URL=1 включает переход 308 со всех
+// других адресов на основной для открытий страниц. Модуль без базы и без Node: его зовут proxy, обработчики загрузок и
+// модульные тесты. Правила адресов общие с next.config.mjs: src/lib/app-origins.mjs.
+
+import { appOrigins as originsOf, exactOrigin } from "./app-origins.mjs";
 
 type Env = Record<string, string | undefined>;
 type HeaderSource = { get(name: string): string | null };
 
-/** Адрес из переменной: с https:// или без, лишние пробелы и косые черты в конце не мешают. null: не адрес */
-function originOf(value: string | undefined | null): string | null {
-  const v = (value ?? "").trim().replace(/\/+$/, "");
-  if (!v) return null;
-  try {
-    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`);
-    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
 /** Основной адрес приложения из APP_URL (только начало: протокол, домен, порт) или null, если не задан */
 export function appOrigin(env: Env = process.env): string | null {
-  return originOf(env.APP_URL);
+  return exactOrigin(env.APP_URL);
 }
 
 /** Все адреса ресурса: основной из APP_URL и дополнительные из APP_ALIASES, без повторов */
 export function appOrigins(env: Env = process.env): string[] {
-  const list = [env.APP_URL, ...(env.APP_ALIASES ?? "").split(",")].map(originOf).filter((o): o is string => !!o);
-  return [...new Set(list)];
+  return originsOf(env);
+}
+
+/** Хост, на который пришёл запрос: как его видит Next в серверных действиях, сначала X-Forwarded-Host, потом Host */
+export function requestHost(headers: HeaderSource): string | null {
+  const forwarded = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  return forwarded || headers.get("host")?.trim() || null;
 }
 
 /**
- * Запрос пришёл со страницы ресурса: заголовок Origin совпадает с основным или дополнительным адресом либо с адресом
- * самого запроса. Чужой сайт и «Origin: null» (страница из файла, песочница) не проходят
+ * Адрес, на который пришёл запрос, по заголовкам прокси: X-Forwarded-Proto (иначе протокол адреса запроса) и
+ * X-Forwarded-Host (иначе Host). Адрес самого запроса (request.url) у Next за прокси бывает внутренним, вида
+ * http://0.0.0.0:3000, поэтому одного его мало
  */
-export function sameSiteOrigin(origin: string, requestUrl: string, env: Env = process.env): boolean {
-  const from = originOf(origin);
-  if (!from || origin.trim() === "null") return false;
+function forwardedOrigin(request: { url: string; headers: HeaderSource }): string | null {
+  const host = requestHost(request.headers);
+  if (!host) return null;
+  let proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase() ?? "";
+  if (proto !== "http" && proto !== "https") {
+    try {
+      proto = new URL(request.url).protocol.replace(/:$/, "");
+    } catch {
+      return null;
+    }
+  }
+  return exactOrigin(`${proto}://${host}`);
+}
+
+/**
+ * Запрос пришёл со страницы ресурса: заголовок Origin совпадает с основным или дополнительным адресом либо с адресом,
+ * на который пришёл запрос (по заголовкам прокси или по адресу запроса). Сравниваются протокол, хост и порт целиком.
+ * Чужой сайт, «Origin: null» (страница из файла, песочница) и не адрес не проходят
+ */
+export function sameSiteOrigin(origin: string, request: { url: string; headers: HeaderSource }, env: Env = process.env): boolean {
+  if (origin.trim().toLowerCase() === "null") return false;
+  const from = exactOrigin(origin);
+  if (!from) return false;
   if (appOrigins(env).includes(from)) return true;
+  if (forwardedOrigin(request) === from) return true;
   try {
-    return new URL(from).host === new URL(requestUrl).host;
+    return exactOrigin(new URL(request.url).origin) === from;
   } catch {
     return false;
   }
@@ -52,29 +68,16 @@ export function redirectEnabled(env: Env = process.env): boolean {
   return ["1", "true", "yes", "on"].includes((env.REDIRECT_TO_APP_URL ?? "").trim().toLowerCase());
 }
 
-/** Хост без регистра, точки в конце и порта по умолчанию для протокола основного адреса */
-function normalHost(host: string, protocol: string): string {
-  let h = host.trim().toLowerCase().replace(/\.$/, "");
-  if (protocol === "https:" && h.endsWith(":443")) h = h.slice(0, -4);
-  if (protocol === "http:" && h.endsWith(":80")) h = h.slice(0, -3);
-  return h.replace(/\.$/, "");
-}
-
-/** Хост, на который пришёл запрос: как его видит Next в серверных действиях, сначала X-Forwarded-Host, потом Host */
-export function requestHost(headers: HeaderSource): string | null {
-  const forwarded = headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  return forwarded || headers.get("host")?.trim() || null;
-}
-
 export type RedirectRequest = { method: string; pathname: string; search: string; headers: HeaderSource };
 
 /**
  * Куда перевести запрос со старого адреса, или null, если не нужно. Переводятся только открытия страниц (GET и HEAD)
- * и только при REDIRECT_TO_APP_URL=1, если хост запроса не совпадает с хостом APP_URL. Путь и параметры сохраняются.
- * Не трогаются: /api (проверку здоровья хостинг зовёт, возможно, по техническому адресу, календари забирают ленту по
- * старой ссылке), загрузки и серверные действия (это POST, они доделываются там, где начаты). Вкладка, открытая на
- * старом адресе до включения перехода, при следующем переходе по ссылке внутри ресурса получает отказ служебного
- * запроса Next (заголовки RSC до proxy не доходят) и открывает страницу целиком, уже на основном адресе
+ * и только при REDIRECT_TO_APP_URL=1, если хост запроса не совпадает с хостом APP_URL (регистр, точка в конце и порт
+ * по умолчанию не мешают). Путь и параметры сохраняются. Не трогаются: /api (проверку здоровья хостинг зовёт, возможно,
+ * по техническому адресу, календари забирают ленту по старой ссылке), загрузки и серверные действия (это POST, они
+ * доделываются там, где начаты). Вкладка, открытая на старом адресе до включения перехода, при следующем переходе по
+ * ссылке внутри ресурса получает отказ служебного запроса Next (заголовки RSC до proxy не доходят) и открывает страницу
+ * целиком, уже на основном адресе
  */
 export function appUrlRedirect(req: RedirectRequest, env: Env = process.env): string | null {
   if (!redirectEnabled(env)) return null;
@@ -87,8 +90,16 @@ export function appUrlRedirect(req: RedirectRequest, env: Env = process.env): st
   if (req.headers.get("next-action")) return null;
   const host = requestHost(req.headers);
   if (!host) return null;
-  const app = new URL(target);
-  if (normalHost(host, app.protocol) === normalHost(app.host, app.protocol)) return null;
+  const here = exactOrigin(`${new URL(target).protocol}//${host}`);
+  // Хост, который не разобрать как адрес, не переводим: лучше остаться на месте, чем увести неизвестно куда
+  if (!here || here === target) return null;
   const search = req.search && req.search !== "?" ? (req.search.startsWith("?") ? req.search : `?${req.search}`) : "";
   return `${target}${path.startsWith("/") ? path : `/${path}`}${search}`;
 }
+
+/**
+ * Ответ перехода на основной адрес: 308 (метод и тело не меняются, адрес переехал насовсем) с Cache-Control: no-store.
+ * Без запрета кэша браузер запомнил бы постоянный переход без срока, и ошибку в APP_URL не исправить, убрав переменную:
+ * так каждое открытие снова спрашивает сервер, и выключенный переход перестаёт действовать сразу
+ */
+export const APP_URL_REDIRECT = { status: 308, headers: { "Cache-Control": "no-store" } } as const;

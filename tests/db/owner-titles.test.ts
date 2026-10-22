@@ -100,12 +100,14 @@ describe("кто задаёт подпись роли", () => {
     expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец", golovkin: "Владелец" });
     const list = await admin.listPeople();
     const row = (slug: string) => list.find((p) => p.slug === slug)!;
-    expect([row("muradyan").ownerTitle, row("muradyan").roleLabel, row("muradyan").primaryOwner]).toEqual(["ex-Владелец", "ex-Владелец", true]);
-    expect([row("golovkin").ownerTitle, row("golovkin").roleLabel, row("golovkin").primaryOwner]).toEqual(["Владелец", "Владелец", false]);
-    expect([row("reva").ownerTitle, row("reva").roleLabel]).toEqual([null, "Лидер"]);
+    expect([row("muradyan").ownerTitle, row("muradyan").primaryOwner]).toEqual(["ex-Владелец", true]);
+    expect([row("golovkin").ownerTitle, row("golovkin").primaryOwner]).toEqual(["Владелец", false]);
+    expect(row("reva").ownerTitle).toBeNull();
     const owners = await ownerLabels();
     expect(owners).toEqual({ primary: "muradyan", titles: { muradyan: "ex-Владелец", golovkin: "Владелец" } });
+    expect(roleLabelOf({ slug: "muradyan", role: "OWNER" }, owners)).toBe("ex-Владелец");
     expect(roleLabelOf({ slug: "golovkin", role: "OWNER" }, owners)).toBe("Владелец");
+    expect(roleLabelOf({ slug: "reva", role: "LEADER" }, owners)).toBe("Лидер");
 
     const me = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
     const log = await titleAudit();
@@ -121,7 +123,8 @@ describe("кто задаёт подпись роли", () => {
     expect(await titleAudit()).toHaveLength(1);
     expect(await admin.setOwnerTitle(await primary(), "muradyan", "   ")).toEqual({ slug: "muradyan", title: null, label: "Владелец", changed: true });
     expect((await titlesRow())?.value).toEqual({});
-    expect((await admin.listPeople()).find((p) => p.slug === "muradyan")?.roleLabel).toBe("Владелец");
+    expect((await admin.listPeople()).find((p) => p.slug === "muradyan")?.ownerTitle).toBeNull();
+    expect(roleLabelOf({ slug: "muradyan", role: "OWNER" }, await ownerLabels())).toBe("Владелец");
     const log = await titleAudit();
     expect([log[1]?.before, log[1]?.after]).toEqual(["ex-Владелец", "Владелец, по умолчанию"]);
   });
@@ -142,17 +145,27 @@ describe("кто задаёт подпись роли", () => {
     expect(await titleAudit()).toEqual([]);
   });
 
-  it("подпись бывает только у включённого владельца; неверный текст отказывает до записи", async () => {
+  it("подпись бывает только у владельца; неверный текст отказывает до записи", async () => {
     await expectRule(admin.setOwnerTitle(await primary(), "reva", "Владелец"), admin.OWNER_TITLE_RULES.ownerOnly);
     await expectRule(admin.setOwnerTitle(await primary(), "nobody", "Владелец"), admin.OWNER_TITLE_RULES.ownerOnly);
-    await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
-    await prisma.person.update({ where: { slug: "golovkin" }, data: { active: false } });
-    await expectRule(admin.setOwnerTitle(await primary(), "golovkin", "Владелец"), admin.OWNER_TITLE_RULES.ownerOnly);
     await expectRule(admin.setOwnerTitle(await primary(), "muradyan", "Владелец → CEO"), OWNER_TITLE_TEXTS.chars);
     await expectRule(admin.setOwnerTitle(await primary(), "muradyan", "В"), OWNER_TITLE_TEXTS.length);
     await expectRule(admin.setOwnerTitle(await primary(), "muradyan", "В".repeat(31)), OWNER_TITLE_TEXTS.length);
     expect(await titlesRow()).toBeNull();
     expect(await titleAudit()).toEqual([]);
+  });
+
+  it("у выключенного владельца подпись видна и её можно только снять", async () => {
+    await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
+    await admin.setOwnerTitle(await primary(), "golovkin", "Владелец");
+    await prisma.person.update({ where: { slug: "golovkin" }, data: { active: false } });
+    expect((await admin.listPeople()).find((p) => p.slug === "golovkin")?.ownerTitle).toBe("Владелец");
+    await expectRule(admin.setOwnerTitle(await primary(), "golovkin", "Совладелец"), admin.OWNER_TITLE_RULES.inactive);
+    expect((await titlesRow())?.value).toEqual({ golovkin: "Владелец" });
+    expect(await admin.setOwnerTitle(await primary(), "golovkin", "")).toEqual({ slug: "golovkin", title: null, label: "Совладелец", changed: true });
+    expect((await titlesRow())?.value).toEqual({});
+    const log = await titleAudit();
+    expect([log.at(-1)?.before, log.at(-1)?.after]).toEqual(["Владелец", "Совладелец, по умолчанию"]);
   });
 
   it("снятие роли владельца снимает подпись с записью в журнал: снова став владельцем, человек подписан по умолчанию", async () => {
@@ -163,7 +176,59 @@ describe("кто задаёт подпись роли", () => {
     const log = await titleAudit();
     expect([log.at(-1)?.before, log.at(-1)?.after]).toEqual(["Владелец", "снята вместе с ролью владельца"]);
     await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
-    expect((await admin.listPeople()).find((p) => p.slug === "golovkin")?.roleLabel).toBe("Совладелец");
+    expect((await admin.listPeople()).find((p) => p.slug === "golovkin")?.ownerTitle).toBeNull();
+    expect(roleLabelOf({ slug: "golovkin", role: "OWNER" }, await ownerLabels())).toBe("Совладелец");
+  });
+});
+
+describe("одновременные правки", () => {
+  it("подпись главного и снятие роли совладельца одновременно: ни одна правка не затирает другую", async () => {
+    let lost = 0;
+    let survived = 0;
+    const rounds = 20;
+    for (let i = 0; i < rounds; i++) {
+      await prisma.setting.deleteMany({ where: { key: OWNER_TITLES_KEY } });
+      await prisma.person.update({ where: { slug: "golovkin" }, data: { role: "OWNER", active: true } });
+      const a = await primary();
+      await admin.setOwnerTitle(a, "golovkin", "Владелец");
+      const [title] = await Promise.allSettled([admin.setOwnerTitle(a, "muradyan", `Подпись ${i}`), admin.updatePerson(a, "golovkin", { role: "ADMIN" })]);
+      const titles = ((await titlesRow())?.value ?? {}) as Record<string, string>;
+      const golovkin = await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } });
+      if (golovkin.role !== "OWNER" && titles.golovkin) survived++;
+      if (title.status === "fulfilled" && titles.muradyan !== `Подпись ${i}`) lost++;
+    }
+    expect({ lost, survived }).toEqual({ lost: 0, survived: 0 });
+  }, 120_000);
+
+  it("подпись совладельцу одновременно со снятием его роли: либо подпись снята вместе с ролью, либо правка отказала", async () => {
+    for (let i = 0; i < 10; i++) {
+      await prisma.setting.deleteMany({ where: { key: OWNER_TITLES_KEY } });
+      await prisma.person.update({ where: { slug: "golovkin" }, data: { role: "OWNER", active: true } });
+      const a = await primary();
+      await Promise.allSettled([admin.setOwnerTitle(a, "golovkin", `Владелец ${i}`), admin.updatePerson(a, "golovkin", { role: "ADMIN" })]);
+      const titles = ((await titlesRow())?.value ?? {}) as Record<string, string>;
+      expect(titles.golovkin, `круг ${i}`).toBeUndefined();
+    }
+  }, 120_000);
+});
+
+describe("подпись в выгрузке в Excel", () => {
+  it("лист «Люди»: своя подпись у главного и совладельца, у остальных роль", async () => {
+    const { buildExport } = await import("@/lib/admin/export");
+    const ExcelJS = (await import("exceljs")).default;
+    await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
+    await admin.setOwnerTitle(await primary(), "muradyan", "ex-Владелец");
+    await admin.setOwnerTitle(await primary(), "golovkin", "Владелец");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildExport()).buffer as unknown as ArrayBuffer);
+    const sheet = wb.getWorksheet("Люди")!;
+    const roles = new Map<string, unknown>();
+    sheet.eachRow((row, n) => {
+      if (n > 1) roles.set(String(row.getCell(1).value), row.getCell(3).value);
+    });
+    expect(roles.get("Мурадян Арам")).toBe("ex-Владелец");
+    expect(roles.get("Головкин Владислав")).toBe("Владелец");
+    expect(roles.get("Рева Тарас")).toBe("Лидер");
   });
 });
 

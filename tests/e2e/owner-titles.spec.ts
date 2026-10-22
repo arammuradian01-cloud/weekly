@@ -98,6 +98,13 @@ test("главный владелец задаёт себе «ex-Владеле�
   await expect(page.locator("dd").filter({ hasText: "ex-Владелец" })).toHaveCount(1);
   await shot(page, "profile");
 
+  // «Люди»: в сводке команды совладелец со своей подписью
+  await page.goto("/people");
+  const summary = page.getByTestId("team-summary");
+  await expect(summary).toContainText("Владелец, Департамент, ОСАГО");
+  await expect(summary).not.toContainText("Совладелец");
+  await shot(page, "people");
+
   // Журнал: было и стало
   await page.goto("/journal");
   await expect(page.getByText("было «Владелец, по умолчанию»").first()).toBeVisible();
