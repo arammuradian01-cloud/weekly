@@ -41,6 +41,11 @@ type Store = {
   /** Общий логин без режима управления: передача задачи и другие личные действия скрыты */
   limited: boolean;
   observer: boolean;
+  /**
+   * «Смотреть как» (этап 63): владелец смотрит глазами me, или просмотр закончился сам и изменения закрыты до «Вернуться
+   * к себе». Черновики на устройстве и автосохранение выключены
+   */
+  viewing: boolean;
   /** Команды, которыми человек руководит, с командами ниже (этап 14) */
   leads: string[];
   team: CurrentTeamView;
@@ -75,6 +80,7 @@ export function PrototypeProvider({
   team,
   leads = [],
   limited = false,
+  viewing = false,
   children,
 }: {
   today: string;
@@ -89,6 +95,8 @@ export function PrototypeProvider({
   leads?: string[];
   /** Общий логин без режима управления (этап 21): часть действий только при личном входе */
   limited?: boolean;
+  /** «Смотреть как» (этап 63): только просмотр, на устройстве ничего не пишется от имени выбранного человека */
+  viewing?: boolean;
   children: React.ReactNode;
 }) {
   applyRegistry(registry);
@@ -193,6 +201,7 @@ export function PrototypeProvider({
       manageRole,
       observer,
       limited,
+      viewing,
       leads,
       team,
       teamPeople,
@@ -256,7 +265,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, limited, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks]);
+  }, [data, me, manageRole, observer, limited, viewing, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks]);
 
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }

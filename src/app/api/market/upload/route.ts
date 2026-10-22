@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { unstable_rethrow } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { currentActor } from "@/lib/action-runner";
+import { writingActor } from "@/lib/action-runner";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
 import { readSession } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canUploadMarket } from "@/lib/market/access";
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, value: { datasetsCount: meta.datasetsCount, rowsTotal: meta.rowsTotal, uploadedAt: meta.uploadedAt, version: meta.version } }, { headers: NO_STORE });
   } catch (error) {
     unstable_rethrow(error);
+    if (error instanceof ViewAsReadOnlyError) return answer(403, error.message);
     if (error instanceof MarketBundleError || error instanceof TaskRuleError) return answer(400, error.message);
     // Только вид ошибки: в тексте ошибки базы могут оказаться строки пакета
     const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : error instanceof Error ? error.name : "ошибка";
@@ -53,10 +55,13 @@ export async function POST(request: Request) {
   }
 }
 
-/** Человек из сессии или null, если вход больше не действует (устройство отозвано, профиль выключен и т.п.) */
+/**
+ * Человек из сессии или null, если вход больше не действует (устройство отозвано, профиль выключен и т.п.). В режиме
+ * «Смотреть как» отказ до чтения тела (этап 63)
+ */
 async function actorOrNull(): Promise<Actor | null> {
   try {
-    return await currentActor();
+    return await writingActor();
   } catch (error) {
     if (isRedirectError(error)) return null;
     throw error;

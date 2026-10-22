@@ -360,7 +360,8 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
       AUDIT_ACTION_LABELS[a.action] ?? a.action,
       objectLabel(a.entity, a.entityId),
       a.field ?? "",
-      text(a.before),
+      // Номер просмотра «Смотреть как» (этап 63) служебный: в выгрузке его нет, как и на экране журнала
+      a.action.startsWith("viewAs.") ? "" : text(a.before),
       text(a.after),
       SOURCE[a.source],
       a.ip ?? "",

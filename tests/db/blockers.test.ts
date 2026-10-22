@@ -123,7 +123,8 @@ describe("передача задачи", () => {
     const moved = await svc.handOver(reva, mine.number, "loginova", "Это зона RED, у Светы есть данные");
     expect(moved.task).toMatchObject({ owner: "loginova", coExecutors: ["reva"] });
     expect(await texts("loginova")).toContain("Задача передана вам: Это зона RED, у Светы есть данные");
-    const log = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(mine.number), action: "task.handover" } });
+    // Журнал только дописывается: задача с тем же номером могла быть в другом файле тестов этого прогона, берём последнюю запись
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(mine.number), action: "task.handover" }, orderBy: { id: "desc" } });
     expect(log).toMatchObject({ field: "Ответственный", before: "Рева Тарас", after: "Логинова Светлана. Причина: Это зона RED, у Светы есть данные" });
     // Закрытую и предложенную не передают
     await svc.changeStatus(await actors.loginova(), mine.number, "done", "Готово");
@@ -173,7 +174,7 @@ describe("правки по проверке кода", () => {
     const team = { ...(await actors.reva()), via: "TEAM" as const };
     await expectRule(svc.handOver(team, mine.number, "loginova", "Передаю"), /при личном входе/);
     await svc.handOver(await actors.reva(), mine.number, "loginova", "Передаю");
-    const co = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(mine.number), field: "Соисполнители" } });
+    const co = await prisma.auditLog.findFirstOrThrow({ where: { entity: "task", entityId: String(mine.number), field: "Соисполнители" }, orderBy: { id: "desc" } });
     expect(co).toMatchObject({ before: "нет", after: "Рева Тарас" });
   });
 

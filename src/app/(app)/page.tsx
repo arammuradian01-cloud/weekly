@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
+import { viewAsTitleMark } from "@/lib/view-as";
 import { getSetting } from "@/lib/settings";
 import {
   greeting,
@@ -31,7 +32,15 @@ import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
 import { NewsBlock } from "@/components/news/news-block";
 
-export const metadata: Metadata = { title: "Моя неделя" };
+/**
+ * Шаблон названия из (app)/layout действует только на вложенные страницы, а «Моя неделя» лежит в том же сегменте:
+ * пометку просмотра «Смотреть как» (этап 63) ставим здесь же
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const ctx = await requireContext();
+  if (!ctx.viewAs) return { title: "Моя неделя" };
+  return { title: { absolute: `${viewAsTitleMark(ctx.person.fullName)}: Моя неделя | Weekly` } };
+}
 
 const WEEKDAYS_GENITIVE = ["понедельника", "вторника", "среды", "четверга", "пятницы", "субботы", "воскресенья"];
 const WEEKDAYS_ACCUSATIVE = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"];
@@ -52,8 +61,9 @@ export default async function MyWeekPage() {
     // «Обещал и сделал» за законченные недели: отчётная ещё идёт (этап 22). По общему логину профиль мог выбрать
     // кто угодно, поэтому статистику показываем только при личном входе
     subjectOf(ctx).limited ? Promise.resolve([]) : promiseHistory([person.id], shiftWeek(weekKey, -1)),
-    // Анонимная оценка встреч (этап 29): напоминание в конце месяца и в первые дни следующего
-    ratingPrompt(actor, now),
+    // Анонимная оценка встреч (этап 29): напоминание в конце месяца и в первые дни следующего. В «Смотреть как»
+    // (этап 63) его нет: по напоминанию видно, ответил ли человек
+    ctx.viewAs ? Promise.resolve(null) : ratingPrompt(actor, now),
     // События для «Требует внимания» (этап 44): без просьб, которые и так в списке своей строкой
     listInbox(person.id, now, subjectOf(ctx)),
   ]);

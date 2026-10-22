@@ -1,6 +1,7 @@
 "use server";
 
 // Действия страницы «Структура» (этап 14). Права проверяет сервис: экран лишь прячет то, что нельзя.
+// Этап 64: команды и их состав правятся на экране «Weekly-команды», действия в people/teams/actions.ts
 
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
@@ -21,35 +22,6 @@ export async function applyStructureAction(text: string): Promise<Result<org.Str
   return done(await runAction("Загрузка структуры", (a) => org.applyStructure(a, String(text ?? ""))));
 }
 
-export async function syncTeamsAction(): Promise<Result<{ teams: number; members: number }>> {
-  return done(await runAction("Команды по структуре", (a) => org.syncTeams(a)));
-}
-
-export async function createTeamAction(input: org.TeamInput): Promise<Result<{ id: string }>> {
-  return done(await runAction("Новая команда", (a) => org.createTeam(a, input)));
-}
-
-export async function updateTeamAction(id: string, input: org.TeamInput): Promise<Result<void>> {
-  return done(await runAction("Правка команды", (a) => org.updateTeam(a, String(id), input)));
-}
-
-export async function addMemberAction(team: string, slug: string): Promise<Result<org.AddMemberResult>> {
-  return done(await runAction("Участник команды", (a) => org.addTeamMember(a, String(team), String(slug))));
-}
-
-/** Согласие или отказ руководителя человека на запрос в команду другой ветки (этап 53) */
-export async function decideJoinAction(id: string, approve: boolean): Promise<Result<void>> {
-  return done(await runAction("Запрос в команду", (a) => org.decideJoinRequest(a, String(id), !!approve)));
-}
-
-export async function cancelJoinAction(id: string): Promise<Result<void>> {
-  return done(await runAction("Запрос в команду", (a) => org.cancelJoinRequest(a, String(id))));
-}
-
-export async function removeMemberAction(team: string, slug: string): Promise<Result<void>> {
-  return done(await runAction("Участник команды", (a) => org.removeTeamMember(a, String(team), String(slug))));
-}
-
 export async function setPersonOrgAction(slug: string, input: org.PersonOrgInput): Promise<Result<void>> {
   return done(await runAction("Человек в структуре", (a) => org.setPersonOrg(a, String(slug), input)));
 }
@@ -62,6 +34,3 @@ export async function createUnitAction(input: { name: string; kind: UnitKind; pa
   return done(await runAction("Новое подразделение", (a) => org.createUnit(a, input)));
 }
 
-export async function setTeamRhythmAction(team: string, input: org.RhythmInput): Promise<Result<void>> {
-  return done(await runAction("Ритм команды", (a) => org.setTeamRhythm(a, String(team), input)));
-}

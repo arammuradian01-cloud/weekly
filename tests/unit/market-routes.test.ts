@@ -16,6 +16,9 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({
+  // Этап 63: выгрузка проверяет конец просмотра «Смотреть как»; здесь просмотра нет
+  assertWritable: () => undefined,
+  requestViewAsTab: async () => null,
   readSession: async () => state.session,
   requestIp: async () => "127.0.0.1",
   requireManagement: async () => ({ person: { id: "p1", fullName: "Мурадян Арам", role: "OWNER" }, via: "PASSWORD", management: { role: "OWNER" } }),
@@ -24,13 +27,15 @@ vi.mock("@/lib/auth", () => ({
     return { person: { id: "p1", role: "OWNER" }, via: "PASSWORD" };
   },
 }));
-vi.mock("@/lib/action-runner", () => ({
-  currentActor: async () => {
+vi.mock("@/lib/action-runner", () => {
+  const actor = async () => {
     // Устройство отозвано или профиль выключен: вход перенаправляет на экран входа
     if (state.actor === "redirect") redirect("/login?ended=1");
     return state.actor;
-  },
-}));
+  };
+  // Загрузка пакета берёт того, кто меняет, через writingActor (этап 63: в режиме «Смотреть как» отказ)
+  return { currentActor: actor, writingActor: actor };
+});
 vi.mock("@/lib/market/access", async (original) => ({ ...(await original<typeof import("@/lib/market/access")>()), canSeeMarket: async () => state.seesMarket }));
 vi.mock("@/lib/market/service", () => ({
   MARKET_UPLOAD_ONLY: "Пакет рынка загружает владелец при личном входе",

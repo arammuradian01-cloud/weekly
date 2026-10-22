@@ -1,13 +1,6 @@
-import type { Metadata } from "next";
-import { currentActor } from "@/lib/action-runner";
-import { projectsView } from "@/lib/org/projects";
-import { ProjectsBoard } from "@/components/projects/projects-board";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Люди: weekly-проекты" };
-
-/** Weekly-проекты (этап 57): готовые команды по структуре и проекты руководителя, люди перетаскиваются в проект */
-export default async function ProjectsPage() {
-  const actor = await currentActor();
-  const view = await projectsView(actor);
-  return <ProjectsBoard view={view} />;
+/** Weekly-проекты (этап 57) стали частью экрана «Weekly-команды» (этап 64): старый адрес ведёт туда */
+export default function ProjectsPage() {
+  redirect("/people/teams");
 }

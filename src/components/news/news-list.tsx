@@ -1,6 +1,7 @@
 // Список новостей (этап 60): серверный компонент. Карточка: продукты, заголовок ссылкой на источник, источник и дата,
 // короткое описание. Группы по дню публикации по Москве: сегодня, вчера, дата.
-// Описание подписано честно: без Claude это начало анонса источника дословно, с Claude его короткий пересказ
+// Описание подписано честно: без Claude это начало анонса источника дословно, с Claude его короткий пересказ.
+// Этап 59: описание серым в две строки, подпись начала анонса только для диктора, на телефоне два продукта и «+N»
 
 import { ExternalLink, Newspaper } from "lucide-react";
 import type { NewsItemView } from "@/lib/news/service";
@@ -33,15 +34,28 @@ export function shortDate(iso: string, now = new Date()): string {
   return `${String(d.day).padStart(2, "0")}.${String(d.month).padStart(2, "0")}${d.year !== y ? `.${d.year}` : ""}`;
 }
 
+/** Продуктов в строке карточки на телефоне: остальные одной меткой «+N», чтобы метки не занимали три строки */
+const PHONE_TAGS = 2;
+
 export function NewsCard({ item, labels, compact = false, now }: { item: NewsItemView; labels: Map<string, string>; compact?: boolean; now?: Date }) {
+  const names = item.directions.map((code) => labels.get(code) ?? code);
+  const rest = names.slice(PHONE_TAGS);
   return (
     <article className={cn("flex min-w-0 flex-col gap-1.5", compact ? "py-3" : "sv-card p-4")} data-testid="news-item" data-news-id={item.id}>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {item.directions.map((code) => (
-          <Badge key={code} tone="blue">
-            {labels.get(code) ?? code}
+      <div className="flex flex-wrap items-center gap-1.5" data-testid="news-tags">
+        {names.map((name, i) => (
+          <Badge key={item.directions[i]} tone="blue" className={i >= PHONE_TAGS ? "max-sm:hidden" : undefined}>
+            {name}
           </Badge>
         ))}
+        {rest.length ? (
+          <Badge tone="gray" className="sm:hidden">
+            <span aria-hidden="true" data-testid="news-more">
+              +{rest.length}
+            </span>
+            <span className="sr-only">ещё {rest.join(", ")}</span>
+          </Badge>
+        ) : null}
         <span className="text-caption text-muted">
           {item.source}, {shortDate(item.publishedAt, now)}
         </span>
@@ -53,9 +67,11 @@ export function NewsCard({ item, labels, compact = false, now }: { item: NewsIte
           <span className="sr-only">, откроется на сайте источника</span>
         </a>
       </h3>
+      {/* Описание серым и не длиннее двух строк (этап 59): статья целиком на сайте источника. Начало анонса источника
+          подписано для диктора, глазу подпись перед каждой новостью мешает; пересказ Claude подписан видимо */}
       {item.summary && !compact ? (
-        <p className="text-body text-ink [overflow-wrap:anywhere]" data-testid="news-summary">
-          <span className="text-caption text-muted">{SUMMARY_LABELS[item.summaryBy]}: </span>
+        <p className="line-clamp-2 text-body text-muted [overflow-wrap:anywhere]" data-testid="news-summary">
+          <span className={item.summaryBy === "source" ? "sr-only" : "text-caption"}>{SUMMARY_LABELS[item.summaryBy]}: </span>
           {item.summary}
         </p>
       ) : null}

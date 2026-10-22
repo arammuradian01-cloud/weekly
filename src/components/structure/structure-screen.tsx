@@ -1,40 +1,27 @@
 "use client";
 
 // Страница «Структура» (этап 14): подразделения департамента и команды руководителей.
-// Владелец в режиме управления загружает структуру из таблицы, правит команды, людей и подразделения.
-// Руководитель команды сам добавляет и убирает участников своей команды.
+// Владелец в режиме управления загружает структуру из таблицы, правит людей и подразделения.
+// Этап 64: команды здесь только для просмотра, состав и настройки команд правятся на экране «Weekly-команды».
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Plus, Upload, Users } from "lucide-react";
+import { ChevronDown, ChevronRight, Settings2, Upload } from "lucide-react";
 import type { StructureView, TeamView, UnitView } from "@/lib/org/view";
-import type { AddMemberResult, JoinRequestView } from "@/lib/org/service";
 import { usePrototype } from "@/domain/store";
-import { TOP_TEAM } from "@/domain/teams";
 import { cn } from "@/lib/cn";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
-import { SearchPicker, type PickerOption } from "@/components/ui/search-picker";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { EmptyState } from "@/components/empty-state";
-import {
-  addMemberAction,
-  cancelJoinAction,
-  decideJoinAction,
-  createTeamAction,
-  removeMemberAction,
-  setPersonOrgAction,
-  setTeamRhythmAction,
-  syncTeamsAction,
-  updateTeamAction,
-  updateUnitAction,
-} from "@/app/(app)/people/structure/actions";
+import { setPersonOrgAction, updateUnitAction } from "@/app/(app)/people/structure/actions";
 import { StructureImport } from "./structure-import";
 import { unitTitle } from "@/lib/org/tree-groups";
 import { PeopleTreeView } from "./people-tree";
 import type { PeopleTree } from "@/lib/org/people-tree";
-import { WEEKDAY_NAMES, slotText, type Slot } from "@/lib/org/rhythm";
-import { deadlineText } from "@/components/weekly/weekly-feed";
+import { WeeklyLine, rhythmText } from "@/components/teams/weekly-line";
 
 type Candidate = { slug: string; fullName: string; position: string | null; unit?: string | null; own?: boolean };
 
@@ -44,31 +31,25 @@ export function StructureScreen({
   owner,
   me,
   candidates,
-  leads = [],
   focus = null,
-  focusTeam = null,
-  requests = { toApprove: [], waiting: [] },
+  toApprove = 0,
 }: {
   view: StructureView;
   tree: PeopleTree;
   owner: boolean;
   me: string;
   candidates: Candidate[];
-  leads?: string[];
   /** Человек из адреса: дерево открывается на нём (этап 45) */
   focus?: string | null;
-  /** Команда из адреса (этап 53): вкладка «Команды» открывается с ней */
-  focusTeam?: string | null;
-  /** Запросы в команды из других веток (этап 53) */
-  requests?: { toApprove: JoinRequestView[]; waiting: JoinRequestView[] };
+  /** Сколько запросов в команды ждут вашего согласия: решают на экране «Weekly-команды» (этап 64) */
+  toApprove?: number;
 }) {
   // Дерево подчинённых первым (этап 34): так смотрят структуру чаще всего. Пока руководители не заданы, первыми подразделения
-  const [tab, setTab] = useState<"people" | "units" | "teams">(focusTeam ? "teams" : tree.loaded ? "people" : "units");
+  const [tab, setTab] = useState<"people" | "units" | "teams">(tree.loaded ? "people" : "units");
   const [importing, setImporting] = useState(false);
-  const [creating, setCreating] = useState(false);
   const { notify } = usePrototype();
   const router = useRouter();
-  const [pending, start] = useTransition();
+  const [, start] = useTransition();
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) =>
     start(async () => {
       const r = await fn();
@@ -94,27 +75,29 @@ export function StructureScreen({
             { value: "teams", label: "Команды", count: view.teams.length },
           ]}
         />
-        {owner ? (
-          <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
+          {owner ? (
             <Button size="sm" variant="secondary" onClick={() => setImporting(true)}>
               <Upload className="h-4 w-4" aria-hidden="true" />
               Загрузить структуру
             </Button>
-            <Button size="sm" variant="secondary" disabled={pending} onClick={() => run(async () => {
-              const r = await syncTeamsAction();
-              return r.ok ? { ok: true } : r;
-            }, "Команды руководителей подразделений проверены")}>
-              Создать команды по структуре
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setCreating(true)}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Новая команда
-            </Button>
-          </div>
-        ) : null}
+          ) : null}
+          <Link href="/people/teams" className={buttonClass("secondary", "sm")} data-testid="manage-teams">
+            <Settings2 className="h-4 w-4" aria-hidden="true" />
+            Управлять командами
+          </Link>
+        </div>
       </div>
 
-      {requests.toApprove.length ? <JoinRequests list={requests.toApprove} onSave={run} pending={pending} /> : null}
+      {toApprove ? (
+        // Старые ссылки «Запрос в команду» вели сюда с якорем: отсюда одна ссылка на экран, где решают
+        <p id="join-requests" className="sv-card sv-card--soft scroll-mt-24 p-4 text-body text-ink">
+          Ваших сотрудников зовут в команды: {toApprove}.{" "}
+          <Link href="/people/teams#join-requests" className="font-medium text-link hover:underline">
+            Решить в «Weekly-командах»
+          </Link>
+        </p>
+      ) : null}
 
       {tab === "people" ? (
         <PeopleTreeView key={focus ?? "start"} tree={tree} me={me} owner={owner} start={focus} />
@@ -127,7 +110,7 @@ export function StructureScreen({
           <UnitTree units={view.units} owner={owner} people={candidates} onSave={run} />
         )
       ) : (
-        <TeamTree teams={view.teams} owner={owner} me={me} candidates={candidates} onSave={run} pending={pending} leads={leads} waiting={requests.waiting} focusTeam={focusTeam} />
+        <TeamTree teams={view.teams} />
       )}
 
       {owner && tab === "units" && view.unplaced.length ? (
@@ -147,7 +130,6 @@ export function StructureScreen({
       ) : null}
 
       {owner ? <StructureImport open={importing} onOpenChange={setImporting} /> : null}
-      {owner ? <NewTeamModal open={creating} onOpenChange={setCreating} teams={view.teams} people={candidates} onSave={run} /> : null}
     </div>
   );
 }
@@ -377,37 +359,21 @@ function orderTeams(teams: TeamView[]): { team: TeamView; depth: number }[] {
   return out;
 }
 
-function TeamTree({
-  teams,
-  owner,
-  me,
-  candidates,
-  onSave,
-  pending,
-  leads,
-  waiting,
-  focusTeam,
-}: {
-  teams: TeamView[];
-  owner: boolean;
-  me: string;
-  candidates: Candidate[];
-  onSave: Runner;
-  pending: boolean;
-  leads: string[];
-  waiting: JoinRequestView[];
-  focusTeam: string | null;
-}) {
-  const [openId, setOpenId] = useState<string | null>(focusTeam);
-  const [editing, setEditing] = useState<TeamView | null>(null);
-  const [rhythm, setRhythm] = useState<TeamView | null>(null);
+/** Команды деревом только для просмотра (этап 64): состав и настройки правятся на экране «Weekly-команды» */
+function TeamTree({ teams }: { teams: TeamView[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   return (
-    <>
+    <div className="flex flex-col gap-3">
+      <p className="text-small text-muted">
+        Команды компании деревом: кто куда сдаёт weekly. Состав, руководителя и срок weekly меняют на экране{" "}
+        <Link href="/people/teams" className="font-medium text-link hover:underline">
+          «Weekly-команды»
+        </Link>
+        .
+      </p>
       <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft" aria-label="Команды">
         {orderTeams(teams).map(({ team: t, depth }) => {
-          const canEdit = owner || (t.id !== TOP_TEAM && t.leader?.slug === me);
           const open = openId === t.id;
-          const addable = candidates.filter((c) => c.slug !== t.leader?.slug && !t.members.some((m) => m.slug === c.slug));
           return (
             <li key={t.id} className={cn("px-3 py-3 sm:px-4", !t.active && "opacity-60")}>
               <div className="flex items-start gap-2" style={{ paddingLeft: `${Math.min(depth, 5) * 16}px` }}>
@@ -429,7 +395,7 @@ function TeamTree({
                     {t.leader ? `Руководитель: ${t.leader.fullName}` : "Руководитель не назначен"}, участников {t.members.length}, открытых задач {t.openTasks}
                     {t.overdue ? <span className="text-danger-ink">, просрочено {t.overdue}</span> : null}
                   </p>
-                  {t.active ? <WeeklyLight weekly={t.weekly} /> : null}
+                  {t.active ? <WeeklyLine weekly={t.weekly} className="mt-0.5" /> : null}
                   {open ? (
                     <div className="mt-2 flex flex-col gap-2">
                       <p className="text-small text-muted">{rhythmText(t)}</p>
@@ -440,47 +406,17 @@ function TeamTree({
                               <span className="text-ink">{m.fullName}</span>
                               {m.position ? <span className="text-muted">{m.position}</span> : null}
                               {m.external ? <span className="text-caption text-muted">из другой ветки</span> : null}
-                              {canEdit ? (
-                                <button type="button" disabled={pending} className="text-blue-700 hover:underline disabled:opacity-50" onClick={() => onSave(() => removeMemberAction(t.id, m.slug), `${m.fullName} убран из команды`)}>
-                                  Убрать
-                                </button>
-                              ) : null}
                             </li>
                           ))}
                         </ul>
                       ) : (
                         <p className="text-small text-muted">Участников пока нет.</p>
                       )}
-                      {waiting.filter((w) => w.team.id === t.id).length ? (
-                        <ul className="flex flex-col gap-1" aria-label={`Ждут согласия руководителя: ${t.name}`}>
-                          {waiting
-                            .filter((w) => w.team.id === t.id)
-                            .map((w) => (
-                              <li key={w.id} className="flex flex-wrap items-baseline gap-x-2 text-small text-muted">
-                                <span className="text-ink">{w.person.fullName}</span>
-                                <span>ждёт согласия: {w.approver}</span>
-                                {canEdit ? (
-                                  <button type="button" disabled={pending} className="text-blue-700 hover:underline disabled:opacity-50" onClick={() => onSave(() => cancelJoinAction(w.id), "Запрос отменён")}>
-                                    Отменить
-                                  </button>
-                                ) : null}
-                              </li>
-                            ))}
-                        </ul>
+                      {t.active ? (
+                        <Link href={`/people/teams?team=${encodeURIComponent(t.id)}`} className="self-start text-small font-medium text-link hover:underline">
+                          Карточка команды
+                        </Link>
                       ) : null}
-                      {canEdit && addable.length ? <AddMember team={t} people={addable.filter((c) => !waiting.some((w) => w.team.id === t.id && w.person.slug === c.slug))} /> : null}
-                      <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        {t.active && t.id !== TOP_TEAM && (owner || leads.includes(t.id)) ? (
-                          <button type="button" className="text-small text-blue-700 hover:underline" onClick={() => setRhythm(t)}>
-                            Ритм weekly
-                          </button>
-                        ) : null}
-                        {owner ? (
-                          <button type="button" className="text-small text-blue-700 hover:underline" onClick={() => setEditing(t)}>
-                            Изменить команду
-                          </button>
-                        ) : null}
-                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -489,271 +425,6 @@ function TeamTree({
           );
         })}
       </ul>
-      {editing ? <TeamModal team={editing} teams={teams} people={candidates} onClose={() => setEditing(null)} onSave={onSave} /> : null}
-      {rhythm ? <RhythmModal team={rhythm} onClose={() => setRhythm(null)} onSave={onSave} /> : null}
-    </>
-  );
-}
-
-const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((d, i) => ({ value: String(i + 1), label: d.charAt(0).toUpperCase() + d.slice(1) }));
-
-/** «Сдача: пятница, 16:00. Встреча: понедельник следующей недели, 11:00. Weekly сдают руководители» */
-function rhythmText(t: TeamView): string {
-  if (t.id === TOP_TEAM) return "Срок и встреча как у департамента. Weekly сдают все участники";
-  const deadline = t.rhythm.deadline ? `Сдача: ${slotText(t.rhythm.deadline)}` : "Сдача как у департамента";
-  const meeting = t.rhythm.meeting ? `встреча: ${slotText(t.rhythm.meeting)}` : "встреча как у департамента";
-  return `${deadline}, ${meeting}. Weekly сдают ${t.rhythm.specialists ? "все участники" : "руководители команд, специалисты обновляют задачи"}`;
-}
-
-/** Светофор сдачи weekly за отчётную неделю (этап 15) */
-function WeeklyLight({ weekly }: { weekly: TeamView["weekly"] }) {
-  const done = weekly.submitted + weekly.late;
-  if (weekly.expected === 0 && weekly.absent === 0) return <p className="mt-0.5 text-small text-muted">Weekly в этой команде не ждём</p>;
-  const tone = done >= weekly.expected ? "bg-green" : weekly.passed ? "bg-danger" : "bg-amber";
-  const word = done >= weekly.expected ? "все сдали" : weekly.passed ? "срок прошёл" : `срок ${deadlineText(weekly.deadline).replace("срок ", "")}`;
-  return (
-    <p className="mt-0.5 inline-flex items-center gap-2 text-small text-ink">
-      <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
-      Weekly: сдали {done} из {weekly.expected}
-      {weekly.late ? `, с опозданием ${weekly.late}` : ""}
-      {weekly.absent ? `, нет на неделе ${weekly.absent}` : ""}
-      <span className="text-muted">({word}{weekly.closed ? ", неделя закрыта" : ""})</span>
-    </p>
-  );
-}
-
-type SlotDraft = { own: boolean; week: "0" | "1"; weekday: string; time: string };
-const draftOf = (slot: Slot | null, fallback: SlotDraft): SlotDraft => (slot ? { own: true, week: String(slot.week) as "0" | "1", weekday: String(slot.weekday), time: slot.time } : fallback);
-const slotFrom = (d: SlotDraft): Slot | null => (d.own ? { week: Number(d.week) as 0 | 1, weekday: Number(d.weekday), time: d.time } : null);
-
-/** Ритм weekly команды: срок сдачи, встреча и кто сдаёт. Задают руководитель команды, руководитель выше и владелец */
-function RhythmModal({ team, onClose, onSave }: { team: TeamView; onClose: () => void; onSave: Runner }) {
-  const [deadline, setDeadline] = useState<SlotDraft>(draftOf(team.rhythm.deadline, { own: false, week: "0", weekday: "5", time: "16:00" }));
-  const [meeting, setMeeting] = useState<SlotDraft>(draftOf(team.rhythm.meeting, { own: false, week: "1", weekday: "1", time: "11:00" }));
-  const [specialists, setSpecialists] = useState(team.rhythm.specialists);
-  return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title={`Ритм weekly: ${team.name}`} description="Срок сдачи команды не позже срока департамента: руководитель должен успеть собрать weekly команды и сдать свой">
-      <form
-        className="flex flex-col gap-5"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(() => setTeamRhythmAction(team.id, { deadline: slotFrom(deadline), meeting: slotFrom(meeting), specialists }), "Ритм команды сохранён");
-          onClose();
-        }}
-      >
-        <SlotFields legend="Срок сдачи" id="rh-deadline" value={deadline} onChange={setDeadline} />
-        <SlotFields legend="Встреча команды" id="rh-meeting" value={meeting} onChange={setMeeting} />
-        <label className="flex items-start gap-3 text-body text-ink">
-          <input type="checkbox" checked={specialists} onChange={(e) => setSpecialists(e.target.checked)} className="mt-1 h-4 w-4 accent-blue-700" />
-          <span>
-            Weekly сдают и специалисты
-            <span className="block text-small text-muted">Выключено: weekly сдают только руководители команд, специалисты обновляют задачи</span>
-          </span>
-        </label>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button type="submit">Сохранить</Button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function SlotFields({ legend, id, value, onChange }: { legend: string; id: string; value: SlotDraft; onChange: (v: SlotDraft) => void }) {
-  return (
-    <fieldset className="flex flex-col gap-3">
-      <legend className="text-body font-semibold text-ink">{legend}</legend>
-      <SelectField
-        label="Когда"
-        id={`${id}-mode`}
-        value={value.own ? "own" : "department"}
-        onChange={(e) => onChange({ ...value, own: e.target.value === "own" })}
-        options={[
-          { value: "department", label: "Как у департамента" },
-          { value: "own", label: "Свой день и время" },
-        ]}
-      />
-      {value.own ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SelectField
-            label="Неделя"
-            id={`${id}-week`}
-            value={value.week}
-            onChange={(e) => onChange({ ...value, week: e.target.value as "0" | "1" })}
-            options={[
-              { value: "0", label: "Отчётная" },
-              { value: "1", label: "Следующая" },
-            ]}
-          />
-          <SelectField label="День" id={`${id}-day`} value={value.weekday} onChange={(e) => onChange({ ...value, weekday: e.target.value })} options={WEEKDAY_OPTIONS} />
-          <TextInput label="Время" id={`${id}-time`} type="time" value={value.time} onChange={(e) => onChange({ ...value, time: e.target.value })} />
-        </div>
-      ) : null}
-    </fieldset>
-  );
-}
-
-/**
- * Участник в команду: поиск по всей компании (этап 53). Человек не из ветки руководителя команды помечен «другая
- * ветка»: руководитель команды просит его, а входит человек с согласия своего руководителя. Владелец добавляет сразу
- */
-function AddMember({ team, people }: { team: TeamView; people: Candidate[] }) {
-  const [slug, setSlug] = useState("");
-  const [busy, setBusy] = useState(false);
-  const { notify } = usePrototype();
-  const router = useRouter();
-  const chosen = people.find((p) => p.slug === slug) ?? null;
-  const options: PickerOption[] = useMemo(
-    () => people.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null, note: p.own === false ? "другая ветка" : null })),
-    [people],
-  );
-  return (
-    <form
-      className="flex flex-col gap-2"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!chosen || busy) return;
-        setBusy(true);
-        try {
-          const r = await addMemberAction(team.id, chosen.slug);
-          if (!r.ok) notify(r.error, "error");
-          else {
-            const v: AddMemberResult = r.value;
-            notify(v.added ? (v.external ? `${chosen.fullName} в команде, его руководитель знает об этом` : `${chosen.fullName} в команде`) : `Запрос отправлен: ${chosen.fullName} войдёт в команду, когда согласится ${v.pendingWith}`);
-            setSlug("");
-            router.refresh();
-          }
-        } catch {
-          notify("Нет связи с сервером: участник не добавлен", "error");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <SearchPicker label="Добавить участника" id={`add-${team.id}`} value={slug} onChange={setSlug} options={options} placeholder="Фамилия, должность или подразделение" className="sm:w-96" />
-        <Button size="sm" type="submit" disabled={!chosen || busy}>
-          <Users className="h-4 w-4" aria-hidden="true" />
-          {chosen?.own === false ? "Попросить" : "Добавить"}
-        </Button>
-      </div>
-      {chosen?.own === false ? (
-        <p className="text-small text-muted" data-testid={`add-${team.id}-external`}>
-          {chosen.fullName} не из вашей ветки. Человек войдёт в команду, когда согласится его руководитель. Задачи этого человека вне команды вам видны не будут.
-        </p>
-      ) : null}
-    </form>
-  );
-}
-
-/** Запросы в команды, которые ждут вашего согласия (этап 53): ваш сотрудник нужен руководителю другой ветки */
-function JoinRequests({ list, onSave, pending }: { list: JoinRequestView[]; onSave: Runner; pending: boolean }) {
-  return (
-    <section id="join-requests" aria-labelledby="join-requests-title" className="sv-card sv-card--soft scroll-mt-24 p-4" data-testid="join-requests">
-      <h2 id="join-requests-title" className="text-title-sm font-semibold text-ink">
-        Ваших сотрудников зовут в команды: {list.length}
-      </h2>
-      <p className="mt-1 text-small text-muted">Участник команды видит weekly и задачи коллег по ней, а они его. Согласитесь, если человек действительно будет работать с этой командой.</p>
-      <ul className="mt-3 flex flex-col gap-3">
-        {list.map((r) => (
-          <li key={r.id} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-body text-ink">
-              <span className="font-semibold">{r.person.fullName}</span> в команду «{r.team.name}»{r.requestedBy ? <span className="text-muted">, просит {r.requestedBy}</span> : null}
-            </p>
-            <div className="flex gap-2">
-              <Button size="sm" disabled={pending} onClick={() => onSave(() => decideJoinAction(r.id, true), `${r.person.fullName} в команде «${r.team.name}»`)}>
-                Согласовать
-              </Button>
-              <Button size="sm" variant="secondary" disabled={pending} onClick={() => onSave(() => decideJoinAction(r.id, false), "Запрос отклонён")}>
-                Отказать
-              </Button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function TeamModal({ team, teams, people, onClose, onSave }: { team: TeamView; teams: TeamView[]; people: Candidate[]; onClose: () => void; onSave: Runner }) {
-  const [name, setName] = useState(team.name);
-  const [leader, setLeader] = useState(team.leader?.slug ?? "");
-  const [parent, setParent] = useState(team.parentId ?? TOP_TEAM);
-  const top = team.id === TOP_TEAM;
-  return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title={team.name} description="Название, руководитель и команда уровнем выше, куда руководитель сдаёт weekly">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(() => updateTeamAction(team.id, { name, leader: leader || null, ...(top ? {} : { parent }) }), "Команда сохранена");
-          onClose();
-        }}
-      >
-        <TextInput label="Название" id="tm-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SelectField label="Руководитель" id="tm-leader" value={leader} onChange={(e) => setLeader(e.target.value)} options={[...(top ? [] : [{ value: "", label: "Не назначен" }]), ...people.map((p) => ({ value: p.slug, label: p.fullName }))]} />
-        {!top ? (
-          <SelectField label="Команда выше" id="tm-parent" value={parent} onChange={(e) => setParent(e.target.value)} options={teams.filter((t) => t.id !== team.id).map((t) => ({ value: t.id, label: t.name }))} />
-        ) : null}
-        <div className="flex flex-wrap justify-between gap-2">
-          {!top ? (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                onSave(() => updateTeamAction(team.id, { active: !team.active }), team.active ? "Команда выключена" : "Команда включена");
-                onClose();
-              }}
-            >
-              {team.active ? "Выключить команду" : "Включить команду"}
-            </Button>
-          ) : (
-            <span />
-          )}
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" onClick={onClose}>
-              Отмена
-            </Button>
-            <Button type="submit">Сохранить</Button>
-          </div>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-function NewTeamModal({ open, onOpenChange, teams, people, onSave }: { open: boolean; onOpenChange: (o: boolean) => void; teams: TeamView[]; people: Candidate[]; onSave: Runner }) {
-  const [name, setName] = useState("");
-  const [leader, setLeader] = useState("");
-  const [parent, setParent] = useState(TOP_TEAM);
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Новая команда" description="Например, проектная команда поверх подразделений. Участников добавите после">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          onSave(async () => {
-            const r = await createTeamAction({ name, leader: leader || null, parent });
-            return r.ok ? { ok: true } : r;
-          }, `Команда «${name}» создана`);
-          onOpenChange(false);
-          setName("");
-        }}
-      >
-        <TextInput label="Название" id="nt-team-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SelectField label="Руководитель" id="nt-team-leader" value={leader} onChange={(e) => setLeader(e.target.value)} options={[{ value: "", label: "Не назначен" }, ...people.map((p) => ({ value: p.slug, label: p.fullName }))]} />
-        <SelectField label="Команда выше" id="nt-team-parent" value={parent} onChange={(e) => setParent(e.target.value)} options={teams.map((t) => ({ value: t.id, label: t.name }))} />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button type="submit" disabled={!name.trim()}>
-            Создать команду
-          </Button>
-        </div>
-      </form>
-    </Modal>
+    </div>
   );
 }
