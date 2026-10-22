@@ -83,7 +83,8 @@ export default async function TeamReportPage({ searchParams }: { searchParams: P
           </Link>
         ) : null}
       </nav>
-      <TeamReportScreen key={`${view.team.id}:${view.week}`} view={view} template={template} />
+      {/* Ключ и по блокам шаблона: шаблон поменяли, редактор собирается заново из новой автосборки */}
+      <TeamReportScreen key={`${view.team.id}:${view.week}:${view.template?.map((b) => b.key).join(",") ?? "-"}`} view={view} template={template} />
     </>
   );
 }
