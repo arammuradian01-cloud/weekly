@@ -22,6 +22,8 @@ export default defineConfig({
     locale: "ru-RU",
     timezoneId: "Europe/Moscow",
     launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : undefined,
+    // В проверках на GitHub трасса упавшего теста уходит в артефакт e2e-traces: по ней видно, что было на экране
+    trace: process.env.CI ? "retain-on-failure" : "off",
   },
   projects: [
     { name: "laptop", use: { viewport: { width: 1440, height: 900 } } },

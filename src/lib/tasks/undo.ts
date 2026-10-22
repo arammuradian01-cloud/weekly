@@ -25,6 +25,8 @@ export type TaskSnapshot = {
   whereUpdatedAt: string;
   due: string;
   archivedAt: string | null;
+  /** Цель задачи (этап 65): отмена привязки к цели возвращает прежнюю цель. Нет в старых токенах */
+  goalId?: string | null;
 };
 
 export type UndoSpec =

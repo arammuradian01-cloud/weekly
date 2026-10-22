@@ -138,7 +138,7 @@ export function TaskCard({
         <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
       </Meta>
       <Meta label="Цель">
-        <TaskGoal task={task} canLink={!observer && !task.archived && (manage || leads.includes(task.team) || task.owner === me.slug || task.createdBy === me.slug)} />
+        <TaskGoal task={task} canLink={!observer && !task.archived && (manage || leads.includes(task.team) || task.owner === me.slug || task.coExecutors.includes(me.slug) || task.createdBy === me.slug)} />
       </Meta>
       <Meta label="Направление">{directionLabel(task.direction)}</Meta>
       <Meta label="Источник">
