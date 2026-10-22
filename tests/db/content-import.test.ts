@@ -1070,7 +1070,7 @@ describe("правки по проверке: стыки, гонка, повто
       { key: "task.test.adopt-owner", title: "Задача топ-команды", outcome: "Как было", owner: "Головкин Владислав", direction: "product", due: "2026-12-01", whereNow: "Из пакета", adopt: { number: top.number, title: "Задача топ-команды" } },
     ];
     const preview = await previewContentImport(me, pkgOf(p));
-    expect(preview.errors).toEqual([{ what: "Задача «Задача команды Ревы»", text: `задача ${inChild.number} в ресурсе в команде «Тестовая команда Ревы», а в пакете в команде «Топ-команда»: задачу другой команды загрузка не подхватывает` }]);
+    expect(preview.errors).toEqual([{ what: "Задача «Задача команды Ревы»", text: `задача ${inChild.number} в ресурсе в команде «Тестовая команда Ревы», а в пакете в команде «Команда страхования и инвестиций»: задачу другой команды загрузка не подхватывает` }]);
     expect(preview.warnings).toEqual([{ what: `Задача ${top.number}`, text: "в пакете ответственный «Головкин Владислав», в ресурсе «Рева Тарас»: ответственного загрузка не меняет" }]);
     expect(preview.tasks).toEqual({ add: 0, update: 1, skip: 1 });
     await applyContentImport(me, pkgOf(p));
