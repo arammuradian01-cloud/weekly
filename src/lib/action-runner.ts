@@ -30,9 +30,10 @@ export async function writingActor(): Promise<Actor> {
   return actorOf(await requireWriteContext(), await requestIp());
 }
 
-async function attempt<T>(what: string, actor: () => Promise<Actor>, fn: (a: Actor) => Promise<T>): Promise<Result<T>> {
+async function attempt<T>(what: string, context: () => Promise<AppContext>, fn: (a: Actor, ctx: AppContext) => Promise<T>): Promise<Result<T>> {
   try {
-    return { ok: true, value: await fn(await actor()) };
+    const ctx = await context();
+    return { ok: true, value: await fn(actorOf(ctx, await requestIp()), ctx) };
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof TaskRuleError) return { ok: false, error: error.message };
@@ -43,16 +44,17 @@ async function attempt<T>(what: string, actor: () => Promise<Actor>, fn: (a: Act
 
 /**
  * Действие экрана, которое что-то меняет: ошибка правила уходит человеку текстом, остальные ошибки в лог сервера.
- * В режиме «Смотреть как» отказывает до любого обращения к данным
+ * В режиме «Смотреть как» и после его конца в старой вкладке отказывает до любого обращения к данным. ctx: весь
+ * контекст входа, например запись устройства
  */
-export async function runAction<T>(what: string, fn: (a: Actor) => Promise<T>): Promise<Result<T>> {
-  return attempt(what, writingActor, fn);
+export async function runAction<T>(what: string, fn: (a: Actor, ctx: AppContext) => Promise<T>): Promise<Result<T>> {
+  return attempt(what, requireWriteContext, fn);
 }
 
 /**
  * Действие экрана, которое только читает (карточка задачи, поиск, списки для выбора): работает и в режиме
  * «Смотреть как». Ничего не пишет, иначе это runAction. Список таких действий проверяет tests/db/view-as.test.ts
  */
-export async function runRead<T>(what: string, fn: (a: Actor) => Promise<T>): Promise<Result<T>> {
-  return attempt(what, currentActor, fn);
+export async function runRead<T>(what: string, fn: (a: Actor, ctx: AppContext) => Promise<T>): Promise<Result<T>> {
+  return attempt(what, requireContext, fn);
 }

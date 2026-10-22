@@ -11,7 +11,16 @@ export const metadata: Metadata = { title: "Оценка встреч" };
 
 /** Оценка встреч раз в месяц (этап 29): анонимно, полезность от 1 до 5 и что убрать */
 export default async function MeetingRatingPage() {
-  await requireContext();
+  const ctx = await requireContext();
+  // «Смотреть как» (этап 63): оценка анонимная, даже то, ответил ли человек, владельцу не показываем
+  if (ctx.viewAs) {
+    return (
+      <div className="max-w-3xl">
+        <PageHeader title="Оценка встреч" description="Раз в месяц, анонимно: насколько полезны встречи команды и что из них убрать" />
+        <EmptyState title="Оценка встреч в просмотре закрыта">Ответ анонимный: в режиме «Смотреть как» не видно, ответил ли человек и что ему предложено оценить.</EmptyState>
+      </div>
+    );
+  }
   const data = await myRatings(await currentActor());
   return (
     <div className="max-w-3xl">

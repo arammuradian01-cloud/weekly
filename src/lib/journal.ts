@@ -193,7 +193,8 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     kind: kindOf(r.action),
     object: objectOf(r.entity, r.entityId, r.action, r.before),
     field: r.entity ? (r.field ?? undefined) : undefined,
-    before: text(r.before),
+    // У просмотра «Смотреть как» в «было» лежит служебный номер просмотра: на экране он ничего не говорит
+    before: r.action.startsWith("viewAs.") ? undefined : text(r.before),
     after: text(r.after),
     ip: r.ip ?? undefined,
     via: r.via ? (r.via === "TEAM" ? "team" : "personal") : undefined,

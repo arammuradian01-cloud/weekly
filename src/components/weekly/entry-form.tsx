@@ -67,7 +67,7 @@ export function EntryForm({
   /** Автосохранение прошло: экран обновляет список, форма остаётся открытой */
   onAutosaved?: (entry: WeeklyEntry) => void;
 }) {
-  const { notify, me } = usePrototype();
+  const { notify, me, viewing } = usePrototype();
   const [e, setE] = useState<WeeklyEntry>(initial);
   // Ключ черновика на устройстве (этап 26): у записи с сервера её id, у новой случайный. Он же ключ повтора для сервера
   const draftKey = useRef(isLocalId(initial.id) ? newDraftKey() : initial.id);
@@ -158,7 +158,8 @@ export function EntryForm({
 
   // Каждая правка сначала ложится в черновик на устройстве (этап 26): пропала сеть или закрыли вкладку, текст цел
   useEffect(() => {
-    if (!dirty.current || !e.what.trim()) return;
+    // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
+    if (viewing || !dirty.current || !e.what.trim()) return;
     const { e: cur, needHelp: nh, links: ln } = latest.current;
     const input = toInput(cur, nh, ln);
     const draft: DraftEntryInput = { ...input, week: String(input.week), links: input.links.map((l) => ({ title: l.title, url: l.url })) };
@@ -170,7 +171,7 @@ export function EntryForm({
       input: draft,
       savedAt: Date.now(),
     });
-  }, [e, needHelp, links, me.slug]);
+  }, [e, needHelp, links, me.slug, viewing]);
 
   const autosave = async () => {
     setAutoState("saving");
@@ -188,15 +189,16 @@ export function EntryForm({
   // Связь вернулась: черновик уходит сам, без нажатий
   useEffect(() => {
     const back = () => {
-      if (dirty.current && latest.current.e.what.trim()) void autosaveRef.current();
+      if (!viewing && dirty.current && latest.current.e.what.trim()) void autosaveRef.current();
     };
     window.addEventListener("online", back);
     return () => window.removeEventListener("online", back);
-  }, []);
+  }, [viewing]);
 
   // Автосохранение: через 2,5 секунды тишины после ввода, если «что произошло» уже написано
   useEffect(() => {
-    if (!dirty.current) return;
+    // В просмотре автосохранения нет: сервер всё равно откажет, сохранить можно только кнопкой (и тоже будет отказ)
+    if (viewing || !dirty.current) return;
     if (timer.current) clearTimeout(timer.current);
     const what = e.what.trim();
     if (!what || what.length > WEEKLY_LIMITS.what) return;
@@ -205,7 +207,7 @@ export function EntryForm({
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [e, needHelp, links]);
+  }, [e, needHelp, links, viewing]);
 
   const submit = async (ev: React.FormEvent) => {
     ev.preventDefault();

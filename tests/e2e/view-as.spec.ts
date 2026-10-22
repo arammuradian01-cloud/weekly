@@ -5,8 +5,10 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 // Этап 63: «Смотреть как». Владелец при личном входе в режиме управления выбирает Реву в меню профиля, видит его
 // «Мою неделю» и его черновик weekly, плашку «Вы смотрите как Рева Тарас. Изменения недоступны». Сдать weekly и
 // поставить задачу нельзя: сервер отказывает одним текстом, в базе ничего не меняется. «Выйти из просмотра»
-// возвращает к себе, начало и конец просмотра в журнале. Общий логин пункта не видит ни в меню, ни в командной строке.
-// Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
+// возвращает к себе, начало и конец просмотра в журнале. Вторая вкладка того же браузера сама перезагружается при
+// начале и конце просмотра (вкладка, оставшаяся от просмотра, не пишет от имени владельца). Встречи один на один и
+// анонимная оценка встреч в просмотре закрыты. На телефоне плашка прилипает под шапкой, в шапке значок просмотра.
+// Общий логин пункта не видит ни в меню, ни в командной строке. Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -52,6 +54,11 @@ test("владелец смотрит как Рева: его неделя и we
 
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
+  // Вторая вкладка того же браузера: владелец у себя
+  const second = await page.context().newPage();
+  await second.goto("/");
+  await expect(second.getByRole("heading", { level: 1 })).toContainText("Арам");
+
   await openProfileMenu(page);
   await page.getByRole("menuitem", { name: "Смотреть как…" }).click();
 
@@ -71,6 +78,11 @@ test("владелец смотрит как Рева: его неделя и we
   await expect(banner).toContainText("Вы смотрите как Рева Тарас. Изменения недоступны");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
   await expect(page.getByRole("heading", { name: /Мой weekly за неделю/ })).toBeVisible();
+  // Вторая вкладка перезагрузилась сама и тоже показывает просмотр
+  await expect(second.getByTestId("view-as-banner")).toContainText("Вы смотрите как Рева Тарас");
+  // Телефон: плашка прилипает под шапкой, в шапке рядом с аватаркой значок просмотра
+  await expect(banner).toHaveCSS("position", isPhone() ? "sticky" : "static");
+  await expect(page.getByTestId("view-as-badge").filter({ visible: true })).toHaveCount(isPhone() ? 1 : 0);
   // Режим управления в просмотре выключен: в меню профиля нет «Журнала» и выключения режима
   await openProfileMenu(page);
   await expect(page.getByRole("menuitem", { name: "Выйти из просмотра" })).toBeVisible();
@@ -79,6 +91,12 @@ test("владелец смотрит как Рева: его неделя и we
   await page.keyboard.press("Escape");
   await shot(page, "my-week");
 
+  // Встречи один на один и анонимная оценка встреч в просмотре закрыты
+  await page.goto("/one-on-one");
+  await expect(page.getByText("Встречи один на один в просмотре закрыты")).toBeVisible();
+  await page.goto("/meeting-rating");
+  await expect(page.getByText("Оценка встреч в просмотре закрыта")).toBeVisible();
+
   // Сдать weekly Ревы нельзя: черновик виден, сдача отказывает
   await page.goto("/weekly/submit");
   await expect(page.getByTestId("view-as-banner")).toBeVisible();
@@ -86,7 +104,8 @@ test("владелец смотрит как Рева: его неделя и we
   await page.getByRole("button", { name: "Сдать weekly" }).click();
   await expect(page.getByText(DENIED).first()).toBeVisible();
   await shot(page, "submit-denied");
-  expect(await sql(`SELECT r.state FROM weekly_reports r JOIN people p ON p.id = r."authorId" WHERE p.slug = 'reva' AND r.state <> 'DRAFT'`)).toEqual([]);
+  // Только weekly той недели, где черновик Ревы: прошлые недели из выгрузки Bord сданы и так
+  expect(await sql(`SELECT r.state FROM weekly_reports r JOIN weekly_entries e ON e."weekId" = r."weekId" AND e."authorId" = r."authorId" WHERE e.what = $1`, [ENTRY])).toEqual([{ state: "DRAFT" }]);
 
   // Поставить задачу нельзя
   await page.goto("/tasks");
@@ -107,6 +126,10 @@ test("владелец смотрит как Рева: его неделя и we
   await openProfileMenu(page);
   await expect(page.getByRole("menuitem", { name: "Выключить режим управления" })).toBeVisible();
   await page.keyboard.press("Escape");
+  // Вторая вкладка, показывавшая просмотр, перезагрузилась и снова показывает владельца
+  await expect(second.getByTestId("view-as-banner")).toHaveCount(0);
+  await expect(second.getByRole("heading", { level: 1 })).toContainText("Арам");
+  await second.close();
 
   const journal = await sql(`SELECT action, "entityId" FROM audit_log WHERE action LIKE 'viewAs.%' AND id > $1::bigint ORDER BY id`, [mark]);
   expect(journal).toEqual([

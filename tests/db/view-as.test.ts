@@ -31,8 +31,10 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { prisma } from "@/lib/db";
 import { MANAGEMENT_TTL_MS, SESSION_COOKIE, signSession, type ManagementGrant } from "@/lib/session";
 import { getEpochs } from "@/lib/settings";
-import { requireContext } from "@/lib/auth";
-import { VIEW_AS_COOKIE, VIEW_AS_DENIED, VIEW_AS_TEXTS, ViewAsReadOnlyError, signViewAs } from "@/lib/view-as";
+import { closeViewAs, requireContext, requireWriteContext } from "@/lib/auth";
+import { VIEW_AS_COOKIE, VIEW_AS_DENIED, VIEW_AS_ENDED, VIEW_AS_TEXTS, ViewAsReadOnlyError, signViewAs } from "@/lib/view-as";
+import { inboxCount, listInbox } from "@/lib/inbox/service";
+import { subjectOf } from "@/lib/org/current";
 import { setMailTransport, type Mail } from "@/lib/mail";
 import * as tasks from "@/lib/tasks/service";
 import { moscowToday } from "@/lib/tasks/dates";
@@ -178,24 +180,33 @@ describe("кто включает «Смотреть как»", () => {
   });
 });
 
-describe("просмотр гаснет сам", () => {
-  it("владелец потерял роль, человека выключили, режим управления сменили: снова видно себя", async () => {
+/** Просмотр закончился сам, cookie ещё есть: владелец видит себя, но изменения закрыты до «Вернуться к себе» */
+async function expectEnded(reason: string) {
+  const ctx = await requireContext();
+  expect([ctx.person.slug, ctx.viewAs, ctx.viewAsEnded?.reason, ctx.viewAsEnded?.target?.fullName]).toEqual(["muradyan", null, reason, "Рева Тарас"]);
+  // Вкладка, оставшаяся от просмотра, не запишет правку от имени владельца
+  expect(await markSeenAction()).toEqual({ ok: false, error: VIEW_AS_ENDED });
+  await expect(requireWriteContext()).rejects.toThrow(VIEW_AS_ENDED);
+}
+
+describe("просмотр закончился сам", () => {
+  it("роль, человек выключен, режим управления сменили или включили заново: изменения закрыты, «Вернуться к себе» пишет конец с причиной", async () => {
     await signIn("muradyan", { management: true });
     expect(await startAs("reva")).toBe("redirect");
     expect((await requireContext()).person.slug).toBe("reva");
 
     await prisma.person.update({ where: { slug: "muradyan" }, data: { role: "ADMIN" } });
     try {
-      const ctx = await requireContext();
-      expect([ctx.person.slug, ctx.viewAs]).toEqual(["muradyan", null]);
+      await expectEnded("role");
     } finally {
       await prisma.person.update({ where: { slug: "muradyan" }, data: { role: "OWNER" } });
     }
+    // Конец не записан и cookie на месте: роль вернули, просмотр идёт дальше
     expect((await requireContext()).person.slug).toBe("reva");
 
     await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
     try {
-      expect((await requireContext()).person.slug).toBe("muradyan");
+      await expectEnded("inactive");
     } finally {
       await prisma.person.update({ where: { slug: "reva" }, data: { active: true } });
     }
@@ -203,44 +214,124 @@ describe("просмотр гаснет сам", () => {
     const { epoch, managementEpoch } = await getEpochs();
     await prisma.setting.upsert({ where: { key: "auth.managementEpoch" }, update: { value: managementEpoch + 1 }, create: { key: "auth.managementEpoch", value: managementEpoch + 1 } });
     try {
-      const ctx = await requireContext();
-      expect([ctx.person.slug, ctx.viewAs, ctx.management]).toEqual(["muradyan", null, null]);
+      await expectEnded("management");
     } finally {
       await prisma.setting.update({ where: { key: "auth.managementEpoch" }, data: { value: managementEpoch } });
     }
     expect((await requireContext()).person.slug).toBe("reva");
 
-    // Режим управления включили заново на том же устройстве: это другой режим, старая cookie просмотра не оживает
+    // Режим управления включили заново на том же устройстве: это другой режим, просмотр не оживает
     const owner = await person("muradyan");
     const sid = (await requireContext()).session.sid!;
     http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: owner.id, sid, via: "PASSWORD", management: { role: "OWNER", until: Date.now() + MANAGEMENT_TTL_MS + 5000, epoch: managementEpoch } }, SECRET));
-    const again = await requireContext();
-    expect([again.person.slug, again.viewAs, again.management?.role]).toEqual(["muradyan", null, "OWNER"]);
+    await expectEnded("management");
+    expect(await viewAsAudit()).toHaveLength(1);
+
+    // «Вернуться к себе»: конец с причиной, cookie снята, изменения снова открыты
+    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+    const back = await requireWriteContext();
+    expect([back.person.slug, back.viewAs, back.viewAsEnded, back.management?.role]).toEqual(["muradyan", null, null, "OWNER"]);
+    expect((await markSeenAction()).ok).toBe(true);
+    const [, stop] = await viewAsAudit();
+    expect(stop).toMatchObject({ action: "viewAs.stop", actorId: owner.id, entityId: "reva", field: "Закончился режим управления", after: "Рева Тарас" });
   });
 
-  it("другое устройство владельца, срок вышел, вход завершён: просмотра нет", async () => {
+  it("срок вышел: изменения закрыты; новый просмотр сначала записывает конец прежнего", async () => {
+    const { person: owner, sid, grant } = await signIn("muradyan", { management: true });
+    const reva = await person("reva");
+    const past = Date.now() - 60_000;
+    http.cookies.set(VIEW_AS_COOKIE, await signViewAs({ id: "view-expired", ownerId: owner.id, sid: sid!, targetId: reva.id, until: past, grant }, SECRET, past - 3_600_000));
+    await expectEnded("expired");
+
+    expect(await startAs("fatyanov")).toBe("redirect");
+    expect((await requireContext()).person.slug).toBe("fatyanov");
+    expect((await viewAsAudit()).map((r) => [r.action, r.entityId, r.field])).toEqual([
+      ["viewAs.stop", "reva", "Вышел срок просмотра"],
+      ["viewAs.start", "fatyanov", "Смотреть как"],
+    ]);
+  });
+
+  it("выход из ресурса после конца просмотра пишет конец один раз; после «Выйти из просмотра» второй записи нет", async () => {
+    await signIn("muradyan", { management: true });
+    expect(await startAs("reva")).toBe("redirect");
+    await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
+    try {
+      expect(await settle(() => logout())).toBe("redirect");
+    } finally {
+      await prisma.person.update({ where: { slug: "reva" }, data: { active: true } });
+    }
+    expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+    expect((await viewAsAudit()).map((r) => [r.action, r.field])).toEqual([
+      ["viewAs.start", "Смотреть как"],
+      ["viewAs.stop", "Человек выключен"],
+    ]);
+
+    auditMark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    await signIn("muradyan", { management: true });
+    expect(await startAs("reva")).toBe("redirect");
+    const cookie = http.cookies.get(VIEW_AS_COOKIE)!;
+    expect(await settle(() => viewAs.stopViewAsAction())).toBe("redirect");
+    // Та же cookie вернулась (вторая вкладка прислала старую): конец уже записан, второй записи нет
+    http.cookies.set(VIEW_AS_COOKIE, cookie);
+    await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
+    try {
+      expect(await settle(() => logout())).toBe("redirect");
+    } finally {
+      await prisma.person.update({ where: { slug: "reva" }, data: { active: true } });
+    }
+    expect((await viewAsAudit()).map((r) => [r.action, r.field])).toEqual([
+      ["viewAs.start", "Смотреть как"],
+      ["viewAs.stop", "Выйти из просмотра"],
+    ]);
+  });
+
+  it("cookie другой сессии не мешает и не закрывает изменения; завершённый вход пишет конец при новом входе", async () => {
     const { person: owner, sid } = await signIn("muradyan", { management: true });
     expect(await startAs("reva")).toBe("redirect");
     const cookie = http.cookies.get(VIEW_AS_COOKIE)!;
+    const session = http.cookies.get(SESSION_COOKIE)!;
 
-    // Та же cookie просмотра в другом браузере владельца не действует: она привязана к записи устройства
+    // Другой браузер владельца с той же cookie просмотра: она привязана к записи устройства и здесь не в счёт
     await signIn("muradyan", { management: true });
     http.cookies.set(VIEW_AS_COOKIE, cookie);
-    expect((await requireContext()).person.slug).toBe("muradyan");
+    const other = await requireWriteContext();
+    expect([other.person.slug, other.viewAs, other.viewAsEnded]).toEqual(["muradyan", null, null]);
 
-    // Срок вышел
-    const reva = await person("reva");
-    const past = Date.now() - 60_000;
-    const { sid: fresh, grant } = await signIn("muradyan", { management: true });
-    http.cookies.set(VIEW_AS_COOKIE, await signViewAs({ ownerId: owner.id, sid: fresh!, targetId: reva.id, until: past + 1000, grant }, SECRET, past - 3_600_000));
-    expect((await requireContext()).viewAs).toBeNull();
-
-    // Вход завершили: никакого просмотра, человек уходит на экран входа
-    http.cookies.set(VIEW_AS_COOKIE, await signViewAs({ ownerId: owner.id, sid: fresh!, targetId: reva.id, until: Date.now() + 60_000, grant }, SECRET));
-    expect((await requireContext()).person.slug).toBe("reva");
-    await prisma.deviceSession.update({ where: { id: fresh! }, data: { revokedAt: new Date(), revokedBy: "owner" } });
+    // Вход с просмотром завершили: страницы уводят на вход, а при новом входе в этом браузере пишется конец просмотра
+    http.cookies.set(SESSION_COOKIE, session);
+    await prisma.deviceSession.update({ where: { id: sid! }, data: { revokedAt: new Date(), revokedBy: "owner" } });
     await expect(requireContext()).rejects.toSatisfy(isRedirectError);
-    expect(sid).not.toBe(fresh);
+    await closeViewAs("login");
+    expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+    const [, stop] = await viewAsAudit();
+    expect(stop).toMatchObject({ action: "viewAs.stop", actorId: owner.id, entityId: "reva", field: "Вход завершён" });
+  });
+});
+
+describe("встречи один на один в просмотре", () => {
+  it("события встреч один на один выбранного человека не видны в «Мне», на главной и в счётчике", async () => {
+    const reva = await person("reva");
+    const events = await Promise.all([
+      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "ONE_ON_ONE", subject: "1on1:view-as", text: "Новая тема в повестке встречи один на один" } }),
+      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "TEAM", subject: "team:view-as-1on1", text: "Событие о команде" } }),
+    ]);
+    try {
+      await signIn("reva");
+      const self = await requireContext();
+      const own = await listInbox(reva.id, new Date(), subjectOf(self));
+      expect(own.items.map((i) => i.subject).sort()).toEqual(["1on1:view-as", "team:view-as-1on1"]);
+
+      await signIn("muradyan", { management: true });
+      expect(await startAs("reva")).toBe("redirect");
+      const ctx = await requireContext();
+      expect(subjectOf(ctx).viewAs).toBe(true);
+      const seen = await listInbox(reva.id, new Date(), subjectOf(ctx));
+      expect(seen.items.map((i) => i.subject)).toEqual(["team:view-as-1on1"]);
+      expect(await inboxCount(reva.id, new Date(), subjectOf(ctx))).toBe((await inboxCount(reva.id, new Date(), subjectOf(self))) - 1);
+    } finally {
+      await prisma.inboxEvent.deleteMany({ where: { id: { in: events.map((e) => e.id) } } });
+    }
   });
 });
 
@@ -278,8 +369,8 @@ const READ = new Set([
   "taskRequestsAction",
   "weekViewAction",
 ]);
-/** Сам просмотр: выбор и начало отвечают «сначала выйдите из просмотра», выход проверен отдельно */
-const SPECIAL = new Set(["viewAsPeopleAction", "startViewAsAction", "stopViewAsAction"]);
+/** Сам просмотр: выбор и начало отвечают «сначала выйдите из просмотра», выход (кнопкой и перед выходом из ресурса) проверен отдельно */
+const SPECIAL = new Set(["viewAsPeopleAction", "startViewAsAction", "stopViewAsAction", "endViewAsForLogoutAction"]);
 
 type Outcome = "denied" | string;
 
@@ -401,6 +492,22 @@ describe("конец просмотра", () => {
     expect([ctx.person.slug, ctx.viewAs, ctx.management?.role]).toEqual(["muradyan", null, "OWNER"]);
     const [, stop] = await viewAsAudit();
     expect(stop).toMatchObject({ action: "viewAs.stop", actorId: owner.id, entity: "person", entityId: "reva", field: "Выйти из просмотра", after: "Рева Тарас" });
+  });
+
+  it("выход из ресурса из меню: сначала снимается просмотр, и черновики самого владельца сервер уже принимает", async () => {
+    const { person: owner } = await signIn("muradyan", { management: true });
+    expect(await startAs("reva")).toBe("redirect");
+    expect(await viewAs.endViewAsForLogoutAction()).toEqual({ ok: true });
+    expect(http.cookies.has(VIEW_AS_COOKIE)).toBe(false);
+    const ctx = await requireWriteContext();
+    expect([ctx.person.slug, ctx.viewAs, ctx.viewAsEnded]).toEqual(["muradyan", null, null]);
+    expect((await viewAsAudit()).map((r) => [r.action, r.actorId, r.field])).toEqual([
+      ["viewAs.start", owner.id, "Смотреть как"],
+      ["viewAs.stop", owner.id, "Выход из ресурса"],
+    ]);
+    // Обычный выход после этого второй записи о конце не делает
+    expect(await settle(() => logout())).toBe("redirect");
+    expect(await viewAsAudit()).toHaveLength(2);
   });
 
   it("выход из ресурса во время просмотра заканчивает просмотр и пишет это в журнал", async () => {

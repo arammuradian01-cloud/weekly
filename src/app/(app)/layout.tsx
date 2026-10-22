@@ -30,7 +30,8 @@ import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
 import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
 import { canViewAs } from "@/lib/view-as-service";
-import { ViewAsBanner, ViewAsDialog } from "@/components/shell/view-as";
+import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
+import { VIEW_AS_END_TEXTS } from "@/lib/view-as";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -64,8 +65,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via }, marketAccess) };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
   // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
-  const viewAs = ctx.viewAs ? { name: ctx.person.fullName, until: formatTime(new Date(ctx.viewAs.until)) } : null;
+  const viewAs = ctx.viewAs ? { name: ctx.person.fullName, until: formatTime(new Date(ctx.viewAs.until)), untilMs: ctx.viewAs.until, ownerSlug: ctx.viewAs.owner.slug } : null;
   const viewAsOpen = !ctx.viewAs && canViewAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: false });
+  // Состояние просмотра для остальных вкладок этого браузера: сменилось, и вкладка с прежним состоянием перезагружается
+  const viewAsState = ctx.viewAs ? `view:${ctx.person.id}:${ctx.viewAs.until}` : ctx.viewAsEnded ? `ended:${ctx.viewAsEnded.target?.id ?? ""}` : "self";
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -78,6 +81,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     personal: ctx.via !== "TEAM",
     canViewAs: viewAsOpen,
     viewing: !!viewAs,
+    ownerSlug: viewAs?.ownerSlug ?? null,
+    // cookie просмотра этой сессии есть (просмотр идёт или закончился сам): выход из ресурса сначала снимает её
+    viewAsCookie: !!ctx.viewAs || !!ctx.viewAsEnded,
   };
 
   return (
@@ -87,6 +93,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
       limited={subject.limited}
+      viewing={!!viewAs || !!ctx.viewAsEnded}
       initialTasks={tasks}
       registry={registry}
       team={teamView}
@@ -130,7 +137,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </div>
 
       <div className="flex min-w-0 flex-col lg:col-start-2">
-        {viewAs ? <ViewAsBanner name={viewAs.name} until={viewAs.until} /> : null}
+        {viewAs ? <ViewAsBanner name={viewAs.name} until={viewAs.until} untilMs={viewAs.untilMs} /> : null}
+        {ctx.viewAsEnded ? <ViewAsEndedBanner name={ctx.viewAsEnded.target?.fullName ?? null} reason={VIEW_AS_END_TEXTS[ctx.viewAsEnded.reason]} /> : null}
         {lagging ? (
           <div role="status" className="sv-alert sv-alert--warning rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]">
             <span>
@@ -157,9 +165,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <GlobalHotkeys />
     <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} />
     <RequestDialogHost />
-    {/* В просмотре черновики с устройства и подписка на уведомления не сверяются: это записи от имени человека */}
-    {viewAs ? null : <DeviceSync />}
+    {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются */}
+    {viewAs || ctx.viewAsEnded ? null : <DeviceSync />}
     {viewAsOpen ? <ViewAsDialog /> : null}
+    <ViewAsSync state={viewAsState} />
     </InboxCountProvider>
     </TaskActionsProvider>
     </PrototypeProvider>

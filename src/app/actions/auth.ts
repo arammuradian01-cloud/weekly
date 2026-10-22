@@ -14,9 +14,8 @@ import { formatTime } from "@/lib/week";
 import {
   baseUrl,
   clearSession,
-  clearViewAs,
+  closeViewAs,
   readSession,
-  readViewAsToken,
   requestIp,
   requestUserAgent,
   requireSignedIn,
@@ -26,7 +25,6 @@ import {
 } from "@/lib/auth";
 import { writingActor } from "@/lib/action-runner";
 import { ViewAsReadOnlyError } from "@/lib/view-as";
-import { endViewAs } from "@/lib/view-as-service";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { confirmEmail } from "@/lib/login/email";
@@ -91,6 +89,8 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
 
   // Личный вход, который был в этом браузере, заменяется общим: завершаем его и в базе, как при смене личного входа.
   // Иначе запись устройства жила бы ещё 30 дней, и уведомления прежнего человека приходили бы в этот браузер (этап 26)
+  // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
+  await closeViewAs("login");
   const previous = (await readSession())?.sid ?? null;
   if (previous) await prisma.deviceSession.updateMany({ where: { id: previous, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
   const { epoch } = await getEpochs();
@@ -105,6 +105,8 @@ async function personalLogin(loginValue: string, password: string): Promise<Form
   const previous = (await readSession())?.sid ?? null;
   const result = await loginWithPassword(loginValue, password, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
   if (!result.ok) return { error: result.error };
+  // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
+  await closeViewAs("login");
   const { epoch } = await getEpochs();
   await writeSession({ epoch, personId: result.personId, sid: result.sessionId, via: "PASSWORD" });
   redirect("/");
@@ -194,14 +196,9 @@ export async function logout(): Promise<void> {
   const person = session?.personId
     ? await prisma.person.findUnique({ where: { id: session.personId } })
     : null;
-  // Выход во время «Смотреть как» (этап 63): просмотр заканчивается, в журнале кого смотрели
-  const viewing = await readViewAsToken();
-  if (viewing) {
-    if (person && session?.sid === viewing.sid && viewing.ownerId === person.id) {
-      await endViewAs(person, viewing.targetId, "logout", { ip: await requestIp(), via: session.via ?? null });
-    }
-    await clearViewAs();
-  }
+  // Выход во время «Смотреть как» (этап 63): просмотр заканчивается, в журнале кого смотрели. Если он закончился сам
+  // и конец уже записан, второй записи нет. До завершения устройства: иначе причиной стал бы «вход завершён»
+  await closeViewAs("logout");
   // Личный вход завершается и в базе: cookie с этого устройства больше не откроет ресурс
   if (session?.sid) {
     await prisma.deviceSession.updateMany({ where: { id: session.sid, revokedAt: null }, data: { revokedAt: new Date(), revokedBy: "self" } });
@@ -230,6 +227,7 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
     const previous = (await readSession())?.sid ?? null;
     // Без пароля входят только по ссылке из письма: по ссылке от владельца человек сначала задаёт пароль
     const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous, ["EMAIL"]);
+    await closeViewAs("login");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";
@@ -260,6 +258,7 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
       new Date(),
       previous,
     );
+    await closeViewAs("login");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
     // Первый вход (этап 52): если рабочей почты ещё нет, ресурс предлагает её указать

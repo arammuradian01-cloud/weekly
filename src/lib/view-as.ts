@@ -10,26 +10,34 @@ import { TaskRuleError } from "./rule-error";
 export const VIEW_AS_COOKIE = "wk_view_as";
 /** Просмотр живёт 2 часа и не дольше режима управления */
 export const VIEW_AS_TTL_MS = 2 * 60 * 60 * 1000;
+/**
+ * Сколько cookie живёт после конца режима управления. Пока она есть, вход знает, что просмотр был и закончился:
+ * вкладка, оставшаяся от просмотра, не запишет ничего от имени владельца. Снимают её только «Выйти из просмотра»
+ * («Вернуться к себе»), выход из ресурса, новый вход и новый просмотр
+ */
+export const VIEW_AS_KEEP_AFTER_MS = 12 * 60 * 60 * 1000;
 /** Ответ на любое изменение в режиме просмотра */
 export const VIEW_AS_DENIED = "В режиме «Смотреть как» изменения недоступны";
+/** Ответ на изменение из вкладки, которая осталась от закончившегося просмотра */
+export const VIEW_AS_ENDED = "Просмотр закончился, обновите страницу";
 
 /**
- * Отказ записи в режиме просмотра. Наследник ошибки правила: все действия экранов уже показывают такой текст человеку
- * как есть, а не «не получилось сохранить»
+ * Отказ записи в режиме просмотра и после его конца. Наследник ошибки правила: все действия экранов уже показывают
+ * такой текст человеку как есть, а не «не получилось сохранить»
  */
 export class ViewAsReadOnlyError extends TaskRuleError {
-  constructor() {
-    super(VIEW_AS_DENIED);
+  constructor(message: string = VIEW_AS_DENIED) {
+    super(message);
     this.name = "ViewAsReadOnlyError";
   }
 }
 
 /**
- * Что лежит в подписанной cookie: чья сессия (владелец и запись его устройства), кого смотрим, до какого момента и при
- * каком режиме управления (его срок, grant). Режим управления включили заново: это уже другой режим, и старая cookie
- * не оживает
+ * Что лежит в подписанной cookie: номер просмотра (id, по нему в журнале связаны начало и конец), чья сессия (владелец
+ * и запись его устройства), кого смотрим, до какого момента и при каком режиме управления (его срок, grant). Режим
+ * управления включили заново: это уже другой режим, и старая cookie не оживает
  */
-export type ViewAsToken = { ownerId: string; sid: string; targetId: string; until: number; grant: number };
+export type ViewAsToken = { id: string; ownerId: string; sid: string; targetId: string; until: number; grant: number };
 
 const AUDIENCE = "weekly:view-as";
 
@@ -46,25 +54,34 @@ export function viewAsUntil(now: number, managementUntil: number): number {
   return Math.min(now + VIEW_AS_TTL_MS, managementUntil);
 }
 
+/** До какого момента живёт cookie: конец режима управления и ещё VIEW_AS_KEEP_AFTER_MS */
+export function viewAsKeepUntil(token: Pick<ViewAsToken, "until" | "grant">): number {
+  return Math.max(token.until, token.grant) + VIEW_AS_KEEP_AFTER_MS;
+}
+
 export async function signViewAs(data: ViewAsToken, secret: string, now = Date.now()): Promise<string> {
-  return new SignJWT({ ownerId: data.ownerId, sid: data.sid, targetId: data.targetId, until: data.until, grant: data.grant })
+  return new SignJWT({ id: data.id, ownerId: data.ownerId, sid: data.sid, targetId: data.targetId, until: data.until, grant: data.grant })
     .setProtectedHeader({ alg: "HS256" })
     .setAudience(AUDIENCE)
     .setIssuedAt(Math.floor(now / 1000))
-    .setExpirationTime(Math.ceil(data.until / 1000))
+    .setExpirationTime(Math.ceil(viewAsKeepUntil(data) / 1000))
     .sign(keyFrom(secret));
 }
 
-/** Подпись и срок. null: cookie нет, она чужая, подделана или срок вышел */
+const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/**
+ * Подпись и срок жизни cookie. null: cookie нет, она чужая, подделана или прошло VIEW_AS_KEEP_AFTER_MS после конца
+ * режима управления. Срок самого просмотра (until) здесь не проверяется: закончившийся просмотр тоже нужно узнать
+ */
 export async function verifyViewAs(token: string | undefined, secret: string, now = Date.now()): Promise<ViewAsToken | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, keyFrom(secret), { algorithms: ["HS256"], audience: AUDIENCE, currentDate: new Date(now) });
-    const { ownerId, sid, targetId, until, grant } = payload;
-    if (typeof ownerId !== "string" || !ownerId || typeof sid !== "string" || !sid || typeof targetId !== "string" || !targetId) return null;
-    if (typeof until !== "number" || !Number.isFinite(until) || until <= now) return null;
-    if (typeof grant !== "number" || !Number.isFinite(grant)) return null;
-    return { ownerId, sid, targetId, until, grant };
+    const { id, ownerId, sid, targetId, until, grant } = payload;
+    const text = (v: unknown): v is string => typeof v === "string" && v.length > 0;
+    if (!text(id) || !text(ownerId) || !text(sid) || !text(targetId) || !num(until) || !num(grant)) return null;
+    return { id, ownerId, sid, targetId, until, grant };
   } catch {
     return null;
   }
@@ -102,16 +119,39 @@ export function viewAsStartError(who: ViewAsStarter, target: { id: string; activ
 /** Кто сейчас вошёл: запись устройства из сессии, профиль, его роль, режим управления и срок этого режима */
 export type ViewAsHolder = { sid: string | undefined; personId: string; role: Role; personal: boolean; management: ManagementRole | null; managementUntil: number | null };
 
+/** cookie этой же сессии: та же запись устройства и тот же владелец. Чужую (осталась от прежнего входа) вход не замечает */
+export function viewAsOwnSession(token: ViewAsToken, who: Pick<ViewAsHolder, "sid" | "personId">): boolean {
+  return !!who.sid && token.sid === who.sid && token.ownerId === who.personId;
+}
+
+/** Почему просмотр закончился: для журнала (поле записи «viewAs.stop») и плашки */
+export type ViewAsEnd = "stop" | "logout" | "expired" | "management" | "role" | "inactive" | "session";
+
+export const VIEW_AS_END_TEXTS: Record<ViewAsEnd, string> = {
+  stop: "Выйти из просмотра",
+  logout: "Выход из ресурса",
+  expired: "Вышел срок просмотра",
+  management: "Закончился режим управления",
+  role: "Снята роль владельца",
+  inactive: "Человек выключен",
+  session: "Вход завершён",
+};
+
 /**
- * Просмотр ещё действует. Проверяется на каждом запросе: та же сессия владельца (та же запись устройства и тот же
- * профиль), он по-прежнему владелец при личном входе в том же режиме управления владельца, срок не вышел. Владелец
- * вышел, его вход завершили, роль сменили, режим управления погас или его включили заново: просмотр гаснет.
- * Включённость выбранного человека вход проверяет по базе
+ * Почему просмотр этой сессии уже не действует, или null, если действует. Проверяется на каждом запросе: срок не
+ * вышел, профиль по-прежнему владелец при личном входе в том же режиме управления владельца, выбранный человек
+ * включён (его вход читает из базы)
  */
+export function viewAsEndReason(token: ViewAsToken, who: ViewAsHolder, targetActive: boolean, now = Date.now()): ViewAsEnd | null {
+  if (token.until <= now) return "expired";
+  if (who.role !== "OWNER") return "role";
+  if (!who.personal) return "session";
+  if (who.management !== "OWNER" || who.managementUntil !== token.grant) return "management";
+  if (!targetActive || token.targetId === who.personId) return "inactive";
+  return null;
+}
+
+/** Просмотр действует: cookie этой сессии и причины конца нет (включённость выбранного человека проверяет вход) */
 export function viewAsHolds(token: ViewAsToken, who: ViewAsHolder, now = Date.now()): boolean {
-  if (token.until <= now) return false;
-  if (!who.sid || token.sid !== who.sid) return false;
-  if (token.ownerId !== who.personId || token.targetId === who.personId) return false;
-  if (who.managementUntil !== token.grant) return false;
-  return who.role === "OWNER" && who.personal && who.management === "OWNER";
+  return viewAsOwnSession(token, who) && viewAsEndReason(token, who, true, now) === null && token.targetId !== who.personId;
 }

@@ -173,11 +173,43 @@ export function ViewAsDialog() {
   );
 }
 
-/** Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе */
-export function ViewAsBanner({ name, until }: { name: string; until: string }) {
+/** Перезагрузить вкладку: новое состояние просмотра должна показать вся страница, а не её часть */
+function reloadPage() {
+  window.location.reload();
+}
+
+/**
+ * Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе. На телефоне и
+ * планшете прилипает под шапкой. В срок вкладка перезагружается сама (и при возврате на вкладку, если срок вышел,
+ * пока она спала): вкладка, оставшаяся от просмотра, не должна выглядеть живой
+ */
+export function ViewAsBanner({ name, until, untilMs }: { name: string; until: string; untilMs: number }) {
   const [pending, startTransition] = useTransition();
+  useEffect(() => {
+    const check = () => {
+      if (Date.now() >= untilMs) reloadPage();
+    };
+    // Таймер в спящей вкладке или на уснувшем ноутбуке может опоздать: срок проверяется и при возврате на вкладку
+    const timer = window.setTimeout(reloadPage, Math.max(0, untilMs - Date.now()) + 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", check);
+    window.addEventListener("pageshow", check);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("pageshow", check);
+    };
+  }, [untilMs]);
   return (
-    <div role="status" data-testid="view-as-banner" className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-accent bg-navy px-4 py-3 text-white sm:px-6 lg:px-[var(--content-pad)]">
+    <div
+      role="status"
+      data-testid="view-as-banner"
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-accent bg-navy px-4 py-3 text-white max-lg:sticky max-lg:top-14 max-lg:z-10 sm:px-6 lg:px-[var(--content-pad)]"
+    >
       <Eye className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
       <p className="min-w-0 flex-1 text-body">
         <strong className="font-semibold">Вы смотрите как {name}. Изменения недоступны</strong>
@@ -194,4 +226,66 @@ export function ViewAsBanner({ name, until }: { name: string; until: string }) {
       </button>
     </div>
   );
+}
+
+/**
+ * Просмотр закончился сам (срок, режим управления, роль, человека выключили), а владелец ещё не вернулся к себе:
+ * страницы показывают его самого, но изменения закрыты, пока он не нажмёт «Вернуться к себе»
+ */
+export function ViewAsEndedBanner({ name, reason }: { name: string | null; reason: string }) {
+  const [pending, startTransition] = useTransition();
+  return (
+    <div role="status" data-testid="view-as-ended" className="sv-alert sv-alert--warning flex-wrap items-center rounded-none border-b border-warning-line px-4 max-lg:sticky max-lg:top-14 max-lg:z-10 sm:px-6 lg:px-[var(--content-pad)]">
+      <p className="min-w-0 flex-1">
+        <strong className="font-semibold">Просмотр{name ? ` как ${name}` : ""} закончился: {reason.toLowerCase()}.</strong> Изменения откроются, когда вы вернётесь к себе.
+      </p>
+      <button type="button" className={buttonClass("secondary", "sm", "shrink-0")} disabled={pending} aria-busy={pending || undefined} onClick={() => startTransition(() => stopViewAsAction())}>
+        Вернуться к себе
+      </button>
+    </div>
+  );
+}
+
+const CHANNEL = "weekly-view-as";
+const SIGNAL_KEY = "weekly-view-as-state";
+
+/**
+ * Начало и конец просмотра для остальных вкладок этого браузера (BroadcastChannel, запасной путь событие storage).
+ * Каждая вкладка при открытии объявляет, в каком состоянии её показал сервер. Вкладка с другим состоянием
+ * перезагружается: вкладка, оставшаяся от просмотра, не запишет ничего от чужого имени, а вкладка владельца сразу
+ * покажет начатый просмотр
+ */
+export function ViewAsSync({ state }: { state: string }) {
+  useEffect(() => {
+    const other = (value: unknown) => {
+      if (typeof value === "string" && value !== state) reloadPage();
+    };
+    let channel: BroadcastChannel | null = null;
+    try {
+      channel = new BroadcastChannel(CHANNEL);
+      channel.onmessage = (e: MessageEvent<{ state?: unknown }>) => other(e.data?.state);
+      channel.postMessage({ state });
+    } catch {
+      channel = null;
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== SIGNAL_KEY || !e.newValue) return;
+      try {
+        other((JSON.parse(e.newValue) as { state?: unknown }).state);
+      } catch {
+        // Чужое значение в хранилище: не наше дело
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    try {
+      localStorage.setItem(SIGNAL_KEY, JSON.stringify({ state, at: Date.now() }));
+    } catch {
+      // Хранилище запрещено: остаётся BroadcastChannel
+    }
+    return () => {
+      channel?.close();
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [state]);
+  return null;
 }

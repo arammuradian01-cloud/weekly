@@ -8,12 +8,17 @@ import { MANAGEMENT_TTL_MS, signSession, verifySession } from "@/lib/session";
 import { TaskRuleError } from "@/lib/rule-error";
 import {
   VIEW_AS_DENIED,
+  VIEW_AS_ENDED,
+  VIEW_AS_KEEP_AFTER_MS,
   VIEW_AS_TEXTS,
   VIEW_AS_TTL_MS,
   ViewAsReadOnlyError,
   signViewAs,
   verifyViewAs,
+  viewAsEndReason,
   viewAsHolds,
+  viewAsKeepUntil,
+  viewAsOwnSession,
   viewAsStartError,
   viewAsUntil,
   type ViewAsHolder,
@@ -24,7 +29,7 @@ import {
 const secret = "test-secret-0123456789-0123456789-abcdef";
 const now = Date.UTC(2026, 9, 22, 9, 0);
 const grant = now + MANAGEMENT_TTL_MS;
-const token: ViewAsToken = { ownerId: "owner", sid: "device-1", targetId: "reva", until: now + VIEW_AS_TTL_MS, grant };
+const token: ViewAsToken = { id: "view-1", ownerId: "owner", sid: "device-1", targetId: "reva", until: now + VIEW_AS_TTL_MS, grant };
 
 describe("cookie просмотра", () => {
   it("подпись и проверка возвращают те же данные", async () => {
@@ -48,10 +53,12 @@ describe("cookie просмотра", () => {
     expect(await verifySession(await signViewAs(token, secret, now), secret, now)).toBeNull();
   });
 
-  it("живёт до своего срока и не дольше", async () => {
+  it("живёт до конца режима управления и ещё 12 часов, а не до конца просмотра: закончившийся просмотр видно", async () => {
     const signed = await signViewAs(token, secret, now);
-    expect(await verifyViewAs(signed, secret, token.until - 1000)).not.toBeNull();
-    expect(await verifyViewAs(signed, secret, token.until + 1000)).toBeNull();
+    expect(viewAsKeepUntil(token)).toBe(grant + VIEW_AS_KEEP_AFTER_MS);
+    expect(await verifyViewAs(signed, secret, token.until + 1000)).toEqual(token);
+    expect(await verifyViewAs(signed, secret, grant + VIEW_AS_KEEP_AFTER_MS - 1000)).toEqual(token);
+    expect(await verifyViewAs(signed, secret, grant + VIEW_AS_KEEP_AFTER_MS + 1000)).toBeNull();
   });
 
   it("срок: 2 часа, но не дольше режима управления", () => {
@@ -102,6 +109,19 @@ describe("просмотр держится, пока жива сессия вл
     expect(viewAsHolds(token, holder, token.until)).toBe(false);
     expect(viewAsHolds({ ...token, targetId: "owner" }, holder, now)).toBe(false);
   });
+
+  it("причина конца для журнала и плашки; cookie другой сессии не считается закончившимся просмотром", () => {
+    expect(viewAsEndReason(token, holder, true, now)).toBeNull();
+    expect(viewAsEndReason(token, holder, true, token.until)).toBe("expired");
+    expect(viewAsEndReason(token, { ...holder, role: "ADMIN" }, true, now)).toBe("role");
+    expect(viewAsEndReason(token, { ...holder, management: null, managementUntil: null }, true, now)).toBe("management");
+    expect(viewAsEndReason(token, { ...holder, managementUntil: grant + 60_000 }, true, now)).toBe("management");
+    expect(viewAsEndReason(token, holder, false, now)).toBe("inactive");
+    expect(viewAsOwnSession(token, holder)).toBe(true);
+    expect(viewAsOwnSession(token, { sid: "device-2", personId: "owner" })).toBe(false);
+    expect(viewAsOwnSession(token, { sid: "device-1", personId: "reva" })).toBe(false);
+    expect(viewAsOwnSession(token, { sid: undefined, personId: "owner" })).toBe(false);
+  });
 });
 
 describe("отказ записи", () => {
@@ -110,6 +130,9 @@ describe("отказ записи", () => {
     expect(error).toBeInstanceOf(TaskRuleError);
     expect(error.message).toBe("В режиме «Смотреть как» изменения недоступны");
     expect(VIEW_AS_DENIED).toBe(error.message);
+    const ended = new ViewAsReadOnlyError(VIEW_AS_ENDED);
+    expect(ended).toBeInstanceOf(TaskRuleError);
+    expect(ended.message).toBe("Просмотр закончился, обновите страницу");
   });
 });
 
@@ -133,24 +156,56 @@ describe("по коду: изменения идут через проверку
     }
   });
 
-  it("серверные действия берут вход через runAction, runRead или проверку записи; чтение напрямую только у перечисленных", () => {
-    // Действия, которые сами читают вход без проверки записи: только чтение, переключатель команды и сам просмотр.
-    // В профиле вход читается ради записи устройства, а изменение всё равно идёт через runAction с отказом.
-    // Остальное поведение проверяет tests/db/view-as.test.ts, вызывая каждое действие в режиме просмотра
-    const DIRECT_READ = new Set([
-      "src/app/actions/team.ts",
-      "src/app/actions/view-as.ts",
-      "src/app/(app)/search/actions.ts",
-      "src/app/(app)/weekly/actions.ts",
-      "src/app/(app)/tasks/actions.ts",
-      "src/app/(app)/profile/actions.ts",
+  it("серверные действия: вход для чтения (requireContext, reader, runRead) только у перечисленных функций", () => {
+    // Чтение в просмотре работает, поэтому каждое действие, которое берёт вход без проверки записи, перечислено здесь
+    // по имени. Новая функция с requireContext, reader() или runRead падает в этом тесте, даже если файл уже есть в
+    // списке. То же поведение проверяет tests/db/view-as.test.ts, вызывая каждое действие в режиме просмотра
+    const READ_FUNCTIONS = new Set([
+      // requireContext напрямую
+      "setTeamAction",
+      "searchAction",
+      "weekViewAction",
+      "viewAsPeopleAction",
+      "startViewAsAction",
+      // reader() в задачах
+      "getTaskAction",
+      "taskHistoryAction",
+      "taskExtrasAction",
+      "taskLinksAction",
+      // runRead
+      "goalOptionsAction",
+      "suggestGoalsAction",
+      "meetingAction",
+      "searchDecisionsAction",
+      "myForecastAction",
+      "planPeopleAction",
+      "taskRequestsAction",
     ]);
+    /** Помощники внутри файла, которые читают вход без проверки записи: их вызов тоже чтение */
+    const READ_HELPERS = new Set(["reader"]);
     const actions = files("src", (n) => /\.(ts|tsx)$/.test(n)).filter((f) => /^"use server";/m.test(readFileSync(f, "utf8")));
     expect(actions.length).toBeGreaterThan(10);
+    const problems: string[] = [];
+    const seen = new Set<string>();
     for (const file of actions) {
       const code = readFileSync(file, "utf8");
-      if (/\bcurrentActor\b/.test(code)) expect.fail(`${file}: currentActor в серверном действии, нужен writingActor или runRead`);
-      if (/\brequireContext\(/.test(code) && !DIRECT_READ.has(file)) expect.fail(`${file}: requireContext в серверном действии, нужен requireWriteContext`);
+      if (/\bcurrentActor\b/.test(code)) problems.push(`${file}: currentActor в серверном действии, нужен writingActor или runRead`);
+      // Функции верхнего уровня: от объявления до следующего объявления
+      const marks = [...code.matchAll(/^(export\s+)?(?:async\s+)?function\s+(\w+)|^(export\s+)?const\s+(\w+)\s*=/gm)].map((m) => ({ at: m.index!, name: (m[2] ?? m[4])!, exported: !!(m[1] ?? m[3]) }));
+      marks.forEach((m, i) => {
+        const body = code.slice(m.at, marks[i + 1]?.at ?? code.length);
+        const reads = /\brequireContext\(/.test(body) || /\brunRead\(/.test(body) || [...READ_HELPERS].some((h) => new RegExp(`\\b${h}\\(\\)`).test(body.replace(new RegExp(`function\\s+${h}\\b`), "")));
+        if (!reads) return;
+        if (!m.exported) {
+          if (!READ_HELPERS.has(m.name)) problems.push(`${file} ${m.name}: помощник читает вход без проверки записи`);
+          return;
+        }
+        seen.add(m.name);
+        if (!READ_FUNCTIONS.has(m.name)) problems.push(`${file} ${m.name}: вход для чтения в действии, которое не перечислено как чтение`);
+      });
     }
+    expect(problems).toEqual([]);
+    // Список не устарел: каждое имя действительно читает вход
+    for (const name of READ_FUNCTIONS) expect(seen.has(name), name).toBe(true);
   });
 });

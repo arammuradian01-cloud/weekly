@@ -5,7 +5,7 @@ import { useTransition } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, KeyRound, CircleHelp, Eye, EyeOff, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
-import { stopViewAsAction } from "@/app/actions/view-as";
+import { endViewAsForLogoutAction, stopViewAsAction } from "@/app/actions/view-as";
 import { openViewAs } from "./view-as";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
@@ -26,6 +26,10 @@ type Props = {
   canViewAs?: boolean;
   /** Идёт просмотр «Смотреть как»: меню показывает выбранного человека и выход из просмотра */
   viewing?: boolean;
+  /** Короткое имя владельца, который смотрит: при выходе из ресурса отправляются и стираются его черновики */
+  ownerSlug?: string | null;
+  /** Есть cookie просмотра этой сессии (просмотр идёт или закончился сам): выход сначала снимает её */
+  viewAsCookie?: boolean;
   tone?: "dark" | "light";
 };
 
@@ -37,7 +41,7 @@ function initials(fullName: string) {
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
 const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, viewAsCookie = false, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
   const { me } = usePrototype();
   const dark = tone === "dark";
@@ -49,10 +53,16 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           "flex min-w-0 items-center gap-2.5 rounded-control text-left transition-colors",
           dark ? "w-full flex-1 p-1 text-sidebar-text hover:bg-sidebar-hover" : "h-10 px-1 text-ink hover:bg-field",
         )}
-        aria-label={`Профиль: ${fullName}`}
+        aria-label={viewing ? `Профиль: ${fullName}, просмотр «Смотреть как»` : `Профиль: ${fullName}`}
       >
-        <span className={cn("sv-avatar", `sv-avatar--${avatarTone(fullName)}`)} aria-hidden="true">
+        <span className={cn("sv-avatar relative", `sv-avatar--${avatarTone(fullName)}`)} aria-hidden="true">
           {initials(fullName)}
+          {/* На телефоне в шапке видна только аватарка: значок глаза говорит, что идёт просмотр (этап 63) */}
+          {viewing ? (
+            <span className={cn("absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-navy text-white ring-2 ring-surface", tone === "light" ? "sm:hidden" : "hidden")} data-testid="view-as-badge">
+              <Eye className="h-2.5 w-2.5" strokeWidth={2.5} />
+            </span>
+          ) : null}
         </span>
         <span className={cn("min-w-0 flex-1", tone === "light" && "hidden sm:block")}>
           <span className="sv-sidebar__profile__name block">{shortName}</span>
@@ -153,8 +163,10 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             disabled={pending}
             onSelect={() =>
               startTransition(async () => {
-                // В просмотре черновики на устройстве не трогаем: отправить их сервер сейчас не даст, а стёртые пропадут
-                if (!viewing) await forgetThisDevice(me.slug);
+                // В просмотре (этап 63) сначала просмотр снимается: тогда сервер примет черновики самого владельца с
+                // устройства, потом они уходят и всё стирается, черновики выбранного человека тоже
+                if (viewAsCookie) await endViewAsForLogoutAction();
+                await forgetThisDevice(viewing ? (ownerSlug ?? undefined) : me.slug);
                 await logout();
               })
             }

@@ -4,10 +4,10 @@
 // всё его глазами, изменения недоступны. Выбор, начало и конец просмотра. Правила в src/lib/view-as.ts.
 
 import { redirect, unstable_rethrow } from "next/navigation";
-import { clearViewAs, readViewAsToken, requestIp, requireContext, writeViewAs, type AppContext } from "@/lib/auth";
+import { closeViewAs, requestIp, requireContext, writeViewAs, type AppContext } from "@/lib/auth";
 import { TaskRuleError } from "@/lib/rule-error";
 import { VIEW_AS_TEXTS } from "@/lib/view-as";
-import { beginViewAs, endViewAs, viewAsPeople, type ViewAsOwner, type ViewAsPerson } from "@/lib/view-as-service";
+import { beginViewAs, viewAsPeople, viewAsTarget, type ViewAsOwner, type ViewAsPerson } from "@/lib/view-as-service";
 
 export type ViewAsResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -33,13 +33,18 @@ export async function viewAsPeopleAction(): Promise<ViewAsResult<ViewAsPerson[]>
   }
 }
 
-/** Начать просмотр: подписанная cookie на 2 часа (не дольше режима управления), запись в журнал, переход на «Мою неделю» */
+/**
+ * Начать просмотр: подписанная cookie, просмотр 2 часа (не дольше режима управления), запись в журнал, переход на
+ * «Мою неделю». Если прежний просмотр закончился сам, сначала пишется его конец с причиной
+ */
 export async function startViewAsAction(personId: string): Promise<ViewAsResult<null>> {
   try {
     const ctx = await requireContext();
     if (ctx.viewAs) return { ok: false, error: VIEW_AS_TEXTS.viewing };
-    const { token } = await beginViewAs(ownerOf(ctx, await requestIp()), String(personId ?? ""));
-    await writeViewAs(token);
+    const owner = ownerOf(ctx, await requestIp());
+    const target = await viewAsTarget(owner, String(personId ?? ""));
+    await closeViewAs("start");
+    await writeViewAs(await beginViewAs(owner, target));
   } catch (error) {
     return failure("Начало «Смотреть как»", error);
   }
@@ -47,13 +52,20 @@ export async function startViewAsAction(personId: string): Promise<ViewAsResult<
 }
 
 /**
- * «Выйти из просмотра»: единственное действие, которое режим просмотра пропускает. Запись в журнал, кого смотрели,
- * cookie гаснет, владелец снова видит себя. Режим управления остаётся, если его срок не вышел
+ * «Выйти из просмотра» и «Вернуться к себе» после конца просмотра: действия, которые режим просмотра пропускает.
+ * Запись в журнал, кого смотрели и почему кончилось, cookie снимается, владелец снова видит себя и может вносить
+ * изменения. Режим управления остаётся, если его срок не вышел
  */
 export async function stopViewAsAction(): Promise<void> {
-  const ctx = await requireContext();
-  const token = await readViewAsToken();
-  if (ctx.viewAs && token) await endViewAs(ctx.viewAs.owner, token.targetId, "stop", { ip: await requestIp(), via: ctx.via });
-  await clearViewAs();
+  await closeViewAs("stop");
   redirect("/");
+}
+
+/**
+ * Выход из ресурса во время просмотра (меню профиля): сначала просмотр снимается с записью «выход из ресурса», потом
+ * экран отправляет черновики владельца с устройства и выходит. Без перехода: дальше идёт обычный выход
+ */
+export async function endViewAsForLogoutAction(): Promise<{ ok: true }> {
+  await closeViewAs("logout");
+  return { ok: true };
 }
