@@ -52,9 +52,10 @@ export async function proxy(request: NextRequest) {
 
 // Без проверки входа: файлы сборки, значки и логотип, а для приложения на экране «Домой» (этап 26) описание приложения,
 // служебный обработчик и страница «Нет сети»: браузер запрашивает их без cookie, данных в них нет.
-// Загрузка пакета рынка (этап 62, /api/market/upload) идёт мимо proxy: для запросов с телом Next копит всё тело в
-// памяти до вызова proxy и обработчика, а пакет бывает до 25 МБ. Вход, права, адрес страницы и размер обработчик
-// проверяет сам до чтения тела. Обновлять cookie сессии на этом POST не нужно: proxy делает это только на GET
+// Загрузка пакета рынка (этап 62, /api/market/upload) и пакета наполнения (этап 67, /api/content-import) идёт мимо
+// proxy: для запросов с телом Next копит всё тело в памяти до вызова proxy и обработчика, а пакет бывает до 25 МБ и
+// 5 МБ. Вход, права, адрес страницы и размер обработчик проверяет сам до чтения тела. Обновлять cookie сессии на этом
+// POST не нужно: proxy делает это только на GET
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/|icons/|manifest.webmanifest|sw.js|offline.html|api/market/upload/?$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|robots.txt|logo/|icons/|manifest.webmanifest|sw.js|offline.html|api/market/upload/?$|api/content-import/?$).*)"],
 };

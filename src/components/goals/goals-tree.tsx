@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
+import { goalTasksText } from "@/lib/goals/links";
 import { formatShort } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ function Progress({ done, total }: { done: number; total: number }) {
       <div className="h-1.5 w-28 overflow-hidden rounded-full bg-field" aria-hidden="true">
         <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
       </div>
-      <span className="text-caption tabular-nums text-muted">{total ? `задач закрыто ${done} из ${total}` : "задач пока нет"}</span>
+      <span className="text-caption tabular-nums text-muted">{goalTasksText(done, total)}</span>
     </div>
   );
 }

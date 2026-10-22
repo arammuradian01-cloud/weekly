@@ -4,6 +4,7 @@ import { ApprovalSection } from "./approval-section";
 import { NumbersAccessSection } from "./numbers-access-section";
 import type { NumbersAccessView } from "@/lib/plan/access";
 import { MarketSettingsSection } from "./market-settings-section";
+import { ContentImportSection } from "./content-import-section";
 import type { MarketSettingsView } from "@/lib/market/access";
 import { NewsSettings, type NewsSettingsProps } from "@/components/news/news-settings";
 import type { ApprovalSetting } from "@/lib/tasks/approval-modes";
@@ -114,6 +115,7 @@ export function SettingsView({
   numbersAccess,
   market,
   news,
+  contentImport,
 }: {
   owner: boolean;
   me: string;
@@ -138,6 +140,8 @@ export function SettingsView({
   market?: MarketSettingsView;
   /** Новости (этап 60): источники и ключевые слова, только владельцу */
   news?: NewsSettingsProps;
+  /** Импорт наполнения (этап 67): владельцу при личном входе в режиме управления */
+  contentImport?: boolean;
 }) {
   // Оглавление (этап 48): только те разделы, которые человек видит
   const toc: TocItem[] = [
@@ -151,6 +155,7 @@ export function SettingsView({
           ...(numbersAccess ? [{ id: "numbers-access", label: "Доступ к цифрам" }] : []),
           ...(market ? [{ id: "market", label: "Рынок КАСКО и ОСАГО" }] : []),
           ...(news ? [{ id: "news", label: "Новости" }] : []),
+          ...(contentImport ? [{ id: "content-import", label: "Импорт наполнения" }] : []),
           { id: "stand", label: banner === "test" ? "Стенд и данные" : "Плашка и данные" },
         ]
       : []),
@@ -195,6 +200,7 @@ export function SettingsView({
           {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
           {market ? <MarketSettingsSection initial={market} /> : null}
           {news ? <NewsSettings {...news} /> : null}
+          {contentImport ? <ContentImportSection /> : null}
 
           <Group id="login">
             <LoginSection login={login} />

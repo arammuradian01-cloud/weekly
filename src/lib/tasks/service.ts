@@ -22,11 +22,12 @@ import { applyReaction } from "@/lib/discuss/reactions";
 import { TOP_TEAM, loadScope, loadTeamNodes, visibleTasksWhere, type Scope } from "@/lib/org/scope";
 import { nextRepeatDue, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "./repeat";
 import { foreignGoal, goalFits, taskPeople } from "@/lib/goals/personal";
-import { quarterOf } from "@/lib/goals/parse";
+import { quarterLabel, quarterOf } from "@/lib/goals/parse";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval";
 import { topTeamName } from "@/lib/org/top-name";
 import { TaskRuleError } from "@/lib/rule-error";
+import { canChangeGoal } from "@/lib/goals/links";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -44,6 +45,9 @@ export type Actor = {
 
 /** Ошибка правила: текст показывается человеку как есть. Живёт в отдельном модуле без базы (этап 63) */
 export { TaskRuleError };
+
+/** Цель у задачи уже та, что выбрали (этап 65): для нескольких задач разом это успех, а не отказ */
+export class SameGoalError extends TaskRuleError {}
 
 /** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
 export type TaskResult = { task: Task; undo?: string; warning?: string };
@@ -159,6 +163,7 @@ function snapshot(row: TaskRow): TaskSnapshot {
     whereUpdatedAt: isoFromDbDate(row.whereUpdatedAt),
     due: isoFromDbDate(row.due),
     archivedAt: row.archivedAt?.toISOString() ?? null,
+    goalId: row.goalId,
   };
 }
 
@@ -189,18 +194,22 @@ type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: O
  * Общий ход правки: блокируем строку, проверяем правило, меняем, пишем журнал, отдаём новую задачу и токен отмены.
  * plan получает задачу и права и возвращает изменения. undo: false значит «эту правку не отменяют».
  */
-async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
+type PlanFn = (row: TaskRow, can: TaskPermissions, tx: Tx, scope: Scope) => Promise<Plan>;
+
+async function mutate(actor: Actor, number: number, plan: PlanFn, db?: Tx): Promise<TaskResult> {
+  // db: правка внутри чужой транзакции (этап 67, импорт наполнения: всё одной транзакцией)
+  if (db) return mutateIn(db, actor, number, plan);
   return prisma.$transaction((tx) => mutateIn(tx, actor, number, plan));
 }
 
 /** Тот же ход правки внутри чужой транзакции: так «Заблокирована, ждёт человека» создаёт просьбу и меняет задачу разом */
-async function mutateIn(tx: Tx, actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
+async function mutateIn(tx: Tx, actor: Actor, number: number, plan: PlanFn): Promise<TaskResult> {
   const scope = await scopeOfActor(tx, actor);
   const row = await lockRow(tx, number, { scope, personId: actor.personId });
   if (row.archivedAt && actor.management !== "OWNER") fail(`Задача ${number} в архиве`);
   const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(tx, scope.leadPeople) });
   const before = snapshot(row);
-  const p = await plan(row, can, tx);
+  const p = await plan(row, can, tx, scope);
   if (!p.changes.length) fail("Ничего не изменилось");
   // Сменили ответственного или убрали соисполнителя: личная цель человека, которого больше нет в задаче, снимается.
   // Только при этих правках: смена статуса или срока цель не трогает
@@ -337,31 +346,63 @@ function repeatDb(input: RepeatInput | null | undefined): { repeat: RepeatKind |
   return { repeat, repeatMode };
 }
 
-/** Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе */
-async function nextNumber(tx: Tx): Promise<number> {
+/**
+ * Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе. count: сразу
+ * несколько номеров подряд (отдаётся первый). Строка настройки заперта до конца транзакции
+ */
+async function nextNumber(tx: Tx, count = 1): Promise<number> {
   const rows = await tx.$queryRaw<{ n: number }[]>`
     UPDATE "settings"
-    SET "value" = to_jsonb(GREATEST(("value" #>> '{}')::int, (SELECT COALESCE(MAX("number"), 0) + 1 FROM "tasks")) + 1), "updatedAt" = now()
+    SET "value" = to_jsonb(GREATEST(("value" #>> '{}')::int, (SELECT COALESCE(MAX("number"), 0) + 1 FROM "tasks")) + ${count}::int), "updatedAt" = now()
     WHERE "key" = 'tasks.nextNumber'
-    RETURNING (("value" #>> '{}')::int - 1) AS n`;
+    RETURNING (("value" #>> '{}')::int - ${count}::int) AS n`;
   if (rows[0]) return Number(rows[0].n);
   const max = await tx.task.aggregate({ _max: { number: true } });
   const n = Math.max(52, (max._max.number ?? 0) + 1);
-  await tx.setting.create({ data: { key: "tasks.nextNumber", value: n + 1 } });
+  await tx.setting.create({ data: { key: "tasks.nextNumber", value: n + count } });
   return n;
+}
+
+/**
+ * Номера для нескольких новых задач заранее, короткой своей транзакцией (этап 67, импорт наполнения): долгая загрузка
+ * не держит строку настройки номеров, и задачи, которые в это время ставят люди, не ждут её
+ */
+export async function reserveTaskNumbers(count: number): Promise<number[]> {
+  if (count <= 0) return [];
+  const first = await prisma.$transaction((tx) => nextNumber(tx, count));
+  return Array.from({ length: count }, (_, i) => first + i);
+}
+
+/**
+ * Вернуть неиспользованные заранее взятые номера from..to-1: только если после них никто номер не брал (в настройке
+ * всё ещё to). Иначе номера пропадают, это не ошибка
+ */
+export async function releaseTaskNumbers(from: number, to: number): Promise<void> {
+  if (from >= to) return;
+  await prisma.$executeRaw`
+    UPDATE "settings" SET "value" = to_jsonb(${from}::int), "updatedAt" = now()
+    WHERE "key" = 'tasks.nextNumber' AND ("value" #>> '{}')::int = ${to}::int`;
 }
 
 export async function createTask(actor: Actor, input: NewTaskInput): Promise<TaskResult> {
   return prisma.$transaction((tx) => createTaskIn(tx, actor, input));
 }
 
+/**
+ * Задача из истории (этап 67, импорт наполнения владельцем): sourceDate дата источника как есть (нет даты: пусто, а не
+ * «сегодня», иначе задача со встречи попала бы в повестку как поручение прошлой встречи). closed: задачу сразу
+ * закрывают, только ей срок может быть в прошлом. originalDue: исходный срок из истории, когда срок задачи сдвинут
+ * (открытая задача, у которой срок в истории уже прошёл)
+ */
+export type HistoryOptions = { sourceDate?: IsoDate | null; closed?: boolean; originalDue?: IsoDate | null };
+
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
-export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string } = {}): Promise<TaskResult> {
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: HistoryOptions; number?: number } = {}): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
   if (!isIsoDate(input.due)) fail("Укажите срок");
-  if (input.due < moscowToday()) fail("Срок не может быть в прошлом");
+  if (input.due < moscowToday() && !opts.history?.closed) fail("Срок не может быть в прошлом");
   const sourceNote = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
 
   const scope = await scopeOfActor(tx, actor);
@@ -415,7 +456,8 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
   const rule = await approvalRule(tx, requester, ownerId);
   const pending = rule?.mode === "approve" && !actor.management;
   if (pending) status = "proposed";
-  const number = await nextNumber(tx);
+  // Номер, взятый заранее (reserveTaskNumbers), или следующий
+  const number = opts.number ?? (await nextNumber(tx));
   const today = dbDate(moscowToday());
   const row = await tx.task.create({
     data: {
@@ -430,10 +472,10 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
       state: "ON_TRACK",
       whereUpdatedAt: today,
       due: dbDate(input.due),
-      originalDue: dbDate(input.due),
+      originalDue: opts.history && opts.history.originalDue !== undefined ? (opts.history.originalDue && isIsoDate(opts.history.originalDue) ? dbDate(opts.history.originalDue) : null) : dbDate(input.due),
       sourceCode,
       sourceNote,
-      sourceDate: sourceCode === "meeting" ? today : null,
+      sourceDate: opts.history ? (opts.history.sourceDate ? dbDate(opts.history.sourceDate) : null) : sourceCode === "meeting" ? today : null,
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
@@ -489,7 +531,7 @@ function pickTeam(scope: Scope, actor: Actor, wanted: string | undefined): strin
 
 // ---------- Правки ----------
 
-export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string): Promise<TaskResult> {
+export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     const pendingApproval = current === "proposed" && row.approvalState === "PENDING";
@@ -575,7 +617,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       // согласованию тоже не отменяется кнопкой: отмена вернула бы задачу в «Предложена» без согласования
       ...(spawned || pendingApproval || reopen ? { undo: false as const } : {}),
     };
-  });
+  }, db);
 }
 
 /**
@@ -786,7 +828,7 @@ export async function changePriority(actor: Actor, number: number, next: Priorit
   });
 }
 
-export async function updateWhere(actor: Actor, number: number, text: string): Promise<TaskResult> {
+export async function updateWhere(actor: Actor, number: number, text: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can) => {
     if (!can.where) fail("«Где сейчас» пишут ответственный и соисполнители");
     const value = required(text, LIMITS.where, "Напишите одну-две фразы о том, где задача сейчас", "Где сейчас");
@@ -800,10 +842,10 @@ export async function updateWhere(actor: Actor, number: number, text: string): P
       data: { whereNow: value, whereUpdatedAt: dbDate(today) },
       changes: [{ field: "Где сейчас", before: row.whereNow || null, after: value }],
     };
-  });
+  }, db);
 }
 
-export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string): Promise<TaskResult> {
+export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string, db?: Tx): Promise<TaskResult> {
   const transferId = `tr_${crypto.randomUUID()}`;
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.due) fail("Срок переносит ответственный, владелец или администратор");
@@ -827,12 +869,12 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
       undo: { removeTransferId: transferId },
     };
-  });
+  }, db);
 }
 
 export type EditInput = { title?: string; outcome?: string; direction?: string; source?: string; sourceNote?: string | null };
 
-export async function editTask(actor: Actor, number: number, input: EditInput): Promise<TaskResult> {
+export async function editTask(actor: Actor, number: number, input: EditInput, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.edit) fail("Задачу правит тот, кто её поставил, владелец или администратор");
     const data: Prisma.TaskUncheckedUpdateInput = {};
@@ -878,7 +920,7 @@ export async function editTask(actor: Actor, number: number, input: EditInput): 
       await notify(tx, { kind: "APPROVAL", recipients: [row.approverId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу из другого департамента для вашего сотрудника поправили: ${essential.join(", ")}` });
     }
     return { data, changes };
-  });
+  }, db);
 }
 
 /** Чья задача для правила согласования (этап 54): сохранённый автор, иначе тот, кто поставил, иначе тот, кто правит */
@@ -1290,6 +1332,12 @@ async function restoreChanges(tx: Tx, row: TaskRow, b: TaskSnapshot): Promise<Ch
     const items = await tx.dictionaryItem.findMany({ where: { kind: "TASK_SOURCE", code: { in: [row.sourceCode, b.sourceCode] } } });
     add("Источник", items.find((i) => i.code === row.sourceCode)?.label ?? row.sourceCode, items.find((i) => i.code === b.sourceCode)?.label ?? b.sourceCode);
   }
+  // Цель (этап 65): в старых токенах её нет, тогда цель не трогаем. Прежнюю цель могли удалить: тогда отменить нельзя
+  if (b.goalId !== undefined && (row.goalId ?? null) !== (b.goalId ?? null)) {
+    const goal = b.goalId ? await tx.goal.findUnique({ where: { id: b.goalId }, select: { title: true } }) : null;
+    if (b.goalId && !goal) fail("Прежней цели уже нет: отменить нельзя");
+    out.push({ action: "task.undo", field: "Цель (отмена)", before: row.goal?.title ?? null, after: goal?.title ?? null });
+  }
   return out;
 }
 
@@ -1355,6 +1403,7 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
         whereUpdatedAt: dbDate(b.whereUpdatedAt),
         due: dbDate(b.due),
         archivedAt: b.archivedAt ? new Date(b.archivedAt) : null,
+        ...(b.goalId !== undefined ? { goalId: b.goalId } : {}),
       },
       include: taskInclude,
     });
@@ -1425,6 +1474,72 @@ export async function requestUpdate(actor: Actor, number: number, now = new Date
     await audit(tx, actor, number, [{ action: "task.ask", field: "Попросили обновить", after: owner?.fullName ?? null }]);
     return { asked: owner?.fullName ?? "" };
   });
+}
+
+// ---------- Цель задачи (этап 17, перетаскиванием с этапа 65) ----------
+
+/**
+ * Привязать задачу к цели, перевязать или отвязать (goalId null). Цель меняют ответственный, соисполнитель, тот, кто
+ * поставил задачу, руководитель команды задачи или команды выше и режим управления (canChangeGoal). Цель своей команды или команды выше,
+ * или личная цель ответственного и соисполнителей из борда лидера, на квартал сегодня или квартал срока; снятая цель
+ * не подходит. Такие цели человек и так видит: цели видны всем людям департамента. Журнал пишет было и стало,
+ * отмена на 5 секунд возвращает прежнюю цель, если задачу с тех пор не трогали.
+ *
+ * Подбор цели по тексту (этап 55) только предлагает цель новой задаче и сам цель существующей задачи не меняет:
+ * связь, которую поставили здесь, живёт, пока её не поменяют руками
+ */
+/** db: внутри чужой транзакции (этап 67, импорт наполнения ставит связь задачи с целью в своей транзакции) */
+export async function setTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<TaskResult> {
+  if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
+  return mutate(
+    actor,
+    number,
+    async (row, _can, tx, scope) => {
+    if (row.archivedAt) fail(`Задача ${number} в архиве`);
+    if (!canChangeGoal(row, actor, scope)) fail("Цель задаче выбирают ответственный, соисполнители, тот, кто поставил задачу, руководитель команды и режим управления");
+    let goal: { id: string; title: string } | null = null;
+    if (goalId) {
+      const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
+      const nodes = await loadTeamNodes(tx);
+      if (!goalFits(g, row, taskPeople(row), nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
+      if (g.result === "DROPPED") fail("Цель снята: выберите другую");
+      if (![quarterOf(moscowToday()), quarterOf(isoFromDbDate(row.due))].includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала срока`);
+      goal = g;
+    }
+    if ((row.goalId ?? null) === (goal?.id ?? null)) throw new SameGoalError("Цель уже такая");
+    return { data: { goalId: goal?.id ?? null }, changes: [{ field: "Цель", before: row.goal?.title ?? null, after: goal?.title ?? null }] };
+    },
+    db,
+  );
+}
+
+/** done: связь стоит; task и undo только у задач, которые поменялись (у задачи с той же целью отменять нечего) */
+export type GoalLinkOutcome = { done: { number: number; task?: Task; undo?: string }[]; failed: { number: number; error: string }[] };
+
+/**
+ * Несколько задач к одной цели (этап 65): отметили и перетащили или нажали «Привязать к цели». Каждая задача проходит
+ * те же права и правила, что и поодиночке, в своей транзакции: задача без права не останавливает остальные, а попадает
+ * в неудачи с причиной. У каждой своя отмена. Цель уже такая (её успел поставить кто-то другой): это успех без отмены
+ */
+export async function setTasksGoal(actor: Actor, numbers: number[], goalId: string | null): Promise<GoalLinkOutcome> {
+  const unique = [...new Set(numbers.filter((n) => Number.isInteger(n)))];
+  if (!unique.length) fail("Выберите задачи");
+  if (unique.length > BULK_MAX) fail(`За раз не больше ${BULK_MAX} задач`);
+  if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
+  const out: GoalLinkOutcome = { done: [], failed: [] };
+  for (const number of unique) {
+    try {
+      const r = await setTaskGoal(actor, number, goalId);
+      out.done.push({ number, task: r.task, undo: r.undo });
+    } catch (error) {
+      if (error instanceof SameGoalError) {
+        out.done.push({ number });
+        continue;
+      }
+      out.failed.push({ number, error: error instanceof TaskRuleError ? error.message : "Не получилось сохранить" });
+    }
+  }
+  return out;
 }
 
 // ---------- Массовые действия (этап 25, модуль М10) ----------

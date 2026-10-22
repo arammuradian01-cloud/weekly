@@ -7,25 +7,27 @@
 // - цели департамента (топ-команды) заводит и правит режим управления;
 // - цели команды заводит и правит руководитель этой команды или команды выше, и режим управления;
 // - владелец цели отмечает «в риске» и итог квартала;
-// - задачу к цели привязывает тот, кто может её править, ответственный и руководитель команды задачи;
+// - задачу к цели привязывают ответственный, соисполнитель (этап 65), тот, кто поставил задачу, руководитель команды
+//   задачи и режим управления (canChangeGoal в links.ts, проверяет сервис задач);
 //   цель берётся из команды задачи или из команд выше.
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { GoalResult } from "@/generated/prisma/enums";
-import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { TaskRuleError, setTaskGoal, type Actor } from "@/lib/tasks/service";
 import { isoFromDbDate, moscowIso, moscowToday } from "@/lib/tasks/dates";
 import { diffDays } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
-import { ancestorsOf, loadScope, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
+import { ancestorsOf, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
 import { seesTask } from "@/lib/tasks/watch";
 import { NameIndex } from "@/lib/bord/names";
 import { matchPerson } from "@/lib/org/import";
 import { normName } from "@/lib/bord/names";
 import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow } from "./parse";
-import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
+import { fromLeaderBoard, othersPersonal, taskPeople } from "./personal";
 import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
+import { countsForGoal, doneForGoal } from "./links";
 import { TOP_TEAM_OLD_NAME } from "@/lib/org/top-name";
 
 type Tx = Prisma.TransactionClient;
@@ -113,7 +115,7 @@ function canEditTeam(who: Who, scope: Scope, teamId: string): boolean {
 }
 
 /** Все кварталы, где есть цели, плюс текущий */
-async function quartersList(): Promise<string[]> {
+export async function quartersList(): Promise<string[]> {
   const rows = await prisma.goal.findMany({ distinct: ["quarter"], select: { quarter: true } });
   return [...new Set([quarterOf(moscowToday()), ...rows.map((r) => r.quarter)])].sort().reverse();
 }
@@ -170,8 +172,9 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
     if (memo.has(id)) return memo.get(id)!;
     const g = byId.get(id)!;
     guard.add(id);
-    const counted = g.tasks.filter((t) => t.status !== "CANCELLED" && t.status !== "PROPOSED");
-    let done = counted.filter((t) => t.status === "DONE").length;
+    // Одно правило с карточкой цели на вкладке «Связать задачи с целями» (этап 65): без отменённых и предложенных
+    const counted = g.tasks.filter((t) => countsForGoal(t.status));
+    let done = counted.filter((t) => doneForGoal(t.status)).length;
     let total = counted.length;
     let overdue = counted.filter((t) => (t.status === "IN_PROGRESS" || t.status === "CLARIFY") && diffDays(isoFromDbDate(t.due), today) > 0).length;
     let achieved = 0;
@@ -327,6 +330,11 @@ function link(value: string | null | undefined): string | null {
   return v;
 }
 
+/** Своя транзакция или чужая (этап 67, импорт наполнения: всё одной транзакцией) */
+function inTx<T>(db: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db ? fn(db) : prisma.$transaction(fn);
+}
+
 async function audit(tx: Tx, actor: Actor, goalId: string, field: string, before?: string | null, after?: string | null, action = "goal.update") {
   await tx.auditLog.create({
     data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: goalId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
@@ -352,10 +360,11 @@ async function checkParent(tx: Tx, nodes: TeamNode[], parentId: string, teamId: 
   return parent;
 }
 
-export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: string }> {
+/** opts.source: откуда цель (этап 67: цели из бордов, загруженные импортом наполнения, как при загрузке борда) */
+export async function createGoal(actor: Actor, input: GoalInput, db?: Tx, opts: { source?: string } = {}): Promise<{ id: string }> {
   const quarter = input.quarter && QUARTER.test(input.quarter) ? input.quarter : quarterOf(moscowToday());
   const title = text(input.title, LIMITS.title, "Цель") ?? fail("Напишите цель одной мыслью");
-  return prisma.$transaction(async (tx) => {
+  return inTx(db, async (tx) => {
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const teamId = input.team ?? fail("Выберите команду цели");
     const team = nodes.find((n) => n.id === teamId && n.active) ?? fail("Такой команды нет");
@@ -383,6 +392,7 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
         link: link(input.link),
         sortOrder: (count + 1) * 10,
         createdById: actor.personId,
+        ...(opts.source ? { source: opts.source } : {}),
       },
     });
     await audit(tx, actor, goal.id, "Цель заведена", null, `${quarterLabel(quarter)}, ${team.name}: ${title}`, "goal.create");
@@ -390,8 +400,8 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
   });
 }
 
-export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }, db?: Tx): Promise<void> {
+  await inTx(db, async (tx) => {
     const goal = (await tx.goal.findUnique({ where: { id }, include: { team: true, owner: true, parent: true } })) ?? fail("Цели уже нет");
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const who = { personId: actor.personId, role: actor.role, management: actor.management };
@@ -552,7 +562,9 @@ export async function goalOptions(who: Who, number: number): Promise<GoalOption[
 
 /**
  * Цель для новой задачи по её тексту (этап 55): форма новой задачи подставляет лучшую, человек может сменить.
- * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем
+ * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем.
+ * Подбор только читает: цель уже заведённой задачи он не меняет, связь, поставленную руками в карточке или
+ * перетаскиванием (этап 65), не перетирает. Это закрепляет tests/db/goals-link.test.ts
  */
 export async function suggestGoals(who: Who, input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<{ options: GoalOption[]; best: string | null }> {
   // Наблюдатель задач не ставит: подбирать ему нечего
@@ -569,34 +581,15 @@ export async function suggestGoals(who: Who, input: { team: string; due: string;
   return withSuggestions(options, `${input.title} ${input.outcome}`.slice(0, 2000));
 }
 
-/** Привязать задачу к цели или отвязать */
-export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null): Promise<{ goal: string | null }> {
-  if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
-  return prisma.$transaction(async (tx) => {
-    const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management });
-    const task = await tx.task.findUnique({ where: { number }, include: { coExecutors: { select: { personId: true } }, goal: true } });
-    if (!task || !seesTask(scope, task, actor.personId)) return fail(`Задачи ${number} нет`);
-    if (task.archivedAt) fail(`Задача ${number} в архиве`);
-    const allowed = !!actor.management || scope.leads.includes(task.teamId) || task.ownerId === actor.personId || task.createdById === actor.personId;
-    if (!allowed) fail("Цель задаче выбирают ответственный, тот, кто поставил задачу, руководитель команды и режим управления");
-    let goal: { id: string; title: string } | null = null;
-    if (goalId) {
-      const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
-      const nodes = await loadTeamNodes(tx);
-      // Цель своей команды или команды выше, или личная цель ответственного и соисполнителей из борда (этап 31)
-      if (!goalFits(g, task, taskPeople(task), nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
-      if (g.result === "DROPPED") fail("Цель снята: выберите другую");
-      const quarters = [quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))];
-      if (!quarters.includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
-      goal = g;
-    }
-    if ((task.goalId ?? null) === (goal?.id ?? null)) fail("Цель уже такая");
-    await tx.task.update({ where: { id: task.id }, data: { goalId: goal?.id ?? null } });
-    await tx.auditLog.create({
-      data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: task.goal?.title ?? undefined, after: goal?.title ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
-    });
-    return { goal: goal?.title ?? null };
-  });
+/**
+ * Привязать задачу к цели или отвязать из карточки задачи. С этапа 65 связь пишет сервис задач (setTaskGoal): те же
+ * права и правила, что у перетаскивания на странице «Цели», журнал и блокировка строки задачи. db: внутри чужой
+ * транзакции (этап 67, импорт наполнения), название цели для ответа читается тем же клиентом
+ */
+export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<{ goal: string | null }> {
+  await setTaskGoal(actor, number, goalId, db);
+  const goal = goalId ? await (db ?? prisma).goal.findUnique({ where: { id: goalId }, select: { title: true } }) : null;
+  return { goal: goal?.title ?? null };
 }
 
 // ---------- Загрузка из таблицы и из Bord ----------

@@ -76,7 +76,11 @@ export async function reloadFromBord(db: PrismaClient, tasksText: string, weekly
     // Только данные топ-команды: Bord ведёт она, задачи и weekly остальных команд перезаливка не трогает (этап 14).
     // Комментарии, переносы, ссылки и соисполнители удаляются вместе с задачами (каскад в базе)
     const ids = await topPeople(tx);
+    const gone = (await tx.task.findMany({ where: { teamId: TOP_TEAM }, select: { id: true } })).map((t) => t.id);
     await tx.task.deleteMany({ where: { teamId: TOP_TEAM } });
+    // Ключи импорта наполнения (этап 67) удалённых задач и их связей с целями: повторный импорт пакета поставит эти
+    // задачи заново, а не пропустит их как «удалённые в ресурсе»
+    if (gone.length) await tx.contentImportKey.deleteMany({ where: { kind: { in: ["task", "link"] }, entityId: { in: gone } } });
     await tx.weeklyEntry.deleteMany({ where: { OR: [{ authorId: null }, { authorId: { in: ids } }] } });
     await tx.weeklyReport.deleteMany({ where: { authorId: { in: ids } } });
     // Черновики отчёта CEO уходят, отправленные CEO остаются: на них ведут события в «Мне» (этапы 61 и 66)
