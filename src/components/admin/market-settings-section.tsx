@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { saveMarketSettingsAction } from "@/app/(app)/settings/actions";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
@@ -51,6 +51,7 @@ export function MarketSettingsSection({ initial, teamLogin = true }: { initial: 
   const [teamIds, setTeamIds] = useState<string[]>(initial.teamIds);
   const [pick, setPick] = useState("");
   const [saving, setSaving] = useState<Saving>(null);
+  const countRef = useRef<HTMLParagraphElement>(null);
   const names = new Map(view.options.map((p) => [p.slug, p.name]));
   const stale = view.stale.people + view.stale.teams;
   const peopleDiff = listDiff(people, view.people);
@@ -59,16 +60,32 @@ export function MarketSettingsSection({ initial, teamLogin = true }: { initial: 
   const teamsDirty = isDirty(teamsDiff);
   useLeaveGuard(peopleDirty || teamsDirty, LEAVE_TEXT);
 
-  /** Сохраняет выбранные списки; несохранённый черновик другого списка остаётся как есть */
+  /**
+   * Сохраняет выбранные списки. Нижняя кнопка отправляет только изменённые списки, чтобы не вернуть поверх правки
+   * другого владельца устаревший список с этой страницы. После ответа список берётся с сервера, только если его не
+   * правили во время сохранения и на нём нет несохранённого черновика; иначе черновик остаётся как есть
+   */
   const save = async (what: Exclude<Saving, null>) => {
     setSaving(what);
-    const input = what === "people" ? { people } : what === "teams" ? { teamIds } : { people, teamIds };
-    const saved = await run(() => saveMarketSettingsAction(input));
+    const sendPeople = what === "people" || (what === "all" && peopleDirty);
+    const sendTeams = what === "teams" || (what === "all" && teamsDirty);
+    const atClick = { people, teamIds, peopleDirty, teamsDirty };
+    const saved = await run(() => saveMarketSettingsAction({ ...(sendPeople && { people }), ...(sendTeams && { teamIds }) }));
     if (saved) {
       setView(saved);
-      if (what !== "teams") setPeople(saved.people);
-      if (what !== "people") setTeamIds(saved.teamIds);
-      notify(what === "teams" ? "Разбор рынка на встречах сохранён" : what === "people" || peopleDirty ? marketSavedText(saved.count) : "Настройка рынка сохранена");
+      setPeople((cur) => (cur === atClick.people && (sendPeople || !atClick.peopleDirty) ? saved.people : cur));
+      setTeamIds((cur) => (cur === atClick.teamIds && (sendTeams || !atClick.teamsDirty) ? saved.teamIds : cur));
+      notify(
+        sendPeople && sendTeams
+          ? `${marketSavedText(saved.count)}. Разбор рынка на встречах сохранён`
+          : sendTeams
+            ? "Разбор рынка на встречах сохранён"
+            : sendPeople
+              ? marketSavedText(saved.count)
+              : "Настройка рынка сохранена",
+      );
+      // Строка с кнопками исчезает: фокус на счётчик, чтобы клавиатура не начинала с начала страницы
+      countRef.current?.focus();
     }
     setSaving(null);
   };
@@ -83,7 +100,7 @@ export function MarketSettingsSection({ initial, teamLogin = true }: { initial: 
           Владельцы, все в режиме управления и все, кто входит по общему логину, видят раздел «Рынок» всегда. При личном входе без режима управления
           остальные видят его, если они в списке ниже. Пакет рынка загружает владелец при личном входе на странице раздела.
         </p>
-        <p className="mt-2 text-small text-ink" data-testid="market-settings-count">
+        <p ref={countRef} tabIndex={-1} className="mt-2 text-small text-ink outline-none" data-testid="market-settings-count">
           {marketCountText(view.count, view.owners, teamLogin)}
         </p>
         {stale ? (
@@ -143,6 +160,7 @@ export function MarketSettingsSection({ initial, teamLogin = true }: { initial: 
                 onCancel={() => {
                   setPeople(view.people);
                   setPick("");
+                  countRef.current?.focus();
                 }}
               />
             ) : null}
@@ -171,7 +189,10 @@ export function MarketSettingsSection({ initial, teamLogin = true }: { initial: 
                 saving={saving === "teams"}
                 disabled={saving !== null}
                 onSave={() => void save("teams")}
-                onCancel={() => setTeamIds(view.teamIds)}
+                onCancel={() => {
+                  setTeamIds(view.teamIds);
+                  countRef.current?.focus();
+                }}
               />
             ) : null}
           </div>

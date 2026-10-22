@@ -34,10 +34,10 @@ export function marketCountText(count: number, owners: number, teamLogin: boolea
 
 /** Уведомление после сохранения списка людей */
 export function marketSavedText(count: number): string {
-  return `Доступ к рынку сохранён: раздел ${people(count)}`;
+  return `Доступ к рынку сохранён: при личном входе раздел ${people(count)}`;
 }
 
-export const LEAVE_TEXT = "Доступ к рынку не сохранён. Уйти со страницы без сохранения?";
+export const LEAVE_TEXT = "Настройка рынка не сохранена. Уйти со страницы без сохранения?";
 
 /**
  * Уводит ли щелчок по ссылке с этой страницы внутри приложения: тот же сайт, другой путь или параметры. Ссылки на

@@ -188,8 +188,8 @@ describe("строка «Не сохранено» и тексты", () => {
     expect(marketCountText(2, 1, true)).toBe("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
     expect(marketCountText(7, 1, false)).toBe("Сейчас раздел видят 7 человек, из них владельцев 1, плюс администраторы в режиме управления.");
     expect(marketCountText(1, 1, false)).toBe("Сейчас раздел видит 1 человек, из них владельцев 1, плюс администраторы в режиме управления.");
-    expect(marketSavedText(7)).toBe("Доступ к рынку сохранён: раздел видят 7 человек");
-    expect(marketSavedText(21)).toBe("Доступ к рынку сохранён: раздел видит 21 человек");
+    expect(marketSavedText(7)).toBe("Доступ к рынку сохранён: при личном входе раздел видят 7 человек");
+    expect(marketSavedText(21)).toBe("Доступ к рынку сохранён: при личном входе раздел видит 21 человек");
     for (const text of [marketCountText(2, 1, true), marketSavedText(3), unsavedText({ add: 1, remove: 1 }), LEAVE_TEXT]) expect(text).not.toMatch(/[—–→·]/);
   });
 

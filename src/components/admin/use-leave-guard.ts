@@ -18,8 +18,8 @@ export function useLeaveGuard(dirty: boolean, text: string) {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
       if (agreed.current) return;
       e.preventDefault();
-      // Старые браузеры показывают вопрос только при заданном returnValue
-      e.returnValue = "";
+      // Chrome и Edge до версии 119 показывают вопрос только при непустом returnValue
+      e.returnValue = true;
     };
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

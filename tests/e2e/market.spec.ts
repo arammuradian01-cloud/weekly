@@ -126,7 +126,7 @@ test("владелец загружает пакет, вкладка и филь
   const unsaved = section.getByTestId("market-people-unsaved");
   await expect(unsaved).toContainText("Не сохранено: добавить 1");
   await unsaved.getByRole("button", { name: "Сохранить доступ" }).click();
-  await expect(page.getByText("Доступ к рынку сохранён: раздел видят 2 человека").first()).toBeVisible();
+  await expect(page.getByText("Доступ к рынку сохранён: при личном входе раздел видят 2 человека").first()).toBeVisible();
   await expect(unsaved).toHaveCount(0);
   await expect(section.getByTestId("market-settings-count")).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
   await shot(page, "settings");
@@ -266,7 +266,7 @@ test("настройки: «Не сохранено» под людьми, «О�
   const clicking = tasksLink.click();
   const asked = await dialog;
   expect(asked.type()).toBe("confirm");
-  expect(asked.message()).toBe("Доступ к рынку не сохранён. Уйти со страницы без сохранения?");
+  expect(asked.message()).toBe("Настройка рынка не сохранена. Уйти со страницы без сохранения?");
   await asked.dismiss();
   await clicking;
   await expect(page).toHaveURL(/\/settings/);
@@ -292,7 +292,7 @@ test("настройки: «Не сохранено» под людьми, «О�
   await add("Рева", /Рева Тарас/);
   await top.uncheck();
   await unsaved.getByRole("button", { name: "Сохранить доступ" }).click();
-  await expect(page.getByText("Доступ к рынку сохранён: раздел видят 2 человека").first()).toBeVisible();
+  await expect(page.getByText("Доступ к рынку сохранён: при личном входе раздел видят 2 человека").first()).toBeVisible();
   await expect(unsaved).toHaveCount(0);
   await expect(count).toHaveText("Сейчас раздел видят 2 человека, из них владельцев 1, плюс администраторы в режиме управления и все, кто входит по общему логину.");
   await expect.poll(async () => (await sql(`SELECT value FROM settings WHERE key = 'market.access'`))[0]?.value).toEqual({ people: ["reva"] });
@@ -306,7 +306,7 @@ test("настройки: «Не сохранено» под людьми, «О�
   await section.getByRole("button", { name: "Убрать доступ: Рева Тарас" }).click();
   await expect(section.getByTestId("market-people-unsaved-text")).toHaveText("Не сохранено: убрать 1");
   await section.getByTestId("market-settings-save").click();
-  await expect(page.getByText("Доступ к рынку сохранён: раздел видит 1 человек").first()).toBeVisible();
+  await expect(page.getByText("Доступ к рынку сохранён: при личном входе раздел видит 1 человек").first()).toBeVisible();
   await expect(unsaved).toHaveCount(0);
   await expect.poll(async () => (await sql(`SELECT value FROM settings WHERE key = 'market.access'`))[0]?.value).toEqual({ people: [] });
 
