@@ -110,7 +110,7 @@ test("владелец собирает команду поиском из ра�
   if (isPhone()) await expect(aram.getByTestId("teams-list").locator('[aria-current="true"]')).toHaveCount(0);
   if (!isPhone()) {
     // Своя топ-команда: не «только просмотр», а где менять состав
-    await expect(aram.getByTestId("team-card")).toContainText("Состав топ-команды меняют в режиме управления");
+    await expect(aram.getByTestId("team-card")).toContainText("Состав этой команды меняют в режиме управления");
     await expect(aram.getByTestId("team-card")).not.toContainText("Только просмотр");
   }
   await shot(aram, "start");
@@ -263,7 +263,7 @@ test("руководитель видит свои команды, соглас�
   const list = reva.getByTestId("teams-list");
   await expect(list).toContainText("Управление продуктового развития (insurance)");
   await expect(list).toContainText("Руководитель: вы");
-  await expect(list).toContainText("Топ-команда");
+  await expect(list).toContainText("Команда страхования и инвестиций");
   await expect(list).not.toContainText("Департамент Money");
   await shot(reva, "leader-list");
 
@@ -289,8 +289,8 @@ test("руководитель видит свои команды, соглас�
   await expect(list).toBeVisible();
   if (!isPhone()) await expect(list.locator('[aria-current="true"]')).toHaveCount(1);
   if (isPhone()) await expect(reva.getByTestId("team-card")).toBeHidden();
-  const top = await openTeam(reva, "Топ-команда");
-  await expect(top.getByTestId("team-card-readonly")).toContainText("Состав топ-команды меняет владелец в режиме управления");
+  const top = await openTeam(reva, "Команда страхования и инвестиций");
+  await expect(top.getByTestId("team-card-readonly")).toContainText("Состав этой команды меняет владелец в режиме управления");
   await expect(top.getByRole("button", { name: "Добавить участников" })).toHaveCount(0);
   // Старый адрес «Weekly-проектов» ведёт сюда
   await reva.goto("/people/projects");
@@ -337,7 +337,7 @@ test("руководитель видит свои команды, соглас�
   await expect(shared.getByText("Под общим входом команды только для просмотра", { exact: false })).toBeVisible();
   await expect(shared.getByTestId("team-create")).toHaveCount(0);
   await expect(shared.getByTestId("teams-list").getByRole("link")).toHaveCount(1);
-  const sharedTop = await openTeam(shared, "Топ-команда");
+  const sharedTop = await openTeam(shared, "Команда страхования и инвестиций");
   await expect(sharedTop.getByTestId("team-card-readonly")).toBeVisible();
   await expect(sharedTop.getByRole("button", { name: /Убрать из команды/ })).toHaveCount(0);
   await shot(shared, "shared");
