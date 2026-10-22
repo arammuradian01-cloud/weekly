@@ -370,15 +370,18 @@ describe("встречи один на один в просмотре", () => {
     try {
       await signIn("reva");
       const self = await requireContext();
+      // Только события этого теста: в «Мне» Ревы могут лежать события из других файлов тестов
+      const mine = (items: { subject: string | null }[]) => items.map((i) => i.subject).filter((s) => s === "1on1:view-as" || s === "team:view-as-1on1");
       const own = await listInbox(reva.id, new Date(), subjectOf(self));
-      expect(own.items.map((i) => i.subject).sort()).toEqual(["1on1:view-as", "team:view-as-1on1"]);
+      expect(mine(own.items).sort()).toEqual(["1on1:view-as", "team:view-as-1on1"]);
 
       await signIn("muradyan", { management: true });
       expect(await startAs("reva")).toBe("redirect");
       const ctx = await requireContext();
       expect(subjectOf(ctx).viewAs).toBe(true);
       const seen = await listInbox(reva.id, new Date(), subjectOf(ctx));
-      expect(seen.items.map((i) => i.subject)).toEqual(["team:view-as-1on1"]);
+      expect(mine(seen.items)).toEqual(["team:view-as-1on1"]);
+      expect(seen.items.some((i) => i.kind === "ONE_ON_ONE")).toBe(false);
       expect(await inboxCount(reva.id, new Date(), subjectOf(ctx))).toBe((await inboxCount(reva.id, new Date(), subjectOf(self))) - 1);
     } finally {
       await prisma.inboxEvent.deleteMany({ where: { id: { in: events.map((e) => e.id) } } });
