@@ -24,6 +24,10 @@ type Preview = {
   decisions: Counts;
   goals: Counts;
   links: Counts;
+  /** Крупные инициативы (этап 67г). Сервер до этапа 67г их не присылал */
+  initiatives?: Counts;
+  /** Стирание решений, которые ставила загрузка (этап 67г) */
+  removals?: { remove: number; skip: number };
   missingPeople: string[];
   missingTeams: string[];
   errors: Line[];
@@ -41,7 +45,7 @@ type Line = { what: string; text: string };
 /** Настройки загрузки: все дубли, выбранные дубли, срок для задач без актуального срока (null: по умолчанию) */
 type Options = { all: boolean; picked: string[]; due: string | null };
 const DEFAULTS: Options = { all: false, picked: [], due: null };
-type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
+type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives?: number; removed?: number } };
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; problems?: string[] };
 
 const SIGNED_OUT = "Вход больше не действует: войдите заново и загрузите пакет ещё раз";
@@ -67,11 +71,12 @@ async function post<T>(mode: "preview" | "apply", text: string, o: Options): Pro
   }
 }
 
-const KINDS: { key: "tasks" | "decisions" | "goals" | "links"; label: string }[] = [
+const KINDS: { key: "tasks" | "decisions" | "goals" | "links" | "initiatives"; label: string }[] = [
   { key: "tasks", label: "Задачи" },
   { key: "decisions", label: "Решения" },
   { key: "goals", label: "Цели" },
   { key: "links", label: "Связи задач с целями" },
+  { key: "initiatives", label: "Крупные инициативы" },
 ];
 
 function line(c: Counts): string {
@@ -165,13 +170,13 @@ export function ContentImportSection() {
     // Поле файла с чистого листа: тот же файл можно выбрать снова и увидеть, что загружать нечего
     setRound((x) => x + 1);
     const n = r.value.applied.tasks.length;
-    notify(`Наполнение загружено: ${n} ${plural(n, "новая задача", "новые задачи", "новых задач")}, решений ${r.value.applied.decisions}, целей ${r.value.applied.goals}, связей ${r.value.applied.links}`);
+    notify(`Наполнение загружено: ${n} ${plural(n, "новая задача", "новые задачи", "новых задач")}, решений ${r.value.applied.decisions}, целей ${r.value.applied.goals}, связей ${r.value.applied.links}${r.value.applied.initiatives ? `, инициатив ${r.value.applied.initiatives}` : ""}${r.value.applied.removed ? `, стёрто решений ${r.value.applied.removed}` : ""}`);
     router.refresh();
   };
 
   const shown = done ?? preview;
   // Привязка к ресурсу тоже работа загрузки: при одних привязках кнопка «Загрузить» доступна
-  const nothing = preview && KINDS.every((k) => preview[k.key].add + preview[k.key].update === 0) && !preview.bound.length;
+  const nothing = preview && KINDS.every((k) => (preview[k.key]?.add ?? 0) + (preview[k.key]?.update ?? 0) === 0) && !preview.bound.length && !preview.removals?.remove;
 
   return (
     <section id="content-import" aria-labelledby={headingId} className="sv-toc-section border-t border-line py-8" data-testid="content-import">
@@ -180,7 +185,7 @@ export function ContentImportSection() {
           Импорт наполнения
         </h2>
         <p className="mt-1 text-small text-muted">
-          Пакет с задачами, решениями, целями и связями задач с целями, собранный из истории проекта. Сначала ресурс покажет, что добавится, обновится и пропустится. Загрузка
+          Пакет с задачами, решениями, целями, связями задач с целями и крупными инициативами, собранный из истории проекта. Сначала ресурс покажет, что добавится, обновится и пропустится. Загрузка
           ничего не удаляет, поля, которые поменяли в ресурсе, не трогает, повторная загрузка того же пакета ничего не дублирует. Файл пакета храните у себя, в общие папки не
           кладите.
         </p>
@@ -214,11 +219,16 @@ export function ContentImportSection() {
           <div className="flex flex-col gap-4 rounded-xl bg-field p-4" data-testid={done ? "content-import-done" : "content-import-preview"} role="status">
             <p className="text-body font-semibold text-ink">{done ? "Загружено" : `Что даст загрузка${shown.title ? `: ${shown.title}` : ""}`}</p>
             <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body text-ink">
-              {KINDS.map((k) => (
+              {KINDS.filter((k) => shown[k.key]).map((k) => (
                 <li key={k.key} data-testid={`content-import-${k.key}`}>
-                  <span className="font-medium">{k.label}:</span> {line(shown[k.key])}
+                  <span className="font-medium">{k.label}:</span> {line(shown[k.key]!)}
                 </li>
               ))}
+              {shown.removals && shown.removals.remove + shown.removals.skip ? (
+                <li data-testid="content-import-removals" className="text-danger-ink">
+                  <span className="font-medium">Стереть решения, которые ставила загрузка:</span> {done ? "стёрто" : "сотрётся"} {shown.removals.remove}, пропустится {shown.removals.skip}. Стёртое не вернуть, текст останется в журнале
+                </li>
+              ) : null}
             </ul>
             {done && done.applied.tasks.length ? (
               <p className="text-small text-muted">

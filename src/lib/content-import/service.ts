@@ -27,7 +27,13 @@
 //   блокировку Postgres снимает: загрузка откатывается с понятной причиной, её повторяют;
 // - запись, которая уже есть в ресурсе (подхват без правок, цель с тем же номером без новых полей, задача уже с этой
 //   целью), привязывается к ресурсу: загрузка только запоминает её ключ;
-// - любая ошибка правила при загрузке откатывает всё: база остаётся как была, владелец видит запись и причину.
+// - любая ошибка правила при загрузке откатывает всё: база остаётся как была, владелец видит запись и причину;
+// - этап 67г: крупные инициативы. Новая встаёт с делением и заметкой из пакета, закрытая сразу закрывается с итогом.
+//   Поля уже загруженной инициативы (название, зачем, продукт, ответственный, команда, цель, деление, заметка, итог)
+//   идут по тем же трём значениям, что у задач: правку в ресурсе загрузка не затирает. Событий «Мне» о загруженных
+//   инициативах нет, как и о старых решениях: ответственных назначили не сегодня, а в рабочем файле;
+// - этап 67г: пакет может стереть решения, которые ставила загрузка (remove по ключу). Решение, поставленное не загрузкой,
+//   и решение, текст которого правили в ресурсе, не стираются. Стёртое решение остаётся в журнале с текстом.
 
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
@@ -43,7 +49,8 @@ import { statusCode } from "@/lib/tasks/codes";
 import { addDays, diffDays, formatLong, plural, toCalendar, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
 import { sameTask } from "@/lib/meeting/parse-types";
-import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageLink, type PackageTask } from "./package";
+import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageInitiative, type PackageLink, type PackageRemoval, type PackageTask } from "./package";
+import { SOFT_MAX as INITIATIVES_SOFT_MAX } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -97,6 +104,10 @@ export type ImportPreview = {
   errors: ImportLine[];
   /** Загрузятся, но не так, как в пакете: цель выше не подошла, у подхваченной задачи другой ответственный */
   warnings: ImportLine[];
+  /** Крупные инициативы (этап 67г) */
+  initiatives: ImportCounts;
+  /** Стирание решений, которые ставила загрузка (этап 67г): сколько сотрётся и сколько пропустится */
+  removals: { remove: number; skip: number };
   /** Привяжутся к ресурсу: запись уже есть в ресурсе и совпадает с пакетом, загрузка только запомнит её ключ */
   bound: ImportLine[];
   /** Вероятные дубли того, что уже есть в ресурсе: по умолчанию пропускаются, по одному или все можно включить */
@@ -112,9 +123,9 @@ export type ImportPreview = {
   /** Сколько человек узнают о новых открытых задачах в «Мне»: ответственные, соисполнители, согласующие */
   notified: number;
 };
-export type ImportResult = ImportPreview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
+export type ImportResult = ImportPreview & { applied: { tasks: number[]; goals: number; decisions: number; links: number; initiatives: number; removed: number } };
 
-type Kind = "task" | "decision" | "goal" | "link";
+type Kind = "task" | "decision" | "goal" | "link" | "initiative";
 type KeyRow = { kind: string; key: string; entityId: string; hash: string; payload: Prisma.JsonValue };
 type Person = { id: string; slug: string; fullName: string; shortName: string; active: boolean; role: string };
 
@@ -128,6 +139,8 @@ type Ctx = {
   index: NameIndex;
   nodes: TeamNode[];
   directions: Set<string>;
+  /** Коды продуктов и их id в справочнике: продукт инициативы хранится ссылкой */
+  directionIds: Map<string, string>;
   sources: Set<string>;
   keys: Map<string, KeyRow>;
   /** Задачи, у которых уже есть ключ пакета: id задачи и ключ (одну задачу ресурса подхватывает один ключ) */
@@ -140,6 +153,8 @@ type Ctx = {
   tasks: { number: number; title: string; owner: string | null; due: IsoDate }[];
   /** Решения ресурса за даты пакета для поиска дублей */
   decisions: { teamId: string; date: IsoDate; text: string }[];
+  /** Открытые инициативы ресурса для поиска дублей и счёта открытых */
+  initiatives: { id: string; title: string }[];
   /** Согласующий человека из другого департамента для того, кто загружает (кеш на одну загрузку) */
   approvers: Map<string, string | null>;
   missingPeople: Set<string>;
@@ -162,10 +177,11 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
   // По очереди: внутри транзакции у клиента базы один запрос за раз
   const people = await db.person.findMany({ select: { id: true, slug: true, fullName: true, shortName: true, active: true, role: true } });
   const nodes = await loadTeamNodes(db);
-  const dict = await db.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] }, active: true }, select: { kind: true, code: true } });
+  const dict = await db.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] }, active: true }, select: { id: true, kind: true, code: true } });
   const keys = await db.contentImportKey.findMany();
   const tasks = await db.task.findMany({ where: { archivedAt: null }, select: { number: true, title: true, ownerId: true, ownerAll: true, due: true } });
   const decisions = dates.length ? await db.decision.findMany({ where: { date: { in: dates.map(dbDate) } }, select: { teamId: true, date: true, text: true } }) : [];
+  const initiatives = (pkg.initiatives ?? []).length ? await db.initiative.findMany({ where: { closedAt: null }, select: { id: true, title: true } }) : [];
   const today = moscowToday();
   const staleDue = opts.staleDue ?? addDays(today, STALE_DUE_DAYS);
   if (!isIsoDate(staleDue) || staleDue < today) fail("Срок для задач без актуального срока: дата не раньше сегодняшней");
@@ -179,6 +195,7 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
     index: new NameIndex(people.filter((p) => p.active)),
     nodes,
     directions: new Set(dict.filter((d) => d.kind === "DIRECTION").map((d) => d.code)),
+    directionIds: new Map(dict.filter((d) => d.kind === "DIRECTION").map((d) => [d.code, d.id])),
     sources: new Set(dict.filter((d) => d.kind === "TASK_SOURCE").map((d) => d.code)),
     keys: new Map(keys.map((k) => [key(k.kind as Kind, k.key), k])),
     taskKeys: new Map(keys.filter((k) => k.kind === "task").map((k) => [k.entityId, k.key])),
@@ -186,6 +203,7 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
     excluded: new Map(personnelExclusions(pkg, surnameStems(people.map((p) => p.fullName))).map((e) => [key(e.kind, e.key), { what: e.what, text: e.text }])),
     tasks: tasks.map((t) => ({ number: t.number, title: t.title, owner: t.ownerAll ? "all" : t.ownerId, due: isoFromDbDate(t.due) })),
     decisions: decisions.map((d) => ({ teamId: d.teamId, date: isoFromDbDate(d.date), text: d.text })),
+    initiatives,
     approvers: new Map(),
     missingPeople: new Set(),
     missingTeams: new Set(),
@@ -334,7 +352,25 @@ type DecisionPlan = Step & {
 /** taskId: задача в ресурсе, которой загрузка поставит цель (её строку загрузка запирает) */
 type LinkPlan = Step & { l: PackageLink; goal?: ParentTarget; entityId?: string; taskId?: string; kept?: Record<string, unknown> };
 
-type Plan = { goals: GoalPlan[]; tasks: TaskPlan[]; decisions: DecisionPlan[]; links: LinkPlan[] };
+/** Цель инициативы: id в ресурсе, ключ новой цели пакета или без цели */
+type InitiativeGoal = { id: string } | { key: string } | null;
+type InitiativeFields = { title: string; why: string; directionId: string | null; ownerId: string; teamId: string; goalId: string | null; state: PackageInitiative["state"]; note: string; result: string | null };
+type InitiativePlan = Step & {
+  x: PackageInitiative;
+  existingId?: string;
+  ownerId?: string;
+  ownerName?: string;
+  teamId?: string;
+  directionId?: string | null;
+  goal?: InitiativeGoal;
+  /** Поля, которые загрузка запишет в уже загруженную инициативу */
+  write?: Partial<InitiativeFields>;
+  kept?: Record<string, unknown>;
+};
+
+type RemovalPlan = Step & { r: PackageRemoval; existingId?: string; text?: string };
+
+type Plan = { goals: GoalPlan[]; tasks: TaskPlan[]; decisions: DecisionPlan[]; links: LinkPlan[]; initiatives: InitiativePlan[]; removals: RemovalPlan[] };
 
 const GOAL_FIELDS = ["title", "description", "metric", "base", "target", "link", "code"] as const;
 /** Поля, которые replace приводит к пакету: всё, кроме номера */
@@ -1063,13 +1099,209 @@ async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals
   return out;
 }
 
+const INITIATIVE_LABELS: Record<keyof InitiativeFields, string> = {
+  title: "Инициатива",
+  why: "Зачем",
+  directionId: "Продукт",
+  ownerId: "Ответственный",
+  teamId: "Команда",
+  goalId: "Цель",
+  state: "Деление шкалы",
+  note: "Что сейчас происходит",
+  result: "Итог",
+};
+const CLOSED_INITIATIVE = ["done", "dropped"];
+
+/** Деление инициативы в ресурсе словами пакета: закрытая по итогу, открытая по шкале */
+function initiativeState(row: { state: string; closedAt: Date | null; result: string | null }): PackageInitiative["state"] {
+  if (row.closedAt) return row.result === "DROPPED" ? "dropped" : "done";
+  return row.state === "DOING" ? "doing" : "searching";
+}
+
+/** Цель инициативы: новая или уже загруженная цель пакета по ключу, иначе цель текущего квартала по номеру */
+async function goalOfInitiative(ctx: Ctx, x: PackageInitiative, goals: GoalPlan[], notes: string[]): Promise<InitiativeGoal> {
+  const ref = x.goal;
+  if (!ref) return null;
+  if ("key" in ref) {
+    const plan = goals.find((p) => p.g.key === ref.key);
+    if (plan?.existingId) return { id: plan.existingId };
+    if (plan?.action === "add") return { key: ref.key };
+    notes.push(`цель с ключом ${ref.key} не загружается, инициатива загрузится без цели`);
+    return null;
+  }
+  const found = await ctx.db.goal.findMany({ where: { code: ref.code, quarter: quarterOf(ctx.today), result: { not: "DROPPED" } }, select: { id: true } });
+  if (found.length === 1) return { id: found[0]!.id };
+  notes.push(found.length > 1 ? `цель ${ref.code}: несколько целей с таким номером, инициатива загрузится без цели` : `цели ${ref.code} нет в текущем квартале, инициатива загрузится без цели`);
+  return null;
+}
+
+async function planInitiatives(ctx: Ctx, pkg: ContentPackage, goals: GoalPlan[]): Promise<InitiativePlan[]> {
+  const out: InitiativePlan[] = [];
+  for (const x of pkg.initiatives ?? []) {
+    const hr = ctx.excluded.get(key("initiative", x.key));
+    if (hr) {
+      out.push({ x, action: "skip", level: "error", label: hr.what, reason: hr.text });
+      continue;
+    }
+    if (x.direction && !ctx.directions.has(x.direction)) {
+      out.push({ x, action: "skip", level: "error", reason: `продукта «${x.direction}» нет в справочнике направлений или он скрыт` });
+      continue;
+    }
+    const known = ctx.keys.get(key("initiative", x.key));
+    if (known) {
+      const cur = await ctx.db.initiative.findUnique({ where: { id: known.entityId } });
+      if (!cur) {
+        out.push({ x, action: "skip", reason: "ключ есть, инициативы в ресурсе нет: её удалили, загрузка её не возвращает" });
+        continue;
+      }
+      if (known.hash === recordHash(x)) {
+        out.push({ x, action: "skip", existingId: cur.id, reason: UNCHANGED });
+        continue;
+      }
+      out.push(await planInitiativeUpdate(ctx, x, asRecord(known.payload), cur, goals));
+      continue;
+    }
+    const owner = personOf(ctx, x.owner);
+    if (!owner) {
+      out.push({ x, action: "skip", reason: `ответственный «${x.owner}» не найден в ресурсе` });
+      continue;
+    }
+    if (owner.role === "OBSERVER") {
+      out.push({ x, action: "skip", level: "error", reason: `${owner.fullName} наблюдатель: наблюдатель не отвечает за инициативу` });
+      continue;
+    }
+    const team = teamByName(ctx, x.team ?? TOP_TEAM);
+    if (!team) {
+      out.push({ x, action: "skip", reason: `команды «${x.team}» нет в ресурсе` });
+      continue;
+    }
+    const notes: string[] = [];
+    const goal = await goalOfInitiative(ctx, x, goals, notes);
+    const step: InitiativePlan = { x, action: "add", ownerId: owner.id, ownerName: owner.fullName, teamId: team.id, directionId: x.direction ? ctx.directionIds.get(x.direction)! : null, goal, notes };
+    // Вероятный дубль: открытая инициатива в ресурсе с похожим названием
+    const twin = ctx.initiatives.find((i) => similar(i.title, x.title));
+    if (twin) {
+      const id = `initiative/${x.key}`;
+      const text = `похоже на открытую инициативу «${short(twin.title)}»`;
+      if (!duplicateOn(ctx, id)) {
+        out.push({ ...step, action: "skip", level: "duplicate", duplicate: id, reason: `${text}, пропустится` });
+        continue;
+      }
+      Object.assign(step, { level: "duplicate", duplicate: id, reason: `${text}, загрузится, как вы выбрали` });
+    }
+    out.push(step);
+  }
+  // Шкала задумана для 15 самых крупных: больше открытых она покажет предупреждением, загрузка его повторяет заранее
+  const opened = out.filter((p) => p.action === "add" && !CLOSED_INITIATIVE.includes(p.x.state)).length;
+  const total = ctx.initiatives.length + opened;
+  if (opened && total > INITIATIVES_SOFT_MAX) {
+    ctx.warnings.push({ what: "Крупные инициативы", text: `открытых станет ${total}, а шкала задумана для ${INITIATIVES_SOFT_MAX} самых крупных. Долго ищущие (дольше 4 недель) и без новостей 2 недели сами встают в повестку встречи команды` });
+  }
+  return out;
+}
+
+async function planInitiativeUpdate(
+  ctx: Ctx,
+  x: PackageInitiative,
+  old: Record<string, unknown>,
+  cur: { id: string; title: string; why: string; directionId: string | null; ownerId: string; teamId: string; goalId: string | null; state: string; note: string; closedAt: Date | null; result: string | null; resultNote: string | null },
+  goals: GoalPlan[],
+): Promise<InitiativePlan> {
+  const notes: string[] = [];
+  const record = recordOf(old);
+  // Люди, команда и цель ищутся, только если пакет их поменял: выключенный потом человек с инициативы не снимается
+  let ownerId = (old.ownerId as string | undefined) ?? cur.ownerId;
+  if (!record || !same(record.owner, x.owner)) {
+    const owner = personOf(ctx, x.owner);
+    if (!owner || owner.role === "OBSERVER") notes.push(`ответственный «${x.owner}» не найден или наблюдатель, ответственный не меняется`);
+    else ownerId = owner.id;
+  }
+  let teamId = (old.teamId as string | undefined) ?? cur.teamId;
+  if (!record || !same(record.team, x.team)) {
+    const team = teamByName(ctx, x.team ?? TOP_TEAM);
+    if (!team) notes.push(`команды «${x.team}» нет в ресурсе, команда не меняется`);
+    else teamId = team.id;
+  }
+  let goal: InitiativeGoal = old.goalId ? { id: old.goalId as string } : null;
+  if (!record || !same(record.goal, x.goal)) goal = await goalOfInitiative(ctx, x, goals, notes);
+  const goalId = goal && "id" in goal ? goal.id : null;
+  const next: InitiativeFields = {
+    title: x.title,
+    why: x.why ?? "",
+    directionId: x.direction ? ctx.directionIds.get(x.direction)! : null,
+    ownerId,
+    teamId,
+    goalId,
+    state: x.state,
+    note: x.note ?? "",
+    result: CLOSED_INITIATIVE.includes(x.state) ? x.result : null,
+  };
+  const now: InitiativeFields = {
+    title: cur.title,
+    why: cur.why,
+    directionId: cur.directionId,
+    ownerId: cur.ownerId,
+    teamId: cur.teamId,
+    goalId: cur.goalId,
+    state: initiativeState(cur),
+    note: cur.note,
+    result: cur.closedAt ? cur.resultNote : null,
+  };
+  const kept: Record<string, unknown> = { ...next };
+  const write: Partial<InitiativeFields> = {};
+  for (const f of Object.keys(INITIATIVE_LABELS) as (keyof InitiativeFields)[]) {
+    // Новая цель пакета (ещё без id): пишется после целей, база запомнит её id
+    if (f === "goalId" && goal && "key" in goal) {
+      if (!cur.goalId || same(cur.goalId, old.goalId ?? null)) Object.assign(write, { goalId: null });
+      else notes.push(`поле «${INITIATIVE_LABELS[f]}» правили в ресурсе, загрузка его не тронет`);
+      continue;
+    }
+    const way = threeWay(old[f] ?? null, now[f], next[f]);
+    if (way === "keep" || way === "edited") kept[f] = old[f] ?? null;
+    if (way === "edited") notes.push(`поле «${INITIATIVE_LABELS[f]}» правили в ресурсе, загрузка его не тронет`);
+    if (way === "apply") Object.assign(write, { [f]: next[f] });
+  }
+  // Итог без закрытия не пишется: у открытой инициативы итога нет
+  if ("result" in write && !CLOSED_INITIATIVE.includes((write.state ?? now.state) as string)) delete write.result;
+  const goalPending = goal && "key" in goal ? goal : undefined;
+  const step: InitiativePlan = { x, existingId: cur.id, write, kept, notes, goal: goalPending ?? (goalId ? { id: goalId } : null), action: "update" };
+  return Object.keys(write).length || goalPending ? step : { ...step, action: "skip", reason: ONLY_OTHER, remember: true };
+}
+
+/** Стереть решение можно, только если его ставила загрузка (есть ключ) и текст в ресурсе тот, что она оставила */
+async function planRemovals(ctx: Ctx, pkg: ContentPackage): Promise<RemovalPlan[]> {
+  const out: RemovalPlan[] = [];
+  for (const r of pkg.remove ?? []) {
+    const known = ctx.keys.get(key("decision", r.key));
+    if (!known) {
+      out.push({ r, action: "skip", reason: "этого решения загрузка не ставила или его уже стёрли" });
+      continue;
+    }
+    const cur = await ctx.db.decision.findUnique({ where: { id: known.entityId }, select: { id: true, text: true } });
+    if (!cur) {
+      // Решение уже стёрли в ресурсе: загрузка забудет и его ключ
+      out.push({ r, action: "skip", reason: "решения в ресурсе уже нет, загрузка забудет его ключ", remember: true });
+      continue;
+    }
+    const old = asRecord(known.payload);
+    if (typeof old.text === "string" && old.text !== cur.text) {
+      out.push({ r, action: "skip", level: "warning", existingId: cur.id, text: cur.text, reason: "текст решения правили в ресурсе, загрузка его не стирает" });
+      continue;
+    }
+    out.push({ r, action: "add", existingId: cur.id, text: cur.text });
+  }
+  return out;
+}
+
 async function buildPlan(ctx: Ctx, pkg: ContentPackage): Promise<Plan> {
   const goals = await planGoals(ctx, pkg);
   await planParents(ctx, goals);
   const tasks = await planTasks(ctx, pkg);
   const decisions = await planDecisions(ctx, pkg, tasks);
   const links = await planLinks(ctx, pkg, tasks, goals);
-  return { goals, tasks, decisions, links };
+  const initiatives = await planInitiatives(ctx, pkg, goals);
+  const removals = await planRemovals(ctx, pkg);
+  return { goals, tasks, decisions, links, initiatives, removals };
 }
 
 /** Привязка к ресурсу (bind) в эти числа не входит: она в своём списке */
@@ -1117,7 +1349,9 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
   for (const p of plan.tasks) put(p.number ? `Задача ${p.number}` : `Задача «${short(p.t.title)}»`, p);
   for (const p of plan.decisions) put(`Решение «${short(p.d.text)}»`, p);
   for (const p of plan.links) put(`Связь ${p.l.key}`, p);
-  const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links].filter((p) => p.reason === UNCHANGED).length;
+  for (const p of plan.initiatives) put(`Инициатива «${short(p.x.title)}»`, p);
+  for (const p of plan.removals) if (p.action === "skip") put(p.text ? `Стереть решение «${short(p.text)}»` : `Стереть решение ${p.r.key}`, p);
+  const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links, ...plan.initiatives].filter((p) => p.reason === UNCHANGED).length;
   if (unchanged) lists.notes.unshift({ what: "Без изменений", text: `${unchanged} ${unchanged === 1 ? "запись уже загружена" : "записей уже загружено"} в том же виде` });
   return {
     title: pkg.title,
@@ -1125,6 +1359,8 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
     decisions: counts(plan.decisions),
     goals: counts(plan.goals),
     links: counts(plan.links),
+    initiatives: counts(plan.initiatives),
+    removals: { remove: plan.removals.filter((p) => p.action === "add").length, skip: plan.removals.filter((p) => p.action === "skip").length },
     missingPeople: [...ctx.missingPeople].sort((a, b) => a.localeCompare(b, "ru")),
     missingTeams: [...ctx.missingTeams].sort((a, b) => a.localeCompare(b, "ru")),
     errors: lists.errors.slice(0, 300),
@@ -1170,22 +1406,26 @@ function historyClosedAt(t: PackageTask, today: IsoDate): Date {
  * владелец, цель выше), решения (текст, владелец, статус). Строки, на которые план только ссылается (цель выше, задача
  * решения, цель связи), и записи без изменений не запираются
  */
-function writtenRows(plan: Plan): { tasks: string[]; goals: string[]; decisions: string[] } {
+function writtenRows(plan: Plan): { tasks: string[]; goals: string[]; decisions: string[]; initiatives: string[] } {
   const tasks = new Set<string>();
   const goals = new Set<string>();
   const decisions = new Set<string>();
+  const initiatives = new Set<string>();
+  for (const p of plan.initiatives) if (p.action === "update" && p.existingId) initiatives.add(p.existingId);
+  for (const p of plan.removals) if (p.action === "add" && p.existingId) decisions.add(p.existingId);
   for (const p of plan.tasks) if ((p.action === "update" || p.action === "adopt") && p.entityId) tasks.add(p.entityId);
   for (const p of plan.links) if ((p.action === "add" || p.action === "update") && p.taskId) tasks.add(p.taskId);
   for (const p of plan.goals) if ((p.action === "update" || p.action === "match") && p.existingId && (Object.keys(p.input ?? {}).length || p.parent)) goals.add(p.existingId);
   for (const p of plan.decisions) if (p.action === "update" && p.existingId && Object.keys(p.data ?? {}).length) decisions.add(p.existingId);
-  return { tasks: [...tasks], goals: [...goals], decisions: [...decisions] };
+  return { tasks: [...tasks], goals: [...goals], decisions: [...decisions], initiatives: [...initiatives] };
 }
 
 /** Запереть строки FOR UPDATE в порядке id: встречные правки ждут конца загрузки */
-async function lockIds(tx: Tx, ids: { tasks: string[]; goals: string[]; decisions: string[] }): Promise<void> {
+async function lockIds(tx: Tx, ids: { tasks: string[]; goals: string[]; decisions: string[]; initiatives: string[] }): Promise<void> {
   if (ids.tasks.length) await tx.$queryRaw`SELECT "id" FROM "tasks" WHERE "id" = ANY(${ids.tasks}::text[]) ORDER BY "id" FOR UPDATE`;
   if (ids.goals.length) await tx.$queryRaw`SELECT "id" FROM "goals" WHERE "id" = ANY(${ids.goals}::text[]) ORDER BY "id" FOR UPDATE`;
   if (ids.decisions.length) await tx.$queryRaw`SELECT "id" FROM "decisions" WHERE "id" = ANY(${ids.decisions}::text[]) ORDER BY "id" FOR UPDATE`;
+  if (ids.initiatives.length) await tx.$queryRaw`SELECT "id" FROM "initiatives" WHERE "id" = ANY(${ids.initiatives}::text[]) ORDER BY "id" FOR UPDATE`;
 }
 
 /** Postgres снял загрузку из-за встречной правки (взаимная блокировка, конфликт записи) */
@@ -1230,15 +1470,21 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
   // то, что поменяли в ресурсе до блокировки, план уже видит, а правка во время записи ждёт её конца
   let ctx = await context(tx, actor, pkg, opts);
   let plan = await buildPlan(ctx, pkg);
-  const locked = { tasks: new Set<string>(), goals: new Set<string>(), decisions: new Set<string>() };
+  const locked = { tasks: new Set<string>(), goals: new Set<string>(), decisions: new Set<string>(), initiatives: new Set<string>() };
   for (let round = 0; round < 3; round++) {
     const want = writtenRows(plan);
-    const fresh = { tasks: want.tasks.filter((id) => !locked.tasks.has(id)), goals: want.goals.filter((id) => !locked.goals.has(id)), decisions: want.decisions.filter((id) => !locked.decisions.has(id)) };
-    if (!fresh.tasks.length && !fresh.goals.length && !fresh.decisions.length) break;
+    const fresh = {
+      tasks: want.tasks.filter((id) => !locked.tasks.has(id)),
+      goals: want.goals.filter((id) => !locked.goals.has(id)),
+      decisions: want.decisions.filter((id) => !locked.decisions.has(id)),
+      initiatives: want.initiatives.filter((id) => !locked.initiatives.has(id)),
+    };
+    if (!fresh.tasks.length && !fresh.goals.length && !fresh.decisions.length && !fresh.initiatives.length) break;
     await lockIds(tx, fresh);
     for (const id of fresh.tasks) locked.tasks.add(id);
     for (const id of fresh.goals) locked.goals.add(id);
     for (const id of fresh.decisions) locked.decisions.add(id);
+    for (const id of fresh.initiatives) locked.initiatives.add(id);
     ctx = await context(tx, actor, pkg, opts);
     plan = await buildPlan(ctx, pkg);
   }
@@ -1432,7 +1678,24 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
     if (!bind) linksDone += 1;
   }
 
-  const result: ImportResult = { ...(await summarize(ctx, pkg, plan)), applied: { tasks: created, goals: goalsDone, decisions: decisionsDone, links: linksDone } };
+  const initiativesDone = await applyInitiatives(tx, actor, plan, goalIds);
+
+  // Стирание решений: запись в журнале с текстом раньше самого стирания, ключ забывается
+  let removed = 0;
+  for (const p of plan.removals) {
+    if (p.action === "skip") {
+      if (p.remember) await tx.contentImportKey.deleteMany({ where: { kind: "decision", key: p.r.key } });
+      continue;
+    }
+    await tx.auditLog.create({
+      data: { action: "decision.delete", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: p.existingId!, field: "Решение стёрто из наполнения", before: p.text ?? "", ip: actor.ip ?? null, via: actor.via ?? null },
+    });
+    await tx.decision.delete({ where: { id: p.existingId! } });
+    await tx.contentImportKey.deleteMany({ where: { kind: "decision", key: p.r.key } });
+    removed += 1;
+  }
+
+  const result: ImportResult = { ...(await summarize(ctx, pkg, plan)), applied: { tasks: created, goals: goalsDone, decisions: decisionsDone, links: linksDone, initiatives: initiativesDone, removed } };
   await tx.auditLog.create({
     data: {
       action: "content.import",
@@ -1442,10 +1705,105 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       entity: "content",
       entityId: pkg.title ?? "пакет наполнения",
       field: "Загружено наполнение",
-      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}`,
+      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
       ip: actor.ip ?? null,
       via: actor.via ?? null,
     },
   });
   return result;
+}
+
+const STATE_DB_OF: Record<string, "SEARCHING" | "DOING"> = { searching: "SEARCHING", doing: "DOING" };
+const RESULT_DB_OF: Record<string, "DONE" | "DROPPED"> = { done: "DONE", dropped: "DROPPED" };
+const RESULT_WORDS: Record<string, string> = { done: "Сделали", dropped: "Сняли" };
+
+/**
+ * Инициативы: после целей, чтобы цель пакета уже была с id. Новая встаёт с делением и заметкой из пакета (закрытая
+ * сразу с итогом), у загруженной пишутся только поля из плана. Каждое изменение в истории инициативы и в журнале
+ */
+async function applyInitiatives(tx: Tx, actor: Actor, plan: Plan, goalIds: Map<string, string>): Promise<number> {
+  let done = 0;
+  const now = new Date();
+  const goalOf = (g: InitiativeGoal | undefined): string | null => (!g ? null : "id" in g ? g.id : (goalIds.get(g.key) ?? null));
+  const audit = (action: string, id: string, title: string, after: string) =>
+    tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, via: actor.via ?? null } });
+  let order = (await tx.initiative.aggregate({ _max: { sortOrder: true }, where: { closedAt: null } }))._max.sortOrder ?? 0;
+  for (const p of plan.initiatives) {
+    const x = p.x;
+    if (p.action === "skip") {
+      if (p.remember && p.existingId) await remember(tx, "initiative", x.key, p.existingId, x, p.kept!);
+      continue;
+    }
+    if (p.action === "add") {
+      const closed = CLOSED_INITIATIVE.includes(x.state);
+      const state = closed ? "SEARCHING" : STATE_DB_OF[x.state]!;
+      const goalId = goalOf(p.goal);
+      order += 1;
+      const row = await tx.initiative.create({
+        data: {
+          title: x.title,
+          why: x.why ?? "",
+          ownerId: p.ownerId!,
+          teamId: p.teamId!,
+          directionId: p.directionId ?? null,
+          goalId,
+          state,
+          stateSince: now,
+          note: x.note ?? "",
+          noteAt: now,
+          sortOrder: order,
+          createdById: actor.personId,
+          createdAt: now,
+          ...(closed ? { result: RESULT_DB_OF[x.state], resultNote: x.result, closedAt: now } : {}),
+          changes: {
+            create: [
+              { kind: "create", toState: state, note: x.note || "Из пакета наполнения", byId: actor.personId, at: now },
+              ...(closed ? [{ kind: "close", note: `${RESULT_WORDS[x.state]}: ${x.result}`, byId: actor.personId, at: now }] : []),
+            ],
+          },
+        },
+      });
+      await audit("initiative.create", row.id, x.title, `из пакета наполнения, ответственный ${p.ownerName}`);
+      await remember(tx, "initiative", x.key, row.id, x, { title: x.title, why: x.why ?? "", directionId: p.directionId ?? null, ownerId: p.ownerId, teamId: p.teamId, goalId, state: x.state, note: x.note ?? "", result: closed ? x.result : null });
+      done += 1;
+      continue;
+    }
+    // Обновление уже загруженной: только поля из плана
+    const id = p.existingId!;
+    const cur = await tx.initiative.findUniqueOrThrow({ where: { id }, select: { title: true, state: true, closedAt: true, result: true } });
+    const w = p.write ?? {};
+    const data: Prisma.InitiativeUncheckedUpdateInput = {};
+    const changes: Prisma.InitiativeChangeCreateManyInput[] = [];
+    for (const f of ["title", "why", "directionId", "ownerId", "teamId"] as const) if (f in w) Object.assign(data, { [f]: w[f] });
+    const goalId = p.goal && "key" in p.goal ? goalOf(p.goal) : "goalId" in w ? (w.goalId ?? null) : undefined;
+    if (goalId !== undefined) data.goalId = goalId;
+    if (Object.keys(data).length) changes.push({ initiativeId: id, kind: "ownerId" in data ? "owner" : "edit", note: "Из пакета наполнения", byId: actor.personId, at: now });
+    if ("note" in w) {
+      Object.assign(data, { note: w.note, noteAt: now });
+      changes.push({ initiativeId: id, kind: "note", note: w.note || null, byId: actor.personId, at: now });
+    }
+    const was = initiativeState(cur);
+    if (w.state && w.state !== was) {
+      if (CLOSED_INITIATIVE.includes(w.state)) {
+        Object.assign(data, { result: RESULT_DB_OF[w.state], resultNote: w.result ?? p.x.result, closedAt: now });
+        changes.push({ initiativeId: id, kind: "close", note: `${RESULT_WORDS[w.state]}: ${w.result ?? p.x.result ?? ""}`, byId: actor.personId, at: now });
+      } else {
+        if (cur.closedAt) {
+          Object.assign(data, { result: null, resultNote: null, closedAt: null });
+          changes.push({ initiativeId: id, kind: "reopen", byId: actor.personId, at: now });
+        }
+        Object.assign(data, { state: STATE_DB_OF[w.state], stateSince: now });
+        changes.push({ initiativeId: id, kind: "state", fromState: cur.state, toState: STATE_DB_OF[w.state], note: p.x.note || null, byId: actor.personId, at: now });
+      }
+    } else if ("result" in w && cur.closedAt) data.resultNote = w.result;
+    if (Object.keys(data).length) {
+      await tx.initiative.update({ where: { id }, data });
+      await tx.initiativeChange.createMany({ data: changes });
+      await audit("initiative.edit", id, (w.title as string | undefined) ?? cur.title, "обновлена из пакета наполнения");
+    }
+    const kept = { ...p.kept, ...(goalId !== undefined ? { goalId } : {}) };
+    await remember(tx, "initiative", x.key, id, x, kept);
+    done += 1;
+  }
+  return done;
 }

@@ -195,7 +195,7 @@ describe("предпросмотр и загрузка", () => {
     expect(preview.duplicates).toEqual([]);
     const since = await lastLogId();
     const res = await applyContentImport(await owner(), pkgOf(raw()));
-    expect(res.applied).toEqual({ tasks: [], goals: 0, decisions: 0, links: 0 });
+    expect(res.applied).toEqual({ tasks: [], goals: 0, decisions: 0, links: 0, initiatives: 0 });
     expect({ tasks: await prisma.task.count(), goals: await prisma.goal.count(), decisions: await prisma.decision.count(), keys: await prisma.contentImportKey.count() }).toEqual(before);
     // В журнале только запись о самой загрузке
     expect((await prisma.auditLog.findMany({ where: { id: { gt: since } } })).map((l) => l.action)).toEqual(["content.import"]);

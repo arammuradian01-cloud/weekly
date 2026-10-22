@@ -5,6 +5,12 @@
 // У каждой записи стабильный внешний ключ: по нему повторная загрузка находит то, что уже загружено, и ничего не
 // дублирует. Ссылки внутри пакета идут по ключам: задача решения { key }, цель связи { key } или уже существующая
 // в ресурсе задача { number } и цель { code }.
+//
+// Этап 67г: крупные инициативы (initiatives). Продукт по коду справочника направлений, ответственный по ФИО, деление
+// шкалы searching или doing, закрытые done или dropped с итогом.
+//
+// Этап 67г: удаление (remove). Пакет перечисляет по ключам решения, которые загрузка ставила раньше и которые нужно
+// стереть: раздел решений собирают заново. Стирается только то, что поставила сама загрузка.
 
 import { createHash } from "node:crypto";
 import type { IsoDate } from "@/domain/dates";
@@ -89,8 +95,33 @@ export type PackageLink = {
   reason: string | null;
 };
 
+export const INITIATIVE_STATES = ["searching", "doing", "done", "dropped"] as const;
+export type InitiativeState = (typeof INITIATIVE_STATES)[number];
+
+export type PackageInitiative = {
+  key: string;
+  title: string;
+  why: string | null;
+  /** Код продукта из справочника направлений. Пусто: общая для департамента */
+  direction: string | null;
+  /** ФИО ответственного как в ресурсе */
+  owner: string;
+  /** Команда, которая ведёт инициативу, по названию или «top». Пусто: топ-команда */
+  team: string | null;
+  goal: GoalRef | null;
+  /** searching и doing: деление шкалы; done и dropped: закрыта, итог в result */
+  state: InitiativeState;
+  /** Что сейчас происходит: одна фраза */
+  note: string | null;
+  result: string | null;
+};
+
 /** Запись пакета, которая не загрузится, пока её не исправят в файле: например, в ней кадровые сведения */
-export type ExcludedRecord = { kind: "task" | "decision" | "goal" | "link"; key: string; what: string; text: string };
+export type ExcludedRecord = { kind: "task" | "decision" | "goal" | "link" | "initiative"; key: string; what: string; text: string };
+
+export const REMOVABLE = ["decision"] as const;
+/** Запись, которую прошлая загрузка поставила и которую этот пакет стирает */
+export type PackageRemoval = { kind: (typeof REMOVABLE)[number]; key: string };
 
 export type ContentPackage = {
   format: typeof PACKAGE_FORMAT;
@@ -100,6 +131,8 @@ export type ContentPackage = {
   tasks: PackageTask[];
   decisions: PackageDecision[];
   links: PackageLink[];
+  initiatives: PackageInitiative[];
+  remove: PackageRemoval[];
   /** Записи с кадровыми сведениями: в пакете остаются (на них могут ссылаться другие записи), но не загружаются */
   excluded: ExcludedRecord[];
 };
@@ -379,6 +412,10 @@ const FIELD_LABELS: Record<string, string> = {
   "goal.code": "Цель",
   confidence: "Уверенность",
   reason: "Причина связи",
+  why: "Зачем",
+  note: "Что сейчас происходит",
+  result: "Итог",
+  state: "Деление шкалы",
 };
 /** Все строки записи с путём поля, кроме ФИО и команд */
 function stringsOf(value: unknown, path = ""): [string, string][] {
@@ -389,14 +426,14 @@ function stringsOf(value: unknown, path = ""): [string, string][] {
   }
   return [];
 }
-const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь" };
+const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь", initiative: "Инициатива" };
 
 /**
  * Записи пакета с кадровыми сведениями в любой строке (кроме ФИО и названий команд). Запись подписывается без её текста:
  * вид, номер по порядку в пакете и ключ (если в ключе нет кадрового); маркер не показывается. names: основы фамилий
  * людей ресурса, служба импорта передаёт их из базы
  */
-export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" | "decisions" | "links">, names: Surnames = []): ExcludedRecord[] {
+export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" | "decisions" | "links"> & { initiatives?: PackageInitiative[] }, names: Surnames = []): ExcludedRecord[] {
   const out: ExcludedRecord[] = [];
   const scan = (kind: ExcludedRecord["kind"], records: { key: string }[]) =>
     records.forEach((record, i) => {
@@ -410,6 +447,7 @@ export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" 
   scan("task", pkg.tasks);
   scan("decision", pkg.decisions);
   scan("link", pkg.links);
+  scan("initiative", pkg.initiatives ?? []);
   return out;
 }
 
@@ -668,6 +706,47 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     return link;
   });
 
+  const initiativeKeys = new Set<string>();
+  const initiatives: PackageInitiative[] = list(r0, "initiatives", problems).map((raw, i) => {
+    const r = new Reader(`инициатива ${i + 1}${typeof raw.key === "string" ? ` (${raw.key})` : ""}`);
+    const key = keyOf(raw, r, `инициатива ${i + 1}`, initiativeKeys, problems);
+    // Пределы те же, что у формы инициативы: название 120, зачем 500, заметка и итог 300
+    const item: PackageInitiative = {
+      key,
+      title: r.str(raw, "title", "Инициатива", 120, { required: true }) ?? "",
+      why: r.str(raw, "why", "Зачем", 500),
+      direction: r.str(raw, "direction", "Продукт", 40),
+      owner: r.str(raw, "owner", "Ответственный", 120, { required: true }) ?? "",
+      team: r.str(raw, "team", "Команда", 120),
+      goal: raw.goal === undefined || raw.goal === null ? null : r.goalRef(raw.goal, "Цель"),
+      state: r.oneOf(raw, "state", "Деление шкалы", INITIATIVE_STATES, "searching") ?? "searching",
+      note: r.str(raw, "note", "Что сейчас происходит", 300),
+      result: r.str(raw, "result", "Итог", 300),
+    };
+    if ((item.state === "done" || item.state === "dropped") && !item.result) r.problems.push(`инициатива ${key}: для закрытой инициативы нужен итог (result)`);
+    problems.push(...r.problems);
+    return item;
+  });
+  for (const x of initiatives) if (x.goal && "key" in x.goal && !goalKeys.has(x.goal.key)) problems.push(`инициатива ${x.key}: цели с ключом «${x.goal.key}» в пакете нет`);
+
+  const removeSeen = new Set<string>();
+  const remove: PackageRemoval[] = list(r0, "remove", problems).flatMap((raw, i) => {
+    const kind = raw.kind;
+    const key = typeof raw.key === "string" ? raw.key.trim() : "";
+    if (typeof kind !== "string" || !(REMOVABLE as readonly string[]).includes(kind)) {
+      problems.push(`удаление ${i + 1}: стереть можно только решения (kind «decision»)`);
+      return [];
+    }
+    if (!KEY.test(key)) {
+      problems.push(`удаление ${i + 1}: ключ «${shown(key)}» пустой или с недопустимыми знаками`);
+      return [];
+    }
+    if (removeSeen.has(`${kind}/${key}`)) problems.push(`удаление ${i + 1}: ключ «${key}» повторяется`);
+    removeSeen.add(`${kind}/${key}`);
+    if (kind === "decision" && decisionKeys.has(key)) problems.push(`удаление ${i + 1}: решение ${key} и загружается, и стирается, оставьте одно`);
+    return [{ kind: kind as PackageRemoval["kind"], key }];
+  });
+
   // Ссылки по ключам должны вести на записи этого же пакета
   for (const g of goals) if (g.parent && "key" in g.parent && !goalKeys.has(g.parent.key)) problems.push(`цель ${g.key}: цели выше с ключом «${g.parent.key}» в пакете нет`);
   for (const d of decisions) for (const t of d.tasks) if ("key" in t && !taskKeys.has(t.key)) problems.push(`решение ${d.key}: задачи с ключом «${t.key}» в пакете нет`);
@@ -703,7 +782,7 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   }
   problems.unshift(...head.problems);
 
-  const pkg: ContentPackage = { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, excluded: [] };
+  const pkg: ContentPackage = { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, initiatives, remove, excluded: [] };
   pkg.excluded = personnelExclusions(pkg);
   return { pkg, problems };
 }
