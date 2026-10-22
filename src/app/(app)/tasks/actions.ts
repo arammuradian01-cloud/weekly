@@ -118,6 +118,11 @@ export async function transferDueAction(number: number, to: IsoDate, reason: str
   return run((a) => svc.transferDue(a, checkNumber(number), to, reason));
 }
 
+/** Начало задачи на карте сроков (этап 68), права как у срока. null убирает начало. В режиме «Смотреть как» отказ, как у всех run */
+export async function setTaskStartAction(number: number, start: IsoDate | null) {
+  return run((a) => svc.setTaskStart(a, checkNumber(number), start === null ? null : String(start)));
+}
+
 export async function editTaskAction(number: number, input: EditInput) {
   return run((a) => svc.editTask(a, checkNumber(number), input));
 }

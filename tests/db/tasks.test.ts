@@ -187,6 +187,32 @@ describe("правила просрочки и переносов (раздел 
     expect(unblocked.task.blockedBy).toBeUndefined();
     await svc.changeStatus(reva, 9, "cancelled", "Не нужно");
     await expectRule(svc.transferDue(reva, 9, future, "Причина"), /Закрытой задаче/);
+    await expectRule(svc.setTaskStart(reva, 9, today), /закрытой задачи начало/);
+  });
+
+  it("начало на карте сроков (этап 68): права как у срока, не позже срока, срок не раньше начала, журнал без отмены", async () => {
+    const fat = await actors.fatyanov();
+    await svc.transferDue(fat, 13, future, "Ждём ВСК");
+    // Чужую задачу лидер не двигает: как и срок
+    await expectRule(svc.setTaskStart(await actors.reva(), 13, today), /меняет тот, кто может менять её срок/);
+    await expectRule(svc.setTaskStart(fat, 13, addDays(future, 1)), /позже срока/);
+    await expectRule(svc.setTaskStart(fat, 13, "завтра"), /дату начала/);
+    const start = addDays(today, 3);
+    const r = await svc.setTaskStart(fat, 13, start);
+    expect(r.task.start).toBe(start);
+    expect(r.task.due).toBe(future);
+    expect(r.undo).toBeUndefined();
+    const a = await lastAudit(13);
+    expect(a?.field).toBe("Начало");
+    expect(a?.before).toBeNull();
+    await expectRule(svc.setTaskStart(fat, 13, start), /уже такое/);
+    // Срок раньше начала не переносится: сначала сдвигают начало
+    await expectRule(svc.transferDue(fat, 13, addDays(today, 2), "Раньше"), /раньше начала/);
+    // Владелец в режиме управления двигает начало любой задачи, null убирает начало
+    expect((await svc.setTaskStart(await actors.owner(), 13, today)).task.start).toBe(today);
+    const cleared = await svc.setTaskStart(fat, 13, null);
+    expect(cleared.task.start).toBeUndefined();
+    expect((await prisma.task.findFirstOrThrow({ where: { number: 13 } })).startOn).toBeNull();
   });
 });
 

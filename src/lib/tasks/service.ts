@@ -812,6 +812,8 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
     const from = isoFromDbDate(row.due);
     if (to === from) fail("Выберите новый срок");
     if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
+    // Этап 68: у задачи есть начало на карте сроков, срок раньше начала не ставится
+    if (row.startOn && to < isoFromDbDate(row.startOn)) fail("Новый срок раньше начала задачи: сначала сдвиньте начало");
     const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
     await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
     // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
@@ -826,6 +828,27 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
       data: { due: dbDate(to) },
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
       undo: { removeTransferId: transferId },
+    };
+  });
+}
+
+/**
+ * Начало работы над задачей (этап 68): левый край полосы на карте сроков. Права те же, что у срока. Без причины:
+ * это не перенос, обещанный срок не меняется. null убирает начало, полоса снова идёт от даты постановки
+ */
+export async function setTaskStart(actor: Actor, number: number, start: IsoDate | null): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can) => {
+    if (!can.due) fail("Начало задачи меняет тот, кто может менять её срок");
+    if (CLOSED_DB.includes(row.status)) fail("У закрытой задачи начало не меняют");
+    if (start !== null && !isIsoDate(start)) fail("Выберите дату начала");
+    const due = isoFromDbDate(row.due);
+    if (start && start > due) fail("Начало не может быть позже срока");
+    const before = row.startOn ? isoFromDbDate(row.startOn) : null;
+    if (before === start) fail("Начало уже такое");
+    return {
+      data: { startOn: start ? dbDate(start) : null },
+      changes: [{ field: "Начало", before: before ? formatLong(before) : null, after: start ? formatLong(start) : "не задано" }],
+      undo: false,
     };
   });
 }
