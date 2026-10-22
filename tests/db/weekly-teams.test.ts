@@ -98,6 +98,8 @@ describe("список команд по тому, кто смотрит", () =>
     expect(view.units.some((u) => u.kind === "COMPANY")).toBe(true);
     expect(view.owners).toContain("muradyan");
     expect(view.parents.length).toBe(active);
+    // «Команда выше» (этап 70): у каждой команды руководитель подсказкой и команда выше, чтобы не предложить команду ниже
+    expect(view.parents.find((p) => p.id === money.id)).toEqual({ id: money.id, name: MONEY, parentId: money.parent?.id ?? null, leader: "Ершов Пётр" });
     expect(view.managementOff).toBeNull();
     // Тот же владелец без режима управления: только свои команды, экран говорит, что режим управления выключен
     const plain = await teams.teamsView({ ...(await ownerMode()), management: null });

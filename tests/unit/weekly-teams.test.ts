@@ -1,7 +1,7 @@
 // Этап 64: экран «Weekly-команды». Чистые правила экрана: какие кнопки показать по правам сервисов, поиск по
 // названию и людям, пометка «другая ветка», итог добавления, порядок списка и состояние сдачи weekly.
 import { describe, expect, it } from "vitest";
-import { NO_RIGHTS, addSummary, canCancelRequest, inBranch, managementHint, matchTeam, sizeText, sortTeams, teamKindLabel, teamNote, teamRights, teamSize, weeklyStatus, type RightsSubject } from "@/lib/org/team-rights";
+import { NO_RIGHTS, addSummary, canCancelRequest, inBranch, managementHint, matchTeam, parentChoices, sizeText, sortTeams, teamKindLabel, teamNote, teamRights, teamSize, weeklyStatus, type RightsSubject } from "@/lib/org/team-rights";
 import { TOP_TEAM } from "@/domain/teams";
 
 const leader = (over: Partial<RightsSubject> = {}): RightsSubject => ({ me: "p-lead", owner: false, personal: true, leads: new Set(["t-unit", "t-project", "t-below"]), ...over });
@@ -149,5 +149,33 @@ describe("подсказки владельцу и пояснения в кар�
     expect(teamNote({ mode: "mine", off: null }, { id: "t", relation: "member", rights: NO_RIGHTS })?.text).toContain("Только просмотр");
     expect(teamNote({ mode: "shared", off: null }, { id: TOP_TEAM, relation: "member", rights: NO_RIGHTS })?.text).toContain("войдите со своим логином");
     expect(teamNote({ mode: "mine", off: "owner" }, { id: "t", relation: "other", rights: NO_RIGHTS })).toEqual({ text: "Чтобы менять эту команду, включите режим управления.", manage: true });
+  });
+});
+
+describe("поле «Команда выше» (этап 70)", () => {
+  const tree = [
+    { id: TOP_TEAM, name: "Топ-команда", parentId: null, leader: "Крайник Александр" },
+    { id: "t-ins", name: "Департамент страхования", parentId: TOP_TEAM, leader: "Мурадян Арам" },
+    { id: "t-osago", name: "ОСАГО", parentId: "t-ins", leader: null },
+    { id: "t-osago-pilot", name: "Пилот ОСАГО", parentId: "t-osago", leader: null },
+    { id: "t-money", name: "Департамент Money", parentId: TOP_TEAM, leader: "Ершов Пётр" },
+  ];
+
+  it("нельзя выбрать саму команду и команды ниже неё на любую глубину: иначе кольцо", () => {
+    expect(parentChoices(tree, "t-ins").map((t) => t.id)).toEqual([TOP_TEAM, "t-money"]);
+    expect(parentChoices(tree, "t-osago").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-money"]);
+  });
+
+  it("у команды без команд ниже предлагаются все остальные в порядке дерева", () => {
+    expect(parentChoices(tree, "t-money").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-osago", "t-osago-pilot"]);
+  });
+
+  it("петля в данных не зацикливает подсчёт", () => {
+    const loop = [
+      { id: "a", name: "А", parentId: "b", leader: null },
+      { id: "b", name: "Б", parentId: "a", leader: null },
+      { id: "c", name: "В", parentId: null, leader: null },
+    ];
+    expect(parentChoices(loop, "a").map((t) => t.id)).toEqual(["c"]);
   });
 });

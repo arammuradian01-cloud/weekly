@@ -20,7 +20,7 @@ import * as projects from "./projects";
 import { TOP_TEAM, loadTeamNodes, orderTeams, scopeOf } from "./scope";
 import { weeklyLights, type WeeklyLight } from "./panel";
 import type { TeamRhythm } from "./rhythm";
-import { canCancelRequest, sortTeams, teamRights, type ManagementOff, type RightsSubject, type TeamRelation, type TeamRights } from "./team-rights";
+import { canCancelRequest, sortTeams, teamRights, type ManagementOff, type ParentChoice, type RightsSubject, type TeamRelation, type TeamRights } from "./team-rights";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -69,8 +69,8 @@ export type WeeklyTeamsView = {
   /** Люди компании для поиска: только тем, кто может добавлять людей или собирать команды */
   people: PickPerson[];
   units: PickUnit[];
-  /** Команды для выбора «Команда выше»: владельцу */
-  parents: { id: string; name: string }[];
+  /** Команды для выбора «Команда выше»: владельцу. С руководителем и командой выше: поиск и без команд ниже (этап 70) */
+  parents: ParentChoice[];
   /** Кто может руководить топ-командой: владельцы ресурса */
   owners: string[];
   /** Ваших сотрудников зовут в команды других веток: решаете вы */
@@ -187,7 +187,7 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
     closed: owner ? rows.filter((r) => !r.active).map((r) => ({ id: r.id, name: r.name, kind: r.kind })) : [],
     people: people.map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, unit: unitName(p.unit), unitId: p.unitId, manager: p.manager?.slug ?? null })),
     units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head?.slug ?? null })),
-    parents: owner ? orderTeams(active).map((x) => ({ id: x.node.id, name: x.node.name })) : [],
+    parents: owner ? orderTeams(active).map((x) => ({ id: x.node.id, name: x.node.name, parentId: x.node.parentId, leader: byId.get(x.node.id)?.leader?.fullName ?? null })) : [],
     owners,
     toApprove,
     mode: shared ? "shared" : all ? "all" : "mine",

@@ -58,6 +58,27 @@ export function matchTeam(team: SearchableTeam, query: string): boolean {
   return words.every((w) => hay.includes(w));
 }
 
+/** Команда для поля «Команда выше» (этап 70): руководитель подсказкой, команда выше, чтобы не предложить команду ниже */
+export type ParentChoice = { id: string; name: string; parentId: string | null; leader: string | null };
+
+/**
+ * Куда можно поставить команду: все команды, кроме неё самой и команд ниже неё (иначе получится кольцо). Сервер
+ * проверяет то же самое (updateTeam), здесь только список для выбора. Порядок как пришёл: дерево команд
+ */
+export function parentChoices(all: ParentChoice[], teamId: string): ParentChoice[] {
+  const below = new Set([teamId]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const t of all) {
+      if (t.parentId && below.has(t.parentId) && !below.has(t.id)) {
+        below.add(t.id);
+        grew = true;
+      }
+    }
+  }
+  return all.filter((t) => !below.has(t.id));
+}
+
 /** Вид команды для экрана: по структуре (команды подразделений и топ-команда) или проект (собранная руками) */
 export function teamKindLabel(team: { kind: "TOP" | "UNIT" | "CUSTOM" }): "По структуре" | "Проект" {
   return team.kind === "CUSTOM" ? "Проект" : "По структуре";

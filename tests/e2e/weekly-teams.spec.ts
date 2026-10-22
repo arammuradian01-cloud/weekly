@@ -227,6 +227,25 @@ test("владелец собирает команду поиском из ра�
   const [after] = await sql('SELECT l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.id = $1', [id]);
   expect(after!.leader).toBe("reva");
 
+  // Команда выше: поиск по названию или руководителю вместо списка на десятки команд (этап 70). Саму команду не предлагает
+  await owned.getByRole("button", { name: "Назначить руководителя" }).click();
+  const up = page.getByRole("dialog", { name: "Руководитель: Кросс-продажи и кредиты" });
+  const parentField = up.getByRole("combobox", { name: "Команда выше" });
+  const parentList = up.getByRole("listbox", { name: "Команда выше" });
+  await parentField.fill("департамент");
+  await expect(parentList.getByRole("option", { name: /^Департамент Money/ })).toBeVisible();
+  await parentField.fill("кросс-продажи");
+  await expect(up.getByText("Такой команды нет: проверьте написание").first()).toBeVisible();
+  await expect(parentList.getByRole("option")).toHaveCount(0);
+  await parentField.fill("белова");
+  const partners = parentList.getByRole("option", { name: /^Департамент партнёрств/ });
+  await expect(partners).toContainText("Руководитель: Белова Ольга");
+  await partners.click();
+  await expect(parentField).toHaveValue("Департамент партнёрств");
+  await up.getByRole("button", { name: "Сохранить" }).click();
+  await expect(up).toHaveCount(0);
+  await expect.poll(async () => (await sql('SELECT p.name FROM teams t JOIN teams p ON p.id = t."parentId" WHERE t.id = $1', [id]))[0]?.name).toBe("Департамент партнёрств");
+
   // Режим управления: создать команду сразу с другим руководителем
   if (isPhone()) await owned.getByRole("button", { name: "К списку команд" }).click();
   await page.getByTestId("team-create").click();

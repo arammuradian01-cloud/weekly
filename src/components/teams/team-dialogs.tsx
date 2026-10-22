@@ -14,7 +14,7 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { plural } from "@/domain/dates";
 import { addPeopleAction, closeTeamAction, createTeamAction, renameTeamAction, setRhythmAction, updateTeamAction } from "@/app/(app)/people/teams/actions";
 import type { PickPerson, WeeklyTeam } from "@/lib/org/teams";
-import { addSummary, inBranch, type ManagementOff } from "@/lib/org/team-rights";
+import { addSummary, inBranch, parentChoices, type ManagementOff, type ParentChoice } from "@/lib/org/team-rights";
 import { WEEKDAY_NAMES, type Slot } from "@/lib/org/rhythm";
 import { TOP_TEAM } from "@/domain/teams";
 import { PeoplePicker, type PickOption } from "./people-picker";
@@ -224,7 +224,7 @@ export function CloseModal({ team, onClose, onClosed }: { team: WeeklyTeam; onCl
 }
 
 /** Руководитель и команда выше: владелец в режиме управления. Топ-командой руководит владелец ресурса */
-export function LeaderModal({ team, all, owners, parents, onClose }: { team: WeeklyTeam; all: PickPerson[]; owners: string[]; parents: { id: string; name: string }[]; onClose: () => void }) {
+export function LeaderModal({ team, all, owners, parents, onClose }: { team: WeeklyTeam; all: PickPerson[]; owners: string[]; parents: ParentChoice[]; onClose: () => void }) {
   const run = useRunWeekly();
   const top = team.id === TOP_TEAM;
   const [leader, setLeader] = useState(team.leader?.slug ?? "");
@@ -232,6 +232,10 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
   const [busy, setBusy] = useState(false);
   const allowed = top ? all.filter((p) => owners.includes(p.slug)) : all;
   const options = allowed.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null }));
+  // Команды выше десятки: поиск по названию (этап 70). Саму команду и команды ниже неё не предлагаем, сервер это тоже проверяет
+  const parentOptions = useMemo(() => parentChoices(parents, team.id).map((p) => ({ value: p.id, label: p.name, hint: p.leader ? `Руководитель: ${p.leader}` : null })), [parents, team.id]);
+  // Команду выше можно сменить, но не убрать: без неё команда встала бы под топ-команду. Очищенное поле возвращает прежнюю
+  const chooseParent = (id: string) => setParent(id || (team.parent?.id ?? ""));
   const leaderChanged = leader !== (team.leader?.slug ?? "");
   const parentChanged = !top && parent !== (team.parent?.id ?? "");
   return (
@@ -249,12 +253,15 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
       >
         <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
         {!top ? (
-          <SelectField
-            label="Команда выше"
+          <SearchPicker
             id="team-parent"
+            label="Команда выше"
             value={parent}
-            onChange={(e) => setParent(e.target.value)}
-            options={[...(team.parent ? [] : [{ value: "", label: "Не выбрана" }]), ...parents.filter((p) => p.id !== team.id).map((p) => ({ value: p.id, label: p.name }))]}
+            onChange={chooseParent}
+            options={parentOptions}
+            placeholder="Не выбрана"
+            hint="Найдите по названию команды или руководителю. Саму команду и команды ниже неё выбрать нельзя"
+            emptyText="Такой команды нет: проверьте написание"
           />
         ) : null}
         <Actions busy={busy} onCancel={onClose} submit="Сохранить" disabled={!leaderChanged && !parentChanged} />
