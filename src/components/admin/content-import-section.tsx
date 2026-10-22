@@ -28,6 +28,8 @@ type Preview = {
   missingTeams: string[];
   errors: Line[];
   warnings: Line[];
+  /** Уже есть в ресурсе и совпадает с пакетом: загрузка только запомнит ключ */
+  bound: Line[];
   duplicates: (Line & { id: string; on: boolean })[];
   withDuplicates: boolean;
   staleTasks: { key: string; title: string; due: IsoDate }[];
@@ -168,7 +170,8 @@ export function ContentImportSection() {
   };
 
   const shown = done ?? preview;
-  const nothing = preview && KINDS.every((k) => preview[k.key].add + preview[k.key].update === 0);
+  // Привязка к ресурсу тоже работа загрузки: при одних привязках кнопка «Загрузить» доступна
+  const nothing = preview && KINDS.every((k) => preview[k.key].add + preview[k.key].update === 0) && !preview.bound.length;
 
   return (
     <section id="content-import" aria-labelledby={headingId} className="sv-toc-section border-t border-line py-8" data-testid="content-import">
@@ -242,6 +245,16 @@ export function ContentImportSection() {
               <div className="text-small text-danger-ink">
                 <p className="font-medium">Не загрузятся, пока их не исправят в пакете ({shown.errors.length}):</p>
                 <Lines items={shown.errors} testId="content-import-errors" />
+              </div>
+            ) : null}
+            {shown.bound.length ? (
+              <div className="text-small text-ink" data-testid="content-import-bound">
+                <p className="font-medium">
+                  {done ? "Привязано" : "Привяжется"} к ресурсу ({shown.bound.length}):{" "}
+                  {plural(shown.bound.length, "запись уже есть в ресурсе и совпадает", "записи уже есть в ресурсе и совпадают", "записей уже есть в ресурсе и совпадают")} с пакетом,
+                  загрузка запоминает ключи и ничего в них не меняет.
+                </p>
+                <Lines items={shown.bound} testId="content-import-bound-list" />
               </div>
             ) : null}
             {shown.warnings.length ? (

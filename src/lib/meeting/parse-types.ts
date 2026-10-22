@@ -116,15 +116,23 @@ export function sameTask(a: { title: string; owner: string | null }, b: { title:
 }
 
 /**
- * Текст для ресурса: длинное тире и стрелки становятся дефисом, точка посередине запятой, пробелы схлопнуты.
- * Так пишет Арам, и так модель не протащит на экран символы, которых в ресурсе нет
+ * Знаки, которых в ресурсе нет: длинное и другие тире становятся дефисом, стрелки дефисом с пробелами, точка посередине
+ * запятой, мягкий перенос и знаки нулевой ширины убираются. Общая чистка разбора встречи и пакета наполнения (этап 67)
  */
-export function cleanText(value: string, max: number = PARSE_LIMITS.item): string {
+export function resourceChars(value: string): string {
   return value
     .replace(/[\u2014\u2013\u2012\u2015]/g, "-")
     .replace(/\s*[\u2192\u27f6\u21d2\u279d\u2794\u27f9]\s*/g, " - ")
     .replace(/\s*\u00b7\s*/g, ", ")
-    .replace(/[\u200b\u00ad]/g, "")
+    .replace(/[\u200b\u200c\u200d\u2060\ufeff\u00ad]/g, "");
+}
+
+/**
+ * Текст для ресурса: длинное тире и стрелки становятся дефисом, точка посередине запятой, пробелы схлопнуты.
+ * Так пишет Арам, и так модель не протащит на экран символы, которых в ресурсе нет
+ */
+export function cleanText(value: string, max: number = PARSE_LIMITS.item): string {
+  return resourceChars(value)
     .replace(/[ \t\u00a0]+/g, " ")
     .trim()
     .slice(0, max)
