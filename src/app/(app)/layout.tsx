@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { getSetting } from "@/lib/settings";
-import { personRoleLabel } from "@/lib/roles";
+import { roleLabelOf } from "@/lib/roles";
 import { formatTime, reportingWeek, type DeadlineSetting } from "@/lib/week";
 import { SidebarBrand, Wordmark } from "@/components/brand/wordmark";
 import { MobileNav, SidebarNav } from "@/components/shell/nav";
@@ -21,8 +21,8 @@ import { TaskActionsProvider } from "@/components/tasks/task-actions";
 import { listTasks } from "@/lib/tasks/service";
 import { loadRegistry } from "@/lib/registry";
 import { syncLagging } from "@/lib/sheet/runner";
-import { getStandBanner, primaryOwnerSlug } from "@/lib/admin/service";
-import { primaryOwner } from "@/lib/login/primary";
+import { getStandBanner } from "@/lib/admin/service";
+import { ownerLabels, primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import { inboxCount } from "@/lib/inbox/service";
 import { InboxCountProvider } from "@/components/inbox/inbox-count";
@@ -85,7 +85,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     fullName: ctx.person.fullName,
     shortName: ctx.person.shortName,
     // Сотрудник, который руководит командой, подписан как руководитель (этап 14)
-    roleLabel: ctx.person.role === "EMPLOYEE" && team.scope.leads.length ? "Руководитель команды" : personRoleLabel(ctx.person.role, ctx.person.role === "OWNER" && (await primaryOwnerSlug()) === ctx.person.slug),
+    // Этап 69: у владельца подпись, которую задал главный владелец, например «ex-Владелец»
+    roleLabel: ctx.person.role === "EMPLOYEE" && team.scope.leads.length ? "Руководитель команды" : roleLabelOf(ctx.person, ctx.person.role === "OWNER" ? await ownerLabels() : { primary: null, titles: {} }),
     canManage: ctx.managementRole !== null,
     management: ctx.management?.role ?? null,
     managementUntil,

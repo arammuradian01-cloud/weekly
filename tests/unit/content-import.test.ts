@@ -599,6 +599,32 @@ describe("обработчик импорта мимо proxy", () => {
     expect(state.calls).toEqual([]);
   });
 
+  it("адрес страницы проверяется общим правилом этапа 69: APP_URL и APP_ALIASES за прокси с внутренним адресом запроса", async () => {
+    vi.stubEnv("APP_URL", "https://weekly.example.ru");
+    vi.stubEnv("APP_ALIASES", "https://app-1234.hosting.example, https://*.hosting.example");
+    try {
+      const at = (origin: string) =>
+        POST(new Request("http://0.0.0.0:3000/api/content-import?mode=preview", { method: "POST", headers: { "content-type": "application/json", origin }, body: FIXTURE }));
+      for (const origin of ["https://weekly.example.ru", "https://app-1234.hosting.example"]) expect((await at(origin)).status, origin).toBe(200);
+      for (const origin of ["https://evil.example", "null", "https://other.hosting.example", "http://weekly.example.ru"]) {
+        const res = await at(origin);
+        expect(res.status, origin).toBe(403);
+        expect((await res.json()).error, origin).toBe("Запрос с чужого сайта");
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("своих копий проверки Origin в обработчиках нет: все идут через sameSiteOrigin из src/lib/app-url.ts", () => {
+    const routes = ["src/app/api/content-import/route.ts", "src/app/api/market/upload/route.ts", "src/app/api/goals/leader-board/route.ts"];
+    for (const file of routes) {
+      const code = readFileSync(file, "utf8");
+      expect(code, file).toContain("sameSiteOrigin(origin, request)");
+      expect(code, file).not.toMatch(/function sameSite\(/);
+    }
+  });
+
   it("больше 5 МБ по заголовку: 413 до чтения тела; без заголовка чтение обрывается на пределе", async () => {
     const first = countingBody(8 * MB);
     const res = await send(first.stream, "mode=preview", { "content-length": String(6 * MB) });

@@ -97,6 +97,11 @@ export async function setPrimaryOwnerAction(slug: string) {
   return done(await runAction("Главный владелец", (a) => svc.setPrimaryOwner(a, String(slug))));
 }
 
+/** Подпись роли владельца (этап 69): задаёт главный владелец при личном входе, пустая возвращает подпись по умолчанию */
+export async function setOwnerTitleAction(slug: string, title: string) {
+  return done(await runAction("Подпись роли", (a) => svc.setOwnerTitle(a, String(slug), String(title ?? ""))));
+}
+
 export async function revokePersonDevicesAction(slug: string) {
   return done(await runAction("Завершение входов человека", (a) => revokeAllDevices(a, String(slug))));
 }

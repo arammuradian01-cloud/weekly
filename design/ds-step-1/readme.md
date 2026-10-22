@@ -8,7 +8,7 @@
 - ТЗ для Claude Design «Новая версия интерфейса Weekly» (07.10.2026): `uploads/resurs-weekly/tz-claude-design-weekly-2-0-07-10-2026.md`, живая версия https://claude.ai/code/artifact/0c38d84e-4d6f-44f5-9cef-55f3044299cb.
 - План «Weekly 2.0: исследование, новый функционал и план этапов» (07.10): `uploads/resurs-weekly/weekly-2-0-issledovanie-funkcional-plan-07-10-2026.md`.
 - Хэндоффы этапов 0-21а (`uploads/resurs-weekly/handoff-*.md`): как устроены экраны на стенде. Этап 10 задаёт имена токенов в коде.
-- Стенд с настоящими данными: https://arammuradian01-cloud-weekly-c578.twc1.net (доступ по паролю у Арама, из этой среды недоступен).
+- Стенд с настоящими данными: адрес у Арама (доступ по паролю, из этой среды недоступен).
 - Сайт: https://www.sravni.ru/ (главная, вклады, ОСАГО, КАСКО), страница бренда https://www.sravni.ru/about/brand/.
 - Код продукта: закрытый репозиторий github.com/arammuradian01-cloud/weekly (Next.js 16, React 19, Tailwind 4).
 

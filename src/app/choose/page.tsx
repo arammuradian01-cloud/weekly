@@ -3,8 +3,8 @@ import { topTeamOnly } from "@/lib/org/people";
 import { prisma } from "@/lib/db";
 import { requireSignedIn } from "@/lib/auth";
 import { chooseProfile } from "@/app/actions/auth";
-import { personRoleLabel } from "@/lib/roles";
-import { primaryOwnerSlug } from "@/lib/login/primary";
+import { roleLabelOf } from "@/lib/roles";
+import { ownerLabels } from "@/lib/login/primary";
 import { Wordmark } from "@/components/brand/wordmark";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
@@ -19,7 +19,8 @@ export default async function ChoosePage() {
     where: { active: true, ...topTeamOnly },
     orderBy: { sortOrder: "asc" },
   });
-  const primary = await primaryOwnerSlug();
+  // Подписи ролей владельцев (этап 69): «Владелец», «Совладелец» или подпись, которую задал главный владелец
+  const owners = await ownerLabels();
 
   return (
     <div className="min-h-dvh bg-field">
@@ -51,7 +52,7 @@ export default async function ChoosePage() {
                       <span className="block text-title-sm font-semibold text-ink">{p.fullName}</span>
                       <span className="mt-0.5 block text-small text-muted">{p.zone}</span>
                     </span>
-                    {p.role !== "LEADER" ? <Badge tone={p.role === "OWNER" ? "navy" : "outline"}>{personRoleLabel(p.role, p.slug === primary)}</Badge> : null}
+                    {p.role !== "LEADER" ? <Badge tone={p.role === "OWNER" ? "navy" : "outline"}>{roleLabelOf(p, owners)}</Badge> : null}
                   </button>
                 </li>
               );

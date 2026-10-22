@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sameSiteOrigin } from "@/lib/app-url";
 import { unstable_rethrow } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { writingActor } from "@/lib/action-runner";
@@ -31,7 +32,7 @@ const answer = (status: number, error: string, problems?: string[]) => NextRespo
 export async function POST(request: Request) {
   try {
     const origin = request.headers.get("origin");
-    if (origin && !sameSite(origin, request.url)) return answer(403, "Запрос с чужого сайта");
+    if (origin && !sameSiteOrigin(origin, request)) return answer(403, "Запрос с чужого сайта");
     if (!(await readSession())) return answer(401, CONTENT_SIGNED_OUT);
     const actor = await actorOrNull();
     if (!actor) return answer(401, CONTENT_SIGNED_OUT);
@@ -97,13 +98,4 @@ async function readBody(request: Request, limit: number): Promise<{ text: string
     at += c.byteLength;
   }
   return { text: new TextDecoder("utf-8").decode(all), bytes };
-}
-
-function sameSite(origin: string, url: string): boolean {
-  if (origin === process.env.APP_URL?.replace(/\/+$/, "")) return true;
-  try {
-    return new URL(origin).host === new URL(url).host;
-  } catch {
-    return false;
-  }
 }
