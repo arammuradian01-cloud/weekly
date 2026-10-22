@@ -64,7 +64,7 @@ test("бюджет и LBE из LRF, корректировка драйвера 
   await enterByLink(page, "golovkin");
   await page.goto("/forecast");
   const card = page.locator("#plan-product-osago");
-  await expect(card.getByRole("heading", { name: "ОСАГО" })).toBeVisible();
+  await expect(card.getByRole("heading", { name: "ОСАГО", exact: true })).toBeVisible();
   await expect(card.getByTestId("plan-row-revenue")).toContainText("450,0");
   await card.getByTestId("plan-edit-crWeb").click();
   const editor = card.getByTestId("plan-editor");
