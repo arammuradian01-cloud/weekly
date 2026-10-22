@@ -13,7 +13,7 @@ export default async function InitiativesPage() {
   const data = await listInitiatives(await currentActor());
   return (
     <>
-      <PageHeader title="Крупные инициативы" description="Большие дела департамента. Ответственный отмечает, ищем ли ещё, как сделать, или уже делаем, и одной фразой, что сейчас происходит" />
+      <PageHeader title="Крупные инициативы" description="Большие дела департамента: ищем, как сделать, или уже делаем" />
       <InitiativesScreen data={data} />
     </>
   );

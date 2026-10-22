@@ -237,7 +237,7 @@ export function OneOnOneScreen({ view }: { view: PairView }) {
         </p>
       </aside>
 
-      <Modal open={finish} onOpenChange={setFinish} title="Завершить встречу?" description="Обсуждённые темы останутся в истории этой встречи. Открытые темы перейдут на следующую.">
+      <Modal open={finish} onOpenChange={setFinish} title="Завершить встречу?" description="Обсуждённые темы останутся в истории, открытые перейдут на следующую встречу">
         <div className="flex flex-col gap-4">
           <TextInput type="date" label="Следующая встреча" id="oo-next" className="w-[200px]" value={nextDate} min={view.today} onChange={(e) => setNextDate(e.target.value)} />
           <div className="flex flex-wrap justify-end gap-2">
@@ -561,7 +561,7 @@ function TaskDialog({ topic, view, onClose }: { topic: TopicView; view: PairView
     if (r) onClose();
   };
   return (
-    <Modal open onOpenChange={(o) => !o && onClose()} title="Поставить задачу из темы" description="Название и описание задачи увидят все, кому видна задача, и они попадут в журнал задач. Сама тема, итог и заметки останутся между вами: в задачу они не копируются.">
+    <Modal open onOpenChange={(o) => !o && onClose()} title="Поставить задачу из темы" description="Задачу увидят все, кому она видна. Тема, итог и заметки останутся между вами">
       <div className="flex flex-col gap-3">
         <TextInput label="Задача" id="oo-task-title" maxLength={120} value={title} onChange={(e) => setTitle(e.target.value)} />
         <TextArea label="Что нужно сделать" id="oo-task-outcome" rows={3} maxLength={1000} value={outcome} onChange={(e) => setOutcome(e.target.value)} hint="По чему понять, что задача сделана" />

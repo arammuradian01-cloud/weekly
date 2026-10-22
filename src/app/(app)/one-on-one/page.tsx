@@ -16,7 +16,8 @@ export const metadata: Metadata = { title: "Один на один" };
 export default async function OneOnOnePage({ searchParams }: { searchParams: Promise<{ pair?: string }> }) {
   const ctx = await requireContext();
   const { pair } = await searchParams;
-  const description = "Встречи руководителя и человека его команды: повестку ставит человек, незакрытые темы переходят на следующую встречу";
+  // Этап 68: описание в одну строку
+  const description = "Повестку ставит человек, незакрытые темы переходят на следующую встречу";
   const header = <PageHeader title="Один на один" description={description} />;
   if (!personalLogin(ctx.via)) {
     return (
@@ -100,7 +101,7 @@ export default async function OneOnOnePage({ searchParams }: { searchParams: Pro
               <ul className="mt-3 flex flex-col divide-y divide-line sv-card sv-card--soft">{mine.map(row)}</ul>
             </section>
           ) : null}
-          <p className="text-caption text-muted">Встречи видите только вы и собеседник. Режим управления их не открывает, в журнал содержимое не попадает.</p>
+          <p className="text-caption text-muted">Видите только вы и собеседник: режим управления и журнал их не открывают.</p>
         </div>
       ) : (
         <EmptyState title="Встреч один на один пока нет">Они появятся, когда вы будете в команде с руководителем или у вас будут люди в команде.</EmptyState>

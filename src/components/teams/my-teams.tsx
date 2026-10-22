@@ -2,6 +2,8 @@
 
 // Вкладка «Руководителю» страницы «Люди» (панель руководителя, этап 16; с этапа 41 вкладкой): своя команда и команды на уровень ниже, люди выбранной команды,
 // задачи, которые требуют внимания, и «Попросить обновить». Переход вниз: из команды в команду ниже, оттуда к человеку.
+// Этап 68: команды карточками вместо таблицы. В карточке руководитель,
+// полоса задач (в графике, застряли, просрочены), сдача weekly и одна ссылка. Описания модулей в одну строку.
 
 import Link from "next/link";
 import { useState } from "react";
@@ -66,40 +68,15 @@ export function MyTeams({ panel }: { panel: Panel }) {
       <Module
         id="mt-teams"
         title={panel.teams.length > 1 ? "Команда и команды ниже" : "Команда"}
-        description="По команде и командам на уровень ниже: кто руководит, сдача weekly и задачи. Название команды ниже открывает её панель."
+        description="Название команды ниже открывает её панель"
         flush
       >
-        <div className="overflow-x-auto">
-          <table className="sv-datatable sv-datatable--stack" data-testid="mt-teams-table">
-            <caption className="sr-only">Команды: weekly и задачи</caption>
-            <thead>
-              <tr>
-                <th scope="col">Команда</th>
-                <th scope="col">Weekly</th>
-                <th scope="col" className="is-num">
-                  В работе
-                </th>
-                <th scope="col" className="is-num">
-                  Просрочено
-                </th>
-                <th scope="col" className="is-num">
-                  Уточнить
-                </th>
-                <th scope="col" className="is-num">
-                  Без обновлений
-                </th>
-                <th scope="col" className="is-num">
-                  Целей в риске
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {panel.teams.map((t) => (
-                <TeamRow key={t.id} team={t} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="m-0 grid list-none gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5" data-testid="mt-teams-table" aria-label="Команды: weekly и задачи">
+          {panel.teams.map((t) => (
+            <TeamCard key={t.id} team={t} />
+          ))}
+        </ul>
+        <TeamLegend />
       </Module>
 
       <Module
@@ -109,7 +86,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
             Требует внимания <span className="font-normal text-muted">{panel.attention.length}</span>
           </>
         }
-        description={`Просроченные, заблокированные и без обновлений дольше ${panel.staleDays} дней, по команде и командам ниже`}
+        description={`Просрочены, заблокированы или без обновлений дольше ${panel.staleDays} дней`}
         flush
       >
         {panel.attention.length ? (
@@ -122,7 +99,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
           </ul>
         ) : (
           <div className="px-5 pb-4">
-            <EmptyState title="Просрочек и застрявших задач нет">Здесь появятся задачи, которые просрочены, заблокированы или давно не обновлялись.</EmptyState>
+            <EmptyState title="Просрочек и застрявших задач нет" tone="success">Всё в графике.</EmptyState>
           </div>
         )}
       </Module>
@@ -134,7 +111,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
             Люди команды <span className="font-normal text-muted">{panel.people.length}</span>
           </>
         }
-        description={`Weekly за неделю ${panel.reportingNumber}, открытые задачи, переносы срока за 30 дней и просьбы к человеку. Имя раскрывает задачи человека.`}
+        description={`Weekly за неделю ${panel.reportingNumber} и задачи. Имя раскрывает задачи человека`}
         flush
       >
         <ul className="flex flex-col divide-y divide-line border-t border-border">
@@ -155,55 +132,80 @@ function Count({ n, label, alert }: { n: number; label: string; alert?: boolean 
   );
 }
 
-function TeamRow({ team: t }: { team: PanelTeam }) {
-  const done = t.weekly.submitted + t.weekly.late;
-  const tone = t.weekly.expected === 0 ? "bg-mist" : done >= t.weekly.expected ? "bg-green" : t.weekly.passed ? "bg-danger" : "bg-amber";
-  const n = (value: number, alert?: boolean) => <span className={cn("tabular-nums", value && alert ? "font-semibold text-danger-ink" : value ? "text-ink" : "text-muted")}>{value}</span>;
+/** Полоса задач команды: в графике, застряли или требуют уточнений, просрочены. Пустая полоса: задач в работе нет */
+function TaskBar({ team: t }: { team: PanelTeam }) {
+  const late = t.overdue;
+  const stuck = Math.min(Math.max(t.inWork - late, 0), t.stale + t.clarify);
+  const fine = Math.max(t.inWork - late - stuck, 0);
+  if (!t.inWork) return <div className="h-2 rounded-full bg-field" aria-hidden="true" />;
   return (
-    <tr data-testid={`mt-team-${t.id}`}>
-      <th scope="row" className="is-wide text-left font-normal">
-        <span className="sv-datatable__name">
-          <span className="sv-datatable__strong">
-            {t.level === "below" ? (
-              <Link href={`/people/leader?team=${t.id}`} className="hover:underline">
-                {t.name}
-              </Link>
-            ) : (
-              t.name
-            )}
-          </span>
-          <span className="sv-datatable__hint">
-            {t.leader ? `Руководитель: ${t.leader.fullName}` : "Руководитель не назначен"}, людей {t.people}
-            {t.below ? `, команд ниже ${t.below}` : ""}
-            {t.proposed ? `, предложено задач ${t.proposed}` : ""}
-          </span>
-        </span>
-      </th>
-      <td className="is-wide" data-label="Weekly">
-        <span className="inline-flex items-start gap-2">
-          <span className={cn("mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full", tone)} aria-hidden="true" />
-          <span>
-            {t.weekly.expected === 0 ? "в команде не ждём" : `сдали ${done} из ${t.weekly.expected}`}
-            {t.weekly.expected ? <span className="block text-caption text-muted">{t.weekly.passed ? "срок прошёл" : deadlineText(t.weekly.deadline)}</span> : null}
-          </span>
-        </span>
-      </td>
-      <td className="is-num" data-label="В работе">
-        {n(t.inWork)}
-      </td>
-      <td className="is-num" data-label="Просрочено">
-        {n(t.overdue, true)}
-      </td>
-      <td className="is-num" data-label="Уточнить">
-        {n(t.clarify, true)}
-      </td>
-      <td className="is-num" data-label="Без обновлений">
-        {n(t.stale, true)}
-      </td>
-      <td className="is-num" data-label="Целей в риске">
-        {n(t.goalsAtRisk, true)}
-      </td>
-    </tr>
+    <div className="flex h-2 gap-0.5 overflow-hidden rounded-full" aria-hidden="true">
+      {fine ? <span className="h-full rounded-full bg-green" style={{ flex: fine }} /> : null}
+      {stuck ? <span className="h-full rounded-full bg-warning" style={{ flex: stuck }} /> : null}
+      {late ? <span className="h-full rounded-full bg-danger" style={{ flex: late }} /> : null}
+    </div>
+  );
+}
+
+function TeamLegend() {
+  return (
+    <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 px-5 pb-4 text-caption text-muted" aria-hidden="true">
+      <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3.5 rounded-full bg-green" />в графике</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3.5 rounded-full bg-warning" />застряли или уточнить</span>
+      <span className="inline-flex items-center gap-1.5"><span className="h-2 w-3.5 rounded-full bg-danger" />просрочены</span>
+    </p>
+  );
+}
+
+function TeamCard({ team: t }: { team: PanelTeam }) {
+  const done = t.weekly.submitted + t.weekly.late;
+  const weeklyOk = t.weekly.expected > 0 && done >= t.weekly.expected;
+  const weeklyText = t.weekly.expected === 0 ? "weekly в команде не ждём" : `weekly ${done} из ${t.weekly.expected}`;
+  const problems = [
+    t.overdue ? `просрочено ${t.overdue}` : null,
+    t.stale ? `без обновлений ${t.stale}` : null,
+    t.clarify ? `уточнить ${t.clarify}` : null,
+    t.goalsAtRisk ? `${plural(t.goalsAtRisk, "цель", "цели", "целей")} в риске ${t.goalsAtRisk}` : null,
+  ].filter(Boolean);
+  return (
+    <li
+      className={cn("sv-card flex flex-col gap-3 px-4 py-4", t.overdue && "border-danger-ink/30")}
+      data-testid={`mt-team-${t.id}`}
+      aria-label={`${t.name}: в работе ${t.inWork}, ${problems.join(", ") || "всё в графике"}, ${weeklyText}`}
+    >
+      <div className="min-w-0">
+        <p className="m-0 text-body font-semibold leading-snug text-ink [overflow-wrap:anywhere]">
+          {t.level === "below" ? (
+            <Link href={`/people/leader?team=${t.id}`} className="hover:underline">
+              {t.name}
+            </Link>
+          ) : (
+            t.name
+          )}
+        </p>
+        <p className="m-0 text-caption text-muted">
+          {t.leader ? t.leader.fullName : "руководитель не назначен"}, {t.people} {plural(t.people, "человек", "человека", "человек")}
+          {t.below ? `, команд ниже ${t.below}` : ""}
+        </p>
+      </div>
+      <TaskBar team={t} />
+      <p className="m-0 text-caption text-muted">
+        в работе {t.inWork}
+        {problems.length ? (
+          <>
+            {", "}
+            <span className={cn("font-semibold", t.overdue ? "text-danger-ink" : "text-warning-ink")}>{problems.join(", ")}</span>
+          </>
+        ) : (
+          ", всё в графике"
+        )}
+        {t.proposed ? `, предложено ${t.proposed}` : ""}
+      </p>
+      <p className={cn("m-0 mt-auto border-t border-line pt-2.5 text-caption font-semibold", t.weekly.expected === 0 ? "text-muted" : weeklyOk ? "text-green-ink" : t.weekly.passed ? "text-danger-ink" : "text-warning-ink")}>
+        {weeklyText}
+        {t.weekly.expected && !weeklyOk ? <span className="font-normal text-muted">, {t.weekly.passed ? "срок прошёл" : deadlineText(t.weekly.deadline)}</span> : null}
+      </p>
+    </li>
   );
 }
 
