@@ -19,13 +19,15 @@ vi.mock("@/lib/auth", () => ({
   readSession: async () => state.session,
   requestIp: async () => "127.0.0.1",
 }));
-vi.mock("@/lib/action-runner", () => ({
-  currentActor: async () => {
+vi.mock("@/lib/action-runner", () => {
+  const actor = async () => {
     // Устройство отозвано или профиль выключен: вход перенаправляет на экран входа
     if (state.actor === "redirect") redirect("/login?ended=1");
     return state.actor;
-  },
-}));
+  };
+  // Загрузка берёт того, кто меняет, через writingActor (этап 63: в режиме «Смотреть как» отказ)
+  return { currentActor: actor, writingActor: actor };
+});
 vi.mock("@/lib/content-import/service", () => ({
   IMPORT_ONLY: "Наполнение загружает владелец при личном входе в режиме управления",
   canImportContent: (a: { role: string; management: string | null; via?: string | null }) => a.role === "OWNER" && a.management === "OWNER" && !!a.via && a.via !== "TEAM",

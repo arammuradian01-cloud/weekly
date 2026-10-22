@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { unstable_rethrow } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { currentActor } from "@/lib/action-runner";
+import { writingActor } from "@/lib/action-runner";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
 import { readSession } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { isIsoDate } from "@/lib/tasks/dates";
@@ -55,6 +56,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, value }, { headers: NO_STORE });
   } catch (error) {
     unstable_rethrow(error);
+    // «Смотреть как» (этап 63): в просмотре загрузка отказывает, как любое изменение
+    if (error instanceof ViewAsReadOnlyError) return answer(403, error.message);
     if (error instanceof PackageError || error instanceof TaskRuleError) return answer(400, error.message);
     const code = error && typeof error === "object" && "code" in error ? String((error as { code: unknown }).code) : error instanceof Error ? error.name : "ошибка";
     console.error("Импорт наполнения: не прошёл", code);
@@ -64,7 +67,7 @@ export async function POST(request: Request) {
 
 async function actorOrNull(): Promise<Actor | null> {
   try {
-    return await currentActor();
+    return await writingActor();
   } catch (error) {
     if (isRedirectError(error)) return null;
     throw error;
