@@ -1,10 +1,9 @@
 // Карта сроков roadmap (этап 68). Задача на карте полосой от начала работы до срока, по месяцам. Полосу двигают
 // целиком или тянут за края: левый край меняет начало (сразу, без причины), правый переносит срок (с причиной, как
-// в карточке задачи). У задачи без начала полоса идёт от даты постановки, край помечен пунктиром.
+// в карточке задачи), сдвиг целиком сохраняется одной правкой (moveTaskSpan). У задачи без начала полоса идёт от даты
+// постановки, край помечен пунктиром. Полоса целиком за окном карты рисуется обрубком у края с подписью даты.
 //
-// Здесь только расчёт: диапазон месяцев, положение полосы, новая пара дат после перетаскивания и порядок сохранения.
-// Порядок важен: сервер не даёт начало позже срока и срок раньше начала. Полоса уехала вправо: сначала срок, потом
-// начало; влево: сначала начало, потом срок.
+// Здесь только расчёт: диапазон месяцев, положение полосы, новая пара дат после перетаскивания и что сохранить.
 
 import { addDays, diffDays, type IsoDate } from "@/domain/dates";
 import type { DirectionCode } from "@/domain/dictionaries";
@@ -60,6 +59,8 @@ export type Bar = {
   /** Полоса начинается раньше карты или кончается позже: край обрезан */
   cutStart: boolean;
   cutEnd: boolean;
+  /** Полоса целиком за окном: before кончилась до первого дня карты, after начинается после последнего. Рисуется обрубком у края */
+  outside: "before" | "after" | null;
   overdue: boolean;
   importance: 0 | 1 | 2;
 };
@@ -81,6 +82,7 @@ export function barOf(task: Task, range: TimelineRange, today: IsoDate, span?: {
     to: clamp(b, 0, range.days - 1),
     cutStart: a < 0,
     cutEnd: b > range.days - 1,
+    outside: b < 0 ? "before" : a > range.days - 1 ? "after" : null,
     overdue: end < today && task.status !== "proposed",
     importance: importanceOf(task.priority),
   };
@@ -90,12 +92,18 @@ export type DragMode = "move" | "start" | "end";
 
 /**
  * Новая пара дат после перетаскивания на delta дней. Начало не позже срока, срок не раньше начала. Срок не уходит
- * в прошлое: сервер такой перенос не примет, поэтому полоса упирается в сегодня
+ * в прошлое: сервер такой перенос не примет, поэтому полоса упирается в сегодня. У просроченной полосы (срок уже
+ * прошёл) сдвиг целиком и срок двигаются только вправо и считаются от сегодня: срок на день позже сегодняшнего
  */
 export function dragSpan(span: { start: IsoDate; end: IsoDate }, mode: DragMode, delta: number, today: IsoDate): { start: IsoDate; end: IsoDate } {
   if (mode === "start") {
     const start = addDays(span.start, delta);
     return { start: start > span.end ? span.end : start, end: span.end };
+  }
+  if (span.end < today) {
+    if (delta <= 0) return span;
+    const end = addDays(today, delta);
+    return mode === "end" ? { start: span.start, end } : { start: addDays(span.start, diffDays(span.end, end)), end };
   }
   if (mode === "end") {
     let end = addDays(span.end, delta);
@@ -109,18 +117,18 @@ export function dragSpan(span: { start: IsoDate; end: IsoDate }, mode: DragMode,
   return { start: addDays(span.start, shift), end: addDays(span.end, shift) };
 }
 
-export type SpanPlan = { start: IsoDate | null; due: IsoDate | null; order: ("start" | "due")[] };
+/**
+ * Что сохранить после перетаскивания: start: одно начало, без причины; due: перенос срока с причиной; move: начало
+ * и срок одной правкой с причиной (moveTaskSpan); null: ничего не поменялось
+ */
+export type SpanPlan = { kind: "start" | "due" | "move" | null; start: IsoDate; due: IsoDate };
 
-/** Что и в каком порядке сохранить. null: поле не менялось */
-export function spanPlan(before: { start: IsoDate; end: IsoDate; startKnown: boolean }, after: { start: IsoDate; end: IsoDate }): SpanPlan {
+export function spanPlan(before: { start: IsoDate; end: IsoDate }, after: { start: IsoDate; end: IsoDate }): SpanPlan {
   // Начало без своей даты (от постановки) сохраняется, только если его сдвинули: иначе задача остаётся «без начала»
-  const start = after.start !== before.start ? after.start : null;
-  const due = after.end !== before.end ? after.end : null;
-  const order: ("start" | "due")[] = [];
-  if (start && due) order.push(...(after.end > before.end ? (["due", "start"] as const) : (["start", "due"] as const)));
-  else if (start) order.push("start");
-  else if (due) order.push("due");
-  return { start, due, order };
+  const startMoved = after.start !== before.start;
+  const dueMoved = after.end !== before.end;
+  const kind = startMoved && dueMoved ? "move" : startMoved ? "start" : dueMoved ? "due" : null;
+  return { kind, start: after.start, due: after.end };
 }
 
 export type TimelineRow = { direction: DirectionCode; label: string; bars: Bar[]; important: number };

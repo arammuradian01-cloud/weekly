@@ -29,14 +29,16 @@ import { RoadmapTimeline } from "./roadmap-timeline";
 
 /** Широкий экран: сетка сроков. Уже: список. На сервере и до гидратации список */
 const WIDE = "(min-width: 1280px)";
-function useWide(): boolean {
+/** Сенсорный экран (этап 68): полосы карты сроков пальцем не тянут, начало задаётся в карточке задачи */
+const COARSE = "(pointer: coarse)";
+function useMedia(query: string): boolean {
   return useSyncExternalStore(
     (cb) => {
-      const mq = window.matchMedia(WIDE);
+      const mq = window.matchMedia(query);
       mq.addEventListener("change", cb);
       return () => mq.removeEventListener("change", cb);
     },
-    () => window.matchMedia(WIDE).matches,
+    () => window.matchMedia(query).matches,
     () => false,
   );
 }
@@ -124,7 +126,8 @@ export function RoadmapBoard() {
   const { open } = useOpenTask();
   const params = useSearchParams();
   const pathname = usePathname();
-  const wide = useWide();
+  const wide = useMedia(WIDE);
+  const coarse = useMedia(COARSE);
   const person = params.get("person");
   const onlyImportant = params.get("important") === "1";
   // Этап 68: карта сроков на широком экране по умолчанию, доска по ?view=board. На узком экране только доска списком
@@ -213,7 +216,7 @@ export function RoadmapBoard() {
 
       <p className="text-small text-muted" data-testid="roadmap-summary" aria-live="polite">
         {board.total
-          ? `На доске ${board.total} ${plural(board.total, "задача", "задачи", "задач")}, важных ${board.important}${board.overdue ? `, просрочено ${board.overdue}` : ""}`
+          ? `${showTimeline ? "На карте" : "На доске"} ${board.total} ${plural(board.total, "задача", "задачи", "задач")}, важных ${board.important}${board.overdue ? `, просрочено ${board.overdue}` : ""}`
           : null}
       </p>
 
@@ -233,8 +236,9 @@ export function RoadmapBoard() {
           range={timeline.range}
           rows={timeline.rows}
           today={data.today}
-          // Права как у срока. В «Смотреть как» полосы не двигаются: сервер всё равно откажет, а начало сохраняется без вопроса
-          canMove={(t) => !viewing && permissions(t, viewer).due}
+          // Права как у срока. В «Смотреть как» и на сенсорном экране полосы не двигаются: сервер в просмотре всё равно откажет,
+          // а пальцем полосу легко сдвинуть случайно. Начало и срок тогда меняют в карточке задачи
+          canMove={(t) => !viewing && !coarse && permissions(t, viewer).due}
           onOpen={open}
           runTask={runTask}
         />

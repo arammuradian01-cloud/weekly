@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Этап 56: roadmap. Задачи топ-команды по направлениям и месяцам, важные со звёздочками, фильтры в адресе,
 // смена важности прямо на карточке. Ноутбук 1440 и телефон 360.
@@ -90,17 +90,33 @@ test("доска по направлениям и срокам, звёздочк
   await shot(page, "empty");
 });
 
-test("карта сроков: начало и срок тянутся мышью и с клавиатуры, срок с причиной", async ({ page }) => {
+/** Сегодня по Москве в базе: даты тестов этапа 68 считаются по Москве, а не по часовому поясу сервера базы */
+const MSK = "(now() AT TIME ZONE 'Europe/Moscow')::date";
+
+/** Тянуть мышью: нажать в точке x, сдвинуть на dx шагами, отпустить */
+async function dragBy(page: Page, x: number, y: number, dx: number) {
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x + dx, y, { steps: 8 });
+  await page.mouse.up();
+}
+
+test("карта сроков: начало с клавиатуры, срок за край с причиной, сдвиг целиком одной правкой с отменой, нажатие открывает задачу", async ({ page }) => {
   test.skip(test.info().project.name === "phone", "Карта сроков только на широком экране");
+  test.setTimeout(90_000);
   const [row] = await sql(`SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "ownerId" IS NOT NULL ORDER BY number LIMIT 1`);
   const n = row!.number as number;
-  await sql(`UPDATE tasks SET priority = 'CRITICAL', due = CURRENT_DATE + 14, "startOn" = NULL WHERE number = $1`, [n]);
+  await sql(`UPDATE tasks SET priority = 'CRITICAL', due = ${MSK} + 14, "startOn" = NULL WHERE number = $1`, [n]);
+  const state = async () => (await sql(`SELECT "startOn"::text AS start, due::text AS due, (SELECT count(*)::int FROM task_transfers tt WHERE tt."taskId" = t.id) AS transfers FROM tasks t WHERE number = $1`, [n]))[0]!;
 
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/roadmap");
   const bar = page.getByTestId(`timeline-bar-${n}`);
   await expect(bar).toBeVisible();
+  await expect(page.getByTestId("roadmap-summary")).toContainText("На карте");
+  // Подсказка про мышь и клавиатуру видна, а не только диктору
+  await expect(page.getByTestId("timeline-hint")).toContainText("С клавиатуры: стрелки двигают полосу");
   await shot(page, "timeline");
 
   // Клавиатура: Alt+стрелка вправо три раза двигает начало, Enter сохраняет без причины
@@ -108,26 +124,99 @@ test("карта сроков: начало и срок тянутся мышь�
   for (let i = 0; i < 3; i++) await page.keyboard.press("Alt+ArrowRight");
   await page.keyboard.press("Enter");
   await expect(page.getByText(`Начало задачи ${n}:`).first()).toBeVisible();
-  const [started] = await sql(`SELECT "startOn" FROM tasks WHERE number = $1`, [n]);
-  expect(started!.startOn).not.toBeNull();
+  const started = await state();
+  expect(started.start).not.toBeNull();
+
+  // Нажатие с дрожанием руки (3 px) открывает задачу и ничего не сохраняет
+  let box = (await bar.boundingBox())!;
+  await dragBy(page, box.x + box.width / 2, box.y + box.height / 2, 3);
+  await expect(page).toHaveURL(new RegExp(`task=${n}`));
+  await page.keyboard.press("Escape");
+  await expect(page).not.toHaveURL(new RegExp(`task=${n}`));
+  expect(await state()).toEqual(started);
 
   // Мышь: правый край на несколько дней вправо, окно с причиной, срок переносится, перенос записан
-  const box = (await bar.boundingBox())!;
-  await page.mouse.move(box.x + box.width - 3, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width + 60, box.y + box.height / 2, { steps: 6 });
-  await page.mouse.up();
+  box = (await bar.boundingBox())!;
+  await dragBy(page, box.x + box.width - 2, box.y + box.height / 2, 60);
   const dialog = page.getByRole("dialog", { name: `Перенести срок задачи ${n}` });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Перенести срок" })).toBeDisabled();
   await dialog.getByLabel("Причина переноса").fill("Ждём данные партнёра");
   await dialog.getByRole("button", { name: "Перенести срок" }).click();
   await expect(page.getByText(`Срок задачи ${n} перенесён`).first()).toBeVisible();
-  const [moved] = await sql(`SELECT (due > CURRENT_DATE + 14) AS later, (SELECT count(*)::int FROM task_transfers tt WHERE tt."taskId" = t.id) AS transfers FROM tasks t WHERE number = $1`, [n]);
-  expect(moved!.later).toBe(true);
-  expect(moved!.transfers).toBeGreaterThan(0);
+  const [later] = await sql(`SELECT (due > ${MSK} + 14) AS later FROM tasks WHERE number = $1`, [n]);
+  expect(later!.later).toBe(true);
+  const moved = await state();
+  expect(moved.transfers).toBe(started.transfers + 1);
+  expect(moved.start).toBe(started.start);
+
+  // Сдвиг целиком: одна правка moveTaskSpan, в журнале срок и начало, одна отмена возвращает оба поля
+  const [{ mark }] = await sql(`SELECT coalesce(max(id), 0)::text AS mark FROM audit_log`);
+  box = (await bar.boundingBox())!;
+  await dragBy(page, box.x + box.width / 2, box.y + box.height / 2, 80);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Начало");
+  await dialog.getByLabel("Причина переноса").fill("Партнёр сдвинул запуск");
+  await dialog.getByRole("button", { name: "Перенести срок" }).click();
+  const toast = page.getByText(new RegExp(`^Задача ${n}: с .+ по .+`)).first();
+  await expect(toast).toBeVisible();
+  const shifted = await state();
+  expect(shifted.start! > moved.start!).toBe(true);
+  expect(shifted.due > moved.due).toBe(true);
+  expect(shifted.transfers).toBe(moved.transfers + 1);
+  const fields = await sql(`SELECT field FROM audit_log WHERE id > $1::bigint AND entity = 'task' AND "entityId" = $2 ORDER BY id`, [mark, String(n)]);
+  expect(fields.map((f) => f.field)).toEqual(["Срок", "Начало"]);
+  await page.getByRole("button", { name: "Отменить" }).first().click();
+  await expect.poll(async () => await state()).toEqual(moved);
 
   // Нажатие без перетаскивания открывает задачу
   await bar.click();
   await expect(page).toHaveURL(new RegExp(`task=${n}`));
+});
+
+test("карта сроков: без прав на срок и в «Смотреть как» полосы не двигаются, нажатие открывает задачу", async ({ page }) => {
+  test.skip(test.info().project.name === "phone", "Карта сроков только на широком экране");
+  test.setTimeout(90_000);
+  // Задача Фатьянова: у Ревы нет прав на её срок; своя задача Ревы: права есть, но в «Смотреть как» полоса не двигается
+  const [other] = await sql(`SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'fatyanov' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL AND t."teamId" = 'top' ORDER BY t.number LIMIT 1`);
+  const [own] = await sql(`SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL AND t."teamId" = 'top' ORDER BY t.number LIMIT 1`);
+  const a = other!.number as number;
+  const b = own!.number as number;
+  await sql(`UPDATE tasks SET due = ${MSK} + 20, "startOn" = ${MSK} + 5 WHERE number = ANY($1)`, [[a, b]]);
+  const snapshot = async () => sql(`SELECT number, "startOn"::text AS start, due::text AS due FROM tasks WHERE number = ANY($1) ORDER BY number`, [[a, b]]);
+  const before = await snapshot();
+
+  const tryDrag = async (p: Page, number: number) => {
+    const bar = p.getByTestId(`timeline-bar-${number}`);
+    await expect(bar).toBeVisible();
+    // Без прав нет подсказки про клавиатуру у полосы и нет ручек краёв
+    await expect(bar).not.toHaveAttribute("aria-describedby", "timeline-keys");
+    const box = (await bar.boundingBox())!;
+    await dragBy(p, box.x + box.width / 2, box.y + box.height / 2, 80);
+    await expect(p.getByRole("dialog", { name: /Перенести срок задачи/ })).toHaveCount(0);
+    // Нажатие открыло задачу, правки нет
+    await expect(p).toHaveURL(new RegExp(`task=${number}`));
+    await p.keyboard.press("Escape");
+  };
+
+  await enter(page, "Рева Тарас");
+  await page.goto("/roadmap");
+  await tryDrag(page, a);
+  expect(await snapshot()).toEqual(before);
+
+  // «Смотреть как» Реву: владелец при личном входе в режиме управления
+  const owner = await page.context().browser()!.newContext({ viewport: page.viewportSize()! });
+  const op = await owner.newPage();
+  await enterByLink(op, "muradyan");
+  await enterManagement(op, "owner");
+  await op.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
+  await op.getByRole("menuitem", { name: "Смотреть как…" }).click();
+  const dialog = op.getByRole("dialog", { name: "Смотреть как" });
+  await dialog.getByLabel("Поиск по ФИО, должности или подразделению").fill("рева");
+  await dialog.getByRole("button", { name: /Рева Тарас/ }).click();
+  await expect(op.getByTestId("view-as-banner")).toBeVisible();
+  await op.goto("/roadmap");
+  await tryDrag(op, b);
+  expect(await snapshot()).toEqual(before);
+  await owner.close();
 });
