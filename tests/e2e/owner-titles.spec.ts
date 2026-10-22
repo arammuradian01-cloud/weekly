@@ -117,10 +117,12 @@ test("главный владелец задаёт себе «ex-Владеле�
   await team.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
   await team.getByRole("button", { name: "Войти" }).click();
   await expect(team).toHaveURL(/\/choose$/);
-  // Этап 71: владельцы по общему логину не входят: ни главного, ни совладельца с подписью в списке нет
+  // Этап 71: по общему логину только люди без личного пароля. Главный владелец вошёл по ссылке и задал пароль: его в
+  // списке нет. Совладелец пароля ещё не задал: он в списке со своей подписью (поправка 23.10)
   await expect(team.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
   await expect(team.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
-  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).toHaveCount(0);
+  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).toContainText("Владелец");
+  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).not.toContainText("Совладелец");
   await shot(team, "choose");
   await team.context().close();
 

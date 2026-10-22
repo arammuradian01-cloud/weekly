@@ -32,9 +32,11 @@ import { getEpochs } from "@/lib/settings";
 import { requireContext } from "@/lib/auth";
 import { OWNER_AS_ENDED, OWNER_AS_STALE, OWNER_AS_TEXTS } from "@/lib/owner-as";
 import { teamChoosableWhere } from "@/lib/org/people";
+import { roleLabelOf } from "@/lib/roles";
+import { VIEW_AS_TEXTS } from "@/lib/view-as";
 import { journalEvents } from "@/lib/journal";
 import { updatePerson } from "@/lib/admin/service";
-import { primaryOwnerSlug } from "@/lib/login/primary";
+import { ownerLabels, primaryOwnerSlug } from "@/lib/login/primary";
 import { revokeOnDeactivate } from "@/lib/login/service";
 import { PASSWORD_SETTING_KEYS, hashPassword } from "@/lib/passwords";
 import * as tasks from "@/lib/tasks/service";
@@ -73,6 +75,7 @@ const EXTRA = [
   { slug: "s71-coowner", fullName: "Совладельцев Олег", shortName: "Олег", role: "OWNER" as const, zone: "Совладелец", active: true },
   { slug: "s71-lead", fullName: "Структурный Лидер", shortName: "Лидер", role: "LEADER" as const, zone: "", position: "Product Owner ОСАГО", active: true },
   { slug: "s71-pw", fullName: "Парольный Пётр", shortName: "Пётр", role: "LEADER" as const, zone: "", active: true },
+  { slug: "s71-owner-pw", fullName: "Парольный Владелец", shortName: "Владелец", role: "OWNER" as const, zone: "", active: true },
   { slug: "s71-off", fullName: "Выключенный Игорь", shortName: "Игорь", role: "LEADER" as const, zone: "", active: false },
   { slug: "s71-tmp", fullName: "Временный Тимур", shortName: "Тимур", role: "EMPLOYEE" as const, zone: "", active: true },
 ];
@@ -136,6 +139,7 @@ beforeAll(async () => {
     await prisma.person.upsert({ where: { slug: p.slug }, update: { ...rest, position: position ?? null, sortOrder: 9000 }, create: { ...rest, position: position ?? null, sortOrder: 9000 } });
   }
   await prisma.person.update({ where: { slug: "s71-pw" }, data: { passwordHash: await hashPassword("Пароль Петра 2026") } });
+  await prisma.person.update({ where: { slug: "s71-owner-pw" }, data: { passwordHash: await hashPassword("Пароль владельца файла 2026") } });
   const owner = await tasks.actorFor("muradyan", "OWNER");
   taskNumber = (await tasks.createTask(owner, { title: "Проверка входа владельца", outcome: "Готово", owner: "reva", direction: "product", due: future })).task.number;
 });
@@ -163,6 +167,7 @@ describe("кого можно выбрать", () => {
     expect(slugs).toEqual(expect.arrayContaining(["reva", "golovkin", "s71-lead", "s71-pw", "s71-tmp"]));
     expect(slugs).not.toContain("muradyan");
     expect(slugs).not.toContain("s71-coowner");
+    expect(slugs).not.toContain("s71-owner-pw");
     expect(slugs).not.toContain("s71-off");
     const lead = r.ok ? r.value.find((p) => p.slug === "s71-lead") : null;
     expect(lead?.position).toBe("Product Owner ОСАГО");
@@ -186,14 +191,14 @@ describe("кого можно выбрать", () => {
     expect(await ownerAsAudit()).toEqual([]);
   });
 
-  it("общий логин: все включённые люди структуры без личного пароля и не владельцы", async () => {
+  it("общий логин: все включённые люди структуры без личного пароля, владелец без пароля тоже (поправка 23.10)", async () => {
     const list = await prisma.person.findMany({ where: teamChoosableWhere, select: { slug: true } });
     const slugs = list.map((p) => p.slug);
-    expect(slugs).toEqual(expect.arrayContaining(["reva", "golovkin", "s71-lead", "s71-tmp"]));
-    for (const no of ["muradyan", "s71-coowner", "s71-pw", "s71-off"]) expect(slugs).not.toContain(no);
+    expect(slugs).toEqual(expect.arrayContaining(["reva", "golovkin", "s71-lead", "s71-tmp", "s71-coowner"]));
+    for (const no of ["s71-owner-pw", "s71-pw", "s71-off"]) expect(slugs).not.toContain(no);
   });
 
-  it("chooseProfile: человек вне топ-команды выбирается, с личным паролем, владелец и выключенный нет", async () => {
+  it("chooseProfile: человек вне топ-команды и владелец без пароля выбираются, с личным паролем и выключенный нет", async () => {
     const lead = await person("s71-lead");
     await signInTeam();
     const form = (id: string) => {
@@ -207,14 +212,39 @@ describe("кого можно выбрать", () => {
     const [chosen] = await audit({ action: "profile.choose" });
     expect(chosen).toMatchObject({ actorId: lead.id, via: "TEAM" });
 
-    for (const slug of ["s71-pw", "muradyan", "s71-coowner", "s71-off"]) {
+    for (const slug of ["s71-pw", "s71-owner-pw", "s71-off"]) {
       await signInTeam();
       expect(await settle(async () => chooseProfile(form((await person(slug)).id)))).toEqual({ redirect: "/choose?denied=1" });
       expect((await session())?.personId).toBeUndefined();
     }
   });
 
-  it("профиль общего логина больше не открывается, когда человек задал личный пароль или он владелец", async () => {
+  it("владелец по общему логину: подпись роли, но не режим управления, не «Смотреть как» и не вход в чужой профиль", async () => {
+    const coowner = await person("s71-coowner");
+    await signInTeam();
+    const f = new FormData();
+    f.set("personId", coowner.id);
+    expect(await settle(() => chooseProfile(f))).toEqual({ redirect: "/" });
+    // Режим управления, подписанный когда-то в эту же cookie, тоже не действует
+    const { epoch, managementEpoch } = await getEpochs();
+    http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: coowner.id, via: "TEAM", management: { role: "OWNER", until: Date.now() + MANAGEMENT_TTL_MS, epoch: managementEpoch } }, SECRET));
+    const ctx = await requireContext();
+    expect(ctx.person.slug).toBe("s71-coowner");
+    expect(ctx.via).toBe("TEAM");
+    expect(ctx.management).toBeNull();
+    expect(ctx.managementRole).toBeNull();
+    expect(roleLabelOf(ctx.person, await ownerLabels())).toBe("Совладелец");
+    const form = new FormData();
+    form.set("password", PASSWORD);
+    expect(await enterManagement(null, form)).toEqual({ error: OWNER_AS_TEXTS.teamOwner });
+    expect(await requestStepUpAction(null)).toEqual({ error: OWNER_AS_TEXTS.teamOwner });
+    expect(await viewAs.viewAsPeopleAction()).toEqual({ ok: false, error: VIEW_AS_TEXTS.personal });
+    expect(await ownerAs.ownerAsPeopleAction()).toEqual({ ok: false, error: OWNER_AS_TEXTS.personal });
+    expect(await ownerAs.startOwnerAsAction((await person("reva")).id)).toEqual({ ok: false, error: OWNER_AS_TEXTS.personal });
+    expect(await ownerAsAudit()).toEqual([]);
+  });
+
+  it("профиль общего логина больше не открывается, когда человек задал личный пароль", async () => {
     const reva = await person("reva");
     await signInTeam(reva.id);
     expect((await requireContext()).person.slug).toBe("reva");
@@ -224,7 +254,8 @@ describe("кого можно выбрать", () => {
     } finally {
       await prisma.person.update({ where: { id: reva.id }, data: { passwordHash: null } });
     }
-    await signInTeam((await person("muradyan")).id);
+    // Владелец задал себе личный пароль: из общего логина пропал
+    await signInTeam((await person("s71-owner-pw")).id);
     expect(await settle(() => requireContext())).toEqual({ redirect: "/choose" });
   });
 });

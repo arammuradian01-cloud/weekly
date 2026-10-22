@@ -174,12 +174,9 @@ describe("пометка журнала и выбор по общему логи
     expect(auditVia({})).toEqual({ via: null, asOwnerId: null, asOwnerName: null });
   });
 
-  it("общий логин: включённые люди без личного пароля и не владельцы", () => {
-    const p = { active: true, role: "LEADER" as const, passwordHash: null };
+  it("общий логин: включённые люди без личного пароля, владелец без пароля тоже (поправка 23.10)", () => {
+    const p = { active: true, passwordHash: null };
     expect(teamChoosable(p)).toBe(true);
-    expect(teamChoosable({ ...p, role: "EMPLOYEE" })).toBe(true);
-    expect(teamChoosable({ ...p, role: "ADMIN" })).toBe(true);
-    expect(teamChoosable({ ...p, role: "OWNER" })).toBe(false);
     expect(teamChoosable({ ...p, passwordHash: "$2b$12$hash" })).toBe(false);
     expect(teamChoosable({ ...p, active: false })).toBe(false);
   });

@@ -298,11 +298,11 @@ describe("weekly выбранной команды", () => {
 });
 
 describe("люди по командам", () => {
-  it("общий логин выбирает из всех включённых людей структуры без личного пароля и не владельцев (этап 71), коллеги: люди моих команд", async () => {
+  it("общий логин выбирает из всех включённых людей структуры без личного пароля (этап 71), коллеги: люди моих команд", async () => {
     const choosable = await prisma.person.findMany({ where: teamChoosableWhere });
     expect(choosable.some((p) => p.slug === "reva")).toBe(true);
     expect(choosable.some((p) => p.fullName.startsWith("Антонов"))).toBe(true);
-    expect(choosable.some((p) => p.role === "OWNER")).toBe(false);
+    expect(choosable.some((p) => !p.active || p.passwordHash)).toBe(false);
     const alisa = await actor("Чемоданова");
     const colleagues = await prisma.person.findMany({ where: { id: { not: alisa.personId }, ...colleaguesOf(alisa.personId) } });
     expect(colleagues.map((p) => p.fullName)).toEqual(expect.arrayContaining(["Антонов Дмитрий Денисович"]));

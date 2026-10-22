@@ -8,8 +8,9 @@ import { enter, enterManagement, enterPersonal, resetDatabase, sql } from "./hel
 
 // Этап 71: «Сменить профиль». Владелец при личном входе находит поиском руководителя сектора не из топ-команды, входит в
 // его профиль после подтверждения, ставит задачу от его имени: в журнале пометка «вошёл владелец», на каждой странице
-// плашка, возврат ведёт на главную страницу владельца. Общий логин находит поиском человека вне топ-команды, владельцев
-// и людей с личным паролем в списке нет. Обычный человек при личном входе нажимает «Сменить профиль», видит
+// плашка, возврат ведёт на главную страницу владельца. Общий логин находит поиском человека вне топ-команды, людей с
+// личным паролем в списке нет; владелец без пароля в списке с подписью роли, но без режима управления (поправка 23.10).
+// Обычный человек при личном входе нажимает «Сменить профиль», видит
 // подтверждение, выходит, входит под другим логином и попадает на главную. Ноутбук 1440 и телефон 360 без прокрутки вбок
 
 const SHOTS = "tests/e2e/screenshots";
@@ -131,7 +132,7 @@ test("владелец входит в профиль руководителя �
   expect(stop!.field).toBe("Вернулся в свой профиль");
 });
 
-test("общий логин находит поиском человека вне топ-команды, владельцев и людей с личным паролем в списке нет", async ({ page }) => {
+test("общий логин находит поиском человека вне топ-команды, людей с личным паролем в списке нет", async ({ page }) => {
   await sql(`UPDATE people SET "passwordHash" = 'x' WHERE slug = 'loginova'`);
   // Длинный список: полторы сотни человек с длинными ФИО и должностями, на экране первые 100 и поиск
   await sql(
@@ -148,11 +149,11 @@ test("общий логин находит поиском человека вн�
   await expect(page.getByText(/Ещё \d+: уточните поиск/)).toBeVisible();
   await shot(page, "choose");
   const search = page.getByLabel("Поиск по ФИО, должности или подразделению");
-  // Владельца и человека с личным паролем поиск не находит, остальных находит
-  for (const name of ["мурадян", "логинова"]) {
-    await search.fill(name);
-    await expect(page.getByText("Никого не нашли: проверьте написание")).toBeVisible();
-  }
+  // Человека с личным паролем поиск не находит. Владелец без личного пароля в списке есть, с подписью роли (поправка 23.10)
+  await search.fill("логинова");
+  await expect(page.getByText("Никого не нашли: проверьте написание")).toBeVisible();
+  await search.fill("мурадян");
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toContainText("Владелец");
   await search.fill("рева");
   await expect(page.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
 
@@ -172,6 +173,34 @@ test("общий логин находит поиском человека вн�
   await expect(page).toHaveURL(/\/choose$/);
   await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("чемоданова");
   await expect(page.getByRole("button", { name: /Чемоданова Алиса/ })).toContainText("Сейчас");
+});
+
+test("владелец без личного пароля выбирается по общему логину с подписью роли, но без режима управления; с паролем пропадает", async ({ page, browser }) => {
+  await page.goto("/login");
+  await page.getByLabel("Логин").fill("team");
+  await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
+  await page.getByRole("button", { name: "Войти" }).click();
+  await expect(page).toHaveURL(/\/choose$/);
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("мурадян");
+  await page.getByRole("button", { name: /Мурадян Арам/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await openProfileMenu(page);
+  const menu = page.getByRole("menu");
+  await expect(menu).toContainText("Владелец");
+  await expect(page.getByRole("menuitem", { name: "Включить режим управления" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Смотреть как…" })).toHaveCount(0);
+  // «Сменить профиль» по общему логину ведёт на выбор себя, а не во вход в чужой профиль
+  await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
+  await expect(page).toHaveURL(/\/choose$/);
+  await page.goto("/manage");
+  await expect(page).toHaveURL(/\/$/);
+  await shot(page, "team-owner");
+
+  // Владелец задал себе личный пароль: в списке общего логина его больше нет
+  await enterPersonal(await (await browser.newContext({ viewport: page.viewportSize()! })).newPage(), "muradyan");
+  await page.goto("/choose");
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("мурадян");
+  await expect(page.getByText("Никого не нашли: проверьте написание")).toBeVisible();
 });
 
 test("обычный человек: «Сменить профиль» спрашивает, выходит, после входа под другим логином главная страница", async ({ page }) => {

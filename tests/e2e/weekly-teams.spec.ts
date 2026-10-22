@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterPersonal, resetDatabase, sql } from "./helpers";
 import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 64: один экран «Люди», «Weekly-команды». Владелец создаёт команду и добавляет людей поиском из разных
@@ -54,8 +54,11 @@ async function loadCompany(page: Page) {
 
 async function personal(browser: Browser, page: Page, fullName: string) {
   const p = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();
-  const [row] = await sql('SELECT slug FROM people WHERE "fullName" LIKE $1', [`${fullName}%`]);
-  await enterByLink(p, row!.slug as string);
+  const [row] = await sql('SELECT slug, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" LIKE $1', [`${fullName}%`]);
+  // Этап 71: владелец уже вошёл лично в первой вкладке. Ссылка задала бы новый пароль и завершила тот вход, поэтому второй
+  // вход тем же логином и паролем
+  if (row!.personal) await enterPersonal(p, row!.slug as string);
+  else await enterByLink(p, row!.slug as string);
   return p;
 }
 
@@ -330,7 +333,9 @@ test("руководитель видит свои команды, соглас�
   await shot(ershov, "below");
   await ershov.close();
 
-  // Общий логин без режима управления: только топ-команда, без кнопок
+  // Общий логин без режима управления: только топ-команда, без кнопок. Этап 71: по общему логину выбирают только тех, у
+  // кого нет личного пароля, а Рева задал его выше: пароль снимаем, его личный вход при этом остаётся
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE "fullName" LIKE 'Рева Тарас%'`);
   const shared = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();
   await enter(shared, "Рева Тарас");
   await shared.goto("/people/teams");

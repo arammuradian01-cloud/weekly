@@ -147,9 +147,16 @@ describe("кто включает «Смотреть как»", () => {
   it("без режима управления, по общему логину, администратор, лидер: нельзя", async () => {
     await signIn("muradyan");
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.management });
-    // Этап 71: владелец по общему логину не входит вовсе: сессия общего логина с его профилем уводит на выбор себя
-    await signIn("muradyan", { management: true, team: true });
-    expect(await startAs("reva")).toBe("redirect");
+    // Этап 71: владелец по общему логину выбирается, только пока у него нет личного пароля, и режима управления не получает
+    const { passwordHash } = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash: null } });
+    try {
+      await signIn("muradyan", { management: true, team: true });
+      expect((await requireContext()).management).toBeNull();
+      expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.personal });
+    } finally {
+      await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash } });
+    }
     await signIn("golovkin", { management: true });
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.ownerOnly });
     await signIn("reva");

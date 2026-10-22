@@ -148,6 +148,8 @@ async function managementContext(): Promise<{ ctx: AppContext; error?: undefined
   // после конца входа сначала возврат в свой профиль
   if (ctx.ownerAs) return { error: OWNER_AS_TEXTS.management };
   if (ctx.ownerAsEnded) return { error: OWNER_AS_ENDED };
+  // Поправка 23.10: владелец есть в списке общего логина, но права владельца только при личном входе
+  if (ctx.via === "TEAM" && ctx.person.role === "OWNER") return { error: OWNER_AS_TEXTS.teamOwner };
   return { ctx };
 }
 

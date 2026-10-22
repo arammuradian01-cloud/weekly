@@ -100,8 +100,9 @@ export async function sql(text: string, values: unknown[] = []) {
 }
 
 /**
- * Вход под человеком. Этап 71: владельцы и люди с личным паролем по общему логину не выбираются, они входят своим
- * логином и паролем (enterPersonal). Остальные: общий логин team и выбор себя поиском на экране «Выберите себя»
+ * Вход под человеком. Этап 71: люди с личным паролем по общему логину не выбираются, а владелец по общему логину не
+ * получает режим управления, который нужен сценариям: оба входят своим логином и паролем (enterPersonal). Остальные:
+ * общий логин team и выбор себя поиском на экране «Выберите себя»
  */
 export async function enter(page: Page, fullName: string) {
   const [row] = await sql(`SELECT slug, role, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" = $1 AND active`, [fullName]);

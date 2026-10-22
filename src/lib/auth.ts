@@ -186,8 +186,8 @@ export async function requireContext(): Promise<AppContext> {
     if ((await getTeamLogin()) === "off") redirect("/login?team=off");
     if (!session.personId) redirect("/choose");
     const found = await prisma.person.findUnique({ where: { id: session.personId } });
-    // Этап 71: по общему логину только люди без личного пароля и не владельцы. Человек задал пароль или стал владельцем:
-    // профиль, выбранный раньше на этом устройстве, больше не открывается, выбор заново
+    // Этап 71: по общему логину только люди без личного пароля. Человек задал пароль: профиль, выбранный раньше на этом
+    // устройстве, больше не открывается, выбор заново
     if (!found || !found.active || !teamChoosable(found)) redirect("/choose");
     person = found;
   }
@@ -226,7 +226,9 @@ export async function requireContext(): Promise<AppContext> {
     };
   }
 
-  const managementRole = managementRoleFor(person.role);
+  // Этап 71 (поправка 23.10): владелец, выбранный по общему логину, режима управления не включает: права владельца
+  // только при личном входе. Администратор по общему логину включает режим, как и раньше
+  const managementRole = via === "TEAM" && person.role === "OWNER" ? null : managementRoleFor(person.role);
   const grant = activeManagement(session, managementEpoch);
   // Режим управления действует, только если он выдан этой же роли профиля
   const management = grant && managementRole === grant.role ? grant : null;

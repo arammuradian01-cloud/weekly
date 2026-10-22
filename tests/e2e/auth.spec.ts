@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
-import { enter, enterPersonal } from "./helpers";
+import { enter, enterPersonal, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -69,10 +69,15 @@ test("5 неверных паролей закрывают вход на 15 ми
 });
 
 test("лидер входит, выбирает себя и видит свою неделю без режима управления", async ({ page }) => {
+  // Этап 71: в списке общего логина только люди без личного пароля: владелец без пароля там есть с подписью роли,
+  // Логинова с паролем нет. Пароли могли остаться от других файлов: задаём явно
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug = 'muradyan'`);
+  await sql(`UPDATE people SET "passwordHash" = 'x' WHERE slug = 'loginova'`);
   await signIn(page);
   await expect(page).toHaveURL(/\/choose$/);
-  // Этап 71: владельцы по общему логину не входят, их в списке нет
-  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toContainText("Владелец");
+  await expect(page.getByRole("button", { name: /Логинова Светлана/ })).toHaveCount(0);
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug = 'loginova'`);
   await shot(page, "03-choose");
   await chooseMe(page, "Рева Тарас");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
