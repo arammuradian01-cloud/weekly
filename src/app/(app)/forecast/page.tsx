@@ -91,7 +91,8 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   }
 
   if (!weekTab) {
-    const plan = await monthPlan(actor, month);
+    // Уровень уже известен: раздел по СК не считает его заново
+    const plan = await monthPlan(actor, month, new Date(), null, { level });
     return (
       <>
         <PageHeader

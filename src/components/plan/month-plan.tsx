@@ -51,6 +51,8 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
     requestAnimationFrame(() => document.getElementById(`plan-product-${code}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   };
 
+  // Ответ на корректировку и отметку приходит без раздела по СК (этап 58): раздел и источник хаба остаются прежними
+  const saved = (next: MonthPlanView) => setView((prev) => (next.skOmitted ? { ...next, sk: prev.sk, hubSource: prev.hubSource, skOmitted: prev.skOmitted } : next));
   const setOwners = (owners: PlanPerson[]) => setView((v) => ({ ...v, products: v.products.map((p) => (p.code === selected ? { ...p, owners } : p)) }));
   const setPartnerOwners = (owners: PlanPerson[]) => setView((v) => (v.partners ? { ...v, partners: { ...v.partners, owners } } : v));
   // Изменение полисов партнёров выбранного продукта к LBE: продукту предлагается учесть его в полисах B2B
@@ -127,7 +129,7 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
         <Module title={`Прогноз на ${view.monthLabel} ещё не начат`} description={view.canPull ? "Загрузите бюджет и LBE месяца из LRF: после этого команды продуктов смогут корректировать драйверы." : "Бюджет и LBE месяца загружает владелец ресурса после того, как LBE заполнен в LRF. Тогда здесь появятся продукты и драйверы."} />
       ) : section === "partners" ? (
         view.partners ? (
-          <PartnerChannel key={view.month} month={view.month} partners={view.partners} canOwners={view.canOwners} adjustHint={view.adjustHint} onSaved={setView} onOwners={() => setPartnerOwnersOpen(true)} />
+          <PartnerChannel key={view.month} month={view.month} partners={view.partners} canOwners={view.canOwners} adjustHint={view.adjustHint} onSaved={saved} onOwners={() => setPartnerOwnersOpen(true)} />
         ) : (
           <Module title="Партнёрский канал не загружен" description="Партнёры по продуктам приходят вместе с бюджетом и LBE из LRF. После загрузки здесь появятся партнёры, их полисы и комиссия." />
         )
@@ -191,7 +193,7 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
                     total={summary.total}
                     canOwners={view.canOwners}
                     adjustHint={view.adjustHint}
-                    onSaved={setView}
+                    onSaved={saved}
                     onOwners={() => setOwnersOpen(true)}
                     partner={partner}
                     sk={product.code === "osago" ? view.sk : null}
@@ -207,7 +209,7 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
 
       {view.canPull ? <PullDrawer open={pullOpen} onOpenChange={setPullOpen} month={view.month} serviceEmail={view.source.serviceEmail} mode={view.source.mode} sourceId={view.source.sourceId} canSource={view.canSource} /> : null}
       {view.canFacts ? <FactsDrawer open={factsOpen} onOpenChange={setFactsOpen} /> : null}
-      {view.canPull && !view.empty ? <HubDrawer open={hubOpen} onOpenChange={setHubOpen} serviceEmail={view.hubSource.serviceEmail} mode={view.hubSource.mode} sourceId={view.hubSource.sourceId} canSource={view.canSource} /> : null}
+      {view.canPull && !view.empty && view.hubSource ? <HubDrawer open={hubOpen} onOpenChange={setHubOpen} source={view.hubSource} canSource={view.canSource} /> : null}
       {view.canOwners && product ? <OwnersDrawer key={product.code} open={ownersOpen} onOpenChange={setOwnersOpen} product={product.code} owners={product.owners} onSaved={setOwners} /> : null}
       {view.canOwners && view.partners ? <OwnersDrawer key="b2b" open={partnerOwnersOpen} onOpenChange={setPartnerOwnersOpen} product="b2b" owners={view.partners.owners} onSaved={setPartnerOwners} /> : null}
     </div>
