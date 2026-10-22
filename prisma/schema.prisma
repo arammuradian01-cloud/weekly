@@ -259,6 +259,7 @@ model DictionaryItem {
   entriesByBlock     WeeklyEntry[] @relation("EntryBlock")
   entriesByType      WeeklyEntry[] @relation("EntryType")
   forecasts          Forecast[]    @relation("ForecastDirection")
+  initiatives        Initiative[]  @relation("InitiativeDirection")
 
   @@unique([kind, code])
   @@map("dictionary_items")
@@ -2028,6 +2029,9 @@ model Initiative {
   /// Команда, которая ведёт инициативу
   teamId      String            @default("top")
   team        Team              @relation(fields: [teamId], references: [id])
+  /// Продукт из справочника направлений (этап 67г): по нему инициативы делятся на странице. null: общая для департамента
+  directionId String?
+  direction   DictionaryItem?   @relation("InitiativeDirection", fields: [directionId], references: [id], onDelete: SetNull)
   /// Цель квартала, на которую работает (не обязательно)
   goalId      String?
   goal        Goal?             @relation(fields: [goalId], references: [id], onDelete: SetNull)
@@ -2052,6 +2056,7 @@ model Initiative {
 
   @@index([closedAt])
   @@index([ownerId])
+  @@index([directionId])
   @@map("initiatives")
 }
 
