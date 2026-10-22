@@ -196,10 +196,11 @@ test("дерево подчинённых: схема с путём наверх
   await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
   await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
 
-  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя
+  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя. Этап 71: владелец по
+  // общему логину не входит, поэтому профиль руководителя ветки здесь у Ревы
   const other = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" });
   const shared = await other.newPage();
-  await enter(shared, "Мурадян Арам");
+  await enter(shared, "Рева Тарас");
   await shared.goto("/people/structure");
   const sharedTree = shared.getByTestId("people-tree");
   await sharedTree.getByTestId(`person-${reva}`).click();
