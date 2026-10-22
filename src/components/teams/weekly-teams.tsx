@@ -7,8 +7,8 @@
 // Перетаскивание подразделений и людей осталось помощником «Собрать из структуры», свёрнутым по умолчанию.
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { startTransition, useEffect, useMemo, useOptimistic, useRef, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Users } from "lucide-react";
 import type { WeeklyTeam, WeeklyTeamsView } from "@/lib/org/teams";
 import { managementHint, matchTeam, sizeText, teamKindLabel, teamSize } from "@/lib/org/team-rights";
@@ -169,8 +169,11 @@ function pushedBefore(id: string | null): string | null {
 
 export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const pathname = usePathname();
-  // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку
-  const picked = useSearchParams().get("team");
+  const router = useRouter();
+  // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку. Пока идёт замена
+  // адреса (перебор команд на ноутбуке), карточка уже показывает выбранную команду из данных списка
+  const fromUrl = useSearchParams().get("team");
+  const [picked, pick] = useOptimistic(fromUrl);
   const run = useRunWeekly();
   const { notify } = usePrototype();
   const [query, setQuery] = useState("");
@@ -196,6 +199,11 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  useEffect(() => {
+    // Шаг в истории роутер кладёт, когда переход закончился: тогда и запоминаем длину истории
+    if (fromUrl && pushedRef.current === fromUrl) rememberPush(fromUrl);
+  }, [fromUrl]);
+
   const wide = useWide();
   const assembleIsOpen = useSyncExternalStore(subscribeAssemble, assembleOpen, () => false);
   // Карточка: выбранная в адресе команда. Без выбора на ноутбуке показана и подсвечена первая команда (адрес не
@@ -213,6 +221,8 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     // Элемент ещё не на экране (данные новой команды не пришли): попробуем после следующего обновления
     if (!el || !el.getClientRects().length) return;
     focusRef.current = null;
+    // Карточка заменила список (узкий экран): показываем её с начала страницы
+    if (f.to === "card") window.scrollTo({ top: 0 });
     el.focus({ preventScroll: f.to === "row" ? false : true });
   }, [selected, view]);
 
@@ -227,24 +237,35 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const hint = managementHint(view.managementOff);
 
   /**
+   * Сменить адрес переходом роутера Next, а не window.history: после pushState/replaceState Next 16 оставляет у себя
+   * дерево и параметры прежнего адреса. Следующее обновление данных (после действия их два: router.refresh и
+   * revalidatePath) не сходится с ответом сервера, а второе такое расхождение подряд Next чинит полной перезагрузкой
+   * страницы: пропадали тост, раскрытый помощник и введённое (этап 70). Переход отменяет начатое обновление, а
+   * обновление после действия идёт уже по новому адресу.
+   * Замена адреса показывает выбор сразу, не дожидаясь ответа сервера. Шаг вперёд роутер кладёт в историю, когда
+   * переход закончился: карточку показываем вместе с ним, иначе «Назад», нажатая сразу, ушла бы мимо списка
+   */
+  const go = (id: string | null, url: string, push: boolean) =>
+    startTransition(() => {
+      if (push) router.push(url, { scroll: false });
+      else {
+        pick(id);
+        router.replace(url, { scroll: false });
+      }
+    });
+  /**
    * Открыть карточку. Из списка шаг в истории (на телефоне «Назад» вернёт к списку), из открытой карточки замена:
-   * перебор команд на ноутбуке не копит историю. Адрес меняется через history: роутер Next подхватывает его сразу,
-   * а обновление данных после действия, начатое раньше, отменяется переходом и повторяется уже по новому адресу.
-   * Фокус на заголовок карточки только на узком экране, где карточка заменяет список; на ноутбуке он остаётся в списке
+   * перебор команд на ноутбуке не копит историю. Фокус на заголовок карточки только на узком экране, где карточка
+   * заменяет список; на ноутбуке он остаётся в списке
    */
   const open = (id: string) => {
     if (picked === id) return;
-    const url = `${pathname}?team=${encodeURIComponent(id)}`;
     const narrow = window.matchMedia(NARROW).matches;
     // На ноутбуке список виден рядом с карточкой: перебор команд не копит историю
-    if (picked || !narrow) window.history.replaceState(null, "", url);
-    else {
-      window.history.pushState(null, "", url);
-      pushedRef.current = id;
-      rememberPush(id);
-    }
+    const push = !picked && narrow;
+    if (push) pushedRef.current = id;
+    go(id, `${pathname}?team=${encodeURIComponent(id)}`, push);
     focusRef.current = narrow ? { to: "card" } : null;
-    if (narrow) window.scrollTo({ top: 0 });
   };
   /** Карточку убрать: если её открыли из списка, это шаг назад по истории, иначе адрес без команды */
   const leave = () => {
@@ -252,7 +273,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     pushedRef.current = null;
     rememberPush(null);
     if (wasPushed) window.history.back();
-    else window.history.replaceState(null, "", `${pathname}${window.location.hash}`);
+    else go(null, `${pathname}${window.location.hash}`, false);
   };
   /** К списку (телефон): фокус возвращается на строку команды */
   const back = () => {

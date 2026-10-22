@@ -237,9 +237,10 @@ test("владелец собирает команду поиском из ра�
   await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
   await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
   await pilot.getByRole("button", { name: "Создать команду" }).click();
-  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
+  // Карточка новой команды открывается переходом без перезагрузки страницы (этап 70): тост на месте и после неё
   const pilotCard = page.getByTestId("team-card");
   await expect(pilotCard.getByRole("heading", { name: "Партнёрский пилот", level: 2 })).toBeVisible();
+  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
   await expect(pilotCard).toContainText("Белова Ольга");
   // В режиме управления действия руководителя и ритма кнопками в шапке карточки
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Назначить руководителя" })).toBeVisible();
@@ -342,4 +343,42 @@ test("руководитель видит свои команды, соглас�
   await expect(sharedTop.getByRole("button", { name: /Убрать из команды/ })).toHaveCount(0);
   await shot(shared, "shared");
   await shared.close();
+});
+
+test("новая команда открывается без перезагрузки страницы: тост на месте, перебор команд на ноутбуке не копит историю", async ({ page }) => {
+  test.setTimeout(120_000);
+  await loadCompany(page);
+  await page.goto("/people/teams");
+  // Этап 70: адрес карточки раньше менялся через window.history, и Next после действия перезагружал всю страницу,
+  // когда ответ действия приходил целиком (быстрая сеть). Отдаём ответ одним куском: так перезагрузка была каждый раз
+  await page.route("**/people/teams*", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const response = await route.fetch();
+    await route.fulfill({ response, body: await response.body() });
+  });
+  const card = page.getByTestId("team-card");
+  const length = await page.evaluate(() => window.history.length);
+  for (const name of ["Пилот продаж", "Пилот сервиса"]) {
+    if (isPhone() && (await card.isVisible())) await card.getByRole("button", { name: "К списку команд" }).click();
+    await page.evaluate(() => ((window as unknown as { samePage?: boolean }).samePage = true));
+    await page.getByTestId("team-create").click();
+    const create = page.getByRole("dialog", { name: "Новая weekly-команда" });
+    await create.getByRole("textbox", { name: "Название команды" }).fill(name);
+    await create.getByRole("button", { name: "Создать команду" }).click();
+    await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
+    await expect(page.getByText(`Команда «${name}» создана`).first()).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { samePage?: boolean }).samePage === true), "страница перезагрузилась").toBe(true);
+    await expect(page).toHaveURL(new RegExp(`/people/teams\\?team=${await teamId(name)}$`));
+  }
+  if (isPhone()) {
+    // Телефон: карточка новой команды открылась шагом вперёд, «Назад» возвращает к списку
+    await page.goBack();
+    await expect(page).toHaveURL(/\/people\/teams$/);
+    await expect(page.getByTestId("teams-list")).toBeVisible();
+  } else {
+    // Ноутбук: обе карточки и перебор команд в списке заменяют адрес, история не растёт
+    await openTeam(page, "Пилот продаж");
+    await openTeam(page, "Департамент Money");
+    expect(await page.evaluate(() => window.history.length)).toBe(length);
+  }
 });
