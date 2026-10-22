@@ -132,7 +132,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-body text-text-secondary" aria-live="polite">
           {data.active.length
-            ? "Две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
+            ? "Инициативы по департаментам и продуктам, у каждого продукта две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
             : "Крупных инициатив пока нет."}
         </p>
         {data.canManage ? (

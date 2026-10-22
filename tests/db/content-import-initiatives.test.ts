@@ -260,7 +260,7 @@ describe("weekly для CEO за прошедшие недели", () => {
       const preview = await previewContentImport(await owner(), pkg);
       expect(preview.ceoReports).toEqual({ add: 1, update: 0, skip: 2 });
       expect(texts(preview.warnings)).toMatch(/отчёт за эту неделю уже есть в ресурсе/);
-      expect(texts(preview.errors)).toMatch(/неделя ещё не началась/);
+      expect(texts(preview.errors)).toMatch(/неделя ещё не закончилась/);
       expect(texts(preview.notes)).toMatch(/блоков nope в отчёте CEO нет/);
 
       const res = await applyContentImport(await owner(), pkg);
@@ -269,6 +269,7 @@ describe("weekly для CEO за прошедшие недели", () => {
       const blocks = r1.blocks as { key: string; edited?: boolean; lines: { text: string; product: string | null }[] }[];
       expect(blocks.map((b) => b.key)).toEqual(["news", "wow", "risks"]);
       expect(blocks.every((b) => b.edited)).toBe(true);
+      expect(blocks.every((b) => (b as { basis?: string }).basis === "import")).toBe(true);
       expect(blocks[1]!.lines[0]).toMatchObject({ text: "Трафик 465 тыс., минус 2%", product: "osago" });
       expect(r1.main).toMatch(/Собрали структуру разработки/);
       expect(r1.risks).toMatch(/Вклады ниже бюджета/);

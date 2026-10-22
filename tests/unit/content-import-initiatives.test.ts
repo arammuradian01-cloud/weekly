@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePackage, personnelExclusions } from "@/lib/content-import/package";
 import { departmentOf } from "@/lib/initiatives/rules";
+import { IMPORTED_BASIS, withLiveBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 const parse = (initiatives: unknown, extra: Record<string, unknown> = {}) => parsePackage(JSON.stringify({ format: "weekly-napolnenie/1", initiatives, ...extra }));
 
@@ -67,5 +68,14 @@ describe("департамент инициативы", () => {
     expect(departmentOf("nope", units)).toBeNull();
     // Петля в структуре не вешает страницу
     expect(departmentOf("x", units)).toBeNull();
+  });
+});
+
+describe("отчёт CEO из пакета наполнения", () => {
+  it("живой блок из пакета не помечается устаревшим и не пересобирается; правленый руками помечается", () => {
+    const fresh: ReportBlock[] = [{ key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "osago", text: "Свежие цифры", href: null, source: null }], basis: "abc" }];
+    const imported: ReportBlock = { key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "osago", text: "Цифры той недели", href: null, source: null }], edited: true, basis: IMPORTED_BASIS };
+    expect(withLiveBlocks([imported], fresh)[0]).toMatchObject({ stale: false, lines: [{ text: "Цифры той недели" }] });
+    expect(withLiveBlocks([{ ...imported, basis: "old" }], fresh)[0]!.stale).toBe(true);
   });
 });

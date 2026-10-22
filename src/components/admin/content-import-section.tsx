@@ -222,7 +222,11 @@ export function ContentImportSection() {
           <div className="flex flex-col gap-4 rounded-xl bg-field p-4" data-testid={done ? "content-import-done" : "content-import-preview"} role="status">
             <p className="text-body font-semibold text-ink">{done ? "Загружено" : `Что даст загрузка${shown.title ? `: ${shown.title}` : ""}`}</p>
             <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body text-ink">
-              {KINDS.filter((k) => shown[k.key]).map((k) => (
+              {KINDS.filter((k) => {
+                // Новые виды (инициативы, weekly для CEO) показываются, только если они есть в пакете
+                const c = shown[k.key];
+                return c && (k.key === "tasks" || k.key === "decisions" || k.key === "goals" || k.key === "links" || c.add + c.update + c.skip > 0);
+              }).map((k) => (
                 <li key={k.key} data-testid={`content-import-${k.key}`}>
                   <span className="font-medium">{k.label}:</span> {line(shown[k.key]!)}
                 </li>

@@ -789,7 +789,12 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       return [{ key: String((b as Raw).key).trim(), lines }];
     });
     if (!blocks.some((b) => b.lines.length)) r.problems.push(`weekly для CEO ${key}: в отчёте нет ни одной строки`);
-    const meetingsRaw = Array.isArray(raw.meetings) ? (raw.meetings as unknown[]).slice(0, 20) : [];
+    const blockKeys = blocks.map((b) => b.key);
+    const twice = blockKeys.filter((k, j) => blockKeys.indexOf(k) !== j);
+    if (twice.length) r.problems.push(`weekly для CEO ${key}: блок ${[...new Set(twice)].join(", ")} повторяется`);
+    // Встреч в отчёте CEO не больше 12, как в форме
+    if (Array.isArray(raw.meetings) && raw.meetings.length > 12) r.problems.push(`weekly для CEO ${key}: встреч больше 12`);
+    const meetingsRaw = Array.isArray(raw.meetings) ? (raw.meetings as unknown[]).slice(0, 12) : [];
     const meetings = meetingsRaw.flatMap((m) => {
       if (!m || typeof m !== "object" || Array.isArray(m)) return [];
       const text = r.str(m as Raw, "text", "Текст о встрече", 2000, { lines: true });

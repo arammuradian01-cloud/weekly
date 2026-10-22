@@ -56,7 +56,7 @@ import { sameTask } from "@/lib/meeting/parse-types";
 import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageCeoReport, type PackageInitiative, type PackageLink, type PackageRemoval, type PackageTask } from "./package";
 import { ensureWeek } from "@/lib/weekly/service";
 import { cleanMeetings } from "@/lib/ceo/text";
-import { blocksToLegacy, cleanBlocks, standardOf, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { IMPORTED_BASIS, STANDARD_KEYS, blocksToLegacy, cleanBlocks, standardOf, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { SOFT_MAX as INITIATIVES_SOFT_MAX } from "@/lib/initiatives/rules";
 
 type Tx = Prisma.TransactionClient;
@@ -1325,9 +1325,14 @@ async function planRemovals(ctx: Ctx, pkg: ContentPackage): Promise<RemovalPlan[
 }
 
 /** Блоки отчёта из пакета: ключи этапа 66, названия стандартных блоков, продукты из справочника; все правлены руками */
-function ceoBlocksOf(ctx: Ctx, c: PackageCeoReport): ReportBlock[] {
-  const raw = c.blocks.map((b) => ({ key: b.key, title: standardOf(b.key)?.title ?? "", lines: b.lines.map((l) => ({ text: l.text, product: l.product })), edited: true }));
-  return cleanBlocks(raw, ctx.directions).map((b) => ({ ...b, edited: true }));
+function ceoBlocksOf(c: PackageCeoReport, codes: Set<string>): ReportBlock[] {
+  // Только стандартные блоки этапа 66 и в их порядке: у своего блока команды в пакете нет названия
+  const order = (k: string) => STANDARD_KEYS.indexOf(k as (typeof STANDARD_KEYS)[number]);
+  const raw = c.blocks
+    .filter((b) => order(b.key) >= 0)
+    .sort((a, b) => order(a.key) - order(b.key))
+    .map((b) => ({ key: b.key, title: standardOf(b.key)!.title, lines: b.lines.map((l) => ({ text: l.text, product: l.product })), basis: IMPORTED_BASIS }));
+  return cleanBlocks(raw, codes).map((b) => ({ ...b, edited: true }));
 }
 
 const hasCeoText = (r: { main: string; risks: string; next: string; meetings: unknown; blocks: unknown }) =>
@@ -1335,19 +1340,25 @@ const hasCeoText = (r: { main: string; risks: string; next: string; meetings: un
 
 async function planCeoReports(ctx: Ctx, pkg: ContentPackage): Promise<CeoPlan[]> {
   const out: CeoPlan[] = [];
+  if (!(pkg.ceoReports ?? []).length) return out;
+  // Продукты строк: все коды справочника, как у сохранения отчёта в ресурсе (скрытый продукт у старой строки остаётся)
+  const codes = new Set((await ctx.db.dictionaryItem.findMany({ where: { kind: "DIRECTION" }, select: { code: true } })).map((d) => d.code));
   for (const c of pkg.ceoReports ?? []) {
     const hr = ctx.excluded.get(key("ceo", c.key));
     if (hr) {
       out.push({ c, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
-    if (c.week > ctx.today) {
-      out.push({ c, action: "skip", level: "error", reason: "неделя ещё не началась: загрузка ставит отчёты прошедших недель" });
+    // Неделя кончилась: её воскресенье уже прошло. Текущую неделю пишут сами, загрузка её не трогает
+    if (addDays(c.week, 7) > ctx.today) {
+      out.push({ c, action: "skip", level: "error", reason: "неделя ещё не закончилась: загрузка ставит отчёты прошедших недель" });
       continue;
     }
-    const blocks = ceoBlocksOf(ctx, c);
+    const blocks = ceoBlocksOf(c, codes);
     const unknown = c.blocks.filter((b) => !blocks.some((x) => x.key === b.key)).map((b) => b.key);
     const notes = unknown.length ? [`блоков ${unknown.join(", ")} в отчёте CEO нет, они не загрузятся`] : [];
+    const lost = c.blocks.flatMap((b) => b.lines).filter((l) => l.product && !codes.has(l.product)).map((l) => l.product);
+    if (lost.length) notes.push(`продуктов ${[...new Set(lost)].join(", ")} нет в справочнике: строки загрузятся без продукта`);
     const meetings = cleanMeetings(c.meetings);
     const week = await ctx.db.week.findUnique({ where: { start: dbDate(c.week) }, select: { ceoReport: true } });
     const cur = week?.ceoReport ?? null;
@@ -1438,7 +1449,7 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
   for (const p of plan.initiatives) put(`Инициатива «${short(p.x.title)}»`, p);
   for (const p of plan.ceo) put(`Weekly для CEO за неделю с ${formatLong(p.c.week)}`, p);
   for (const p of plan.removals) if (p.action === "skip") put(p.text ? `Стереть решение «${short(p.text)}»` : `Стереть решение ${p.r.key}`, p);
-  const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links, ...plan.initiatives].filter((p) => p.reason === UNCHANGED).length;
+  const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links, ...plan.initiatives, ...plan.ceo].filter((p) => p.reason === UNCHANGED).length;
   if (unchanged) lists.notes.unshift({ what: "Без изменений", text: `${unchanged} ${unchanged === 1 ? "запись уже загружена" : "записей уже загружено"} в том же виде` });
   return {
     title: pkg.title,
@@ -1776,12 +1787,34 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
     const order = dict.map((d) => d.code);
     for (const p of plan.ceo) {
       if (p.action === "skip") continue;
+      // Тот же замок, что у сохранения и отправки отчёта в ресурсе; после него отчёт перечитывается и проверяется заново
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${p.c.week}`}))`;
+      const now = await tx.ceoReport.findFirst({ where: { week: { start: dbDate(p.c.week) } } });
+      const known = ctx.keys.get(key("ceo", p.c.key));
+      const base = known ? asRecord(known.payload) : null;
+      const changed = now && (now.sentAt || (base ? !(same(now.blocks ?? null, base.blocks ?? null) && same(now.meetings ?? [], base.meetings ?? [])) : hasCeoText(now)));
+      if (changed) {
+        Object.assign(p, { action: "skip", level: "warning", reason: "отчёт за эту неделю поменяли в ресурсе во время загрузки, загрузка его не трогает" });
+        continue;
+      }
       const week = await ensureWeek(tx, p.c.week);
       const legacy = blocksToLegacy(p.blocks!, labels, order);
       const data = { ...legacy, blocks: p.blocks as unknown as Prisma.InputJsonValue, meetings: p.meetings as unknown as Prisma.InputJsonValue, updatedById: actor.personId };
       const saved = await tx.ceoReport.upsert({ where: { weekId: week.id }, update: data, create: { ...data, weekId: week.id } });
       await tx.auditLog.create({
-        data: { action: "ceo.save", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "ceo-report", entityId: p.c.week, field: "Отчёт CEO из пакета наполнения", after: legacy.main.slice(0, 2000), ip: actor.ip ?? null, via: actor.via ?? null },
+        data: {
+          action: "ceo.save",
+          actorId: actor.personId,
+          actorName: actor.fullName,
+          source: "APP",
+          entity: "ceo-report",
+          entityId: p.c.week,
+          field: "Отчёт CEO из пакета наполнения",
+          before: now ? `${now.main}\n${now.risks}\n${now.next}`.trim().slice(0, 4000) : undefined,
+          after: `${legacy.main}\n${legacy.risks}\n${legacy.next}`.trim().slice(0, 4000),
+          ip: actor.ip ?? null,
+          via: actor.via ?? null,
+        },
       });
       // База: блоки и встречи, какими их записала загрузка (из базы, в том виде, в каком их хранит jsonb)
       const row = await tx.ceoReport.findUniqueOrThrow({ where: { id: saved.id }, select: { blocks: true, meetings: true } });
@@ -1880,7 +1913,7 @@ async function applyInitiatives(tx: Tx, actor: Actor, plan: Plan, goalIds: Map<s
     }
     // Обновление уже загруженной: только поля из плана
     const id = p.existingId!;
-    const cur = await tx.initiative.findUniqueOrThrow({ where: { id }, select: { title: true, state: true, closedAt: true, result: true } });
+    const cur = await tx.initiative.findUniqueOrThrow({ where: { id }, select: { title: true, state: true, closedAt: true, result: true, resultNote: true } });
     const w = p.write ?? {};
     const data: Prisma.InitiativeUncheckedUpdateInput = {};
     const changes: Prisma.InitiativeChangeCreateManyInput[] = [];
@@ -1895,7 +1928,8 @@ async function applyInitiatives(tx: Tx, actor: Actor, plan: Plan, goalIds: Map<s
     const was = initiativeState(cur);
     if (w.state && w.state !== was) {
       if (CLOSED_INITIATIVE.includes(w.state)) {
-        Object.assign(data, { result: RESULT_DB_OF[w.state], resultNote: w.result ?? p.x.result, closedAt: now });
+        // Итог, который пакет не менял или который правили в ресурсе, остаётся прежним (done и dropped меняются местами)
+        Object.assign(data, { result: RESULT_DB_OF[w.state], resultNote: "result" in w ? w.result : cur.closedAt ? cur.resultNote : p.x.result, closedAt: now });
         changes.push({ initiativeId: id, kind: "close", note: `${RESULT_WORDS[w.state]}: ${w.result ?? p.x.result ?? ""}`, byId: actor.personId, at: now });
       } else {
         if (cur.closedAt) {
