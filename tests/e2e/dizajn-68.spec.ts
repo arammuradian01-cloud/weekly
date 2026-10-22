@@ -101,7 +101,7 @@ test.afterAll(async () => {
 const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void>; contrast?: boolean }[] = [
   { name: "roadmap", path: "/roadmap", contrast: true, ready: async (page) => void (await expect(page.getByTestId(phone() ? "roadmap-list" : "roadmap-timeline")).toBeVisible()) },
   { name: "lyudi", path: "/people", contrast: true, ready: async (page) => void (await expect(page.getByRole("heading", { name: "Люди", level: 1 })).toBeVisible()) },
-  { name: "rukovoditelyu", path: "/people/leader", contrast: true, ready: async (page) => void (await expect(page.getByTestId("mt-teams-table")).toBeVisible()) },
+  { name: "rukovoditelyu", path: "/people/leader", contrast: true, ready: async (page) => void (await expect(page.getByTestId("mt-team-cards")).toBeVisible()) },
   { name: "iniciativy", path: "/initiatives", contrast: true, ready: async (page) => void (await expect(page.getByText("Подписка ОСАГО в приложении")).toBeVisible()) },
   { name: "celi", path: "/goals", contrast: true, ready: async (page) => void (await expect(page.getByTestId("goals-cards")).toBeVisible()) },
   { name: "weekly-lenta", path: "/weekly?week=2026-09-21", contrast: true, ready: async (page) => void (await expect(page.getByTestId("weekly-digest")).toBeVisible()) },
@@ -153,6 +153,14 @@ test("цели: шкала квартала включает отбор, кар�
   const bar = page.getByTestId("goals-quarter-bar");
   await expect(bar.getByRole("button", { name: /^Все\s*3$/ })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("goal-card-d68-g1")).toContainText("факт 141");
+  // Отборы взаимоисключающие: D1 без задач, D2 в риске, D3 достигнута; числа на кнопках дают все цели, «в работе» нет
+  await expect(bar.getByRole("button", { name: /Без задач\s*1/ })).toBeVisible();
+  await expect(bar.getByRole("button", { name: /Без свежего факта/ })).toHaveCount(0);
+  await expect(bar.getByTestId("goals-bar-rest")).toHaveCount(0);
+  // Ширина отрезка: доля от всех целей, одна цель из трёх
+  const share = await bar.getByTestId("goals-bar-risk").evaluate((el) => el.getBoundingClientRect().width / el.parentElement!.getBoundingClientRect().width);
+  expect(share).toBeGreaterThan(0.3);
+  expect(share).toBeLessThan(0.36);
   // Отбор «В риске»: остаётся одна карточка, риск одной строкой
   await bar.getByRole("button", { name: /В риске\s*1/ }).click();
   await expect(page.locator("[data-testid^='goal-card-']")).toHaveCount(1);
@@ -167,13 +175,16 @@ test("цели: шкала квартала включает отбор, кар�
   await expect(less).toHaveAttribute("aria-expanded", "true");
   await expect(less).toBeFocused();
   await expect(risky.getByRole("link").first()).toBeVisible();
-  // «Факт» у числовой цели открывает таблицу на этой цели
+  // «Факт» у числовой цели открывает таблицу с раскрытой строкой этой цели, поиск не трогает
   await bar.getByRole("button", { name: /^Все/ }).click();
   const numeric = page.getByTestId("goal-card-d68-g1");
   await numeric.getByRole("button", { name: /^Подробнее: D1\./ }).click();
   await numeric.getByRole("button", { name: "Факт" }).click();
   await expect(page.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" })).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("goal-row-D1")).toBeVisible();
+  await expect(page.getByTestId("goal-details")).toBeVisible();
+  await expect(page.getByLabel("Поиск цели")).toHaveValue("");
+  await expect(page.getByTestId("goal-row-D2")).toBeVisible();
   // Ссылка на цель (метка цели у задачи) открывает таблицу с раскрытой строкой
   await page.goto(`/goals#goal-d68-g1`);
   await expect(page.getByTestId("goal-details")).toBeVisible();
@@ -241,13 +252,21 @@ test("«Новая задача»: на телефоне одна кнопка �
 });
 
 test("«Моя неделя»: счётчики «Требует внимания» ведут к группам «Мне», срок сдачи крупно", async ({ page }) => {
-  await sql(`UPDATE tasks SET due = CURRENT_DATE - 3 WHERE number = (SELECT min(number) FROM tasks WHERE "ownerId" = ${person("reva")} AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`);
+  await sql(`UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date - 3 WHERE number = (SELECT min(number) FROM tasks WHERE "ownerId" = ${person("reva")} AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`);
   await enter(page, "Рева Тарас");
   const figures = page.getByTestId("my-attention-figures");
   await expect(figures).toBeVisible();
+  // Срок сдачи крупно: при прошедшем сроке подпись и значение красные (цвет у самих строк)
+  const deadline = page.getByTestId("my-deadline");
+  if ((await deadline.count()) && (await deadline.getAttribute("data-late"))) {
+    for (const line of await deadline.locator("span").all()) expect(await line.evaluate((el) => el.className)).toContain("text-danger-ink");
+  }
   await figures.getByRole("link", { name: /срок прошёл/ }).click();
   await expect(page).toHaveURL(/\/me#me-late$/);
   await expect(page.getByTestId("me-late")).toBeVisible();
+  // Заголовок группы не уходит под липкую шапку
+  const top = await page.locator("#me-late").evaluate((el) => el.getBoundingClientRect().top);
+  expect(top).toBeGreaterThanOrEqual(56);
 });
 
 test("приветствие: «Начать работу» выше формы почты", async ({ page }) => {
@@ -256,6 +275,36 @@ test("приветствие: «Начать работу» выше формы 
   const start = await page.getByTestId("welcome-start").boundingBox();
   const email = await page.locator("#welcome-email").boundingBox();
   expect(start && email && start.y < email.y).toBe(true);
+});
+
+test("карточка задачи: поле «Начало» задаётся и убирается тем, кто меняет срок; без прав только просмотр", async ({ page }) => {
+  const [own] = await sql(`SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1`);
+  const n = own!.number as number;
+  await sql(`UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date + 20, "startOn" = NULL WHERE number = $1`, [n]);
+  await enter(page, "Рева Тарас");
+  await page.goto(`/tasks/${n}`);
+  await page.getByRole("button", { name: `Задать начало задачи ${n}` }).click();
+  const input = page.getByLabel(`Начало задачи ${n}`);
+  const [{ d }] = await sql(`SELECT ((now() AT TIME ZONE 'Europe/Moscow')::date + 3)::text AS d`);
+  await input.fill(d as string);
+  await page.locator("form").filter({ has: input }).getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText(`Начало задачи ${n}:`).first()).toBeVisible();
+  await expect(page.getByTestId("task-start")).not.toContainText("Не задано");
+  const [saved] = await sql(`SELECT "startOn"::text AS s FROM tasks WHERE number = $1`, [n]);
+  expect(saved!.s).toBe(d);
+  // Другой лидер видит начало, но не меняет: кнопок нет
+  const ctx = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: phone(), hasTouch: phone() });
+  const other = await ctx.newPage();
+  await enter(other, "Логинова Светлана");
+  await other.goto(`/tasks/${n}`);
+  await expect(other.getByTestId("task-start")).toBeVisible();
+  await expect(other.getByRole("button", { name: new RegExp(`начало задачи ${n}`) })).toHaveCount(0);
+  await ctx.close();
+  // Убрать: начало снова от даты постановки
+  await page.getByRole("button", { name: `Убрать начало задачи ${n}` }).click();
+  await expect(page.getByText(`Начало задачи ${n} убрано`).first()).toBeVisible();
+  const [cleared] = await sql(`SELECT "startOn" FROM tasks WHERE number = $1`, [n]);
+  expect(cleared!.startOn).toBeNull();
 });
 
 // Экраны с таблицами и лентами, которые на 360 должны прокручиваться внутри себя

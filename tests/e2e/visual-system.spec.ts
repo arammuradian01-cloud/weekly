@@ -67,7 +67,7 @@ test("люди: команда и руководителю: цифры и таб
 
   await page.goto("/people/leader");
   await expect(page.getByRole("list", { name: /в цифрах/ })).toBeVisible();
-  await expect(page.getByTestId("mt-teams-table")).toBeVisible();
+  await expect(page.getByTestId("mt-team-cards")).toBeVisible();
   await expect(page.getByRole("heading", { name: /Требует внимания/ })).toBeVisible();
   await shot(page, "my-teams");
 });

@@ -82,8 +82,8 @@ test("цели Q4 из файла борда лидера, задача с ли�
   // В списке задач метка цели, группировка «По цели»
   await page.goto(`/tasks?q=${number}`);
   const tag = page.getByRole("link", { name: "Цель РТ-1: Подписка ОСАГО запущена и имеет P&L" }).locator("visible=true");
-  // Этап 68: от 1360 px и на телефоне цель строкой с кодом и названием, на 1024-1359 метка «Цель РТ-1»
-  await expect(tag).toContainText("РТ-1");
+  // Этап 68: от 1360 px и на телефоне цель строкой с кодом и названием (на 1024-1359 прежняя метка «Цель РТ-1»)
+  await expect(tag).toHaveText("РТ-1 Подписка ОСАГО запущена и имеет P&L");
   await page.getByLabel("Группировать").selectOption("goal");
   await expect(page.getByText("Цель РТ-1. Подписка ОСАГО запущена и имеет P&L").locator("visible=true").first()).toBeVisible();
   await shot(page, "tasks-tag");
