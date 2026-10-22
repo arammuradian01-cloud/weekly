@@ -153,7 +153,10 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
             <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-field" aria-hidden="true">
               <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
             </div>
-            <span className={cn("shrink-0 text-caption", g.progress.total ? "font-semibold text-ink" : "text-warning-ink")}>{goalTasksText(g.progress.done, g.progress.total)}</span>
+            {/* «Задач пока нет» предупреждением только у цели в работе: у закрытой цели задачи уже не нужны */}
+            <span className={cn("shrink-0 text-caption", g.progress.total ? "font-semibold text-ink" : g.result === "IN_PROGRESS" ? "text-warning-ink" : "text-muted")}>
+              {goalTasksText(g.progress.done, g.progress.total)}
+            </span>
           </div>
         </div>
       )}
