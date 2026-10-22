@@ -820,6 +820,8 @@ model Week {
   snapshot   WeekSnapshot?
   meetings   Meeting[]
   forecasts  Forecast[]
+  /// Weekly команд по блокам (этап 66)
+  teamReports TeamWeeklyReport[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -1211,10 +1213,48 @@ model Team {
   ratingBoxes  MeetingRatingBox[]
   initiatives  Initiative[]
   joinRequests TeamJoinRequest[]
+  /// Weekly по смысловым блокам (этап 66): шаблон блоков команды и собранные отчёты команды по неделям
+  weeklyTemplate TeamWeeklyTemplate?
+  weeklyReports  TeamWeeklyReport[]
 
   @@index([leaderId])
   @@index([parentId])
   @@map("teams")
+}
+
+/// Шаблон смысловых блоков weekly команды (этап 66): какие блоки и в каком порядке. Нет строки: weekly команды как раньше.
+/// Задаёт руководитель команды, руководитель выше или режим управления. Люди без связи: шаблон переживает выключение автора
+model TeamWeeklyTemplate {
+  teamId      String   @id
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// [{ key, title }]: стандартные блоки (news, products, risks...) и свои (c:...)
+  blocks      Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("team_weekly_templates")
+}
+
+/// Weekly команды по блокам за неделю (этап 66): отчёт, который руководитель собрал из weekly своей команды и отправил
+/// своему руководителю (событие в «Мне», как отправка CEO). Блоки в том же виде, что у отчёта CEO
+model TeamWeeklyReport {
+  id           String    @id @default(cuid())
+  teamId       String
+  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  weekId       String
+  week         Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  blocks       Json
+  updatedById  String?
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  /// Отправлен руководителю: когда, кем и кому [{ id, name }], что ушло (блоки)
+  sentAt       DateTime? @db.Timestamptz(3)
+  sentById     String?
+  sentTo       Json      @default("[]")
+  sentSnapshot Json?
+
+  @@unique([teamId, weekId])
+  @@index([weekId])
+  @@map("team_weekly_reports")
 }
 
 /// Руководитель команды просит человека из другой ветки (этап 53). Человек входит в команду, когда согласится его

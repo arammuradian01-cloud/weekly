@@ -18,7 +18,7 @@ import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections 
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
 import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
-import { cleanBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { cleanBlocks, isBlockKey, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
@@ -110,6 +110,7 @@ export function toEntryDto(e: EntryRow): WeeklyEntry {
     taskNumber: e.tasks[0]?.number,
     updatedAt: e.updatedAt.toISOString(),
     ...(e.factKey ? { factKey: e.factKey } : {}),
+    ...(e.section ? { section: e.section } : {}),
     ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
     ...(e.comments.length ? { comments: e.comments.map(commentDto) } : {}),
     ...(e.reactions.length ? { reactions: e.reactions.map(reactionDto) } : {}),
@@ -432,6 +433,11 @@ export type EntryInput = {
   /** Запись из факта недели (этап 22): ставит только сервер, из экрана не приходит */
   factKey?: string;
   /**
+   * Смысловой блок по шаблону команды (этап 66): news, products, risks, c:... null: снять. Не передали: как было.
+   * Это подсказка для отчёта команды по блокам: блок чужого шаблона отчёт просто разложит по смыслу
+   */
+  section?: string | null;
+  /**
    * Ключ черновика новой записи с устройства (этап 26). Повтор с тем же ключом после обрыва связи правит уже созданную
    * запись, а не создаёт вторую
    */
@@ -527,6 +533,7 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       next,
       help,
       links: links as unknown as Prisma.InputJsonValue,
+      ...(input.section !== undefined ? { section: typeof input.section === "string" && isBlockKey(input.section) ? input.section : null } : {}),
     };
     // Черновик с устройства начат со старой версии: если на сервере уже другой текст, поверх не пишем. Тот же текст
     // (ответ на прошлую отправку потерялся по дороге) не конфликт
@@ -626,6 +633,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       sortOrder: existing.sortOrder,
       importBatch: existing.importBatch,
       factKey: existing.factKey,
+      section: existing.section,
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
       requestIds: existing.helpRequests.map((r) => r.id),
@@ -687,6 +695,7 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
           snapshot.factKey && !(await tx.weeklyEntry.findFirst({ where: { weekId: snapshot.weekId, authorId: snapshot.authorId, factKey: snapshot.factKey }, select: { id: true } }))
             ? snapshot.factKey
             : null,
+        section: snapshot.section ?? null,
         createdAt: new Date(snapshot.createdAt),
         // События об упоминаниях удалились вместе с записью: следующая правка упомянет людей заново
         mentions: [],

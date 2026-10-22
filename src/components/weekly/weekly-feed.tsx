@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutList, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, plural } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
@@ -239,6 +239,14 @@ export function WeeklyFeed({
             {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
           </Link>
           {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
+          {/* Этап 66: отчёт команды по смысловым блокам и шаблон блоков у руководителя команды */}
+          {teamWeek ? (
+            <Link href={`/weekly/team-report?team=${encodeURIComponent(teamWeek.id)}&week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
+              <LayoutList className="h-4 w-4" aria-hidden="true" />
+              <span className="sm:hidden">По блокам</span>
+              <span className="hidden sm:inline">Отчёт по блокам</span>
+            </Link>
+          ) : null}
           {manage ? <WeekLock week={{ ...week, closed: data.departmentClosed ?? week.closed }} /> : null}
         </div>
       </PageHeader>
