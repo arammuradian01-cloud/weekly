@@ -5,8 +5,9 @@ import { enter, enterByLink, enterManagement, resetDatabase } from "./helpers";
 // Этап 67: импорт наполнения. Владелец при личном входе в режиме управления выбирает файл пакета в «Настройках»
 // (синтетический tests/fixtures/content-import/package.json, данные выдуманные), видит предпросмотр: что добавится,
 // обновится и пропустится, кого нет в ресурсе. Загружает по кнопке, новые задачи видны в списке задач. Повторный
-// выбор того же файла: загружать нечего. Без режима управления, по общему логину и администратору раздела нет,
-// обработчик отвечает отказом. Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
+// выбор того же файла: загружать нечего. Кадровые сведения и решение без команды в списке «не загрузятся», вероятные
+// дубли пропускаются, пока их не включить. Без режима управления, по общему логину и администратору раздела нет,
+// обработчик отвечает отказом, без входа 401 текстом. Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -44,6 +45,9 @@ test("владелец видит предпросмотр, загружает �
   await expect(preview.getByTestId("content-import-goals")).toHaveText("Цели: добавится 2, обновится 0, пропустится 0");
   await expect(preview.getByTestId("content-import-links")).toHaveText("Связи задач с целями: добавится 2, обновится 0, пропустится 0");
   await expect(preview.getByTestId("content-import-missing-people")).toContainText("Иванов Пётр, Сидоров Никто");
+  await expect(preview.getByTestId("content-import-errors")).toHaveCount(0);
+  await expect(preview.getByTestId("content-import-duplicates")).toHaveCount(0);
+  await expect(preview.getByText(/узнают о новых открытых задачах в «Мне»: ответственные, соисполнители/)).toBeVisible();
   await preview.getByText(/Подробнее: что пропустится и почему/).click();
   await expect(preview.getByTestId("content-import-notes")).toContainText("ответственный «Иванов Пётр» не найден в ресурсе");
   await shot(page, "preview");
@@ -85,7 +89,47 @@ test("пакет с ошибками: список ошибок, база не �
   await shot(page, "errors");
 });
 
+test("кадровые сведения и решение без команды не загружаются, вероятные дубли пропускаются, пока их не включить", async ({ page }) => {
+  test.setTimeout(150_000);
+  await enterByLink(page, "muradyan");
+  await enterManagement(page, "owner");
+  await page.goto("/settings#content-import");
+  const section = page.getByTestId("content-import");
+  await section.locator("#content-import-file").setInputFiles(PACKAGE);
+  await section.getByTestId("content-import-apply").click();
+  await expect(section.getByTestId("content-import-done")).toBeVisible();
+
+  // Второй пакет: копия первой задачи под новым ключом (вероятный дубль задачи 52), кадровая запись, решение без команды
+  const next = JSON.parse(readFileSync(PACKAGE, "utf8")) as { tasks: Record<string, unknown>[]; decisions: Record<string, unknown>[]; links: unknown[] };
+  next.tasks.push({ ...next.tasks[0], key: "task.test.open-copy" });
+  next.tasks.push({ key: "task.test.hr-1", title: "Пересмотреть оклады аналитиков", outcome: "Новые оклады", owner: "Рева Тарас", direction: "product", due: "2026-12-01" });
+  next.decisions.push({ key: "decision.test.no-team", text: "Решение без команды", date: "2026-10-20" });
+  await page.goto("/settings#content-import");
+  await page.getByTestId("content-import").locator("#content-import-file").setInputFiles({ name: "next.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(next)) });
+  const preview = page.getByTestId("content-import-preview");
+  await expect(preview.getByTestId("content-import-tasks")).toHaveText("Задачи: добавится 0, обновится 0, пропустится 7");
+  const errors = preview.getByTestId("content-import-errors");
+  await expect(errors).toContainText("Задача «Пересмотреть оклады аналитиков»: кадровые сведения («оклады» в поле «Задача»)");
+  await expect(errors).toContainText("Решение «Решение без команды»: нет команды");
+  await expect(preview.getByTestId("content-import-duplicates")).toContainText("похожа на задачу 52");
+  await expect(preview.getByTestId("content-import-apply")).toHaveText("Нечего загружать");
+  await shot(page, "errors-duplicates");
+
+  // Владелец включает дубли: предпросмотр пересчитан, копия загрузится
+  await preview.getByTestId("content-import-with-duplicates").check();
+  await expect(page.getByTestId("content-import-preview").getByTestId("content-import-tasks")).toHaveText("Задачи: добавится 1, обновится 0, пропустится 6");
+  await expect(page.getByTestId("content-import-duplicates")).toContainText("загрузится, как вы выбрали");
+  await page.getByTestId("content-import-apply").click();
+  await expect(page.getByTestId("content-import-done")).toBeVisible();
+});
+
 test("без режима управления, по общему логину и администратору раздела нет, обработчик отказывает", async ({ page, browser }) => {
+  // Без входа: обработчик идёт мимо proxy и отвечает 401 текстом, а не перенаправлением на вход
+  const anonymous = await newPage(browser, page);
+  const anon = await anonymous.request.post("/api/content-import?mode=preview", { headers: { "Content-Type": "application/json" }, data: readFileSync(PACKAGE), maxRedirects: 0 });
+  expect(anon.status()).toBe(401);
+  expect((await anon.json()).error).toBe("Вход больше не действует: войдите заново и загрузите пакет ещё раз");
+
   // Владелец лично, но без режима управления: настройки закрыты
   await enterByLink(page, "muradyan");
   const res = await page.request.post("/api/content-import?mode=preview", { headers: { "Content-Type": "application/json" }, data: readFileSync(PACKAGE) });

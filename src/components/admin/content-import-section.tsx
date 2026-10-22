@@ -2,7 +2,8 @@
 
 // Импорт наполнения (этап 67): владелец при личном входе в режиме управления загружает пакет с задачами, решениями,
 // целями и связями задач с целями, собранный из истории проекта. Сначала предпросмотр: сколько добавится, обновится
-// и пропустится, кого и каких команд нет в ресурсе. Потом загрузка по подтверждению. Загрузка ничего не удаляет,
+// и пропустится, кого и каких команд нет в ресурсе, что не загрузится и почему, вероятные дубли того, что уже есть в
+// ресурсе (по умолчанию пропускаются, их можно включить). Потом загрузка по подтверждению. Загрузка ничего не удаляет,
 // повторная загрузка того же пакета ничего не дублирует
 
 import { useId, useState } from "react";
@@ -12,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { FileField } from "@/components/ui/file-field";
 import { FormError } from "@/components/ui/field";
 import { plural } from "@/domain/dates";
-import { PACKAGE_MAX_BYTES } from "@/lib/content-import/limits";
+import { PACKAGE_MAX_BYTES, PACKAGE_MAX_LABEL } from "@/lib/content-import/limits";
 
 type Counts = { add: number; update: number; skip: number };
 type Preview = {
@@ -23,16 +24,21 @@ type Preview = {
   links: Counts;
   missingPeople: string[];
   missingTeams: string[];
-  notes: { what: string; text: string }[];
+  errors: Line[];
+  warnings: Line[];
+  duplicates: Line[];
+  withDuplicates: boolean;
+  notes: Line[];
   notified: number;
 };
+type Line = { what: string; text: string };
 type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; problems?: string[] };
 
-async function post<T>(mode: "preview" | "apply", file: File): Promise<Answer<T>> {
+async function post<T>(mode: "preview" | "apply", file: File, duplicates: boolean): Promise<Answer<T>> {
   let res: Response;
   try {
-    res = await fetch(`/api/content-import?mode=${mode}`, { method: "POST", body: await file.text(), headers: { "Content-Type": "application/json" } });
+    res = await fetch(`/api/content-import?mode=${mode}${duplicates ? "&duplicates=1" : ""}`, { method: "POST", body: await file.text(), headers: { "Content-Type": "application/json" } });
   } catch {
     return { ok: false, error: "Нет связи с сервером: пакет не отправился" };
   }
@@ -54,6 +60,18 @@ function line(c: Counts): string {
   return `добавится ${c.add}, обновится ${c.update}, пропустится ${c.skip}`;
 }
 
+function Lines({ items, testId }: { items: Line[]; testId: string }) {
+  return (
+    <ul className="m-0 mt-2 flex list-disc flex-col gap-1 pl-5" data-testid={testId}>
+      {items.map((n, i) => (
+        <li key={i}>
+          {n.what}: {n.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ContentImportSection() {
   const headingId = useId();
   const router = useRouter();
@@ -64,6 +82,8 @@ export function ContentImportSection() {
   const [busy, setBusy] = useState<"preview" | "apply" | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [problems, setProblems] = useState<string[]>([]);
+  // Вероятные дубли по умолчанию пропускаются; владелец может включить их загрузку
+  const [duplicates, setDuplicates] = useState(false);
   // Новый круг поля файла после «Отменить»: тот же файл можно выбрать снова
   const [round, setRound] = useState(0);
 
@@ -74,16 +94,20 @@ export function ContentImportSection() {
     setProblems([]);
   };
 
-  const check = async (f: File | null) => {
+  // keep: пересчёт того же файла (включили или выключили дубли), прежний предпросмотр виден, пока не придёт новый
+  const check = async (f: File | null, withDuplicates = duplicates, keep = false) => {
     setFile(f);
-    reset();
+    if (keep) {
+      setError(undefined);
+      setProblems([]);
+    } else reset();
     if (!f) return;
     if (f.size > PACKAGE_MAX_BYTES) {
-      setError("Файл пакета больше 2 МБ: разделите его на части");
+      setError(`Файл пакета больше ${PACKAGE_MAX_LABEL}: разделите его на части`);
       return;
     }
     setBusy("preview");
-    const r = await post<Preview>("preview", f);
+    const r = await post<Preview>("preview", f, withDuplicates);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -97,7 +121,7 @@ export function ContentImportSection() {
     if (!file) return;
     setBusy("apply");
     setError(undefined);
-    const r = await post<Applied>("apply", file);
+    const r = await post<Applied>("apply", file, duplicates);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -127,7 +151,19 @@ export function ContentImportSection() {
         </p>
       </div>
       <div className="mt-5 flex max-w-2xl flex-col gap-4">
-        <FileField key={round} id="content-import-file" label="Файл пакета" accept=".json,application/json" fileName={file?.name ?? null} hint="JSON до 2 МБ" onChange={(f) => void check(f)} />
+        <FileField
+          key={round}
+          id="content-import-file"
+          label="Файл пакета"
+          accept=".json,application/json"
+          fileName={file?.name ?? null}
+          hint={`JSON до ${PACKAGE_MAX_LABEL}`}
+          onChange={(f) => {
+            // Новый файл: вероятные дубли снова пропускаются, пока их не включить
+            setDuplicates(false);
+            void check(f, false);
+          }}
+        />
         {busy === "preview" ? (
           <p className="text-small text-muted" role="status">
             Проверяем пакет
@@ -169,20 +205,48 @@ export function ContentImportSection() {
             ) : null}
             {!done && shown.notified ? (
               <p className="text-small text-muted">
-                {shown.notified} {plural(shown.notified, "человек узнает", "человека узнают", "человек узнают")} о новых открытых задачах в «Мне». О закрытых задачах из истории
-                событий не будет.
+                {shown.notified} {plural(shown.notified, "человек узнает", "человека узнают", "человек узнают")} о новых открытых задачах в «Мне»: ответственные, соисполнители и
+                руководители, которые согласуют задачи своих людей. О закрытых задачах из истории событий не будет.
               </p>
+            ) : null}
+            {shown.errors.length ? (
+              <div className="text-small text-danger-ink">
+                <p className="font-medium">Не загрузятся, пока их не исправят в пакете ({shown.errors.length}):</p>
+                <Lines items={shown.errors} testId="content-import-errors" />
+              </div>
+            ) : null}
+            {shown.warnings.length ? (
+              <div className="text-small text-ink">
+                <p className="font-medium">Загрузятся не так, как в пакете ({shown.warnings.length}):</p>
+                <Lines items={shown.warnings} testId="content-import-warnings" />
+              </div>
+            ) : null}
+            {shown.duplicates.length ? (
+              <div className="text-small text-ink">
+                <p className="font-medium">Похоже на то, что уже есть в ресурсе ({shown.duplicates.length}):</p>
+                <Lines items={shown.duplicates} testId="content-import-duplicates" />
+                {!done ? (
+                  <label className="mt-2 flex min-h-9 items-center gap-2 text-body text-ink">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={duplicates}
+                      disabled={!!busy}
+                      data-testid="content-import-with-duplicates"
+                      onChange={(e) => {
+                        setDuplicates(e.target.checked);
+                        void check(file, e.target.checked, true);
+                      }}
+                    />
+                    Загрузить и их
+                  </label>
+                ) : null}
+              </div>
             ) : null}
             {shown.notes.length ? (
               <details className="text-small text-ink">
                 <summary className="cursor-pointer font-medium">Подробнее: что пропустится и почему ({shown.notes.length})</summary>
-                <ul className="m-0 mt-2 flex list-disc flex-col gap-1 pl-5" data-testid="content-import-notes">
-                  {shown.notes.map((n, i) => (
-                    <li key={i}>
-                      {n.what}: {n.text}
-                    </li>
-                  ))}
-                </ul>
+                <Lines items={shown.notes} testId="content-import-notes" />
               </details>
             ) : null}
             {!done ? (
@@ -196,6 +260,7 @@ export function ContentImportSection() {
                   onClick={() => {
                     setFile(null);
                     setRound((r) => r + 1);
+                    setDuplicates(false);
                     reset();
                   }}
                 >

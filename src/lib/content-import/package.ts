@@ -9,9 +9,9 @@
 import { createHash } from "node:crypto";
 import type { IsoDate } from "@/domain/dates";
 
-import { PACKAGE_FORMAT, PACKAGE_MAX_BYTES, PACKAGE_MAX_ITEMS } from "./limits";
+import { PACKAGE_FORMAT, PACKAGE_LINK_TITLE_MAX, PACKAGE_MAX_BYTES, PACKAGE_MAX_ITEMS, PACKAGE_MAX_LABEL, PACKAGE_TITLE_MAX, PACKAGE_URL_MAX } from "./limits";
 
-export { PACKAGE_FORMAT, PACKAGE_MAX_BYTES, PACKAGE_MAX_ITEMS };
+export { PACKAGE_FORMAT, PACKAGE_MAX_BYTES, PACKAGE_MAX_ITEMS, PACKAGE_MAX_LABEL };
 
 export const IMPORT_STATUSES = ["in-progress", "clarify", "done", "partial", "failed", "cancelled"] as const;
 export type ImportStatus = (typeof IMPORT_STATUSES)[number];
@@ -77,6 +77,9 @@ export type PackageLink = {
   reason: string | null;
 };
 
+/** Запись пакета, которая не загрузится, пока её не исправят в файле: например, в ней кадровые сведения */
+export type ExcludedRecord = { kind: "task" | "decision" | "goal"; key: string; what: string; text: string };
+
 export type ContentPackage = {
   format: typeof PACKAGE_FORMAT;
   title: string | null;
@@ -85,6 +88,8 @@ export type ContentPackage = {
   tasks: PackageTask[];
   decisions: PackageDecision[];
   links: PackageLink[];
+  /** Записи с кадровыми сведениями: в пакете остаются (на них могут ссылаться другие записи), но не загружаются */
+  excluded: ExcludedRecord[];
 };
 
 /** Ошибка разбора пакета: текст показывается владельцу как есть */
@@ -102,9 +107,12 @@ function isRealDate(value: string): boolean {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
-/** Текст как его хранит ресурс: длинное тире и стрелки заменены дефисом, пробелы схлопнуты */
+/**
+ * Текст как его хранит ресурс: длинное тире и стрелки заменены дефисом, пробелы схлопнуты. Текстом считаются только
+ * строка и число: список или объект дают пустую строку (String() от глубоко вложенного списка уронил бы разбор)
+ */
 export function cleanText(value: unknown, keepLines = false): string {
-  const s = typeof value === "string" ? value : value === null || value === undefined ? "" : String(value);
+  const s = typeof value === "string" ? value : typeof value === "number" && Number.isFinite(value) ? String(value) : "";
   const dashed = s.replace(/[—–]/g, "-").replace(/\s*[→⟶⇒]\s*/g, " - ");
   if (!keepLines) return dashed.replace(/\s+/g, " ").trim();
   return dashed
@@ -114,6 +122,65 @@ export function cleanText(value: unknown, keepLines = false): string {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/** Значение для текста ошибки: строку и число показываем, остальное только видом (без String() от вложенных данных) */
+function shown(value: unknown): string {
+  if (typeof value === "string") return value.length > 60 ? `${value.slice(0, 59)}…` : value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return Array.isArray(value) ? "список" : value === null ? "пусто" : "не текст";
+}
+
+/** Короткая подпись записи для предпросмотра */
+export function shortText(text: string, max = 60): string {
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+// Кадровые сведения: зарплаты, оценки и судьбы людей в ресурс из пакета не попадают (как личные вкладки бордов лидеров,
+// src/lib/goals/leader-board.ts). Слово с начала, иначе «доклад» сойдёт за «оклад», а «апгрейд» за «грейд». Голая
+// «премия» не повод: это страховой термин. «Калибровка» только про оценки и людей: калибровка пула ОСАГО это модель
+const START = "(?:^|[^а-яa-z0-9])";
+const PERSONNEL = new RegExp(
+  `${START}(${[
+    "зарплат[а-я]*",
+    "оклад[а-я]*",
+    "зп(?![а-яa-z0-9])",
+    "грейд[а-я]*",
+    "калибровк[а-я]*\\s+(?:оцен|грейд|сотрудник|персонал)[а-я]*",
+    "декрет[а-я]*",
+    "больничн[а-я]*",
+    "увол[а-я]*",
+    "сокращени[а-я]*\\s+(?:штат|сотрудник|персонал)[а-я]*",
+    "оценк[а-я]*\\s+(?:сотрудник|персонал)[а-я]*",
+    "годов[а-я]*\\s+преми[а-я]*",
+    "бонус[а-я]*\\s+сотрудник[а-я]*",
+    "salary",
+  ].join("|")})`,
+);
+
+/** Кадровое слово в тексте или null */
+export function personnelMarker(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const m = PERSONNEL.exec(text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " "));
+  return m ? m[1]! : null;
+}
+
+function personnelHit(fields: [string, string | null][]): string | null {
+  for (const [label, text] of fields) {
+    const marker = personnelMarker(text);
+    if (marker) return `кадровые сведения («${marker}» в поле «${label}»): такие записи в ресурс не загружаются, уберите их из пакета`;
+  }
+  return null;
+}
+
+function validUrl(value: string): boolean {
+  if (!/^https?:\/\/\S+$/i.test(value)) return false;
+  try {
+    const u = new URL(value);
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 /** Каноническая запись: ключи по алфавиту. Отпечаток не зависит от порядка полей в файле */
@@ -176,7 +243,7 @@ class Reader {
     const v = raw[field];
     if (v === undefined || v === null || v === "") return fallback;
     if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) {
-      this.add(`«${label}»: «${String(v)}» не из списка (${allowed.join(", ")})`);
+      this.add(`«${label}»: «${shown(v)}» не из списка (${allowed.join(", ")})`);
       return fallback;
     }
     return v as T;
@@ -234,7 +301,7 @@ function keyOf(raw: Raw, r: Reader, label: string, seen: Set<string>, problems: 
  * не загружается вовсе: даже предпросмотр показывает только список ошибок
  */
 export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8")): { pkg: ContentPackage; problems: string[] } {
-  if (bytes > PACKAGE_MAX_BYTES) throw new PackageError("Файл пакета больше 2 МБ: разделите его на части");
+  if (bytes > PACKAGE_MAX_BYTES) throw new PackageError(`Файл пакета больше ${PACKAGE_MAX_LABEL}: разделите его на части`);
   let root: unknown;
   try {
     root = JSON.parse(text.replace(/^﻿/, ""));
@@ -245,6 +312,7 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   const r0 = root as Raw;
   if (r0.format !== PACKAGE_FORMAT) throw new PackageError(`Это не пакет наполнения: в поле format должно быть «${PACKAGE_FORMAT}»`);
   const problems: string[] = [];
+  const excluded: ExcludedRecord[] = [];
 
   const goalKeys = new Set<string>();
   const goals: PackageGoal[] = list(r0, "goals", problems).map((raw, i) => {
@@ -269,6 +337,13 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       parent: raw.parent === undefined || raw.parent === null ? null : r.goalRef(raw.parent, "Цель выше"),
     };
     if (!goal.team && !goal.owner) r.problems.push(`цель ${key}: нужна команда или владелец`);
+    const hr = personnelHit([
+      ["Цель", goal.title],
+      ["Описание", goal.description],
+      ["Метрика", goal.metric],
+      ["Целевое значение", goal.target],
+    ]);
+    if (hr) excluded.push({ kind: "goal", key, what: `Цель «${shortText(goal.title)}»`, text: hr });
     problems.push(...r.problems);
     return goal;
   });
@@ -278,15 +353,23 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     const r = new Reader(`задача ${i + 1}${typeof raw.key === "string" ? ` (${raw.key})` : ""}`);
     const key = keyOf(raw, r, `задача ${i + 1}`, taskKeys, problems);
     const src = raw.source && typeof raw.source === "object" && !Array.isArray(raw.source) ? (raw.source as Raw) : {};
+    if (raw.links !== undefined && raw.links !== null && !Array.isArray(raw.links)) r.problems.push(`задача ${key}: «Ссылки» должны быть списком`);
     const linksRaw = Array.isArray(raw.links) ? (raw.links as unknown[]).slice(0, 10) : [];
-    const links = linksRaw
-      .map((l) => (l && typeof l === "object" ? (l as Raw) : {}))
-      .map((l) => ({ title: cleanText(l.title) || null, url: cleanText(l.url) }))
-      .filter((l) => {
-        if (/^https?:\/\/\S+$/i.test(l.url)) return true;
-        r.problems.push(`задача ${key}: ссылка «${l.url}» не начинается с https://`);
-        return false;
-      });
+    // Те же правила, что у службы задач: подпись до 120 знаков, адрес до 500, только http и https
+    const links = linksRaw.flatMap((l, j) => {
+      if (!l || typeof l !== "object" || Array.isArray(l)) {
+        r.problems.push(`задача ${key}: ссылка ${j + 1} должна быть записью { "url": ... }`);
+        return [];
+      }
+      const title = r.str(l as Raw, "title", "Подпись ссылки", PACKAGE_LINK_TITLE_MAX);
+      const url = r.str(l as Raw, "url", "Адрес ссылки", PACKAGE_URL_MAX, { required: true });
+      if (!url) return [];
+      if (!validUrl(url)) {
+        r.problems.push(`задача ${key}: ссылка «${shortText(url)}» не начинается с https://`);
+        return [];
+      }
+      return [{ title, url }];
+    });
     const task: PackageTask = {
       key,
       title: r.str(raw, "title", "Задача", 120, { required: true }) ?? "",
@@ -310,6 +393,15 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     if (["done", "partial", "failed", "cancelled"].includes(task.status) && !task.resolution) {
       r.problems.push(`задача ${key}: для статуса «${task.status}» нужен итог или причина (resolution)`);
     }
+    const hr = personnelHit([
+      ["Задача", task.title],
+      ["Что нужно сделать", task.outcome],
+      ["Где сейчас", task.whereNow],
+      ["Итог или причина", task.resolution],
+      ["Подробнее об источнике", task.source.note],
+      ...task.links.map((l): [string, string | null] => ["Подпись ссылки", l.title]),
+    ]);
+    if (hr) excluded.push({ kind: "task", key, what: `Задача «${shortText(task.title)}»`, text: hr });
     problems.push(...r.problems);
     return task;
   });
@@ -331,6 +423,11 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       cancelReason: r.str(raw, "cancelReason", "Почему отменено", 300),
     };
     if (status === "cancelled" && !decision.cancelReason) r.problems.push(`решение ${key}: для отменённого решения нужна причина (cancelReason)`);
+    const hr = personnelHit([
+      ["Решение", decision.text],
+      ["Почему отменено", decision.cancelReason],
+    ]);
+    if (hr) excluded.push({ kind: "decision", key, what: `Решение «${shortText(decision.text)}»`, text: hr });
     problems.push(...r.problems);
     return decision;
   });
@@ -366,16 +463,13 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     else linked.set(t, l.key);
   }
 
+  const head = new Reader("пакет");
+  const title = head.str(r0, "title", "Название пакета", PACKAGE_TITLE_MAX);
+  const createdAt = head.str(r0, "createdAt", "Дата сборки пакета", 40);
+  problems.unshift(...head.problems);
+
   return {
-    pkg: {
-      format: PACKAGE_FORMAT,
-      title: cleanText(r0.title) || null,
-      createdAt: cleanText(r0.createdAt) || null,
-      goals,
-      tasks,
-      decisions,
-      links,
-    },
+    pkg: { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, excluded },
     problems,
   };
 }
