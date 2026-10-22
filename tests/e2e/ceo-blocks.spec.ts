@@ -37,6 +37,13 @@ function monday(shiftWeeks = 0): Date {
 /** Длинное имя ленты: подпись источника обрезается многоточием и не даёт горизонтальной прокрутки на телефоне */
 const LONG_SOURCE = "Агентство страховых новостей: лента рынка страхования и финансов";
 
+/**
+ * Отчёт CEO отчётной недели. Без недели в адресе страница открывает последнюю неделю с записями weekly (этап 27), а в
+ * тестовой базе записи из Bord лежат в старых неделях: новости этой недели туда не попали бы. Понедельник этой недели
+ * сервер сам сдвигает на отчётную неделю, если она раньше
+ */
+const reportingUrl = () => `/ceo-report?week=${monday(0).toISOString().slice(0, 10)}`;
+
 const STANDARD = ["Новости рынка и команды", "Неделя к неделе", "Месяц: к прошлому году, к прошлому месяцу, план продаж", "Конкуренты", "Продукты", "Партнёрский канал", "Риски", "План на неделю"];
 
 test.beforeEach(async () => {
@@ -69,7 +76,7 @@ test("этап 66: владелец собирает отчёт CEO по смы�
 
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
-  await page.goto("/ceo-report");
+  await page.goto(reportingUrl());
   const editor = page.getByTestId("ceo-editor");
   // Стандартный набор блоков в порядке отчёта CEO
   await expect(editor.getByRole("heading", { level: 2 })).toHaveText(STANDARD);
@@ -143,7 +150,7 @@ test("этап 66: цифры недели живые, поправленный 
   test.setTimeout(120_000);
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
-  await page.goto("/ceo-report");
+  await page.goto(reportingUrl());
   const wow = page.getByTestId("ceo-block-wow");
   await expect(wow).toBeVisible();
   // Строка руками в блоке цифр: блок помечен поправленным, сам больше не пересобирается
