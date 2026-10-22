@@ -1,9 +1,26 @@
 // За чужим прокси (например, GitHub Codespaces) Next.js отклоняет отправку форм с другого домена.
-// Разрешённые домены задаются переменной SERVER_ACTIONS_ALLOWED_ORIGINS через запятую
-const allowedOrigins = (process.env.SERVER_ACTIONS_ALLOWED_ORIGINS ?? "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
+// Разрешённые домены задаются переменной SERVER_ACTIONS_ALLOWED_ORIGINS через запятую.
+// Этап 69: сюда же сами попадают адреса ресурса, основной из APP_URL и дополнительные из APP_ALIASES. Обычно Next и
+// без них видит адрес запроса в Host или X-Forwarded-Host, но если прокси хостинга подменит заголовок, формы на своём
+// домене не начнут отказывать. Конфиг читается при запуске сервера, поэтому новые переменные действуют после перезапуска
+const hostOf = (value) => {
+  const v = value.trim().replace(/\/+$/, "");
+  if (!v) return null;
+  try {
+    return new URL(/^https?:\/\//i.test(v) ? v : `https://${v}`).host;
+  } catch {
+    return null;
+  }
+};
+const allowedOrigins = [
+  ...new Set([
+    ...(process.env.SERVER_ACTIONS_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    ...[process.env.APP_URL ?? "", ...(process.env.APP_ALIASES ?? "").split(",")].map(hostOf).filter(Boolean),
+  ]),
+];
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
