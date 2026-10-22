@@ -243,7 +243,8 @@ test("настройки: «Не сохранено» под людьми, «О�
   // Уход со страницы: браузер переспрашивает, ссылка внутри приложения спрашивает подтверждение и остаётся на месте
   expect(await leaving()).toBe(true);
   const dialog = page.waitForEvent("dialog");
-  const tasksLink = page.getByRole("navigation", { name: "Разделы" }).filter({ visible: true }).first().getByRole("link", { name: "Задачи", exact: true });
+  // Меню разделов по точному имени: оглавление настроек называется «Разделы страницы» и на телефоне стоит выше
+  const tasksLink = page.getByRole("navigation", { name: "Разделы", exact: true }).filter({ visible: true }).first().getByRole("link", { name: "Задачи", exact: true });
   // Щелчок ждёт ответа на вопрос: сначала вопрос, потом сам щелчок
   const clicking = tasksLink.click();
   const asked = await dialog;
