@@ -602,7 +602,8 @@ function PeopleView({
               ) : reporting ? (
                 <p className="mt-2 text-body text-muted">{state === "not-started" ? "Weekly ещё не начат" : "Главная фраза пока не написана"}</p>
               ) : null}
-              {weekly?.thanks && open ? (
+              {/* Благодарность видна и у свёрнутой карточки: короткая строка, как главная фраза */}
+              {weekly?.thanks ? (
                 <p className="mt-1.5 text-body text-ink">{weekly.thanks}</p>
               ) : null}
               {collapsible ? (
