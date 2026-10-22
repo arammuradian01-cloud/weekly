@@ -74,10 +74,9 @@ export function Legend({ items }: { items: LegendItem[] }) {
  * Подсказка и активный столбик: мышь показывает по наведению, палец по касанию (повторное касание прячет), стрелки
  * двигают по точкам, когда график в фокусе
  */
-function useActive(n: number) {
+function useActive(n: number, box: React.RefObject<HTMLDivElement | null>) {
   const [active, setActive] = useState<number | null>(null);
   const touch = useRef(false);
-  const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (active === null || !touch.current) return;
     const away = (e: PointerEvent) => {
@@ -85,7 +84,7 @@ function useActive(n: number) {
     };
     document.addEventListener("pointerdown", away);
     return () => document.removeEventListener("pointerdown", away);
-  }, [active]);
+  }, [active, box]);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (!n) return;
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
@@ -97,7 +96,6 @@ function useActive(n: number) {
     } else if (e.key === "Escape") setActive(null);
   };
   const boxProps = {
-    ref: box,
     tabIndex: 0,
     onKeyDown,
     onFocus: () => setActive((a) => a ?? (n ? n - 1 : null)),
@@ -221,7 +219,7 @@ const H_COL = 200;
 export function Columns({ items, format, label, prevLabel = "год назад", height = H_COL }: { items: Column[]; format: (v: number) => string; label: string; prevLabel?: string; height?: number }) {
   const [ref, W] = useWidth<HTMLDivElement>();
   const n = items.length;
-  const { active, boxProps, hover } = useActive(n);
+  const { active, boxProps, hover } = useActive(n, ref);
   const vals = items.flatMap((c) => [c.value, c.prev]).filter((v): v is number => typeof v === "number");
   const { lo, hi, ticks } = niceScale(Math.min(0, ...vals), Math.max(0, ...vals));
   const PAD = { l: 56, r: 10, t: 16, b: 24 };
@@ -230,7 +228,6 @@ export function Columns({ items, format, label, prevLabel = "год назад",
   const slot = (W - PAD.l - PAD.r) / Math.max(1, n);
   const cx = (i: number) => PAD.l + slot * i + slot / 2;
   const bw = Math.max(2, Math.min(24, slot * 0.62));
-  const base = y(0);
   const show = axisEvery(n, W - PAD.l - PAD.r);
   const lastIdx = items.map((c, i) => (c.value !== null && !c.partial ? i : -1)).filter((i) => i >= 0).pop() ?? -1;
   const bar = (i: number, v: number) => {
@@ -326,7 +323,7 @@ export function Lines({
 }) {
   const [ref, W] = useWidth<HTMLDivElement>();
   const n = x.length;
-  const { active, setActive, boxProps, touch } = useActive(n);
+  const { active, setActive, boxProps, touch } = useActive(n, ref);
   const vals = series.flatMap((s) => s.values).filter((v): v is number => typeof v === "number");
   if (reference !== undefined) vals.push(reference);
   const min = vals.length ? Math.min(...vals) : 0;
@@ -463,7 +460,7 @@ export function Stacks({
 }) {
   const [ref, W] = useWidth<HTMLDivElement>();
   const n = x.length;
-  const { active, boxProps, hover } = useActive(n);
+  const { active, boxProps, hover } = useActive(n, ref);
   const pos = values.map((r) => r.reduce<number>((s, v) => s + Math.max(0, v ?? 0), 0));
   const neg = values.map((r) => r.reduce<number>((s, v) => s + Math.min(0, v ?? 0), 0));
   const dots = dot?.values.filter((v): v is number => typeof v === "number") ?? [];

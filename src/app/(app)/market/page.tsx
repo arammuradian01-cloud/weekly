@@ -9,13 +9,17 @@ import { PageHeader } from "@/components/page-header";
 import { EmptyState } from "@/components/empty-state";
 import { MarketFrame } from "@/components/market/market-frame";
 import { MarketUpload } from "@/components/market/market-upload";
+import { VersionLink } from "@/components/market/version-link";
+import { MarketNativePage } from "@/components/market/native/native-page";
 
 export const metadata: Metadata = { title: "Рынок" };
 
 /**
  * Рынок КАСКО и ОСАГО (этап 62): дашборд из пакета рынка, который загружает владелец. Раздел открыт владельцам и
  * людям из списка в «Настройках», только при личном входе. Остальным страница пишет, что раздел закрыт, без цифр.
- * Вкладки КАСКО и ОСАГО внутри самого дашборда, вкладка и фильтры в адресе
+ * Вкладки КАСКО и ОСАГО внутри самого дашборда, вкладка и фильтры в адресе.
+ * Этап 79 (решение Арама 23.10): новая версия раздела обычными страницами приложения по адресу /market?v=2, расчёты
+ * на сервере. Пока перенесены не все вкладки, по умолчанию открывается старая версия; переключатель в шапке
  */
 export default async function MarketPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requireContext();
@@ -31,6 +35,9 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
   }
   const [meta, sp] = await Promise.all([marketMeta(), searchParams]);
   const upload = canUploadMarket({ role: ctx.person.role, via: ctx.via });
+  const state = stateFromSearch(sp);
+  const native = state.params.v === "2";
+  const search = new URLSearchParams(Object.entries(sp).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : Array.isArray(v) && typeof v[0] === "string" ? [[k, v[0]]] : []))).toString();
   return (
     <>
       <PageHeader
@@ -45,10 +52,15 @@ export default async function MarketPage({ searchParams }: { searchParams: Promi
           )
         }
       >
+        {meta ? <VersionLink to={native ? "old" : "new"} initialSearch={search} /> : null}
         {upload ? <MarketUpload /> : null}
       </PageHeader>
       {meta ? (
-        <MarketFrame key={meta.stamp} stamp={meta.stamp} initial={stateFromSearch(sp)} />
+        native ? (
+          <MarketNativePage meta={meta} state={state} />
+        ) : (
+          <MarketFrame key={meta.stamp} stamp={meta.stamp} initial={state} />
+        )
       ) : (
         <EmptyState icon={ChartLine} title="Данных рынка пока нет" centered className="mx-auto max-w-xl">
           {upload ? "Загрузите пакет рынка: один файл JSON с кодом дашборда и наборами данных. Новый пакет целиком заменяет прежний." : "Владелец ещё не загрузил пакет рынка. Когда загрузит, дашборд появится здесь."}
