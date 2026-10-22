@@ -29,7 +29,8 @@ test("комментарий к задаче Ревы виден ему в «М�
   await expect(reva.getByText("Комментарий: «Тарас, посмотри мой расчёт по КАСКО»")).toBeVisible();
   // Строка события по дизайн-системе: кто сделал под текстом, время справа
   await expect(reva.getByText("Фатьянов Евгений", { exact: true })).toBeVisible();
-  await expect(reva.getByText(/^сегодня в \d\d:\d\d$/)).toBeVisible();
+  // «вчера» тоже верно: комментарий оставлен в 23:59 по Москве, а «Мне» открыли уже после полуночи (упало в CI на этапе 68)
+  await expect(reva.getByText(/^(сегодня|вчера) в \d\d:\d\d$/)).toBeVisible();
   await reva.screenshot({ path: `tests/e2e/screenshots/${test.info().project.name}-c-inbox.png`, fullPage: true });
 
   // «Напомнить завтра»: строка уходит, счётчик гаснет
