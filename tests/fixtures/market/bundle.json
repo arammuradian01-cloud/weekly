@@ -1,0 +1,50 @@
+{
+  "kind": "weekly-market-bundle",
+  "version": 1,
+  "files": {
+    "index.html": "<style>\n.fx { font-family: var(--font-anthropic-sans); color: var(--color-fg); display: flex; flex-direction: column; gap: var(--cds-gap-md); }\n.fx-tabs { display: flex; gap: var(--cds-gap-sm); border-bottom: 1px solid var(--color-border-line); }\n.fx-tab { font: inherit; background: none; border: 0; padding: var(--cds-pad-sm) var(--cds-pad-md); color: var(--color-fg-muted); cursor: pointer; }\n.fx-tab[aria-selected=\"true\"] { color: var(--color-fg); border-bottom: 2px solid var(--color-fg); }\n.fx-tile { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md); margin: 0; }\n.fx [hidden] { display: none !important; }\n</style>\n<div class=\"fx\">\n  <nav class=\"fx-tabs\" role=\"tablist\" aria-label=\"Рынок\">\n    <button class=\"fx-tab\" role=\"tab\" data-tab=\"kasko\">КАСКО</button>\n    <button class=\"fx-tab\" role=\"tab\" data-tab=\"osago\">ОСАГО</button>\n  </nav>\n  <section id=\"kasko\" role=\"tabpanel\">\n    <h1>Проверочный рынок КАСКО</h1>\n    <label>Показатель <select id=\"metric\"><option value=\"cnt\">Договоры</option><option value=\"prem\">Премии</option></select></label>\n    <p class=\"fx-tile\">Итого: <span id=\"k-total\">-</span></p>\n    <p id=\"k-status\">-</p>\n  </section>\n  <section id=\"osago\" role=\"tabpanel\" hidden>\n    <h1>Проверочный рынок ОСАГО</h1>\n    <p class=\"fx-tile\">Страховых в наборе: <span id=\"o-count\">-</span></p>\n  </section>\n  <div id=\"c-import\"><h2>Обновить данные НСИС по КАСКО</h2></div>\n</div>\n<script>\ndash.calc('k_total', { inputs: ['k_demo'], title: 'Итого по регионам', fn: (rows) => [{ cnt: rows.reduce((s, r) => s + r.cnt, 0), prem: rows.reduce((s, r) => s + r.prem, 0) }] });\ndash.calc('o_count', { inputs: ['o_demo'], title: 'Число страховых', fn: (rows) => [{ n: new Set(rows.map((r) => r.insurer)).size }] });\ndash.calc('broken', { inputs: ['k_demo'], title: 'Расчёт с ошибкой', fn: () => { throw new Error('проверка ошибки'); } });\n</script>\n<script src=\"app.js\"></script>\n",
+    "app.js": "(function () {\n  var tabs = ['kasko', 'osago'];\n  function show(tab, link) {\n    if (tabs.indexOf(tab) < 0) tab = 'kasko';\n    tabs.forEach(function (t) { document.getElementById(t).hidden = t !== tab; });\n    document.querySelectorAll('.fx-tab').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.tab === tab)); });\n    if (link) dash.setLink(tab);\n  }\n  document.querySelectorAll('.fx-tab').forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab, true); }); });\n  show(location.hash.slice(1), false);\n  var metric = document.getElementById('metric');\n  metric.addEventListener('change', function () { dash.setParams({ metric: metric.value }); });\n  function draw() {\n    var p = Object.assign({ metric: 'cnt' }, dash.params());\n    metric.value = p.metric;\n    var t = dash.data('k_total');\n    document.getElementById('k-total').textContent = t.status === 'ok' ? String(t.data[0][p.metric]) : t.status;\n    var o = dash.data('o_count');\n    document.getElementById('o-count').textContent = o.status === 'ok' ? String(o.data[0].n) : o.status;\n    document.getElementById('k-status').textContent = 'Расчёт с ошибкой: ' + dash.data('broken').status + ', d3: ' + (window.d3 && window.d3.stub ? 'заглушка' : 'нет');\n  }\n  dash.onData(draw);\n})();\n",
+    "d3.min.js": "window.d3 = { stub: true };\n"
+  },
+  "datasets": {
+    "k_demo": {
+      "title": "Проверочные договоры КАСКО",
+      "description": "Выдуманные цифры для тестов",
+      "rows": [
+        {
+          "region": "Север",
+          "cnt": 10,
+          "prem": 1.5
+        },
+        {
+          "region": "Юг",
+          "cnt": 20,
+          "prem": 2.5
+        },
+        {
+          "region": "Запад",
+          "cnt": 12,
+          "prem": 2
+        }
+      ]
+    },
+    "o_demo": {
+      "title": "Проверочные договоры ОСАГО",
+      "description": "Выдуманные цифры для тестов",
+      "rows": [
+        {
+          "insurer": "СК Альфа",
+          "cnt": 5
+        },
+        {
+          "insurer": "СК Бета",
+          "cnt": 7
+        },
+        {
+          "insurer": "СК Альфа",
+          "cnt": 1
+        }
+      ]
+    }
+  }
+}

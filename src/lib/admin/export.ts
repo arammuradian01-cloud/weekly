@@ -7,6 +7,7 @@ import { listTasks } from "@/lib/tasks/service";
 import { personRoleLabel } from "@/lib/roles";
 import { primaryOwnerSlug } from "@/lib/login/primary";
 import { AUDIT_ACTION_LABELS } from "@/lib/audit";
+import { MARKET_EVENTS } from "@/lib/journal";
 import { DICT_TITLES } from "./labels";
 import { priorityOf, stateLabel, statusOf, type EditableDictKind } from "@/domain/dictionaries";
 import { isoFromDbDate } from "@/lib/tasks/dates";
@@ -40,7 +41,11 @@ function sheet(wb: ExcelJS.Workbook, name: string, cols: Col[], rows: unknown[][
 
 export type ExportSummary = { tasks: number; entries: number; audit: number };
 
-export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSummary }> {
+/**
+ * market: открыт ли выгружающему раздел «Рынок» (этап 62). Нет: события рынка в лист «Журнал» не попадают, как и в
+ * журнале на экране. По умолчанию скрыты
+ */
+export async function buildExport(options: { market?: boolean } = {}): Promise<{ buffer: Buffer; summary: ExportSummary }> {
   const [tasks, people, dicts, weeks, reports, entries, ceo, audit, taskMeta, promiseRows, requests] = await Promise.all([
     listTasks({ archived: true }),
     prisma.person.findMany({ orderBy: [{ sortOrder: "asc" }], include: { defaultDirection: true } }),
@@ -52,7 +57,7 @@ export async function buildExport(): Promise<{ buffer: Buffer; summary: ExportSu
       orderBy: [{ week: { start: "asc" } }, { sortOrder: "asc" }],
     }),
     prisma.ceoReport.findMany({ include: { week: true, updatedBy: { select: { fullName: true } } }, orderBy: { week: { start: "asc" } } }),
-    prisma.auditLog.findMany({ orderBy: [{ at: "asc" }, { id: "asc" }] }),
+    prisma.auditLog.findMany({ where: options.market ? {} : { NOT: MARKET_EVENTS }, orderBy: [{ at: "asc" }, { id: "asc" }] }),
     prisma.task.findMany({ select: { number: true, weeklyEntry: { select: { what: true } } } }),
     // Итоги обещаний (этап 22): и те, чья запись потом удалена
     prisma.promiseReview.findMany({

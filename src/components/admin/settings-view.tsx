@@ -3,6 +3,8 @@
 import { ApprovalSection } from "./approval-section";
 import { NumbersAccessSection } from "./numbers-access-section";
 import type { NumbersAccessView } from "@/lib/plan/access";
+import { MarketSettingsSection } from "./market-settings-section";
+import type { MarketSettingsView } from "@/lib/market/access";
 import { NewsSettings, type NewsSettingsProps } from "@/components/news/news-settings";
 import type { ApprovalSetting } from "@/lib/tasks/approval-modes";
 import { csvCell } from "@/lib/csv";
@@ -108,6 +110,7 @@ export function SettingsView({
   weeks,
   approval,
   numbersAccess,
+  market,
   news,
 }: {
   owner: boolean;
@@ -129,6 +132,8 @@ export function SettingsView({
   approval?: { setting: ApprovalSetting; departments: { id: string; name: string }[] };
   /** Доступ к цифрам прогноза (этап 57): только владельцу */
   numbersAccess?: NumbersAccessView;
+  /** Рынок КАСКО и ОСАГО (этап 62): кто видит раздел и разбор на встрече, только владельцу */
+  market?: MarketSettingsView;
   /** Новости (этап 60): источники и ключевые слова, только владельцу */
   news?: NewsSettingsProps;
 }) {
@@ -142,6 +147,7 @@ export function SettingsView({
           { id: "login", label: "Вход и пароли" },
           ...(approval ? [{ id: "approval", label: "Согласование задач" }] : []),
           ...(numbersAccess ? [{ id: "numbers-access", label: "Доступ к цифрам" }] : []),
+          ...(market ? [{ id: "market", label: "Рынок КАСКО и ОСАГО" }] : []),
           ...(news ? [{ id: "news", label: "Новости" }] : []),
           { id: "stand", label: banner === "test" ? "Стенд и данные" : "Плашка и данные" },
         ]
@@ -185,6 +191,7 @@ export function SettingsView({
           {approval ? <ApprovalSection setting={approval.setting} departments={approval.departments} /> : null}
 
           {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
+          {market ? <MarketSettingsSection initial={market} /> : null}
           {news ? <NewsSettings {...news} /> : null}
 
           <Group id="login">

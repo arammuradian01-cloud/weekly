@@ -5,9 +5,10 @@ import type { PersonSlug, WeekKey } from "./types";
 
 export type MeetingStatusCode = "planned" | "live" | "done";
 
-export type AgendaKindCode = "follow-up" | "request" | "task-state" | "task-attention" | "question" | "proposal" | "initiative" | "person" | "manual";
+export type AgendaKindCode = "market" | "follow-up" | "request" | "task-state" | "task-attention" | "question" | "proposal" | "initiative" | "person" | "manual";
 
 export const AGENDA_KIND_LABELS: Record<AgendaKindCode, string> = {
+  market: "Рынок КАСКО и ОСАГО",
   "follow-up": "Поручение прошлой встречи",
   request: "Просьба",
   "task-state": "Риск или блокер",
@@ -19,10 +20,11 @@ export const AGENDA_KIND_LABELS: Record<AgendaKindCode, string> = {
   manual: "Пункт ведущего",
 };
 
-/** Блоки повестки по порядку: прошлые поручения, риски и помощь, лидеры по очереди, решения */
-export type AgendaBlock = "follow-up" | "attention" | "people" | "manual";
+/** Блоки повестки по порядку: рынок в начале месяца (этап 62), прошлые поручения, риски и помощь, лидеры по очереди, решения */
+export type AgendaBlock = "market" | "follow-up" | "attention" | "people" | "manual";
 
 export const AGENDA_BLOCKS: { code: AgendaBlock; label: string }[] = [
+  { code: "market", label: "Итоги месяца" },
   { code: "follow-up", label: "Поручения прошлой встречи" },
   { code: "attention", label: "Риски и помощь" },
   { code: "manual", label: "Добавлено ведущим" },
@@ -30,6 +32,7 @@ export const AGENDA_BLOCKS: { code: AgendaBlock; label: string }[] = [
 ];
 
 export function blockOf(kind: AgendaKindCode): AgendaBlock {
+  if (kind === "market") return "market";
   if (kind === "follow-up") return "follow-up";
   if (kind === "person") return "people";
   if (kind === "manual") return "manual";
@@ -91,6 +94,8 @@ export type MeetingView = {
   participants: PersonSlug[];
   /** Можно вести: начать, листать, отмечать, записывать решения, закрыть */
   canLead: boolean;
+  /** Открыт ли смотрящему раздел «Рынок» (этап 62): у пункта разбора рынка кнопка «Открыть рынок» */
+  canOpenMarket?: boolean;
   /** Время последней правки встречи: запоздавшее обновление страницы не откатывает свежий переход ведущего */
   version?: string;
 };
