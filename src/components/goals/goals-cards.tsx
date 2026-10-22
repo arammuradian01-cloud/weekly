@@ -1,8 +1,8 @@
 "use client";
 
-// Цели карточками (этап 68). Вид по умолчанию: цели по командам, в карточке код,
-// название, статус, путь к целевому значению (полоса Meter из таблицы) или доля закрытых задач, риск одной строкой,
-// владелец и задачи. Карточка раскрывается: описание и задачи цели. Таблица и дерево остались видами рядом.
+// Цели карточками (этап 68). Вид по умолчанию: цели по командам, внутри команды по владельцам (этап 68б), в карточке
+// код, название, статус, путь к целевому значению (полоса Meter из таблицы) или текст результата и доля закрытых
+// задач, риск одной строкой, владелец и задачи. Карточка раскрывается: описание и задачи цели. Таблица и дерево остались видами рядом.
 // Сверху шкала квартала: статусы одной полосой, подписи под ней включают отбор. Ссылка на цель (#goal-...) открывает
 // таблицу: там строка раскрывается с фактом и историей (goals-screen.tsx).
 
@@ -52,7 +52,8 @@ export function QuarterBar({ total, slices, onAll, allActive }: { total: number;
 type Actions = { onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; onFact: (g: GoalNode) => void; creatable: boolean };
 
 export function GoalsCards({ goals, ...actions }: { goals: GoalNode[] } & Actions) {
-  // Группы по командам в порядке первой встречи: сервис уже отдаёт департамент первым
+  // Группы по командам в порядке первой встречи, внутри по владельцам: у команды бывает 30 целей, сплошная сетка не
+  // читается. Сервис отдаёт департамент первым
   const groups: { team: string; name: string; goals: GoalNode[] }[] = [];
   for (const g of goals) {
     const group = groups.find((x) => x.team === g.team.id);
@@ -69,13 +70,46 @@ export function GoalsCards({ goals, ...actions }: { goals: GoalNode[] } & Action
               {gr.goals.length} {plural(gr.goals.length, "цель", "цели", "целей")}
             </span>
           </h3>
-          <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3">
-            {gr.goals.map((g) => (
-              <GoalCard key={g.id} goal={g} {...actions} />
-            ))}
-          </ul>
+          <OwnerGroups team={gr.team} goals={gr.goals} actions={actions} />
         </section>
       ))}
+    </div>
+  );
+}
+
+/** Цели команды по владельцам в порядке первой встречи. Один владелец: без подзаголовка, сеткой как раньше */
+function OwnerGroups({ team, goals, actions }: { team: string; goals: GoalNode[]; actions: Actions }) {
+  const byOwner: { key: string; name: string; goals: GoalNode[] }[] = [];
+  for (const g of goals) {
+    const key = g.owner?.slug ?? "";
+    const o = byOwner.find((x) => x.key === key);
+    if (o) o.goals.push(g);
+    else byOwner.push({ key, name: g.owner?.fullName ?? "Без владельца", goals: [g] });
+  }
+  const many = byOwner.length > 1;
+  return (
+    <div className="flex flex-col gap-5">
+      {byOwner.map((o) => {
+        const id = `gc-${team}-${o.key || "none"}`;
+        return (
+          <div key={o.key} className="flex flex-col gap-2" data-testid={`goal-owner-${team}-${o.key || "none"}`}>
+            {many ? (
+              <h4 id={id} className="m-0 flex items-baseline gap-2 text-small font-semibold text-text-secondary">
+                {o.name}
+                <span className="font-normal">
+                  {o.goals.length}
+                  <span className="sr-only"> {plural(o.goals.length, "цель", "цели", "целей")}</span>
+                </span>
+              </h4>
+            ) : null}
+            <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3" aria-labelledby={many ? id : undefined}>
+              {o.goals.map((g) => (
+                <GoalCard key={g.id} goal={g} {...actions} />
+              ))}
+            </ul>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -104,13 +138,22 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
           <Meter progress={g.numeric} risk={!!g.risk} />
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
-          <div className="flex justify-between gap-2 text-caption text-muted">
-            <span>{g.metric ? g.metric : "без числа"}</span>
-            <span className="font-semibold text-ink">{goalTasksText(g.progress.done, g.progress.total)}</span>
-          </div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-field" aria-hidden="true">
-            <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
+        // Этап 68б: у цели без числа главное текст целевого значения, то есть что считаем достижением. Доля закрытых
+        // задач полосой под ним, подпись справа
+        <div className="flex flex-col gap-2">
+          {g.target ? (
+            <p className="m-0 flex gap-2 rounded-control bg-field px-3 py-2 text-small text-ink" data-testid="goal-card-result">
+              <span className="shrink-0 font-semibold text-text-secondary">Результат</span>
+              <span className="line-clamp-3 [overflow-wrap:anywhere]" title={g.target}>
+                {g.target}
+              </span>
+            </p>
+          ) : null}
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-field" aria-hidden="true">
+              <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
+            </div>
+            <span className={cn("shrink-0 text-caption", g.progress.total ? "font-semibold text-ink" : "text-warning-ink")}>{goalTasksText(g.progress.done, g.progress.total)}</span>
           </div>
         </div>
       )}

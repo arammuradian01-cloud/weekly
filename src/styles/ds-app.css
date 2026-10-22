@@ -154,3 +154,7 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 .sv-segment--block .sv-segment__item { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; padding-block: 4px; }
 .sv-segment--tiles .sv-segment__item { flex-direction: column; gap: 4px; min-height: 56px; padding: 6px 4px; font-size: var(--text-caption); line-height: 1.2; }
 .sv-segment--tiles .sv-segment__item > span { overflow-wrap: anywhere; }
+/* Этап 68б: двойной класс, чтобы правило плиток победило правила сегмента из forms.css при любом порядке файлов:
+   плитки делят ширину поровну, подпись «Как в системе» переносится внутри своей плитки */
+.sv-segment.sv-segment--tiles { overflow: hidden; }
+.sv-segment.sv-segment--tiles .sv-segment__item { flex: 1 1 0; min-width: 0; max-width: 100%; white-space: normal; text-align: center; }

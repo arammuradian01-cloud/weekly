@@ -116,6 +116,8 @@ const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void
   { name: "vstrecha", path: "/weekly/meeting", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
   { name: "otchet-ceo", path: "/ceo-report", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Отчёт CEO", level: 1 })).toBeVisible()) },
   { name: "weekly-komandy", path: "/people/teams", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Люди", level: 1 })).toBeVisible()) },
+  // Этап 68б: подпись синхронизации короче
+  { name: "sinhronizaciya", path: "/sync", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Синхронизация", level: 1 })).toBeVisible()) },
 ];
 
 for (const theme of ["light", "dark"] as Theme[]) {
@@ -170,6 +172,33 @@ async function bgContrast(page: Page, a: string, b: string): Promise<number> {
   );
 }
 
+for (const theme of ["light", "dark"] as Theme[]) {
+  test(`вход (этап 68б): три плитки вместо расписания, подпись пространства, нейтральный пример логина: ${theme === "light" ? "светлая" : "тёмная"} тема`, async ({ page }) => {
+    await page.context().addCookies([{ name: "theme", value: theme, url: "http://localhost:3100" }]);
+    await page.goto("/login");
+    await expect(page.getByRole("heading", { name: "Итоги недели и задачи команды в одном месте", level: 1 })).toBeVisible();
+    await expect(page.getByText("Введите ваш логин и пароль", { exact: true })).toBeVisible();
+    // Пример логина не настоящий логин человека
+    await expect(page.getByText("Например ivanov или рабочая почта")).toBeVisible();
+    // Расписания недели словами больше нет
+    await expect(page.getByText(/До 18:00 понедельника|Weekly сдаём до 18:00/)).toHaveCount(0);
+    // Плитки декоративные: скрыты от диктора, на телефоне не показываются; подпись пространства внизу от 640 px
+    const showcase = page.getByTestId("login-showcase");
+    await expect(showcase).toHaveAttribute("aria-hidden", "true");
+    if (phone()) {
+      await expect(showcase).toBeHidden();
+      await expect(page.getByText("Рабочее пространство для членов команды")).toBeHidden();
+    } else {
+      await expect(showcase).toBeVisible();
+      await expect(showcase).toContainText("Итоги недели");
+      await expect(showcase).toContainText("Задачи");
+      await expect(showcase).toContainText("Встреча");
+      await expect(page.getByText("Рабочее пространство для членов команды")).toBeVisible();
+    }
+    await shot(page, theme, "vhod", { contrast: true });
+  });
+}
+
 test("цели: шкала квартала включает отбор, карточки по командам, «Подробнее» с клавиатуры, «Факт» открывает таблицу", async ({ page }) => {
   // На время проверки ещё две цели: закрыта частично и в работе с задачей (без риска, факт не нужен: цель текстовая)
   await sql(
@@ -178,6 +207,8 @@ test("цели: шкала квартала включает отбор, кар�
       ('d68-g5', $1, 'D5', 'Витрина ВЗР у партнёра', 'top', ${person("fatyanov")}, 'IN_PROGRESS', 5, now())`,
     [quarterNow()],
   );
+  // Этап 68б: у цели без числа текст результата крупно в карточке
+  await sql(`UPDATE goals SET target = 'Витрина открыта у двух банков-партнёров' WHERE id = 'd68-g5'`);
   await sql(`UPDATE tasks SET "goalId" = 'd68-g5', due = (now() AT TIME ZONE 'Europe/Moscow')::date + 10 WHERE number = (SELECT min(number) FROM tasks WHERE "ownerId" = ${person("fatyanov")} AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "goalId" IS NULL)`);
   try {
     await enter(page, "Мурадян Арам");
@@ -186,6 +217,14 @@ test("цели: шкала квартала включает отбор, кар�
     const bar = page.getByTestId("goals-quarter-bar");
     await expect(bar.getByRole("button", { name: /^Все\s*5$/ })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByTestId("goal-card-d68-g1")).toContainText("факт 141");
+    // Этап 68б: внутри команды цели по владельцам, у каждого подзаголовок с числом целей; у цели без числа текст результата
+    const reva = page.getByTestId("goal-owner-top-reva");
+    await expect(reva.getByRole("heading", { level: 4 })).toHaveText(/^Рева Тарас\s*1/);
+    await expect(reva.getByTestId("goal-card-d68-g2")).toBeVisible();
+    const textual = page.getByTestId("goal-card-d68-g5");
+    await expect(textual.getByTestId("goal-card-result")).toContainText("Результат");
+    await expect(textual.getByTestId("goal-card-result")).toContainText("Витрина открыта у двух банков-партнёров");
+    await expect(textual).toContainText("закрыто 0 из 1");
     // Отборы взаимоисключающие: D1 без задач, D2 в риске, D3 достигнута, D4 закрыта частично, D5 в работе
     for (const name of ["Достигнуты", "В риске", "Без задач", "Закрыты не полностью", "В работе"]) await expect(bar.getByRole("button", { name: new RegExp(`^${name}\\s*1$`) })).toBeVisible();
     await expect(bar.getByRole("button", { name: /Без свежего факта/ })).toHaveCount(0);

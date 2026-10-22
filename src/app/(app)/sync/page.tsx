@@ -146,7 +146,8 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader
         title="Синхронизация"
-        description="Цифры недели в ресурс, задачи в таблицу для просмотра. В Bord и отчёт ресурс не пишет"
+        // Этап 68б: одна строка. Что куда пишется, видно во вкладках связей
+        description="Ресурс читает цифры и задачи и выгружает задачи в таблицу для просмотра. В Bord и отчёт не пишет"
         figures={<StatusLine label="Состояние связей" items={[bordState, numbersState, mirrorState]} />}
         tabs={
           <PageTabs
