@@ -310,7 +310,8 @@ export function edgeScroll(
 ): { page: number; column: number } {
   if (pointer.x < rect.left || pointer.x > rect.right) return { page: 0, column: 0 };
   const step = edgeStep(pointer.y, Math.max(rect.top, 0), Math.min(rect.bottom, viewport));
-  const hidden = Math.ceil(rect.bottom - viewport);
+  // Доли точки не в счёт: у самого низа страницы окну их не докрутить, и колонка так и не крутилась бы
+  const hidden = Math.floor(rect.bottom - viewport);
   if (step > 0 && hidden > 0) return { page: Math.min(step, hidden), column: 0 };
   return { page: 0, column: scrollable ? step : 0 };
 }

@@ -281,6 +281,8 @@ describe("автопрокрутка колонки целей у краёв", (
     expect(first.page).toBeLessThanOrEqual(35);
     expect(first.column).toBe(0);
     expect(edgeScroll({ x: 555, y: 899 }, { ...col, bottom: 902 }, 900, true)).toEqual({ page: 2, column: 0 });
+    // Спрятано меньше точки: окно не трогаем, крутится колонка
+    expect(edgeScroll({ x: 555, y: 899 }, { ...col, bottom: 900.4 }, 900, true)).toEqual({ page: 0, column: edgeStep(899, 440, 900) });
     // Колонка видна целиком (прилипла к верху): окно стоит, крутится колонка, если ей есть куда
     const pinned = { top: 80, bottom: 884, left: 280, right: 830 };
     expect(edgeScroll({ x: 555, y: 872 }, pinned, 900, true).page).toBe(0);
