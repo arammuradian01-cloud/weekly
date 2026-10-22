@@ -10,10 +10,25 @@ export const ROLE_LABELS: Record<Role, string> = {
   EMPLOYEE: "Сотрудник",
 };
 
-/** Подпись роли человека (этап 52): владельцев несколько, главный подписан «Владелец», остальные «Совладелец» */
-export function personRoleLabel(role: Role, primaryOwner: boolean): string {
-  if (role === "OWNER" && !primaryOwner) return "Совладелец";
+/**
+ * Подпись роли человека (этап 52): владельцев несколько, главный подписан «Владелец», остальные «Совладелец».
+ * Этап 69: подпись владельца задаёт главный владелец (title), например «ex-Владелец». Права она не меняет
+ */
+export function personRoleLabel(role: Role, primaryOwner: boolean, title?: string | null): string {
+  if (role === "OWNER") {
+    const own = title?.trim();
+    if (own) return own;
+    if (!primaryOwner) return "Совладелец";
+  }
   return ROLE_LABELS[role];
+}
+
+/** Что нужно для подписи роли владельцев: главный владелец и подписи, которые задал главный (этап 69) */
+export type OwnerLabels = { primary: string | null; titles: Record<string, string> };
+
+/** Подпись роли человека по главному владельцу и подписям владельцев */
+export function roleLabelOf(person: { slug: string; role: Role }, owners: OwnerLabels): string {
+  return personRoleLabel(person.role, person.role === "OWNER" && person.slug === owners.primary, owners.titles[person.slug]);
 }
 
 /** Режим управления доступен только профилям владельца и администраторов */

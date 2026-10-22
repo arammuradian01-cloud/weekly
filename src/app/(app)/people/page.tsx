@@ -1,4 +1,4 @@
-import { primaryOwnerSlug } from "@/lib/login/primary";
+import { ownerLabels } from "@/lib/login/primary";
 import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { currentReportingKey, weeklyStates } from "@/lib/weekly/service";
@@ -24,7 +24,7 @@ export default async function TeamPage() {
       : "";
   return (
     <Section title={team.id ? team.name : "Команда"} hint={`Задачи и weekly каждого за отчётную неделю${rhythm}`}>
-      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} primaryOwner={await primaryOwnerSlug()} />
+      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} owners={await ownerLabels()} />
     </Section>
   );
 }
