@@ -165,4 +165,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "decision.delete": "Решение стёрто",
   "settings.marketAccess": "Доступ к рынку КАСКО и ОСАГО",
   "settings.marketMeeting": "Разбор рынка на встрече",
+  // Этап 80: фото и «О себе» в профиле. У фото без самой картинки, у текстов было и стало
+  "profile.photo.upload": "Фото загружено",
+  "profile.photo.remove": "Фото убрано",
+  "profile.about": "Изменено «О себе»",
 };

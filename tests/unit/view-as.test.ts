@@ -242,6 +242,8 @@ describe("по коду: изменения идут через проверку
       "myForecastAction",
       "planPeopleAction",
       "taskRequestsAction",
+      // Этап 80: фото и «О себе» в карточке человека
+      "personProfileAction",
       // Режим управления: свой отказ во время просмотра в managementContext, после конца просмотра можно (этап 63)
       "enterManagement",
       "exitManagement",

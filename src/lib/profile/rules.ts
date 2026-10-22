@@ -169,3 +169,35 @@ export function profileEditRefusal(editor: ProfileEditor, targetId: string): str
   if (editor.role === "OWNER" && editor.management === "OWNER") return null;
   return PROFILE_TEXTS.notYours;
 }
+
+export type PhotoAnswer = { ok: true; version: number } | { ok: false; error: string };
+
+/**
+ * Ответ обработчика загрузки фото в браузере: версия нового фото или понятный текст. Текст ошибки сервера (JSON
+ * {ok:false, error}) показывается как есть, ответ не JSON разбирается по статусу (401 вход закончился, 413 файл
+ * больше предела), остальное общим текстом
+ */
+export async function readPhotoAnswer(res: Response): Promise<PhotoAnswer> {
+  if (res.redirected) return { ok: false, error: PROFILE_TEXTS.signedOut };
+  const json = (res.headers.get("content-type") ?? "").includes("application/json");
+  const body = json ? ((await res.json().catch(() => null)) as Record<string, unknown> | null) : null;
+  if (body && typeof body === "object") {
+    const value = body.value as { version?: unknown } | undefined;
+    if (res.ok && body.ok === true && typeof value?.version === "number") return { ok: true, version: value.version };
+    if (body.ok === false && typeof body.error === "string" && body.error.trim()) return { ok: false, error: body.error };
+  }
+  if (res.status === 401) return { ok: false, error: PROFILE_TEXTS.signedOut };
+  if (res.status === 413) return { ok: false, error: PROFILE_TEXTS.tooBig };
+  return { ok: false, error: PROFILE_TEXTS.failed };
+}
+
+/** Проверка файла в браузере до отправки, по размеру и заявленному типу: сервер всё равно проверит по содержимому */
+export function pickedFileRefusal(file: { size: number; type: string; name: string }): string | null {
+  const size = imageSizeRefusal(file.size);
+  if (size) return size;
+  const type = file.type.toLowerCase();
+  if (type === "image/heic" || type === "image/heif" || /\.hei[cf]$/i.test(file.name)) return PROFILE_TEXTS.heic;
+  // Тип пустой у некоторых браузеров и файловых менеджеров: решит сервер
+  if (type && !AVATAR_ACCEPT.split(",").includes(type)) return PROFILE_TEXTS.wrongType;
+  return null;
+}

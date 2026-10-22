@@ -422,6 +422,8 @@ const READ = new Set([
   "planPeopleAction",
   "taskRequestsAction",
   "weekViewAction",
+  // Этап 80: фото и «О себе» в карточке человека
+  "personProfileAction",
 ]);
 /** Сам просмотр: выбор и начало отвечают «сначала выйдите из просмотра», выход (кнопкой и перед выходом из ресурса) проверен отдельно */
 const SPECIAL = new Set(["viewAsPeopleAction", "startViewAsAction", "stopViewAsAction", "endViewAsForLogoutAction"]);

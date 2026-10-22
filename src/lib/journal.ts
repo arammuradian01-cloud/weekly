@@ -28,7 +28,8 @@ export type JournalFilter = {
 };
 
 const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth.", "viewAs."];
-const SETTINGS_PREFIXES = ["password", "setup", "settings", "export"];
+// Этап 80: фото и «О себе» в профиле рядом с личными настройками (письма и уведомления тоже здесь)
+const SETTINGS_PREFIXES = ["password", "setup", "settings", "export", "profile.photo", "profile.about"];
 const KNOWN_PREFIXES = ["task.", "request.", "weekly.", "ceo.", "meeting.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
 
 function kindOf(action: string): JournalKind {
@@ -159,6 +160,8 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     }
     // Входы и ссылки: что случилось и с кем, «Человек: ...» здесь ничего не говорит
     if (entity === "person" && id && (action.startsWith("auth.") || action.startsWith("viewAs."))) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
+    // Этап 80: «Фото загружено: Рева Тарас», «Фото убрано: ...», «Изменено «О себе»: ...»
+    if (entity === "person" && id && (action.startsWith("profile.photo") || action.startsWith("profile.about"))) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
     if (entity === "person" && id) return `Человек: ${nameOf(id)}`;
     if (entity === "settings") {
       if (id === "stand.banner") return "Плашка над страницами";

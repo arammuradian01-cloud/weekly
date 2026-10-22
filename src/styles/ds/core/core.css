@@ -88,6 +88,8 @@
 .sv-avatar--sm { width: 24px; height: 24px; border-radius: 7px; font-size: 10px; }
 .sv-avatar--lg { width: 40px; height: 40px; font-size: var(--text-body); }
 .sv-avatar--xl { width: 56px; height: 56px; border-radius: var(--radius-card); font-size: var(--text-card); }
+/* Крупное фото (этап 80): карточка человека и профиль */
+.sv-avatar--2xl { width: 96px; height: 96px; border-radius: var(--radius-card); font-size: 30px; }
 .sv-avatar--round { border-radius: var(--radius-round); }
 /* Фото профиля (этап 80) поверх инициалов: та же форма, обрезка по центру. Картинка непрозрачная, инициалы под ней видны
    только пока она грузится или если не загрузилась */

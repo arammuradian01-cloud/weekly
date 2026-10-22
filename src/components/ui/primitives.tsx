@@ -36,7 +36,7 @@ export function Avatar({
 }: {
   text: string;
   name?: string;
-  size?: "xs" | "sm" | "md" | "lg" | "xl";
+  size?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
   /** Оставлено для совместимости: цвет теперь по имени */
   tone?: "navy" | "light";
   className?: string;

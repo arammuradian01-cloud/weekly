@@ -2,7 +2,8 @@
 
 // Карточка человека (этап 45): одна на все вкладки «Люди». В дереве структуры она стоит в центре схемы, из таблицы
 // команды и списка панели руководителя открывается выдвижной панелью. Данные из дерева подчинённых: должность,
-// подразделение, руководитель, команды, вакансии; ссылки на задачи, weekly и цели человека
+// подразделение, руководитель, команды, вакансии; ссылки на задачи, weekly и цели человека. Этап 80: крупное фото и
+// «О себе», «Чем могу помочь коллегам», Telegram из профиля человека
 
 import Link from "next/link";
 import { createContext, useContext, useState } from "react";
@@ -11,6 +12,8 @@ import { ChevronUp, UserRound } from "lucide-react";
 import type { PeopleTree, TreePerson } from "@/lib/org/people-tree";
 import { plural } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
+import { avatarPhoto } from "@/domain/people";
+import { PersonAbout, usePersonProfile } from "./person-about";
 import { Avatar } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlays";
@@ -52,6 +55,10 @@ export function PersonDetails({
   structureLink?: boolean;
 }) {
   const { teamPeople } = usePrototype();
+  // Фото и «О себе» грузятся при открытии карточки; пока грузятся, фото из снимка людей
+  const profileState = usePersonProfile(p.slug);
+  const loaded = profileState.profile;
+  const photo = loaded === undefined ? avatarPhoto(p.slug) : loaded?.avatar ? { slug: p.slug, version: loaded.avatar } : null;
   const manager = p.manager ? people[p.manager] : undefined;
   const functional = p.functional ? people[p.functional] : undefined;
   // Разбор задач на встрече идёт по очереди выбранной в шапке команды: ссылка только для её участников
@@ -67,14 +74,17 @@ export function PersonDetails({
   return (
     <>
       {compact ? (
-        <p className="text-body text-ink">
-          {[p.position, p.unit].filter(Boolean).join(", ") || "Должность не указана"}
-          {p.slug === me ? <span className="ml-2 text-caption text-text-secondary">это вы</span> : null}
-          <span className="block text-text-secondary">{reportsText(p)}</span>
-        </p>
+        <div className="flex items-start gap-4">
+          <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="2xl" photo={photo} />
+          <p className="min-w-0 flex-1 text-body text-ink">
+            {[p.position, p.unit].filter(Boolean).join(", ") || "Должность не указана"}
+            {p.slug === me ? <span className="ml-2 text-caption text-text-secondary">это вы</span> : null}
+            <span className="block text-text-secondary">{reportsText(p)}</span>
+          </p>
+        </div>
       ) : (
         <div className="flex flex-wrap items-start gap-3">
-          <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="lg" />
+          <Avatar text={initialsOf(p.fullName)} name={p.fullName} size="2xl" photo={photo} />
           <div className="min-w-0 flex-1 basis-56">
             <h2 ref={headRef} tabIndex={-1} className="scroll-mt-24 font-heading text-title-sm font-bold text-ink [overflow-wrap:anywhere] focus:outline-none">
               {p.fullName}
@@ -91,6 +101,7 @@ export function PersonDetails({
           ) : null}
         </div>
       )}
+      <PersonAbout state={profileState} slug={p.slug} fullName={p.fullName} mine={p.slug === me} compact={compact} />
       <dl className={cn("grid gap-x-6 gap-y-2 text-body sm:grid-cols-2", compact ? "mt-4" : "mt-3 border-t border-border pt-3")}>
         <div>
           <dt className="text-caption text-text-secondary">Руководитель</dt>

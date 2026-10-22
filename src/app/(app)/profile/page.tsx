@@ -24,6 +24,11 @@ import { feedFor } from "@/lib/calendar/service";
 import { CalendarFeedSettings } from "@/components/profile/calendar-feed";
 import { NewsPrefsForm } from "@/components/news/news-prefs";
 import { newsDirections, newsPrefsFor, personDirections } from "@/lib/news/service";
+import { personProfile } from "@/lib/profile/service";
+import { profileEditRefusal } from "@/lib/profile/rules";
+import { VIEW_AS_DENIED, VIEW_AS_ENDED } from "@/lib/view-as";
+import { PhotoEditor } from "@/components/profile/photo-editor";
+import { AboutForm } from "@/components/profile/about-form";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -48,7 +53,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const requested = TABS.find((t) => t === sp.tab) ?? "profile";
   const tab: ProfileTab = requested === "absences" && observer ? "profile" : requested;
   // Этап 50: грузится только то, что нужно открытой вкладке
-  const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed] = await Promise.all([
+  const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed, card] = await Promise.all([
     tab === "login" && ctx.via !== "TEAM" ? listDevices(ctx.person.id) : Promise.resolve([]),
     tab === "absences" && !observer ? upcomingAbsences(ctx.person.id) : Promise.resolve([]),
     tab === "absences" ? absenceWeeks() : Promise.resolve([]),
@@ -65,7 +70,16 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
     tab === "mail" && personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
     // По общему логину и наблюдателю состояние ссылки не отдаём: по нему видно, когда чужой календарь забирал данные
     tab === "profile" && personal && !observer ? feedFor(ctx.person.id) : Promise.resolve(null),
+    // Фото и «О себе» (этап 80)
+    tab === "profile" ? personProfile(ctx.person.slug) : Promise.resolve(null),
   ]);
+  // Фото и «О себе» меняются при личном входе; в просмотре «Смотреть как» и после него, пока владелец не вернулся, нет.
+  // Правило то же, что на сервере: любой вход, кроме личного, закрывает правку
+  const aboutLocked = ctx.viewAs
+    ? VIEW_AS_DENIED
+    : ctx.viewAsEnded
+      ? VIEW_AS_ENDED
+      : profileEditRefusal({ personId: ctx.person.id, role: ctx.person.role, management: ctx.management?.role ?? null, via: ctx.via }, ctx.person.id);
   // Календарь сроков (этап 29): ссылка личная, по общему логину её не выдаём
   const calendarLocked = !personal
     ? "Календарь сроков подключается при личном входе: по общему логину можно выбрать чужой профиль."
@@ -83,7 +97,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   ];
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Профиль" description="Роль и зону меняет владелец ресурса, рабочую почту вы указываете сами на вкладке «Вход и пароль»" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
+      <PageHeader title="Профиль" description="Фото и «О себе» вы меняете сами, роль и зону меняет владелец ресурса, рабочую почту вы указываете на вкладке «Вход и пароль»" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
 
       {tab === "profile" ? (
         <>
@@ -95,6 +109,26 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <Row label="Почта">{ctx.person.email ?? (ctx.person.pendingEmail ? `${ctx.person.pendingEmail}, ждёт подтверждения` : "не указана")}</Row>
             <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
           </dl>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="photo-head">
+            <h2 id="photo-head" className="text-title font-semibold text-ink">
+              Фото
+            </h2>
+            <p className="mt-1 text-small text-muted">Видно рядом с вашим именем в задачах, weekly, комментариях и в разделе «Люди». Без фото остаются инициалы.</p>
+            <div className="mt-4">
+              <PhotoEditor fullName={ctx.person.fullName} photo={card?.avatar ? { slug: ctx.person.slug, version: card.avatar } : null} locked={aboutLocked} />
+            </div>
+          </section>
+
+          <section className="mt-10 border-t border-line pt-8" aria-labelledby="about-head">
+            <h2 id="about-head" className="text-title font-semibold text-ink">
+              О себе
+            </h2>
+            <p className="mt-1 text-small text-muted">Коллеги видят это в вашей карточке: в разделе «Люди», в структуре и в командах.</p>
+            <div className="mt-4 max-w-2xl">
+              <AboutForm initial={{ about: card?.about ?? null, helpWith: card?.helpWith ?? null, telegram: card?.telegram ?? null }} locked={aboutLocked} />
+            </div>
+          </section>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="calendar-feed">
             <h2 id="calendar-feed" className="text-title font-semibold text-ink">
