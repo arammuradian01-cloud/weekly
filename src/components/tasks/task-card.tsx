@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, MoreHorizontal, Pencil, History as HistoryIcon } from "lucide-react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { usePrototype } from "@/domain/store";
@@ -533,11 +534,22 @@ function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; 
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(task.start ?? "");
   const [busy, setBusy] = useState(false);
+  // После «Сохранить», «Отмена» и «Убрать» фокус возвращается на «Изменить» или «Задать», а не теряется в начале страницы:
+  // кнопка появляется в том же обновлении (flushSync), и фокус ставится сразу
+  const trigger = useRef<HTMLButtonElement>(null);
+  const close = (update: () => void) => {
+    flushSync(update);
+    trigger.current?.focus();
+  };
   const save = async (start: string | null) => {
     setBusy(true);
     const ok = await onSave(start);
-    setBusy(false);
-    if (ok) setEditing(false);
+    if (ok)
+      close(() => {
+        setBusy(false);
+        setEditing(false);
+      });
+    else setBusy(false);
   };
   if (editing) {
     return (
@@ -548,11 +560,28 @@ function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; 
           if (value && !busy) void save(value);
         }}
       >
-        <TextInput type="date" label={`Начало задачи ${task.number}`} hideLabel id={`task-start-${task.number}`} value={value} max={task.due} onChange={(e) => setValue(e.target.value)} className="w-[180px]" autoFocus />
+        <TextInput
+          type="date"
+          label={`Начало задачи ${task.number}`}
+          hideLabel
+          id={`task-start-${task.number}`}
+          value={value}
+          max={task.due}
+          hint={`Не позже срока: ${formatLong(task.due)}`}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-[180px]"
+          autoFocus
+        />
         <Button type="submit" size="sm" loading={busy} disabled={!value || busy}>
           Сохранить
         </Button>
-        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => close(() => setEditing(false))}
+        >
           Отмена
         </Button>
       </form>
@@ -566,10 +595,14 @@ function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; 
       {editable ? (
         <span className="flex flex-wrap gap-x-3">
           <button
+            ref={trigger}
             type="button"
-            className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline"
+            className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline disabled:text-disabled disabled:no-underline"
+            disabled={busy}
             onClick={() => {
-              setValue(task.start ?? task.createdAt.slice(0, 10));
+              // Без своего начала поле открывается с даты постановки, но не позже срока: иначе сохранить нельзя
+              const created = task.createdAt.slice(0, 10);
+              setValue(task.start ?? (created > task.due ? task.due : created));
               setEditing(true);
             }}
             aria-label={task.start ? `Изменить начало задачи ${task.number}` : `Задать начало задачи ${task.number}`}
@@ -577,7 +610,7 @@ function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; 
             {task.start ? "Изменить" : "Задать"}
           </button>
           {task.start ? (
-            <button type="button" className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline" disabled={busy} onClick={() => void save(null)} aria-label={`Убрать начало задачи ${task.number}`}>
+            <button type="button" className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline disabled:text-disabled disabled:no-underline" disabled={busy} onClick={() => void save(null)} aria-label={`Убрать начало задачи ${task.number}`}>
               Убрать
             </button>
           ) : null}

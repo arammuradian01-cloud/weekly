@@ -9,6 +9,7 @@ import { addDays, diffDays, type IsoDate } from "@/domain/dates";
 import type { DirectionCode } from "@/domain/dictionaries";
 import type { Task } from "@/domain/types";
 import { buildRoadmap, importanceOf, type RoadmapFilter } from "./roadmap";
+import { permissions, type Viewer } from "./rules";
 
 const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
@@ -89,6 +90,35 @@ export function barOf(task: Task, range: TimelineRange, today: IsoDate, span?: {
 }
 
 export type DragMode = "move" | "start" | "end";
+
+/**
+ * Можно ли тянуть полосу: права те же, что у срока задачи. В «Смотреть как» и на сенсорном экране (pointer: coarse)
+ * полосы не двигаются: палец на узкой полосе промахивается, начало и срок там меняются в карточке задачи
+ */
+export function canMoveBar(task: Task, viewer: Viewer, env: { viewing: boolean; coarse: boolean }): boolean {
+  return !env.viewing && !env.coarse && permissions(task, viewer).due;
+}
+
+/**
+ * День карты под указателем: x от левого края трека, width ширина трека. Для обрезанного края полосы: его тянут не
+ * сдвигом от невидимой даты, а ставят на дату под указателем. За краями трека день прижимается к первому или последнему
+ */
+export function dayAtX(range: TimelineRange, x: number, width: number): IsoDate {
+  const day = width > 0 ? Math.floor((x / width) * range.days) : 0;
+  return addDays(range.start, clamp(day, 0, range.days - 1));
+}
+
+/**
+ * Ручки краёв полосы: нажимаемая часть 24 px. Внутри полосы не больше четверти её ширины (и не больше половины ручки),
+ * у узкой полосы (уже 32 px, около 4-5 дней) ручки целиком снаружи: середину можно тянуть всегда. Возвращает, сколько
+ * пикселей ручки внутри полосы
+ */
+export const HANDLE_PX = 24;
+export function handleInside(barPx: number, cutEdge = false): number {
+  if (barPx < 32) return 0;
+  // Обрезанный правый край упирается в край карты: снаружи ручку не нажать, поэтому у широкой полосы она целиком внутри
+  return Math.min(cutEdge ? HANDLE_PX : HANDLE_PX / 2, barPx / 4);
+}
 
 /**
  * Новая пара дат после перетаскивания на delta дней. Начало не позже срока, срок не раньше начала. Срок не уходит

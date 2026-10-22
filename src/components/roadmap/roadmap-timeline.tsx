@@ -2,19 +2,20 @@
 
 // Карта сроков roadmap (этап 68): задачи полосами от начала до срока по месяцам. Полосу тянут за середину
 // (сдвигаются начало и срок, одна правка с причиной), за левый край (начало, сохраняется сразу) или за правый (срок, с
-// причиной, как в карточке задачи). Перетаскивание засчитывается после 6 px движения в основном по горизонтали, иначе
+// причиной, как в карточке задачи). Обрезанный край (задача началась до окна карты или кончается после) тоже тянется:
+// край встаёт на дату под указателем. Перетаскивание засчитывается после 6 px движения в основном по горизонтали, иначе
 // это нажатие: оно открывает задачу и ничего не сохраняет. С клавиатуры: стрелки двигают полосу на день, Alt со
 // стрелкой меняет начало, Shift срок, Enter сохраняет, Escape отменяет, Enter или пробел без сдвига открывают задачу.
 // Права те же, что у срока задачи: кто не может менять срок, видит полосу без ручек. На сенсорном экране и в «Смотреть
 // как» полосы не двигаются (начало задаётся в карточке задачи), сервер всё равно проверяет права и режим просмотра.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Star } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { diffDays, formatLong, formatShort, plural, type IsoDate } from "@/domain/dates";
 import { ownerName } from "@/domain/people";
 import { IMPORTANCE_LABEL } from "@/lib/tasks/roadmap";
-import { barOf, dragSpan, spanPlan, type Bar, type DragMode, type TimelineRange, type TimelineRow } from "@/lib/tasks/timeline";
+import { barOf, dayAtX, dragSpan, handleInside, HANDLE_PX, spanPlan, type Bar, type DragMode, type TimelineRange, type TimelineRow } from "@/lib/tasks/timeline";
 import { moveTaskSpanAction, setTaskStartAction, transferDueAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
 import { Modal } from "@/components/ui/overlays";
@@ -22,11 +23,14 @@ import { TextArea } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 
 type Span = { start: IsoDate; end: IsoDate };
-type Drag = { number: number; mode: DragMode; x0: number; y0: number; width: number; base: Span; moved: boolean; span: Span | null };
+/** abs: тянут обрезанный край, он встаёт на дату под указателем; left: левый край трека на экране */
+type Drag = { number: number; mode: DragMode; x0: number; y0: number; left: number; width: number; base: Span; abs: boolean; moved: boolean; span: Span | null };
 type Pending = { task: Task; before: Span; after: Span };
 
 /** Сколько пикселей нужно сдвинуть указатель, чтобы нажатие стало перетаскиванием */
 const DRAG_THRESHOLD = 6;
+/** Ширина трека до первого замера: ноутбук 1440 с боковым меню */
+const TRACK_PX = 860;
 
 const pct = (day: number, range: TimelineRange) => `${(day / range.days) * 100}%`;
 
@@ -53,6 +57,28 @@ function saveSpan(task: Task, before: Span, after: Span, why: string | undefined
   return runTask(() => moveTaskSpanAction(task.number, plan.start, plan.due, why ?? ""), `Задача ${task.number}: с ${formatLong(plan.start)} по ${formatLong(plan.due)}`);
 }
 
+/**
+ * Ручка края полосы: прозрачная нажимаемая полоса HANDLE_PX шириной, inside пикселей из неё внутри полосы, остальное
+ * снаружи. Видна тонкая черта у края: внутри цветом текста полосы, снаружи цветом иконок (на фоне трека)
+ */
+function EdgeHandle({ side, inside, dashed = false, onPointerDown }: { side: "start" | "end"; inside: number; dashed?: boolean; onPointerDown: (e: React.PointerEvent<HTMLElement>) => void }) {
+  const out = HANDLE_PX - inside;
+  // Черта на 2 px внутрь от края полосы, если ручка заходит в полосу хотя бы на 6 px, иначе на 4 px снаружи
+  const at = inside >= 6 ? out + 2 : out - 4;
+  const line = cn("absolute inset-y-1 w-0.5 rounded-full", inside >= 6 ? "bg-current/50" : "bg-icon", dashed && "w-0 rounded-none border-l-2 border-dashed bg-transparent", dashed && (inside >= 6 ? "border-current" : "border-icon"));
+  return (
+    <span
+      onPointerDown={onPointerDown}
+      className="absolute inset-y-0 z-[1] cursor-ew-resize"
+      style={side === "start" ? { left: -out, width: HANDLE_PX } : { right: -out, width: HANDLE_PX }}
+      aria-hidden="true"
+      data-handle={side}
+    >
+      <span className={line} style={side === "start" ? { left: at } : { right: at }} />
+    </span>
+  );
+}
+
 export function RoadmapTimeline({
   range,
   rows,
@@ -74,6 +100,18 @@ export function RoadmapTimeline({
   const [busy, setBusy] = useState(false);
   const [live, setLive] = useState("");
   const drag = useRef<Drag | null>(null);
+  // Ширина трека в пикселях: по ней ручки краёв решают, сколько их внутри полосы (узкую полосу можно тянуть за середину)
+  const root = useRef<HTMLDivElement>(null);
+  const [trackPx, setTrackPx] = useState(TRACK_PX);
+  useEffect(() => {
+    const track = root.current?.querySelector<HTMLElement>("[data-rm-track]");
+    if (!track) return;
+    const measure = () => setTrackPx(track.getBoundingClientRect().width || TRACK_PX);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [rows.length]);
   // Нажатие после перетаскивания: click приходит следом за отпусканием кнопки, задачу он открывать не должен
   const dragged = useRef(false);
   const todayAt = diffDays(range.start, today);
@@ -103,16 +141,24 @@ export function RoadmapTimeline({
     cancel(task.number);
   };
 
-  const begin = (e: React.PointerEvent<HTMLElement>, bar: Bar, mode: DragMode) => {
+  // base: полоса по настоящим датам задачи, а не по несохранённому сдвигу с клавиатуры: сдвиг сбрасывается, иначе
+  // правка сравнивалась бы с предпросмотром и перенос срока с клавиатуры молча терялся бы
+  const begin = (e: React.PointerEvent<HTMLElement>, base: Bar, mode: DragMode) => {
     if (e.button !== 0 || busy) return;
     const el = e.currentTarget.closest<HTMLElement>("[data-rm-bar]");
     const track = el?.closest<HTMLElement>("[data-rm-track]");
     if (!el || !track) return;
     e.stopPropagation();
     dragged.current = false;
+    if (preview[base.task.number]) {
+      cancel(base.task.number);
+      setLive("");
+    }
     // Захват указателя: движение и отпускание приходят полосе, даже когда указатель ушёл с неё
     el.setPointerCapture(e.pointerId);
-    drag.current = { number: bar.task.number, mode, x0: e.clientX, y0: e.clientY, width: track.getBoundingClientRect().width, base: { start: bar.start, end: bar.end }, moved: false, span: null };
+    const rect = track.getBoundingClientRect();
+    const abs = (mode === "start" && base.cutStart) || (mode === "end" && base.cutEnd);
+    drag.current = { number: base.task.number, mode, x0: e.clientX, y0: e.clientY, left: rect.left, width: rect.width, base: { start: base.start, end: base.end }, abs, moved: false, span: null };
   };
 
   const move = (e: React.PointerEvent<HTMLElement>) => {
@@ -126,7 +172,13 @@ export function RoadmapTimeline({
       d.moved = true;
     }
     e.preventDefault();
-    d.span = dragSpan(d.base, d.mode, Math.round((dx / d.width) * range.days), today);
+    let delta = Math.round((dx / d.width) * range.days);
+    if (d.abs) {
+      // Обрезанный край встаёт на день под указателем: сдвиг считается от настоящей даты края
+      const day = dayAtX(range, e.clientX - d.left, d.width);
+      delta = diffDays(d.mode === "start" ? d.base.start : d.base.end, day);
+    }
+    d.span = dragSpan(d.base, d.mode, delta, today);
     setPreview((p) => ({ ...p, [d.number]: d.span! }));
   };
 
@@ -135,6 +187,10 @@ export function RoadmapTimeline({
     drag.current = null;
     if (!d?.moved) return;
     dragged.current = true;
+    // Нажатие после перетаскивания гасится только сразу: браузер без click после захвата указателя не съест следующее
+    setTimeout(() => {
+      dragged.current = false;
+    }, 0);
     if (d.span) void commit(task, d.base, d.span);
   };
 
@@ -172,10 +228,7 @@ export function RoadmapTimeline({
 
   return (
     // overflow-clip, а не hidden: строка месяцев липнет к верху страницы, а у контейнера с прокруткой она бы не липла
-    <div className="sv-card overflow-clip" data-testid="roadmap-timeline">
-      <p id="timeline-keys" className="sr-only">
-        Стрелки двигают полосу на день, Alt со стрелкой меняет начало, Shift со стрелкой срок, Enter сохраняет, Escape отменяет
-      </p>
+    <div ref={root} className="sv-card overflow-clip" data-testid="roadmap-timeline">
       <p className="sr-only" aria-live="polite">
         {live}
       </p>
@@ -212,6 +265,10 @@ export function RoadmapTimeline({
                 // Полоса за окном карты: обрубок прижат к краю трека с подписью даты, ширина по подписи
                 const place: React.CSSProperties = bar.outside === "before" ? { left: 0 } : bar.outside === "after" ? { right: 0 } : { left: `min(${pct(bar.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(bar.to - bar.from + 1, range)})` };
                 const edges = can && !bar.outside;
+                // Ширина полосы в пикселях: по ней ручки решают, сколько их внутри, и отступ текста
+                const barPx = Math.max(12, ((bar.to - bar.from + 1) / range.days) * trackPx);
+                const inL = handleInside(barPx);
+                const inR = handleInside(barPx, bar.cutEnd);
                 return (
                   <li key={base.task.number} className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0">
                     <div className="flex min-w-0 flex-col justify-center px-4">
@@ -235,7 +292,7 @@ export function RoadmapTimeline({
                         aria-label={label}
                         aria-describedby={can ? "timeline-keys" : undefined}
                         title={label}
-                        onPointerDown={can ? (e) => begin(e, bar, "move") : undefined}
+                        onPointerDown={can ? (e) => begin(e, base, "move") : undefined}
                         onPointerMove={can ? move : undefined}
                         onPointerUp={can ? () => end(base.task) : undefined}
                         onPointerCancel={
@@ -257,7 +314,7 @@ export function RoadmapTimeline({
                               }
                         }
                         className={cn(
-                          "absolute top-3 flex h-8 items-center gap-1.5 rounded-control px-3 text-caption font-semibold whitespace-nowrap select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+                          "absolute top-3 flex h-8 items-center rounded-control text-caption font-semibold select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
                           tone(bar),
                           can ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
                           span && "shadow-medium",
@@ -267,29 +324,28 @@ export function RoadmapTimeline({
                         style={place}
                         data-testid={`timeline-bar-${bar.task.number}`}
                         data-outside={bar.outside ?? undefined}
+                        data-cut={bar.cutStart ? (bar.cutEnd ? "both" : "start") : bar.cutEnd ? "end" : undefined}
                       >
-                        {/* Ручки краёв: нажимается полоса 24 px шириной, половина за краем полосы; видна тонкая черта. У обрезанного края ручки нет */}
-                        {edges && !bar.cutStart ? (
-                          <span onPointerDown={(e) => begin(e, bar, "start")} className="absolute inset-y-0 -left-3 z-[1] flex w-6 cursor-ew-resize items-stretch justify-center" aria-hidden="true">
-                            <span className={cn("my-1 w-0.5 rounded-full bg-current/50", !bar.startKnown && "w-0 border-l-2 border-dashed border-current bg-transparent")} />
-                          </span>
+                        {/* Ручки краёв: нажимается полоса 24 px, внутри полосы не больше четверти её ширины, у узкой полосы ручки
+                            снаружи. Обрезанный край тоже с ручкой: он встаёт на дату под указателем */}
+                        {edges ? (
+                          <EdgeHandle side="start" inside={inL} dashed={!bar.startKnown} onPointerDown={(e) => begin(e, base, "start")} />
                         ) : !bar.startKnown && !bar.outside && !bar.cutStart ? (
                           <span className="absolute inset-y-0 left-0 border-l-[3px] border-dashed border-current" aria-hidden="true" />
                         ) : null}
-                        {bar.importance ? (
-                          // Звёздочки цветом текста полосы: цветные звёздочки доски на тёмной и синей полосе не видны
-                          <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-                            {Array.from({ length: bar.importance }, (_, i) => (
-                              <Star key={i} className="h-3.5 w-3.5" fill="currentColor" strokeWidth={1.5} />
-                            ))}
-                          </span>
-                        ) : null}
-                        <span className="min-w-0 truncate">{bar.outside ? outsideText(bar) : bar.to - bar.from > 10 ? bar.task.title : formatShort(bar.end)}</span>
-                        {edges && !bar.cutEnd ? (
-                          <span onPointerDown={(e) => begin(e, bar, "end")} className="absolute inset-y-0 -right-3 z-[1] flex w-6 cursor-ew-resize items-stretch justify-center" aria-hidden="true">
-                            <span className="my-1 w-0.5 rounded-full bg-current/50" />
-                          </span>
-                        ) : null}
+                        {/* Звёздочки и текст внутри своей обёртки с обрезкой: у узкой полосы они не вылезают, ручки снаружи видны */}
+                        <span className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap", barPx < 40 ? "px-1" : "px-3")}>
+                          {bar.importance ? (
+                            // Звёздочки цветом текста полосы: цветные звёздочки доски на тёмной и синей полосе не видны
+                            <span className="inline-flex shrink-0 items-center" aria-hidden="true">
+                              {Array.from({ length: bar.importance }, (_, i) => (
+                                <Star key={i} className="h-3.5 w-3.5" fill="currentColor" strokeWidth={1.5} />
+                              ))}
+                            </span>
+                          ) : null}
+                          <span className="min-w-0 truncate">{bar.outside ? outsideText(bar) : bar.to - bar.from > 10 ? bar.task.title : formatShort(bar.end)}</span>
+                        </span>
+                        {edges ? <EdgeHandle side="end" inside={inR} onPointerDown={(e) => begin(e, base, "end")} /> : null}
                       </div>
                     </div>
                   </li>
@@ -300,9 +356,10 @@ export function RoadmapTimeline({
         ))}
       </div>
       {anyMovable ? (
-        <p className="m-0 border-t border-line px-4 py-2 text-caption text-muted" data-testid="timeline-hint">
-          Мышью: за середину полоса сдвигается вся, за левый край меняется начало, за правый срок с причиной переноса. С клавиатуры: стрелки двигают полосу на
-          день, Alt со стрелкой меняет начало, Shift со стрелкой срок, Enter сохраняет, Escape отменяет.
+        // Видимая подсказка и есть описание полос для диктора (aria-describedby): одна копия текста, а не две
+        <p id="timeline-keys" className="m-0 border-t border-line px-4 py-2 text-caption text-muted" data-testid="timeline-hint">
+          Мышью: за середину полоса сдвигается вся, за левый край меняется начало, за правый срок с причиной переноса; обрезанный край встаёт на дату под
+          указателем. С клавиатуры: стрелки двигают полосу на день, Alt со стрелкой меняет начало, Shift со стрелкой срок, Enter сохраняет, Escape отменяет.
         </p>
       ) : null}
 

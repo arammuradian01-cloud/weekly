@@ -24,7 +24,7 @@ import { GoalTag, OverdueNote, StateDot } from "@/components/ui/task-badges";
 import { ImportanceMark, ImportanceMenu, importanceWord } from "@/components/ui/importance";
 import { useViewer } from "@/components/tasks/task-fields";
 import { useOpenTask } from "@/components/tasks/task-drawer";
-import { buildTimeline } from "@/lib/tasks/timeline";
+import { buildTimeline, canMoveBar } from "@/lib/tasks/timeline";
 import { RoadmapTimeline } from "./roadmap-timeline";
 
 /** Широкий экран: сетка сроков. Уже: список. На сервере и до гидратации список */
@@ -238,7 +238,7 @@ export function RoadmapBoard() {
           today={data.today}
           // Права как у срока. В «Смотреть как» и на сенсорном экране полосы не двигаются: сервер в просмотре всё равно откажет,
           // а пальцем полосу легко сдвинуть случайно. Начало и срок тогда меняют в карточке задачи
-          canMove={(t) => !viewing && !coarse && permissions(t, viewer).due}
+          canMove={(t) => canMoveBar(t, viewer, { viewing, coarse })}
           onOpen={open}
           runTask={runTask}
         />
