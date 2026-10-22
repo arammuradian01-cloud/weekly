@@ -162,7 +162,10 @@ test("цели: шкала квартала включает отбор, кар�
   const more = risky.getByRole("button", { name: /^Подробнее: D2\./ });
   await more.focus();
   await page.keyboard.press("Enter");
-  await expect(more).toHaveAttribute("aria-expanded", "true");
+  // Имя кнопки сменилось на «Свернуть: ...», фокус остался на ней
+  const less = risky.getByRole("button", { name: /^Свернуть: D2\./ });
+  await expect(less).toHaveAttribute("aria-expanded", "true");
+  await expect(less).toBeFocused();
   await expect(risky.getByRole("link").first()).toBeVisible();
   // «Факт» у числовой цели открывает таблицу на этой цели
   await bar.getByRole("button", { name: /^Все/ }).click();
@@ -202,7 +205,7 @@ test("новости: главная новость сверху, одна те�
   const more = page.getByText("Ещё в 1 источнике");
   await expect(more).toBeVisible();
   await more.click();
-  await expect(page.getByRole("link", { name: /^Интерфакс: Итоги продаж КАСКО/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Интерфакс\s?: Итоги продаж КАСКО/ })).toBeVisible();
   // Главная в ленте не повторяется: каждая новость один раз
   await expect(page.locator('[data-news-id="d68-n1"]')).toHaveCount(1);
   // «Официально» от 1280 px: регулятор и союзы этой страницы без главной новости

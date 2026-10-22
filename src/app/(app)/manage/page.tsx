@@ -19,16 +19,20 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
   // страницы не видны (field почти равен page), поэтому разделы простым текстом
   return (
     <div className="max-w-md">
-      <PageHeader title="Режим управления">
-        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small">
-          <dt className="text-muted">Профиль</dt>
-          <dd className="m-0 text-ink">{ctx.person.fullName}</dd>
-          <dt className="text-muted">Открывает</dt>
-          <dd className="m-0 text-ink">Отчёт CEO, журнал, настройки</dd>
-          <dt className="text-muted">Действует</dt>
-          <dd className="m-0 text-ink">12 часов</dd>
-        </dl>
-      </PageHeader>
+      {/* Строки под заголовком (слот figures), а не в колонке действий справа: там им тесно рядом с заголовком */}
+      <PageHeader
+        title="Режим управления"
+        figures={
+          <dl className="m-0 mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-small">
+            <dt className="text-muted">Профиль</dt>
+            <dd className="m-0 text-ink">{ctx.person.fullName}</dd>
+            <dt className="text-muted">Открывает</dt>
+            <dd className="m-0 text-ink">Отчёт CEO, журнал, настройки</dd>
+            <dt className="text-muted">Действует</dt>
+            <dd className="m-0 text-ink">12 часов</dd>
+          </dl>
+        }
+      />
       <ManageForm passwordLabel={owner ? "Пароль владельца" : "Пароль администраторов"} next={target} />
       {ctx.via !== "TEAM" && mailConfigured() && ctx.person.email ? (
         <div className="mt-8 border-t border-line pt-6">

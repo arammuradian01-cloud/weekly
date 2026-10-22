@@ -237,7 +237,14 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
       </div>
       {/* Заметка главной строкой: что сейчас происходит. «Зачем» и вопрос к заметке в подсказке и в истории */}
       <p className="text-body text-ink" title={NOTE_PROMPTS[item.state]}>
-        {item.note ? `«${item.note}»` : <span className="text-muted">Заметки пока нет</span>}
+        {/* Заметка отдельным элементом внутри кавычек: её текст ищется поиском по странице и в тестах целиком */}
+        {item.note ? (
+          <>
+            «<span>{item.note}</span>»
+          </>
+        ) : (
+          <span className="text-muted">Заметки пока нет</span>
+        )}
       </p>
       {item.why ? <p className="line-clamp-2 text-small text-text-secondary">{item.why}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
