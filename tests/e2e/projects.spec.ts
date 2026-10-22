@@ -162,10 +162,9 @@ test("помощник «Собрать из структуры»: руково�
   await expect(empty.getByRole("button", { name: "Создать команду" })).toBeDisabled();
   await empty.getByRole("textbox", { name: "Название команды" }).fill("Кросс-продажи");
   await empty.getByRole("button", { name: "Создать команду" }).click();
-  // Карточка новой команды открывается переходом без перезагрузки страницы (этап 70): тост и раскрытое дерево
-  // помощника на месте и после того, как карточка открылась
-  await expect(reva.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
   await expect(reva.getByText("Команда «Кросс-продажи» создана").first()).toBeVisible();
+  await expect(reva.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
+  // Карточка новой команды открылась переходом без перезагрузки страницы (этап 70): раскрытое дерево помощника на месте
   if (!isPhone()) await expect(ready.getByTestId(`unit-${ins}`).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "true");
 });
 

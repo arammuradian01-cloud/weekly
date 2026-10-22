@@ -58,12 +58,13 @@ export function matchTeam(team: SearchableTeam, query: string): boolean {
   return words.every((w) => hay.includes(w));
 }
 
-/** Команда для поля «Команда выше» (этап 70): руководитель подсказкой, команда выше, чтобы не предложить команду ниже */
-export type ParentChoice = { id: string; name: string; parentId: string | null; leader: string | null };
+/** Команда для поля «Команда выше» (этап 70): руководитель и команда выше подсказкой, закрытые для обхода ветки */
+export type ParentChoice = { id: string; name: string; parentId: string | null; leader: string | null; active: boolean };
 
 /**
- * Куда можно поставить команду: все команды, кроме неё самой и команд ниже неё (иначе получится кольцо). Сервер
- * проверяет то же самое (updateTeam), здесь только список для выбора. Порядок как пришёл: дерево команд
+ * Куда можно поставить команду: действующие команды, кроме неё самой и команд ниже неё (иначе получится кольцо).
+ * Ветку обходим и через закрытые команды, как сервер (subtreeOf в updateTeam): действующая команда под закрытой
+ * командой ниже выбираемой тоже ниже неё. Закрытые убираем после обхода. Порядок как пришёл: дерево команд
  */
 export function parentChoices(all: ParentChoice[], teamId: string): ParentChoice[] {
   const below = new Set([teamId]);
@@ -76,7 +77,13 @@ export function parentChoices(all: ParentChoice[], teamId: string): ParentChoice
       }
     }
   }
-  return all.filter((t) => !below.has(t.id));
+  return all.filter((t) => t.active && !below.has(t.id));
+}
+
+/** Подсказка варианта «Команда выше»: руководитель и команда выше, чтобы различать одноимённые команды */
+export function parentHint(choice: ParentChoice, all: ParentChoice[]): string | null {
+  const above = choice.parentId ? all.find((t) => t.id === choice.parentId)?.name : undefined;
+  return [choice.leader ? `Руководитель: ${choice.leader}` : null, above ? `команда выше «${above}»` : null].filter(Boolean).join(", ") || null;
 }
 
 /** Вид команды для экрана: по структуре (команды подразделений и топ-команда) или проект (собранная руками) */

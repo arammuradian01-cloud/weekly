@@ -232,6 +232,11 @@ test("владелец собирает команду поиском из ра�
   const up = page.getByRole("dialog", { name: "Руководитель: Кросс-продажи и кредиты" });
   const parentField = up.getByRole("combobox", { name: "Команда выше" });
   const parentList = up.getByRole("listbox", { name: "Команда выше" });
+  // Список в потоке окна, не обрезан его прокруткой: видно не меньше шести вариантов целиком
+  await parentField.click();
+  expect(await parentList.getByRole("option").count()).toBeGreaterThanOrEqual(6);
+  await expect(parentList.getByRole("option").nth(5)).toBeInViewport({ ratio: 1 });
+  await shot(page, "parent-picker");
   await parentField.fill("департамент");
   await expect(parentList.getByRole("option", { name: /^Департамент Money/ })).toBeVisible();
   await parentField.fill("кросс-продажи");
@@ -240,7 +245,13 @@ test("владелец собирает команду поиском из ра�
   await parentField.fill("белова");
   const partners = parentList.getByRole("option", { name: /^Департамент партнёрств/ });
   await expect(partners).toContainText("Руководитель: Белова Ольга");
+  // Подсказкой и команда выше варианта: одноимённые команды не спутать
+  await expect(partners).toContainText("команда выше «");
   await partners.click();
+  await expect(parentField).toHaveValue("Департамент партнёрств");
+  // Напечатали и ушли из поля, ничего не выбрав: остаётся выбранная команда, а не напечатанный текст или прежняя
+  await parentField.fill("абв");
+  await parentField.press("Tab");
   await expect(parentField).toHaveValue("Департамент партнёрств");
   await up.getByRole("button", { name: "Сохранить" }).click();
   await expect(up).toHaveCount(0);
@@ -256,10 +267,9 @@ test("владелец собирает команду поиском из ра�
   await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
   await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
   await pilot.getByRole("button", { name: "Создать команду" }).click();
-  // Карточка новой команды открывается переходом без перезагрузки страницы (этап 70): тост на месте и после неё
+  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
   const pilotCard = page.getByTestId("team-card");
   await expect(pilotCard.getByRole("heading", { name: "Партнёрский пилот", level: 2 })).toBeVisible();
-  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
   await expect(pilotCard).toContainText("Белова Ольга");
   // В режиме управления действия руководителя и ритма кнопками в шапке карточки
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Назначить руководителя" })).toBeVisible();
@@ -377,18 +387,19 @@ test("новая команда открывается без перезагру
   });
   const card = page.getByTestId("team-card");
   const length = await page.evaluate(() => window.history.length);
+  // Метка на странице: после полной перезагрузки её не будет
+  await page.evaluate(() => ((window as unknown as { samePage?: boolean }).samePage = true));
   for (const name of ["Пилот продаж", "Пилот сервиса"]) {
     if (isPhone() && (await card.isVisible())) await card.getByRole("button", { name: "К списку команд" }).click();
-    await page.evaluate(() => ((window as unknown as { samePage?: boolean }).samePage = true));
     await page.getByTestId("team-create").click();
     const create = page.getByRole("dialog", { name: "Новая weekly-команда" });
     await create.getByRole("textbox", { name: "Название команды" }).fill(name);
     await create.getByRole("button", { name: "Создать команду" }).click();
-    await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
     await expect(page.getByText(`Команда «${name}» создана`).first()).toBeVisible();
-    expect(await page.evaluate(() => (window as unknown as { samePage?: boolean }).samePage === true), "страница перезагрузилась").toBe(true);
+    await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/people/teams\\?team=${await teamId(name)}$`));
   }
+  expect(await page.evaluate(() => (window as unknown as { samePage?: boolean }).samePage === true), "страница перезагрузилась").toBe(true);
   if (isPhone()) {
     // Телефон: карточка новой команды открылась шагом вперёд, «Назад» возвращает к списку
     await page.goBack();
@@ -409,7 +420,16 @@ test("карточка большой команды на ноутбуке не 
   const surnames = ["Абрамов", "Богданов", "Васильев", "Григорьев", "Давыдов", "Егоров"];
   const names = ["Антон", "Борис", "Виктор", "Глеб", "Денис"];
   const crowd = surnames.flatMap((s) => names.map((n) => `${s} ${n}`));
-  await loadCompany(page, [COMPANY, ...crowd.map((n) => [n, "Partner manager", "Департамент партнёрств", "Управление партнёрских продаж", ""].join("\t"))].join("\n"));
+  // И ещё 30 в управлении кредитных продуктов: вторая большая команда, у Лисиной
+  const credit = ["Жуков", "Зайцев", "Ильин", "Калинин", "Лебедев", "Макаров"].flatMap((s) => ["Олег", "Павел", "Роман", "Сергей", "Тимур"].map((n) => `${s} ${n}`));
+  await loadCompany(
+    page,
+    [
+      COMPANY,
+      ...crowd.map((n) => [n, "Partner manager", "Департамент партнёрств", "Управление партнёрских продаж", ""].join("\t")),
+      ...credit.map((n) => [n, "Credit analyst", "Департамент Money", "Управление кредитных продуктов", ""].join("\t")),
+    ].join("\n"),
+  );
   await page.goto("/people/teams");
   const card = await openTeam(page, "Департамент партнёрств");
   await expect(card).toContainText("в команде 32 человека");
@@ -431,4 +451,74 @@ test("карточка большой команды на ноутбуке не 
   await remove.click();
   await expect(page.getByText(`${last} убран из команды`).first()).toBeVisible();
   await expect(card.getByTestId("team-members")).not.toContainText(last);
+
+  // Колонка прокручена вниз, выбрали другую большую команду: её карточка открывается сверху, заголовок в окне
+  await column.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  const other = await openTeam(page, "Управление кредитных продуктов");
+  await expect(other).toContainText("в команде 32 человека");
+  await expect(other.getByRole("heading", { name: "Управление кредитных продуктов", level: 2 })).toBeInViewport();
+  expect(await column.evaluate((el) => el.scrollTop)).toBe(0);
+});
+
+test("телефон: карточка шагом с ожиданием, «Вперёд» и «Назад» без двух списков подряд, устаревшая ссылка, «К списку» и сразу другая команда", async ({ page }) => {
+  test.skip(!isPhone(), "на ноутбуке карточка рядом со списком, шагов в истории нет");
+  test.setTimeout(120_000);
+  await loadCompany(page);
+  await page.goto("/people");
+  await page.getByTestId("people-tab-teams").click();
+  await expect(page).toHaveURL(/\/people\/teams$/);
+  const list = page.getByTestId("teams-list");
+  const card = page.getByTestId("team-card");
+  const money = await teamId("Департамент Money");
+  const partners = await teamId("Департамент партнёрств");
+  const heading = (name: string) => card.getByRole("heading", { name, level: 2 });
+
+  // Этап 70: пока сервер отвечает, нажатая строка занята и пишет «Открываем»
+  await page.route(/\/people\/teams\?team=[^&]+&_rsc=/, async (route) => {
+    await new Promise((r) => setTimeout(r, 1500));
+    await route.continue();
+  });
+  const moneyRow = page.getByTestId(`team-row-${money}`);
+  await moneyRow.click();
+  await expect(moneyRow).toHaveAttribute("aria-busy", "true");
+  await expect(moneyRow.getByTestId("team-row-opening")).toBeVisible();
+  await expect(heading("Департамент Money")).toBeVisible();
+  await page.unrouteAll({ behavior: "wait" });
+
+  // «Назад», «Вперёд» и «К списку команд»: это снова шаг назад, следующая «Назад» уходит со списка, а не на второй список
+  await page.goBack();
+  await expect(page).toHaveURL(/\/people\/teams$/);
+  await expect(list).toBeVisible();
+  await page.goForward();
+  await expect(heading("Департамент Money")).toBeVisible();
+  await card.getByRole("button", { name: "К списку команд" }).click();
+  await expect(page).toHaveURL(/\/people\/teams$/);
+  await expect(list).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/people$/);
+
+  // «К списку команд» и сразу другая команда, пока браузер не вернулся к списку: открывается она, шагом из списка
+  await page.goForward();
+  await expect(list).toBeVisible();
+  await moneyRow.click();
+  await expect(heading("Департамент Money")).toBeVisible();
+  await page.evaluate((id) => {
+    const back = [...document.querySelectorAll<HTMLButtonElement>('[data-testid="team-card"] button')].find((b) => b.textContent?.includes("К списку команд"));
+    back!.click();
+    document.querySelector<HTMLElement>(`[data-testid="team-row-${id}"]`)!.click();
+  }, partners);
+  await expect(heading("Департамент партнёрств")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/people/teams\\?team=${partners}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(/\/people\/teams$/);
+  await expect(list).toBeVisible();
+
+  // Устаревшая ссылка на команду, которой нет: виден список, команда из него открывается шагом, «Назад» к списку
+  await page.goto("/people/teams?team=net-takoy-komandy");
+  await expect(list).toBeVisible();
+  await moneyRow.click();
+  await expect(heading("Департамент Money")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/people\/teams\?team=net-takoy-komandy$/);
+  await expect(list).toBeVisible();
 });

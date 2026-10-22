@@ -14,7 +14,7 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { plural } from "@/domain/dates";
 import { addPeopleAction, closeTeamAction, createTeamAction, renameTeamAction, setRhythmAction, updateTeamAction } from "@/app/(app)/people/teams/actions";
 import type { PickPerson, WeeklyTeam } from "@/lib/org/teams";
-import { addSummary, inBranch, parentChoices, type ManagementOff, type ParentChoice } from "@/lib/org/team-rights";
+import { addSummary, inBranch, parentChoices, parentHint, type ManagementOff, type ParentChoice } from "@/lib/org/team-rights";
 import { WEEKDAY_NAMES, type Slot } from "@/lib/org/rhythm";
 import { TOP_TEAM } from "@/domain/teams";
 import { PeoplePicker, type PickOption } from "./people-picker";
@@ -121,7 +121,7 @@ export function CreateTeamModal({
         }}
       >
         <TextInput label="Название команды" id="team-new-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Например, Кросс-продажи с кредитами" autoFocus />
-        {direct && all.length ? <SearchPicker id="team-new-leader" label="Руководитель" value={leader} onChange={setLeader} options={leaders} placeholder="Вы" hint="Пусто: руководите командой вы. Руководитель ведёт weekly и задачи команды" /> : null}
+        {direct && all.length ? <SearchPicker id="team-new-leader" label="Руководитель" value={leader} onChange={setLeader} options={leaders} inline placeholder="Вы" hint="Пусто: руководите командой вы. Руководитель ведёт weekly и задачи команды" /> : null}
         {all.length ? <PeoplePicker id="team-new-people" label="Участники, можно добавить и позже" people={options} value={slugs} onChange={setSlugs} /> : null}
         {external ? <p className="text-small text-muted">Из других веток: {people(external)}. Они войдут после согласия своего руководителя.</p> : null}
         {slugs.length > BATCH_MAX ? <p className="text-small text-danger-ink">За раз можно добавить до {BATCH_MAX} человек.</p> : null}
@@ -232,10 +232,12 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
   const [busy, setBusy] = useState(false);
   const allowed = top ? all.filter((p) => owners.includes(p.slug)) : all;
   const options = allowed.map((p) => ({ value: p.slug, label: p.fullName, hint: [p.position, p.unit].filter(Boolean).join(", ") || null }));
-  // Команды выше десятки: поиск по названию (этап 70). Саму команду и команды ниже неё не предлагаем, сервер это тоже проверяет
-  const parentOptions = useMemo(() => parentChoices(parents, team.id).map((p) => ({ value: p.id, label: p.name, hint: p.leader ? `Руководитель: ${p.leader}` : null })), [parents, team.id]);
-  // Команду выше можно сменить, но не убрать: без неё команда встала бы под топ-команду. Очищенное поле возвращает прежнюю
-  const chooseParent = (id: string) => setParent(id || (team.parent?.id ?? ""));
+  // Команды выше десятки: поиск по названию (этап 70). Саму команду, команды ниже неё и закрытые не предлагаем, сервер
+  // это тоже проверяет. Подсказкой руководитель и команда выше: одноимённые команды не спутать
+  const parentOptions = useMemo(() => parentChoices(parents, team.id).map((p) => ({ value: p.id, label: p.name, hint: parentHint(p, parents) })), [parents, team.id]);
+  // Нынешней команды выше нет среди вариантов (закрыта): поле не делает вид, что команда выше не выбрана
+  const missing = team.parent && !parentOptions.some((o) => o.value === team.parent!.id) ? team.parent : null;
+  const missingClosed = missing ? parents.find((p) => p.id === missing.id)?.active === false : false;
   const leaderChanged = leader !== (team.leader?.slug ?? "");
   const parentChanged = !top && parent !== (team.parent?.id ?? "");
   return (
@@ -251,16 +253,23 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
           if (r !== null) onClose();
         }}
       >
-        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
+        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} inline placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
         {!top ? (
           <SearchPicker
             id="team-parent"
             label="Команда выше"
             value={parent}
-            onChange={chooseParent}
+            onChange={setParent}
             options={parentOptions}
-            placeholder="Не выбрана"
-            hint="Найдите по названию команды или руководителю. Саму команду и команды ниже неё выбрать нельзя"
+            // Команду выше можно сменить, но не убрать: без неё команда встала бы под топ-команду
+            clearable={!team.parent}
+            inline
+            placeholder={missing ? missing.name : "Не выбрана"}
+            hint={
+              missing
+                ? `Сейчас команда выше «${missing.name}»${missingClosed ? ", она закрыта" : ""}. Выберите другую поиском по названию или руководителю`
+                : "Найдите по названию команды или руководителю. Саму команду и команды ниже неё выбрать нельзя"
+            }
             emptyText="Такой команды нет: проверьте написание"
           />
         ) : null}

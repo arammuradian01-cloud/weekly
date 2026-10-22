@@ -13,6 +13,7 @@
 // - общий логин без режима управления: как в остальном ресурсе, только топ-команда и только просмотр.
 
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@/generated/prisma/client";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canManagePeople } from "@/lib/admin/service";
 import * as org from "./service";
@@ -62,8 +63,6 @@ export type JoinRequestView = org.JoinRequestView;
 
 export type WeeklyTeamsView = {
   teams: WeeklyTeam[];
-  /** Команда из адреса, которой нет в списке (ссылка из «Мне» руководителю человека). Права те же, что везде: обычно только просмотр */
-  extra: WeeklyTeam | null;
   /** Закрытые команды: владелец может вернуть */
   closed: { id: string; name: string; kind: "TOP" | "UNIT" | "CUSTOM" }[];
   /** Люди компании для поиска: только тем, кто может добавлять людей или собирать команды */
@@ -104,68 +103,81 @@ const teamSelect = {
 type UnitRef = { name: string; active: boolean } | null;
 const unitName = (u: UnitRef) => (u?.active ? u.name : null);
 
-/** Всё для экрана «Weekly-команды». focus: команда из адреса */
-export async function teamsView(actor: Actor, opts: { focus?: string | null } = {}): Promise<WeeklyTeamsView> {
+type TeamRow = Prisma.TeamGetPayload<{ select: typeof teamSelect }>;
+
+/** Кто смотрит и дерево команд: общее для списка и для команды из адреса */
+async function viewContext(actor: Actor) {
   const shared = actor.via === "TEAM" && !actor.management;
   const owner = canManagePeople(actor);
-  const all = actor.role !== "OBSERVER" && actor.management !== null;
+  const nodes = await loadTeamNodes(prisma);
+  // Общий логин без режима управления видит только топ-команду и ничем не руководит (как везде в ресурсе)
+  const scope = scopeOf(nodes, { id: actor.personId, role: actor.role, limited: shared });
   const personal = !shared && actor.role !== "OBSERVER";
-  const [nodes, rows, open, canCreate] = await Promise.all([
-    loadTeamNodes(prisma),
+  const subject: RightsSubject = { me: actor.personId, owner, personal, leads: new Set(scope.leads) };
+  return { actor, shared, owner, personal, all: actor.role !== "OBSERVER" && actor.management !== null, nodes, scope, subject };
+}
+type ViewContext = Awaited<ReturnType<typeof viewContext>>;
+
+/** Команда для экрана: состав, ждущие согласия, сдача weekly и права по правилам сервисов */
+function teamOf(ctx: ViewContext, row: TeamRow, parent: { id: string; name: string } | null, light: WeeklyLight, openTasks: number): WeeklyTeam {
+  const { actor, shared, owner, subject } = ctx;
+  const node = ctx.nodes.find((n) => n.id === row.id)!;
+  // Ждущих согласия видят те же, кому их показывали раньше: руководитель команды, просивший, согласующий, владелец
+  const seesWaiting = (r: TeamRow["joinRequests"][number]) => !shared && (owner || row.leaderId === actor.personId || r.approverId === actor.personId || r.requestedById === actor.personId);
+  return {
+    id: row.id,
+    name: row.name,
+    kind: row.kind,
+    project: row.project,
+    active: row.active,
+    leader: row.leader ? { slug: row.leader.slug, fullName: row.leader.fullName, position: row.leader.position, unit: unitName(row.leader.unit) } : null,
+    parent,
+    members: row.members
+      .filter((m) => m.person.active && m.personId !== row.leaderId)
+      .map((m) => ({ slug: m.person.slug, fullName: m.person.fullName, position: m.person.position, unit: unitName(m.person.unit), external: m.external, auto: m.auto }))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")),
+    waiting: row.joinRequests.filter(seesWaiting).map((r) => ({
+      id: r.id,
+      slug: r.person.slug,
+      fullName: r.person.fullName,
+      approver: r.approver.fullName,
+      requestedBy: r.requestedBy?.fullName ?? null,
+      canCancel: canCancelRequest(subject, row, r.requestedById),
+    })),
+    rhythm: node.rhythm,
+    weekly: light,
+    openTasks,
+    relation: row.leaderId === actor.personId ? "leader" : subject.leads.has(row.id) ? "below" : row.members.some((m) => m.personId === actor.personId) ? "member" : "other",
+    // Права всегда по правилам сервисов, и для команды из адреса: руководитель выше задаёт ритм и по ссылке
+    rights: teamRights(subject, row),
+  };
+}
+
+/**
+ * Всё для экрана «Weekly-команды», кроме выбранной команды. Не зависит от адреса: его считает layout экрана, и смена
+ * команды в адресе его не пересчитывает (этап 70). Выбранную команду считает страница (focusTeam)
+ */
+export async function teamsView(actor: Actor): Promise<WeeklyTeamsView> {
+  const ctx = await viewContext(actor);
+  const { shared, owner, personal, all, nodes, scope } = ctx;
+  const [rows, open, canCreate] = await Promise.all([
     prisma.team.findMany({ select: teamSelect, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: [...OPEN] }, archivedAt: null }, _count: { _all: true } }),
     projects.canCreateProject(actor),
   ]);
-  // Общий логин без режима управления видит только топ-команду и ничем не руководит (как везде в ресурсе)
-  const scope = scopeOf(nodes, { id: actor.personId, role: actor.role, limited: shared });
   const active = nodes.filter((n) => n.active);
   // Команды ниже своих тоже в списке: их руководитель задаёт им ритм weekly (setTeamRhythm, scope.leads)
   const mine = new Set([...scope.member, ...scope.leads]);
   const listed = orderTeams(all ? active : active.filter((n) => mine.has(n.id))).map((x) => x.node);
-  const focusNode = opts.focus && !listed.some((n) => n.id === opts.focus) ? active.find((n) => n.id === opts.focus) : undefined;
-  const lights = listed.length || focusNode ? await weeklyLights(nodes) : null;
+  const lights = listed.length ? await weeklyLights(nodes) : null;
   const byId = new Map(rows.map((r) => [r.id, r]));
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const openBy = new Map(open.map((o) => [o.teamId, o._count._all]));
-  const subject: RightsSubject = { me: actor.personId, owner, personal, leads: new Set(scope.leads) };
-
-  const leads = new Set(scope.leads);
-  const view = (row: (typeof rows)[number]): WeeklyTeam => {
-    const node = nodeById.get(row.id)!;
+  const parentOf = (row: TeamRow) => {
     const parent = row.parentId ? byId.get(row.parentId) : undefined;
-    // Ждущих согласия видят те же, кому их показывали раньше: руководитель команды, просивший, согласующий, владелец
-    const seesWaiting = (r: (typeof row.joinRequests)[number]) => !shared && (owner || row.leaderId === actor.personId || r.approverId === actor.personId || r.requestedById === actor.personId);
-    return {
-      id: row.id,
-      name: row.name,
-      kind: row.kind,
-      project: row.project,
-      active: row.active,
-      leader: row.leader ? { slug: row.leader.slug, fullName: row.leader.fullName, position: row.leader.position, unit: unitName(row.leader.unit) } : null,
-      parent: parent ? { id: parent.id, name: parent.name } : null,
-      members: row.members
-        .filter((m) => m.person.active && m.personId !== row.leaderId)
-        .map((m) => ({ slug: m.person.slug, fullName: m.person.fullName, position: m.person.position, unit: unitName(m.person.unit), external: m.external, auto: m.auto }))
-        .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")),
-      waiting: row.joinRequests.filter(seesWaiting).map((r) => ({
-        id: r.id,
-        slug: r.person.slug,
-        fullName: r.person.fullName,
-        approver: r.approver.fullName,
-        requestedBy: r.requestedBy?.fullName ?? null,
-        canCancel: canCancelRequest(subject, row, r.requestedById),
-      })),
-      rhythm: node.rhythm,
-      weekly: lights!.light(node),
-      openTasks: openBy.get(row.id) ?? 0,
-      relation: row.leaderId === actor.personId ? "leader" : leads.has(row.id) ? "below" : row.members.some((m) => m.personId === actor.personId) ? "member" : "other",
-      // Права всегда по правилам сервисов, и для команды из адреса: руководитель выше задаёт ритм и по ссылке
-      rights: teamRights(subject, row),
-    };
+    return parent ? { id: parent.id, name: parent.name } : null;
   };
 
-  const teams = sortTeams(listed.map((n) => view(byId.get(n.id)!)));
-  const extra = focusNode ? view(byId.get(focusNode.id)!) : null;
+  const teams = sortTeams(listed.map((n) => byId.get(n.id)!).map((row) => teamOf(ctx, row, parentOf(row), lights!.light(nodes.find((n) => n.id === row.id)!), openBy.get(row.id) ?? 0)));
   // Люди и подразделения нужны только тем, кто добавляет людей или собирает команды: остальным не отправляем
   const picks = canCreate || teams.some((t) => t.rights.members);
   const [people, units, toApprove] = await Promise.all([
@@ -181,13 +193,17 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
     personal ? org.joinRequestsFor(actor).then((r) => r.toApprove) : Promise.resolve([]),
   ]);
   const owners = owner ? (await prisma.person.findMany({ where: { active: true, role: "OWNER" }, select: { slug: true } })).map((p) => p.slug) : [];
+  // «Команда выше» (этап 70): все команды, и закрытые тоже. Закрытую выбрать нельзя, но через неё идёт ветка: команда
+  // под закрытой командой ниже выбираемой всё равно ниже неё, сервер такое кольцо не пропустит (subtreeOf)
+  const parents = owner
+    ? [...orderTeams(active), ...orderTeams(nodes.filter((n) => !n.active))].map(({ node }) => ({ id: node.id, name: node.name, parentId: node.parentId, leader: byId.get(node.id)?.leader?.fullName ?? null, active: node.active }))
+    : [];
   return {
     teams,
-    extra,
     closed: owner ? rows.filter((r) => !r.active).map((r) => ({ id: r.id, name: r.name, kind: r.kind })) : [],
     people: people.map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, unit: unitName(p.unit), unitId: p.unitId, manager: p.manager?.slug ?? null })),
     units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head?.slug ?? null })),
-    parents: owner ? orderTeams(active).map((x) => ({ id: x.node.id, name: x.node.name, parentId: x.node.parentId, leader: byId.get(x.node.id)?.leader?.fullName ?? null })) : [],
+    parents,
     owners,
     toApprove,
     mode: shared ? "shared" : all ? "all" : "mine",
@@ -196,6 +212,25 @@ export async function teamsView(actor: Actor, opts: { focus?: string | null } = 
     canCreate,
     me: actor.slug,
   };
+}
+
+/**
+ * Команда из адреса (?team=) для карточки: свежие данные одной команды, в том числе той, которой нет в списке
+ * человека (ссылка из «Мне»: только просмотр, права те же, что везде). Закрытой или неизвестной команды нет. Смена
+ * команды на экране пересчитывает только это, а не весь экран (этап 70)
+ */
+export async function focusTeam(actor: Actor, id: string): Promise<WeeklyTeam | null> {
+  const ctx = await viewContext(actor);
+  const node = ctx.nodes.find((n) => n.id === id && n.active);
+  if (!node) return null;
+  const [row, openTasks, lights] = await Promise.all([
+    prisma.team.findUnique({ where: { id }, select: teamSelect }),
+    prisma.task.count({ where: { teamId: id, status: { in: [...OPEN] }, archivedAt: null } }),
+    weeklyLights(ctx.nodes),
+  ]);
+  if (!row) return null;
+  const parent = row.parentId ? ctx.nodes.find((n) => n.id === row.parentId) : undefined;
+  return teamOf(ctx, row, parent ? { id: parent.id, name: parent.name } : null, lights.light(node), openTasks);
 }
 
 export type CreatedTeam = { id: string; name: string; result: projects.AddPeopleResult | null; /** Другой руководитель, если его сразу назначили */ leader: string | null };
