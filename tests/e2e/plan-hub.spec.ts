@@ -57,26 +57,36 @@ async function skLayout(page: Page) {
     for (const pill of await row.locator(".sv-delta").all()) expect(overlaps((await button.boundingBox())!, (await pill.boundingBox())!), `кнопка ${await button.getAttribute("data-testid")} наезжает на отклонение`).toBe(false);
   }
   // Таблица по СК либо помещается в контейнер целиком, либо прокручивается в нём (страницу проверяет shot). У лидера
-  // КАСКО колонок меньше, на телефоне таблица может поместиться. Если прокрутка есть, колонка СК закреплена: таблица
-  // прокручена до конца, а название СК у левого края контейнера (рамка 1 px)
-  const first = sk.getByTestId("plan-sk-row").first().locator("td").first();
+  // КАСКО колонок меньше, на телефоне таблица может поместиться. Если прокрутка есть, колонка СК закреплена: после
+  // прокрутки до конца ячейка СК на том же месте, а соседняя колонка уехала влево на величину прокрутки. Прокрутка без плавности, положение
+  // меряется в следующем кадре
+  const cells = sk.getByTestId("plan-sk-row").first().locator("td");
+  const first = cells.nth(0);
+  const second = cells.nth(1);
   await expect(first).toHaveCSS("position", "sticky");
   const hidden = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
   if (hidden > 0) {
-    const scrolled = await scroller.evaluate((el) => {
+    const firstBefore = (await first.boundingBox())!;
+    const secondBefore = (await second.boundingBox())!;
+    const scrolled = await scroller.evaluate(async (el) => {
+      el.style.scrollBehavior = "auto";
       el.scrollLeft = el.scrollWidth;
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
       return el.scrollLeft;
     });
     expect(scrolled, "таблица по СК шире контейнера, но не прокручивается в нём").toBeGreaterThan(0);
+    const firstAfter = (await first.boundingBox())!;
+    const secondAfter = (await second.boundingBox())!;
+    expect(Math.abs(firstAfter.x - firstBefore.x), "колонка СК уехала при прокрутке").toBeLessThanOrEqual(0.5);
+    expect(Math.abs(secondBefore.x - secondAfter.x - scrolled), "соседняя колонка сдвинулась не на величину прокрутки").toBeLessThanOrEqual(1);
+    await scroller.evaluate(async (el) => {
+      el.scrollLeft = 0;
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      el.style.scrollBehavior = "";
+    });
   } else {
     await fits(sk.getByTestId("plan-sk-table"), "таблица по СК");
   }
-  const box = (await scroller.boundingBox())!;
-  const cell = (await first.boundingBox())!;
-  expect(Math.abs(cell.x - box.x), "колонка СК уехала при прокрутке").toBeLessThanOrEqual(1.5);
-  await scroller.evaluate((el) => {
-    el.scrollLeft = 0;
-  });
 }
 
 async function clearPlan() {
