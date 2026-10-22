@@ -6,7 +6,7 @@ import { MAIN_NAV, MANAGEMENT_NAV, NAV_GROUPS, mobileItems } from "@/components/
 describe("меню", () => {
   it("группы и порядок разделов", () => {
     expect(NAV_GROUPS.map((g) => g.label)).toEqual(["Моё", "Команда", "Бизнес"]);
-    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/me", "/one-on-one", "/weekly", "/tasks", "/roadmap", "/people", "/goals", "/initiatives", "/decisions", "/forecast", "/news", "/market"]);
+    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/me", "/one-on-one", "/weekly", "/tasks", "/roadmap", "/people", "/goals", "/initiatives", "/decisions", "/forecast", "/market", "/news"]);
     // Этап 62: «Рынок» закрытый раздел, пункт видят только те, кому он открыт
     expect(MAIN_NAV.filter((i) => i.restricted).map((i) => i.href)).toEqual(["/market"]);
     expect(MANAGEMENT_NAV.map((i) => i.href)).toEqual(["/ceo-report", "/journal", "/sync", "/settings"]);
