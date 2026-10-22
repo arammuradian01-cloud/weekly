@@ -14,7 +14,7 @@ import type { PersonSlug, Task } from "@/domain/types";
 import type { GoalResult } from "@/lib/goals/parse";
 import type { GoalProgress } from "@/lib/goals/progress";
 import { importanceOf, periodOf, roadmapTasks, type Period, type PeriodKey, type RoadmapFilter } from "./roadmap";
-import { placeOf, startOf, type Place, type TimelineRange } from "./timeline";
+import { barOf, byStart, placeOf, startOf, timelineRange, type Bar, type Place, type TimelineRange } from "./timeline";
 
 export type RoadmapGroupBy = "tasks" | "goals" | "both";
 
@@ -183,4 +183,15 @@ export type GoalLine = Place & { start: IsoDate; end: IsoDate; empty: boolean; l
 export function goalLineOf(group: Pick<GoalGroup, "tasks" | "span" | "empty">, range: TimelineRange, today: IsoDate): GoalLine {
   const late = !group.empty && group.span.end < today && group.tasks.some((t) => t.due === group.span.end && t.status !== "proposed");
   return { ...placeOf(range, group.span.start, group.span.end), start: group.span.start, end: group.span.end, empty: group.empty, late };
+}
+
+export type GoalTimelineRow = { group: GoalGroup; line: GoalLine; bars: Bar[] };
+
+/** Карта сроков по целям: строка цели с её полосой и полосы её задач; задачи без цели отдельно */
+export function buildGoalTimeline(groups: GoalGroups, today: IsoDate, range: TimelineRange = timelineRange(today)): { range: TimelineRange; goals: GoalTimelineRow[]; noGoal: Bar[] } {
+  return {
+    range,
+    goals: groups.goals.map((group) => ({ group, line: goalLineOf(group, range, today), bars: group.tasks.map((t) => barOf(t, range, today)).sort(byStart) })),
+    noGoal: groups.noGoal.map((t) => barOf(t, range, today)).sort(byStart),
+  };
 }
