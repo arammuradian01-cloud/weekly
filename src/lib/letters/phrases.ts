@@ -69,9 +69,9 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   if (e.subject?.startsWith("initiative:")) return `/initiatives#i-${encodeURIComponent(e.subject.slice(11))}`;
   // Прогноз месяца (этап 35): страница прогноза на месяц события
   if (e.subject?.startsWith("plan:")) return planHref(e.subject);
-  // Состав команды (этап 53): страница структуры с этой командой, запрос в команду: список запросов
-  if (e.subject?.startsWith("team:")) return `/people/structure?team=${encodeURIComponent(e.subject.split(":")[1] ?? "")}`;
-  if (e.subject?.startsWith("join:")) return "/people/structure#join-requests";
+  // Состав команды (этап 53): карточка команды на экране «Weekly-команды» (этап 64), запрос в команду: список запросов там же
+  if (e.subject?.startsWith("team:")) return `/people/teams?team=${encodeURIComponent(e.subject.split(":")[1] ?? "")}`;
+  if (e.subject?.startsWith("join:")) return "/people/teams#join-requests";
   // Дайджест новостей (этап 60): страница дайджеста
   if (e.subject?.startsWith("news:")) return `/news?digest=${encodeURIComponent(e.subject.slice(5))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;

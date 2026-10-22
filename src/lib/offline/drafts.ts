@@ -16,6 +16,8 @@ export type DraftEntryInput = {
   fact?: string;
   next?: string;
   help?: string;
+  /** Смысловой блок по шаблону команды (этап 66) */
+  section?: string | null;
   links: { title: string; url: string }[];
 };
 

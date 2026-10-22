@@ -25,6 +25,12 @@ import { ceoContext } from "@/lib/ceo/assembled";
 import { dbDate } from "@/lib/tasks/dates";
 import type { NotionDeps } from "@/lib/meeting/notion-api";
 import type { WeekKey } from "@/domain/types";
+import type { ReportBlock } from "@/lib/weekly-blocks/types";
+
+/** Этап 66: черновик weekly для CEO по смысловым блокам */
+const blk = (key: string, lines: [string, string][]): ReportBlock => ({ key, title: key, hidden: false, note: null, lines: lines.map(([product, text]) => ({ product, text, href: null, source: null })) });
+const pairs = (blocks: ReportBlock[] | null | undefined, key: string) => (blocks ?? []).find((b) => b.key === key)?.lines.map((l) => [l.product, l.text]) ?? [];
+const ceoText = (blocks: ReportBlock[]) => blocks.flatMap((b) => b.lines.map((l) => l.text)).join("\n");
 
 const INS = "Департамент страхования и инвестиций";
 const FIN = "Финансовый департамент";
@@ -163,10 +169,10 @@ describe("кто запускает и видит разбор", () => {
     const id = await readyParse();
     const tokov = await parse.getParse(await actorOf("Токов"), id);
     expect(tokov).toMatchObject({ status: "ready", canEdit: false, canCreateTasks: false, canSendCeo: false, canSeeText: false, pageText: "", canSeeCeo: true });
-    expect(tokov.result.ceo.main).toContain("Конверсия");
+    expect(ceoText(tokov.result.ceo)).toContain("Конверсия");
     // Собранный отчёт с цифрами, решениями и благодарностями топ-команды только отправляющим
     expect(tokov.ceoPreview).toBeNull();
-    await expectRule(parse.saveParseDraft(await actorOf("Токов"), id, { ceo: { main: "- Своё", risks: "", next: "" } }), /ведёт встречу/);
+    await expectRule(parse.saveParseDraft(await actorOf("Токов"), id, { ceo: [blk("products", [["osago", "Своё"]])] }), /ведёт встречу/);
     await expectRule(parse.createParseTasks(await actorOf("Токов"), id), /ведёт встречу/);
     await expectRule(parse.getParse(await actorOf("Кацемба"), id), /не видите/);
     const reva = await parse.getParse(await actorOf("Рева"), id);
@@ -179,7 +185,7 @@ describe("кто запускает и видит разбор", () => {
     try {
       const observer = await parse.getParse(await actorOf("CEO"), id);
       expect(observer).toMatchObject({ canSeeCeo: false, canSeeText: false, pageText: "", ceoPreview: null, canEdit: false });
-      expect(observer.result.ceo).toEqual({ main: "", risks: "", next: "" });
+      expect(observer.result.ceo).toEqual([]);
       expect(observer.result.tasks).toHaveLength(3);
     } finally {
       await prisma.person.update({ where: { slug: "ceo" }, data: { active: false } });
@@ -190,7 +196,7 @@ describe("кто запускает и видит разбор", () => {
     const team = await parse.getParse(await teamLogin("Мурадян", "OWNER"), top);
     expect(team).toMatchObject({ canEdit: true, canSeeCeo: false, canSeeText: false, pageText: "", canSendCeo: false, canCreateTasks: false });
     const before = (await parse.getParse(await owner(), top)).result.ceo;
-    await parse.saveParseDraft(await teamLogin("Мурадян", "OWNER"), top, { ceo: { main: "- Подмена", risks: "", next: "" } });
+    await parse.saveParseDraft(await teamLogin("Мурадян", "OWNER"), top, { ceo: [blk("products", [["osago", "Подмена"]])] });
     expect((await parse.getParse(await owner(), top)).result.ceo).toEqual(before);
   });
 });
@@ -204,7 +210,9 @@ describe("разбор", () => {
     expect(view.result.summary).toEqual(["Конверсия в покупку ОСАГО выросла до 12%"]);
     expect(view.result.decisions).toMatchObject([{ text: "запускаем тест новой формы расчёта в ноябре", on: false }]);
     expect(view.result.risks).toEqual(["Задержка выгрузки от финансов"]);
-    expect(view.result.ceo.main).toContain("- Конверсия в покупку ОСАГО выросла до 12%");
+    // Этап 66: черновик по смысловым блокам, строка подписана продуктом
+    expect(pairs(view.result.ceo, "products")).toContainEqual(["osago", "Конверсия в покупку ОСАГО выросла до 12%"]);
+    expect(pairs(view.result.ceo, "risks")).toEqual([["department", "Задержка выгрузки от финансов"]]);
     const [tokov, pogosova, ivanov] = view.result.tasks;
     expect(tokov).toMatchObject({ title: "собрать дашборд конверсии по СК", owner: (await person("Токов")).slug, dueGuessed: true, on: true, existing: null });
     expect(pogosova).toMatchObject({ title: "Сверка комиссий партнёров за октябрь", owner: (await person("Погосова")).slug });
@@ -222,7 +230,7 @@ describe("разбор", () => {
       decisions: [{ text: "Тест формы в ноябре", owner: "Рева Тарас Игоревич" }],
       risks: [],
       next: ["Итоги теста через месяц"],
-      ceo: { main: "- ОСАГО: конверсия 12%", risks: "", next: "- Тест формы в ноябре" },
+      ceo: { news: [], competitors: [], products: [{ product: "osago", text: "Конверсия 12%" }], partners: [], risks: [], plan: [{ product: "chto-to", text: "Тест формы в ноябре" }] },
       tasks: [{ title: "Собрать дашборд", outcome: "Дашборд конверсии по СК", owner: "Токов Никита Андреевич", coExecutors: ["Погосова Сабина Левоновна"], due: "" }],
     });
     const id = await start(reva, revaTeam, RULES_PAGE);
@@ -231,7 +239,9 @@ describe("разбор", () => {
     expect(claude.calls).toBe(1);
     expect(view).toMatchObject({ method: "ai", model: "claude-sonnet-5-5" });
     expect(view.result.summary).toEqual(["Конверсия - 12%"]);
-    expect(view.result.ceo).toEqual({ main: "- ОСАГО: конверсия 12%", risks: "", next: "- Тест формы в ноябре" });
+    expect(pairs(view.result.ceo, "products")).toEqual([["osago", "Конверсия 12%"]]);
+    // Чужой код продукта из ответа модели не принимается: строка подписана департаментом
+    expect(pairs(view.result.ceo, "plan")).toEqual([["department", "Тест формы в ноябре"]]);
     expect(view.result.tasks[0]).toMatchObject({ owner: (await person("Токов")).slug, coExecutors: [(await person("Погосова")).slug] });
     expect(view.result.decisions[0]!.owner).toBe((await person("Рева")).slug);
 
@@ -427,62 +437,82 @@ describe("задачи из разбора", () => {
 });
 
 describe("weekly для CEO", () => {
-  it("отправляет владелец или администратор в режиме управления при личном входе; CEO руководитель компании, событие в «Мне», собранный отчёт", async () => {
-    const id = await readyParse(await owner(), "top");
-    const draft = { main: "- ОСАГО: конверсия 12%", risks: "- Задержка выгрузки", next: "- Тест формы в ноябре" };
-    await expectRule(parse.sendParseToCeo(await actorOf("Рева"), id, { ceo: draft }), /ведёт встречу|владелец или администратор/);
-    await expectRule(parse.sendParseToCeo(await teamLogin("Мурадян", "OWNER"), id, { ceo: draft }), /при личном входе/);
-    await expectRule(parse.sendParseToCeo(await actorOf("Мурадян"), id, { ceo: draft }), /владелец или администратор в режиме управления/);
-    await expectRule(parse.sendParseToCeo(await owner(), id, { ceo: { main: "", risks: "", next: "" } }), /пустой/);
+  const DRAFT = [blk("products", [["osago", "Конверсия 12%"]]), blk("risks", [["department", "Задержка выгрузки"]]), blk("plan", [["department", "Тест формы в ноябре"]])];
 
-    const view = await parse.sendParseToCeo(await owner(), id, { ceo: draft });
+  it("отправляет владелец или администратор в режиме управления при личном входе; CEO руководитель компании, событие в «Мне», собранный отчёт по блокам", async () => {
+    const id = await readyParse(await owner(), "top");
+    await expectRule(parse.sendParseToCeo(await actorOf("Рева"), id, { ceo: DRAFT }), /ведёт встречу|владелец или администратор/);
+    await expectRule(parse.sendParseToCeo(await teamLogin("Мурадян", "OWNER"), id, { ceo: DRAFT }), /при личном входе/);
+    await expectRule(parse.sendParseToCeo(await actorOf("Мурадян"), id, { ceo: DRAFT }), /владелец или администратор в режиме управления/);
+    await expectRule(parse.sendParseToCeo(await owner(), id, { ceo: [blk("products", [])] }), /пустой/);
+
+    const view = await parse.sendParseToCeo(await owner(), id, { ceo: DRAFT });
     expect(view.statusLabel).toBe("Отправлено CEO");
     expect(view.ceoPreview?.week).toBe(key);
     const krainik = await actorOf("Крайник");
     const report = await weekly.getCeoReport(key);
-    expect(report.sections).toEqual(draft);
+    // Отчёта за неделю не было: черновик дописан к свежей автосборке, CEO получает отчёт целиком по стандартным блокам
+    expect(report.blocks!.map((b) => b.key)).toEqual(["news", "wow", "month", "competitors", "products", "partners", "risks", "plan"]);
+    expect(pairs(report.blocks, "products")).toContainEqual(["osago", "Конверсия 12%"]);
+    expect(pairs(report.blocks, "risks")).toContainEqual(["department", "Задержка выгрузки"]);
+    expect(pairs(report.blocks, "plan")).toContainEqual(["department", "Тест формы в ноябре"]);
+    expect(report.sections!.next).toContain("- Департамент. Тест формы в ноябре");
     expect(report.sent).toMatchObject({ by: "Мурадян Арам", to: ["Крайник Александр"] });
     const inbox = await listInbox(krainik.personId);
     expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/отправил weekly для CEO/) });
     // CEO видит собранный отчёт только для чтения и только при личном входе; цифры по его уровню (у генерального все)
     const seen = await parse.ceoSentReports(krainik, key);
-    expect(seen?.current).toMatchObject({ sections: draft, sentBy: "Мурадян Арам", editedAfter: false });
+    // Скрытые блоки (конкуренты без новостей) CEO не уходят
+    expect(seen?.current).toMatchObject({ blocks: report.blocks!.filter((b) => !b.hidden), sentBy: "Мурадян Арам", editedAfter: false });
     expect(seen?.current?.ctx).toMatchObject({ week: key, level: "full" });
     expect(await parse.ceoSentReports({ ...krainik, via: "TEAM" }, key)).toBeNull();
     expect(await parse.ceoSentReports(await actorOf("Токов"))).toBeNull();
     expect(await prisma.auditLog.findFirst({ where: { action: "meeting.parse.ceo" } })).toMatchObject({ after: expect.stringMatching(/Отправлен в приложении: Крайник Александр. Новый отчёт/) });
+    // Черновик разбора помнит, что ушло
+    expect(pairs((await parse.getParse(await owner(), id)).result.ceo, "products")).toEqual([["osago", "Конверсия 12%"]]);
   });
 
   it("правка после отправки: отметка честная, CEO видит отправленный снимок", async () => {
     const id = await readyParse(await owner(), "top");
-    const draft = { main: "- Отправленная версия", risks: "", next: "" };
-    await parse.sendParseToCeo(await owner(), id, { ceo: draft });
+    await parse.sendParseToCeo(await owner(), id, { ceo: [blk("news", [["department", "Отправленная версия"]])] });
     const row = await prisma.ceoReport.findFirstOrThrow();
     expect(row.sentAt!.getTime()).toBe(row.updatedAt.getTime());
     const krainik = await actorOf("Крайник");
     expect((await parse.ceoSentReports(krainik, key))?.current?.editedAfter).toBe(false);
     await weekly.saveCeoReport(await owner(), key, { main: "- Поправили после отправки", risks: "", next: "" });
     const after = await parse.ceoSentReports(krainik, key);
-    expect(after?.current).toMatchObject({ editedAfter: true, sections: draft });
+    expect(after?.current?.editedAfter).toBe(true);
+    expect(pairs(after?.current?.blocks, "news")).toContainEqual(["department", "Отправленная версия"]);
   });
 
-  it("отчёт недели уже есть: без выбора и по устаревшему экрану не отправляется; дописать по разделам или заменить", async () => {
+  it("отчёт недели уже есть: без выбора и по устаревшему экрану не отправляется; дописать по блокам или заменить блоки черновика", async () => {
     const id = await readyParse(await owner(), "top");
     const saved = await weekly.saveCeoReport(await owner(), key, { main: "- Бюджет 2027 защищён", risks: "", next: "- Встреча с СК" }, [{ title: "Встреча с ВСК", text: "Договорились о планах." }]);
-    const draft = { main: "- ОСАГО: конверсия 12%", risks: "- Задержка выгрузки", next: "- встреча с СК" };
+    const draft = [blk("products", [["osago", "Конверсия 12%"]]), blk("risks", [["department", "Задержка выгрузки"]]), blk("plan", [["department", "встреча с СК"]])];
     await expectRule(parse.sendParseToCeo(await owner(), id, { ceo: draft, expected: saved.updatedAt }), /выберите, дописать/);
     await expectRule(parse.sendParseToCeo(await owner(), id, { ceo: draft, mode: "merge", expected: "2020-01-01T00:00:00.000Z" }), /поменялся/);
     const view = await parse.getParse(await owner(), id);
     expect(view.ceo?.existing.updatedAt).toBe(saved.updatedAt);
+    // Старый отчёт (разделы) разложен по блокам: к нему и пойдёт черновик
+    expect(pairs(view.ceo?.base, "news")).toEqual([["department", "Бюджет 2027 защищён"]]);
+    expect(pairs(view.ceo?.base, "plan")).toEqual([["department", "Встреча с СК"]]);
     await parse.sendParseToCeo(await owner(), id, { ceo: draft, mode: "merge", expected: saved.updatedAt });
     const merged = await weekly.getCeoReport(key);
-    expect(merged.sections).toEqual({ main: "- Бюджет 2027 защищён\n- ОСАГО: конверсия 12%", risks: "- Задержка выгрузки", next: "- Встреча с СК" });
+    expect(pairs(merged.blocks, "news")).toEqual([["department", "Бюджет 2027 защищён"]]);
+    expect(pairs(merged.blocks, "products")).toEqual([["osago", "Конверсия 12%"]]);
+    expect(pairs(merged.blocks, "risks")).toEqual([["department", "Задержка выгрузки"]]);
+    // Та же строка второй раз не попадает
+    expect(pairs(merged.blocks, "plan")).toEqual([["department", "Встреча с СК"]]);
     expect(merged.meetings).toEqual([{ title: "Встреча с ВСК", text: "Договорились о планах." }]);
-    // Снимок того, что ушло CEO: разделы после слияния и «Мои встречи»
+    // Снимок того, что ушло CEO: блоки после слияния и «Мои встречи»
     const seen = await parse.ceoSentReports(await actorOf("Крайник"), key);
-    expect(seen?.current).toMatchObject({ sections: merged.sections, meetings: merged.meetings });
+    expect(seen?.current).toMatchObject({ blocks: merged.blocks!.filter((b) => !b.hidden), meetings: merged.meetings });
     await parse.sendParseToCeo(await owner(), id, { ceo: draft, mode: "replace", expected: merged.updatedAt });
-    expect((await weekly.getCeoReport(key)).sections).toEqual(draft);
+    const replaced = await weekly.getCeoReport(key);
+    // Пустой блок черновика ничего не заменяет: новости отчёта остались
+    expect(pairs(replaced.blocks, "news")).toEqual([["department", "Бюджет 2027 защищён"]]);
+    expect(pairs(replaced.blocks, "plan")).toEqual([["department", "встреча с СК"]]);
+    expect(replaced.meetings).toEqual(merged.meetings);
   });
 
   it("нет руководителя компании: CEO из профиля ceo, если он включён; иначе понятная ошибка", async () => {

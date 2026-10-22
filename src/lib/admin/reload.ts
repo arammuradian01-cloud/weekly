@@ -64,8 +64,8 @@ export async function planReload(db: PrismaClient, tasksText: string, weeklyText
 
 /**
  * Удаляет задачи топ-команды (вместе с комментариями, переносами и ссылками), записи и сдачи weekly людей топ-команды,
- * черновики отчёта CEO и опустевшие недели, затем загружает выгрузку. Задачи и weekly других команд, люди, справочники,
- * настройки и журнал остаются.
+ * черновики отчёта CEO (отправленные остаются) и опустевшие недели без отчётов, затем загружает выгрузку. Задачи и
+ * weekly других команд, люди, справочники, настройки и журнал остаются.
  * Битая выгрузка останавливает перезаливку до удаления
  */
 export async function reloadFromBord(db: PrismaClient, tasksText: string, weeklyText: string, opts: { batch: string; actor: ReloadActor }): Promise<ReloadResult> {
@@ -83,9 +83,11 @@ export async function reloadFromBord(db: PrismaClient, tasksText: string, weekly
     if (gone.length) await tx.contentImportKey.deleteMany({ where: { kind: { in: ["task", "link"] }, entityId: { in: gone } } });
     await tx.weeklyEntry.deleteMany({ where: { OR: [{ authorId: null }, { authorId: { in: ids } }] } });
     await tx.weeklyReport.deleteMany({ where: { authorId: { in: ids } } });
-    await tx.ceoReport.deleteMany();
-    // Недели, где не осталось ни записей, ни сдач других команд
-    await tx.week.deleteMany({ where: { entries: { none: {} }, reports: { none: {} } } });
+    // Черновики отчёта CEO уходят, отправленные CEO остаются: на них ведут события в «Мне» (этапы 61 и 66)
+    await tx.ceoReport.deleteMany({ where: { sentAt: null } });
+    // Недели, где не осталось ни записей, ни сдач других команд, ни отчётов CEO и команд (этап 66: отчёт команды
+    // собирается и из задач, он привязан к неделе и ушёл бы вместе с ней)
+    await tx.week.deleteMany({ where: { entries: { none: {} }, reports: { none: {} }, teamReports: { none: {} }, ceoReport: { is: null } } });
     // Номера новых задач начнутся после самой старшей задачи из выгрузки, а при заборе из Bord от 1001
     const pullOn = await tx.setting.findUnique({ where: { key: "bord.sourceId" } });
     const first = typeof pullOn?.value === "string" && pullOn.value ? 1001 : 1;

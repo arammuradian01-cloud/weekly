@@ -31,6 +31,7 @@ import { ThanksField } from "./thanks-field";
 import { taskFacts, type WeekFact } from "@/lib/weekly/facts";
 import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
+import type { TemplateBlock } from "@/lib/weekly-blocks/types";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
 
@@ -56,6 +57,7 @@ export function WeeklySubmit({
   promises: initialPromises = [],
   facts: initialFacts = [],
   skippedFacts = [],
+  template = null,
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -74,8 +76,10 @@ export function WeeklySubmit({
   facts?: WeekFact[];
   /** Ключи фактов, которые уже записи или скрыты, в этой и прошлой неделе */
   skippedFacts?: string[];
+  /** Смысловые блоки weekly команды (этап 66): записи сдаются по ним. null: шаблона нет, weekly как раньше */
+  template?: { teamId: string; teamName: string; blocks: TemplateBlock[] } | null;
 }) {
-  const { data, me, notify, notifyUndo } = usePrototype();
+  const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
   const [weekly, setWeekly] = useState<PersonWeekly>(initialReport);
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
@@ -85,7 +89,8 @@ export function WeeklySubmit({
   // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
   const setHeadline = (value: string) => {
     setHeadlineState(value);
-    if (canEdit) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
+    // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
+    if (canEdit && !viewing) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
   };
   const [offline, setOffline] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -127,20 +132,21 @@ export function WeeklySubmit({
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
-    if (!canEdit || headline === savedHeadline.current) return;
+    // В просмотре автосохранения нет (этап 63): сервер всё равно откажет
+    if (!canEdit || viewing || headline === savedHeadline.current) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void saveHeadline(), 2000);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [headline, canEdit, saveHeadline]);
+  }, [headline, canEdit, viewing, saveHeadline]);
   useEffect(() => {
     const flush = () => {
-      if (document.visibilityState === "hidden") void saveHeadline();
+      if (document.visibilityState === "hidden" && !viewing) void saveHeadline();
     };
     document.addEventListener("visibilitychange", flush);
     return () => document.removeEventListener("visibilitychange", flush);
-  }, [saveHeadline]);
+  }, [saveHeadline, viewing]);
 
   // Обещания недели (этап 22): планы прошлого weekly и мои задачи со сроком на этой неделе
   const [promises, setPromises] = useState<EntryPromise[]>(initialPromises);
@@ -211,7 +217,7 @@ export function WeeklySubmit({
     ACTIVE_DRAFTS.add(headlineKey);
     // Главная фраза, которую не успели отправить в прошлый раз, возвращается в поле и уходит сама. Если на сервере
     // её уже изменили на другом устройстве, черновик устарел: не возвращаем и говорим об этом
-    const kept = canEdit ? headlineDraft(me.slug, week.key) : null;
+    const kept = canEdit && !viewing ? headlineDraft(me.slug, week.key) : null;
     if (kept && kept.value !== savedHeadline.current) {
       if (kept.base !== undefined && kept.base !== savedHeadline.current) {
         dropHeadlineDraft(me.slug, week.key);
@@ -230,7 +236,7 @@ export function WeeklySubmit({
     if (missed.length) setEntries((prev) => [...prev, ...missed.filter((m) => !prev.some((e) => e.id === m.id))]);
     const back = () => {
       setOffline(false);
-      void saveHeadline();
+      if (!viewing) void saveHeadline();
     };
     const gone = () => setOffline(true);
     if (typeof navigator !== "undefined" && !navigator.onLine) setOffline(true);
@@ -472,12 +478,17 @@ export function WeeklySubmit({
             <h3 className="text-lead font-semibold text-ink">
               Записи <span className="font-normal text-muted">{entries.length}</span>
             </h3>
+            {template ? (
+              <p className="text-small text-muted" data-testid="weekly-template-hint">
+                Команда «{template.teamName}» сдаёт weekly по блокам: {template.blocks.map((b) => b.title).join(", ")}. У каждой записи выберите блок отчёта.
+              </p>
+            ) : null}
             {entries.length === 0 && !draft ? <p className="text-body text-muted">Пока ни одной записи.</p> : null}
             <ul className="flex flex-col gap-3">
               {entries.filter((e) => !(draft && e.id === draftId)).map((e) =>
                 editing === e.id ? (
                   <li key={e.id}>
-                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} />
+                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} template={template?.blocks} />
                   </li>
                 ) : (
                   <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -525,6 +536,7 @@ export function WeeklySubmit({
             {!canEdit ? null : draft ? (
               <EntryForm
                 initial={draft}
+                template={template?.blocks}
                 onSaved={onSaved}
                 onAutosaved={onAutosaved}
                 onCancel={() => {

@@ -49,7 +49,7 @@ test("цель департамента, цель сектора ниже и з�
   await page.goto("/goals");
   await page.getByRole("button", { name: "Новая цель" }).click();
   let modal = page.getByRole("dialog", { name: /Новая цель/ });
-  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Команда").selectOption({ label: "Команда страхования и инвестиций" });
   await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
   await modal.getByLabel("Номер").fill("D1");
   await modal.getByLabel("База").fill("120");
@@ -124,7 +124,7 @@ test("факт и целевое значение в таблице целей: 
   await page.goto("/goals");
   await page.getByRole("button", { name: "Новая цель" }).click();
   const modal = page.getByRole("dialog", { name: /Новая цель/ });
-  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Команда").selectOption({ label: "Команда страхования и инвестиций" });
   await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
   await modal.getByLabel("Номер").fill("D1");
   await modal.getByLabel("Метрика").fill("Промо-маржа за квартал, млн");

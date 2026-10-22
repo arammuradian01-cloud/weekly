@@ -53,7 +53,7 @@ test("цели Q4 из файла борда лидера, задача с ли�
   await drawer.getByLabel("Файл борда лидера").setInputFiles({ name: "Борд лидера INS CPO.xlsx", mimeType: XLSX, buffer: await boardBuffer() });
   await drawer.getByRole("button", { name: "Проверить" }).click();
   await expect(drawer.getByText("Новых целей 2, изменится 0, без изменений 0")).toBeVisible();
-  await expect(drawer.getByText(/Рева Тарас: целей 2, команда «Топ-команда». Вкладка «Цели CPO»/)).toBeVisible();
+  await expect(drawer.getByText(/Рева Тарас: целей 2, команда «Команда страхования и инвестиций». Вкладка «Цели CPO»/)).toBeVisible();
   await expect(drawer.getByText(/«Цели Telemarketing Unit»: В шапке вкладки не указан владелец/)).toBeVisible();
   await expect(drawer.getByText(/«Цели и мотивация»: Вкладка с мотивацией, оценками или оплатой: не читается/)).toBeVisible();
   await expect(drawer.getByText(/999 999|330 000|Salary/)).toHaveCount(0);

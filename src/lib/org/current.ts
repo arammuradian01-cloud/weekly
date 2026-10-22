@@ -13,6 +13,7 @@ export { orderTeams };
 import { ALL_TEAMS } from "@/domain/teams";
 import type { WeekAudience } from "@/lib/weekly/service";
 import { teamOptions, type CurrentTeam, type TeamOption } from "./audience";
+import { TEAM_VIEW_COOKIE } from "@/lib/view-as";
 
 export { audienceOf, feedTeamFor, teamOptions, type CurrentTeam, type TeamOption } from "./audience";
 
@@ -32,9 +33,9 @@ export function pickCurrent(options: TeamOption[], wanted: string | undefined): 
   return options[0]?.id ?? null;
 }
 
-/** Чей доступ: профиль и как вошли. Общий логин без режима управления видит только топ-команду */
-export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown }): ScopeSubject {
-  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management, shared: ctx.via === "TEAM" };
+/** Чей доступ: профиль и как вошли. Общий логин без режима управления видит только топ-команду. viewAs: «Смотреть как» (этап 63) */
+export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown; viewAs?: unknown }): ScopeSubject {
+  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management, shared: ctx.via === "TEAM", ...(ctx.viewAs ? { viewAs: true } : {}) };
 }
 
 export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
@@ -45,7 +46,8 @@ export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
   ]);
   const scope = scopeOf(nodes, person, functional.map((p) => p.id));
   const options = teamOptions(nodes, scope, person.id);
-  const id = pickCurrent(options, jar.get(TEAM_COOKIE)?.value);
+  // «Смотреть как» (этап 63): команда, выбранная в просмотре, живёт в своей cookie и не трогает выбор владельца
+  const id = pickCurrent(options, jar.get(person.viewAs ? TEAM_VIEW_COOKIE : TEAM_COOKIE)?.value);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   let people: string[];
   let name: string;

@@ -4,8 +4,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { NotionError, allowedFromEnv, allowedParentsFromEnv, blocksToText, fakeAllowed, meaningfulText, notionPageIdFromUrl, readNotionPage, unreadableBlock, type NotionBlock } from "@/lib/meeting/notion-api";
 import { parseByRules, taskFromLine } from "@/lib/meeting/parse-rules";
-import { ceoDraftOf, cleanText, dueFromText, mergeCeoSections, sameTask, taskTitle, validateRawMeeting } from "@/lib/meeting/parse-types";
-import { ClaudeError, parseWithClaude, userMessage, type ClaudeInput } from "@/lib/meeting/claude";
+import { ceoDraftOf, cleanText, dueFromText, sameTask, taskTitle, validateRawMeeting } from "@/lib/meeting/parse-types";
+import { ClaudeError, TOOL_SCHEMA, parseWithClaude, userMessage, type ClaudeInput } from "@/lib/meeting/claude";
+import { mergeBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 const PAGE = "1a2b3c4d5e6f47a8b9c0d1e2f3a4b5c6";
 const DASHED = "1a2b3c4d-5e6f-47a8-b9c0-d1e2f3a4b5c6";
@@ -297,7 +298,7 @@ describe("проверка ответа Claude", () => {
       decisions: [{ text: "Пилот \u00b7 ноябрь", owner: "Фатьянов" }, { owner: "без текста" }],
       risks: [],
       next: ["Встреча 03.11"],
-      ceo: { main: "Главное \u2014 рост", risks: "", next: "" },
+      ceo: { news: [], competitors: [], products: [{ product: "osago", text: "Главное \u2014 рост" }, { text: "КАСКО: пилот" }, "  "], partners: [{ product: "нет такого", text: "Два агрегатора" }], risks: [], plan: [] },
       tasks: [{ title: long, outcome: "План", owner: "Фатьянов", due: "2026-13-01" }, { outcome: "без названия" }],
     });
     expect(r.ok).toBe(true);
@@ -305,10 +306,37 @@ describe("проверка ответа Claude", () => {
     expect(r.skipped).toBe(2);
     expect(r.value.summary).toEqual(["Рост конверсии - 12%", "ОСАГО - КАСКО"]);
     expect(r.value.decisions).toEqual([{ text: "Пилот, ноябрь", owner: "Фатьянов" }]);
-    expect(r.value.ceo).toEqual({ main: "- Главное - рост", risks: "", next: "" });
+    // Этап 66: черновик по смысловым блокам. Продукт из ответа или по тексту строки, чужой код продукта не принимается
+    const byKey = (k: string) => r.value.ceo!.find((b) => b.key === k)!;
+    expect(r.value.ceo!.map((b) => b.key)).toEqual(["news", "competitors", "products", "partners", "risks", "plan"]);
+    expect(byKey("products").lines).toEqual([
+      { product: "osago", text: "Главное - рост", href: null, source: null },
+      { product: "kasko", text: "пилот", href: null, source: null },
+    ]);
+    expect(byKey("partners").lines).toEqual([{ product: "partners", text: "Два агрегатора", href: null, source: null }]);
     expect(r.value.tasks[0]!.title.length).toBeLessThanOrEqual(120);
     expect(r.value.tasks[0]!.title).toBe(taskTitle(long));
     expect(r.value.tasks[0]!.due).toBeNull();
+  });
+
+  it("прежний вид черновика (главное, риски, что дальше строками) раскладывается по блокам", () => {
+    const r = validateRawMeeting({ summary: [], decisions: [], risks: [], next: [], tasks: [], ceo: { main: "- ВЗР: тариф не поднимаем\n- Партнёры: два агрегатора", risks: "- Интеграция сдвигается", next: "" } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const byKey = (k: string) => r.value.ceo!.find((b) => b.key === k)!;
+    expect(byKey("products").lines.map((l) => [l.product, l.text])).toEqual([["red", "ВЗР: тариф не поднимаем"]]);
+    expect(byKey("partners").lines.map((l) => [l.product, l.text])).toEqual([["partners", "два агрегатора"]]);
+    expect(byKey("risks").lines.map((l) => [l.product, l.text])).toEqual([["department", "Интеграция сдвигается"]]);
+    expect(r.value.ceo!.some((b) => b.key === "wow" || b.key === "month")).toBe(false);
+    // Пустой черновик: собираем из итогов
+    const empty = validateRawMeeting({ summary: [], decisions: [], risks: [], next: [], tasks: [], ceo: { news: [], competitors: [], products: [], partners: [], risks: [], plan: [] } });
+    expect(empty.ok && empty.value.ceo).toBeNull();
+  });
+
+  it("схема ответа просит блоки с продуктом у каждой строки", () => {
+    const ceo = TOOL_SCHEMA.input_schema.properties.ceo;
+    expect(ceo.required).toEqual(["news", "competitors", "products", "partners", "risks", "plan"]);
+    expect(ceo.properties.products.items.required).toEqual(["product", "text"]);
   });
 
   it("не тот вид ответа не принимается: не объект, нет списка задач, ceo не объект", () => {
@@ -331,7 +359,7 @@ const INPUT: ClaudeInput = {
   people: ["Рева Тарас", "Логинова Светлана"],
   directions: [{ code: "osago", label: "ОСАГО" }],
 };
-const TOOL_INPUT = { summary: ["Рост"], decisions: [], risks: [], next: [], ceo: { main: "- Рост", risks: "", next: "" }, tasks: [{ title: "Выгрузка", outcome: "Выгрузка готова", owner: "Логинова Светлана", due: "2026-10-23" }] };
+const TOOL_INPUT = { summary: ["Рост"], decisions: [], risks: [], next: [], ceo: { news: [], competitors: [], products: [{ product: "osago", text: "Рост" }], partners: [], risks: [], plan: [] }, tasks: [{ title: "Выгрузка", outcome: "Выгрузка готова", owner: "Логинова Светлана", due: "2026-10-23" }] };
 
 function claudeStub(response: unknown, status = 200) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -382,16 +410,65 @@ describe("повторный разбор", () => {
 });
 
 describe("weekly для CEO", () => {
-  it("черновик из итогов, решений, рисков и следующих шагов, если модель его не дала", () => {
-    const raw = parseByRules("## Итоги\n- Рост\n## Решения\n- Пилот в ноябре\n## Риски\n- Срыв сроков\n## Задачи\n- Рева: слайды до 24.10", { base: BASE, knows });
-    expect(ceoDraftOf(raw)).toEqual({ main: "- Рост\n- Решили: Пилот в ноябре", risks: "- Срыв сроков", next: "- слайды" });
+  const block = (key: string, lines: [string | null, string][]): ReportBlock => ({ key, title: key, hidden: false, note: null, lines: lines.map(([product, text]) => ({ product, text, href: null, source: null })) });
+  const pairs = (blocks: ReportBlock[], key: string) => blocks.find((b) => b.key === key)!.lines.map((l) => [l.product, l.text]);
+
+  it("черновик по блокам из итогов, решений, рисков и следующих шагов, если модель его не дала: каждая строка с продуктом", () => {
+    const raw = parseByRules("## Итоги\n- Конверсия ОСАГО выросла\n- Партнёрский канал отстаёт\n- Бюджет защищён\n## Решения\n- Пилот КАСКО в ноябре\n## Риски\n- Срыв сроков\n## Задачи\n- Рева: слайды до 24.10", { base: BASE, knows });
+    expect(raw.ceo).toBeNull();
+    const draft = ceoDraftOf(raw);
+    expect(draft.map((b) => b.key)).toEqual(["news", "competitors", "products", "partners", "risks", "plan"]);
+    expect(pairs(draft, "products")).toEqual([
+      ["osago", "Конверсия ОСАГО выросла"],
+      ["kasko", "Решили: Пилот КАСКО в ноябре"],
+    ]);
+    expect(pairs(draft, "partners")).toEqual([["partners", "Партнёрский канал отстаёт"]]);
+    expect(pairs(draft, "news")).toEqual([["department", "Бюджет защищён"]]);
+    expect(pairs(draft, "risks")).toEqual([["department", "Срыв сроков"]]);
+    expect(pairs(draft, "plan")).toEqual([["department", "слайды"]]);
   });
 
-  it("дописать по разделам без повторов или заменить целиком", () => {
-    const existing = { main: "- Рост конверсии\n- Бюджет защищён", risks: "", next: "- Встреча с СК" };
-    const draft = { main: "- рост конверсии.\n- Пилот КАСКО", risks: "- Срыв сроков", next: "- Встреча с СК" };
-    expect(mergeCeoSections(existing, draft, "merge")).toEqual({ main: "- Рост конверсии\n- Бюджет защищён\n- Пилот КАСКО", risks: "- Срыв сроков", next: "- Встреча с СК" });
-    expect(mergeCeoSections(existing, draft, "replace")).toEqual(draft);
-    expect(mergeCeoSections(null, draft, "merge")).toEqual(draft);
+  it("разбор правилами по разделам смысловых блоков: новости, конкуренты, разделы продуктов и партнёров", () => {
+    const raw = parseByRules(
+      "## Новости рынка\n- ЦБ изменил тарифный коридор ОСАГО\n## Конкуренты\n- Пампаду запустил подписку\n## ОСАГО\n- Конверсия 12%\n## Депозиты и инвестиции\n- Ставки снизились\n## Партнёры\n- Два новых агрегатора\n## Риски\n- Задержка выгрузки",
+      { base: BASE, knows },
+    );
+    // Строки разделов видны и в итогах встречи
+    expect(raw.summary).toEqual(["ЦБ изменил тарифный коридор ОСАГО", "Пампаду запустил подписку", "Конверсия 12%", "Ставки снизились", "Два новых агрегатора"]);
+    const draft = ceoDraftOf(raw);
+    expect(pairs(draft, "news")).toEqual([["osago", "ЦБ изменил тарифный коридор ОСАГО"]]);
+    expect(pairs(draft, "competitors")).toEqual([["department", "Пампаду запустил подписку"]]);
+    expect(pairs(draft, "products")).toEqual([
+      ["osago", "Конверсия 12%"],
+      ["deposits", "Ставки снизились"],
+    ]);
+    expect(pairs(draft, "partners")).toEqual([["partners", "Два новых агрегатора"]]);
+    expect(pairs(draft, "risks")).toEqual([["department", "Задержка выгрузки"]]);
+  });
+
+  it("слова разделов в начале обычной фразы не заголовок: «Рынок растёт», «Партнёры подписали договор», «Команда укомплектована»", () => {
+    const raw = parseByRules("Итоги\nРынок растёт\nПартнёры подписали договор\nКоманда укомплектована\nРиски:\n- Срыв сроков", { base: BASE, knows });
+    expect(raw.summary).toEqual(["Рынок растёт", "Партнёры подписали договор", "Команда укомплектована"]);
+    expect(raw.risks).toEqual(["Срыв сроков"]);
+    // Вне разделов короткие фразы тоже не теряются
+    expect(parseByRules("Рынок растёт\nКоманда укомплектована", { base: BASE, knows }).summary).toEqual(["Рынок растёт", "Команда укомплектована"]);
+    // С двоеточием, разметкой заголовка или одним названием раздела это заголовок
+    const marked = parseByRules("Рынок:\n- ЦБ поднял ставку\n**Партнёры**\n- Два новых агрегатора\nКоманда\n- Вышел аналитик\n## Конкуренты\n- Пампаду запустил подписку", { base: BASE, knows });
+    const draft = ceoDraftOf(marked);
+    expect(pairs(draft, "news").map(([, t]) => t)).toEqual(["ЦБ поднял ставку", "Вышел аналитик"]);
+    expect(pairs(draft, "partners")).toEqual([["partners", "Два новых агрегатора"]]);
+    expect(pairs(draft, "competitors").map(([, t]) => t)).toEqual(["Пампаду запустил подписку"]);
+  });
+
+  it("дописать по блокам без повторов или заменить блоки черновика целиком", () => {
+    const existing = [block("wow", [["osago", "Трафик +2%"]]), block("products", [["osago", "Рост конверсии"], ["department", "Бюджет защищён"]]), block("plan", [["osago", "Встреча с СК"]])];
+    const draft = [block("products", [["osago", "рост конверсии."], ["kasko", "Пилот КАСКО"]]), block("risks", [["department", "Срыв сроков"]]), block("plan", [["osago", "Встреча с СК"]])];
+    const merged = mergeBlocks(existing, draft, "merge");
+    expect(pairs(merged, "products")).toEqual([["osago", "Рост конверсии"], ["department", "Бюджет защищён"], ["kasko", "Пилот КАСКО"]]);
+    expect(pairs(merged, "risks")).toEqual([["department", "Срыв сроков"]]);
+    expect(pairs(merged, "wow")).toEqual([["osago", "Трафик +2%"]]);
+    const replaced = mergeBlocks(existing, draft, "replace");
+    expect(pairs(replaced, "products")).toEqual([["osago", "рост конверсии."], ["kasko", "Пилот КАСКО"]]);
+    expect(pairs(replaced, "wow")).toEqual([["osago", "Трафик +2%"]]);
   });
 });

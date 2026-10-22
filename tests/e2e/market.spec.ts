@@ -8,6 +8,7 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 // пункт меню и дашборд. Логинова не из списка и вход по общему логину: пункта меню нет, раздел закрыт, данных нет.
 // На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» и подпись пункта (от какого дня
 // данные) только у тех, кому раздел открыт. Данные рынка браузер не кэширует: no-store, без ETag и 304.
+// Этап 59: заголовок дашборда внутри окна меньше заголовка страницы, двух заголовков первого уровня подряд нет.
 // Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
 const SHOTS = "tests/e2e/screenshots";
@@ -90,6 +91,12 @@ test("владелец загружает пакет, вкладка и филь
   await frame.getByRole("tab", { name: "ОСАГО" }).click();
   await expect(frame.locator("#o-count")).toHaveText("2");
   await expect(page).toHaveURL(/[?&]tab=osago/);
+  // Заголовок дашборда ниже заголовка страницы: размер раздела (22 px, на телефоне 20 px), а не второй заголовок страницы
+  const fontSize = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
+  const pageTitle = await page.getByRole("heading", { name: "Рынок КАСКО и ОСАГО", level: 1 }).evaluate(fontSize);
+  const dashTitle = await frame.getByRole("heading", { name: "Проверочный рынок ОСАГО" }).evaluate(fontSize);
+  expect(dashTitle, "заголовок дашборда не меньше заголовка страницы").toBeLessThan(pageTitle);
+  expect(dashTitle).toBeLessThanOrEqual(isPhone() ? 20 : 22);
   await shot(page, "owner");
 
   // Ссылкой открывается та же вкладка с тем же фильтром

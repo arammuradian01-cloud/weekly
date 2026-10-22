@@ -25,6 +25,8 @@ import { foreignGoal, goalFits, taskPeople } from "@/lib/goals/personal";
 import { quarterOf } from "@/lib/goals/parse";
 import type { RepeatKind, RepeatMode } from "@/generated/prisma/enums";
 import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval";
+import { topTeamName } from "@/lib/org/top-name";
+import { TaskRuleError } from "@/lib/rule-error";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -40,8 +42,8 @@ export type Actor = {
   via?: LoginMethod | null;
 };
 
-/** Ошибка правила: текст показывается человеку как есть */
-export class TaskRuleError extends Error {}
+/** Ошибка правила: текст показывается человеку как есть. Живёт в отдельном модуле без базы (этап 63) */
+export { TaskRuleError };
 
 /** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
 export type TaskResult = { task: Task; undo?: string; warning?: string };
@@ -401,7 +403,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
   const teamId = pickTeam(scope, actor, input.team);
   const team = await tx.team.findUnique({ where: { id: teamId }, select: { active: true } });
   if (!team?.active) fail("Команда выключена: задачу в неё не поставить");
-  if (input.owner === "all" && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
+  if (input.owner === "all" && teamId !== TOP_TEAM) fail(`«Все лидеры» бывают только у задач команды «${await topTeamName(tx)}»`);
   const people = await peopleBySlug(tx);
   let ownerId: string | null = null;
   if (input.owner !== "all") {
@@ -1013,7 +1015,7 @@ export async function assignOwner(actor: Actor, number: number, owner: Owner): P
     const names = await nameMap(tx);
     const before = ownerLabel(row, names);
     if (owner === ownerOf(row)) fail("Ответственный уже этот");
-    if (owner === "all" && row.teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды");
+    if (owner === "all" && row.teamId !== TOP_TEAM) fail(`«Все лидеры» бывают только у задач команды «${await topTeamName(tx)}»`);
     let ownerId: string | null = null;
     if (owner !== "all") {
       const p = (await peopleBySlug(tx)).get(owner);

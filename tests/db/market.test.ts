@@ -91,7 +91,7 @@ describe("доступ к разделу", () => {
     expect(String(log[0]!.after)).toContain("Рева");
     await saveMarketSettings(owner, { people: ["reva"], teamIds: [] });
     const meetingLog = await prisma.auditLog.findFirst({ where: { id: { gt: since }, action: "settings.marketMeeting" } });
-    expect(meetingLog).toMatchObject({ before: "Топ-команда", after: "ни у кого", via: "PASSWORD" });
+    expect(meetingLog).toMatchObject({ before: "Команда страхования и инвестиций", after: "ни у кого", via: "PASSWORD" });
     expect(await loadMarketMeeting()).toEqual({ teamIds: [] });
   });
 });

@@ -4,7 +4,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { baseUrl, clearSession, readSession, requestUserAgent, requireContext } from "@/lib/auth";
+import { baseUrl, clearSession, readSession, requestUserAgent } from "@/lib/auth";
 import { createFeed, feedUrl, revokeFeed, setFeedTitles } from "@/lib/calendar/service";
 import { changePassword } from "@/lib/login/password";
 import { cancelEmailBinding, requestEmailBinding } from "@/lib/login/email";
@@ -58,17 +58,15 @@ export async function saveMailPrefsAction(prefs: Record<string, boolean>) {
 
 /** Смена своего пароля (этап 20а): при личном входе, с текущим паролем, если он уже есть */
 export async function changePasswordAction(current: string, next: string, repeat: string) {
-  const ctx = await requireContext();
-  return runAction("Смена пароля", (a) => changePassword(a, ctx.deviceId, String(current ?? ""), String(next ?? ""), String(repeat ?? "")));
+  return runAction("Смена пароля", (a, ctx) => changePassword(a, ctx.deviceId, String(current ?? ""), String(next ?? ""), String(repeat ?? "")));
 }
 
 // ---------- Уведомления в браузере (этап 26). Только при личном входе ----------
 
 /** Включить на этом устройстве: подписка от браузера привязывается к записи устройства */
 export async function savePushSubscriptionAction(subscription: unknown) {
-  const ctx = await requireContext();
   const ua = await requestUserAgent();
-  const result = await runAction("Уведомления в браузере", (a) => saveSubscription(a, ctx.deviceId, subscription, ua));
+  const result = await runAction("Уведомления в браузере", (a, ctx) => saveSubscription(a, ctx.deviceId, subscription, ua));
   if (result.ok) revalidatePath("/profile");
   return result;
 }
@@ -95,14 +93,12 @@ export async function savePushPrefsAction(prefs: Record<string, boolean>) {
 
 /** Проверка: уведомление на это устройство прямо сейчас */
 export async function testPushAction() {
-  const ctx = await requireContext();
-  return runAction("Проверка уведомлений", (a) => sendTestPush(a, ctx.deviceId));
+  return runAction("Проверка уведомлений", (a, ctx) => sendTestPush(a, ctx.deviceId));
 }
 
 /** Сверка подписки браузера с текущим входом при открытии ресурса. keep: false значит снять подписку в браузере */
 export async function syncPushAction(subscription: unknown, owner: string | null) {
-  const ctx = await requireContext();
-  return runAction("Сверка уведомлений", (a) => syncSubscription(a, ctx.deviceId, subscription, typeof owner === "string" ? owner : null));
+  return runAction("Сверка уведомлений", (a, ctx) => syncSubscription(a, ctx.deviceId, subscription, typeof owner === "string" ? owner : null));
 }
 
 // ---------- Календарь сроков (этап 29). Только при личном входе ----------

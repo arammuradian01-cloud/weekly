@@ -15,8 +15,10 @@ import { compactName, personOf } from "@/domain/people";
 import { dictOptions } from "@/domain/dictionaries";
 import { formatLong, plural } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
-import type { CeoSections } from "@/lib/weekly/rules";
-import { hasCeoText, mergeCeoSections, type CeoMergeMode, type ParseDecision, type ParseTaskDraft } from "@/lib/meeting/parse-types";
+import type { ParseDecision, ParseTaskDraft } from "@/lib/meeting/parse-types";
+import { hasBlocksText, lineText, mergeBlocks, type MergeMode, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { withoutEmptyLines } from "@/lib/weekly-blocks/edit";
+import { BlocksEditor } from "@/components/weekly-blocks/blocks-editor";
 import type { ParseView } from "@/lib/meeting/parse-service";
 import { createParseTasksAction, retryParseAction, saveParseDraftAction, sendParseToCeoAction } from "@/app/(app)/meeting/parse-actions";
 import { Badge } from "@/components/ui/badge";
@@ -195,7 +197,7 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
     const wanted = tabs.find((t) => t.code === fromUrl)?.code ?? lastTab.get(view.id) ?? initialTab;
     return tabs.some((t) => t.code === wanted) ? wanted : "summary";
   });
-  const [ceo, setCeo] = useState<CeoSections>(view.result.ceo);
+  const [ceo, setCeo] = useState<ReportBlock[]>(view.result.ceo);
   const [tasks, setTasks] = useState<ParseTaskDraft[]>(view.result.tasks);
   const [decisions, setDecisions] = useState<ParseDecision[]>(view.result.decisions);
   const [dirty, setDirty] = useState(false);
@@ -217,8 +219,8 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
       // Адрес не обновился: вкладка всё равно открыта
     }
   };
-  const editCeo = (patch: Partial<CeoSections>) => {
-    setCeo((c) => ({ ...c, ...patch }));
+  const editCeo = (next: ReportBlock[]) => {
+    setCeo(next);
     setDirty(true);
   };
   const editTask = (key: string, patch: Partial<ParseTaskDraft>) => {
@@ -232,7 +234,7 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
 
   /** Сохранить черновик: true, если сохранилось. Новая версия запоминается сразу */
   const persist = async (): Promise<string | true> => {
-    const r = await saveParseDraftAction(view.id, { ...(view.canSeeCeo ? { ceo } : {}), tasks, decisions }, version);
+    const r = await saveParseDraftAction(view.id, { ...(view.canSeeCeo ? { ceo: withoutEmptyLines(ceo) } : {}), tasks, decisions }, version);
     if (!r.ok) return r.error;
     setVersion(r.value.updatedAt);
     setDirty(false);
@@ -383,12 +385,6 @@ function Summary({ view }: { view: ParseView }) {
   );
 }
 
-const SECTIONS: { key: keyof CeoSections; label: string }[] = [
-  { key: "main", label: "Главное" },
-  { key: "risks", label: "Риски" },
-  { key: "next", label: "Что дальше" },
-];
-
 type TabProps = { view: ParseView; dirty: boolean; busy: Busy; setBusy: (b: Busy) => void; save: () => Promise<void>; persist: () => Promise<string | true> };
 
 function SaveButton({ view, dirty, busy, save }: Pick<TabProps, "view" | "dirty" | "busy" | "save">) {
@@ -401,17 +397,20 @@ function SaveButton({ view, dirty, busy, save }: Pick<TabProps, "view" | "dirty"
   );
 }
 
-function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabProps & { ceo: CeoSections; edit: (p: Partial<CeoSections>) => void }) {
+function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabProps & { ceo: ReportBlock[]; edit: (next: ReportBlock[]) => void }) {
   const router = useRouter();
   const { notify } = usePrototype();
-  const existing = view.ceo?.existing.sections ?? null;
-  const filled = hasCeoText(existing);
-  const [mode, setMode] = useState<CeoMergeMode>("merge");
+  const existing = view.ceo?.existing ?? null;
+  const filled = !!existing && (existing.blocks ? hasBlocksText(existing.blocks) : !!existing.sections && !!(existing.sections.main.trim() || existing.sections.risks.trim() || existing.sections.next.trim()));
+  const [mode, setMode] = useState<MergeMode>("merge");
   const [confirm, setConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const result = mergeCeoSections(existing, ceo, filled ? mode : "replace");
+  const meta = view.blocksMeta;
+  const draft = withoutEmptyLines(ceo);
+  // Что получит CEO: отчёт недели (или свежая автосборка, если отчёта нет), к которому допишется или который заменит черновик
+  const result = view.ceo ? mergeBlocks(view.ceo.base, draft, filled ? mode : "merge") : draft;
   // В предпросмотре «Мои встречи недели» из отчёта недели: их отправка не трогает
-  const meetings = view.ceo?.existing.meetings ?? [];
+  const meetings = existing?.meetings ?? [];
 
   const send = async () => {
     setBusy("send");
@@ -421,7 +420,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         const s = await persist();
         if (s !== true) return setError(s);
       }
-      const r = await sendParseToCeoAction(view.id, { ceo, mode: filled ? mode : null, expected: view.ceo?.existing.updatedAt ?? null });
+      const r = await sendParseToCeoAction(view.id, { ceo: draft, mode: filled ? mode : null, expected: existing?.updatedAt ?? null });
       if (!r.ok) return setError(r.error);
       setConfirm(false);
       notify(`Weekly отправлен CEO: ${view.ceo?.recipients.join(", ") ?? ""}`);
@@ -445,21 +444,9 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         </p>
       ) : null}
       <p className="max-w-[760px] text-body text-muted">
-        Черновик weekly для CEO в разделах отчёта CEO за неделю {view.weekNumber}. Каждая мысль отдельной строкой, начинается с «- ». Цифры недели, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
+        Черновик weekly для CEO по смысловым блокам отчёта CEO за неделю {view.weekNumber}: каждая строка подписана продуктом. Цифры недели и месяца, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
       </p>
-      <div className="grid gap-4">
-        {SECTIONS.map((s) => (
-          <TextArea
-            key={s.key}
-            label={s.label}
-            id={`ceo-${s.key}`}
-            value={ceo[s.key]}
-            onChange={(e) => edit({ [s.key]: e.target.value })}
-            rows={Math.min(12, Math.max(3, ceo[s.key].split("\n").length + 1))}
-            readOnly={!view.canEdit}
-          />
-        ))}
-      </div>
+      <BlocksEditor blocks={ceo} onChange={edit} products={meta.products} labels={meta.labels} order={meta.order} idPrefix="parse-ceo" readOnly={!view.canEdit} fixedLayout headingLevel={3} />
 
       {view.ceo ? (
         <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
@@ -470,31 +457,35 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
             <>
               <p className="text-body text-ink">
                 За неделю {view.weekNumber} уже есть отчёт CEO
-                {view.ceo.existing.updatedBy ? `: сохранил ${view.ceo.existing.updatedBy}` : ""}
-                {view.ceo.existing.updatedAt ? `, ${moment(view.ceo.existing.updatedAt)}` : ""}. Молча он не заменится: выберите, что сделать.
+                {existing?.updatedBy ? `: сохранил ${existing.updatedBy}` : ""}
+                {existing?.updatedAt ? `, ${moment(existing.updatedAt)}` : ""}. Молча он не заменится: выберите, что сделать.
               </p>
-              <Segmented<CeoMergeMode>
+              <Segmented<MergeMode>
                 label="Что сделать с отчётом недели"
                 value={mode}
                 onChange={setMode}
                 options={[
-                  { value: "merge", label: "Дописать по разделам" },
-                  { value: "replace", label: "Заменить отчёт" },
+                  { value: "merge", label: "Дописать по блокам" },
+                  { value: "replace", label: "Заменить блоки" },
                 ]}
               />
               <p className="text-small text-muted">
-                {mode === "merge" ? "Строки встречи допишутся в конец каждого раздела, строки, которые уже есть, второй раз не попадут." : "Разделы «Главное», «Риски» и «Что дальше» станут такими, как в черновике. «Мои встречи недели» останутся."}
+                {mode === "merge"
+                  ? "Строки встречи допишутся в конец своих блоков, строки, которые уже есть, второй раз не попадут."
+                  : "Блоки новостей, конкурентов, продуктов, партнёрского канала, рисков и плана станут такими, как в черновике. Цифры недели и месяца и «Мои встречи недели» останутся."}
               </p>
               {mode === "replace" ? (
                 <details className="rounded-lg bg-surface ring-1 ring-line">
                   <summary className="cursor-pointer px-4 py-2.5 text-body font-medium text-ink">Что будет заменено</summary>
                   <div className="grid gap-3 border-t border-line px-4 py-3 lg:grid-cols-3">
-                    {SECTIONS.map((s) => (
-                      <div key={s.key} className="min-w-0">
-                        <p className="text-caption font-semibold text-muted">{s.label}</p>
-                        <p className="mt-1 whitespace-pre-wrap break-words text-small text-muted line-through decoration-line">{existing?.[s.key] || "Раздел пустой"}</p>
-                      </div>
-                    ))}
+                    {view.ceo.base
+                      .filter((b) => ceo.some((d) => d.key === b.key))
+                      .map((b) => (
+                        <div key={b.key} className="min-w-0">
+                          <p className="text-caption font-semibold text-muted">{b.title}</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-small text-muted line-through decoration-line">{b.lines.length ? b.lines.map((l) => `- ${lineText(l, meta.labels)}`).join("\n") : "Блок пустой"}</p>
+                        </div>
+                      ))}
                   </div>
                 </details>
               ) : null}
@@ -505,7 +496,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
 
       {!view.ceoPreview && view.canEdit ? (
         <p className="text-small text-muted" data-testid="ceo-preview-hidden">
-          Собранный отчёт с цифрами, решениями и благодарностями топ-команды видят те, кто отправляет CEO: владелец и администраторы в режиме управления.
+          Собранный отчёт с цифрами, решениями и благодарностями команды видят те, кто отправляет CEO: владелец и администраторы в режиме управления.
         </p>
       ) : null}
       {view.ceoPreview ? (
@@ -513,7 +504,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
           <h2 id="ceo-preview-title" className="text-title-sm font-semibold text-ink">
             Что получит CEO: отчёт за неделю {view.weekNumber}
           </h2>
-          <CeoAssembled ctx={view.ceoPreview} sections={result} meetings={meetings} idPrefix="ceo-preview" />
+          <CeoAssembled ctx={view.ceoPreview} blocks={result} labels={meta.labels} order={meta.order} meetings={meetings} idPrefix="ceo-preview" />
         </section>
       ) : null}
 
@@ -522,7 +513,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
         <SaveButton view={view} dirty={dirty} busy={busy} save={save} />
         {view.canSendCeo ? (
-          <Button onClick={() => (hasCeoText(ceo) ? setConfirm(true) : setError("Weekly для CEO пустой: напишите хотя бы главное"))} disabled={busy !== null}>
+          <Button onClick={() => (hasBlocksText(draft) ? setConfirm(true) : setError("Weekly для CEO пустой: напишите хотя бы одну строку"))} disabled={busy !== null}>
             <Send className="h-4 w-4" aria-hidden="true" />
             {view.ceoSentAt ? "Отправить CEO ещё раз" : "Отправить CEO"}
           </Button>
@@ -532,7 +523,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         open={confirm}
         onOpenChange={setConfirm}
         title="Отправить weekly CEO?"
-        description={`Получит: ${view.ceo?.recipients.join(", ") || "CEO"}. ${filled ? (mode === "merge" ? "Черновик допишется к отчёту недели по разделам." : "Черновик заменит разделы отчёта недели.") : "Отчёт CEO за неделю сохранится из черновика."} Отправка только в приложении, без письма.`}
+        description={`Получит: ${view.ceo?.recipients.join(", ") || "CEO"}. ${filled ? (mode === "merge" ? "Черновик допишется к отчёту недели по блокам." : "Черновик заменит свои блоки отчёта недели.") : "Отчёт CEO за неделю соберётся из цифр недели и месяца и дополнится черновиком."} Отправка только в приложении, без письма.`}
       >
         <FormError message={error ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

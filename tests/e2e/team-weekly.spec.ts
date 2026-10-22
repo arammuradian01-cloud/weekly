@@ -49,11 +49,12 @@ test("руководитель сектора включает weekly специ
 
   // Ритм сектора: свой срок в пятницу и weekly специалистов
   const antonov = await person(browser, page, "Антонов");
-  await antonov.goto("/people/structure");
-  await antonov.getByRole("radio", { name: /Команды/ }).click();
-  await antonov.getByRole("button", { name: "Показать участников: Сектор автострахования" }).click();
-  await expect(antonov.getByText("Weekly в этой команде не ждём")).toBeVisible();
-  await antonov.getByRole("button", { name: "Ритм weekly" }).click();
+  // Этап 64: ритм weekly задают в карточке команды на экране «Weekly-команды»
+  await antonov.goto("/people/teams");
+  await antonov.getByTestId("teams-list").getByRole("link", { name: /^Сектор автострахования/ }).click();
+  const teamCard = antonov.getByTestId("team-card");
+  await expect(teamCard.getByText("Weekly в этой команде не ждём")).toBeVisible();
+  await teamCard.getByRole("button", { name: "Кто сдаёт и срок" }).click();
   const modal = antonov.getByRole("dialog", { name: /Ритм weekly/ });
   await modal.getByLabel("Когда").first().selectOption("own");
   await modal.locator("#rh-deadline-week").selectOption("0");
@@ -64,7 +65,7 @@ test("руководитель сектора включает weekly специ
   await modal.getByRole("button", { name: "Сохранить" }).click();
   await expect(antonov.getByText("Ритм команды сохранён").first()).toBeVisible();
   // Срок пятница 16:00 этой недели: после него в пятницу и в выходные вместо срока «срок прошёл»
-  await expect(antonov.getByText(/Weekly: сдали 0 из 1.*(пт, 16:00|срок прошёл)/)).toBeVisible();
+  await expect(teamCard.getByText(/Weekly: сдали 0 из 1.*(пт, 16:00|срок прошёл)/)).toBeVisible();
   await shot(antonov, "structure-lights");
 
   // Специалист пишет запись: weekly от неё теперь ждут в секторе
@@ -130,7 +131,7 @@ test("weekly человека из дерева подчинённых: подс
 
   // Выбрана топ-команда: Антонова в её ленте нет, лента подсказывает команду и не включает пустой отбор
   const hint = reva.getByTestId("weekly-focus-elsewhere");
-  await expect(hint).toContainText("Антонов Дмитрий: weekly в ленте команды «Управление развития продуктов», а выбрана команда «Топ-команда»");
+  await expect(hint).toContainText("Антонов Дмитрий: weekly в ленте команды «Управление развития продуктов», а выбрана команда «Команда страхования и инвестиций»");
   await expect(reva.locator("#f-author")).toHaveValue("");
   await shot(reva, "focus-elsewhere");
 

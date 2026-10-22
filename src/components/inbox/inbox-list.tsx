@@ -31,6 +31,7 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("meeting:")) return { icon: Presentation, tone: "neutral" };
   if (item.subject.startsWith("ceo-report:")) return { icon: FileText, tone: "info" };
   if (item.subject.startsWith("meeting-parse:")) return { icon: Presentation, tone: "info" };
+  if (item.subject.startsWith("team-report:")) return { icon: FileText, tone: "info" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
@@ -104,6 +105,11 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href={`/ceo-report?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                     Weekly для CEO
                   </Link>
+                ) : item.subject.startsWith("team-report:") ? (
+                  // Этап 66: руководитель команды отправил weekly команды по блокам
+                  <Link href={`/weekly/team-report?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}&week=${item.subject.split(":")[2] ?? ""}`} className="sv-event__text font-semibold hover:text-link">
+                    Weekly команды по блокам
+                  </Link>
                 ) : item.subject.startsWith("meeting-parse:") ? (
                   // Этап 61: разбор встречи из Notion готов или не получился
                   <Link href={`/meeting/notion/${encodeURIComponent(item.subject.slice("meeting-parse:".length))}`} className="sv-event__text font-semibold hover:text-link">
@@ -134,11 +140,11 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                     Дайджест новостей
                   </Link>
                 ) : item.subject.startsWith("team:") ? (
-                  <Link href={`/people/structure?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
+                  <Link href={`/people/teams?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
                     Состав команды
                   </Link>
                 ) : item.subject.startsWith("join:") ? (
-                  <Link href="/people/structure#join-requests" className="sv-event__text font-semibold hover:text-link">
+                  <Link href="/people/teams#join-requests" className="sv-event__text font-semibold hover:text-link">
                     Запрос в команду
                   </Link>
                 ) : item.subject.startsWith("approval-co:") ? (
