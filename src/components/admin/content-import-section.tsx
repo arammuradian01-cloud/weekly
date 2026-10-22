@@ -289,7 +289,8 @@ export function ContentImportSection() {
                         <input
                           type="checkbox"
                           className="mt-1 h-4 w-4 shrink-0"
-                          checked={d.on}
+                          // Выбор виден сразу, не дожидаясь пересчёта предпросмотра: иначе отметка снимается обратно до ответа сервера
+                          checked={done || options.all ? d.on : options.picked.includes(d.id)}
                           disabled={!!busy || !!done || options.all}
                           data-testid={`content-import-duplicate-${d.id}`}
                           onChange={(e) => void check(file, { ...options, picked: e.target.checked ? [...options.picked, d.id] : options.picked.filter((id) => id !== d.id) }, true)}
