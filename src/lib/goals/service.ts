@@ -27,6 +27,7 @@ import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow
 import { fromLeaderBoard, othersPersonal, taskPeople } from "./personal";
 import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
+import { countsForGoal, doneForGoal } from "./links";
 
 type Tx = Prisma.TransactionClient;
 
@@ -170,8 +171,9 @@ export async function goalsView(who: Who, opts: { quarter?: string | null; team?
     if (memo.has(id)) return memo.get(id)!;
     const g = byId.get(id)!;
     guard.add(id);
-    const counted = g.tasks.filter((t) => t.status !== "CANCELLED" && t.status !== "PROPOSED");
-    let done = counted.filter((t) => t.status === "DONE").length;
+    // Одно правило с карточкой цели на вкладке «Связать задачи с целями» (этап 65): без отменённых и предложенных
+    const counted = g.tasks.filter((t) => countsForGoal(t.status));
+    let done = counted.filter((t) => doneForGoal(t.status)).length;
     let total = counted.length;
     let overdue = counted.filter((t) => (t.status === "IN_PROGRESS" || t.status === "CLARIFY") && diffDays(isoFromDbDate(t.due), today) > 0).length;
     let achieved = 0;

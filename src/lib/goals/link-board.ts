@@ -24,7 +24,11 @@ import { RESULT_LABELS, quartersList } from "./service";
 import { REASON_ORDER, canChangeGoal, quarterRange, type LinkGoal, type LinkReason, type LinkTask } from "./links";
 
 const QUARTER = /^\d{4}-Q[1-4]$/;
-/** Сколько задач в списке «Мои задачи» за раз: открытых и закрытых за квартал */
+/**
+ * Сколько задач команд и команд ниже брать за раз: открытых и закрытых за квартал. Свои задачи (ответственный,
+ * соисполнитель, поставил, комментировал, упомянут, следит) приходят все, без предела: их не должно вытеснить
+ * множество задач большой команды
+ */
 const LIMITS = { open: 500, closed: 200 };
 
 export type GoalLinkBoard = {
@@ -62,7 +66,9 @@ const taskSelect = {
 
 type TaskPick = Prisma.TaskGetPayload<{ select: typeof taskSelect }>;
 
-export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } = {}): Promise<GoalLinkBoard> {
+/** limits: предел задач команд, по умолчанию LIMITS; тесты ставят маленький, чтобы проверить, что свои задачи не режутся */
+export async function goalLinkBoard(who: Who, opts: { quarter?: string | null; limits?: { open: number; closed: number } } = {}): Promise<GoalLinkBoard> {
+  const limits = opts.limits ?? LIMITS;
   const today = moscowToday();
   const current = quarterOf(today);
   const quarter = opts.quarter && QUARTER.test(opts.quarter) ? opts.quarter : current;
@@ -126,33 +132,40 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
   // ---------- Задачи ----------
   const start = new Date(`${range.start}T00:00:00+03:00`);
   const end = new Date(`${range.end}T00:00:00+03:00`);
-  const involved: Prisma.TaskWhereInput = {
+  // Свои задачи: ведёт, поставил, комментировал, упомянут, следит. Отдельным запросом без предела
+  const personal: Prisma.TaskWhereInput = {
     OR: [
       { ownerId: me },
       { createdById: me },
       { coExecutors: { some: { personId: me } } },
-      ...(member.length || below.length ? [{ teamId: { in: [...member, ...below] } }] : []),
       { comments: { some: { OR: [{ authorId: me }, { mentions: { has: me } }] } } },
       { watchers: { some: { personId: me } } },
     ],
   };
+  // Задачи своих команд и команд ниже: с пределом, о котором экран честно пишет. Свои задачи из них уже пришли первым
+  // запросом и склеиваются по номеру (условие NOT здесь не годится: на пустом ответственном оно молча отбросило бы
+  // задачи «Все лидеры» и задачи без автора)
+  const teams = [...member, ...below];
+  const teamOnly: Prisma.TaskWhereInput | null = teams.length ? { teamId: { in: teams } } : null;
   const seenBy = {
     comments: { where: { OR: [{ authorId: me }, { mentions: { has: me } }] }, select: { authorId: true }, take: 5 },
     watchers: { where: { personId: me }, select: { personId: true } },
   } satisfies Prisma.TaskSelect;
-  const base: Prisma.TaskWhereInput[] = [{ archivedAt: null }, visibleTasksWhere(scope, me), involved];
-  const [open, closed, linked] = await Promise.all([
-    prisma.task.findMany({ where: { AND: [...base, { status: { in: ["PROPOSED", "IN_PROGRESS", "CLARIFY"] } }] }, select: { ...taskSelect, ...seenBy }, orderBy: [{ due: "asc" }, { number: "asc" }], take: LIMITS.open + 1 }),
-    prisma.task.findMany({
-      where: { AND: [...base, { status: { in: ["DONE", "PARTIAL", "FAILED"] }, closedAt: { gte: start, lt: end } }] },
-      select: { ...taskSelect, ...seenBy },
-      orderBy: [{ closedAt: "desc" }, { number: "desc" }],
-      take: LIMITS.closed + 1,
-    }),
+  const visibleOnly: Prisma.TaskWhereInput[] = [{ archivedAt: null }, visibleTasksWhere(scope, me)];
+  const openWhere: Prisma.TaskWhereInput = { status: { in: ["PROPOSED", "IN_PROGRESS", "CLARIFY"] } };
+  const closedWhere: Prisma.TaskWhereInput = { status: { in: ["DONE", "PARTIAL", "FAILED"] }, closedAt: { gte: start, lt: end } };
+  const select = { ...taskSelect, ...seenBy };
+  const [mineOpen, mineClosed, open, closed, linked] = await Promise.all([
+    prisma.task.findMany({ where: { AND: [...visibleOnly, personal, openWhere] }, select, orderBy: [{ due: "asc" }, { number: "asc" }] }),
+    prisma.task.findMany({ where: { AND: [...visibleOnly, personal, closedWhere] }, select, orderBy: [{ closedAt: "desc" }, { number: "desc" }] }),
+    teamOnly ? prisma.task.findMany({ where: { AND: [...visibleOnly, teamOnly, openWhere] }, select, orderBy: [{ due: "asc" }, { number: "asc" }], take: limits.open + 1 }) : Promise.resolve([]),
+    teamOnly
+      ? prisma.task.findMany({ where: { AND: [...visibleOnly, teamOnly, closedWhere] }, select, orderBy: [{ closedAt: "desc" }, { number: "desc" }], take: limits.closed + 1 })
+      : Promise.resolve([]),
     // Задачи под целями экрана: цифры карточки и раскрытый список из одного набора, без отменённых
     goals.length ? prisma.task.findMany({ where: { goalId: { in: goals.map((g) => g.id) }, archivedAt: null, status: { not: "CANCELLED" } }, select: taskSelect }) : Promise.resolve([]),
   ]);
-  const truncated = open.length > LIMITS.open || closed.length > LIMITS.closed;
+  const truncated = open.length > limits.open || closed.length > limits.closed;
 
   const toLink = (t: TaskPick, mine: boolean, reasons: LinkReason[]): LinkTask => {
     const status = statusCode(t.status);
@@ -177,7 +190,8 @@ export async function goalLinkBoard(who: Who, opts: { quarter?: string | null } 
   };
 
   const tasks = new Map<number, LinkTask>();
-  for (const t of [...open.slice(0, LIMITS.open), ...closed.slice(0, LIMITS.closed)]) {
+  for (const t of [...mineOpen, ...mineClosed, ...open.slice(0, limits.open), ...closed.slice(0, limits.closed)]) {
+    if (tasks.has(t.number)) continue;
     const has: Record<LinkReason, boolean> = {
       owner: t.ownerId === me,
       co: t.coExecutors.some((c) => c.personId === me),

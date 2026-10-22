@@ -102,8 +102,9 @@ test("лидер перетаскивает задачи к целям: прив
   await expect(page.getByTestId("link-open").getByTestId(`link-task-${other}`)).toHaveCount(0);
   const viewOnly = page.getByTestId("link-view-only");
   await expect(viewOnly).toContainText("Только посмотреть");
-  await expect(viewOnly).toContainText("Цель этих задач меняют ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды");
-  await expect(viewOnly.getByTestId(`link-task-${other}`)).toBeHidden();
+  await expect(viewOnly).toContainText("Цель этих задач меняют ответственный, соисполнители, тот, кто поставил задачу, руководитель её команды или команды выше и режим управления");
+  // Строки свёрнутого блока не рисуются, пока его не открыли
+  await expect(viewOnly.getByTestId(`link-task-${other}`)).toHaveCount(0);
   await viewOnly.getByRole("heading", { name: /Только посмотреть/ }).click();
   await expect(viewOnly.getByTestId(`link-task-${other}`)).toBeVisible();
   await expect(viewOnly.getByRole("button", { name: `К цели: задача ${other}` })).toHaveCount(0);
@@ -135,6 +136,13 @@ test("лидер перетаскивает задачи к целям: прив
   await expect(page.getByTestId("link-selection")).toContainText("Ещё 1 скрыта поиском или фильтром: их не тронем");
   await search(page, "");
   await expect(page.getByTestId("link-selection")).toContainText("Отмечено 2 задачи");
+  // «Снять отметку»: плашка пропадает, фокус на заголовке «Мои задачи»
+  await page.getByTestId("link-selection").getByRole("button", { name: "Снять отметку" }).click();
+  await expect(page.getByTestId("link-selection")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Мои задачи" })).toBeFocused();
+  await page.getByLabel(`Отметить задачу ${a}`, { exact: true }).check();
+  await page.getByLabel(`Отметить задачу ${b}`, { exact: true }).check();
+  await expect(page.getByTestId("link-selection")).toContainText("Отмечено 2 задачи");
   await shot(page, "selected");
   await drag(page, page.getByTestId(`drag-task-${b}`), d1);
   await expect(status).toContainText(`2 задачи привязаны к цели «${name(D1)}»`);
@@ -144,7 +152,7 @@ test("лидер перетаскивает задачи к целям: прив
 
   // Карточка цели раскрывается задачами; задачу тянут на другую цель
   await d1.getByRole("button", { name: new RegExp(`^Задачи 2, цель «${D1.code}`) }).click();
-  await expect(d1.getByTestId(`link-goal-tally-${D1.id}`)).toHaveText("задач 2, закрыто 0");
+  await expect(d1.getByTestId(`link-goal-tally-${D1.id}`)).toHaveText("закрыто 0 из 2");
   await expect(d1.getByTestId(`link-goal-task-${a}`)).toBeVisible();
   await expect(d1.getByTestId(`link-goal-task-${b}`)).toBeVisible();
   await shot(page, "goal-open");
@@ -180,12 +188,75 @@ test("лидер перетаскивает задачи к целям: прив
   // Строка ушла из «Без цели», других строк под поиском нет: фокус на заголовке «Мои задачи», а не потерян
   await expect(page.getByRole("heading", { name: "Мои задачи" })).toBeFocused();
 
+  // «Снять цель» у отмеченной задачи во «Все»: тост, фокус на заголовке «Мои задачи»
+  await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Все/ }).click();
+  await page.getByLabel(`Отметить задачу ${a}`, { exact: true }).check();
+  await page.getByTestId("link-selection").getByRole("button", { name: "Снять цель" }).click();
+  await expect(status).toContainText(`Задача ${a} отвязана от цели`);
+  await expect.poll(() => goalOf(a)).toBeNull();
+  await expect(page.getByRole("heading", { name: "Мои задачи" })).toBeFocused();
+
   // Журнал: каждая связь и отмена записаны в истории задачи
   const [{ n }] = await sql(`SELECT count(*)::int AS n FROM audit_log WHERE entity = 'task' AND "entityId" = $1 AND field IN ('Цель', 'Цель (отмена)')`, [String(a)]);
-  expect(n).toBeGreaterThanOrEqual(6);
-  await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Все/ }).click();
+  expect(n).toBeGreaterThanOrEqual(7);
   await search(page, "");
   await shot(page, "done");
+});
+
+test("колонка целей длиннее экрана: задача доезжает до последней цели у края колонки, колесо крутит колонку во время перетаскивания", async ({ page }) => {
+  test.skip(isPhone(), "колонка целей закреплена и прокручивается сама только на ноутбуке");
+  test.setTimeout(120_000);
+  // Ещё 12 целей топ-команды: колонка заметно длиннее окна
+  const extra = Array.from({ length: 12 }, (_, i) => ({ id: `e2e-goal-x${i + 1}`, code: `X${i + 1}`, title: `Дополнительная цель ${i + 1}` }));
+  for (const [i, g] of extra.entries()) {
+    await sql(`INSERT INTO goals (id, quarter, code, title, "teamId", "sortOrder", "updatedAt") VALUES ($1, $2, $3, $4, 'top', $5, now())`, [g.id, quarter(), g.code, g.title, 100 + i]);
+  }
+  const last = extra[extra.length - 1]!;
+  const [a, b] = await ownTasks();
+  await enter(page, "Фатьянов Евгений");
+  await openLinkMode(page);
+  const status = page.locator(".sv-toast");
+  const column = page.getByTestId("link-goals");
+  expect(await column.evaluate((el) => el.scrollHeight > el.clientHeight + 200), "у колонки целей своя прокрутка").toBe(true);
+  // Курсор с задачей у нижнего края колонки: колонка крутится сама до последней цели. Страница внизу: колонка
+  // прилипла к верху окна (и без этого край считается по видимой части колонки)
+  await search(page, String(a));
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const from = page.getByTestId(`drag-task-${a}`);
+  await from.scrollIntoViewIfNeeded();
+  const s = (await from.boundingBox())!;
+  await page.mouse.move(s.x + 8, s.y + s.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(s.x + 30, s.y + s.height / 2, { steps: 5 });
+  const c = (await column.boundingBox())!;
+  const bottom = Math.min(c.y + c.height, page.viewportSize()!.height);
+  await page.mouse.move(c.x + c.width / 2, bottom - 12, { steps: 10 });
+  await expect.poll(() => column.evaluate((el) => el.scrollTop + el.clientHeight >= el.scrollHeight - 2), { timeout: 15_000 }).toBe(true);
+  const target = (await page.getByTestId(`link-goal-${last.id}`).boundingBox())!;
+  await page.mouse.move(target.x + target.width / 2, target.y + Math.min(target.height / 2, 30), { steps: 8 });
+  await page.mouse.up();
+  await expect(status).toContainText(`Задача ${a} привязана к цели «${name(last)}»`);
+  await expect.poll(() => goalOf(a)).toBe(last.id);
+  await shot(page, "long-column");
+
+  // Колесо во время перетаскивания крутит колонку, а не страницу: карточка задачи под курсором колесо не ловит
+  await search(page, String(b));
+  const from2 = page.getByTestId(`drag-task-${b}`);
+  await from2.scrollIntoViewIfNeeded();
+  const s2 = (await from2.boundingBox())!;
+  await page.mouse.move(s2.x + 8, s2.y + s2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(s2.x + 30, s2.y + s2.height / 2, { steps: 5 });
+  const c2 = (await column.boundingBox())!;
+  const middle = (Math.max(c2.y, 0) + Math.min(c2.y + c2.height, page.viewportSize()!.height)) / 2;
+  await page.mouse.move(c2.x + c2.width / 2, middle, { steps: 10 });
+  await page.mouse.wheel(0, -5000);
+  await expect.poll(() => column.evaluate((el) => el.scrollTop)).toBe(0);
+  const first = (await page.getByTestId(`link-goal-${D1.id}`).boundingBox())!;
+  await page.mouse.move(first.x + first.width / 2, first.y + Math.min(first.height / 2, 30), { steps: 8 });
+  await page.mouse.up();
+  await expect(status).toContainText(`Задача ${b} привязана к цели «${name(D1)}»`);
+  await expect.poll(() => goalOf(b)).toBe(D1.id);
 });
 
 test("на телефоне задача к цели кнопкой «К цели» и выбором из списка", async ({ page }) => {

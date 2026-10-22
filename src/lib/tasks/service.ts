@@ -1462,7 +1462,7 @@ export async function setTaskGoal(actor: Actor, number: number, goalId: string |
       const nodes = await loadTeamNodes(tx);
       if (!goalFits(g, row, taskPeople(row), nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
       if (g.result === "DROPPED") fail("Цель снята: выберите другую");
-      if (![quarterOf(moscowToday()), quarterOf(isoFromDbDate(row.due))].includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
+      if (![quarterOf(moscowToday()), quarterOf(isoFromDbDate(row.due))].includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала срока`);
       goal = g;
     }
     if ((row.goalId ?? null) === (goal?.id ?? null)) throw new SameGoalError("Цель уже такая");

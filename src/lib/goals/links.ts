@@ -25,7 +25,10 @@ export const REASON_LABEL: Record<LinkReason, string> = {
 };
 
 /** Кто меняет цель задачи: для подсказок у задач, которые человек привязать не может */
-export const WHO_LINKS = "ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды";
+export const WHO_LINKS = "ответственный, соисполнители, тот, кто поставил задачу, руководитель её команды или команды выше и режим управления";
+
+/** Какие цели подходят задаче: одной фразой для подсказок и отказов */
+export const WHICH_GOALS = "цели своей команды, команды выше или личные цели её людей, текущего квартала или квартала срока";
 
 /** Группа целей на экране: свои цели, цели своих команд, цели команд ниже (у руководителя), цели команд выше */
 export type LinkGoalGroup = "mine" | "team" | "below" | "above";
@@ -170,11 +173,23 @@ export function tasksByGoal(tasks: LinkTask[], goalOf: GoalOf = serverGoal): Map
   return out;
 }
 
-/** Цифры карточки цели из того же списка, что под кнопкой «Задачи»: «задач 3, закрыто 1» */
-export function tallyText(tasks: Pick<LinkTask, "closed" | "status">[]): string {
-  const counted = tasks.filter((t) => t.status !== "cancelled");
-  if (!counted.length) return "задач пока нет";
-  return `задач ${counted.length}, закрыто ${counted.filter((t) => t.closed).length}`;
+/**
+ * Входит ли задача в цифры цели. Одно правило на обеих вкладках страницы «Цели» (таблица, дерево, карточка цели при
+ * связывании): отменённые и только предложенные не считаются, закрытыми считаются выполненные. Статус любым регистром:
+ * сервер даёт CANCELLED, экран cancelled
+ */
+export const countsForGoal = (status: string) => !/^(cancelled|proposed)$/i.test(status);
+export const doneForGoal = (status: string) => /^done$/i.test(status);
+
+/** Подпись цифр цели одна на обеих вкладках: «закрыто 1 из 3» или «задач пока нет» */
+export function goalTasksText(done: number, total: number): string {
+  return total ? `закрыто ${done} из ${total}` : "задач пока нет";
+}
+
+/** Цифры карточки цели при связывании: из того же списка, что под кнопкой «Задачи», по общему правилу */
+export function tallyText(tasks: Pick<LinkTask, "status">[]): string {
+  const counted = tasks.filter((t) => countsForGoal(t.status));
+  return goalTasksText(counted.filter((t) => doneForGoal(t.status)).length, counted.length);
 }
 
 export type GoalGroupView = { key: string; label: string; goals: LinkGoal[] };
@@ -219,7 +234,7 @@ export function planLink(tasks: LinkTask[], goal: LinkGoal | null, goalOf: GoalO
 
 /** Почему ничего не изменилось: текст уведомления, когда двигать нечего */
 export function nothingToMove(plan: ReturnType<typeof planLink>, goal: LinkGoal | null): string {
-  if (plan.unfit.length) return `${numbersText(plan.unfit)} не ${plural(plan.unfit.length, "подходит", "подходят", "подходят")} цели «${goal ? goalName(goal) : ""}»: задачу привязывают к цели своей команды, команды выше или к личной цели её людей на квартал срока`;
+  if (plan.unfit.length) return `${numbersText(plan.unfit)} не ${plural(plan.unfit.length, "подходит", "подходят", "подходят")} цели «${goal ? goalName(goal) : ""}»: подходят ${WHICH_GOALS}`;
   if (plan.locked.length) return `Нет прав менять цель: её меняют ${WHO_LINKS}`;
   return goal ? `Задача уже работает на цель «${goalName(goal)}»` : "У задачи и так нет цели";
 }
@@ -268,6 +283,17 @@ export function focusAfter(visible: number[], removed: number[]): number | null 
  */
 export function dragSet(number: number, fromList: boolean, selectedVisible: number[]): number[] {
   return fromList && selectedVisible.includes(number) && selectedVisible.length > 1 ? selectedVisible : [number];
+}
+
+/**
+ * Автопрокрутка закреплённой колонки целей, пока задачу тянут: курсор у верхнего края колонки крутит её вверх, у
+ * нижнего вниз, тем быстрее, чем ближе к краю. Возвращает сдвиг в точках за кадр (0: курсор не у края)
+ */
+export function edgeStep(y: number, top: number, bottom: number, zone = 56, max = 18): number {
+  if (bottom - top < zone * 2) return 0;
+  if (y >= top && y < top + zone) return -Math.ceil(max * (1 - (y - top) / zone));
+  if (y <= bottom && y > bottom - zone) return Math.ceil(max * (1 - (bottom - y) / zone));
+  return 0;
 }
 
 /** «Задача 12» или «Задачи 12, 15 и 17» */

@@ -2,14 +2,19 @@
 // список «Мои задачи» с фильтрами и поиском, группы, план перетаскивания, шаги с клавиатуры и тексты уведомлений.
 import { describe, expect, it } from "vitest";
 import {
+  WHICH_GOALS,
+  WHO_LINKS,
   canChangeGoal,
+  countsForGoal,
   dragSet,
+  edgeStep,
   failedText,
   filterCounts,
   filterTasks,
   focusAfter,
   goalFitsTask,
   goalName,
+  goalTasksText,
   groupGoals,
   groupTasks,
   linkToast,
@@ -135,9 +140,16 @@ describe("«Мои задачи»: поиск, фильтры, группы", ()
     const by = tasksByGoal([...tasks, task({ number: 40, closed: true, status: "done", goal: s1 }), task({ number: 41, closed: true, status: "cancelled", goal: s1 })]);
     expect(by.get("s1")!.map((t) => t.number)).toEqual([15, 30, 40]);
     expect(by.has("none")).toBe(false);
-    expect(tallyText(by.get("s1")!)).toBe("задач 3, закрыто 1");
+    expect(tallyText(by.get("s1")!)).toBe("закрыто 1 из 3");
     expect(tallyText([])).toBe("задач пока нет");
-    expect(tallyText([{ closed: true, status: "cancelled" }])).toBe("задач пока нет");
+    expect(tallyText([{ status: "cancelled" }])).toBe("задач пока нет");
+  });
+  it("цифры цели одним правилом на обеих вкладках: без отменённых и предложенных, закрытые это выполненные", () => {
+    expect(["IN_PROGRESS", "CLARIFY", "DONE", "PARTIAL", "FAILED", "in-progress", "done"].every(countsForGoal)).toBe(true);
+    expect(["CANCELLED", "PROPOSED", "cancelled", "proposed"].some(countsForGoal)).toBe(false);
+    expect(tallyText([{ status: "proposed" }, { status: "done" }, { status: "partial" }, { status: "in-progress" }])).toBe("закрыто 1 из 3");
+    expect(goalTasksText(0, 1)).toBe("закрыто 0 из 1");
+    expect(goalTasksText(0, 0)).toBe("задач пока нет");
   });
   it("задачи, которые человек привязать не может, отдельно в «Только посмотреть» и не в счётчиках", () => {
     const list = [...tasks, task({ number: 50, title: "Задача команды", canLink: false, reasons: ["team"], due: "2026-10-01" }), task({ number: 51, title: "Закрытая чужая", canLink: false, closed: true, status: "done", closedAt: "2026-10-03" })];
@@ -191,8 +203,11 @@ describe("что сделает перетаскивание", () => {
     expect(planLink(list, null)).toEqual({ move: [2], same: [1, 4], locked: [3], unfit: [] });
   });
   it("когда двигать нечего, уведомление объясняет почему", () => {
-    expect(nothingToMove(planLink([list[3]!], s1), s1)).toMatch(/^Задача 4 не подходит цели «1\. Новая форма»: задачу привязывают к цели своей команды/);
-    expect(nothingToMove(planLink([list[2]!], s1), s1)).toBe("Нет прав менять цель: её меняют ответственный, соисполнители, тот, кто поставил задачу, и руководитель её команды");
+    expect(nothingToMove(planLink([list[3]!], s1), s1)).toBe("Задача 4 не подходит цели «1. Новая форма»: подходят цели своей команды, команды выше или личные цели её людей, текущего квартала или квартала срока");
+    expect(nothingToMove(planLink([list[2]!], s1), s1)).toBe("Нет прав менять цель: её меняют ответственный, соисполнители, тот, кто поставил задачу, руководитель её команды или команды выше и режим управления");
+    expect(nothingToMove(planLink([list[3]!], s1), s1)).toContain("текущего квартала или квартала срока");
+    expect(WHO_LINKS).toContain("руководитель её команды или команды выше и режим управления");
+    expect(WHICH_GOALS).toBe("цели своей команды, команды выше или личные цели её людей, текущего квартала или квартала срока");
     expect(nothingToMove(planLink([list[1]!], s1), s1)).toBe("Задача уже работает на цель «1. Новая форма»");
     expect(nothingToMove(planLink([list[0]!], null), null)).toBe("У задачи и так нет цели");
   });
@@ -241,6 +256,20 @@ describe("тост, фокус и отмеченные", () => {
     expect(dragSet(3, true, [1, 2])).toEqual([3]);
     expect(dragSet(2, false, [1, 2])).toEqual([2]);
     expect(dragSet(2, true, [2])).toEqual([2]);
+  });
+});
+
+describe("автопрокрутка колонки целей у краёв", () => {
+  it("у верхнего края вверх, у нижнего вниз, тем быстрее, чем ближе к краю; в середине и вне колонки стоит", () => {
+    expect(edgeStep(110, 100, 800)).toBeLessThan(0);
+    expect(edgeStep(790, 100, 800)).toBeGreaterThan(0);
+    expect(edgeStep(799, 100, 800)).toBeGreaterThan(edgeStep(760, 100, 800));
+    expect(edgeStep(101, 100, 800)).toBeLessThan(edgeStep(140, 100, 800));
+    expect(edgeStep(450, 100, 800)).toBe(0);
+    expect(edgeStep(90, 100, 800)).toBe(0);
+    expect(edgeStep(810, 100, 800)).toBe(0);
+    // Колонка ниже двух зон у края не крутится вовсе
+    expect(edgeStep(105, 100, 180)).toBe(0);
   });
 });
 

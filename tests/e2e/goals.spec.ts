@@ -120,7 +120,8 @@ test("цель департамента, цель сектора ниже и з�
   await antonov.getByTestId("goals-tab-link").click();
   await expect(antonov).toHaveURL(/\/goals\?mode=link/);
   const card = antonov.getByTestId(`link-goal-${goal!.id}`);
-  await expect(card).toContainText("задач 1, закрыто 0");
+  // Цифры цели тем же правилом и той же подписью, что на вкладке «Цели квартала»
+  await expect(card).toContainText("закрыто 0 из 1");
   await card.getByRole("button", { name: /^Задачи 1, цель «Новая форма расчёта/ }).click();
   await expect(card.getByTestId(`link-goal-task-${task!.number}`)).toContainText("Выкатить форму на весь трафик");
   await expect(antonov.getByRole("heading", { name: /Цели выше/ }).first()).toBeVisible();

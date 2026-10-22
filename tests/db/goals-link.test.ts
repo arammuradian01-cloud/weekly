@@ -139,7 +139,7 @@ describe("права на связь задачи с целью", () => {
     const next = Q.endsWith("Q4") ? `${Number(Q.slice(0, 4)) + 1}-Q1` : `${Q.slice(0, 5)}Q${Number(Q.slice(6)) + 1}`;
     const later = (await goals.createGoal(await actor("Антонов"), { quarter: next, title: "Цель следующего квартала", team: sector.id })).id;
     // Срок задачи в этом квартале (если до конца квартала больше 10 дней): цель следующего не подходит
-    if (quarterOf(future) === Q) await expectRule(svc.setTaskGoal(alisa, t.own, later), /задачу привязывают к цели текущего квартала или квартала её срока/);
+    if (quarterOf(future) === Q) await expectRule(svc.setTaskGoal(alisa, t.own, later), /задачу привязывают к цели текущего квартала или квартала срока/);
     const archived = (await newTask(await actor("Антонов"), "Задача в архив", alisa.slug, sector.id)).number;
     await svc.archiveTask(await owner(), archived);
     await expectRule(svc.setTaskGoal(await owner(), archived, g.s1), new RegExp(`Задача ${archived} в архиве`));
@@ -335,6 +335,26 @@ describe("данные экрана «Связать задачи с целям�
     const antonovBoard = await goalLinkBoard(who(await actor("Антонов")), { quarter: Q });
     expect(antonovBoard.goals.some((x) => x.team.id === analytics.id)).toBe(false);
     expect(antonovBoard.goals.some((x) => x.group === "below")).toBe(false);
+  });
+
+  it("свои задачи руководителя приходят все, предел только к задачам команд и команд ниже", async () => {
+    const reva = await svc.actorFor("reva");
+    const revaTeam = await teamOf("Рева");
+    const far = addDays(moscowToday(), 60);
+    const own: number[] = [];
+    for (const title of ["Своя задача Ревы один", "Своя задача Ревы два", "Своя задача Ревы три"]) own.push((await newTask(reva, title, reva.slug, revaTeam.id, { due: far })).number);
+    const board = await goalLinkBoard(who(reva), { quarter: Q, limits: { open: 1, closed: 1 } });
+    // Задач команд и команд ниже больше предела: экран об этом пишет, но свои задачи с дальним сроком не вытеснены
+    expect(board.truncated).toBe(true);
+    const by = new Map(board.tasks.map((x) => [x.number, x]));
+    for (const n of own) expect(by.get(n)?.reasons[0]).toBe("owner");
+    const teamOnly = board.tasks.filter((x) => x.mine && x.reasons.every((r) => r === "team" || r === "below"));
+    expect(teamOnly.length).toBeLessThanOrEqual(2);
+    // Без предела в тесте приходят и все задачи команды ниже
+    const full = await goalLinkBoard(who(reva), { quarter: Q });
+    expect(full.truncated).toBe(false);
+    expect(full.tasks.filter((x) => x.mine).length).toBeGreaterThan(board.tasks.filter((x) => x.mine).length);
+    for (const n of own) await svc.changeStatus(reva, n, "cancelled", "Тест предела");
   });
 
   it("задача под целью, которую человек видит, но не ведёт, видна в карточке цели, а не в «Моих задачах»", async () => {
