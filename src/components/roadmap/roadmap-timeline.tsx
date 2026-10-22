@@ -104,14 +104,15 @@ export function RoadmapTimeline({
   const root = useRef<HTMLDivElement>(null);
   const [trackPx, setTrackPx] = useState(TRACK_PX);
   useEffect(() => {
-    const track = root.current?.querySelector<HTMLElement>("[data-rm-track]");
-    if (!track) return;
-    const measure = () => setTrackPx(track.getBoundingClientRect().width || TRACK_PX);
+    const el = root.current;
+    if (!el) return;
+    // Трек: ширина карты без колонки задач (280 px) и её рамки. Карта на месте всегда, строки меняются фильтрами
+    const measure = () => setTrackPx(Math.max(0, el.clientWidth - 281) || TRACK_PX);
     measure();
     const ro = new ResizeObserver(measure);
-    ro.observe(track);
+    ro.observe(el);
     return () => ro.disconnect();
-  }, [rows.length]);
+  }, []);
   // Нажатие после перетаскивания: click приходит следом за отпусканием кнопки, задачу он открывать не должен
   const dragged = useRef(false);
   const todayAt = diffDays(range.start, today);
