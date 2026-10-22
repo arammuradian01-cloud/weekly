@@ -120,10 +120,12 @@ describe("отчёт команды по блокам", () => {
     const view = await team.teamReportView(await personal("reva"), teamId, key);
     expect(view).toMatchObject({ template: TEMPLATE, saved: false, canEdit: true, canSend: true, recipients: ["Фатьянов Евгений"], sent: null });
     expect(view.blocks.map((b) => b.key)).toEqual(["products", "c:hire0001", "risks", "plan"]);
-    expect(pairs(view.blocks, "products")).toEqual([["deposits", "Запустили новый оффер по вкладам"]]);
+    // В общей тестовой базе у этих людей могут быть записи из других файлов: проверяем свои строки, а не весь блок
+    expect(pairs(view.blocks, "products")).toContainEqual(["deposits", "Запустили новый оффер по вкладам"]);
+    expect(pairs(view.blocks, "products")).not.toContainEqual(["deposits", "Закрыли вакансию аналитика"]);
     expect(pairs(view.blocks, "c:hire0001")).toEqual([["deposits", "Закрыли вакансию аналитика"]]);
-    expect(pairs(view.blocks, "risks")).toEqual([["partners", "Агрегатор сдвигает интеграцию"]]);
-    expect(pairs(view.blocks, "plan")[0]![1]).toMatch(/^Обновить витрину вкладов, срок \d\d\.\d\d$/);
+    expect(pairs(view.blocks, "risks")).toContainEqual(["partners", "Агрегатор сдвигает интеграцию"]);
+    expect(pairs(view.blocks, "plan").map(([, text]) => text)).toContainEqual(expect.stringMatching(/^Обновить витрину вкладов, срок \d\d\.\d\d$/));
     // Без шаблона отчёта нет: weekly команды как раньше
     await team.saveTeamTemplate(await personal("reva"), teamId, []);
     expect(await team.teamReportView(await personal("reva"), teamId, key)).toMatchObject({ template: null, blocks: [], canEdit: false, sendHint: "Сначала задайте блоки weekly команды" });
