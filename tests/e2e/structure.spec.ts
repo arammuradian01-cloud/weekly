@@ -187,7 +187,7 @@ test("дерево подчинённых: схема с путём наверх
   await page.goto("/goals");
   await page.getByRole("button", { name: "Новая цель" }).click();
   const modal = page.getByRole("dialog", { name: /Новая цель/ });
-  await modal.getByLabel("Команда").selectOption({ label: "Топ-команда" });
+  await modal.getByLabel("Команда").selectOption({ label: "Команда страхования и инвестиций" });
   await modal.getByLabel("Цель", { exact: true }).fill("Маржа департамента 150 млн");
   await modal.getByRole("button", { name: "Завести цель" }).click();
   await expect(page.getByText("Цель заведена").first()).toBeVisible();

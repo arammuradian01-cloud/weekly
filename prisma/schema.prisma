@@ -820,6 +820,8 @@ model Week {
   snapshot   WeekSnapshot?
   meetings   Meeting[]
   forecasts  Forecast[]
+  /// Weekly команд по блокам (этап 66)
+  teamReports TeamWeeklyReport[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -879,6 +881,8 @@ model WeeklyEntry {
   factKey     String?
   /// Ключ черновика с устройства (этап 26): повторная отправка после обрыва связи правит ту же запись, а не создаёт вторую
   clientKey   String?
+  /// Смысловой блок weekly по шаблону команды (этап 66): news, products, risks, plan, c:... null: шаблона не было
+  section     String?
   importBatch String?
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
@@ -922,8 +926,12 @@ model CeoReport {
   sentById    String?
   sentBy      Person?   @relation("CeoReportSentBy", fields: [sentById], references: [id], onDelete: SetNull)
   sentTo      Json      @default("[]")
-  /// Что ушло CEO (этап 61): разделы и «Мои встречи» в момент отправки. Цифры и решения недели собираются живыми
+  /// Что ушло CEO (этап 61): разделы и «Мои встречи» в момент отправки. Цифры и решения недели собираются живыми.
+  /// С этапа 66 и блоки: { main, risks, next, meetings, blocks }
   sentSnapshot Json?
+  /// Отчёт по смысловым блокам (этап 66): [{ key, title, hidden, note, lines: [{ product, text, href, source }] }].
+  /// null: отчёт в прежнем виде (главное, риски, что дальше). При сохранении блоков прежние разделы собираются из них
+  blocks       Json?
 
   @@map("ceo_reports")
 }
@@ -1205,10 +1213,48 @@ model Team {
   ratingBoxes  MeetingRatingBox[]
   initiatives  Initiative[]
   joinRequests TeamJoinRequest[]
+  /// Weekly по смысловым блокам (этап 66): шаблон блоков команды и собранные отчёты команды по неделям
+  weeklyTemplate TeamWeeklyTemplate?
+  weeklyReports  TeamWeeklyReport[]
 
   @@index([leaderId])
   @@index([parentId])
   @@map("teams")
+}
+
+/// Шаблон смысловых блоков weekly команды (этап 66): какие блоки и в каком порядке. Нет строки: weekly команды как раньше.
+/// Задаёт руководитель команды, руководитель выше или режим управления. Люди без связи: шаблон переживает выключение автора
+model TeamWeeklyTemplate {
+  teamId      String   @id
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  /// [{ key, title }]: стандартные блоки (news, products, risks...) и свои (c:...)
+  blocks      Json
+  updatedById String?
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  @@map("team_weekly_templates")
+}
+
+/// Weekly команды по блокам за неделю (этап 66): отчёт, который руководитель собрал из weekly своей команды и отправил
+/// своему руководителю (событие в «Мне», как отправка CEO). Блоки в том же виде, что у отчёта CEO
+model TeamWeeklyReport {
+  id           String    @id @default(cuid())
+  teamId       String
+  team         Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  weekId       String
+  week         Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  blocks       Json
+  updatedById  String?
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+  /// Отправлен руководителю: когда, кем и кому [{ id, name }], что ушло (блоки)
+  sentAt       DateTime? @db.Timestamptz(3)
+  sentById     String?
+  sentTo       Json      @default("[]")
+  sentSnapshot Json?
+
+  @@unique([teamId, weekId])
+  @@index([weekId])
+  @@map("team_weekly_reports")
 }
 
 /// Руководитель команды просит человека из другой ветки (этап 53). Человек входит в команду, когда согласится его

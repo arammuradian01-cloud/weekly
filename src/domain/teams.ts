@@ -4,6 +4,8 @@ import type { PersonSlug } from "./types";
 
 /** id топ-команды: её создаёт миграция, все задачи до команд принадлежат ей */
 export const TOP_TEAM = "top";
+/** Имя топ-команды по умолчанию (этап 66, решение Арама 22.10). Настоящее имя в базе: владелец может его поменять */
+export const TOP_TEAM_NAME = "Команда страхования и инвестиций";
 /** «Все мои команды» в переключателе */
 export const ALL_TEAMS = "*";
 
@@ -29,7 +31,7 @@ export function teamOf(id: string | null | undefined): TeamEntry | undefined {
 
 export function teamName(id: string | null | undefined): string {
   if (id === ALL_TEAMS) return "Все мои команды";
-  return teamOf(id)?.name ?? (id === TOP_TEAM ? "Топ-команда" : "Команда");
+  return teamOf(id)?.name ?? (id === TOP_TEAM ? TOP_TEAM_NAME : "Команда");
 }
 
 /** Люди команды: руководитель и участники */

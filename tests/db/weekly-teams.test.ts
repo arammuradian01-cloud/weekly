@@ -10,6 +10,7 @@ import * as projects from "@/lib/org/projects";
 import * as teams from "@/lib/org/teams";
 import { NO_RIGHTS } from "@/lib/org/team-rights";
 import { TOP_TEAM } from "@/lib/org/scope";
+import { TOP_TEAM_NAME } from "@/domain/teams";
 
 const INS = "Департамент страхования и инвестиций";
 const MONEY = "Департамент Money";
@@ -56,7 +57,7 @@ async function clean() {
   await prisma.teamMember.deleteMany({ where: { teamId: TOP_TEAM, person: { role: "EMPLOYEE" } } });
   await prisma.goal.deleteMany();
   await prisma.team.deleteMany({ where: { id: { not: TOP_TEAM } } });
-  await prisma.team.update({ where: { id: TOP_TEAM }, data: { parentId: null, name: "Топ-команда" } });
+  await prisma.team.update({ where: { id: TOP_TEAM }, data: { parentId: null, name: TOP_TEAM_NAME } });
   await prisma.person.updateMany({ data: { unitId: null, managerId: null, functionalManagerId: null, position: null } });
   await prisma.inboxEvent.deleteMany();
   await prisma.weeklyEntry.deleteMany({ where: { author: { role: "EMPLOYEE" } } });
@@ -249,8 +250,8 @@ describe("обёртки над сервисами", () => {
     expect(view.closed.map((t) => t.name)).toEqual(expect.arrayContaining(["Управление кредитных продуктов", "Кредиты - страхование"]));
     expect(view.teams.some((t) => t.id === credit.id)).toBe(false);
     await org.updateTeam(await ownerMode(), credit.id, { active: true });
-    // Топ-команду не закрыть
-    await expectRule(teams.closeTeam(await ownerMode(), TOP_TEAM), /Топ-команду/);
+    // Команду страхования и инвестиций (бывшая топ-команда) не закрыть
+    await expectRule(teams.closeTeam(await ownerMode(), TOP_TEAM), /закрыть нельзя/);
   });
 
   it("владелец назначает руководителя: новый руководитель управляет составом, прежний больше нет", async () => {

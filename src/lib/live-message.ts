@@ -17,10 +17,12 @@ export function parseLive(payload: string | undefined): LiveMessage | null {
 
 /**
  * Какие экраны обновлять по виду изменения. Экран сдачи weekly не трогаем: человек пишет, чужие правки ему не нужны,
- * а свежие данные экран и так берёт после каждого своего действия
+ * а свежие данные экран и так берёт после каждого своего действия. Отчёт команды по блокам (этап 66) тоже: каждый показ
+ * пересобирает отчёт из многих таблиц, а правки weekly идут потоком. Свежие источники он берёт по кнопке «Обновить
+ * источники» и после своего сохранения
  */
 export function relevant(kind: "inbox" | "tasks" | "weekly" | "meeting", path: string): boolean {
-  if (path.startsWith("/weekly/submit")) return false;
+  if (path.startsWith("/weekly/submit") || path.startsWith("/weekly/team-report")) return false;
   const home = path === "/";
   if (kind === "inbox") return home || path.startsWith("/me");
   // Встреча 2.0 (этап 23): экраны участников идут за ведущим, журнал решений обновляется

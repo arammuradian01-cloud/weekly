@@ -3,32 +3,37 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, Columns2, Mail, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ClipboardCopy, Columns2, Mail, Plus, RefreshCw, Save, Send, Trash2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { numbersText, type WeekNumbers } from "@/lib/numbers/text";
-import { forecastText } from "@/lib/forecast/codes";
+import type { WeekNumbers } from "@/lib/numbers/text";
 import type { ForecastSummary } from "@/lib/forecast/types";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
-import { planBriefText, type PlanBrief } from "@/lib/plan/brief";
+import type { PlanBrief } from "@/lib/plan/brief";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
 import { Figures } from "@/components/ui/data";
 import { Collapsible, revealCollapsible } from "@/components/ui/collapsible";
 import { cn } from "@/lib/cn";
-import { directionLabel } from "@/domain/dictionaries";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
 import { compactName } from "@/domain/people";
 import { promiseShare, summaryText, type PromiseSummary } from "@/lib/weekly/promises";
 import type { PromiseHistory } from "@/lib/weekly/promise-service";
-import { buildCeoSections, cleanDash, type CeoSections } from "@/lib/weekly/rules";
+import { cleanDash } from "@/lib/weekly/rules";
 import type { CeoDecision, CeoReportView } from "@/lib/weekly/service";
-import { MAIL_PASTE_HINT, MEETINGS_MAX, MEETING_TEXT_MAX, MEETING_TITLE_MAX, ceoReportText, cleanMeetings, countSentences, mailtoHref, type CeoMeeting } from "@/lib/ceo/text";
-import { saveCeoReportAction } from "@/app/(app)/weekly/actions";
+import { MAIL_PASTE_HINT, MEETINGS_MAX, MEETING_TEXT_MAX, MEETING_TITLE_MAX, ceoBlocksText, cleanMeetings, countSentences, mailtoHref, type CeoMeeting } from "@/lib/ceo/text";
+import { fromLegacy, rebuildBlock, withoutEmptyLines } from "@/lib/weekly-blocks/edit";
+import { hasBlocksText, legacyToBlocks, type Labels, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
+import type { Competitor } from "@/lib/weekly-blocks/assemble";
+import { saveCeoBlocksAction, sendCeoReportAction } from "@/app/(app)/weekly/blocks-actions";
 import { Button, buttonClass } from "@/components/ui/button";
 import { TextArea, TextInput } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/overlays";
+import { FormError } from "@/components/ui/field";
 import { WeekSwitcher } from "@/components/weekly/weekly-feed";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
+import { BlocksEditor } from "@/components/weekly-blocks/blocks-editor";
+import { CeoAssembled } from "./ceo-assembled";
+import { CompetitorsSetting } from "./competitors-setting";
 
 type Promises = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary; snapshotAt?: string };
 
@@ -49,9 +54,6 @@ function promiseLine(s: PromiseSummary): string {
 
 type History = { key: string; number: number; flagged: number; meeting: string; savedBy?: string; savedAt?: string }[];
 
-// В строке отчёта продукт, а не человек: CEO читает по продуктам (07.10)
-const fromEntries = (view: WeekView) => buildCeoSections(view.entries, directionLabel);
-
 function moment(iso: string): string {
   const at = new Date(iso);
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(at);
@@ -61,17 +63,14 @@ type Draft = CeoMeeting & { key: number };
 let draftKey = 0;
 const withKey = (m: CeoMeeting): Draft => ({ ...m, key: ++draftKey });
 
-/** Текст прошлой недели под полем: только при сравнении */
-function Previous({ number, text }: { number: number; text: string | undefined }) {
-  return (
-    <div className="rounded-lg bg-field px-3.5 py-2.5">
-      <p className="text-caption font-medium text-muted">Неделя {number}</p>
-      <p className="mt-1 whitespace-pre-wrap text-small text-ink">{text?.trim() ? text : <span className="text-muted">Раздел был пустым</span>}</p>
-    </div>
-  );
-}
+export type CeoBlocksMeta = { labels: Labels; order: string[]; products: ProductRef[] };
 
-/** Черновик отчёта CEO (раздел 3 ТЗ, этап 27): видят только владелец и администраторы, в таблицу он не выгружается */
+/**
+ * Черновик отчёта CEO (раздел 3 ТЗ, этап 27) по смысловым блокам (этап 66): видят только владелец и администраторы, в
+ * таблицу он не выгружается. Блоки собираются сами из цифр недели, прогноза месяца, хаба, новостей, weekly команды,
+ * разбора встречи и задач; каждый блок можно поправить, скрыть, поднять или опустить и собрать заново. «Отправить CEO»
+ * только в приложении: снимок блоков, событие CEO в «Мне»
+ */
 export function CeoReport({
   view,
   saved,
@@ -84,6 +83,10 @@ export function CeoReport({
   decisions = [],
   previous,
   owner = false,
+  auto,
+  meta,
+  competitors,
+  send,
 }: {
   view: WeekView;
   saved: CeoReportView;
@@ -101,6 +104,13 @@ export function CeoReport({
   /** Отчёт прошлой недели для сравнения (этап 27) */
   previous?: { number: number; report: CeoReportView };
   owner?: boolean;
+  /** Свежая автосборка блоков (этап 66) и пояснение, из чего она собрана */
+  auto: { blocks: ReportBlock[]; hint: string | null };
+  meta: CeoBlocksMeta;
+  /** Конкуренты для блока «Конкуренты»: владелец меняет список здесь же */
+  competitors: Competitor[];
+  /** Кто может отправить CEO и кому уйдёт */
+  send: { can: boolean; hint: string | null; recipients: string[] };
 }) {
   const thanks = useMemo(() => view.reports.filter((r) => r.thanks), [view.reports]);
   const { notify } = usePrototype();
@@ -108,15 +118,21 @@ export function CeoReport({
   const router = useRouter();
   const week = view.week;
   const flaggedCount = view.entries.filter((e) => e.ceo).length;
-  const [sections, setSections] = useState<CeoSections>(() => saved.sections ?? fromEntries(view));
+  const blocksOf = (r: CeoReportView) => r.blocks ?? (r.sections ? fromLegacy(r.sections, auto.blocks, meta.products) : auto.blocks.map((b) => ({ ...b, lines: [...b.lines] })));
+  const [blocks, setBlocks] = useState<ReportBlock[]>(() => blocksOf(saved));
+  // Отчёт сохранён в прежнем виде (главное, риски, что дальше): он разложен по блокам и ждёт сохранения
+  const [legacy, setLegacy] = useState(!saved.blocks && !!saved.sections);
   // У встречи на экране свой ключ: при удалении поля не перескакивают
   const [meetings, setMeetings] = useState<Draft[]>(() => saved.meetings.map(withKey));
-  const [dirty, setDirty] = useState(!saved.sections);
+  const [dirty, setDirty] = useState(!saved.blocks);
   // Правил ли человек текст на этом экране: свежесобранный черновик без правок не считается «несохранёнными правками»
   const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
+  const [rebuildKey, setRebuildKey] = useState<string | null>(null);
   const [compare, setCompare] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   // Момент последнего сохранения, который видел экран: сервер сверяет его, чтобы не затереть чужие правки
   const [savedAt, setSavedAt] = useState<{ at: string | null; by?: string }>({ at: saved.updatedAt ?? null, by: saved.updatedBy });
   const savedAtRef = useRef<string | null>(saved.updatedAt ?? null);
@@ -130,8 +146,8 @@ export function CeoReport({
   };
   /** Сохранённая версия с другого устройства или от другого человека пришла, пока здесь есть несохранённые правки */
   const [newer, setNewer] = useState<CeoReportView | null>(null);
-  const set = (key: keyof CeoSections, value: string) => {
-    setSections((s) => ({ ...s, [key]: cleanDash(value) }));
+  const editBlocks = (next: ReportBlock[]) => {
+    setBlocks(next);
     markDirty();
   };
   const setMeeting = (i: number, patch: Partial<Draft>) => {
@@ -140,12 +156,13 @@ export function CeoReport({
   };
 
   const adopt = (r: CeoReportView) => {
-    setSections(r.sections ?? fromEntries(view));
+    setBlocks(blocksOf(r));
+    setLegacy(!r.blocks && !!r.sections);
     setMeetings(r.meetings.map(withKey));
     savedAtRef.current = r.updatedAt ?? null;
     setSavedAt({ at: r.updatedAt ?? null, by: r.updatedBy });
     syncedRev.current = rev.current;
-    setDirty(!r.sections);
+    setDirty(!r.blocks);
     setNewer(null);
   };
 
@@ -162,22 +179,20 @@ export function CeoReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
+  const thanksList = useMemo(() => thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })), [thanks]);
   const fullText = useMemo(
     () =>
-      ceoReportText({
+      ceoBlocksText({
         weekNumber: week.number,
-        numbers: numbers ? numbersText(numbers) : ["Появятся после подключения недельного отчёта."],
-        forecast: forecast ? forecastText(forecast) : undefined,
-        monthPlan: plan ? planBriefText(plan) : undefined,
+        blocks,
+        labels: meta.labels,
+        order: meta.order,
         promises: promises?.total.total ? promiseLine(promises.total) : undefined,
-        main: sections.main,
         decisions,
-        risks: sections.risks,
-        next: sections.next,
-        thanks: thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })),
+        thanks: thanksList,
         meetings: cleanMeetings(meetings),
       }),
-    [week.number, numbers, forecast, plan, promises, sections, decisions, thanks, meetings],
+    [week.number, blocks, meta.labels, meta.order, promises, decisions, thanksList, meetings],
   );
 
   const copy = async (okText = "Текст отчёта скопирован") => {
@@ -197,54 +212,82 @@ export function CeoReport({
   const fullHref = mailtoHref(subject, fullText);
   const mailHref = fullHref ?? mailtoHref(subject, MAIL_PASTE_HINT) ?? "mailto:";
 
+  const afterSave = (result: CeoReportView, startRev: number) => {
+    savedAtRef.current = result.updatedAt ?? null;
+    setSavedAt({ at: result.updatedAt ?? null, by: result.updatedBy });
+    setNewer(null);
+    setLegacy(false);
+    // Пока шло сохранение, правили дальше: эти правки ещё не на сервере
+    if (rev.current === startRev) {
+      syncedRev.current = startRev;
+      setDirty(false);
+    }
+  };
+
   const save = async () => {
     const startRev = rev.current;
     setBusy(true);
-    const result = await run(() => saveCeoReportAction(week.key, sections, cleanMeetings(meetings), savedAtRef.current), `Отчёт за неделю ${week.number} сохранён`);
+    const result = await run(() => saveCeoBlocksAction(week.key, withoutEmptyLines(blocks), cleanMeetings(meetings), savedAtRef.current), `Отчёт за неделю ${week.number} сохранён`);
     setBusy(false);
     // Не сохранилось (например, отчёт уже сохранили в другом месте): подтягиваем свежую версию, чтобы сразу
     // появилось предупреждение с кнопкой «Показать сохранённую версию». Набранное при этом не пропадает
     if (!result) router.refresh();
-    if (result) {
-      savedAtRef.current = result.updatedAt ?? null;
-      setSavedAt({ at: result.updatedAt ?? null, by: result.updatedBy });
-      setNewer(null);
-      // Пока шло сохранение, правили дальше: эти правки ещё не на сервере
-      if (rev.current === startRev) {
-        syncedRev.current = startRev;
-        setDirty(false);
-      }
+    else afterSave(result, startRev);
+  };
+
+  const sendNow = async () => {
+    const startRev = rev.current;
+    setBusy(true);
+    setSendError(null);
+    try {
+      const r = await sendCeoReportAction(week.key, withoutEmptyLines(blocks), cleanMeetings(meetings), savedAtRef.current);
+      if (!r.ok) return setSendError(r.error);
+      afterSave(r.value, startRev);
+      setSendOpen(false);
+      notify(`Weekly отправлен CEO: ${send.recipients.join(", ")}`);
+      router.refresh();
+    } catch {
+      setSendError("Нет связи с сервером: weekly не отправлен");
+    } finally {
+      setBusy(false);
     }
   };
 
   const rebuild = () => {
-    setSections(fromEntries(view));
+    setBlocks(auto.blocks.map((b) => ({ ...b, lines: [...b.lines] })));
+    setLegacy(false);
     markDirty();
     setConfirm(false);
-    notify("Главное, риски и что дальше собраны заново из отмеченных записей");
+    notify("Блоки собраны заново из цифр, новостей, weekly и задач");
+  };
+
+  const rebuildOne = (key: string) => {
+    setBlocks((list) => rebuildBlock(list, auto.blocks, key));
+    markDirty();
+    setRebuildKey(null);
   };
 
   const prev = previous?.report;
+  const prevBlocks = prev?.blocks ?? (prev?.sections ? legacyToBlocks(prev.sections, meta.products) : null);
   const sentences = (text: string) => {
     const n = countSentences(text);
     return `${n} ${plural(n, "предложение", "предложения", "предложений")}`;
   };
 
   // Этап 47: редактор в колонке 840 в порядке письма, справа панель с сохранением, действиями и цифрами. Три области
-  // (верх, панель, низ), как у карточки задачи: на ноутбуке панель справа вдоль всей колонки, на планшете и телефоне
-  // она встаёт сразу после «Главного», а не в самом низу страницы. Цифры недели, прогноз, обещания и история отчётов
-  // сворачиваемыми блоками под редактором во всю ширину колонки: их таблицы в панель 320 не помещаются; в текст
-  // письма цифры и прогноз попадают и так
+  // (верх, панель, низ), как у карточки задачи. Этап 66: в верхней области блоки отчёта, на телефоне панель после них
   const status = dirty && edited ? "Есть несохранённые правки" : dirty ? "Черновик собран, ещё не сохранён" : savedAt.at ? `Сохранён ${moment(savedAt.at)}${savedAt.by ? `, ${savedAt.by}` : ""}` : "";
   const promiseHint = promises?.total.total ? promiseLine(promises.total) : "Обещаний на эту неделю не было";
   const numbersHint = !numbers || !numbers.connected ? "Появятся после подключения недельного отчёта" : !numbers.figures.length ? "Отчёт подключён, цифры ещё не выбраны" : !numbers.ready ? `За неделю с ${formatShort(numbers.week)} цифр в отчёте ещё нет` : `Из недельного отчёта, неделя с ${formatShort(numbers.week)}`;
   const savedCount = history.filter((h) => h.savedAt).length;
   const historyHint = history.length ? `${history.length} ${plural(history.length, "неделя", "недели", "недель")}, сохранено ${savedCount}` : "Пока ни одного отчёта";
   const promiseShareText = promises?.total.total && promiseShare(promises.total) !== null ? `${promiseShare(promises.total)}%` : 0;
+  const hiddenCount = blocks.filter((b) => b.hidden).length;
+  const rebuildTitle = blocks.find((b) => b.key === rebuildKey)?.title ?? "";
 
   return (
     <div className="sv-page--read-rail sv-page--split">
-      <div className="sv-page__top flex min-w-0 flex-col gap-6">
+      <div className="sv-page__top flex min-w-0 flex-col gap-5">
         <WeekSwitcher view={view} basePath="/ceo-report" />
 
         {newer ? (
@@ -257,12 +300,26 @@ export function CeoReport({
             </Button>
           </div>
         ) : null}
-        {compare && previous && !prev?.sections ? <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p> : null}
-
-        <div className="flex flex-col gap-2">
-          <TextArea label="Главное за неделю" id="ceo-main" value={sections.main} onChange={(e) => set("main", e.target.value)} rows={8} hint="Пишите от первого лица. Длинное тире и стрелки заменяются на дефис сами" />
-          {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.main} /> : null}
-        </div>
+        {legacy ? (
+          <p className="rounded-lg bg-info-soft px-3.5 py-2.5 text-small text-ink" data-testid="ceo-legacy">
+            Отчёт за эту неделю сохранён в прежнем виде: главное, риски и что дальше. Здесь он разложен по смысловым блокам, цифры недели и месяца собраны заново. Сохраните, чтобы отчёт остался в блоках.
+          </p>
+        ) : null}
+        {compare && previous && !prevBlocks ? <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p> : null}
+        <p className="max-w-[760px] text-small text-muted">
+          Каждая строка подписана продуктом, у цифр ссылка на источник. Блок можно поправить, скрыть, поднять или опустить. Скрытые блоки CEO не увидит.
+          {auto.hint ? ` ${auto.hint}.` : ""}
+        </p>
+        <BlocksEditor
+          blocks={blocks}
+          onChange={editBlocks}
+          products={meta.products}
+          labels={meta.labels}
+          order={meta.order}
+          idPrefix="ceo"
+          onRebuild={(key) => setRebuildKey(key)}
+          compare={compare && previous && prevBlocks ? { number: previous.number, blocks: prevBlocks } : null}
+        />
       </div>
 
       <aside className="sv-page__rail" aria-label="Сохранение, действия и цифры отчёта">
@@ -270,7 +327,7 @@ export function CeoReport({
           <p className="text-small text-muted" aria-live="polite">
             {status}
           </p>
-          {/* Этап 61: weekly отправили CEO из разбора встречи в Notion: когда, кто и кому */}
+          {/* Этап 61: weekly отправили CEO в приложении: когда, кто и кому */}
           {saved.sent ? (
             <p className="text-small text-ink" data-testid="ceo-report-sent">
               Отправлен CEO {moment(saved.sent.at)}
@@ -282,6 +339,26 @@ export function CeoReport({
             <Save className="h-4 w-4" aria-hidden="true" />
             {busy ? "Сохраняю…" : "Сохранить"}
           </Button>
+          {send.can ? (
+            <Button
+              variant="dark"
+              className="w-full"
+              disabled={busy}
+              onClick={() => {
+                setSendError(null);
+                if (!hasBlocksText(withoutEmptyLines(blocks))) {
+                  notify("Weekly для CEO пустой: в видимых блоках нет ни одной строки", "error");
+                  return;
+                }
+                setSendOpen(true);
+              }}
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+              {saved.sent ? "Отправить CEO ещё раз" : "Отправить CEO"}
+            </Button>
+          ) : send.hint ? (
+            <p className="text-caption text-muted">{send.hint}</p>
+          ) : null}
           {/* Второстепенные действия в одну колонку: надписи целиком, без переносов и без прокрутки панели */}
           <div className="flex flex-col gap-2">
             <Button size="sm" variant="secondary" className="w-full justify-start" onClick={() => setConfirm(true)}>
@@ -323,8 +400,7 @@ export function CeoReport({
           </p>
         </div>
 
-        {/* Этап 37: из чего собран отчёт, в цифрах. Этап 47: строкой, не больше трёх, нули спрятаны. Цифра обещаний
-            раскрывает свёрнутый блок, а не только прокручивает к нему */}
+        {/* Этап 37: из чего собран отчёт, в цифрах. Этап 47: строкой, не больше трёх, нули спрятаны */}
         <Figures
           label="Отчёт в цифрах"
           inline
@@ -335,6 +411,7 @@ export function CeoReport({
             { label: "обещаний выполнено", value: promiseShareText, onClick: () => revealCollapsible("ceo-promises"), testId: "ceo-fig-promises" },
             { label: plural(thanks.length, "благодарность", "благодарности", "благодарностей"), value: thanks.length, href: "#ceo-thanks", testId: "ceo-fig-thanks" },
             { label: plural(cleanMeetings(meetings).length, "моя встреча", "мои встречи", "моих встреч"), value: cleanMeetings(meetings).length, href: "#ceo-meetings", testId: "ceo-fig-meetings" },
+            { label: plural(hiddenCount, "блок скрыт", "блока скрыто", "блоков скрыто"), value: hiddenCount, testId: "ceo-fig-hidden" },
           ]}
         />
         <p className="text-caption text-muted">
@@ -364,18 +441,9 @@ export function CeoReport({
               ))}
             </ul>
           ) : (
-            <p className="mt-1 text-body text-muted">Решений топ-команды по этой неделе в журнале нет. Они появятся здесь сами, когда их запишут на встрече.</p>
+            <p className="mt-1 text-body text-muted">Решений команды по этой неделе в журнале нет. Они появятся здесь сами, когда их запишут на встрече.</p>
           )}
         </section>
-
-        <div className="flex flex-col gap-2">
-          <TextArea label="Риски" id="ceo-risks" value={sections.risks} onChange={(e) => set("risks", e.target.value)} rows={5} />
-          {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.risks} /> : null}
-        </div>
-        <div className="flex flex-col gap-2">
-          <TextArea label="Что дальше" id="ceo-next" value={sections.next} onChange={(e) => set("next", e.target.value)} rows={5} />
-          {compare && prev?.sections ? <Previous number={previous!.number} text={prev.sections.next} /> : null}
-        </div>
 
         {thanks.length ? (
           <section aria-labelledby="ceo-thanks" className="sv-card sv-card--soft px-5 py-4">
@@ -448,7 +516,7 @@ export function CeoReport({
               </Button>
             </div>
           ) : null}
-          {compare && prev?.sections ? (
+          {compare && prev && prevBlocks ? (
             <div className="rounded-lg bg-field px-3.5 py-2.5">
               <p className="text-caption font-medium text-muted">Неделя {previous!.number}</p>
               {prev.meetings.length ? (
@@ -467,8 +535,19 @@ export function CeoReport({
           ) : null}
         </section>
 
-        {/* Справочные блоки свёрнуты: в текст письма они попадают сами, редактору нужны изредка. Заголовок и подпись
-            даёт блок, внутренние карточки без своей рамки */}
+        {/* Что получит CEO: блоки без скрытых и пустых, решения, благодарности и встречи */}
+        <Collapsible id="ceo-preview-block" title="Что получит CEO" hint={`Отчёт за неделю ${week.number}: видимые блоки, решения, благодарности и встречи`} testId="ceo-blocks-preview">
+          <CeoAssembled
+            ctx={{ decisions, thanks: thanksList }}
+            blocks={withoutEmptyLines(blocks)}
+            labels={meta.labels}
+            order={meta.order}
+            meetings={cleanMeetings(meetings)}
+            idPrefix="ceo-preview"
+          />
+        </Collapsible>
+
+        {/* Справочные блоки свёрнуты: цифры и прогноз уже в блоках «Неделя к неделе» и «Месяц», здесь таблицы целиком */}
         <Collapsible id="ceo-numbers-block" title="Цифры недели" hint={numbersHint} testId="ceo-numbers-block">
           {numbers ? (
             <WeekNumbersBlock numbers={numbers} manage={owner} headingLevel="h3" embedded />
@@ -526,6 +605,9 @@ export function CeoReport({
             <p className="text-body text-muted">Обещаний на эту неделю не было: в прошлом weekly нет планов, задач со сроком на неделе нет.</p>
           )}
         </Collapsible>
+        <Collapsible id="ceo-competitors" title="Конкуренты" hint={`${competitors.length} ${plural(competitors.length, "конкурент", "конкурента", "конкурентов")} в списке: по их словам собирается блок «Конкуренты»`} testId="ceo-competitors-block">
+          <CompetitorsSetting initial={competitors} canEdit={owner} />
+        </Collapsible>
         <Collapsible id="ceo-history" title="История отчётов" hint={historyHint} testId="ceo-history-block" flush={history.length > 0}>
           {history.length === 0 ? (
             <p className="text-small text-muted">Пока ни одного отчёта: список появится после первого сохранения.</p>
@@ -546,13 +628,39 @@ export function CeoReport({
         </Collapsible>
       </div>
 
-      <Modal open={confirm} onOpenChange={setConfirm} title="Собрать отчёт заново?" description="Главное, риски и что дальше соберутся заново из записей с отметкой «В отчёт CEO». Ваши правки в этих трёх разделах пропадут. Встречи недели останутся как есть.">
+      <Modal open={confirm} onOpenChange={setConfirm} title="Собрать отчёт заново?" description="Все блоки соберутся заново из цифр недели, прогноза месяца, новостей, weekly команды, разбора встречи и задач. Ваши правки в блоках пропадут. Встречи недели останутся как есть.">
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={() => setConfirm(false)}>
             Отмена
           </Button>
           <Button variant="dark" onClick={rebuild}>
             Собрать заново
+          </Button>
+        </div>
+      </Modal>
+      <Modal open={rebuildKey !== null} onOpenChange={(open) => !open && setRebuildKey(null)} title={`Собрать блок «${rebuildTitle}» заново?`} description="Строки блока соберутся заново из источников. Ваши правки в этом блоке пропадут, остальные блоки не изменятся.">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" onClick={() => setRebuildKey(null)}>
+            Отмена
+          </Button>
+          <Button variant="dark" onClick={() => rebuildKey && rebuildOne(rebuildKey)}>
+            Собрать блок
+          </Button>
+        </div>
+      </Modal>
+      <Modal
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        title="Отправить weekly CEO?"
+        description={`Получит: ${send.recipients.join(", ") || "CEO"}. Отчёт сохранится и уйдёт в новой структуре: видимые блоки, решения, благодарности и встречи. Отправка только в приложении, без письма.`}
+      >
+        <FormError message={sendError ?? undefined} />
+        <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setSendOpen(false)}>
+            Отмена
+          </Button>
+          <Button onClick={() => void sendNow()} disabled={busy} loading={busy}>
+            {busy ? "Отправляем…" : "Отправить"}
           </Button>
         </div>
       </Modal>

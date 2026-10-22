@@ -27,6 +27,8 @@ export type EntrySnapshot = {
   importBatch: string | null;
   /** Запись из факта недели (этап 22) */
   factKey?: string | null;
+  /** Смысловой блок по шаблону команды (этап 66). Нет в старых токенах */
+  section?: string | null;
   createdAt: string;
   /** Задачи, созданные из записи: при удалении связь обнуляется, при отмене возвращается */
   taskIds: string[];
