@@ -26,13 +26,14 @@ export function BlockLineView({ line, labels, product = true }: { line: BlockLin
       {line.href ? (
         <>
           {" "}
+          {/* Длинная подпись источника обрезается многоточием: на телефоне 360 без горизонтальной прокрутки */}
           <a
             href={line.href}
             {...(external(line.href) ? { target: "_blank", rel: "noreferrer" } : {})}
-            className="inline-flex items-center gap-1 whitespace-nowrap text-small font-medium text-link hover:underline"
+            className="inline-flex min-w-0 max-w-full items-center gap-1 align-bottom text-small font-medium text-link hover:underline"
           >
-            {line.source || "Источник"}
-            {external(line.href) ? <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+            <span className="truncate">{line.source || "Источник"}</span>
+            {external(line.href) ? <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" /> : null}
           </a>
         </>
       ) : null}

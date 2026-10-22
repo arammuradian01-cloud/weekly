@@ -83,7 +83,8 @@ export default async function TeamReportPage({ searchParams }: { searchParams: P
           </Link>
         ) : null}
       </nav>
-      {/* Ключ и по блокам шаблона: шаблон поменяли, редактор собирается заново из новой автосборки */}
+      {/* Ключ и по блокам шаблона: шаблон поменяли, сервер выравнивает сохранённый отчёт по нему (новые блоки добавлены из
+          автосборки или пустыми, убранные скрыты со своими строками), и редактор берёт отчёт заново */}
       <TeamReportScreen key={`${view.team.id}:${view.week}:${view.template?.map((b) => b.key).join(",") ?? "-"}`} view={view} template={template} />
     </>
   );

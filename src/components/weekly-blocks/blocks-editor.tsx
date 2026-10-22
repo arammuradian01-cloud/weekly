@@ -3,13 +3,14 @@
 // Редактор отчёта по смысловым блокам (этап 66): отчёт CEO, черновик weekly для CEO в разборе встречи и weekly команды.
 // Каждый блок карточкой: строки с продуктом, текстом и ссылкой на источник, «Добавить строку». Блок можно поднять,
 // опустить, скрыть и собрать заново из источников. В «Продуктах» строки по подразделам продуктов. Состояние держит
-// родитель: редактор только показывает блоки и сообщает правки.
+// родитель: редактор только показывает блоки и сообщает правки. Цифры недели и месяца живые, пока их не поправили руками:
+// поправленный блок помечен, а если цифры с тех пор обновились, редактор предлагает собрать блок заново.
 
 import { ArrowDown, ArrowUp, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { addLine, defaultProduct, moveBlock, patchLine, removeLine, setHidden } from "@/lib/weekly-blocks/edit";
-import { BLOCK_LIMITS, labelOf, lineText, productGroups, type BlockLine, type Labels, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, NUMBERS_HIDDEN_TEXT, labelOf, lineText, productGroups, type BlockLine, type Labels, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 const external = (href: string) => /^https?:\/\//.test(href);
 const rowsFor = (text: string) => Math.min(6, Math.max(1, Math.ceil(text.length / 72) + (text.includes("\n") ? 1 : 0)));
@@ -39,20 +40,26 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
       {blocks.map((b, bi) => {
         const id = `${idPrefix}-${b.key.replace(":", "-")}`;
         const prev = compare?.blocks.find((x) => x.key === b.key);
-        const row = (line: BlockLine, index: number, n: number) => (
-          <LineRow
-            key={index}
-            line={line}
-            n={n}
-            id={`${id}-l${index}`}
-            block={b}
-            products={products}
-            labels={labels}
-            readOnly={readOnly}
-            onPatch={(patch) => onChange(patchLine(blocks, b.key, index, patch))}
-            onRemove={() => onChange(removeLine(blocks, b.key, index))}
-          />
-        );
+        const row = (line: BlockLine, index: number, n: number) =>
+          // Вместо цифр, которых зритель не видит: строка только для чтения, при сохранении цифры возвращаются на место
+          !line.href && line.text === NUMBERS_HIDDEN_TEXT ? (
+            <li key={index} className="text-small text-muted" data-testid="block-line-hidden">
+              {NUMBERS_HIDDEN_TEXT}
+            </li>
+          ) : (
+            <LineRow
+              key={index}
+              line={line}
+              n={n}
+              id={`${id}-l${index}`}
+              block={b}
+              products={products}
+              labels={labels}
+              readOnly={readOnly}
+              onPatch={(patch) => onChange(patchLine(blocks, b.key, index, patch))}
+              onRemove={() => onChange(removeLine(blocks, b.key, index))}
+            />
+          );
         return (
           <section key={b.key} aria-labelledby={id} className={cn("flex min-w-0 flex-col gap-3 sv-card sv-card--soft px-4 py-4 sm:px-5", b.hidden && "opacity-80")} data-testid={`${idPrefix}-block-${b.key}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
@@ -66,6 +73,11 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                   </p>
                 ) : b.note ? (
                   <p className="mt-0.5 text-caption text-muted">{b.note}</p>
+                ) : null}
+                {!readOnly && b.edited && LIVE_FIGURE_KEYS.includes(b.key) && !b.stale ? (
+                  <p className="mt-0.5 text-caption text-muted" data-testid="block-edited">
+                    Цифры поправлены руками и сами не обновляются
+                  </p>
                 ) : null}
               </div>
               {!readOnly && !fixedLayout ? (
@@ -88,6 +100,15 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 </div>
               ) : null}
             </div>
+            {b.stale && !readOnly && onRebuild ? (
+              <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status" data-testid="block-stale">
+                <p>Цифры обновились, а этот блок поправлен руками. Пересобрать его по свежим цифрам?</p>
+                <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => onRebuild(b.key)}>
+                  <RefreshCw className="h-4 w-4" aria-hidden="true" />
+                  Пересобрать
+                </Button>
+              </div>
+            ) : null}
             {b.hidden ? null : (
               <>
                 {b.lines.length ? (

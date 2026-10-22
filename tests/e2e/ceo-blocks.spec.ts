@@ -6,7 +6,8 @@ import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 // месяц, конкуренты, продукты, партнёрский канал, риски, план на неделю), правит блок, скрывает, меняет порядок,
 // отправляет CEO в приложении, CEO видит отчёт по блокам. Руководитель задаёт блоки weekly своей команды, участник сдаёт
 // запись по блоку, руководитель отправляет отчёт команды своему руководителю, тот видит его по событию в «Мне».
-// Ноутбук 1440 и телефон 360 без горизонтальной прокрутки, снимки.
+// Правки по проверке: цифры недели и месяца живые, поправленный руками блок с обновившимися цифрами предлагает
+// пересобраться; длинная подпись источника обрезается. Ноутбук 1440 и телефон 360 без горизонтальной прокрутки, снимки.
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -33,6 +34,9 @@ function monday(shiftWeeks = 0): Date {
   return d;
 }
 
+/** Длинное имя ленты: подпись источника обрезается многоточием и не даёт горизонтальной прокрутки на телефоне */
+const LONG_SOURCE = "Агентство страховых новостей: лента рынка страхования и финансов";
+
 const STANDARD = ["Новости рынка и команды", "Неделя к неделе", "Месяц: к прошлому году, к прошлому месяцу, план продаж", "Конкуренты", "Продукты", "Партнёрский канал", "Риски", "План на неделю"];
 
 test.beforeEach(async () => {
@@ -48,7 +52,7 @@ test.beforeEach(async () => {
 test("этап 66: владелец собирает отчёт CEO по смысловым блокам, правит, скрывает, меняет порядок и отправляет; CEO видит блоки", async ({ page, browser }) => {
   test.setTimeout(150_000);
   // Новость о конкуренте в среду этой и прошлой недели: какая-то из них в неделе отчёта (отчётная неделя меняется во вторник)
-  const [source] = await sql(`INSERT INTO news_sources (id, name, url, "updatedAt") VALUES ('e2e66-src', 'АСН', 'https://e2e66.example/rss', now()) ON CONFLICT (url) DO UPDATE SET name = 'АСН' RETURNING id`);
+  const [source] = await sql(`INSERT INTO news_sources (id, name, url, "updatedAt") VALUES ('e2e66-src', $1, 'https://e2e66.example/rss', now()) ON CONFLICT (url) DO UPDATE SET name = $1 RETURNING id`, [LONG_SOURCE]);
   for (const [i, shift] of [0, -1].entries()) {
     const wed = monday(shift);
     wed.setUTCDate(wed.getUTCDate() + 2);
@@ -73,7 +77,7 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   const competitors = page.getByTestId("ceo-block-competitors");
   await expect(competitors.getByRole("textbox").first()).toHaveValue(/^Пампаду: Пампаду запустил КАСКО по подписке/);
   await expect(competitors.getByRole("combobox").first()).toHaveValue("kasko");
-  await expect(competitors.getByRole("link", { name: "АСН" }).first()).toHaveAttribute("href", /https:\/\/e2e66\.example\//);
+  await expect(competitors.getByRole("link", { name: LONG_SOURCE }).first()).toHaveAttribute("href", /https:\/\/e2e66\.example\//);
   await expect(page.getByTestId("ceo-block-month")).toBeVisible();
   await shot(page, "ceo-editor");
 
@@ -127,10 +131,40 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   await expect(sent.getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");
   await expect(sent.getByRole("region", { name: "Продукты" }).getByRole("heading", { name: "КАСКО" })).toBeVisible();
   await expect(sent.getByRole("region", { name: "Конкуренты" })).toContainText("Пампаду");
+  // Подпись источника целиком в ссылке, на экране обрезана многоточием: прокрутки вбок нет (проверяет снимок)
+  await expect(sent.getByRole("region", { name: "Конкуренты" }).getByRole("link", { name: LONG_SOURCE }).first()).toBeVisible();
   await expect(sent.getByRole("region", { name: "Новости рынка и команды" })).toHaveCount(0);
   await expect(ceo.getByRole("button", { name: "Сохранить" })).toHaveCount(0);
   await shot(ceo, "ceo-view");
   await ceo.close();
+});
+
+test("этап 66: цифры недели живые, поправленный руками блок помечен, а когда цифры обновились, предлагает пересобраться", async ({ page }) => {
+  test.setTimeout(120_000);
+  await enterByLink(page, "muradyan");
+  await enterManagement(page, "owner");
+  await page.goto("/ceo-report");
+  const wow = page.getByTestId("ceo-block-wow");
+  await expect(wow).toBeVisible();
+  // Строка руками в блоке цифр: блок помечен поправленным, сам больше не пересобирается
+  await wow.getByRole("button", { name: "Добавить строку" }).click();
+  await wow.getByRole("textbox").last().fill("Трафик ОСАГО держится на уровне прошлой недели");
+  await expect(wow.getByTestId("block-edited")).toContainText("Цифры поправлены руками");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByText(/Отчёт за неделю \d+ сохранён/).first()).toBeVisible();
+  // Автосборка с тех пор изменилась: отпечаток цифр в сохранённом блоке другой
+  await sql(
+    `UPDATE ceo_reports SET blocks = (SELECT jsonb_agg(CASE WHEN b->>'key' = 'wow' THEN b || '{"basis":"e2estale"}'::jsonb ELSE b END ORDER BY n) FROM jsonb_array_elements(blocks) WITH ORDINALITY AS t(b, n)), "updatedAt" = "updatedAt"`,
+  );
+  await page.reload();
+  await expect(wow.getByTestId("block-stale")).toContainText("Цифры обновились");
+  await expect(wow.getByRole("textbox").last()).toHaveValue("Трафик ОСАГО держится на уровне прошлой недели");
+  await shot(page, "ceo-stale");
+  await wow.getByRole("button", { name: "Пересобрать" }).click();
+  await page.getByRole("dialog", { name: "Собрать блок «Неделя к неделе» заново?" }).getByRole("button", { name: "Собрать блок" }).click();
+  await expect(wow.getByTestId("block-stale")).toHaveCount(0);
+  await expect(wow.getByTestId("block-edited")).toHaveCount(0);
+  expect(await wow.getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value))).not.toContain("Трафик ОСАГО держится на уровне прошлой недели");
 });
 
 test("этап 66: руководитель задаёт блоки weekly команды, участник сдаёт запись по блоку, руководитель отправляет отчёт своему руководителю", async ({ page, browser }) => {

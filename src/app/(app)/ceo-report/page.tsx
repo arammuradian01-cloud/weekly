@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { requireContext, requireManagement } from "@/lib/auth";
 import { canSendCeo, ceoRecipients, ceoSentReports, personalLogin } from "@/lib/ceo/report";
 import { assembleCeoBlocks, blocksMeta, loadCompetitors } from "@/lib/weekly-blocks/sources";
+import { withLiveFigures } from "@/lib/weekly-blocks/types";
 import { CeoSentReport } from "@/components/ceo/ceo-sent";
 import { ceoDecisions, ceoReportHistory, getCeoReport, getWeekView } from "@/lib/weekly/service";
 import { promiseHistory, weekPromises } from "@/lib/weekly/promise-service";
@@ -40,7 +41,7 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
   const owner = ctx.management?.role === "OWNER";
   const previousKey = shiftWeek(view.week.key, -1);
   const actor = await currentActor();
-  const [saved, history, promises, stats, numbers, forecast, decisions, previous, plan, auto, meta, competitors, recipients] = await Promise.all([
+  const [stored, history, promises, stats, numbers, forecast, decisions, previous, plan, auto, meta, competitors, recipients] = await Promise.all([
     getCeoReport(view.week.key),
     ceoReportHistory(),
     weekPromises(view.week.key, audience.personIds),
@@ -60,6 +61,9 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
     loadCompetitors(),
     ceoRecipients(),
   ]);
+  // Живые цифры: «Неделя к неделе» и «Месяц» без правок руками показываются по свежей автосборке, поправленные с пометкой,
+  // если цифры с тех пор обновились
+  const saved = stored.blocks ? { ...stored, blocks: withLiveFigures(stored.blocks, auto.blocks) } : stored;
   const sendHint = !personalLogin(actor) ? "Отправить CEO можно при личном входе: так CEO видит, кто отправил" : !recipients.length ? "CEO не найден: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»" : null;
   return (
     <>

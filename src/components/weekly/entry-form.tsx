@@ -14,7 +14,7 @@ import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { ACTIVE_DRAFTS, dropEntryDraft, isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
 import { entryBlockKey } from "@/lib/weekly-blocks/assemble";
-import type { TemplateBlock } from "@/lib/weekly-blocks/types";
+import { LIVE_FIGURE_KEYS, type TemplateBlock } from "@/lib/weekly-blocks/types";
 
 function hostOf(url: string): string {
   try {
@@ -283,7 +283,8 @@ export function EntryForm({
                 type: key === "risks" ? "risk" : key === "plan" ? "plan" : prev.type,
               }));
             }}
-            options={template.map((t) => ({ value: t.key, label: t.title }))}
+            // Блоки цифр («Неделя к неделе», «Месяц») собирает ресурс: запись в них не ставится
+            options={template.filter((t) => !LIVE_FIGURE_KEYS.includes(t.key)).map((t) => ({ value: t.key, label: t.title }))}
             hint="Блоки задал руководитель команды"
           />
         ) : (
