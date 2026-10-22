@@ -147,6 +147,17 @@ test("владелец ведёт источники и забирает лен�
   // Повтор параметра не роняет страницу: берётся первый
   await page.goto("/news?d=deposits&d=kasko");
   await expect(page.getByTestId("news-item")).toHaveCount(1);
+  // Выбранный продукт виден в ряду и на телефоне, где ряд прокручивается вбок и «Депозиты и инвестиции» за краем экрана
+  const filter = page.getByTestId("news-filter");
+  const picked = filter.locator('[aria-current="page"]');
+  await expect(picked).toHaveAttribute("data-testid", "news-filter-deposits");
+  await expect
+    .poll(async () => {
+      const a = (await picked.boundingBox())!;
+      const row = (await filter.boundingBox())!;
+      return a.x >= row.x - 0.5 && a.x + a.width <= row.x + row.width + 0.5;
+    }, { message: "выбранный продукт за краем ряда" })
+    .toBe(true);
   await page.getByTestId("news-filter-deposits").click();
   await expect(page).toHaveURL(/\/news\?d=deposits$/);
   await expect(page.getByTestId("news-item")).toHaveCount(1);

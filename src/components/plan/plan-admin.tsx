@@ -507,6 +507,8 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
   const [aliases, setAliases] = useState(hub.aliases ?? "");
   const [savedAliases, setSavedAliases] = useState(hub.aliases ?? "");
   const [aliasesBusy, setAliasesBusy] = useState(false);
+  // Строка «сохранено» у поля (этап 59): кнопка после сохранения уходит, фокус возвращается в поле, а не теряется
+  const [aliasesSaved, setAliasesSaved] = useState(false);
 
   const saveAliases = async () => {
     setError(null);
@@ -516,6 +518,8 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
     if (!r.ok) return setError(r.error);
     setAliases(r.value);
     setSavedAliases(r.value);
+    setAliasesSaved(true);
+    document.getElementById("plan-hub-aliases-text")?.focus();
     setPreview(null);
     notify("Соответствие названий СК сохранено");
     router.refresh();
@@ -647,7 +651,10 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
               label="Соответствие названий СК"
               rows={4}
               value={aliases}
-              onChange={(e) => setAliases(e.target.value)}
+              onChange={(e) => {
+                setAliases(e.target.value);
+                setAliasesSaved(false);
+              }}
               placeholder={"Росгосстрах = РГС\nСбербанк страхование = СберСтрахование"}
               hint="По строке: название в «Все СК» = название в плане. Регистр, пробелы, кавычки, ё, дефисы и форма собственности (АО, ПАО, САО, СПАО, СК) и так не в счёт: сюда только разные написания одной СК"
             />
@@ -658,6 +665,11 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
                   Сохранить соответствие
                 </Button>
               </div>
+            ) : null}
+            {aliasesSaved && aliases === savedAliases ? (
+              <p className="text-caption text-success-ink" data-testid="plan-hub-aliases-saved">
+                Соответствие сохранено
+              </p>
             ) : null}
           </div>
         ) : null}

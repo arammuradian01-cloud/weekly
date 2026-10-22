@@ -6,6 +6,7 @@ import { digestView, lastFetchAt, listNews, newsDirections, personDirections } f
 import { formatDateTime, formatTime } from "@/lib/week";
 import { PageHeader } from "@/components/page-header";
 import { NewsList, dayLabel } from "@/components/news/news-list";
+import { NewsFilter } from "@/components/news/news-filter";
 import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { SeenMark } from "@/components/inbox/seen-mark";
@@ -120,13 +121,13 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
       </PageHeader>
 
       {/* Продукты в одну строку (этап 59): на телефоне прокручиваются вбок, а не занимают четыре строки над лентой */}
-      <nav aria-label="Продукты" className="sv-pills sv-pills--phone-scroll mb-5" data-testid="news-filter">
+      <NewsFilter active={my ? "my" : selected.join(",")}>
         {pill([], "Все", !selected.length && !my, "news-filter-all")}
         <Link href="/news?d=my" className={cn("sv-pill", my && "is-active")} aria-current={my ? "page" : undefined} data-testid="news-filter-my">
           Мои продукты
         </Link>
         {active.map((d) => pill([d.code], d.label, !my && selected.length === 1 && selected[0] === d.code, `news-filter-${d.code}`))}
-      </nav>
+      </NewsFilter>
 
       {noProducts ? (
         <EmptyState title="Продукты не выбраны" icon={Newspaper}>

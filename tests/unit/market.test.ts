@@ -434,7 +434,9 @@ describe("оформление окна", () => {
     expect(title).toBeGreaterThan(0);
     // Первое значение --text-page в tokens.css: заголовок страницы на ноутбуке (28 px); на телефоне и проекторе свои
     expect(title).toBeLessThan(px(tokens, "--text-page"));
-    // Правило сильнее стилей пакета: через #dash-root, и для заголовка первого уровня, и для .kx-title
+    // Правило сильнее стилей пакета: через #dash-root, и для заголовка первого уровня, и для .kx-title. В настоящем
+    // пакете .kx-title это заголовок дашборда («Рынок КАСКО» под переключателем КАСКО и ОСАГО, serif, размер
+    // заголовка), а не подпись плитки: уменьшается именно он
     expect(MARKET_THEME_CSS).toMatch(/#dash-root h1, #dash-root \.kx-title \{ font-size: var\(--cds-font-size-title\)/);
   });
 });

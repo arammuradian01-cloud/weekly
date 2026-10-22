@@ -5,6 +5,7 @@
 // управлению и командам ОСАГО и партнёрского канала при личном входе: остальным колонок нет вовсе, не пустые ячейки.
 // Ранрейт и «К плану» появляются, когда в месяце набирается HUB_LIMITS.minRunRateDays дней факта: до этого колонок нет
 
+import { useEffect, useRef, useState } from "react";
 import type { SkRow, SkView } from "@/lib/plan/hub-service";
 import { HUB_LIMITS } from "@/lib/plan/hub";
 import { formatPlan } from "@/lib/plan/format";
@@ -63,10 +64,29 @@ function Row({ r, sensitive, rate, total }: { r: SkRow; sensitive: boolean; rate
   );
 }
 
+/**
+ * Таблица шире своего контейнера (этап 59): тогда контейнер в порядке обхода с клавиатуры, чтобы прокрутить его стрелками.
+ * Пересчёт при смене ширины контейнера и таблицы: поворот телефона, окно уже, колонки появились
+ */
+function useScrollable(ref: React.RefObject<HTMLDivElement | null>) {
+  const [scrollable, setScrollable] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setScrollable(el.scrollWidth > el.clientWidth + 1));
+    observer.observe(el);
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
+    return () => observer.disconnect();
+  }, [ref]);
+  return scrollable;
+}
+
 export function PlanSk({ sk }: { sk: SkView }) {
   const vs = sk.total.forecast !== null && sk.lbeUnits ? sk.total.forecast / sk.lbeUnits : null;
   // Ранрейт есть, когда есть факт за месяц и дней факта хватает
   const rate = !sk.factTomorrow && sk.day !== null && sk.runRateFrom === null;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollable = useScrollable(scrollRef);
   return (
     <section className="sv-plan-facts" aria-labelledby="plan-sk-title" data-testid="plan-sk">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -102,7 +122,14 @@ export function PlanSk({ sk }: { sk: SkView }) {
       ) : null}
       {/* Таблица по СК широкая (этап 59): прокручивается вбок внутри своего контейнера, колонка СК закреплена. На телефоне
           тоже таблица, а не карточки: СК сравниваются между собой по строкам */}
-      <div className="sv-table-scroll rounded-card border border-border" tabIndex={0} role="region" aria-label="Таблица ОСАГО по СК" data-testid="plan-sk-scroll">
+      <div
+        ref={scrollRef}
+        className="sv-table-scroll rounded-card border border-border"
+        tabIndex={scrollable ? 0 : undefined}
+        role={scrollable ? "region" : undefined}
+        aria-label={scrollable ? "Таблица ОСАГО по СК, прокручивается вбок" : undefined}
+        data-testid="plan-sk-scroll"
+      >
         <table className="sv-datatable sv-datatable--sticky-first" data-testid="plan-sk-table">
           <caption className="sr-only">ОСАГО по страховым компаниям: план месяца, факт с начала месяца{rate ? ", ранрейт и прогноз к плану" : ""}</caption>
           <thead>
@@ -111,8 +138,9 @@ export function PlanSk({ sk }: { sk: SkView }) {
               <th scope="col" className="is-num">
                 План, полисы
               </th>
+              {/* Длинные подписи переносятся, но не уже 7,5rem на телефоне: иначе таблица в узком окне сжимает их по слову в строку */}
               <th scope="col" className="is-num whitespace-normal py-1.5">
-                Факт с начала месяца
+                <span className="inline-block max-sm:w-[7.5rem]">Факт с начала месяца</span>
               </th>
               <th scope="col" className="is-num">
                 Доля пула
@@ -130,7 +158,7 @@ export function PlanSk({ sk }: { sk: SkView }) {
               {sk.sensitive ? (
                 <>
                   <th scope="col" className="is-num whitespace-normal py-1.5">
-                    Выручка с апсейлом с начала месяца, млн
+                    <span className="inline-block max-sm:w-[8rem]">Выручка с апсейлом с начала месяца, млн</span>
                   </th>
                   <th scope="col" className="is-num">
                     КВ плана

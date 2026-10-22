@@ -17,6 +17,8 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-plan58-${name}.png`, fullPage: true });
 }
 
+const isPhone = () => test.info().project.name === "phone";
+
 /** Блок по ширине внутри контейнера: левый и правый края не выходят за его края (полпикселя на округление) */
 async function within(inner: Locator, outer: Locator, what: string) {
   const a = (await inner.boundingBox())!;
@@ -56,16 +58,23 @@ async function skLayout(page: Page) {
     const row = card.locator("tr", { has: button });
     for (const pill of await row.locator(".sv-delta").all()) expect(overlaps((await button.boundingBox())!, (await pill.boundingBox())!), `кнопка ${await button.getAttribute("data-testid")} наезжает на отклонение`).toBe(false);
   }
-  // Таблица по СК либо помещается в контейнер целиком, либо прокручивается в нём (страницу проверяет shot). У лидера
-  // КАСКО колонок меньше, на телефоне таблица может поместиться. Если прокрутка есть, колонка СК закреплена: после
-  // прокрутки до конца ячейка СК на том же месте, а соседняя колонка уехала влево на величину прокрутки. Прокрутка без плавности, положение
-  // меряется в следующем кадре
+  // Таблица по СК остаётся таблицей и внутри сложенной на телефоне таблицы продуктов: строка СК строкой таблицы, шапка
+  // видна. Без этого вложенная таблица снова складывалась бы в карточки и «помещалась» в контейнер
   const cells = sk.getByTestId("plan-sk-row").first().locator("td");
   const first = cells.nth(0);
   const second = cells.nth(1);
+  await expect(sk.getByTestId("plan-sk-row").first()).toHaveCSS("display", "table-row");
+  await expect(sk.getByTestId("plan-sk-table").locator("thead")).toBeVisible();
   await expect(first).toHaveCSS("position", "sticky");
+  // На телефоне 360 таблица шире контейнера всегда, даже у лидера КАСКО без выручки и КВ (четыре-шесть колонок): она
+  // прокручивается в своём контейнере, страница нет (проверяет shot). На ноутбуке может поместиться целиком. Если
+  // прокрутка есть, колонка СК закреплена: после прокрутки до конца ячейка СК на том же месте, а соседняя колонка уехала
+  // влево на величину прокрутки. Прокрутка без плавности, положение меряется через кадр
   const hidden = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+  if (isPhone()) expect(hidden, "на телефоне таблица по СК не прокручивается в своём контейнере").toBeGreaterThan(0);
   if (hidden > 0) {
+    // Прокручиваемый контейнер доступен с клавиатуры: стрелками листается вбок
+    await expect(scroller).toHaveAttribute("tabindex", "0");
     const firstBefore = (await first.boundingBox())!;
     const secondBefore = (await second.boundingBox())!;
     const scrolled = await scroller.evaluate(async (el) => {
@@ -86,6 +95,8 @@ async function skLayout(page: Page) {
     });
   } else {
     await fits(sk.getByTestId("plan-sk-table"), "таблица по СК");
+    // Таблица помещается: лишней остановки при обходе с клавиатуры нет
+    await expect(scroller).not.toHaveAttribute("tabindex");
   }
 }
 

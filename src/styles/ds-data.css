@@ -140,8 +140,10 @@
   .sv-datatable--stack > :where(tbody) > :where(tr) > td.is-action { grid-column: 1 / -1; align-items: flex-end; }
   /* Отклонение шире своей колонки: процент уходит на вторую строку, а не под соседнюю колонку */
   .sv-datatable--stack > :where(tbody) > :where(tr) > td > .sv-delta { flex-wrap: wrap; max-width: 100%; white-space: normal; }
-  /* Закреплённая колонка на телефоне узкая: название переносится, цифрам остаётся место */
-  .sv-datatable--sticky-first th:first-child, .sv-datatable--sticky-first td:first-child { width: 132px; padding-left: var(--space-3); white-space: normal; overflow-wrap: anywhere; }
+  /* Закреплённая колонка на телефоне узкая, 104 px: название переносится (длинное по слогам), цифрам остаётся место.
+     Ширина и минимум и у ячейки, и у названия внутри: в сжатой таблице колонка не уже 104 px */
+  .sv-datatable--sticky-first th:first-child, .sv-datatable--sticky-first td:first-child { width: 104px; min-width: 104px; padding-left: var(--space-3); padding-right: var(--space-2); white-space: normal; overflow-wrap: anywhere; hyphens: auto; }
+  .sv-datatable--sticky-first td:first-child .sv-datatable__name { min-width: calc(104px - var(--space-3) - var(--space-2)); }
   .sv-datatable--sticky-first th:last-child, .sv-datatable--sticky-first td:last-child { padding-right: var(--space-3); }
   .sv-datatable--stack > :where(tbody) > :where(tr) > td:empty, .sv-datatable--stack > :where(tbody) > :where(tr) > td.is-desktop { display: none; }
   /* Задачи по людям (этап 36): плашки задач во всю ширину карточки человека */

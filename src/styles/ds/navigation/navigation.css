@@ -85,7 +85,9 @@
 /* На телефоне в одну строку с прокруткой вбок до края экрана (этап 59), на ноутбуке с переносом. Поле страницы
    переходит внутрь строки: первая пилюля на месте, последние уходят за край и видно, что строку можно листать */
 @media (max-width: 767px) {
-  .sv-pills--phone-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--content-pad-phone)); padding: 2px var(--content-pad-phone); scroll-padding-inline: var(--content-pad-phone); }
+  /* Отступ сверху и снизу 6 px под рамку фокуса (2 px рамки и 2 px отступа): прокрутка вбок обрезает всё, что за
+     краем строки. Сверху он компенсирован отрицательным полем, снизу поле задаёт страница */
+  .sv-pills--phone-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: calc(-1 * var(--content-pad-phone)); margin-top: -4px; padding: 6px var(--content-pad-phone); scroll-padding-inline: var(--content-pad-phone); }
   .sv-pills--phone-scroll::-webkit-scrollbar { display: none; }
   .sv-pills--phone-scroll > * { flex: none; }
 }
