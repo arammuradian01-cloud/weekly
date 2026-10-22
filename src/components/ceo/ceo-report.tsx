@@ -335,9 +335,10 @@ export function CeoReport({
               {saved.sent.to.length ? `. Получил: ${saved.sent.to.join(", ")}` : ""}
             </p>
           ) : null}
-          <Button onClick={save} disabled={busy || !dirty} className="w-full">
+          {/* Этап 68: ожидание показывает сама кнопка (loading), подпись не меняется */}
+          <Button onClick={save} loading={busy} disabled={busy || !dirty} className="w-full">
             <Save className="h-4 w-4" aria-hidden="true" />
-            {busy ? "Сохраняю…" : "Сохранить"}
+            Сохранить
           </Button>
           {send.can ? (
             <Button

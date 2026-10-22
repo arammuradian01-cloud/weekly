@@ -118,6 +118,7 @@ export default async function MyWeekPage() {
           events={events}
           promiseStats={stats[0]}
           meetingText={`Встреча ${WEEKDAYS_ACCUSATIVE[meetingSetting.weekday - 1]}, ${formatLong(meetingDay)}`}
+          meetingDay={meetingDay}
         />
         <TaskDrawer />
       </Suspense>

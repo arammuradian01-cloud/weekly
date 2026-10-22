@@ -5,6 +5,9 @@
 // новостей: метка словами, такие инициативы сами встают в повестку встречи команды ответственного.
 // Этап 67г: инициативы видят все и делятся по департаментам (заголовок раздела), внутри по продуктам; у каждого
 // продукта свои две колонки. Общие для департамента (без продукта) идут первыми, дальше продукты по порядку справочника.
+// Этап 68: колонки подложкой своего цвета (ищем тёплая, делаем зелёная), пояснение над колонками в одну строку, на
+// карточке заметка главной строкой, ответственный, команда и цель одной строкой, у долгого поиска и тишины метка
+// «в повестке встречи». Текст на цветной подложке цветом её тона: серый на ней в тёмной теме не держит 4,5:1.
 
 import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useEffect, useId, useState } from "react";
@@ -132,7 +135,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-body text-text-secondary" aria-live="polite">
           {data.active.length
-            ? "Инициативы по департаментам и продуктам, у каждого продукта две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
+            ? "По департаментам и продуктам, у каждого продукта «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи"
             : "Крупных инициатив пока нет."}
         </p>
         {data.canManage ? (
@@ -239,9 +242,13 @@ function StateColumns({ group, items, target, canManage, busy, onDialog }: { gro
       {(["searching", "doing"] as const).map((state) => {
         const list = items.filter((i) => i.state === state);
         return (
-          <section key={state} aria-labelledby={`col-${state}-${group}`} className="flex min-w-0 flex-col gap-3">
-            <h4 id={`col-${state}-${group}`} className="text-small font-semibold text-ink">
-              {STATE_LABELS[state]} <span className="text-muted">{list.length}</span>
+          <section
+            key={state}
+            aria-labelledby={`col-${state}-${group}`}
+            className={cn("flex min-w-0 flex-col gap-3 rounded-card p-3", state === "searching" ? "bg-warning-soft" : "bg-green-soft")}
+          >
+            <h4 id={`col-${state}-${group}`} className={cn("px-1 text-small font-semibold", state === "searching" ? "text-warning-ink" : "text-green-ink")}>
+              {STATE_LABELS[state]} <span className="font-normal">{list.length}</span>
             </h4>
             {list.length ? (
               <ul className="flex flex-col gap-3">
@@ -252,7 +259,7 @@ function StateColumns({ group, items, target, canManage, busy, onDialog }: { gro
                 ))}
               </ul>
             ) : (
-              <p className="text-small text-muted">{state === "searching" ? "Все инициативы продукта уже в работе." : "Пока ни одна инициатива продукта не перешла в работу."}</p>
+              <p className={cn("px-1 text-small", state === "searching" ? "text-warning-ink" : "text-green-ink")}>{state === "searching" ? "Все инициативы продукта уже в работе." : "Пока ни одна инициатива продукта не перешла в работу."}</p>
             )}
           </section>
         );
@@ -274,18 +281,25 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
         <h3 id={`${id}-t`} className="text-body font-semibold text-ink">
           {item.title}
         </h3>
-        <p className="text-small text-muted">
-          Отвечает {item.owner.fullName}
+        <p className="text-caption text-muted">
+          {item.owner.fullName}
           {item.owner.active ? "" : " (выключен)"}
-          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, инициатива разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
-          {item.goal ? `. Цель: ${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` : ""}
+          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
+          {item.goal ? `, цель ${item.goal.code ?? item.goal.title}` : ""}
         </p>
       </div>
-      {item.why ? <p className="text-small text-ink">{item.why}</p> : null}
-      <div className="flex flex-col gap-1">
-        <p className="text-small text-muted">{NOTE_PROMPTS[item.state]}</p>
-        <p className="text-body text-ink">{item.note || <span className="text-muted">Заметки пока нет</span>}</p>
-      </div>
+      {/* Заметка главной строкой: что сейчас происходит. «Зачем» и вопрос к заметке в подсказке и в истории */}
+      <p className="text-body text-ink" title={NOTE_PROMPTS[item.state]}>
+        {/* Заметка отдельным элементом внутри кавычек: её текст ищется поиском по странице и в тестах целиком */}
+        {item.note ? (
+          <>
+            «<span>{item.note}</span>»
+          </>
+        ) : (
+          <span className="text-muted">Заметки пока нет</span>
+        )}
+      </p>
+      {item.why ? <p className="line-clamp-2 text-small text-text-secondary">{item.why}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         {item.state === "searching" ? (
           <Badge tone={item.flags.longSearch ? "yellow" : "gray"}>Ищем {weeksText(item.flags.searchDays)}</Badge>
@@ -293,6 +307,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
           <Badge tone="green">Делаем с {when(item.stateSince)}</Badge>
         )}
         {item.flags.stale ? <Badge tone="yellow">Без новостей {item.flags.staleDays} дн.</Badge> : <span className="text-caption text-muted">Обновлено {when(item.noteAt)}</span>}
+        {item.flags.longSearch || item.flags.stale ? <span className="text-caption font-semibold text-danger-ink">в повестке встречи</span> : null}
       </div>
       {item.canUpdate ? (
         <div className="flex flex-wrap gap-2">

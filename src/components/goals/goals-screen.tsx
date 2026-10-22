@@ -4,10 +4,11 @@
 // без задач, без свежего факта. Ниже цели таблицей (группы по командам или людям, факт и целевое значение в строке)
 // или деревом от целей департамента до команд и людей. Внизу задачи без цели по командам
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
+import { goalBucket, type GoalBucket } from "@/lib/goals/quarter";
 import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
@@ -21,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
-import { Figures, Module } from "@/components/ui/data";
+import { Module } from "@/components/ui/data";
 import { EmptyState } from "@/components/empty-state";
 import {
   applyBordGoalsAction,
@@ -34,6 +35,7 @@ import {
 } from "@/app/(app)/goals/actions";
 import { GoalsTable, type GoalGroupBy } from "./goals-table";
 import { GoalsTree } from "./goals-tree";
+import { GoalsCards, QuarterBar } from "./goals-cards";
 
 const RESULTS: { value: GoalResult; label: string }[] = [
   { value: "IN_PROGRESS", label: "Идёт" },
@@ -44,16 +46,31 @@ const RESULTS: { value: GoalResult; label: string }[] = [
 ];
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
-type ViewMode = "table" | "tree";
-type Filter = "all" | "risk" | "stale" | "notasks" | "done";
+// Этап 68: карточки по командам видом по умолчанию, таблица и дерево рядом
+type ViewMode = "cards" | "table" | "tree";
+type Filter = "all" | GoalBucket;
 
-const FILTERS: { value: Filter; label: string; test: (g: GoalNode) => boolean }[] = [
-  { value: "all", label: "Все", test: () => true },
-  { value: "risk", label: "В риске", test: (g) => g.result === "IN_PROGRESS" && !!g.risk },
-  { value: "stale", label: "Без свежего факта", test: (g) => g.factStale },
-  { value: "notasks", label: "Без задач", test: (g) => g.result === "IN_PROGRESS" && g.progress.total === 0 },
-  { value: "done", label: "Достигнуты", test: (g) => g.result === "ACHIEVED" },
+const FILTERS: { value: Filter; label: string }[] = [
+  { value: "all", label: "Все" },
+  { value: "done", label: "Достигнуты" },
+  { value: "risk", label: "В риске" },
+  { value: "notasks", label: "Без задач" },
+  { value: "stale", label: "Без свежего факта" },
+  { value: "closed", label: "Закрыты не полностью" },
+  { value: "work", label: "В работе" },
 ];
+
+const inFilter = (g: GoalNode, f: Filter) => f === "all" || goalBucket(g) === f;
+
+/** Цвет отрезка шкалы: токены, серый «в работе» держит 3:1 к дорожке шкалы в обеих темах */
+const SLICE_COLOR: Record<GoalBucket, string> = {
+  done: "bg-green",
+  risk: "bg-danger",
+  notasks: "bg-info",
+  stale: "bg-warning",
+  closed: "bg-link",
+  work: "bg-steel",
+};
 
 export function GoalsScreen({
   view,
@@ -76,13 +93,23 @@ export function GoalsScreen({
   const [editing, setEditing] = useState<GoalNode | null>(null);
   const [marking, setMarking] = useState<GoalNode | null>(null);
   const [importing, setImporting] = useState(false);
-  const [mode, setMode] = useState<ViewMode>("table");
+  const [mode, setMode] = useState<ViewMode>("cards");
   const [groupBy, setGroupBy] = useState<GoalGroupBy>("team");
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState(initialQuery);
   const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
   // Ссылка на цель обрабатывается один раз за открытие страницы
   const hashHandled = useRef(false);
+  // Ссылка на цель (#goal-..., метка цели у задачи) открывает таблицу: строка там раскрывается с фактом и историей.
+  // На сервере адреса с решёткой не видно, поэтому вид меняется после открытия страницы
+  useEffect(() => {
+    const toTable = () => {
+      if (window.location.hash.startsWith("#goal-")) setMode((m) => (m === "cards" ? "table" : m));
+    };
+    toTable();
+    window.addEventListener("hashchange", toTable);
+    return () => window.removeEventListener("hashchange", toTable);
+  }, []);
   const run: Run = (fn, ok) =>
     start(async () => {
       const r = await fn();
@@ -93,16 +120,17 @@ export function GoalsScreen({
       }
     });
 
-  const count = (f: Filter) => view.goals.filter(FILTERS.find((x) => x.value === f)!.test).length;
-  // Цифра в шапке включает отбор в таблице и ведёт к ней
+  const count = (f: Filter) => view.goals.filter((g) => inFilter(g, f)).length;
+  // Подпись на шкале квартала включает отбор в карточках или в таблице и ведёт к списку целей
   const show = (f: Filter) => {
     setFilter(f);
-    setMode("table");
+    // Отбор работает в карточках и в таблице; из дерева переходим в карточки
+    setMode((m) => (m === "tree" ? "cards" : m));
     requestAnimationFrame(() => document.getElementById("goals-list")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
   const q = query.trim().toLowerCase();
   const shown = view.goals.filter(
-    (g) => FILTERS.find((x) => x.value === filter)!.test(g) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
+    (g) => inFilter(g, filter) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
   );
 
   return (
@@ -135,39 +163,59 @@ export function GoalsScreen({
 
       {view.goals.length ? (
         <>
-          {/* Этап 46: цифры строкой вместо четырёх плиток, нули спрятаны, цифра включает отбор в таблице */}
-          <Figures
-            label={`Цели на ${quarterLabel(view.quarter)} в цифрах`}
-            inline
-            max={3}
-            items={[
-              { label: `${plural(view.goals.length, "цель", "цели", "целей")}, достигнуто ${count("done")}`, value: view.goals.length, keepZero: true, testId: "goals-stat-total", onClick: () => show("all") },
-              { label: "в риске", value: count("risk"), tone: "danger", testId: "goals-stat-risk", hint: "Красный статус безопасен: на риск отвечаем помощью", onClick: () => show("risk") },
-              { label: "без свежего факта", value: count("stale"), tone: "warning", testId: "goals-stat-stale", hint: `Числовые цели, факт старше ${FACT_STALE_DAYS} дней или не вписан`, onClick: () => show("stale") },
-              { label: "без задач", value: count("notasks"), tone: "warning", testId: "goals-stat-notasks", hint: "Цель без задач не двигается", onClick: () => show("notasks") },
-            ]}
+          {/* Этап 68: шкала квартала вместо строки цифр. Отрезки и подписи-кнопки по взаимоисключающим отборам (goalBucket),
+              ширина отрезка по доле целей, сумма по кнопкам равна числу целей */}
+          <QuarterBar
+            total={view.goals.length}
+            allActive={filter === "all"}
+            onAll={() => show("all")}
+            slices={FILTERS.filter((f) => f.value !== "all").map((f) => {
+              const key = f.value as GoalBucket;
+              return { key, label: f.label, count: count(key), color: SLICE_COLOR[key], active: filter === key, onClick: () => show(key) };
+            })}
           />
 
           <Module
             id="goals-list"
             title={`Цели на ${quarterLabel(view.quarter)}`}
-            description="Факт вписывают владелец цели и руководитель команды кнопкой «Факт»: прогресс к целевому считается сам, когда значения числа. Строка раскрывается: описание, задачи, история факта"
-            actions={<Segmented label="Вид" value={mode} onChange={setMode} options={[{ value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
+            description={`Факт вписывают владелец и руководитель команды. Свежий факт: не старше ${FACT_STALE_DAYS} дней`}
+            actions={<Segmented label="Вид" value={mode} onChange={setMode} options={[{ value: "cards", label: "Карточки" }, { value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
             flush
           >
-            {mode === "table" ? (
+            {mode !== "tree" ? (
             <div className="flex flex-col gap-3 border-t border-border px-5 py-3 max-sm:px-4">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
                   <TextInput id="goals-search" label="Поиск цели" hideLabel placeholder="Поиск: код, цель, владелец" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
                   <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
                 </div>
-                <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} />
+                {mode === "table" ? <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} /> : null}
               </div>
-              <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} />
+              {/* В карточках отбор включает шкала квартала сверху, второй ряд тех же кнопок не нужен */}
+              {mode === "table" ? <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} /> : null}
             </div>
             ) : null}
-            {mode === "table" ? (
+            {mode === "cards" ? (
+              shown.length ? (
+                <GoalsCards
+                  goals={shown}
+                  onEdit={setEditing}
+                  onMark={setMarking}
+                  onAdd={(parent) => setCreating({ parent })}
+                  creatable={view.creatable.length > 0}
+                  onFact={(g) => {
+                    // Таблица на этой цели: строка раскрывается по ссылке #goal-id (как с метки цели у задачи), поиск не трогаем.
+                    // Адрес без события hashchange, таблица прочтёт его при появлении
+                    hashHandled.current = false;
+                    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#goal-${g.id}`);
+                    setFilter("all");
+                    setMode("table");
+                  }}
+                />
+              ) : (
+                <p className="px-5 py-6 text-body text-muted">Под этот отбор целей нет</p>
+              )
+            ) : mode === "table" ? (
               shown.length ? (
                 <GoalsTable
                   goals={shown}

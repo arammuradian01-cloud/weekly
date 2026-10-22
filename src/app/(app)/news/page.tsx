@@ -144,6 +144,7 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
           items={list.items}
           labels={labels}
           now={now}
+          lead={list.page === 1}
           empty={{
             title: selected.length ? "По выбранным продуктам новостей пока нет" : "Новостей пока нет",
             text: owner ? "Проверьте источники и ключевые слова в «Настройках»: забор идёт раз в час." : "Ленты забираются раз в час. Если новости не появляются, владелец проверит источники в настройках.",

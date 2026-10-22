@@ -146,7 +146,7 @@ export default async function SyncPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader
         title="Синхронизация"
-        description="Цифры из недельного отчёта в ресурс, все задачи ресурса в таблицу для просмотра. Забор задач из Bord выключен по умолчанию: главное приложение. В Bord и отчёт ресурс не пишет"
+        description="Цифры недели в ресурс, задачи в таблицу для просмотра. В Bord и отчёт ресурс не пишет"
         figures={<StatusLine label="Состояние связей" items={[bordState, numbersState, mirrorState]} />}
         tabs={
           <PageTabs

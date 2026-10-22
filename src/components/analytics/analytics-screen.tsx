@@ -209,7 +209,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             Лидеры <span className="font-normal text-muted">{data.leaders.length}</span>
           </h2>
           <p className="mt-1 text-small text-muted">
-            По карточке на руководителя команды уровнем ниже, в порядке структуры. Общего рейтинга нет: карточка для разговора один на один.
+            Карточка на каждого руководителя ниже, без рейтинга: для разговора один на один.
           </p>
         </div>
         {data.leaders.length ? (

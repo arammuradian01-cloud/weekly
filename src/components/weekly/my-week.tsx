@@ -4,13 +4,12 @@ import Link from "next/link";
 import type { RequestView } from "@/domain/requests";
 import { NoRequests, RequestList, RequestRow } from "@/components/requests/request-list";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
-import { CalendarClock, FileText, Hand, Inbox, MessageSquare, PenLine, Presentation } from "lucide-react";
+import { CalendarClock, FileText, Hand, MessageSquare, PenLine, Presentation } from "lucide-react";
 import { IconCircle } from "@/components/ui/tile";
 import { hotTasks } from "@/components/inbox/me-tasks";
-import { plural } from "@/domain/dates";
+import { diffDays, formatShort, plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
-import { diffDays, formatShort } from "@/domain/dates";
 import { isMine, isOverdue, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { buttonClass } from "@/components/ui/button";
@@ -26,6 +25,9 @@ import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { PromiseStats } from "./promise-stats";
 
 /**
+ * Этап 68: «Сейчас» с крупным сроком слева, «Ждёт вас» четырьмя счётчиками (ведут к группам «Мне») и одним списком
+ * до пяти строк, без отдельного абзаца про события. Встреча с плиткой даты. Комментарии до трёх.
+ *
  * Стартовый экран (раздел 7 ТЗ). Этап 44: сетка 2:1. Слева «Сейчас» (мой weekly, срок, одна кнопка) и «Требует
  * внимания» одним списком: просроченные и срочные задачи, просьбы без ответа, новые события. Справа встреча,
  * обещания (когда есть данные), «Жду от коллег» и новые комментарии. Четыре плитки одного веса ушли
@@ -41,6 +43,7 @@ export function MyWeek({
   events,
   promiseStats,
   meetingText,
+  meetingDay,
 }: {
   /** Срок словами: показывается в заголовке страницы */
   deadlineText: string;
@@ -59,6 +62,8 @@ export function MyWeek({
   promiseStats?: PromiseHistory;
   /** «Встреча во вторник, 13 октября» */
   meetingText: string;
+  /** День встречи для плитки даты (этап 68) */
+  meetingDay?: IsoDate;
 }) {
   const { data, me } = usePrototype();
   const { open } = useOpenTask();
@@ -87,8 +92,17 @@ export function MyWeek({
       <div className="flex min-w-0 flex-col gap-8">
         {/* Сейчас: мой weekly и одна кнопка. Зелёная кнопка только здесь, в шапке её больше нет */}
         <section aria-labelledby="my-weekly" className={cn("sv-card sv-card--soft flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between", !submitted && !weekly.absent && "sv-card--now")}>
-          <div className="flex min-w-0 items-start gap-4">
-            <IconCircle icon={FileText} tone={submitted ? "success" : "accent"} size={48} className="hidden sm:inline-flex" />
+          <div className="flex min-w-0 items-center gap-5">
+            {/* Этап 68: до сдачи срок крупно: главное на странице видно с первого взгляда */}
+            {!submitted && !weekly.absent ? (
+              // Срок прошёл: подпись и значение красные (цвет у каждой строки, вложенный цвет не перебивает), 4,5:1 в обеих темах
+              <div className="hidden shrink-0 flex-col border-r border-line pr-5 sm:flex" data-testid="my-deadline" data-late={late || undefined}>
+                <span className={cn("text-caption font-semibold uppercase tracking-wide", late ? "text-danger-ink" : "text-text-secondary")}>{late ? "Срок прошёл" : "До срока"}</span>
+                <span className={cn("text-title font-semibold tabular-nums", late ? "text-danger-ink" : "text-ink")}>{late ? "сдать сейчас" : timeLeft}</span>
+              </div>
+            ) : (
+              <IconCircle icon={FileText} tone={submitted ? "success" : "accent"} size={48} className="hidden sm:inline-flex" />
+            )}
             <div className="min-w-0">
               <h2 id="my-weekly" className="text-title-sm font-semibold text-ink">
                 Мой weekly за неделю {weekNumber}
@@ -126,10 +140,37 @@ export function MyWeek({
             </EmptyState>
           ) : (
             <div className="flex flex-col gap-5">
+              {/* Этап 68: четыре счётчика сверху, каждый ведёт к своей группе «Мне». Нули не показываются */}
+              <ul className="m-0 grid list-none grid-cols-2 gap-2 p-0 sm:grid-cols-4" aria-label="Что ждёт" data-testid="my-attention-figures">
+                {[
+                  { n: hot.late.length, label: "срок прошёл", href: "/me#me-late", tone: "danger" },
+                  { n: hot.soon.length, label: "сегодня и завтра", href: "/me#me-soon", tone: "warning" },
+                  { n: answer.length, label: plural(answer.length, "просьба без ответа", "просьбы без ответа", "просьб без ответа"), href: "/me#me-answer", tone: "info" },
+                  { n: events, label: plural(events, "новое событие", "новых события", "новых событий"), href: "/me#me-read", tone: "neutral" },
+                ]
+                  .filter((f) => f.n > 0)
+                  .map((f) => (
+                    <li key={f.href}>
+                      <Link
+                        href={f.href}
+                        className={cn(
+                          "group flex flex-col rounded-control-lg px-4 py-3",
+                          f.tone === "danger" && "bg-danger-soft text-danger-ink",
+                          f.tone === "warning" && "bg-warning-soft text-warning-ink",
+                          f.tone === "info" && "bg-blue-soft text-link",
+                          f.tone === "neutral" && "border border-line bg-surface text-ink",
+                        )}
+                      >
+                        <span className="text-title font-semibold tabular-nums">{f.n}</span>
+                        <span className="text-small font-semibold group-hover:underline">{f.label}</span>
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
               {urgent.length ? (
                 <AttentionGroup id="my-tasks" title="Просроченные и срочные задачи" count={urgent.length} icon={CalendarClock} tone="danger" link={{ href: "/tasks/mine", label: "Все мои задачи" }}>
                   <ul className="sv-queue sv-card sv-card--soft divide-y divide-line">
-                    {urgent.map((t) => {
+                    {urgent.slice(0, 5).map((t) => {
                       const overdue = isOverdue(t, data.today);
                       return (
                         <li key={t.number} className={cn("px-4 py-3", overdue && "bg-[var(--color-row-overdue)]")}>
@@ -148,32 +189,29 @@ export function MyWeek({
                       );
                     })}
                   </ul>
+                  {urgent.length > 5 ? (
+                    // Ссылка ведёт на группу «Мне», где остались непоказанные задачи: просроченные идут первыми
+                    <Link href={hot.late.length > 5 ? "/me#me-late" : "/me#me-soon"} className="mt-2 inline-block text-small font-semibold text-link hover:underline" data-testid="my-urgent-more">
+                      Ещё {urgent.length - 5} в «Мне»
+                    </Link>
+                  ) : null}
                 </AttentionGroup>
               ) : null}
               {answer.length ? (
                 <AttentionGroup id="my-incoming" title="Просьбы без ответа" count={answer.length} icon={Hand} tone="info" link={requests.incoming.length > answer.length ? { href: "/me", label: `Все просьбы ко мне: ${requests.incoming.length}` } : undefined}>
                   <ul className="flex flex-col divide-y divide-line sv-card sv-card--soft">
-                    {answer.slice(0, 5).map((r) => (
+                    {answer.slice(0, 3).map((r) => (
                       <RequestRow key={r.number} request={r} mode="incoming" />
                     ))}
                   </ul>
-                  {answer.length > 5 ? (
-                    <Link href="/me" className="mt-2 inline-block text-small font-semibold text-link hover:underline">
-                      Ещё {answer.length - 5} в «Мне»
+                  {answer.length > 3 ? (
+                    <Link href="/me#me-answer" className="mt-2 inline-block text-small font-semibold text-link hover:underline">
+                      Ещё {answer.length - 3} в «Мне»
                     </Link>
                   ) : null}
                 </AttentionGroup>
               ) : null}
-              {events ? (
-                <AttentionGroup id="my-events" title="Новые события" count={events} icon={Inbox} tone="accent">
-                  <Link href="/me#me-read" className="sv-card sv-card--soft flex items-center justify-between gap-3 px-4 py-3 text-body text-ink hover:bg-row-hover">
-                    <span>
-                      {events} {plural(events, "событие ждёт", "события ждут", "событий ждут")} прочтения: комментарии, упоминания, реакции, переносы сроков
-                    </span>
-                    <span className="shrink-0 font-semibold text-link">Открыть</span>
-                  </Link>
-                </AttentionGroup>
-              ) : null}
+              {/* События не повторяются абзацем: их счётчик сверху ведёт в «Мне», там они списком */}
             </div>
           )}
         </section>
@@ -183,7 +221,14 @@ export function MyWeek({
         {/* Встреча: дата, что внутри, кнопка подготовки */}
         <section aria-labelledby="my-meeting" className="sv-card sv-card--soft p-5">
           <div className="flex items-start gap-3">
-            <IconCircle icon={Presentation} tone="neutral" size={40} />
+            {meetingDay ? (
+              <div className="flex h-16 w-14 shrink-0 flex-col items-center justify-center rounded-control-lg bg-blue-soft text-link" aria-hidden="true">
+                <span className="text-caption font-semibold uppercase">{weekdayShort(meetingDay)}</span>
+                <span className="text-title font-semibold leading-none tabular-nums">{toCalendar(meetingDay).day}</span>
+              </div>
+            ) : (
+              <IconCircle icon={Presentation} tone="neutral" size={40} />
+            )}
             <div className="min-w-0">
               <h2 id="my-meeting" className="text-title-sm font-semibold text-ink">
                 {meetingText}
@@ -218,7 +263,7 @@ export function MyWeek({
             <EmptyState title="Новых комментариев нет" icon={MessageSquare}>Здесь появятся комментарии коллег к вашим задачам.</EmptyState>
           ) : (
             <ul className="flex flex-col gap-3">
-              {comments.slice(0, 5).map(({ task, comment }) => (
+              {comments.slice(0, 3).map(({ task, comment }) => (
                 <li key={comment.id} className="sv-card sv-card--soft px-4 py-3">
                   <p className="flex items-center gap-2 text-caption text-muted">
                     <MessageSquare className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -232,9 +277,9 @@ export function MyWeek({
                   </button>
                 </li>
               ))}
-              {comments.length > 5 ? (
+              {comments.length > 3 ? (
                 <li className="text-small text-muted">
-                  Ещё {comments.length - 5}: целиком в карточках задач,{" "}
+                  Ещё {comments.length - 3}: целиком в карточках задач,{" "}
                   <Link href="/tasks/mine" className="font-semibold text-link hover:underline">
                     мои задачи
                   </Link>

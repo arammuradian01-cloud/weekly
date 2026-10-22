@@ -34,7 +34,7 @@ export default async function NotionParsePage({ params, searchParams }: { params
   }
   return (
     <>
-      <PageHeader title={`Разбор встречи ${view.team.name}`} description="Итоги встречи из Notion, черновик weekly для CEO и задачи на проверку. Ничего не уходит без проверки ведущего" />
+      <PageHeader title={`Разбор встречи ${view.team.name}`} description="Итоги из Notion на проверку: ничего не уйдёт без ведущего" />
       {/* Ключ по версии разбора: свежий разбор с сервера заменяет черновики на экране, правки до сохранения живут до него */}
       <NotionParseScreen key={`${view.id}:${view.status}:${view.updatedAt}`} view={view} initialTab={TABS.find((t) => t === tab) ?? "summary"} />
     </>

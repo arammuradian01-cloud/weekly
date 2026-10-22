@@ -179,6 +179,8 @@ test("владелец отмечает записи в отчёт CEO, отчё
 
   // Отметка в ленте недели 39
   await page.goto("/weekly?week=2026-09-21");
+  // Этап 68: при трёх лидерах и больше записи свёрнуты, кнопка «В отчёт CEO» внутри раскрытой карточки
+  await page.getByRole("button", { name: "Развернуть всех" }).click();
   const unflagged = page.locator("article").filter({ has: page.getByRole("button", { name: "В отчёт CEO", exact: true }) }).first();
   const what = (await unflagged.locator("h3").textContent())!.trim();
   await unflagged.getByRole("button", { name: "В отчёт CEO", exact: true }).click();

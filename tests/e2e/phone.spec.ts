@@ -134,7 +134,8 @@ test("просьбу можно принять с телефона в два н�
 
 test("задачу можно обновить с главной в два нажатия; лента и повестка в одном нажатии", async ({ page }) => {
   const [{ number }] = await sql(
-    `UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date - 2 WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
+    // Этап 68: на главной пять самых просроченных задач, остальные ссылкой в «Мне»: задача теста просрочена раньше всех
+    `UPDATE tasks SET due = DATE '2026-01-12' WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
   );
   await enter(page, "Рева Тарас");
   const urgent = page.locator('section[aria-labelledby="my-tasks"]');

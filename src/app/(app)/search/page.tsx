@@ -14,7 +14,11 @@ export const metadata: Metadata = { title: "Поиск" };
 const TITLES: Record<SearchHit["kind"], string> = { task: "Задачи", entry: "Записи weekly", decision: "Решения", comment: "Комментарии", person: "Люди" };
 const ORDER: SearchHit["kind"][] = ["task", "entry", "decision", "comment", "person"];
 
-/** Страница поиска (этап 25): те же результаты, что в командной строке, но больше и со ссылкой, которой можно делиться */
+/**
+ * Страница поиска (этап 25): те же результаты, что в командной строке, но больше и со ссылкой, которой можно делиться.
+ * Этап 68: над результатами строка «Все N, Задачи N, Записи weekly N», каждая метка ведёт к своей группе. Описание
+ * страницы в одну строку
+ */
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const ctx = await requireContext();
   const { q = "" } = await searchParams;
@@ -22,7 +26,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
   const groups = ORDER.map((kind) => ({ kind, title: TITLES[kind], hits: result.hits.filter((h) => h.kind === kind) })).filter((g) => g.hits.length);
   return (
     <>
-      <PageHeader title="Поиск" description="По задачам, записям weekly, решениям, комментариям и людям. Слова ищутся с учётом словоформ, номер задачи открывает её" />
+      <PageHeader title="Поиск" description="Задачи, weekly, решения, комментарии и люди. Номер задачи открывает её" />
       <SearchForm initial={result.query} />
       {result.query.length < SEARCH_MIN ? (
         <p className="mt-6 text-body text-muted">Введите хотя бы два знака.</p>
@@ -32,9 +36,27 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         </EmptyState>
       ) : (
         <div className="mt-6 flex flex-col gap-8">
+          {groups.length > 1 ? (
+            <nav aria-label="Найдено по разделам" className="-mb-2" data-testid="search-kinds">
+              <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+                <li>
+                  <span className="sv-pill is-active">
+                    Все <span className="sv-counter sv-counter--neutral">{result.hits.length}</span>
+                  </span>
+                </li>
+                {groups.map((g) => (
+                  <li key={g.kind}>
+                    <a href={`#search-${g.kind}`} className="sv-pill">
+                      {g.title} <span className="sv-counter sv-counter--neutral">{g.hits.length}</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          ) : null}
           {groups.map((g) => (
             <section key={g.kind} aria-labelledby={`search-${g.kind}`}>
-              <h2 id={`search-${g.kind}`} className="mb-2 text-title font-semibold text-ink">
+              <h2 id={`search-${g.kind}`} className="mb-2 scroll-mt-24 text-title font-semibold text-ink">
                 {g.title} <span className="font-normal text-muted">{g.hits.length}</span>
               </h2>
               <ul className="divide-y divide-line overflow-hidden sv-card sv-card--soft">

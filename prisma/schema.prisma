@@ -344,6 +344,8 @@ model Task {
   whereNow           String         @default("")
   whereUpdatedAt     DateTime       @db.Date
   due                DateTime       @db.Date
+  /// Этап 68: начало работы, левый край полосы на карте сроков roadmap. Нет: полоса от даты постановки
+  startOn            DateTime?      @db.Date
   /// Исходный срок не меняется. null: срок переносили в таблице до запуска ресурса, прежний не записан
   originalDue        DateTime?      @db.Date
   /// Код из справочника TASK_SOURCE: meeting, weekly, ceo, other

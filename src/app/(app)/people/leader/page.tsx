@@ -31,7 +31,7 @@ export default async function MyTeamsPage({ searchParams }: { searchParams: Prom
   return (
     <Section
       title="Руководителю"
-      hint="Что в работе, что просрочено и что застряло у ваших людей, и у кого weekly сдан"
+      hint="Что в работе, просрочено и застряло, у кого сдан weekly"
       actions={
         <div className="flex flex-wrap gap-x-5 gap-y-1">
           <Link href="/tasks/changes" className="inline-flex h-10 items-center text-body font-medium text-blue-700 hover:underline">

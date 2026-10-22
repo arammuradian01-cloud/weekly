@@ -163,6 +163,30 @@ describe("забор задач из Bord", () => {
     expect(t3.whereNow).toBe("Правка в ресурсе");
   });
 
+  it("срок из Bord раньше начала на карте сроков (этап 68): начало обнуляется, в журнале строка «Начало»", async () => {
+    const fake = fakeBord();
+    await pullBord(fake);
+    await prisma.task.update({ where: { number: 5 }, data: { due: new Date("2026-11-20T00:00:00Z"), startOn: new Date("2026-11-01T00:00:00Z") } });
+    await prisma.task.update({ where: { number: 6 }, data: { startOn: new Date("2026-09-01T00:00:00Z") } });
+    auditStart = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    set(fake, 5, 5, "20.10.2026");
+    const report = (await pullBord(fake))!;
+    expect(report.updated).toEqual([5]);
+    const t5 = await task(5);
+    expect(isoFromDbDate(t5.due)).toBe("2026-10-20");
+    expect(t5.startOn).toBeNull();
+    const log = await prisma.auditLog.findMany({ where: fresh({ entity: "task", entityId: "5" }), orderBy: { id: "asc" } });
+    expect(log.map((l) => [l.action, l.field])).toEqual([
+      ["task.bord", "Срок"],
+      ["task.bord", "Начало"],
+    ]);
+    expect(log[1]).toMatchObject({ before: "01.11.2026", after: "не задано: срок в Bord раньше начала" });
+    // Срок позже начала начало не трогает
+    set(fake, 6, 5, "15.12.2026");
+    await pullBord(fake);
+    expect(isoFromDbDate((await task(6)).startOn!)).toBe("2026-09-01");
+  });
+
   it("задачи ресурса уходят на номера от 1001, следующая новая задача получает номер после них", async () => {
     const created = await tasks.createTask(await owner(), { title: "Задача из ресурса", outcome: "Готово", owner: "reva", direction: "product", due: addDays(moscowToday(), 7) });
     expect(created.task.number).toBe(52);
