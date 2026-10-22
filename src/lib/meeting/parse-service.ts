@@ -25,8 +25,9 @@ import { goalFits } from "@/lib/goals/personal";
 import { quarterOf } from "@/lib/goals/parse";
 import { getCeoReport, saveCeoReportIn, type CeoReportView } from "@/lib/weekly/service";
 import type { CeoSections } from "@/lib/weekly/rules";
-import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
+import type { CeoMeeting } from "@/lib/ceo/text";
 import { ceoContext, type CeoContext } from "@/lib/ceo/assembled";
+import { ceoRecipients } from "@/lib/ceo/report";
 import { meetingIdFor, meetingRights, notionUrlOf, MEETING_LIMITS } from "./service";
 import { NotionError, NOTION_MESSAGES, meaningfulText, notionDepsFromEnv, notionPageIdFromUrl, readNotionPage, type NotionDeps } from "./notion-api";
 import { ClaudeError, claudeDepsFromEnv, parseWithClaude, type ClaudeDeps } from "./claude";
@@ -158,23 +159,8 @@ function resultOf(value: unknown): ParseResult {
 
 // ---------- Кто CEO ----------
 
-/**
- * Кому уходит weekly для CEO: руководитель подразделения уровня «компания» (корень структуры, этап 53). Если его нет,
- * включённый профиль CEO из стартовых людей (короткое имя ceo)
- */
-export async function ceoRecipients(db: Tx | typeof prisma = prisma): Promise<{ id: string; slug: string; fullName: string }[]> {
-  const company = await db.orgUnit.findFirst({
-    where: { kind: "COMPANY", active: true, headId: { not: null } },
-    orderBy: { createdAt: "asc" },
-    select: { head: { select: { id: true, slug: true, fullName: true, active: true } } },
-  });
-  if (company?.head?.active) return [{ id: company.head.id, slug: company.head.slug, fullName: company.head.fullName }];
-  return db.person.findMany({ where: { slug: "ceo", active: true }, select: { id: true, slug: true, fullName: true } });
-}
-
-export async function isCeo(personId: string): Promise<boolean> {
-  return (await ceoRecipients()).some((p) => p.id === personId);
-}
+// Кто CEO и отчёт глазами CEO живут в src/lib/ceo/report.ts (этап 66): их же берёт отправка со страницы «Отчёт CEO»
+export { ceoRecipients, ceoSentReports, isCeo, type CeoInboxView } from "@/lib/ceo/report";
 
 // ---------- Запуск ----------
 
@@ -711,12 +697,6 @@ export type SendCeoInput = { ceo: CeoSections; mode?: CeoMergeMode | null; expec
 /** Что ушло CEO: разделы и встречи в момент отправки */
 type Snapshot = CeoSections & { meetings: CeoMeeting[] };
 
-function snapshotOf(value: unknown): Snapshot | null {
-  if (!value || typeof value !== "object") return null;
-  const v = value as Record<string, unknown>;
-  return { main: String(v.main ?? ""), risks: String(v.risks ?? ""), next: String(v.next ?? ""), meetings: cleanMeetings(v.meetings) };
-}
-
 /**
  * Отправить weekly для CEO. Только в приложении: отчёт CEO за неделю сохраняется, помечается отправленным (кем, когда,
  * кому) со снимком разделов, CEO получает событие в «Мне» и видит собранный отчёт на странице отчёта CEO. Отчёт за
@@ -860,56 +840,4 @@ export async function createParseTasks(actor: Actor, id: string, input: { tasks?
     { timeout: 60_000 },
   );
   return { ...out, created: await createdTasks(out.numbers) };
-}
-
-// ---------- Отчёт CEO глазами CEO ----------
-
-export type CeoInboxView = {
-  weeks: { key: WeekKey; number: number; sentAt: string }[];
-  current: {
-    key: WeekKey;
-    number: number;
-    /** Что ушло CEO: снимок разделов и встреч в момент отправки */
-    sections: CeoSections;
-    meetings: CeoMeeting[];
-    sentAt: string;
-    sentBy: string | null;
-    /** После отправки отчёт правили в приложении: CEO видит отправленную версию */
-    editedAfter: boolean;
-    ctx: CeoContext;
-  } | null;
-};
-
-/**
- * Отправленные CEO отчёты для CEO: только чтение и только при личном входе. Неделя не задана или не отправлена:
- * последняя отправленная. Цифры, решения и благодарности собираются живыми за ту неделю, цифры по уровню зрителя
- */
-export async function ceoSentReports(actor: Actor, key?: string | null): Promise<CeoInboxView | null> {
-  if (!personal(actor)) return null;
-  const ceo = await isCeo(actor.personId);
-  const rows = await prisma.ceoReport.findMany({
-    where: { sentAt: { not: null } },
-    include: { week: { select: { start: true, isoNumber: true } }, sentBy: { select: { fullName: true } } },
-    orderBy: { week: { start: "desc" } },
-    take: 30,
-  });
-  const mine = rows.filter((r) => ceo || (Array.isArray(r.sentTo) && (r.sentTo as { id?: string }[]).some((t) => t?.id === actor.personId)));
-  if (!ceo && !mine.length) return null;
-  const pick = mine.find((r) => isoFromDbDate(r.week.start) === key) ?? mine[0] ?? null;
-  let current: CeoInboxView["current"] = null;
-  if (pick) {
-    const snap = snapshotOf(pick.sentSnapshot) ?? { main: pick.main, risks: pick.risks, next: pick.next, meetings: cleanMeetings(pick.meetings) };
-    const week = isoFromDbDate(pick.week.start) as WeekKey;
-    current = {
-      key: week,
-      number: pick.week.isoNumber,
-      sections: { main: snap.main, risks: snap.risks, next: snap.next },
-      meetings: snap.meetings,
-      sentAt: pick.sentAt!.toISOString(),
-      sentBy: pick.sentBy?.fullName ?? null,
-      editedAfter: pick.updatedAt.getTime() > pick.sentAt!.getTime(),
-      ctx: await ceoContext(actor, week, { recipient: true }),
-    };
-  }
-  return { weeks: mine.map((r) => ({ key: isoFromDbDate(r.week.start) as WeekKey, number: r.week.isoNumber, sentAt: r.sentAt!.toISOString() })), current };
 }

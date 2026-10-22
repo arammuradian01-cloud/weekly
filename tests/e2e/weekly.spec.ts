@@ -187,15 +187,17 @@ test("владелец отмечает записи в отчёт CEO, отчё
   await page.goto("/ceo-report?week=2026-09-21");
   // Этап 47: число отметок только в цифрах панели, в подписи его больше нет
   await expect(page.getByTestId("ceo-fig-flags")).toContainText(/13\s*отметок «В отчёт CEO»/);
-  const sections = [page.getByLabel("Главное за неделю"), page.getByLabel("Риски"), page.getByLabel("Что дальше")];
-  const texts = await Promise.all(sections.map((s) => s.inputValue()));
+  // Этап 66: отчёт по смысловым блокам. Отмеченная запись в своём блоке строкой с продуктом
+  const texts = await page.getByTestId("ceo-editor").getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value));
   expect(texts.join("\n")).toContain(what.replace(/\.$/, ""));
 
-  await page.getByLabel("Главное за неделю").fill(`${texts[0]}\n- Проверка сохранения отчёта`);
-  await page.getByRole("button", { name: "Сохранить" }).click();
+  const risks = page.getByTestId("ceo-block-risks");
+  await risks.getByRole("button", { name: "Добавить строку" }).click();
+  await risks.getByRole("textbox").last().fill("Проверка сохранения отчёта");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Главное за неделю")).toHaveValue(/Проверка сохранения отчёта/);
+  await expect(page.getByTestId("ceo-block-risks").getByRole("textbox").last()).toHaveValue("Проверка сохранения отчёта");
   await expect(page.getByText(/^Сохранён \d+ октября/).first()).toBeVisible();
   await shot(page, "ceo-report");
 });

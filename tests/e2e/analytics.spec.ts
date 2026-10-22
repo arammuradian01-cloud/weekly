@@ -160,47 +160,48 @@ test.describe("отчёт CEO 2.0", () => {
   test("решения недели, встречи недели, подтверждение «Собрать заново», сравнение с прошлой неделей, копия и письмо", async ({ page }) => {
     await enter(page, "Мурадян Арам");
     await enterManagement(page, "owner");
-    // Решение топ-команды без встречи, в среду недели 39
+    // Решение команды без встречи, в среду недели 39
     await sql(`INSERT INTO decisions (id, "teamId", text, date, "updatedAt") VALUES ('e2e-dec-39', 'top', 'Запускаем пилот ОСАГО с партнёром в ноябре', '2026-09-23', now())`);
 
     await page.goto("/ceo-report?week=2026-09-21");
     const decisions = page.locator("section", { has: page.getByRole("heading", { name: "Решения недели" }) });
     await expect(decisions.getByText("Запускаем пилот ОСАГО с партнёром в ноябре")).toBeVisible();
 
-    // «Собрать заново» спрашивает подтверждение: «Отмена» оставляет правки
-    const mainField = page.getByLabel("Главное за неделю");
+    // Этап 66: отчёт по смысловым блокам. «Собрать заново» спрашивает подтверждение: «Отмена» оставляет правки
+    const mainField = page.getByTestId("ceo-block-products").getByRole("textbox").first();
     const built = await mainField.inputValue();
-    await mainField.fill(`${built}\n- Моя правка руками`);
-    await page.getByRole("button", { name: "Собрать заново" }).click();
+    await mainField.fill(`${built} Моя правка руками`);
+    await page.getByRole("button", { name: "Собрать заново", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Собрать отчёт заново?" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "Отмена" }).click();
     await expect(mainField).toHaveValue(/Моя правка руками/);
-    await page.getByRole("button", { name: "Собрать заново" }).click();
+    await page.getByRole("button", { name: "Собрать заново", exact: true }).click();
     await dialog.getByRole("button", { name: "Собрать заново" }).click();
-    await expect(mainField).not.toHaveValue(/Моя правка руками/);
+    await expect(page.getByTestId("ceo-block-products").getByRole("textbox").first()).not.toHaveValue(/Моя правка руками/);
 
     // Встреча недели: 4-5 предложений от первого лица, подсказка считает предложения
-    await mainField.fill(`${built}\n- Главное недели 39`);
+    await page.getByTestId("ceo-block-products").getByRole("textbox").first().fill("Главное недели 39");
     await page.getByRole("button", { name: "Добавить встречу" }).click();
     await page.getByLabel("Встреча 1: с кем и о чём").fill("Встреча с партнёрами по ноябрю");
     await page.getByLabel("Встреча 1: что важно").fill("Обсуждали условия на ноябрь. Договорились о скидке для новых клиентов.");
     await expect(page.getByText("2 предложения. Хорошо, когда их 4-5")).toBeVisible();
-    await page.getByRole("button", { name: "Сохранить" }).click();
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
     await page.reload();
     await expect(page.getByLabel("Встреча 1: с кем и о чём")).toHaveValue("Встреча с партнёрами по ноябрю");
 
-    // Копия текста: разделы по порядку ТЗ
+    // Копия текста: видимые блоки по порядку, потом решения и встречи; каждая строка с продуктом
     if (!phone()) {
       await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
       await page.getByRole("button", { name: "Скопировать текст" }).click();
       await expect(page.getByText("Текст отчёта скопирован").first()).toBeVisible();
       const text = await page.evaluate(() => navigator.clipboard.readText());
-      const order = ["Главное за неделю", "Решения недели", "Риски", "Что дальше", "Мои встречи недели"].map((h) => text.indexOf(`\n${h}\n`));
+      const order = ["Продукты", "Риски", "План на неделю", "Решения недели", "Мои встречи недели"].map((h) => text.indexOf(`\n${h}\n`));
       expect(order.every((i) => i > 0)).toBe(true);
       expect([...order].sort((a, b) => a - b)).toEqual(order);
       expect(text).toContain("- Запускаем пилот ОСАГО с партнёром в ноябре");
+      expect(text).toMatch(/\n- [^\n]+\. Главное недели 39\n/);
     }
 
     // Черновик письма: тема в ссылке. Отчёт длинный и в адрес письма не влезает: в письме подсказка вставить текст,
@@ -214,14 +215,14 @@ test.describe("отчёт CEO 2.0", () => {
     expect(url.searchParams.get("body")).toBe("Полный текст отчёта скопирован в буфер обмена: вставьте его сюда.");
     await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-an-ceo-report.png`, fullPage: true });
 
-    // Неделя 40: сравнение с отчётом недели 39
+    // Неделя 40: сравнение с отчётом недели 39 под каждым блоком
     await page.goto("/ceo-report?week=2026-09-28");
     await page.getByRole("button", { name: "Сравнить с прошлой неделей" }).click();
     await expect(page.getByText("Неделя 39").first()).toBeVisible();
-    await expect(page.getByText("- Главное недели 39")).toBeVisible();
+    await expect(page.getByTestId("block-previous").getByText(/Главное недели 39/)).toBeVisible();
     await expect(page.getByText("Встреча с партнёрами по ноябрю")).toBeVisible();
     await page.getByRole("button", { name: "Скрыть прошлую неделю" }).click();
-    await expect(page.getByText("- Главное недели 39")).toHaveCount(0);
+    await expect(page.getByText(/Главное недели 39/)).toHaveCount(0);
     // Неделя 41: прошлый отчёт не сохраняли
     await page.goto("/ceo-report?week=2026-10-05");
     await page.getByRole("button", { name: "Сравнить с прошлой неделей" }).click();
@@ -230,6 +231,8 @@ test.describe("отчёт CEO 2.0", () => {
   });
 
   test("сохранение поверх чужого отчёта: понятная ошибка, а не тихая перезапись", async ({ page, browser }) => {
+    // Этап 66: первая строка блока «Риски»
+    const riskLine = (p: Page) => p.getByTestId("ceo-block-risks").getByRole("textbox").first();
     await enter(page, "Мурадян Арам");
     await enterManagement(page, "owner");
     await page.goto("/ceo-report?week=2026-09-21");
@@ -238,30 +241,30 @@ test.describe("отчёт CEO 2.0", () => {
     await enter(other, "Мурадян Арам");
     await enterManagement(other, "owner");
     await other.goto("/ceo-report?week=2026-09-21");
-    await other.getByLabel("Риски").fill("- Риск со второго устройства");
-    await other.getByRole("button", { name: "Сохранить" }).click();
+    await riskLine(other).fill("Риск со второго устройства");
+    await other.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(other.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
     await other.close();
 
-    await page.getByLabel("Риски").fill("- Риск с первого устройства");
-    await page.getByRole("button", { name: "Сохранить" }).click();
+    await riskLine(page).fill("Риск с первого устройства");
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(page.getByText(/уже сохранён с другого устройства или другим человеком/).first()).toBeVisible();
 
     // Страница обновилась сама (вкладка снова на виду): набранное не пропадает, видно предупреждение
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await expect(page.getByText(/Отчёт за эту неделю сохранён на другом устройстве или другим человеком/)).toBeVisible();
-    await expect(page.getByLabel("Риски")).toHaveValue("- Риск с первого устройства");
+    await expect(riskLine(page)).toHaveValue("Риск с первого устройства");
     await page.getByRole("button", { name: "Показать сохранённую версию" }).click();
-    await expect(page.getByLabel("Риски")).toHaveValue("- Риск со второго устройства");
+    await expect(riskLine(page)).toHaveValue("Риск со второго устройства");
 
     // Своё сохранение после этого проходит, и обновление страницы не стирает то, что набрано после него
-    await page.getByLabel("Что дальше").fill("- Дальше с первого устройства");
-    await page.getByRole("button", { name: "Сохранить" }).click();
+    await page.getByTestId("ceo-block-plan").getByRole("textbox").first().fill("Дальше с первого устройства");
+    await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
-    await page.getByLabel("Риски").fill("- Набрано после сохранения");
+    await riskLine(page).fill("Набрано после сохранения");
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await page.waitForTimeout(1500);
-    await expect(page.getByLabel("Риски")).toHaveValue("- Набрано после сохранения");
+    await expect(riskLine(page)).toHaveValue("Набрано после сохранения");
     await expect(page.getByText("Есть несохранённые правки")).toBeVisible();
   });
 });

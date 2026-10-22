@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import type { DeadlineSetting } from "@/lib/week";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import type { WeeklyState } from "@/generated/prisma/enums";
 import { ENTRY_TYPE_CODES, type BlockCode, type DirectionCode, type EntryTypeCode, type WeeklyStateCode } from "@/domain/dictionaries";
 import { formatLong, type IsoDate } from "@/domain/dates";
@@ -18,6 +18,7 @@ import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections 
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
 import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
+import { cleanBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
@@ -927,7 +928,8 @@ export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekK
 /** Отправлен CEO (этап 61): когда, кем и кому */
 export type CeoSent = { at: string; by: string | null; to: string[] };
 
-export type CeoReportView = { sections: CeoSections | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string; sent?: CeoSent };
+/** blocks (этап 66): отчёт по смысловым блокам. null: отчёт в прежнем виде или его ещё нет */
+export type CeoReportView = { sections: CeoSections | null; blocks: ReportBlock[] | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string; sent?: CeoSent };
 
 /** Кому отправлен отчёт: имена из записи [{ id, name }] */
 export function sentToNames(value: unknown): string[] {
@@ -941,9 +943,10 @@ export async function getCeoReport(key: WeekKey): Promise<CeoReportView> {
     include: { ceoReport: { include: { updatedBy: { select: { fullName: true } }, sentBy: { select: { fullName: true } } } } },
   });
   const r = row?.ceoReport;
-  if (!r) return { sections: null, meetings: [] };
+  if (!r) return { sections: null, blocks: null, meetings: [] };
   return {
     sections: { main: r.main, risks: r.risks, next: r.next },
+    blocks: Array.isArray(r.blocks) ? cleanBlocks(r.blocks, null) : null,
     meetings: cleanMeetings(r.meetings),
     updatedBy: r.updatedBy?.fullName,
     updatedAt: r.updatedAt.toISOString(),
@@ -976,7 +979,8 @@ export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sectio
   }
   // Встречи не передали (или передали не список): остаются прежние, а не стираются
   const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
-  const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
+  // Отчёт в прежнем виде (разделы без блоков): блоки этапа 66, если они были, больше не действуют
+  const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId, blocks: Prisma.DbNull };
   const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
   // Было и стало по каждому разделу, который поменялся
   const parts: [string, string | null, string][] = [
@@ -988,7 +992,7 @@ export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sectio
   const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
   for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
   if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
-  return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
+  return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, blocks: null, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
 }
 
 export type CeoDecision = { id: string; text: string; owner: string | null; date: IsoDate };

@@ -3,6 +3,7 @@
 // мои встречи недели.
 
 import { cleanDash } from "@/lib/weekly/rules";
+import { blocksText, type Labels, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 /** Встреча недели: о какой встрече и что важно CEO, 4-5 предложений от первого лица */
 export type CeoMeeting = { title: string; text: string };
@@ -71,6 +72,36 @@ export function ceoReportText(r: CeoTextInput): string {
     ...(r.decisions.length ? block("Решения недели", r.decisions.map((d) => `- ${d.text}${d.owner ? `. Владелец: ${d.owner}` : ""}`)) : []),
     ...block("Риски", r.risks.trim() ? [r.risks.trim()] : []),
     ...block("Что дальше", r.next.trim() ? [r.next.trim()] : []),
+    ...(r.thanks.length ? block("Благодарности", r.thanks.map((t) => `- ${t.name}: ${t.text}`)) : []),
+    ...(r.meetings.length ? block("Мои встречи недели", r.meetings.flatMap((m, i) => [...(i ? [""] : []), m.title || "Встреча", m.text || "-"])) : []),
+  ]
+    .join("\n")
+    .trimEnd();
+}
+
+export type CeoBlocksTextInput = {
+  weekNumber: number;
+  blocks: readonly ReportBlock[];
+  labels: Labels;
+  order: readonly string[];
+  promises?: string;
+  decisions: CeoDecisionLine[];
+  thanks: { name: string; text: string }[];
+  meetings: CeoMeeting[];
+};
+
+/**
+ * Отчёт по смысловым блокам одним текстом (этап 66): видимые блоки по порядку, строки с продуктом («- ОСАГО. Текст»),
+ * потом обещания, решения недели, благодарности и «Мои встречи недели». Скрытые и пустые блоки не попадают
+ */
+export function ceoBlocksText(r: CeoBlocksTextInput): string {
+  const block = (title: string, lines: string[]) => [title, ...lines, ""];
+  return [
+    `Отчёт за неделю ${r.weekNumber}`,
+    "",
+    ...blocksText(r.blocks, r.labels, r.order),
+    ...(r.promises ? block("Обещания недели", [r.promises]) : []),
+    ...(r.decisions.length ? block("Решения недели", r.decisions.map((d) => `- ${d.text}${d.owner ? `. Владелец: ${d.owner}` : ""}`)) : []),
     ...(r.thanks.length ? block("Благодарности", r.thanks.map((t) => `- ${t.name}: ${t.text}`)) : []),
     ...(r.meetings.length ? block("Мои встречи недели", r.meetings.flatMap((m, i) => [...(i ? [""] : []), m.title || "Встреча", m.text || "-"])) : []),
   ]

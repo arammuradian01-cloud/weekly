@@ -879,6 +879,8 @@ model WeeklyEntry {
   factKey     String?
   /// Ключ черновика с устройства (этап 26): повторная отправка после обрыва связи правит ту же запись, а не создаёт вторую
   clientKey   String?
+  /// Смысловой блок weekly по шаблону команды (этап 66): news, products, risks, plan, c:... null: шаблона не было
+  section     String?
   importBatch String?
   createdAt   DateTime       @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
@@ -922,8 +924,12 @@ model CeoReport {
   sentById    String?
   sentBy      Person?   @relation("CeoReportSentBy", fields: [sentById], references: [id], onDelete: SetNull)
   sentTo      Json      @default("[]")
-  /// Что ушло CEO (этап 61): разделы и «Мои встречи» в момент отправки. Цифры и решения недели собираются живыми
+  /// Что ушло CEO (этап 61): разделы и «Мои встречи» в момент отправки. Цифры и решения недели собираются живыми.
+  /// С этапа 66 и блоки: { main, risks, next, meetings, blocks }
   sentSnapshot Json?
+  /// Отчёт по смысловым блокам (этап 66): [{ key, title, hidden, note, lines: [{ product, text, href, source }] }].
+  /// null: отчёт в прежнем виде (главное, риски, что дальше). При сохранении блоков прежние разделы собираются из них
+  blocks       Json?
 
   @@map("ceo_reports")
 }
