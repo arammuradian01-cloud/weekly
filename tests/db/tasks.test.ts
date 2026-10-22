@@ -190,7 +190,7 @@ describe("правила просрочки и переносов (раздел 
     await expectRule(svc.setTaskStart(reva, 9, today), /закрытой задачи начало/);
   });
 
-  it("начало на карте сроков (этап 68): права как у срока, не позже срока, срок не раньше начала, журнал без отмены", async () => {
+  it("начало на карте сроков (этап 68): права как у срока, не позже срока, журнал, отмена возвращает прежнее начало", async () => {
     const fat = await actors.fatyanov();
     await svc.transferDue(fat, 13, future, "Ждём ВСК");
     // Чужую задачу лидер не двигает: как и срок
@@ -201,18 +201,83 @@ describe("правила просрочки и переносов (раздел 
     const r = await svc.setTaskStart(fat, 13, start);
     expect(r.task.start).toBe(start);
     expect(r.task.due).toBe(future);
-    expect(r.undo).toBeUndefined();
     const a = await lastAudit(13);
     expect(a?.field).toBe("Начало");
     expect(a?.before).toBeNull();
     await expectRule(svc.setTaskStart(fat, 13, start), /уже такое/);
-    // Срок раньше начала не переносится: сначала сдвигают начало
-    await expectRule(svc.transferDue(fat, 13, addDays(today, 2), "Раньше"), /раньше начала/);
+    // Отмена возвращает задачу без начала
+    expect(r.undo).toBeTruthy();
+    const undone = await svc.undoChange(fat, r.undo!);
+    expect(undone.task?.start).toBeUndefined();
     // Владелец в режиме управления двигает начало любой задачи, null убирает начало
     expect((await svc.setTaskStart(await actors.owner(), 13, today)).task.start).toBe(today);
     const cleared = await svc.setTaskStart(fat, 13, null);
     expect(cleared.task.start).toBeUndefined();
     expect((await prisma.task.findFirstOrThrow({ where: { number: 13 } })).startOn).toBeNull();
+  });
+
+  it("перенос срока раньше начала (этап 68): начало сдвигается на срок в той же правке, журнал «Начало», отмена возвращает оба", async () => {
+    const fat = await actors.fatyanov();
+    await svc.transferDue(fat, 13, addDays(today, 20), "Ждём ВСК");
+    await svc.setTaskStart(fat, 13, addDays(today, 10));
+    const r = await svc.transferDue(fat, 13, addDays(today, 5), "Сдвигаем раньше");
+    expect(r.task.due).toBe(addDays(today, 5));
+    expect(r.task.start).toBe(addDays(today, 5));
+    expect(r.notice).toMatch(/^Начало сдвинуто на /);
+    const log = await prisma.auditLog.findMany({ where: { entity: "task", entityId: "13" }, orderBy: { id: "desc" }, take: 2 });
+    expect(log.map((l) => l.field).reverse()).toEqual(["Срок", "Начало"]);
+    expect(String(log[0]!.after)).toContain("срок раньше прежнего начала");
+    // Срок позже начала начало не трогает и ничего не дописывает
+    const later = await svc.transferDue(fat, 13, addDays(today, 7), "Ещё перенос");
+    expect(later.task.start).toBe(addDays(today, 5));
+    expect(later.notice).toBeUndefined();
+    // Отмена переноса со сдвигом возвращает и срок, и начало, перенос убирается
+    const again = await svc.transferDue(fat, 13, addDays(today, 2), "Совсем рано");
+    expect(again.task.start).toBe(addDays(today, 2));
+    const back = await svc.undoChange(fat, again.undo!);
+    expect(back.task).toMatchObject({ due: addDays(today, 7), start: addDays(today, 5) });
+    expect(back.task!.transfers.some((t) => t.reason === "Совсем рано")).toBe(false);
+  });
+
+  it("сдвиг полосы целиком (этап 68): одна правка, в журнале срок и начало, одна отмена возвращает оба поля", async () => {
+    const fat = await actors.fatyanov();
+    await svc.transferDue(fat, 13, addDays(today, 20), "Ждём ВСК");
+    await svc.setTaskStart(fat, 13, addDays(today, 10));
+    const transfers = (await svc.getTask(13))!.transfers.length;
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    const r = await svc.moveTaskSpan(fat, 13, addDays(today, 14), addDays(today, 24), "Партнёр сдвинул запуск");
+    expect(r.task).toMatchObject({ start: addDays(today, 14), due: addDays(today, 24) });
+    expect(r.task.transfers).toHaveLength(transfers + 1);
+    const log = await prisma.auditLog.findMany({ where: { entity: "task", entityId: "13", id: { gt: mark } }, orderBy: { id: "asc" } });
+    expect(log.map((l) => l.field)).toEqual(["Срок", "Начало"]);
+    const back = await svc.undoChange(fat, r.undo!);
+    expect(back.task).toMatchObject({ start: addDays(today, 10), due: addDays(today, 20) });
+    expect(back.task!.transfers).toHaveLength(transfers);
+  });
+
+  it("сдвиг полосы целиком (этап 68): правила срока и начала, одна транзакция, без прав отказ, срок раньше начала ставит начало на срок", async () => {
+    const fat = await actors.fatyanov();
+    await svc.transferDue(fat, 13, addDays(today, 20), "Ждём ВСК");
+    await svc.setTaskStart(fat, 13, addDays(today, 10));
+    // Без причины не сохраняется ничего, и начало тоже: одна транзакция
+    await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 12), addDays(today, 22), "  "), /Без причины/);
+    expect((await svc.getTask(13))!).toMatchObject({ start: addDays(today, 10), due: addDays(today, 20) });
+    await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 1), addDays(today, -1), "Причина"), /в прошлом/);
+    await expectRule(svc.moveTaskSpan(await actors.reva(), 13, addDays(today, 12), addDays(today, 22), "Причина"), /Начало задачи меняет|Срок переносит/);
+    await expectRule(svc.moveTaskSpan(await actors.observer(), 13, addDays(today, 12), addDays(today, 22), "Причина"), /Начало задачи меняет|Срок переносит|не видит|Задач/);
+    // Начало позже нового срока: начало встаёт на срок, об этом говорит уведомление
+    const r = await svc.moveTaskSpan(fat, 13, addDays(today, 30), addDays(today, 25), "Сжимаем");
+    expect(r.task).toMatchObject({ start: addDays(today, 25), due: addDays(today, 25) });
+    expect(r.notice).toMatch(/^Начало сдвинуто на /);
+    // Только начало: без причины и без переноса
+    const transfers = (await svc.getTask(13))!.transfers.length;
+    const s = await svc.moveTaskSpan(fat, 13, addDays(today, 20), addDays(today, 25), "");
+    expect(s.task.start).toBe(addDays(today, 20));
+    expect(s.task.transfers).toHaveLength(transfers);
+    await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 20), addDays(today, 25), ""), /Ничего не изменилось/);
+    // Закрытой задаче не двигают
+    await svc.changeStatus(fat, 13, "cancelled", "Не нужно");
+    await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 21), addDays(today, 26), "Причина"), /закрытой|Закрытой/);
   });
 });
 
