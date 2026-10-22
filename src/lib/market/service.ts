@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canUploadMarket } from "./access";
 import type { MarketBundleInput, MarketRow } from "./bundle";
+import { resetNativeCache } from "./native/store";
 
 const BUNDLE_ID = "current";
 
@@ -141,7 +142,9 @@ export async function uploadMarketBundle(actor: Actor, bundle: MarketBundleInput
     },
     { timeout: 120_000, maxWait: 30_000 },
   );
-  // Готовый ответ прежнего пакета больше не нужен: следующий запрос соберёт новый
+  // Готовый ответ прежнего пакета больше не нужен: следующий запрос соберёт новый. Наборы и модели новой версии
+  // раздела (этап 79) тоже
   resetMarketBodyCache();
+  resetNativeCache();
   return (await marketMeta())!;
 }

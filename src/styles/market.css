@@ -1,0 +1,119 @@
+/* Раздел «Рынок», новая версия (этап 79): графики и плитки «Обзора» КАСКО и ОСАГО на классах дизайн-системы.
+   Палитра рядов проверена валидатором палитры навыка dataviz (светлая поверхность #FFFFFF, тёмная #171D23):
+   порядок синий, оранжевый, фиолетовый, зелёный проходит все проверки (светлота, насыщенность, различимость соседей
+   при нарушениях цветового зрения не ниже 20, контраст с поверхностью не ниже 3:1). Синий и зелёный: ряды графиков
+   дизайн-системы. Хорошо и плохо в матрицах: синий и оранжевый (тёплый и холодный полюс, без красно-зелёной пары).
+   Серый для приглушённых рядов держит 3:1 с поверхностью в обеих темах. */
+:root {
+  --mk-1: var(--color-chart-1);
+  --mk-2: #D2601A;
+  --mk-3: #6250D6;
+  --mk-4: var(--color-chart-2);
+  --mk-muted: #7A8491;
+  --mk-ref: var(--color-text-secondary);
+  --mk-good: var(--mk-1);
+  --mk-bad: var(--mk-2);
+}
+[data-theme="dark"] {
+  --mk-2: #D95926;
+  --mk-3: #9085E9;
+  --mk-muted: #6B7480;
+}
+
+.mk { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.mk-busy { opacity: 0.6; transition: opacity var(--duration-color); }
+.mk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.mk-bar label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-caption); color: var(--color-text-secondary); }
+.mk-bar select { max-width: 100%; }
+.mk-note { margin: 0; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); max-width: 80ch; }
+.mk-head { display: flex; flex-direction: column; gap: 4px; }
+.mk-head h2 { margin: 0; font-family: var(--font-heading); font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-heading); }
+.mk-grid2 { display: grid; gap: var(--space-5); grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1100px) { .mk-grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mk-switch { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); }
+
+/* Плитки ключевых цифр: две колонки уже на телефоне */
+.mk-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.mk-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: var(--space-3) var(--space-4); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.mk-tile__label { font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); color: var(--color-text-secondary); }
+.mk-tile__value { font-family: var(--font-heading); font-size: var(--text-card); line-height: var(--leading-card); font-weight: var(--font-weight-heading); color: var(--color-text); overflow-wrap: anywhere; }
+.mk-tile__value small { margin-left: 4px; font-family: var(--font-body); font-size: var(--text-caption); font-weight: var(--font-weight-regular); color: var(--color-text-secondary); }
+.mk-tile__delta { font-size: var(--text-caption); line-height: var(--leading-caption); font-weight: var(--font-weight-semibold); font-variant-numeric: tabular-nums; color: var(--color-text-secondary); }
+.mk-tile__spark { margin-top: auto; padding-top: 4px; }
+.mk-tile__spark svg { display: block; width: 100%; height: 28px; overflow: visible; }
+
+/* Хорошо и плохо: текст в токенах статуса, знак и подпись говорят направление */
+.mk-good { color: var(--color-success-text); }
+.mk-bad { color: var(--color-danger-text); }
+.mk-flat { color: var(--color-text-secondary); }
+
+/* «Главное» */
+.mk-insights { margin: 0; padding-left: 1.1em; display: flex; flex-direction: column; gap: 6px; font-size: var(--text-body); line-height: var(--leading-body); }
+.mk-insights li { max-width: 90ch; }
+
+/* Графики: оси и сетка дизайн-системы, ряды по палитре раздела */
+.mk-fig { display: flex; flex-direction: column; gap: 8px; margin: 0; min-width: 0; }
+.mk-fig__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.mk-fig__toggle { font: inherit; font-size: var(--text-small, 14px); font-weight: var(--font-weight-semibold); color: var(--color-link); background: none; border: 0; padding: 4px 0; cursor: pointer; }
+.mk-fig__toggle:hover { text-decoration: underline; }
+.mk-fig__toggle:focus-visible { outline: var(--focus-outline); outline-offset: 2px; border-radius: 4px; }
+.mk-plot { position: relative; min-width: 0; }
+.mk-plot:focus-visible { outline: var(--focus-outline); outline-offset: 4px; border-radius: 4px; }
+.mk-plot svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.mk-axis { font-size: 11px; fill: var(--color-text-secondary); font-family: var(--font-body); font-variant-numeric: tabular-nums; }
+.mk-label { font-size: 11px; fill: var(--color-text); font-family: var(--font-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mk-gridline { stroke: var(--color-chart-grid); stroke-width: 1; }
+.mk-zero { stroke: var(--color-border-strong); stroke-width: 1; }
+.mk-cross { stroke: var(--color-border-strong); stroke-width: 1; }
+.mk-hit { fill: transparent; }
+.mk-seg { stroke: var(--color-surface); stroke-width: 1; }
+.mk-dim { opacity: 0.45; }
+.mk-tip { position: absolute; top: 0; z-index: 5; width: max-content; max-width: min(300px, 100%); transform: translate(-50%, calc(-100% - 6px)); pointer-events: none; }
+.mk-tip.sv-tooltip--top::after { display: none; }
+.mk-tip b { display: block; font-weight: var(--font-weight-semibold); }
+.mk-tip span { display: flex; align-items: center; gap: 6px; }
+.mk-tip i { flex: none; width: 12px; height: 3px; border-radius: 2px; display: inline-block; }
+.mk-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
+.mk-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.mk-legend i { flex: none; display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.mk-legend i.is-line { width: 14px; height: 3px; }
+.mk-legend i.is-partial { border: 1.5px solid var(--mk-1); background: color-mix(in srgb, var(--mk-1) 30%, transparent); }
+
+/* Таблицы и матрицы: прокрутка вбок только внутри своего блока, первая колонка на месте */
+.mk-scroll { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+.mk-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--text-caption); line-height: var(--leading-caption); font-variant-numeric: tabular-nums; }
+.mk-table th, .mk-table td { padding: 6px 8px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--color-border); }
+.mk-table thead th { color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); background: var(--color-surface); }
+.mk-table th:first-child, .mk-table td:first-child { text-align: left; position: sticky; left: 0; z-index: 1; background: var(--color-surface); }
+.mk-table tbody th { font-weight: var(--font-weight-regular); color: var(--color-text); }
+.mk-table td.mk-cell { color: var(--color-text); }
+.mk-table tr.mk-sum td, .mk-table tr.mk-sum th { font-weight: var(--font-weight-semibold); }
+@media (max-width: 640px) { .mk-table .mk-narrow { display: none; } }
+
+/* Сравнение месяцев: подпись, полосы двух месяцев, значения, изменение */
+.mk-cmp { display: flex; flex-direction: column; }
+.mk-cmp__row { display: grid; grid-template-columns: minmax(8rem, 14rem) minmax(4rem, 1fr) minmax(7rem, auto) minmax(5rem, auto); align-items: center; gap: 4px 12px; padding: 6px 0; border-bottom: 1px solid var(--color-border); font-size: var(--text-caption); line-height: var(--leading-caption); font-variant-numeric: tabular-nums; }
+.mk-cmp__row--head { color: var(--color-text-secondary); font-weight: var(--font-weight-semibold); }
+.mk-cmp__bars { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mk-cmp__bars i { display: block; height: 6px; border-radius: 0 3px 3px 0; min-width: 1px; }
+.mk-cmp__val { text-align: right; white-space: nowrap; }
+.mk-cmp__chg { text-align: right; white-space: nowrap; font-weight: var(--font-weight-semibold); }
+@media (max-width: 640px) {
+  .mk-cmp__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .mk-cmp__bars { grid-column: 1 / -1; grid-row: 2; }
+  .mk-cmp__row--head .mk-cmp__bars { display: none; }
+  .mk-cmp__val { grid-column: 1; text-align: left; }
+}
+
+/* Полосы «из чего состоит рынок»: этот год и тонкая полоса год назад */
+.mk-bars { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mk-bars li { display: grid; grid-template-columns: minmax(7rem, 12rem) minmax(0, 1fr); gap: 4px 12px; align-items: center; font-size: var(--text-caption); line-height: var(--leading-caption); }
+.mk-bars__track { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mk-bars__cur { display: block; height: 10px; border-radius: 0 4px 4px 0; background: var(--mk-muted); min-width: 1px; }
+.mk-bars__cur.is-accent { background: var(--mk-1); }
+.mk-bars__prev { display: block; height: 3px; border-radius: 0 2px 2px 0; background: var(--mk-ref); opacity: 0.8; min-width: 1px; }
+.mk-bars__val { grid-column: 2; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+.mk-bars__val b { color: var(--color-text); font-weight: var(--font-weight-semibold); }
+@media (max-width: 640px) { .mk-bars li { grid-template-columns: minmax(0, 1fr); } .mk-bars__val { grid-column: 1; } }
+
+.mk-soon { display: flex; flex-direction: column; gap: var(--space-3); align-items: flex-start; }
