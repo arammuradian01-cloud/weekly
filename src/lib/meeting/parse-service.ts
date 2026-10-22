@@ -23,11 +23,12 @@ import { NameIndex } from "@/lib/bord/names";
 import { suggestGoals } from "@/lib/goals/service";
 import { goalFits } from "@/lib/goals/personal";
 import { quarterOf } from "@/lib/goals/parse";
-import { getCeoReport, saveCeoReportIn, type CeoReportView } from "@/lib/weekly/service";
-import type { CeoSections } from "@/lib/weekly/rules";
-import type { CeoMeeting } from "@/lib/ceo/text";
+import { getCeoReport, type CeoReportView } from "@/lib/weekly/service";
 import { ceoContext, type CeoContext } from "@/lib/ceo/assembled";
-import { ceoRecipients } from "@/lib/ceo/report";
+import { ceoRecipients, markCeoSentIn, saveCeoBlocksIn } from "@/lib/ceo/report";
+import { assembleCeoBlocks, blocksMeta, type BlocksMeta } from "@/lib/weekly-blocks/sources";
+import { fromLegacy } from "@/lib/weekly-blocks/edit";
+import { DEFAULT_PRODUCTS, DRAFT_TEMPLATE, cleanBlocks, draftBlocksOf, hasBlocksText, mergeBlocks, type MergeMode, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { meetingIdFor, meetingRights, notionUrlOf, MEETING_LIMITS } from "./service";
 import { NotionError, NOTION_MESSAGES, meaningfulText, notionDepsFromEnv, notionPageIdFromUrl, readNotionPage, type NotionDeps } from "./notion-api";
 import { ClaudeError, claudeDepsFromEnv, parseWithClaude, type ClaudeDeps } from "./claude";
@@ -35,16 +36,12 @@ import { parseByRules } from "./parse-rules";
 import {
   EMPTY_RESULT,
   PARSE_LIMITS,
-  bullets,
   ceoDraftOf,
   cleanText,
   defaultDue,
-  hasCeoText,
-  mergeCeoSections,
   parseStatusLabel,
   sameTask,
   taskTitle,
-  type CeoMergeMode,
   type ParseDecision,
   type ParseResult,
   type ParseTaskDraft,
@@ -123,8 +120,13 @@ export type ParseView = {
   /** Почему нельзя отправить CEO или создать задачи: подсказка вместо кнопки */
   sendHint: string | null;
   tasksHint: string | null;
-  /** Отчёт CEO за неделю и кому уйдёт: только тем, кто может отправить */
-  ceo: { existing: CeoReportView; recipients: string[] } | null;
+  /**
+   * Отчёт CEO за неделю и кому уйдёт: только тем, кто может отправить. base (этап 66): блоки, к которым допишется или
+   * которые заменит черновик: сохранённый отчёт по блокам, старый отчёт по блокам или свежая автосборка, если отчёта нет
+   */
+  ceo: { existing: CeoReportView; recipients: string[]; base: ReportBlock[] } | null;
+  /** Продукты справочника для строк черновика (этап 66) */
+  blocksMeta: BlocksMeta;
   /** Живые части собранного отчёта для предпросмотра: цифры, решения и благодарности. Только тем, кто отправляет CEO */
   ceoPreview: CeoContext | null;
 };
@@ -142,6 +144,15 @@ async function audit(db: Tx | typeof prisma, actor: Actor, action: string, entit
 
 const keyOf = (row: Pick<ParseRow, "meeting">) => isoFromDbDate(row.meeting.week.start) as WeekKey;
 
+/** Черновик по всем блокам, которые заполняет разбор встречи, по порядку: пустые блоки тоже, в них можно дописать */
+function draftOf(blocks: ReportBlock[]): ReportBlock[] {
+  if (!blocks.length) return [];
+  return DRAFT_TEMPLATE.map((t) => {
+    const b = blocks.find((x) => x.key === t.key);
+    return { key: t.key, title: t.title, hidden: false, note: null, lines: b?.lines ?? [] };
+  });
+}
+
 /** Результат из базы: то, что не похоже на разбор, становится пустым разбором, а не ошибкой экрана */
 function resultOf(value: unknown): ParseResult {
   if (!value || typeof value !== "object") return EMPTY_RESULT;
@@ -151,7 +162,8 @@ function resultOf(value: unknown): ParseResult {
     decisions: Array.isArray(v.decisions) ? (v.decisions as ParseDecision[]).map((d, i) => ({ ...d, key: d.key ?? `d${i + 1}`, on: d.on === true })) : [],
     risks: Array.isArray(v.risks) ? v.risks.map(String) : [],
     next: Array.isArray(v.next) ? v.next.map(String) : [],
-    ceo: v.ceo && typeof v.ceo === "object" ? { main: String(v.ceo.main ?? ""), risks: String(v.ceo.risks ?? ""), next: String(v.ceo.next ?? "") } : EMPTY_RESULT.ceo,
+    // Разборы до этапа 66 хранят черновик разделами (главное, риски, что дальше): раскладываем по блокам
+    ceo: draftOf(draftBlocksOf(v.ceo, DEFAULT_PRODUCTS)),
     tasks: Array.isArray(v.tasks) ? (v.tasks as ParseTaskDraft[]) : [],
     ...(typeof v.unreadable === "number" && v.unreadable > 0 ? { unreadable: v.unreadable } : {}),
   };
@@ -352,7 +364,7 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
     } else {
       note = "Ключ Claude не задан на сервере (ANTHROPIC_API_KEY): разобрано правилами по заголовкам и спискам. Проверьте итоги и задачи внимательнее";
     }
-    raw ??= parseByRules(page.text, { base: meetingDate, knows: names.knows });
+    raw ??= parseByRules(page.text, { base: meetingDate, knows: names.knows, products: directions });
     note = [note, page.cutByTime ? "Notion отвечал долго: текст обрезан по времени, разобрано начало страницы" : page.truncated ? "Страница длинная: разобрано начало" : null, unreadNote].filter(Boolean).join(". ");
 
     const existing = await prisma.task.findMany({
@@ -365,6 +377,7 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
       today,
       teamId: row.meeting.teamId,
       directions: directions.map((d) => d.code),
+      products: directions,
       find: names.find,
       who,
       existing: existing.map((t) => ({ number: t.number, title: t.title, owner: t.owner?.slug ?? null })),
@@ -393,6 +406,8 @@ type BuildContext = {
   who: GoalWho | null;
   /** Задачи, уже созданные из прошлых разборов этой встречи */
   existing?: { number: number; title: string; owner: string | null }[];
+  /** Продукты справочника с подписями: строки черновика weekly для CEO подписываются ими (этап 66) */
+  products?: ProductRef[];
 };
 
 /** Сырой разбор в черновики: люди по именам, сроки, направления, цели по тексту (этап 55), уже созданные задачи */
@@ -433,7 +448,7 @@ export async function buildResult(raw: RawMeeting, ctx: BuildContext): Promise<P
     }),
     risks: raw.risks,
     next: raw.next,
-    ceo: ceoDraftOf(raw),
+    ceo: ceoDraftOf(raw, ctx.products ?? DEFAULT_PRODUCTS),
     tasks: await resolveGoals(ctx.who, ctx.teamId, tasks),
   };
 }
@@ -509,9 +524,10 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
   const tasksHint = !rights.canLead ? null : !personal(actor) ? "Создать задачи можно при личном входе: так ответственные видят, кто их поставил" : null;
   const key = keyOf(row);
   let ceo: ParseView["ceo"] = null;
+  const meta = await blocksMeta();
   if (sendAllowed && ready) {
     const [existing, recipients] = await Promise.all([getCeoReport(key), ceoRecipients()]);
-    ceo = { existing, recipients: recipients.map((r) => r.fullName) };
+    ceo = { existing, recipients: recipients.map((r) => r.fullName), base: await baseBlocks(actor, key, existing, meta) };
   }
   const stored = resultOf(row.result);
   // Цель в черновике хранится подобранной: пересчёт при сохранении черновика и при создании задач, а не на каждом показе
@@ -554,6 +570,7 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     sendHint,
     tasksHint,
     ceo,
+    blocksMeta: meta,
     // Собранный отчёт (цифры, решения и благодарности топ-команды) только тем, кто отправляет CEO
     ceoPreview: sendAllowed && ready ? await ceoContext(actor, key) : null,
   };
@@ -651,12 +668,17 @@ async function cleanDecisions(input: unknown, fallback: ParseDecision[]): Promis
   return out;
 }
 
-const cleanCeo = (c: unknown): CeoSections => {
-  const v = (c && typeof c === "object" ? c : {}) as Record<string, unknown>;
-  return { main: bullets(String(v.main ?? "")), risks: bullets(String(v.risks ?? "")), next: bullets(String(v.next ?? "")) };
-};
+/**
+ * Черновик weekly для CEO с экрана: блоки разбора встречи (новости, конкуренты, продукты, партнёрка, риски, план), строки
+ * с продуктом из справочника. Старая вкладка может прислать разделы (главное, риски, что дальше): они раскладываются по
+ * блокам. Цифры недели и месяца из черновика не берутся: их собирает сам отчёт
+ */
+function cleanCeo(c: unknown, meta: BlocksMeta): ReportBlock[] {
+  const blocks = Array.isArray(c) ? cleanBlocks(c, new Set(meta.order)) : draftBlocksOf(c, meta.products);
+  return draftOf(blocks.filter((b) => DRAFT_TEMPLATE.some((t) => t.key === b.key)));
+}
 
-export type DraftPatch = { ceo?: CeoSections; tasks?: ParseTaskDraft[]; decisions?: ParseDecision[] };
+export type DraftPatch = { ceo?: ReportBlock[]; tasks?: ParseTaskDraft[]; decisions?: ParseDecision[] };
 
 /**
  * Сохранить правки черновиков: weekly для CEO, задачи и решения. expected: момент, который видел экран, иначе чужие
@@ -672,7 +694,7 @@ export async function saveParseDraft(actor: Actor, id: string, patch: DraftPatch
   // Цель пересчитывается здесь: черновик хранит ту цель, что получит задача у этого ведущего
   const tasks = patch.tasks !== undefined && !row.tasksCreatedAt ? await resolveGoals(whoOf(actor), row.meeting.teamId, await cleanDrafts(patch.tasks, current.tasks)) : current.tasks;
   const decisions = patch.decisions !== undefined && !row.tasksCreatedAt ? await cleanDecisions(patch.decisions, current.decisions) : current.decisions;
-  const ceo = ceoAllowed ? cleanCeo(patch.ceo) : current.ceo;
+  const ceo = ceoAllowed ? cleanCeo(patch.ceo, await blocksMeta()) : current.ceo;
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM meeting_parses WHERE id = ${row.id} FOR UPDATE`;
     const fresh = await tx.meetingParse.findUniqueOrThrow({ where: { id: row.id }, select: { updatedAt: true } });
@@ -692,16 +714,26 @@ export async function saveParseDraft(actor: Actor, id: string, patch: DraftPatch
 
 // ---------- Отправить CEO ----------
 
-export type SendCeoInput = { ceo: CeoSections; mode?: CeoMergeMode | null; expected?: string | null };
-
-/** Что ушло CEO: разделы и встречи в момент отправки */
-type Snapshot = CeoSections & { meetings: CeoMeeting[] };
+export type SendCeoInput = { ceo: ReportBlock[] | unknown; mode?: MergeMode | null; expected?: string | null };
 
 /**
- * Отправить weekly для CEO. Только в приложении: отчёт CEO за неделю сохраняется, помечается отправленным (кем, когда,
- * кому) со снимком разделов, CEO получает событие в «Мне» и видит собранный отчёт на странице отчёта CEO. Отчёт за
- * неделю уже есть: черновик не затирает его молча, ведущий выбирает «дописать по разделам» или «заменить», и сервер
- * сверяет, что отчёт не поменялся с тех пор, как экран его показал
+ * Блоки, к которым идёт черновик встречи: сохранённый отчёт недели по блокам; старый отчёт (разделы) по блокам с живыми
+ * цифрами; без отчёта свежая автосборка (цифры недели и месяца, новости, weekly команды, задачи)
+ */
+async function baseBlocks(actor: Actor, key: WeekKey, existing: Pick<CeoReportView, "blocks" | "sections">, meta: BlocksMeta): Promise<ReportBlock[]> {
+  if (existing.blocks) return existing.blocks;
+  const auto = await assembleCeoBlocks(actor, key);
+  return existing.sections ? fromLegacy(existing.sections, auto.blocks, meta.products) : auto.blocks;
+}
+
+const filledLegacy = (r: { main: string; risks: string; next: string } | null) => !!r && !!(r.main.trim() || r.risks.trim() || r.next.trim());
+
+/**
+ * Отправить weekly для CEO. Только в приложении: отчёт CEO за неделю сохраняется по смысловым блокам (этап 66),
+ * помечается отправленным (кем, когда, кому) со снимком, CEO получает событие в «Мне» и видит собранный отчёт на странице
+ * отчёта CEO. Отчёт за неделю уже есть: черновик не затирает его молча, ведущий выбирает «дописать по блокам» или
+ * «заменить», и сервер сверяет, что отчёт не поменялся с тех пор, как экран его показал. Отчёта нет: черновик дописывается
+ * к свежей автосборке, и CEO получает отчёт целиком, с цифрами недели и месяца
  */
 export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInput, now = new Date()): Promise<ParseView> {
   const row = await loadRow(String(id));
@@ -710,11 +742,14 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
   if (!personal(actor)) fail("Отправить CEO можно при личном входе: так CEO видит, кто отправил");
   if (!canSend(actor)) fail("Отправить CEO может владелец или администратор в режиме управления");
   if (row.status !== "READY") fail("Разбор ещё не готов");
-  const draft = cleanCeo(input?.ceo);
-  if (!hasCeoText(draft)) fail("Weekly для CEO пустой: напишите хотя бы главное");
+  const meta = await blocksMeta();
+  const draft = cleanCeo(input?.ceo, meta);
+  if (!hasBlocksText(draft)) fail("Weekly для CEO пустой: напишите хотя бы одну строку");
   const recipients = await ceoRecipients();
   if (!recipients.length) fail("Не найден CEO: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»");
   const key = keyOf(row);
+  // Свежая автосборка до транзакции: она читает много таблиц и нужна, только если отчёта по блокам ещё нет
+  const auto = await assembleCeoBlocks(actor, key);
   await prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM meeting_parses WHERE id = ${row.id} FOR UPDATE`;
@@ -724,40 +759,25 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ceo-report:${key}`}))`;
       const week = await tx.week.findUnique({ where: { start: dbDate(key) }, select: { id: true } });
       const before = week ? await tx.ceoReport.findUnique({ where: { weekId: week.id } }) : null;
-      const existing = before ? { main: before.main, risks: before.risks, next: before.next } : null;
-      const filled = hasCeoText(existing);
+      const savedBlocks = Array.isArray(before?.blocks) ? cleanBlocks(before!.blocks, null) : null;
+      const filled = savedBlocks ? hasBlocksText(savedBlocks) : filledLegacy(before);
       if (filled && (input.expected ?? null) !== before!.updatedAt.toISOString()) fail("Отчёт CEO за эту неделю поменялся, пока вы смотрели разбор. Обновите страницу и проверьте, что будет дописано или заменено");
-      if (filled && input.mode !== "merge" && input.mode !== "replace") fail("За неделю уже есть отчёт CEO: выберите, дописать черновик по разделам или заменить отчёт");
-      const mode: CeoMergeMode = filled ? input.mode! : "replace";
-      const final = mergeCeoSections(existing, draft, mode);
-      const saved = await saveCeoReportIn(tx, actor, key, final);
-      const savedWeek = await tx.week.findUniqueOrThrow({ where: { start: dbDate(key) }, select: { id: true } });
-      const to = recipients.map((r) => ({ id: r.id, name: r.fullName }));
-      // Снимок из того, что действительно сохранилось: после чистки текста в отчёте
-      const snapshot: Snapshot = { ...(saved.sections ?? final), meetings: saved.meetings };
-      // Момент отправки тот же, что момент записи отчёта: правка после отправки видна по более позднему updatedAt.
-      // Запрос мимо Prisma, иначе @updatedAt сдвинулся бы ещё раз
-      await tx.$executeRaw`UPDATE ceo_reports SET "sentAt" = "updatedAt", "sentById" = ${actor.personId}, "sentTo" = ${JSON.stringify(to)}::jsonb, "sentSnapshot" = ${JSON.stringify(snapshot)}::jsonb WHERE "weekId" = ${savedWeek.id}`;
+      if (filled && input.mode !== "merge" && input.mode !== "replace") fail("За неделю уже есть отчёт CEO: выберите, дописать черновик по блокам или заменить блоки черновика");
+      const mode: MergeMode = filled ? input.mode! : "merge";
+      const base = savedBlocks ?? (before && filledLegacy(before) ? fromLegacy({ main: before.main, risks: before.risks, next: before.next }, auto.blocks, meta.products) : auto.blocks);
+      const final = mergeBlocks(base, draft, mode);
+      // Проверку «отчёт не поменялся» сделали выше: сохранение без своей сверки, встречи недели остаются
+      const saved = await saveCeoBlocksIn(tx, actor, key, final, undefined, undefined, meta);
+      const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил weekly для CEO за неделю ${row.meeting.week.isoNumber} по итогам встречи «${rights.teamName}»`, now);
       const result = resultOf(row.result);
       await tx.meetingParse.update({ where: { id: row.id }, data: { ceoSentAt: now, ceoSentById: actor.personId, result: { ...result, ceo: draft } as unknown as Prisma.InputJsonValue } });
-      await notify(
-        tx,
-        {
-          kind: "MEETING",
-          recipients: recipients.map((r) => r.id),
-          actor,
-          subject: `ceo-report:${key}`,
-          text: `${actor.fullName} отправил weekly для CEO за неделю ${row.meeting.week.isoNumber} по итогам встречи «${rights.teamName}»`,
-        },
-        now,
-      );
       await audit(
         tx,
         actor,
         "meeting.parse.ceo",
         row.meetingId,
         `Weekly для CEO, неделя ${row.meeting.week.isoNumber}`,
-        `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}. ${!filled ? "Новый отчёт" : mode === "merge" ? "Дописан к отчёту недели" : "Заменил отчёт недели"}`,
+        `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}. ${!filled ? "Новый отчёт" : mode === "merge" ? "Дописан к отчёту недели" : "Заменил блоки отчёта недели"}`,
       );
     },
     { timeout: 30_000 },

@@ -153,6 +153,21 @@ export function cleanTemplate(input: unknown): TemplateBlock[] {
 
 export const STANDARD_TEMPLATE: TemplateBlock[] = STANDARD_BLOCKS.map((b) => ({ key: b.key, title: b.title }));
 
+/** Блоки, которые заполняет черновик из разбора встречи: цифры недели и месяца ресурс собирает сам, из заметки их не берём */
+export const DRAFT_TEMPLATE: TemplateBlock[] = STANDARD_TEMPLATE.filter((b) => b.key !== "wow" && b.key !== "month");
+
+/** Продукты справочника по умолчанию (как в стартовых данных): когда справочник из базы не передали */
+export const DEFAULT_PRODUCTS: ProductRef[] = [
+  { code: "osago", label: "ОСАГО" },
+  { code: "kasko", label: "КАСКО" },
+  { code: "red", label: "RED" },
+  { code: "deposits", label: "Депозиты и инвестиции" },
+  { code: "partners", label: "Партнёрка" },
+  { code: "product", label: "Продукт и CJM" },
+  { code: "insurance", label: "Страхование в целом" },
+  { code: "department", label: "Департамент" },
+];
+
 /** Пустые блоки по шаблону */
 export function emptyBlocks(template: readonly TemplateBlock[] = STANDARD_TEMPLATE): ReportBlock[] {
   return template.map((t) => ({ key: t.key, title: t.title, hidden: false, lines: [], note: null }));
@@ -189,16 +204,27 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
  * Продукт строки: название продукта в начале («ОСАГО. текст», «Партнёры: текст») или признак продукта внутри строки
  * («Конверсия ОСАГО выросла»). rest: текст без названия в начале. Только продукты из products
  */
-export function productOfText(text: string, products: readonly ProductRef[]): { product: string | null; rest: string } {
-  const value = text.trim();
-  const known = new Set(products.map((p) => p.code));
+/** Названия продуктов и их синонимы, длинные первыми: «Депозиты и инвестиции» раньше «Депозиты» */
+function namesOf(products: readonly ProductRef[]): [string, string][] {
   const names: [string, string][] = [];
   for (const p of products) {
     names.push([p.code, p.label]);
     for (const s of PREFIX_SYNONYMS[p.code] ?? []) names.push([p.code, s]);
   }
-  names.sort((a, b) => b[1].length - a[1].length);
-  for (const [code, name] of names) {
+  return names.sort((a, b) => b[1].length - a[1].length);
+}
+
+/** Заголовок раздела заметки, который и есть название продукта: «ОСАГО», «Партнёры:», «Депозиты и инвестиции» */
+export function productNamed(text: string, products: readonly ProductRef[]): string | null {
+  const v = text.trim().replace(/[\s:.]+$/, "").toLowerCase().replace(/ё/g, "е");
+  for (const [code, name] of namesOf(products)) if (v === name.toLowerCase().replace(/ё/g, "е")) return code;
+  return null;
+}
+
+export function productOfText(text: string, products: readonly ProductRef[]): { product: string | null; rest: string } {
+  const value = text.trim();
+  const known = new Set(products.map((p) => p.code));
+  for (const [code, name] of namesOf(products)) {
     const m = new RegExp(`^${escape(name)}\\s*[.:,]\\s*(.+)$|^${escape(name)}\\s+-\\s+(.+)$`, "iu").exec(value);
     if (m) return { product: code, rest: (m[1] ?? m[2] ?? "").trim() };
   }

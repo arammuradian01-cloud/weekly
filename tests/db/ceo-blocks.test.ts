@@ -194,6 +194,7 @@ const BLOCKS: ReportBlock[] = [
 
 describe("редактор отчёта CEO по блокам", () => {
   it("правят владелец и администраторы в режиме управления; блоки и прежние разделы из них; конфликт двух устройств; журнал", async () => {
+    const startId = (await prisma.auditLog.findFirst({ orderBy: { id: "desc" } }))?.id ?? 0n;
     await expectRule(report.saveCeoBlocks(await actor.reva(), key, BLOCKS, [], null), /режиме управления/);
     const saved = await report.saveCeoBlocks(await actor.owner(), key, BLOCKS, [{ title: "Встреча с ВСК", text: "Договорились о планах." }], null);
     expect(saved.blocks!.map((b) => b.key)).toEqual(["news", "competitors", "products", "risks", "plan"]);
@@ -214,7 +215,7 @@ describe("редактор отчёта CEO по блокам", () => {
     const again = await report.saveCeoBlocks(await actor.admin(), key, next, undefined, saved.updatedAt!);
     expect(again.meetings).toHaveLength(1);
     expect(again.sections!.risks).toBe("");
-    const log = await prisma.auditLog.findMany({ where: { action: "ceo.save", entityId: key }, orderBy: { id: "asc" } });
+    const log = await prisma.auditLog.findMany({ where: { action: "ceo.save", entityId: key, id: { gt: startId } }, orderBy: { id: "asc" } });
     expect(log.map((l) => l.field)).toEqual(expect.arrayContaining(["Отчёт CEO, блок «Продукты»", "Отчёт CEO, мои встречи недели", "Отчёт CEO, блок «Риски»", "Отчёт CEO, порядок блоков"]));
     expect(log.find((l) => l.field === "Отчёт CEO, блок «Риски»" && l.actorName === "Головкин Владислав")?.after).toMatch(/^Скрыт\. /);
     // Блок с неизвестным ключом и пустые строки не сохраняются; без блоков сохранить нельзя
@@ -226,7 +227,7 @@ describe("редактор отчёта CEO по блокам", () => {
     expect(legacy.blocks).toBeNull();
     expect((await weekly.getCeoReport(key)).blocks).toBeNull();
     const converted = await report.saveCeoBlocks(await actor.owner(), key, BLOCKS, undefined, legacy.updatedAt!);
-    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.save", field: "Отчёт CEO, переведён в блоки" } })).toMatchObject({ before: "- Старое главное" });
+    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.save", field: "Отчёт CEO, переведён в блоки" }, orderBy: { id: "desc" } })).toMatchObject({ before: "- Старое главное" });
     await weekly.saveCeoReport(await actor.owner(), key, { main: "- Снова по-старому", risks: "", next: "" }, undefined, converted.updatedAt!);
     expect((await weekly.getCeoReport(key)).blocks).toBeNull();
   });
@@ -248,7 +249,7 @@ describe("отправка CEO из отчёта по блокам", () => {
     const ceo = await actor.ceo();
     const inbox = await listInbox(ceo.personId);
     expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/Мурадян Арам отправил weekly для CEO за неделю \d+/) });
-    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.send" } })).toMatchObject({ after: "Отправлен в приложении: CEO" });
+    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.send" }, orderBy: { id: "desc" } })).toMatchObject({ after: "Отправлен в приложении: CEO" });
 
     const seen = await report.ceoSentReports(ceo, key);
     expect(seen?.current).toMatchObject({ sentBy: "Мурадян Арам", editedAfter: false });
