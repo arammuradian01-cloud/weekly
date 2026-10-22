@@ -125,8 +125,8 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
                   <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                     Отмена
                   </Button>
-                  <Button onClick={() => void confirm()} disabled={busy}>
-                    {busy ? "Принимаю…" : `Принять выбранное: ${rows.filter((r) => r.on).length}`}
+                  <Button onClick={() => void confirm()} loading={busy} disabled={busy}>
+                    {`Принять выбранное: ${rows.filter((r) => r.on).length}`}
                   </Button>
                 </div>
               </div>

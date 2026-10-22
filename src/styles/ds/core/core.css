@@ -185,7 +185,8 @@
 .sv-tag--up { background: var(--color-accent-soft); color: var(--color-link); border: 1px solid var(--color-accent-soft-border); font-weight: var(--font-weight-semibold); }
 .sv-tag--removable { padding-right: 4px; }
 .sv-tag__remove { display: inline-flex; width: 16px; height: 16px; border: 0; padding: 0; border-radius: var(--radius-round); background: transparent; color: inherit; cursor: pointer; align-items: center; justify-content: center; }
-.sv-tag__remove:hover { background: rgba(0, 0, 0, 0.08); }
+.sv-tag__remove:hover { background: color-mix(in srgb, currentColor 16%, transparent); }
+.sv-tag__remove:focus-visible { outline: var(--focus-outline); outline-offset: 1px; }
 
 /* Логотип */
 .sv-logo { display: block; }

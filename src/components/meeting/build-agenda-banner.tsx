@@ -35,9 +35,9 @@ export function BuildAgendaBanner({ team, week, canLead }: { team: { id: string;
         {canLead ? "" : " Собрать раньше может руководитель команды."}
       </p>
       {canLead ? (
-        <Button size="sm" onClick={() => void build()} disabled={busy} className="shrink-0">
+        <Button size="sm" onClick={() => void build()} loading={busy} disabled={busy} className="shrink-0">
           <ListPlus className="h-4 w-4" aria-hidden="true" />
-          {busy ? "Собираю…" : "Собрать повестку"}
+          Собрать повестку
         </Button>
       ) : null}
     </div>

@@ -5,7 +5,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, X } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, Target, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName, initials as personInitials, ownerName } from "@/domain/people";
 import { greenOutside } from "@/lib/tasks/green-outside";
@@ -249,6 +250,28 @@ function SortHeader({ label, k, sort, dir, onSort, className }: { label: string;
   );
 }
 
+/**
+ * Цель задачи строкой (этап 68): код жирным и название в две строки, ссылка на цель на странице «Цели». В таблице
+ * отдельной колонкой от 1360 px (уже места нет, там метка «Цель РТ-1» под названием), на телефоне строкой под задачей
+ */
+function GoalCell({ goal, className }: { goal: NonNullable<Task["goal"]>; className?: string }) {
+  const name = goal.code && goal.title.startsWith(`${goal.code}. `) ? goal.title.slice(goal.code.length + 2) : goal.title;
+  return (
+    <Link
+      href={`/goals${goal.quarter ? `?q=${goal.quarter}` : ""}#goal-${goal.id}`}
+      className={cn("group flex min-w-0 items-start gap-1.5 text-small leading-snug text-ink hover:text-link", className)}
+      title={goal.title}
+      aria-label={goal.code ? `Цель ${goal.code}: ${name}` : `Цель: ${name}`}
+    >
+      <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info-ink" strokeWidth={1.75} aria-hidden="true" />
+      <span className="min-w-0">
+        {goal.code ? <span className="mr-1 font-semibold tabular-nums">{goal.code}</span> : null}
+        <span className="line-clamp-2 group-hover:underline">{name}</span>
+      </span>
+    </Link>
+  );
+}
+
 export function TaskTable({
   groups,
   showOwner = true,
@@ -272,7 +295,8 @@ export function TaskTable({
   const { data } = usePrototype();
   const { open: openTask } = useOpenTask();
   const open = onOpen ?? openTask;
-  const cols = (showOwner ? 7 : 6) + (selection ? 1 : 0);
+  // Этап 68: колонка «Цель» последней, чтобы не сдвигать ширины <col> у table-fixed
+  const cols = (showOwner ? 8 : 7) + (selection ? 1 : 0);
   return (
     <div className="mt-4">
       {/* Ноутбук: таблица по дизайн-системе (tasks/TaskTable.jsx): залипающая шапка, группы, подсветка просрочки */}
@@ -303,6 +327,9 @@ export function TaskTable({
             <SortHeader label="Статус" k="status" sort={sort} dir={dir} onSort={onSort} />
             <th scope="col">Состояние</th>
             <SortHeader label="Срок" k="due" sort={sort} dir={dir} onSort={onSort} />
+            <th scope="col" className="hidden w-[200px] min-[1360px]:table-cell">
+              Цель
+            </th>
           </tr>
         </thead>
         {groups.map((g) => {
@@ -357,7 +384,7 @@ export function TaskTable({
                         {stale ? <StaleNote className="block" /> : null}
                         <LateWaits task={t} className="block" />
                         <GreenOutsideNote task={t} today={data.today} className="block" />
-                        {t.goal ? <GoalTag goal={t.goal} className="mt-1 self-start" /> : null}
+                        {t.goal ? <GoalTag goal={t.goal} className="mt-1 self-start min-[1360px]:hidden" /> : null}
                       </div>
                     </td>
                     {showOwner ? (
@@ -379,6 +406,9 @@ export function TaskTable({
                       <span className={cn("sv-due block", overdue && !closed && "!font-semibold !text-danger-ink")}>{formatShort(t.due)}</span>
                       {overdue && !closed ? <OverdueNote days={overdueDays(t, data.today)} /> : null}
                       {t.transfers.length ? <span className="block text-caption text-text-secondary">переносов {t.transfers.length}</span> : null}
+                    </td>
+                    <td className="hidden !whitespace-normal min-[1360px]:table-cell">
+                      {t.goal ? <GoalCell goal={t.goal} /> : <span className="text-caption text-text-secondary">нет</span>}
                     </td>
                   </tr>
                 );
@@ -427,8 +457,8 @@ export function TaskTable({
                         {isStale(t, data.today) ? <StaleNote /> : null}
                         <LateWaits task={t} />
                         <GreenOutsideNote task={t} today={data.today} />
-                        {t.goal ? <GoalTag goal={t.goal} /> : null}
                       </p>
+                      {t.goal ? <GoalCell goal={t.goal} className="mt-1.5" /> : null}
                     </div>
                   </li>
                 );

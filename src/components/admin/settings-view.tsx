@@ -67,6 +67,8 @@ const plural = (n: number, one: string, few: string, many: string) => {
   return d === 1 && t !== 11 ? one : d >= 2 && d <= 4 && (t < 12 || t > 14) ? few : many;
 };
 
+// Этап 68: описания разделов в одну строку. Предупреждения о необратимых действиях (сброс пароля, очистка стенда)
+// оставлены полными: их читают перед нажатием
 /** Раздел настроек: заголовок с якорем для оглавления (этап 48), пояснение, содержимое во всю ширину колонки */
 function Section({ id, title, description, children }: { id?: string; title: string; description?: string; children: React.ReactNode }) {
   const headingId = useId();
@@ -160,7 +162,7 @@ export function SettingsView({
       {withToc ? <Toc items={toc} label="Разделы настроек" /> : null}
       <div className="min-w-0 [&>:first-child]:border-t-0 [&>:first-child]:pt-0">
         <RhythmSection initial={rhythm} />
-        <Section id="dicts" title="Справочники" description="Значения списков в weekly и задачах. Скрытое значение пропадает из выбора, но остаётся в старых записях">
+        <Section id="dicts" title="Справочники" description="Списки в weekly и задачах. Скрытое значение остаётся в старых записях">
         <div className="grid gap-6 xl:grid-cols-2">
           {KINDS.map((kind) => (
             <DictList key={kind} kind={kind} items={dicts[kind]} />
@@ -264,7 +266,7 @@ function RhythmSection({ initial }: { initial: Rhythm }) {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const times = timeOptions.some((t) => t.value === form.deadlineTime) ? timeOptions : [...timeOptions, { value: form.deadlineTime, label: form.deadlineTime }];
   return (
-    <Section id="rhythm" title="Ритм недели" description="Срок сдачи, встреча и порог «давно не обновлялась». Новый срок действует для недель, срок которых ещё не прошёл">
+    <Section id="rhythm" title="Ритм недели" description="Срок сдачи, встреча и «давно не обновлялась». Новый срок не трогает недели, чей срок прошёл">
       <form
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
         onSubmit={async (e) => {
@@ -480,7 +482,7 @@ function PeopleSection({
   };
 
   return (
-    <Section id="people" title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
+    <Section id="people" title="Люди и роли" description="Выключенный человек пропадает из списков, его история остаётся">
       {people.length > 12 ? (
         <div className="mb-3 flex items-center gap-2">
           <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
@@ -766,7 +768,7 @@ function BannerSection({ initial }: { initial: StandBanner }) {
   const { notify } = usePrototype();
   const [value, setValue] = useState<StandBanner>(initial);
   return (
-    <Section title="Плашка над страницами" description="Видна всем. На пилоте ведёт к инструкции «Как работать» и подсказывает, кому писать замечания">
+    <Section title="Плашка над страницами" description="Видна всем, ведёт к «Как работать»">
       <Segmented
         label="Плашка над страницами"
         options={BANNER_OPTIONS}
@@ -995,7 +997,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
   const [bulk, setBulk] = useState<BulkLink[] | null>(null);
   const [days, setDays] = useState(7);
   return (
-    <Section title="Вход" description="Личный вход записывает в журнал настоящего автора. Общий логин team работает переходную неделю, потом владелец его выключает">
+    <Section title="Вход" description="Личный вход пишет в журнал настоящего автора. Общий логин team только на переходную неделю">
       <Segmented
         label="Способ входа"
         options={TEAM_LOGIN_OPTIONS}
