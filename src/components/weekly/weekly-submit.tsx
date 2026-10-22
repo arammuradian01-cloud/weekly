@@ -31,6 +31,7 @@ import { ThanksField } from "./thanks-field";
 import { taskFacts, type WeekFact } from "@/lib/weekly/facts";
 import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
+import type { TemplateBlock } from "@/lib/weekly-blocks/types";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
 
@@ -56,6 +57,7 @@ export function WeeklySubmit({
   promises: initialPromises = [],
   facts: initialFacts = [],
   skippedFacts = [],
+  template = null,
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -74,6 +76,8 @@ export function WeeklySubmit({
   facts?: WeekFact[];
   /** Ключи фактов, которые уже записи или скрыты, в этой и прошлой неделе */
   skippedFacts?: string[];
+  /** Смысловые блоки weekly команды (этап 66): записи сдаются по ним. null: шаблона нет, weekly как раньше */
+  template?: { teamId: string; teamName: string; blocks: TemplateBlock[] } | null;
 }) {
   const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
@@ -474,12 +478,17 @@ export function WeeklySubmit({
             <h3 className="text-lead font-semibold text-ink">
               Записи <span className="font-normal text-muted">{entries.length}</span>
             </h3>
+            {template ? (
+              <p className="text-small text-muted" data-testid="weekly-template-hint">
+                Команда «{template.teamName}» сдаёт weekly по блокам: {template.blocks.map((b) => b.title).join(", ")}. У каждой записи выберите блок отчёта.
+              </p>
+            ) : null}
             {entries.length === 0 && !draft ? <p className="text-body text-muted">Пока ни одной записи.</p> : null}
             <ul className="flex flex-col gap-3">
               {entries.filter((e) => !(draft && e.id === draftId)).map((e) =>
                 editing === e.id ? (
                   <li key={e.id}>
-                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} />
+                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} template={template?.blocks} />
                   </li>
                 ) : (
                   <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
@@ -527,6 +536,7 @@ export function WeeklySubmit({
             {!canEdit ? null : draft ? (
               <EntryForm
                 initial={draft}
+                template={template?.blocks}
                 onSaved={onSaved}
                 onAutosaved={onAutosaved}
                 onCancel={() => {

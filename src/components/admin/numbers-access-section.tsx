@@ -1,5 +1,6 @@
 "use client";
 
+import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useId, useState } from "react";
 import { X } from "lucide-react";
 import { saveNumbersAccessAction } from "@/app/(app)/settings/actions";
@@ -90,7 +91,7 @@ export function NumbersAccessSection({ initial }: { initial: NumbersAccessView }
         </h2>
         <p className="mt-1 text-small text-muted">
           Раздел «Прогноз» видят все. Все цифры: прогноз месяца по драйверам, партнёры, сравнение версий, цифры недели, прогноз лидеров и выгрузка. Основные цифры: итог месяца
-          по продуктам против бюджета и LBE и цифры недели, без драйверов и корректировок. Все цифры всегда видят владельцы и администраторы, топ-команда, генеральный
+          по продуктам против бюджета и LBE и цифры недели, без драйверов и корректировок. Все цифры всегда видят владельцы и администраторы, команда «{teamName(TOP_TEAM)}», генеральный
           директор и команды продуктов и партнёрского канала из «Прогноза».
         </p>
         <p className="mt-2 text-small text-ink" data-testid="numbers-access-counts">

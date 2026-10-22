@@ -5,6 +5,7 @@ import { formatDuration, formatMoment } from "@/lib/week";
 import { currentReportingKey, getMyWeekly } from "@/lib/weekly/service";
 import { entryPromises } from "@/lib/weekly/promise-service";
 import { skippedFactKeys, weekFacts } from "@/lib/weekly/facts-service";
+import { templateForAuthor } from "@/lib/weekly-blocks/team";
 import { subjectOf } from "@/lib/org/current";
 import { canEditWeekly } from "@/lib/weekly/rules";
 import { formatLong } from "@/domain/dates";
@@ -18,11 +19,13 @@ export const metadata: Metadata = { title: "Сдать weekly" };
 export default async function SubmitWeeklyPage() {
   const ctx = await requireContext();
   const key = await currentReportingKey();
-  const [mine, promises, facts, skipped] = await Promise.all([
+  const [mine, promises, facts, skipped, template] = await Promise.all([
     getMyWeekly(ctx.person.id, key),
     entryPromises(ctx.person.id, key),
     weekFacts(ctx.person.id, key, { limited: subjectOf(ctx).limited }),
     skippedFactKeys(ctx.person.id, key),
+    // Смысловые блоки weekly команды (этап 66): записи сдаются по ним
+    templateForAuthor(ctx.person.id),
   ]);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
@@ -47,6 +50,7 @@ export default async function SubmitWeeklyPage() {
           promises={promises}
           facts={facts}
           skippedFacts={skipped}
+          template={template}
         />
         <TaskDrawer />
       </Suspense>

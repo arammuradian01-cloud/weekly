@@ -26,6 +26,7 @@ import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow
 import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
 import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
+import { TOP_TEAM_OLD_NAME } from "@/lib/org/top-name";
 
 type Tx = Prisma.TransactionClient;
 
@@ -620,6 +621,9 @@ export async function planGoals(actor: Actor, input: string | string[][], opts: 
   const who = { personId: actor.personId, role: actor.role, management: actor.management };
   if (!nodes.some((n) => n.id === opts.team)) fail("Выберите команду для целей без колонки «Команда»");
   const teamByName = new Map(nodes.filter((n) => n.active).map((n) => [normName(n.name), n]));
+  // Этап 66: топ-команда переименована, старые файлы целей пишут прежнее имя
+  const top = nodes.find((n) => n.id === TOP_TEAM && n.active);
+  if (top && !teamByName.has(normName(TOP_TEAM_OLD_NAME))) teamByName.set(normName(TOP_TEAM_OLD_NAME), top);
   const people = await prisma.person.findMany({ where: { active: true }, select: { id: true, fullName: true, shortName: true, slug: true } });
   const index = new NameIndex(people);
   const existing = await prisma.goal.findMany({ where: { quarter: { in: [...new Set(rows.map((r) => r.quarter))] } } });

@@ -26,6 +26,7 @@ import { WeeklyLine } from "./weekly-line";
 import { AddPeopleModal, CloseModal, CreateTeamModal, LeaderModal, RenameModal, RhythmModal } from "./team-dialogs";
 import { StructureAssembler } from "./structure-assembler";
 import { ManageHint } from "./manage-hint";
+import { TOP_TEAM_NAME } from "@/domain/teams";
 
 /** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
 const NARROW = "(max-width: 1023.98px)";
@@ -328,7 +329,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
                   </Link>
                 }
               >
-                {view.mode === "shared" ? "Под общим входом видна только топ-команда. Войдите со своим логином и паролем, чтобы увидеть свои команды." : "В команду добавляет её руководитель. Пока можно посмотреть, кто с кем работает, в структуре компании."}
+                {view.mode === "shared" ? `Под общим входом видна только команда «${TOP_TEAM_NAME}». Войдите со своим логином и паролем, чтобы увидеть свои команды.` : "В команду добавляет её руководитель. Пока можно посмотреть, кто с кем работает, в структуре компании."}
               </EmptyState>
             )
           ) : (

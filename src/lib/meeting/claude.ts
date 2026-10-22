@@ -44,10 +44,16 @@ const SYSTEM = [
   "Ответственного и соисполнителей пиши так, как они записаны в списке людей компании, если человек там есть; если нет, как в заметке. Не угадывай человека, если в заметке его нет.",
   "Сроки пиши датой ГГГГ-ММ-ДД, если они названы или однозначно понятны из заметки (например, «до пятницы» от даты встречи). Если срок не назван, оставь поле due пустым.",
   "Пиши по-русски, простыми словами, коротко. Не используй длинное тире, стрелки и точку посередине: вместо них дефис или запятая.",
-  "Раздел ceo: черновик weekly для генерального директора по итогам встречи. main: главное и результаты, risks: риски и что мешает, next: что дальше. Каждая мысль отдельной строкой, строка начинается с «- ». Без воды и без внутренних деталей, которые не нужны CEO.",
+  "Раздел ceo: черновик weekly для генерального директора по итогам встречи, по смысловым блокам. news: новости рынка и команды; competitors: новости о конкурентах, только если о них говорили; products: что сделали и что изменилось по продуктам; partners: партнёрский канал; risks: риски и что мешает; plan: что планируем на неделю.",
+  "Каждая строка блока одна мысль с цифрой, если она есть в заметке. У каждой строки поле product: код направления из списка, о котором строка (ОСАГО, КАСКО и так далее); общая строка про департамент получает код department. Без воды и без внутренних деталей, которые не нужны CEO. Цифры недели и месяца ресурс соберёт сам: не выдумывай их.",
 ].join("\n");
 
 const stringArray = { type: "array", items: { type: "string" } };
+/** Строки смыслового блока weekly для CEO (этап 66): продукт из справочника направлений и текст */
+const blockLines = {
+  type: "array",
+  items: { type: "object", properties: { product: { type: "string", description: "Код направления из списка" }, text: { type: "string", description: "Одна мысль, с цифрой, если она есть" } }, required: ["product", "text"] },
+};
 
 /** Схема ответа: те же поля, что проверяет validateRawMeeting */
 export const TOOL_SCHEMA = {
@@ -60,7 +66,12 @@ export const TOOL_SCHEMA = {
       decisions: { type: "array", items: { type: "object", properties: { text: { type: "string" }, owner: { type: "string" } }, required: ["text"] } },
       risks: { ...stringArray, description: "Риски и проблемы" },
       next: { ...stringArray, description: "Что дальше" },
-      ceo: { type: "object", properties: { main: { type: "string" }, risks: { type: "string" }, next: { type: "string" } }, required: ["main", "risks", "next"] },
+      ceo: {
+        type: "object",
+        description: "Черновик weekly для CEO по смысловым блокам",
+        properties: { news: blockLines, competitors: blockLines, products: blockLines, partners: blockLines, risks: blockLines, plan: blockLines },
+        required: ["news", "competitors", "products", "partners", "risks", "plan"],
+      },
       tasks: {
         type: "array",
         items: {
@@ -139,7 +150,7 @@ export async function parseWithClaude(input: ClaudeInput, deps: ClaudeDeps): Pro
   if (body.stop_reason === "max_tokens") throw new ClaudeError("встреча слишком длинная для одного ответа Claude");
   const call = body.content?.find((c) => c.type === "tool_use" && c.name === TOOL);
   if (!call) throw new ClaudeError("Claude ответил не по схеме");
-  const checked = validateRawMeeting(call.input);
+  const checked = validateRawMeeting(call.input, input.directions);
   if (!checked.ok) throw new ClaudeError(`ответ Claude не прошёл проверку: ${checked.error}`);
   return { raw: checked.value, skipped: checked.skipped };
 }

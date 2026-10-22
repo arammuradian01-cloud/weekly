@@ -207,7 +207,7 @@ describe("неделя команды", () => {
     const antonov = await actor("Антонов");
     const alisa = await actor("Чемоданова");
     await expectRule(weekly.setTeamWeekClosed(await actor("Токов"), sector.id, week, true), /руководитель/);
-    await expectRule(weekly.setTeamWeekClosed(antonov, TOP_TEAM, week, true), /топ-команды/);
+    await expectRule(weekly.setTeamWeekClosed(antonov, TOP_TEAM, week, true), /Неделю команды «Команда страхования и инвестиций» закрывают вместе с неделей департамента/);
     await weekly.setTeamWeekClosed(antonov, sector.id, week, true);
     await expectRule(weekly.saveEntry(alisa, entry(week, "Ещё одна запись после встречи")), /закрыта/);
     expect((await weekly.getMyWeekly(alisa.personId, week)).week.closed).toBe(true);

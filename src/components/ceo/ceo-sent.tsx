@@ -1,9 +1,10 @@
 // Отчёт CEO глазами CEO (этап 61): weekly, которые отправили из приложения по итогам встречи, собранными так же, как
 // страница «Отчёт CEO» собирает их для владельца: цифры недели, итог прогноза месяца, разделы, решения, благодарности,
-// «Мои встречи недели». Только чтение: правят отчёт владелец и администраторы в режиме управления.
+// «Мои встречи недели». Только чтение: правят отчёт владелец и администраторы в режиме управления. Этап 66: отчёт по
+// смысловым блокам, старые отчёты как раньше.
 
 import Link from "next/link";
-import type { CeoInboxView } from "@/lib/meeting/parse-service";
+import type { CeoInboxView } from "@/lib/ceo/report";
 import { EmptyState } from "@/components/empty-state";
 import { CeoAssembled } from "@/components/ceo/ceo-assembled";
 import { cn } from "@/lib/cn";
@@ -25,7 +26,7 @@ export function CeoSentReport({ view }: { view: CeoInboxView }) {
             {c.editedAfter ? ". После отправки отчёт поправили в приложении: здесь отправленная версия" : ""}
           </p>
         </div>
-        <CeoAssembled ctx={c.ctx} sections={c.sections} meetings={c.meetings} idPrefix="ceo-sent" />
+        <CeoAssembled ctx={c.ctx} sections={c.sections} blocks={c.blocks} labels={c.labels} order={c.order} meetings={c.meetings} idPrefix="ceo-sent" />
       </article>
       <nav aria-label="Отправленные недели" className="flex flex-col gap-1">
         <p className="mb-1 text-caption font-semibold text-muted">Отправленные недели</p>

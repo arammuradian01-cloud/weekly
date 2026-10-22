@@ -131,7 +131,7 @@ test("weekly человека из дерева подчинённых: подс
 
   // Выбрана топ-команда: Антонова в её ленте нет, лента подсказывает команду и не включает пустой отбор
   const hint = reva.getByTestId("weekly-focus-elsewhere");
-  await expect(hint).toContainText("Антонов Дмитрий: weekly в ленте команды «Управление развития продуктов», а выбрана команда «Топ-команда»");
+  await expect(hint).toContainText("Антонов Дмитрий: weekly в ленте команды «Управление развития продуктов», а выбрана команда «Команда страхования и инвестиций»");
   await expect(reva.locator("#f-author")).toHaveValue("");
   await shot(reva, "focus-elsewhere");
 

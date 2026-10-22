@@ -6,8 +6,8 @@
 // в черновики (ParseResult), которые ведущий правит перед отправкой CEO и созданием задач.
 
 import { addDays, type IsoDate } from "@/domain/dates";
-import type { CeoSections } from "@/lib/weekly/rules";
 import { sameStem, tokens } from "@/lib/goals/match";
+import { BLOCK_LIMITS, DEFAULT_PRODUCTS, DRAFT_TEMPLATE, emptyBlocks, legacyToBlocks, productOfText, uniqueLines, type BlockLine, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 /** Пределы разбора: что длиннее, обрезается, что сверх количества, отбрасывается */
 export const PARSE_LIMITS = {
@@ -44,8 +44,8 @@ export type RawMeeting = {
   decisions: { text: string; owner: string | null }[];
   risks: string[];
   next: string[];
-  /** Черновик weekly для CEO по разделам. null: собрать из итогов */
-  ceo: CeoSections | null;
+  /** Черновик weekly для CEO по смысловым блокам (этап 66). null: собрать из итогов */
+  ceo: ReportBlock[] | null;
   tasks: RawTask[];
 };
 
@@ -83,13 +83,14 @@ export type ParseResult = {
   decisions: ParseDecision[];
   risks: string[];
   next: string[];
-  ceo: CeoSections;
+  /** Черновик weekly для CEO по смысловым блокам отчёта CEO (этап 66) */
+  ceo: ReportBlock[];
   tasks: ParseTaskDraft[];
   /** Блоки страницы, которые Notion API не отдал текстом */
   unreadable?: number;
 };
 
-export const EMPTY_RESULT: ParseResult = { summary: [], decisions: [], risks: [], next: [], ceo: { main: "", risks: "", next: "" }, tasks: [] };
+export const EMPTY_RESULT: ParseResult = { summary: [], decisions: [], risks: [], next: [], ceo: [], tasks: [] };
 
 const titleNorm = (s: string) =>
   s
@@ -177,7 +178,7 @@ export type Checked<T> = { ok: true; value: T; skipped: number } | { ok: false; 
  * Проверка ответа модели. Верхний уровень строгий: не тот вид ответа значит, что разбор модели не принимаем и разбираем
  * правилами. Отдельные строки без нужных полей отбрасываются (skipped), остальное чистится и обрезается по пределам
  */
-export function validateRawMeeting(input: unknown): Checked<RawMeeting> {
+export function validateRawMeeting(input: unknown, products: readonly ProductRef[] = DEFAULT_PRODUCTS): Checked<RawMeeting> {
   if (!isObj(input)) return { ok: false, error: "ответ не объект" };
   for (const key of ["summary", "decisions", "risks", "next", "tasks"] as const) {
     if (!Array.isArray(input[key])) return { ok: false, error: `нет списка ${key}` };
@@ -210,12 +211,16 @@ export function validateRawMeeting(input: unknown): Checked<RawMeeting> {
       direction: strOrNull(t.direction, 40),
     });
   }
-  let ceo: CeoSections | null = null;
+  let ceo: ReportBlock[] | null = null;
   if (input.ceo !== undefined && input.ceo !== null) {
     if (!isObj(input.ceo)) return { ok: false, error: "раздел ceo не объект" };
     const c = input.ceo;
-    ceo = { main: bullets(typeof c.main === "string" ? c.main : ""), risks: bullets(typeof c.risks === "string" ? c.risks : ""), next: bullets(typeof c.next === "string" ? c.next : "") };
-    if (!ceo.main && !ceo.risks && !ceo.next) ceo = null;
+    // Прежний вид ответа (главное, риски, что дальше строками) раскладывается по блокам тем же правилом, что старый отчёт
+    const legacy = ["main", "risks", "next"].some((k) => typeof c[k] === "string") && !DRAFT_TEMPLATE.some((t) => Array.isArray(c[t.key]));
+    ceo = legacy
+      ? legacyToBlocks({ main: bullets(typeof c.main === "string" ? c.main : ""), risks: bullets(typeof c.risks === "string" ? c.risks : ""), next: bullets(typeof c.next === "string" ? c.next : "") }, products, DRAFT_TEMPLATE)
+      : DRAFT_TEMPLATE.map((t) => ({ key: t.key, title: t.title, hidden: false, note: null, lines: draftLines(c[t.key], t.key, products) }));
+    if (!ceo.some((b) => b.lines.length)) ceo = null;
   }
   return {
     ok: true,
@@ -241,46 +246,65 @@ export function bullets(text: string): string {
     .join("\n");
 }
 
-const lines = (items: string[]) => items.map((s) => `- ${s.replace(/^[-*•]\s*/, "")}`).join("\n");
-
-/** Черновик weekly для CEO: от модели, если она его дала, иначе из итогов, решений, рисков и следующих шагов */
-export function ceoDraftOf(raw: RawMeeting): CeoSections {
-  if (raw.ceo) return raw.ceo;
-  const nextItems = raw.next.length ? raw.next : raw.tasks.slice(0, 7).map((t) => t.title);
-  return {
-    main: cleanSection([lines(raw.summary), lines(raw.decisions.map((d) => `Решили: ${d.text}`))].filter(Boolean).join("\n")),
-    risks: cleanSection(lines(raw.risks)),
-    next: cleanSection(lines(nextItems)),
-  };
+/** Строки блока из ответа модели: продукт из списка направлений или по тексту строки, текст чистый и короткий */
+function draftLines(value: unknown, key: string, products: readonly ProductRef[]): BlockLine[] {
+  if (!Array.isArray(value)) return [];
+  const known = new Set(products.map((p) => p.code));
+  const fallback = known.has("department") ? "department" : null;
+  const out: BlockLine[] = [];
+  for (const raw of value) {
+    const text0 = typeof raw === "string" ? raw : isObj(raw) && typeof raw.text === "string" ? raw.text : "";
+    const text = cleanText(text0.replace(/^\s*[-*•]\s*/, ""), PARSE_LIMITS.item);
+    if (!text) continue;
+    const given = isObj(raw) && typeof raw.product === "string" && known.has(raw.product.trim()) ? raw.product.trim() : null;
+    const found = given ? { product: given, rest: text } : productOfText(text, products);
+    out.push({ product: found.product ?? (key === "partners" && known.has("partners") ? "partners" : fallback), text: cleanText(found.rest || text, PARSE_LIMITS.item), href: null, source: null });
+    if (out.length >= PARSE_LIMITS.listItems) break;
+  }
+  return uniqueLines(out);
 }
 
-const normLine = (l: string) =>
-  l
-    .replace(/^\s*[-*•]\s*/, "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[\s.,;:!?]+/g, " ")
-    .trim();
-
-export type CeoMergeMode = "merge" | "replace";
+/** Строка раздела заметки, уже привязанная к блоку отчёта: разбор правилами нашёл её под заголовком «Новости», «ОСАГО» */
+export type TaggedLine = { key: "news" | "competitors" | "partners" | "products"; product: string | null; text: string };
 
 /**
- * Черновик из встречи и отчёт CEO, который за неделю уже есть. merge: строки встречи дописываются в конец каждого раздела,
- * строки, которые в разделе уже есть, второй раз не попадают. replace: разделы целиком из черновика встречи
+ * Черновик weekly для CEO по блокам из итогов встречи: строки разделов «Новости», «Конкуренты», продуктов и партнёров в
+ * свои блоки; итоги и решения по продукту строки (партнёрка в «Партнёрский канал», без продукта в новости команды),
+ * риски в «Риски», что дальше (а без него задачи встречи) в «План на неделю». Строка без продукта подписана департаментом
  */
-export function mergeCeoSections(existing: CeoSections | null, draft: CeoSections, mode: CeoMergeMode): CeoSections {
-  if (!existing || mode === "replace") return { main: draft.main.trim(), risks: draft.risks.trim(), next: draft.next.trim() };
-  const merge = (a: string, b: string) => {
-    const have = new Set(a.split("\n").map(normLine).filter(Boolean));
-    const add = b.split("\n").filter((l) => normLine(l) && !have.has(normLine(l)));
-    return [a.trim(), add.join("\n")].filter(Boolean).join("\n");
+export function buildDraft(raw: Omit<RawMeeting, "ceo">, products: readonly ProductRef[] = DEFAULT_PRODUCTS, tagged: readonly TaggedLine[] = []): ReportBlock[] {
+  const blocks = emptyBlocks(DRAFT_TEMPLATE);
+  const known = new Set(products.map((p) => p.code));
+  const fallback = known.has("department") ? "department" : null;
+  const push = (key: string, product: string | null, text: string) => {
+    const b = blocks.find((x) => x.key === key);
+    const t = cleanText(text, PARSE_LIMITS.item);
+    if (b && t && b.lines.length < BLOCK_LIMITS.lines) b.lines.push({ product: product && known.has(product) ? product : fallback, text: t, href: null, source: null });
   };
-  return { main: merge(existing.main, draft.main), risks: merge(existing.risks, draft.risks), next: merge(existing.next, draft.next) };
+  const route = (text: string, prefix = "") => {
+    const { product, rest } = productOfText(text, products);
+    push(product === "partners" ? "partners" : product ? "products" : "news", product, `${prefix}${rest || text}`);
+  };
+  for (const t of tagged) {
+    const found = productOfText(t.text, products);
+    const product = t.product ?? found.product ?? (t.key === "partners" ? "partners" : null);
+    const key = t.key === "products" && product === "partners" ? "partners" : t.key;
+    push(key, product, t.product ? t.text : found.rest || t.text);
+  }
+  const taggedTexts = new Set(tagged.map((t) => cleanText(t.text)));
+  for (const s of raw.summary) if (!taggedTexts.has(cleanText(s))) route(s);
+  for (const d of raw.decisions) route(d.text, "Решили: ");
+  for (const r of raw.risks) push("risks", productOfText(r, products).product, r);
+  const nextItems = raw.next.length ? raw.next : raw.tasks.slice(0, 7).map((t) => t.title);
+  for (const n of nextItems) push("plan", productOfText(n, products).product, n);
+  return blocks.map((b) => ({ ...b, lines: uniqueLines(b.lines) }));
 }
 
-/** Есть ли в отчёте CEO хоть что-то: пустой отчёт заменять не страшно */
-export function hasCeoText(s: CeoSections | null | undefined): boolean {
-  return !!s && !!(s.main.trim() || s.risks.trim() || s.next.trim());
+/** Черновик weekly для CEO: от модели или разбора правилами по разделам, если они его дали, иначе из итогов встречи */
+export function ceoDraftOf(raw: RawMeeting, products: readonly ProductRef[] = DEFAULT_PRODUCTS): ReportBlock[] {
+  if (!raw.ceo) return buildDraft(raw, products);
+  // Все блоки черновика по порядку, даже пустые: ведущий видит, куда можно дописать
+  return DRAFT_TEMPLATE.map((t) => raw.ceo!.find((b) => b.key === t.key) ?? { key: t.key, title: t.title, hidden: false, note: null, lines: [] });
 }
 
 // ---------- Сроки из текста ----------

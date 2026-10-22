@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import type { DeadlineSetting } from "@/lib/week";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import type { WeeklyState } from "@/generated/prisma/enums";
 import { ENTRY_TYPE_CODES, type BlockCode, type DirectionCode, type EntryTypeCode, type WeeklyStateCode } from "@/domain/dictionaries";
 import { formatLong, type IsoDate } from "@/domain/dates";
@@ -18,9 +18,12 @@ import { WEEKLY_LIMITS, canEditWeekly, cleanDash, submitState, type CeoSections 
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, weekNumberOf, weekYearOf, type MeetingSetting } from "./weeks";
 import type { EntrySnapshot } from "./undo";
 import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
+import { cleanBlocks, isBlockKey, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { sectionForAuthor } from "@/lib/weekly-blocks/author";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
+import { topTeamName } from "@/lib/org/top-name";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -109,6 +112,7 @@ export function toEntryDto(e: EntryRow): WeeklyEntry {
     taskNumber: e.tasks[0]?.number,
     updatedAt: e.updatedAt.toISOString(),
     ...(e.factKey ? { factKey: e.factKey } : {}),
+    ...(e.section ? { section: e.section } : {}),
     ...(e.promotions.length ? { promoted: e.promotions.map((p) => ({ by: p.by.slug as PersonSlug, ...(p.note ? { note: p.note } : {}) })) } : {}),
     ...(e.comments.length ? { comments: e.comments.map(commentDto) } : {}),
     ...(e.reactions.length ? { reactions: e.reactions.map(reactionDto) } : {}),
@@ -431,6 +435,11 @@ export type EntryInput = {
   /** Запись из факта недели (этап 22): ставит только сервер, из экрана не приходит */
   factKey?: string;
   /**
+   * Смысловой блок по шаблону команды (этап 66): news, products, risks, c:... null: снять. Не передали: как было.
+   * Это подсказка для отчёта команды по блокам: блок чужого шаблона отчёт просто разложит по смыслу
+   */
+  section?: string | null;
+  /**
    * Ключ черновика новой записи с устройства (этап 26). Повтор с тем же ключом после обрыва связи правит уже созданную
    * запись, а не создаёт вторую
    */
@@ -526,6 +535,8 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       next,
       help,
       links: links as unknown as Prisma.InputJsonValue,
+      // Блок отчёта команды (этап 66): только блок шаблона, по которому автор записи сдаёт weekly, и не блок цифр
+      ...(input.section !== undefined ? { section: typeof input.section === "string" && isBlockKey(input.section) ? await sectionForAuthor(existing?.authorId ?? actor.personId, input.section, tx) : null } : {}),
     };
     // Черновик с устройства начат со старой версии: если на сервере уже другой текст, поверх не пишем. Тот же текст
     // (ответ на прошлую отправку потерялся по дороге) не конфликт
@@ -625,6 +636,7 @@ export async function deleteEntry(actor: Actor, id: string): Promise<EntrySnapsh
       sortOrder: existing.sortOrder,
       importBatch: existing.importBatch,
       factKey: existing.factKey,
+      section: existing.section,
       createdAt: existing.createdAt.toISOString(),
       taskIds: existing.tasks.map((t) => t.id),
       requestIds: existing.helpRequests.map((r) => r.id),
@@ -686,6 +698,7 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
           snapshot.factKey && !(await tx.weeklyEntry.findFirst({ where: { weekId: snapshot.weekId, authorId: snapshot.authorId, factKey: snapshot.factKey }, select: { id: true } }))
             ? snapshot.factKey
             : null,
+        section: snapshot.section ?? null,
         createdAt: new Date(snapshot.createdAt),
         // События об упоминаниях удалились вместе с записью: следующая правка упомянет людей заново
         mentions: [],
@@ -898,7 +911,7 @@ export async function unpromoteEntry(actor: Actor, id: string, by?: PersonSlug):
  */
 export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekKey, closed: boolean): Promise<{ closed: boolean }> {
   if (actor.role === "OBSERVER") fail("Наблюдатель неделю не закрывает");
-  if (teamId === TOP_TEAM) fail("Неделю топ-команды закрывают вместе с неделей департамента: «Закрыть неделю» в режиме управления");
+  if (teamId === TOP_TEAM) fail(`Неделю команды «${await topTeamName()}» закрывают вместе с неделей департамента: «Закрыть неделю» в режиме управления`);
   return prisma.$transaction(async (tx) => {
     const team = await tx.team.findUnique({ where: { id: teamId } });
     if (!team || !team.active) return fail("Такой команды нет");
@@ -927,7 +940,8 @@ export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekK
 /** Отправлен CEO (этап 61): когда, кем и кому */
 export type CeoSent = { at: string; by: string | null; to: string[] };
 
-export type CeoReportView = { sections: CeoSections | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string; sent?: CeoSent };
+/** blocks (этап 66): отчёт по смысловым блокам. null: отчёт в прежнем виде или его ещё нет */
+export type CeoReportView = { sections: CeoSections | null; blocks: ReportBlock[] | null; meetings: CeoMeeting[]; updatedBy?: string; updatedAt?: string; sent?: CeoSent };
 
 /** Кому отправлен отчёт: имена из записи [{ id, name }] */
 export function sentToNames(value: unknown): string[] {
@@ -941,9 +955,10 @@ export async function getCeoReport(key: WeekKey): Promise<CeoReportView> {
     include: { ceoReport: { include: { updatedBy: { select: { fullName: true } }, sentBy: { select: { fullName: true } } } } },
   });
   const r = row?.ceoReport;
-  if (!r) return { sections: null, meetings: [] };
+  if (!r) return { sections: null, blocks: null, meetings: [] };
   return {
     sections: { main: r.main, risks: r.risks, next: r.next },
+    blocks: Array.isArray(r.blocks) ? cleanBlocks(r.blocks, null) : null,
     meetings: cleanMeetings(r.meetings),
     updatedBy: r.updatedBy?.fullName,
     updatedAt: r.updatedAt.toISOString(),
@@ -976,7 +991,8 @@ export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sectio
   }
   // Встречи не передали (или передали не список): остаются прежние, а не стираются
   const list = Array.isArray(meetings) ? cleanMeetings(meetings) : cleanMeetings(before?.meetings ?? []);
-  const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId };
+  // Отчёт в прежнем виде (разделы без блоков): блоки этапа 66, если они были, больше не действуют
+  const data = { main: clean3(sections.main), risks: clean3(sections.risks), next: clean3(sections.next), meetings: list, updatedById: actor.personId, blocks: Prisma.DbNull };
   const saved = await tx.ceoReport.upsert({ where: { weekId: row.id }, update: data, create: { ...data, weekId: row.id } });
   // Было и стало по каждому разделу, который поменялся
   const parts: [string, string | null, string][] = [
@@ -988,7 +1004,7 @@ export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sectio
   const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
   for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
   if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
-  return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
+  return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, blocks: null, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
 }
 
 export type CeoDecision = { id: string; text: string; owner: string | null; date: IsoDate };

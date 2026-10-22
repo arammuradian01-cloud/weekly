@@ -130,9 +130,9 @@ describe("подсказки владельцу и пояснения в кар�
 
   it("топ-команда владельца без режима управления: не «только просмотр», а где менять состав", () => {
     const note = teamNote({ mode: "mine", off: "owner" }, { id: TOP_TEAM, relation: "leader", rights: NO_RIGHTS })!;
-    expect(note).toEqual({ text: "Состав топ-команды меняют в режиме управления.", manage: true });
+    expect(note).toEqual({ text: "Состав этой команды меняют в режиме управления.", manage: true });
     expect(note.text).not.toContain("Только просмотр");
-    expect(teamNote({ mode: "mine", off: null }, { id: TOP_TEAM, relation: "member", rights: NO_RIGHTS })).toEqual({ text: "Состав топ-команды меняет владелец в режиме управления.", manage: false });
+    expect(teamNote({ mode: "mine", off: null }, { id: TOP_TEAM, relation: "member", rights: NO_RIGHTS })).toEqual({ text: "Состав этой команды меняет владелец в режиме управления.", manage: false });
   });
 
   it("своя команда: действия есть, пояснение только о недостающем", () => {

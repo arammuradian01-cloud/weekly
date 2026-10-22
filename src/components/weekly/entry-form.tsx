@@ -13,6 +13,8 @@ import { MentionArea } from "@/components/discuss/mention-area";
 import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { ACTIVE_DRAFTS, dropEntryDraft, isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
+import { entryBlockKey } from "@/lib/weekly-blocks/assemble";
+import { LIVE_FIGURE_KEYS, type TemplateBlock } from "@/lib/weekly-blocks/types";
 
 function hostOf(url: string): string {
   try {
@@ -32,7 +34,20 @@ const LINKS_MAX = 10;
 
 type LinkDraft = { title: string; url: string };
 
-function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[]) {
+/**
+ * Блок шаблона команды для записи (этап 66): выбранный, а если его нет в шаблоне, по смыслу записи (риск в «Риски»,
+ * план в «План на неделю», партнёрка в «Партнёрский канал»)
+ */
+export function sectionOf(e: Pick<WeeklyEntry, "section" | "type" | "block" | "direction">, template: readonly TemplateBlock[] | null | undefined): string | undefined {
+  if (!template?.length) return undefined;
+  const keys = template.map((t) => t.key);
+  return entryBlockKey({ section: e.section ?? null, type: e.type, block: e.block, direction: e.direction }, keys);
+}
+
+/** Блок справочника по смысловому блоку: запись остаётся понятной и там, где шаблона нет (лента, выгрузка) */
+const DICT_BLOCK: Record<string, string> = { news: "team", wow: "numbers", month: "numbers", partners: "partners", risks: "risks" };
+
+function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[], template?: readonly TemplateBlock[] | null) {
   return {
     id: isLocalId(e.id) ? undefined : e.id,
     week: e.week,
@@ -47,6 +62,8 @@ function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[]) {
     help: needHelp ? e.help : undefined,
     // Пустые строки не отправляем. Без названия сервер подпишет ссылку адресом сайта
     links: links.filter((l) => l.url.trim()).map((l) => ({ title: l.title.trim(), url: l.url.trim() })) as Link[],
+    // Шаблона нет: блок записи не трогаем
+    ...(template?.length ? { section: sectionOf(e, template) ?? null } : {}),
   };
 }
 
@@ -59,8 +76,11 @@ export function EntryForm({
   onSaved,
   onCancel,
   onAutosaved,
+  template,
 }: {
   initial: WeeklyEntry;
+  /** Шаблон смысловых блоков команды (этап 66): запись сдаётся по его блокам. Нет: блок из справочника, как раньше */
+  template?: TemplateBlock[] | null;
   /** Запись сохранена кнопкой: форму можно закрывать */
   onSaved: (entry: WeeklyEntry) => void;
   onCancel: () => void;
@@ -85,8 +105,8 @@ export function EntryForm({
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
-  const latest = useRef({ e, needHelp, links });
-  latest.current = { e, needHelp, links };
+  const latest = useRef({ e, needHelp, links, template });
+  latest.current = { e, needHelp, links, template };
 
   // Задачу по записи поставили в диалоге: номер появляется здесь же, без перехода в список задач
   useEffect(() => {
@@ -119,9 +139,9 @@ export function EntryForm({
    * Нет сети: черновик остаётся на устройстве, ответ { ok: false } с пометкой offline */
   const persist = async (): Promise<Result<WeeklyEntry> & { offline?: boolean }> => {
     if (inFlight.current) await inFlight.current.catch(() => undefined);
-    const { e: cur, needHelp: nh, links: ln } = latest.current;
+    const { e: cur, needHelp: nh, links: ln, template: tpl } = latest.current;
     const sentAt = Date.now();
-    const input = toInput(cur, nh, ln);
+    const input = toInput(cur, nh, ln, tpl);
     const call = saveEntryAction({ ...input, clientKey: input.id ? undefined : draftKey.current });
     inFlight.current = call;
     let result: Result<WeeklyEntry>;
@@ -160,8 +180,8 @@ export function EntryForm({
   useEffect(() => {
     // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
     if (viewing || !dirty.current || !e.what.trim()) return;
-    const { e: cur, needHelp: nh, links: ln } = latest.current;
-    const input = toInput(cur, nh, ln);
+    const { e: cur, needHelp: nh, links: ln, template: tpl } = latest.current;
+    const input = toInput(cur, nh, ln, tpl);
     const draft: DraftEntryInput = { ...input, week: String(input.week), links: input.links.map((l) => ({ title: l.title, url: l.url })) };
     putEntryDraft(me.slug, {
       key: draftKey.current,
@@ -248,7 +268,30 @@ export function EntryForm({
     <form onSubmit={submit} className="flex flex-col gap-4 sv-card sv-card--soft p-4 sm:p-5">
       <div className="grid gap-4 sm:grid-cols-3">
         <SelectField label="Направление" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={dictOptions("DIRECTION", e.direction)} />
-        <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={dictOptions("WEEKLY_BLOCK", e.block)} />
+        {template?.length ? (
+          <SelectField
+            label="Блок отчёта"
+            id={`${initial.id}-section`}
+            value={sectionOf(e, template)}
+            onChange={(ev) => {
+              const key = ev.target.value;
+              dirty.current = true;
+              // Блок справочника и тип идут за смысловым блоком: риск остаётся риском и в ленте, и в отчёте CEO
+              const dict = DICT_BLOCK[key] ?? "key-changes";
+              setE((prev) => ({
+                ...prev,
+                section: key,
+                block: dictOptions("WEEKLY_BLOCK").some((o) => o.value === dict) ? dict : prev.block,
+                type: key === "risks" ? "risk" : key === "plan" ? "plan" : prev.type,
+              }));
+            }}
+            // Блоки цифр («Неделя к неделе», «Месяц») собирает ресурс: запись в них не ставится
+            options={template.filter((t) => !LIVE_FIGURE_KEYS.includes(t.key)).map((t) => ({ value: t.key, label: t.title }))}
+            hint="Блоки задал руководитель команды"
+          />
+        ) : (
+          <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={dictOptions("WEEKLY_BLOCK", e.block)} />
+        )}
         <SelectField label="Тип" id={`${initial.id}-type`} value={e.type} onChange={(ev) => set("type", ev.target.value as EntryTypeCode)} options={dictOptions("ENTRY_TYPE", e.type)} />
       </div>
       <TextArea label="Что произошло" id={`${initial.id}-what`} value={e.what} onChange={(ev) => set("what", ev.target.value)} rows={2} counter={{ value: e.what.length, max: WEEKLY_LIMITS.what }} autoFocus />

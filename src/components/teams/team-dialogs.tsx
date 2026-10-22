@@ -247,7 +247,7 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
           if (r !== null) onClose();
         }}
       >
-        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Топ-командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
+        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
         {!top ? (
           <SelectField
             label="Команда выше"

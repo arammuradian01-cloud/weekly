@@ -4,6 +4,7 @@
 // ответственный, одна фраза о том, что сейчас происходит, и сколько инициатива в этом делении. Долго ищем или давно без
 // новостей: метка словами, такие инициативы сами встают в повестку встречи команды ответственного.
 
+import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useEffect, useId, useState } from "react";
 import { Plus } from "lucide-react";
 import type { InitiativeView, InitiativesPage } from "@/lib/initiatives/service";
@@ -223,7 +224,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
         <p className="text-small text-muted">
           Отвечает {item.owner.fullName}
           {item.owner.active ? "" : " (выключен)"}
-          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : " выключена, инициатива разбирается на встрече топ-команды"}` : ""}
+          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, инициатива разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
           {item.goal ? `. Цель: ${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` : ""}
         </p>
       </div>

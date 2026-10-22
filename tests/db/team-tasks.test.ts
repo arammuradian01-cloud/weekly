@@ -159,7 +159,7 @@ describe("панель «Мои команды»", () => {
     expect(panel.attention[0]).toMatchObject({ number: late.number, overdue: 3, canAsk: true });
     expect(panel.people.map((p) => p.fullName).sort()).toEqual(["Антонов Дмитрий", "Рева Тарас", "Токов Никита"]);
     expect(panel.people.find((p) => p.fullName === "Рева Тарас")!.leader).toBe(true);
-    expect(panel.path.map((p) => p.name)).toEqual(["Топ-команда", "Управление развития продуктов"]);
+    expect(panel.path.map((p) => p.name)).toEqual(["Команда страхования и инвестиций", "Управление развития продуктов"]);
     // Спуск в сектор: люди сектора и их задачи, просьбы к ним
     const down = (await teamPanel({ id: reva.personId, role: reva.role }, sector.id))!;
     const alisaRow = down.people.find((p) => p.fullName === "Чемоданова Алиса")!;

@@ -10,6 +10,8 @@ import * as tasks from "@/lib/tasks/service";
 import { importBordTasks } from "@/lib/tasks/bord-import";
 import { importBordWeekly } from "@/lib/weekly/bord-import";
 import * as admin from "@/lib/admin/service";
+import { reloadFromBord } from "@/lib/admin/reload";
+import { ensureWeek } from "@/lib/weekly/service";
 
 const TASKS = "data/bord/zadachi-2026-10-05.csv";
 const WEEKLY = "data/bord/weekly-ceo-2026-10-05.csv";
@@ -38,6 +40,27 @@ beforeEach(async () => {
 afterAll(() => prisma.$disconnect());
 
 describe("перезаливка из выгрузки Bord", () => {
+  it("недели с отчётами команд и отправленными отчётами CEO не удаляются, черновик отчёта CEO уходит (этап 66)", async () => {
+    const owner = await tasks.actorFor("muradyan", "OWNER");
+    const team = await prisma.team.create({ data: { name: "Тест 66 перезаливка", kind: "CUSTOM", leaderId: owner.personId } });
+    try {
+      const [teamWeek, sentWeek, draftWeek] = await Promise.all(["2030-03-04", "2030-03-11", "2030-03-18"].map((k) => ensureWeek(prisma, k)));
+      // Отчёт команды из задач: записей weekly в неделе нет
+      await prisma.teamWeeklyReport.create({ data: { teamId: team.id, weekId: teamWeek!.id, blocks: [{ key: "plan", title: "План на неделю", hidden: false, note: null, lines: [{ product: "osago", text: "Задача 5, срок 06.03", href: "/tasks/5", source: "Задача 5" }] }] } });
+      await prisma.ceoReport.create({ data: { weekId: sentWeek!.id, main: "- Отправлено CEO", risks: "", next: "", sentAt: new Date(), sentById: owner.personId, sentTo: [], sentSnapshot: { main: "- Отправлено CEO", risks: "", next: "", meetings: [] } } });
+      await prisma.ceoReport.create({ data: { weekId: draftWeek!.id, main: "- Черновик", risks: "", next: "" } });
+      await reloadFromBord(prisma, readFileSync(TASKS, "utf8"), readFileSync(WEEKLY, "utf8"), { batch: "reload-66", actor: { personId: owner.personId, name: owner.fullName, source: "SYSTEM" } });
+      expect(await prisma.teamWeeklyReport.count({ where: { teamId: team.id } })).toBe(1);
+      expect(await prisma.week.findUnique({ where: { id: teamWeek!.id } })).not.toBeNull();
+      expect(await prisma.ceoReport.findUnique({ where: { weekId: sentWeek!.id } })).toMatchObject({ main: "- Отправлено CEO" });
+      // Черновик отчёта CEO ушёл, и неделя без записей и отчётов вместе с ним
+      expect(await prisma.week.findUnique({ where: { id: draftWeek!.id } })).toBeNull();
+    } finally {
+      await prisma.teamWeeklyReport.deleteMany({ where: { teamId: team.id } });
+      await prisma.team.delete({ where: { id: team.id } });
+    }
+  });
+
   it("без --yes только проверка, с --yes правки стенда уходят и база совпадает с выгрузкой", async () => {
     const reva = await tasks.actorFor("reva");
     const created = await tasks.createTask(reva, { title: "Задача со стенда", outcome: "Проверка", owner: "reva", direction: "product", due: "2030-01-15", source: "weekly" });

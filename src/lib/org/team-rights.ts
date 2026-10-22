@@ -141,7 +141,7 @@ export function teamNote(c: { mode: "all" | "mine" | "shared"; off: ManagementOf
     return null;
   }
   if (c.mode === "shared") return { text: "Под общим входом только просмотр. Чтобы управлять своей командой, войдите со своим логином и паролем.", manage: false };
-  if (t.id === TOP_TEAM) return c.off === "owner" ? { text: "Состав топ-команды меняют в режиме управления.", manage: true } : { text: "Состав топ-команды меняет владелец в режиме управления.", manage: false };
+  if (t.id === TOP_TEAM) return c.off === "owner" ? { text: "Состав этой команды меняют в режиме управления.", manage: true } : { text: "Состав этой команды меняет владелец в режиме управления.", manage: false };
   if (c.off === "owner") return { text: "Чтобы менять эту команду, включите режим управления.", manage: true };
   return { text: "Только просмотр: состав меняют руководитель команды и владелец в режиме управления.", manage: false };
 }

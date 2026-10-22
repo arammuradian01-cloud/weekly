@@ -154,6 +154,8 @@ export type WeeklyEntry = {
   week: WeekKey;
   /** Запись сделана из факта недели (этап 22): факт не предлагается, пока запись есть */
   factKey?: string;
+  /** Смысловой блок по шаблону команды (этап 66): news, products, risks, c:... Нет поля: шаблона не было */
+  section?: string;
   /** null: общая запись без автора («Все лидеры» в таблице), ждёт распределения */
   author: PersonSlug | null;
   direction: DirectionCode;

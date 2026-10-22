@@ -229,6 +229,6 @@ export async function renameTeam(actor: Actor, teamId: string, name: string): Pr
 export async function closeTeam(actor: Actor, teamId: string): Promise<void> {
   const team = await liveTeam(teamId);
   if (team.project) return projects.closeProject(actor, team.id);
-  if (team.id === TOP_TEAM) fail("Топ-команду закрыть нельзя");
+  if (team.id === TOP_TEAM) fail(`Команду «${team.name}» закрыть нельзя`);
   await org.updateTeam(actor, team.id, { active: false });
 }
