@@ -8,7 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, Target, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, initials as personInitials, ownerName } from "@/domain/people";
+import { compactName, initials as personInitials, ownerName, positionOf } from "@/domain/people";
 import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/cn";
 import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
 import { GoalTag, GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { Button } from "@/components/ui/button";
 import type { SavedViewDto } from "@/lib/views/service";
 import { QUICK_FILTERS, DEFAULT_PARAMS, applyListParams, hasFilters, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
@@ -125,7 +126,8 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const canBulk = !observer && !limited && (manage || leads.length > 0);
   const bulk = useBulkSelection(filtered);
 
-  const ownerOptions = [{ value: "", label: "Все ответственные" }, ...teamPeople.map((x) => ({ value: x.slug, label: x.fullName })), { value: "all", label: "Все лидеры (общие)" }];
+  // Людей в команде бывают десятки (этап 74): ответственного ищут по фамилии. Пустое поле: все ответственные
+  const ownerOptions: { value: string; label: string; hint?: string | null }[] = [...teamPeople.map((x) => ({ value: x.slug, label: x.fullName, hint: positionOf(x.slug) })), { value: "all", label: "Все лидеры (общие)" }];
   if (p.owner && !ownerOptions.some((o) => o.value === p.owner)) ownerOptions.push({ value: p.owner, label: ownerName(p.owner) });
 
   return (
@@ -154,7 +156,16 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               className="sv-control h-11 w-full pl-9 pr-3 text-body"
             />
           </div>
-          <SelectField label="Ответственный" id="filter-owner" value={p.owner ?? ""} onChange={(e) => setParams({ owner: e.target.value || null })} className="sm:w-52" options={ownerOptions} />
+          <SearchPicker
+            label="Ответственный"
+            id="filter-owner"
+            value={p.owner ?? ""}
+            onChange={(v) => setParams({ owner: v || null })}
+            className="sm:w-56"
+            options={ownerOptions}
+            placeholder="Все ответственные"
+            emptyText="Такого человека в команде нет"
+          />
           <SelectField
             label="Группировать"
             id="group-by"

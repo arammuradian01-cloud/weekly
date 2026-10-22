@@ -3,6 +3,8 @@
 // проверяют поиск и «Недавние» без браузера.
 
 import { searchKey } from "./search-key";
+import { teamOf } from "./teams";
+import { personOf } from "./people";
 
 /** Команда в окне выбора: название, место в дереве, руководитель и команда выше, чтобы различать одноимённые */
 export type TeamPick = {
@@ -122,4 +124,19 @@ export function clearRecentTeams(kv?: Pick<Storage, "key" | "length" | "removeIt
   } catch {
     // Хранилище запрещено
   }
+}
+
+/**
+ * Варианты поля «Команда» в формах (этап 74): название и вторая строка с руководителем и командой выше из снимка
+ * справочников. Команды нет в снимке: без второй строки
+ */
+export function teamPickerOptions(list: { id: string; name: string }[]): { value: string; label: string; hint: string | null }[] {
+  return list.map((t) => {
+    const entry = teamOf(t.id);
+    return {
+      value: t.id,
+      label: t.name,
+      hint: entry ? teamHint(entry.leader ? personOf(entry.leader).fullName : null, entry.parent ? (teamOf(entry.parent)?.name ?? null) : null) : null,
+    };
+  });
 }

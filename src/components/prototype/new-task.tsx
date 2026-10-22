@@ -4,13 +4,15 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { allPeople } from "@/domain/people";
+import { allPeople, positionOf } from "@/domain/people";
 import { ALL_TEAMS, TOP_TEAM, teamOf, teamPeople } from "@/domain/teams";
 import { addDays } from "@/domain/dates";
 import { dictOptions, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner } from "@/domain/types";
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
+import { SearchPicker } from "@/components/ui/search-picker";
+import { teamPickerOptions } from "@/domain/team-picker";
 import { Button } from "@/components/ui/button";
 import { openCommandPalette } from "@/components/shell/command-palette";
 import { REPEAT_KINDS, type RepeatKindCode } from "@/lib/tasks/repeat";
@@ -161,7 +163,7 @@ export function GlobalHotkeys() {
     ? allPeople().filter((p) => p.active && p.role !== "OBSERVER" && (teamPeople(target).includes(p.slug) || p.slug === me.slug))
     : selectedPeople;
   const ownerOptions = [
-    ...pool.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName })),
+    ...pool.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName, hint: positionOf(p.slug) })),
     ...(manage && taskTeam === TOP_TEAM ? [{ value: "all", label: "Все лидеры" }] : []),
   ];
 
@@ -180,16 +182,22 @@ export function GlobalHotkeys() {
         <TextArea label="Что нужно сделать" id="nt-outcome" value={outcome} onChange={(e) => setOutcome(e.target.value)} hint="По чему понять, что задача сделана" />
         <div className="grid gap-4 sm:grid-cols-2">
           {teamChoices.length > 1 ? (
-            <SelectField
+            // Команд бывают десятки (этап 74): поиск по названию и руководителю, вторая строка различает одноимённые
+            <SearchPicker
               label="Команда"
               id="nt-team"
               value={taskTeam}
-              onChange={(e) => {
-                setTaskTeam(e.target.value);
+              onChange={(id) => {
+                if (id === taskTeam) return;
+                setTaskTeam(id);
                 setOwner(me.slug);
               }}
-              options={teamChoices.map((o) => ({ value: o.id, label: o.name }))}
+              options={teamPickerOptions(teamChoices)}
+              placeholder="Название команды или руководитель"
+              emptyText="Такой команды нет: проверьте написание"
               className="sm:col-span-2"
+              menu="static"
+              required
             />
           ) : null}
           <NewTaskGoal
@@ -210,7 +218,7 @@ export function GlobalHotkeys() {
               setGoalManual(true);
             }}
           />
-          <SelectField label="Ответственный" id="nt-owner" value={owner} onChange={(e) => setOwner(e.target.value as Owner)} options={ownerOptions} />
+          <SearchPicker label="Ответственный" id="nt-owner" value={owner} onChange={(v) => setOwner(v as Owner)} options={ownerOptions} placeholder="Фамилия или имя" emptyText="Такого человека в команде нет" menu="static" required />
           <SelectField label="Направление" id="nt-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode)} options={dictOptions("DIRECTION", direction)} />
           <SelectField label="Приоритет" id="nt-pr" value={priority} onChange={(e) => setPriority(e.target.value as PriorityCode)} options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} />
           <TextInput label="Срок" id="nt-due" type="date" value={due} onChange={(e) => setDue(e.target.value)} />

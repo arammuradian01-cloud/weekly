@@ -3,6 +3,7 @@
 
 import { clearOfflineDrafts } from "./drafts";
 import { flushOfflineDrafts } from "./outbox";
+import { clearRecentTeams } from "@/domain/team-picker";
 
 /**
  * person: кто выходит. Сначала отправляем его черновики, которые ещё не дошли (не дольше 5 секунд), потом стираем:
@@ -12,6 +13,8 @@ export async function forgetThisDevice(person?: string): Promise<void> {
   const flushed = person ? await Promise.race([flushOfflineDrafts(person).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 5000))]) : null;
   // Сервер отказал из-за просмотра «Смотреть как» (этап 63): черновики не стираем, иначе написанное пропадёт
   if (!flushed?.blocked) clearOfflineDrafts();
+  // «Недавние» команды в окне выбора (этап 74): следующий человек на общем устройстве их не увидит
+  clearRecentTeams();
   try {
     localStorage.removeItem("weekly-push-owner");
   } catch {

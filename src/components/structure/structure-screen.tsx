@@ -13,7 +13,7 @@ import { usePrototype } from "@/domain/store";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
-import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { Segmented, TextInput } from "@/components/ui/primitives";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { EmptyState } from "@/components/empty-state";
 import { setPersonOrgAction, updateUnitAction } from "@/app/(app)/people/structure/actions";
@@ -272,10 +272,11 @@ function PersonOrgModal({
         }}
       >
         <TextInput label="Должность" id="po-position" value={position} onChange={(e) => setPosition(e.target.value)} maxLength={120} />
-        <SelectField label="Подразделение" id="po-unit" value={unit} onChange={(e) => setUnit(e.target.value)} options={units.map((u) => ({ value: u.id, label: `${"  ".repeat(u.depth)}${u.name}` }))} />
+        {/* Подразделений в компании десятки (этап 74): поиск по названию, вторая строка с уровнем и подразделением выше */}
+        <SearchPicker label="Подразделение" id="po-unit" value={unit} onChange={setUnit} options={unitOptions(units)} placeholder="Название подразделения" emptyText="Такого подразделения нет: проверьте написание" menu="static" required />
         {/* Людей в компании сотни: выбор с поиском (этап 53). Пусто: не менять */}
-        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" />
-        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
+        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" menu="static" />
+        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" menu="static" />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Отмена
@@ -285,6 +286,18 @@ function PersonOrgModal({
       </form>
     </Modal>
   );
+}
+
+/**
+ * Подразделения для поля с поиском (этап 74): название, вторая строка с уровнем, подразделением выше и руководителем.
+ * Одноимённые отделы в разных управлениях различаются второй строкой, по фамилии руководителя тоже ищется
+ */
+function unitOptions(units: UnitView[]): { value: string; label: string; hint: string }[] {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  return units.map((u) => {
+    const parent = u.parentId ? byId.get(u.parentId) : undefined;
+    return { value: u.id, label: u.name, hint: `${u.kindLabel}${parent ? ` в «${parent.name}»` : ""}${u.head ? `, руководитель ${u.head.fullName}` : ""}` };
+  });
 }
 
 function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; units: UnitView[]; people: Candidate[]; onClose: () => void; onSave: Runner }) {
@@ -303,14 +316,18 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         }}
       >
         <TextInput label="Название" id="un-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" />
+        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" menu="static" />
         {!head ? <TextInput label="Пометка о руководителе" id="un-note" value={headNote} onChange={(e) => setHeadNote(e.target.value)} placeholder="Например, роль делят CPO, PMM и CRM Lead" /> : null}
-        <SelectField
+        <SearchPicker
           label="Подразделение выше"
           id="un-parent"
           value={parent}
-          onChange={(e) => setParent(e.target.value)}
-          options={units.filter((u) => u.id !== unit.id).map((u) => ({ value: u.id, label: `${"  ".repeat(u.depth)}${u.name}` }))}
+          onChange={setParent}
+          options={unitOptions(units).filter((u) => u.value !== unit.id)}
+          placeholder="Название подразделения"
+          emptyText="Такого подразделения нет: проверьте написание"
+          menu="static"
+          required
         />
         <div className="flex flex-wrap justify-between gap-2">
           <Button

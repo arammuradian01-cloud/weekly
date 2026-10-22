@@ -7,7 +7,8 @@ import { REQUEST_STATUS, type RequestStatusCode } from "@/domain/requests";
 import { allPeople } from "@/domain/people";
 import type { PersonSlug } from "@/domain/types";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
-import { SelectField, TextInput } from "@/components/ui/primitives";
+import { TextInput } from "@/components/ui/primitives";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { cn } from "@/lib/cn";
 
 const TONE: Record<(typeof REQUEST_STATUS)[RequestStatusCode]["tone"], BadgeTone> = { warning: "yellow", info: "blue", success: "green", neutral: "gray" };
@@ -58,7 +59,10 @@ export function DueField({ id, label, value, onChange, today }: { id: string; la
   );
 }
 
-/** Кого просить: включённые люди департамента, кроме себя и наблюдателей, по алфавиту, с должностью */
+/**
+ * Кого просить: включённые люди департамента, кроме себя и наблюдателей, по алфавиту, с должностью. Людей десятки и
+ * сотни: поле с поиском по фамилии, имени и должности (этап 74). Пустое поле: никто не выбран
+ */
 export function PersonSelect({
   id,
   label,
@@ -66,6 +70,7 @@ export function PersonSelect({
   onChange,
   exclude,
   only,
+  menu = "static",
 }: {
   id: string;
   label: string;
@@ -74,10 +79,12 @@ export function PersonSelect({
   exclude: PersonSlug;
   /** Только эти люди, например команда задачи */
   only?: PersonSlug[];
+  /** Список под полем в потоке: поле почти всегда в окне с прокруткой */
+  menu?: "float" | "static";
 }) {
   const people = allPeople()
     .filter((p) => p.active && p.role !== "OBSERVER" && p.slug !== exclude && (!only || only.includes(p.slug)))
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
-  const options = [{ value: "", label: "Выберите человека" }, ...people.map((p) => ({ value: p.slug, label: p.position ? `${p.fullName}, ${p.position}` : `${p.fullName}, ${p.zone}`.replace(/, $/, "") }))];
-  return <SelectField label={label} id={id} value={value} onChange={(e) => onChange(e.target.value as PersonSlug)} options={options} />;
+  const options = people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position || p.zone || null }));
+  return <SearchPicker label={label} id={id} value={value} onChange={(v) => onChange(v as PersonSlug)} options={options} placeholder="Фамилия или имя" menu={menu} />;
 }
