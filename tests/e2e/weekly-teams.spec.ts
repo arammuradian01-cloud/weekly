@@ -58,6 +58,7 @@ async function personal(browser: Browser, page: Page, fullName: string) {
   return p;
 }
 
+const slugOf = async (name: string) => (await sql('SELECT slug FROM people WHERE "fullName" LIKE $1', [`${name}%`]))[0]!.slug as string;
 const teamId = async (name: string) => (await sql("SELECT id FROM teams WHERE name = $1 AND active", [name]))[0]!.id as string;
 
 /** Открыть команду из списка: на ноутбуке карточка справа, на телефоне отдельный экран */
@@ -65,6 +66,8 @@ async function openTeam(page: Page, name: string) {
   await page.getByTestId("teams-list").getByRole("link", { name: new RegExp(`^${name.replace(/[()]/g, "\\$&")}`) }).click();
   const card = page.getByTestId("team-card");
   await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
+  // Фокус переходит на заголовок карточки: экранный диктор читает, что открылось
+  await expect(card.getByRole("heading", { name, level: 2 })).toBeFocused();
   return card;
 }
 
@@ -93,10 +96,20 @@ test("владелец собирает команду поиском из ра�
   await aram.getByTestId("people-tab-teams").click();
   await expect(aram).toHaveURL(/\/people\/teams$/);
   await expect(aram.getByRole("heading", { name: "Weekly-команды", level: 2 })).toBeVisible();
+  // Без режима управления владелец видит только свои команды, и экран говорит почему
+  await expect(aram.getByTestId("manage-hint").first()).toContainText("Включите режим управления, чтобы видеть все команды и назначать руководителей");
+  await expect(aram.getByTestId("manage-hint").first().getByRole("link", { name: "Включить режим управления" })).toHaveAttribute("href", "/manage");
+  if (!isPhone()) {
+    // Своя топ-команда: не «только просмотр», а где менять состав
+    await expect(aram.getByTestId("team-card")).toContainText("Состав топ-команды меняют в режиме управления");
+    await expect(aram.getByTestId("team-card")).not.toContainText("Только просмотр");
+  }
   await shot(aram, "start");
 
   await aram.getByTestId("team-create").click();
   const create = aram.getByRole("dialog", { name: "Новая weekly-команда" });
+  await expect(create).toContainText("Другого руководителя назначите в карточке команды, включив режим управления");
+  await expect(create.getByRole("combobox", { name: "Руководитель" })).toHaveCount(0);
   await create.getByRole("textbox", { name: "Название команды" }).fill("Кросс-продажи");
   const search = create.getByLabel("Участники, можно добавить и позже");
   await search.fill("токов");
@@ -119,6 +132,8 @@ test("владелец собирает команду поиском из ра�
   await expect(card.getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
   await expect(card.getByTestId("team-members")).toContainText("Токов Никита Андреевич");
   await expect(card.getByTestId("team-members")).toContainText("Мурадян Арам");
+  await expect(card).toContainText("в команде 2 человека, с руководителем");
+  await expect(card.getByTestId("manage-hint")).toContainText("Назначить другого руководителя можно в режиме управления");
   const waiting = card.getByTestId("team-waiting");
   await expect(waiting).toContainText("Котов Игорь");
   await expect(waiting).toContainText("согласует Лисина Анна");
@@ -164,12 +179,19 @@ test("владелец собирает команду поиском из ра�
   const log = await sql(`SELECT field FROM audit_log WHERE entity = 'team' AND "entityId" = $1 ORDER BY at`, [id]);
   expect(log.map((r) => r.field)).toEqual(expect.arrayContaining(["Weekly-проект создан", "Название проекта", "Участник убран: Кросс-продажи и кредиты", "Запрос в команду отменён: Кросс-продажи и кредиты"]));
 
-  // На телефоне карточка отдельным экраном: «К списку команд» возвращает список
+  // На телефоне карточка отдельным экраном: «К списку команд» это шаг назад, фокус возвращается на строку команды
   if (isPhone()) {
     await expect(aram.getByTestId("teams-list")).toBeHidden();
     await card.getByRole("button", { name: "К списку команд" }).click();
+    await expect(aram).toHaveURL(/\/people\/teams$/);
     await expect(aram.getByTestId("teams-list")).toBeVisible();
     await expect(aram.getByTestId("team-card")).toBeHidden();
+    await expect(aram.getByTestId(`team-row-${id}`)).toBeFocused();
+    // Системная «Назад» ведёт себя так же: открыть карточку из списка и вернуться
+    await openTeam(aram, "Кросс-продажи и кредиты");
+    await aram.goBack();
+    await expect(aram).toHaveURL(/\/people\/teams$/);
+    await expect(aram.getByTestId("teams-list")).toBeVisible();
   }
 
   // Режим управления: владелец назначает руководителем Реву
@@ -183,6 +205,27 @@ test("владелец собирает команду поиском из ра�
   await expect(page.getByText("Команда сохранена").first()).toBeVisible();
   const [after] = await sql('SELECT l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.id = $1', [id]);
   expect(after!.leader).toBe("reva");
+
+  // Режим управления: создать команду сразу с другим руководителем
+  if (isPhone()) await owned.getByRole("button", { name: "К списку команд" }).click();
+  await page.getByTestId("team-create").click();
+  const pilot = page.getByRole("dialog", { name: "Новая weekly-команда" });
+  await pilot.getByRole("textbox", { name: "Название команды" }).fill("Партнёрский пилот");
+  await pilot.getByRole("combobox", { name: "Руководитель" }).fill("белова");
+  await pilot.getByRole("option", { name: /Белова Ольга/ }).click();
+  await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
+  await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
+  await pilot.getByRole("button", { name: "Создать команду" }).click();
+  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
+  const pilotCard = page.getByTestId("team-card");
+  await expect(pilotCard.getByRole("heading", { name: "Партнёрский пилот", level: 2 })).toBeVisible();
+  await expect(pilotCard).toContainText("Белова Ольга");
+  // В режиме управления действия руководителя и ритма кнопками в шапке карточки
+  await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Назначить руководителя" })).toBeVisible();
+  await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Кто сдаёт и срок" })).toBeVisible();
+  const [pilotRow] = await sql('SELECT l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.name = $1', ["Партнёрский пилот"]);
+  expect(pilotRow!.leader).toBe(await slugOf("Белова"));
+  await shot(page, "owner-pilot");
   await aram.close();
 });
 
@@ -216,9 +259,13 @@ test("руководитель видит свои команды, соглас�
   await expect(card.getByRole("button", { name: "Закрыть команду" })).toHaveCount(0);
   await shot(reva, "leader-card");
   // Топ-команда: Рева участник, только просмотр
-  if (isPhone()) await card.getByRole("button", { name: "К списку команд" }).click();
+  // Вкладка «Weekly-команды» при открытой карточке возвращает к списку
+  await reva.getByTestId("people-tab-teams").click();
+  await expect(reva).toHaveURL(/\/people\/teams$/);
+  await expect(list).toBeVisible();
+  if (isPhone()) await expect(reva.getByTestId("team-card")).toBeHidden();
   const top = await openTeam(reva, "Топ-команда");
-  await expect(top.getByTestId("team-card-readonly")).toBeVisible();
+  await expect(top.getByTestId("team-card-readonly")).toContainText("Состав топ-команды меняет владелец в режиме управления");
   await expect(top.getByRole("button", { name: "Добавить участников" })).toHaveCount(0);
   // Старый адрес «Weekly-проектов» ведёт сюда
   await reva.goto("/people/projects");
@@ -239,6 +286,24 @@ test("руководитель видит свои команды, соглас�
   const [member] = await sql(`SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = $1 AND p."fullName" = 'Котов Игорь'`, [team]);
   expect(member!.external).toBe(true);
   await lisina.close();
+
+  // Руководитель департамента видит команды ниже своей и задаёт им ритм weekly, состав меняет их руководитель
+  const ershov = await personal(browser, page, "Ершов");
+  await ershov.goto("/people/teams");
+  const below = ershov.getByTestId(`team-row-${await teamId("Управление кредитных продуктов")}`);
+  await expect(below).toContainText("команда ниже вашей");
+  const credit = await openTeam(ershov, "Управление кредитных продуктов");
+  await expect(credit.getByTestId("team-card-actions").getByRole("button", { name: "Кто сдаёт и срок" })).toBeVisible();
+  await expect(credit.getByRole("button", { name: "Добавить участников" })).toHaveCount(0);
+  await expect(credit.getByTestId("team-card-readonly")).toContainText("Команда ниже вашей");
+  await credit.getByRole("button", { name: "Кто сдаёт и срок" }).click();
+  const rhythm = ershov.getByRole("dialog", { name: "Ритм weekly: Управление кредитных продуктов" });
+  await rhythm.getByLabel(/Weekly сдают и специалисты/).check();
+  await rhythm.getByRole("button", { name: "Сохранить" }).click();
+  await expect(ershov.getByText("Ритм команды сохранён").first()).toBeVisible();
+  await expect(credit).toContainText("Сдают все участники");
+  await shot(ershov, "below");
+  await ershov.close();
 
   // Общий логин без режима управления: только топ-команда, без кнопок
   const shared = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();

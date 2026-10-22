@@ -124,7 +124,7 @@ test("помощник «Собрать из структуры»: руково�
   await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
   await expect(card.getByTestId("team-waiting")).toContainText("согласует Лисина Анна");
   const target = reva.getByTestId(`assemble-target-${team!.id}`);
-  await expect(target).toContainText("0 участников, ждут согласия 3");
+  await expect(target).toContainText("в команде 1 человек, ждут согласия 3");
 
   // Свой человек из ветки входит сразу: на ноутбуке перетаскиванием, на телефоне кнопкой через поиск
   const tokov = await slugOf("Токов");
@@ -142,7 +142,7 @@ test("помощник «Собрать из структуры»: руково�
   await expect(add).toContainText("Токов Никита Андреевич");
   await add.getByRole("button", { name: "Добавить" }).click();
   await expect(reva.getByText(`Команда «${name}»: добавлено 1`).first()).toBeVisible();
-  await expect(target).toContainText("1 участник, ждут согласия 3");
+  await expect(target).toContainText("в команде 2 человека, ждут согласия 3");
   await expect(card.getByTestId("team-members")).toContainText("Токов Никита Андреевич");
   expect((await sql('SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = $1 AND p.slug = $2', [team!.id, tokov]))[0]?.external).toBe(false);
   await shot(reva, "project");
@@ -178,6 +178,10 @@ test("сотрудник Money: цифры прогноза закрыты, ко
   await expect(kotov.getByTestId("teams-list")).toContainText("Управление кредитных продуктов");
   await expect(kotov.getByTestId("team-create")).toHaveCount(0);
   await expect(kotov.getByTestId("assemble")).toHaveCount(0);
+  // Одна команда: переключателя в шапке нет, на его месте ссылка на экран команд
+  await kotov.goto("/tasks");
+  await kotov.getByTestId(isPhone() ? "team-manage-link-m" : "team-manage-link").click();
+  await expect(kotov).toHaveURL(/\/people\/teams$/);
 
   // Сотрудник страхования с ролью сотрудника видит все цифры
   const tokov = await personal(browser, page, "Токов");
