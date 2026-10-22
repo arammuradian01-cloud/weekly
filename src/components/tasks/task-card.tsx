@@ -10,7 +10,7 @@ import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort, plural } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
 import type { HistoryItem, Task } from "@/domain/types";
-import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
+import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, setTaskStartAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { CommentList } from "@/components/discuss/comment-list";
 import { MentionArea } from "@/components/discuss/mention-area";
 import { markSeenAction } from "@/app/(app)/me/actions";
@@ -19,7 +19,7 @@ import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
 import { Button } from "@/components/ui/button";
 import { Collapsible } from "@/components/ui/collapsible";
-import { Avatar, Meta, Segmented, TextArea } from "@/components/ui/primitives";
+import { Avatar, Meta, Segmented, TextArea, TextInput } from "@/components/ui/primitives";
 import { GreenOutsideNote, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { PrioritySelect, StateSelect, StatusSelect, useTaskPermissions } from "./task-fields";
 import { useTaskActions } from "./task-actions";
@@ -47,7 +47,7 @@ export function TaskCard({
       потому что карточку открыл ведущий, а не сам человек */
   brief?: boolean;
 }) {
-  const { data, me, addComment, runTask, notify, team, leads, manage, observer } = usePrototype();
+  const { data, me, addComment, runTask, notify, team, leads, manage, observer, viewing } = usePrototype();
   // В списке задача могла прийти без текста комментариев: дозагружаем её целиком (этап 14)
   const [loaded, setLoaded] = useState<Task | null>(null);
   useEffect(() => {
@@ -134,6 +134,13 @@ export function TaskCard({
           </span>
         ) : null}
       </Meta>
+      {/* Начало на карте сроков (этап 68): видно у задачи с началом, задают и убирают те, кто меняет срок. Так начало
+          меняется и без перетаскивания полосы: с телефона, клавиатуры и экранного диктора. В «Смотреть как» только просмотр */}
+      {task.start || (can.due && !isClosed(task) && !task.archived && !viewing) ? (
+        <Meta label="Начало">
+          <TaskStart task={task} editable={can.due && !isClosed(task) && !task.archived && !viewing} onSave={(start) => runTask(() => setTaskStartAction(task.number, start), start ? `Начало задачи ${task.number}: ${formatLong(start)}` : `Начало задачи ${task.number} убрано`)} />
+        </Meta>
+      ) : null}
       <Meta label="Команда">
         <TaskTeam task={task} options={team.options} movable={!observer && (manage || leads.includes(task.team))} leads={leads} manage={manage} onMove={(to) => void runTask(() => moveTaskAction(task.number, to), `Задача ${task.number} перенесена: ${teamName(to)}`)} />
       </Meta>
@@ -517,6 +524,65 @@ function TaskTeam({
           </option>
         ))}
       </select>
+    </span>
+  );
+}
+
+/** Поле «Начало» в карточке задачи (этап 68): дата, «Изменить» и «Убрать»; без начала кнопка «Задать». Не позже срока */
+function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; onSave: (start: string | null) => Promise<boolean> }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(task.start ?? "");
+  const [busy, setBusy] = useState(false);
+  const save = async (start: string | null) => {
+    setBusy(true);
+    const ok = await onSave(start);
+    setBusy(false);
+    if (ok) setEditing(false);
+  };
+  if (editing) {
+    return (
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (value && !busy) void save(value);
+        }}
+      >
+        <TextInput type="date" label={`Начало задачи ${task.number}`} hideLabel id={`task-start-${task.number}`} value={value} max={task.due} onChange={(e) => setValue(e.target.value)} className="w-[180px]" autoFocus />
+        <Button type="submit" size="sm" loading={busy} disabled={!value || busy}>
+          Сохранить
+        </Button>
+        <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
+          Отмена
+        </Button>
+      </form>
+    );
+  }
+  return (
+    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className={cn("tabular-nums", !task.start && "text-muted")} data-testid="task-start">
+        {task.start ? formatLong(task.start) : "Не задано: на карте сроков от даты постановки"}
+      </span>
+      {editable ? (
+        <span className="flex flex-wrap gap-x-3">
+          <button
+            type="button"
+            className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline"
+            onClick={() => {
+              setValue(task.start ?? task.createdAt.slice(0, 10));
+              setEditing(true);
+            }}
+            aria-label={task.start ? `Изменить начало задачи ${task.number}` : `Задать начало задачи ${task.number}`}
+          >
+            {task.start ? "Изменить" : "Задать"}
+          </button>
+          {task.start ? (
+            <button type="button" className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline" disabled={busy} onClick={() => void save(null)} aria-label={`Убрать начало задачи ${task.number}`}>
+              Убрать
+            </button>
+          ) : null}
+        </span>
+      ) : null}
     </span>
   );
 }
