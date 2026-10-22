@@ -179,6 +179,16 @@ describe("кто задаёт подпись роли", () => {
     expect((await admin.listPeople()).find((p) => p.slug === "golovkin")?.ownerTitle).toBeNull();
     expect(roleLabelOf({ slug: "golovkin", role: "OWNER" }, await ownerLabels())).toBe("Совладелец");
   });
+
+  it("смена роли не на владельца снимает подпись, даже если правка прочла роль до того, как человека сделали владельцем", async () => {
+    // Так выглядит итог гонки: правка прочла «Администратор», пока параллельно человека сделали владельцем и дали
+    // подпись; решение о снятии подписи принимается по новой роли под замком, а не по прочитанной раньше
+    await prisma.setting.create({ data: { key: OWNER_TITLES_KEY, value: { golovkin: "Владелец" } } });
+    await admin.updatePerson(await primary(), "golovkin", { role: "LEADER" });
+    expect((await titlesRow())?.value).toEqual({});
+    const log = await titleAudit();
+    expect([log.at(-1)?.before, log.at(-1)?.after]).toEqual(["Владелец", "снята вместе с ролью владельца"]);
+  });
 });
 
 describe("одновременные правки", () => {

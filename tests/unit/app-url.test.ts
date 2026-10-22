@@ -25,6 +25,13 @@ describe("переход на основной адрес", () => {
     expect(appUrlRedirect(req({ method: "get", pathname: "/people/structure", search: "?team=top" }), ENV)).toBe(`${NEW}/people/structure?team=top`);
   });
 
+  it("цель перехода всегда на хосте APP_URL: ни путь, ни подделанный X-Forwarded-Host её не меняют", () => {
+    expect(appUrlRedirect(req({ pathname: "//evil.example/x" }), ENV)).toBe(`${NEW}//evil.example/x`);
+    expect(new URL(appUrlRedirect(req({ pathname: "//evil.example/x" }), ENV)!).host).toBe("weekly.example.ru");
+    expect(appUrlRedirect(req({ pathname: "/\\evil.example" }), ENV)!.startsWith(`${NEW}/`)).toBe(true);
+    expect(appUrlRedirect(req({ headers: { host: OLD, "x-forwarded-host": "evil.example" } }), ENV)).toBe(`${NEW}/tasks`);
+  });
+
   it("ответ перехода: 308 и запрет кэша, чтобы выключенный переход перестал действовать сразу", () => {
     expect(APP_URL_REDIRECT).toEqual({ status: 308, headers: { "Cache-Control": "no-store" } });
   });
@@ -146,12 +153,12 @@ describe("разрешённые адреса серверных действи�
   });
 
   it("звёздочка и другие схемы из APP_ALIASES в разрешённые адреса не попадают, как и в проверку загрузок", () => {
-    const aliases = ["*.twc1.net", "https://*.twc1.net", "ftp://x.example", "x.example", "https://y.example:8443", "null"];
+    // Звёздочка в обход: %2A и широкие звёздочки разбор адреса превращает в «*»
+    const aliases = ["*.twc1.net", "https://*.twc1.net", "https://%2A.twc1.net", "https://\uFF0A.twc1.net", "https://\uFE61.twc1.net", "ftp://x.example", "x.example", "https://y.example:8443", "null"];
     const env = { APP_URL: NEW, APP_ALIASES: aliases.join(",") };
     const allowed = serverActionOrigins(env);
-    expect(allowed).not.toContain("*.twc1.net");
-    expect(allowed).not.toContain("ftp");
-    expect(allowed).not.toContain("x.example:21");
+    expect(allowed.some((h) => h.includes("*"))).toBe(false);
+    expect(allowed).toEqual(["weekly.example.ru", "x.example", "y.example:8443"]);
     // Одно правило на оба места: хост разрешён серверным действиям тогда и только тогда, когда адрес принят загрузками
     expect(allowed).toEqual(appOrigins(env).map((o) => new URL(o).host));
   });

@@ -29,6 +29,9 @@ export function exactOrigin(value) {
   if (url.username || url.password) return null;
   const host = url.hostname.replace(/\.$/, "").toLowerCase();
   if (!host) return null;
+  // Разбор адреса раскодирует %2A и приводит широкие звёздочки (＊, ﹡) к «*»: проверяется уже разобранный хост.
+  // Русские домены к этому месту уже переведены в xn--, поэтому годятся только латиница, цифры, точка и дефис или IPv6
+  if (!/^[a-z0-9.-]+$/.test(host) && !/^\[[0-9a-f:.]+\]$/.test(host)) return null;
   return `${url.protocol}//${host}${url.port ? `:${url.port}` : ""}`;
 }
 
