@@ -6,6 +6,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { searchKey } from "@/domain/search-key";
 
 export type PickerOption = {
   value: string;
@@ -17,7 +18,7 @@ export type PickerOption = {
 };
 
 /** Строка для поиска: регистр и ё не важны */
-export const searchKey = (text: string) => text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+export { searchKey };
 
 /** Подходит ли вариант: каждое слово запроса есть в названии или второй строке */
 export function matchOption(option: PickerOption, query: string): boolean {
@@ -39,6 +40,10 @@ export function SearchPicker({
   emptyText = "Никого не нашли: проверьте написание",
   className,
   autoFocus,
+  required = false,
+  menu = "float",
+  labelHidden = false,
+  disabled = false,
 }: {
   id: string;
   label: string;
@@ -53,6 +58,19 @@ export function SearchPicker({
   className?: string;
   /** Поле получает фокус сразу и показывает список: открыли выбор кнопкой «Выбрать цель» */
   autoFocus?: boolean;
+  /**
+   * Пустым поле не бывает (этап 74): ответственный, команда, подразделение. Набранный текст выбор не сбрасывает,
+   * брошенный ввод и очищенное поле при уходе возвращают прежний выбор
+   */
+  required?: boolean;
+  /**
+   * Где список: поверх страницы (float) или в потоке под полем (static). В окне с прокруткой список поверх уходит под
+   * край окна, в потоке окно растёт и список виден целиком (этап 74)
+   */
+  menu?: "float" | "static";
+  /** Подпись только для экранного диктора: поле в строке таблицы или карточки */
+  labelHidden?: boolean;
+  disabled?: boolean;
 }) {
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
@@ -77,6 +95,10 @@ export function SearchPicker({
     if (!open) return;
     listRef.current?.querySelector(`[id="${listId}-${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active, open, listId]);
+  // Список в потоке открылся у нижнего края окна: окно докручивается, чтобы первые варианты были видны
+  useEffect(() => {
+    if (open && menu === "static") listRef.current?.scrollIntoView({ block: "nearest" });
+  }, [open, menu]);
 
   const pick = (o: PickerOption) => {
     onChange(o.value);
@@ -84,10 +106,16 @@ export function SearchPicker({
     setTyped(false);
     setOpen(false);
   };
+  const reopen = () => {
+    setQuery(selected?.label ?? "");
+    setTyped(false);
+    setOpen(true);
+    setActive(0);
+  };
 
   return (
     <div className={cn("sv-field relative", className)}>
-      <label htmlFor={id} className="sv-label">
+      <label htmlFor={id} className={labelHidden ? "sr-only" : "sv-label"}>
         {label}
       </label>
       <input
@@ -98,11 +126,15 @@ export function SearchPicker({
         role="combobox"
         autoComplete="off"
         spellCheck={false}
+        disabled={disabled}
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
+        aria-required={required || undefined}
         aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
         aria-describedby={hint ? `${id}-hint` : undefined}
+        // Выбранное значение для проверок и автотестов: в поле видна подпись, а не код
+        data-value={value}
         placeholder={placeholder}
         value={text}
         autoFocus={autoFocus}
@@ -110,52 +142,54 @@ export function SearchPicker({
           // Выбранное остаётся в поле: повторный фокус не стирает текст. Список показывает все варианты, выбранный
           // подсвечен: чтобы сменить выбор, не нужно сначала стирать поле. Текст выделен: первая буква заменяет его
           if (selected) {
-            setQuery(selected.label);
             const input = e.currentTarget;
             requestAnimationFrame(() => {
               if (document.activeElement === input) input.select();
             });
           }
-          setTyped(false);
-          setOpen(true);
-          setActive(0);
+          reopen();
         }}
         // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
         onMouseDown={() => {
-          if (!open && document.activeElement === listInput.current) {
-            setTyped(false);
-            setOpen(true);
-            setActive(0);
-          }
+          if (!open && document.activeElement === listInput.current) reopen();
         }}
         onBlur={() => {
+          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор. Обязательное
+          // поле показывает прежний выбор, он и остаётся в силе
           setOpen(false);
           setTyped(false);
-          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор
-          if (!value) setQuery("");
+          setQuery("");
         }}
         onChange={(e) => {
           setQuery(e.target.value);
           setTyped(true);
           setOpen(true);
           setActive(0);
-          if (value) onChange("");
+          if (value && !required) onChange("");
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
             e.preventDefault();
-            setOpen(true);
-            setActive((i) => Math.min(i + 1, Math.max(shown.length - 1, 0)));
+            if (!open) reopen();
+            else setActive((i) => Math.min(i + 1, Math.max(shown.length - 1, 0)));
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             setActive((i) => Math.max(i - 1, 0));
           } else if (e.key === "Enter" && open && shown[active]) {
             e.preventDefault();
             pick(shown[active]!);
+          } else if (e.key === "Enter" && open && typed) {
+            // Ничего не нашлось: Enter не отправляет форму с текстом, который ничего не выбрал
+            e.preventDefault();
           } else if (e.key === "Escape") {
-            // Первый Escape закрывает список, второй очищает поле
-            if (open) setOpen(false);
-            else {
+            // Первый Escape закрывает список, второй очищает необязательное поле
+            if (open) {
+              setOpen(false);
+              if (required) {
+                setQuery("");
+                setTyped(false);
+              }
+            } else if (!required) {
               setQuery("");
               setTyped(false);
               if (value) onChange("");
@@ -169,7 +203,7 @@ export function SearchPicker({
         </p>
       ) : null}
       {open ? (
-        <div ref={listRef} className="sv-menu m-0">
+        <div ref={listRef} className={cn("sv-menu m-0", menu === "static" && "sv-menu--static mt-1")}>
           <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
             {shown.map((o, i) => (
               <li
@@ -183,7 +217,7 @@ export function SearchPicker({
                   pick(o);
                 }}
                 onMouseEnter={() => setActive(i)}
-                className={cn("sv-menu__item items-start justify-between", i === active && "is-active")}
+                className={cn("sv-menu__item items-start justify-between", i === active && "is-active", o.value === value && "font-semibold")}
               >
                 <span className="min-w-0">
                   <span className="block text-body text-ink">{o.label}</span>
