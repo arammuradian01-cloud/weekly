@@ -161,6 +161,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "plan.export": "Прогноз месяца: выгрузка в Excel",
   "market.upload": "Загружен пакет рынка КАСКО и ОСАГО",
   "content.import": "Загружено наполнение из истории проекта",
+  // Этап 67г: пакет наполнения стирает решения, которые ставила загрузка; текст решения в поле «было»
+  "decision.delete": "Решение стёрто",
   "settings.marketAccess": "Доступ к рынку КАСКО и ОСАГО",
   "settings.marketMeeting": "Разбор рынка на встрече",
 };
