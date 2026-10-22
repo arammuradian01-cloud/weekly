@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePrototype } from "@/domain/store";
-import { applyFactsAction, applyHubAction, applyPullAction, planPeopleAction, previewFactsAction, previewHubAction, previewPullAction, setHubSourceAction, setPlanOwnersAction, setPlanSourceAction } from "@/app/(app)/forecast/actions";
-import type { HubPreview } from "@/lib/plan/hub-service";
+import { applyFactsAction, applyHubAction, applyPullAction, planPeopleAction, previewFactsAction, previewHubAction, previewPullAction, setHubSourceAction, setPlanOwnersAction, setPlanSourceAction, setSkAliasesAction } from "@/app/(app)/forecast/actions";
+import type { HubPreview, HubSourceView } from "@/lib/plan/hub-service";
 import type { FactsPreview } from "@/lib/plan/processes";
 import { FACT_METRICS } from "@/lib/plan/facts";
 import { addMonths, monthLabel } from "@/lib/forecast/codes";
@@ -19,7 +19,7 @@ import { Drawer } from "@/components/ui/overlays";
 import { FormError } from "@/components/ui/field";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Delta } from "@/components/ui/data";
-import { delta } from "./plan-ui";
+import { delta, when } from "./plan-ui";
 
 export function PullDrawer({
   open,
@@ -461,29 +461,63 @@ export function FactsDrawer({ open, onOpenChange }: { open: boolean; onOpenChang
 
 // Хаб «Единая воронка: данные» (этап 58): снимок «Все СК» на сегодня и план ОСАГО по СК. Два шага: проверить и загрузить
 
-export function HubDrawer({
-  open,
-  onOpenChange,
-  serviceEmail,
-  mode,
-  sourceId,
-  canSource,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  serviceEmail: string | null;
-  mode: "google" | "imitation" | "off";
-  sourceId: string;
-  canSource: boolean;
-}) {
+const dmy = (day: string) => day.split("-").reverse().join(".");
+
+/** Часть загрузки хаба в проверке: загрузится или нет, почему, о чём предупредить */
+function HubPartCard({ title, part, summary, testId }: { title: string; part: HubPreview["fact"] | HubPreview["plan"]; summary: string | null; testId: string }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2 rounded-card border border-border p-3" data-testid={testId}>
+      <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-caption text-text-secondary">
+        <span>{title}</span>
+        <span className={part.ready ? "font-semibold text-green-ink" : "font-semibold text-danger-ink"}>{part.ready ? "загрузится" : "не загрузится"}</span>
+      </p>
+      <p>{summary ?? "не прочитано"}</p>
+      {part.problems.length ? (
+        <ul className="list-disc pl-5 text-caption text-danger-ink" role="alert">
+          {part.problems.map((p) => (
+            <li key={p}>{p}</li>
+          ))}
+        </ul>
+      ) : null}
+      {part.warnings.map((w) => (
+        <p key={w} className="text-caption text-warning-ink">
+          {w}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** Когда загружена часть хаба: «Факт загружен 22 октября в 09:10, Мурадян Арам» */
+const hubLoaded = (what: string, part: { at: string; by: string } | null) => (part ? `${what} загружен ${when(part.at)}${part.by ? `, ${part.by}` : ""}` : `${what} ещё не загружен`);
+
+export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open: boolean; onOpenChange: (open: boolean) => void; source: HubSourceView; canSource: boolean }) {
   const router = useRouter();
   const { notify } = usePrototype();
+  const { serviceEmail, mode } = hub;
   const [preview, setPreview] = useState<HubPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"check" | "load" | null>(null);
-  const [source, setSource] = useState(sourceId);
+  const [source, setSource] = useState(hub.sourceId);
   const [link, setLink] = useState("");
   const [sourceBusy, setSourceBusy] = useState(false);
+  // Соответствие названий СК (настройка plan.skAliases): правит владелец
+  const [aliases, setAliases] = useState(hub.aliases ?? "");
+  const [savedAliases, setSavedAliases] = useState(hub.aliases ?? "");
+  const [aliasesBusy, setAliasesBusy] = useState(false);
+
+  const saveAliases = async () => {
+    setError(null);
+    setAliasesBusy(true);
+    const r = await setSkAliasesAction(aliases);
+    setAliasesBusy(false);
+    if (!r.ok) return setError(r.error);
+    setAliases(r.value);
+    setSavedAliases(r.value);
+    setPreview(null);
+    notify("Соответствие названий СК сохранено");
+    router.refresh();
+  };
 
   const changeSource = async () => {
     setError(null);
@@ -513,7 +547,14 @@ export function HubDrawer({
     const r = await applyHubAction();
     setBusy(null);
     if (!r.ok) return setError(r.error);
-    notify(`Снимок «Все СК» на ${r.value.day.split("-").reverse().join(".")} загружен`);
+    const { day, fact, plan } = r.value;
+    notify(
+      fact.loaded && plan.loaded
+        ? `Снимок «Все СК» на ${dmy(day)} и план по СК загружены`
+        : fact.loaded
+          ? `Снимок «Все СК» на ${dmy(day)} загружен. План по СК не загружен: ${plan.problem}`
+          : `План по СК загружен. Снимок «Все СК» не загружен: ${fact.problem}`,
+    );
     onOpenChange(false);
     setPreview(null);
     router.refresh();
@@ -527,7 +568,7 @@ export function HubDrawer({
       onOpenChange={onOpenChange}
       wide
       title="ОСАГО по СК из хаба"
-      description="Ресурс читает хаб «Единая воронка: данные» только на чтение: лист «Все СК» даёт факт по СК с начала месяца, лист плана по СК даёт план месяца из модели. Снимок делается на сегодня, повторная загрузка в тот же день его заменяет"
+      description="Ресурс читает хаб «Единая воронка: данные» только на чтение: лист «Все СК» даёт факт по СК с начала месяца по вчерашний день, лист плана по СК даёт план месяца из модели. Части загружаются независимо: что прошло проверку, то и загрузится. Снимок делается на сегодня, повторная загрузка в тот же день его заменяет"
       footer={
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => void check()} loading={busy === "check"} disabled={busy !== null} data-testid="plan-hub-check">
@@ -553,6 +594,9 @@ export function HubDrawer({
             . В хабе листы боевых файлов подтягиваются формулой IMPORTRANGE, руками там ничего не правят.
           </p>
           {mode === "google" && serviceEmail ? <p>Если не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на хаб.</p> : null}
+          <p data-testid="plan-hub-loaded">
+            {hubLoaded("Факт «Все СК»", hub.fact)}. {hubLoaded("План по СК", hub.plan)}.
+          </p>
         </div>
         {canSource ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
@@ -562,40 +606,61 @@ export function HubDrawer({
             </Button>
           </div>
         ) : null}
+        {canSource ? (
+          <div className="flex flex-col gap-2" data-testid="plan-hub-aliases">
+            <TextArea
+              id="plan-hub-aliases-text"
+              label="Соответствие названий СК"
+              rows={4}
+              value={aliases}
+              onChange={(e) => setAliases(e.target.value)}
+              placeholder={"Росгосстрах = РГС\nСбербанк страхование = СберСтрахование"}
+              hint="По строке: название в «Все СК» = название в плане. Регистр, пробелы, кавычки, ё, дефисы и форма собственности (АО, ПАО, САО, СПАО, СК) и так не в счёт: сюда только разные написания одной СК"
+            />
+            <div>
+              <Button variant="secondary" onClick={() => void saveAliases()} loading={aliasesBusy} disabled={aliasesBusy || aliases === savedAliases} data-testid="plan-hub-aliases-save">
+                Сохранить соответствие
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {mode === "off" ? <p className="sv-alert sv-alert--warning">{source ? "Ключ служебного аккаунта Google не задан на сервере: хаб не прочитать." : "Хаб не задан: вставьте ссылку на таблицу «Единая воронка: данные»."}</p> : null}
         <FormError message={error ?? undefined} />
         {preview ? (
           <div className="flex flex-col gap-3" data-testid="plan-hub-preview">
-            {preview.problems.length ? (
-              <div className="sv-alert sv-alert--danger" role="alert">
-                <p className="font-semibold">Загрузить нельзя</p>
-                <ul className="list-disc pl-5">
-                  {preview.problems.map((p) => (
-                    <li key={p}>{p}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
+            {preview.fact.ready && preview.plan.ready ? (
               <p className="sv-alert sv-alert--success">
-                Всё читается. Снимок на {preview.day.split("-").reverse().join(".")}
-                {preview.replaces ? " заменит сегодняшний" : ""}.
+                Всё читается. Снимок на {dmy(preview.day)} с фактом по {dmy(preview.factDay)}
+                {preview.fact.info?.replaces ? " заменит сегодняшний" : ""}, план по СК заменит загруженный.
+              </p>
+            ) : preview.ready ? (
+              <p className="sv-alert sv-alert--warning" data-testid="plan-hub-partial">
+                {preview.fact.ready ? "Загрузится только снимок «Все СК»: план по СК не готов, загруженный план останется." : "Загрузится только план по СК: снимок «Все СК» не готов, прошлые снимки останутся."}
+              </p>
+            ) : (
+              <p className="sv-alert sv-alert--danger" role="alert">
+                Загрузить нельзя: обе части не готовы.
               </p>
             )}
             {preview.warnings.map((w) => (
-              <p key={w} className="text-caption text-warning-ink">
+              <p key={w} className="text-caption text-warning-ink" data-testid="plan-hub-warning">
                 {w}
               </p>
             ))}
-            <dl className="grid gap-2 text-body sm:grid-cols-2">
-              <div className="rounded-card border border-border p-3">
-                <dt className="text-caption text-text-secondary">«Все СК»: факт по СК</dt>
-                <dd>{preview.vseSk ? `СК за текущий месяц: ${preview.vseSk.companies}, полисов с начала месяца: ${n(preview.vseSk.policiesMtd)}, месяцев на листе: ${preview.vseSk.months.length}` : "не прочитано"}</dd>
-              </div>
-              <div className="rounded-card border border-border p-3">
-                <dt className="text-caption text-text-secondary">План ОСАГО по СК</dt>
-                <dd>{preview.skPlan ? `СК: ${preview.skPlan.companies}, план полисов на месяц: ${n(preview.skPlan.planUnits)}, периодов: ${preview.skPlan.periods.length}` : "не прочитано"}</dd>
-              </div>
-            </dl>
+            <div className="grid gap-2 text-body sm:grid-cols-2">
+              <HubPartCard
+                title="«Все СК»: факт по СК"
+                part={preview.fact}
+                testId="plan-hub-fact"
+                summary={preview.fact.info ? `Факт по ${dmy(preview.factDay)}. СК: ${preview.fact.info.companies}, полисов с начала месяца: ${n(preview.fact.info.policiesMtd)}. В снимок войдут: ${preview.fact.info.stored.map(monthLabel).join(", ") || "ничего"}` : null}
+              />
+              <HubPartCard
+                title="План ОСАГО по СК"
+                part={preview.plan}
+                testId="plan-hub-plan"
+                summary={preview.plan.info ? `СК: ${preview.plan.info.companies}, план полисов на месяц: ${n(preview.plan.info.planUnits)}, периодов: ${preview.plan.info.periods.length}` : null}
+              />
+            </div>
           </div>
         ) : null}
       </div>

@@ -3,7 +3,8 @@ import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Этап 58: единая воронка, шаг 1. Владелец загружает снимок «Все СК» и план ОСАГО по СК из хаба в имитации, в карточке
-// ОСАГО появляется таблица по СК с ранрейтом; лидер КАСКО видит полисы, но не выручку и КВ. Ноутбук 1440 и телефон 360
+// ОСАГО появляется таблица по СК с ранрейтом (с 4-го числа); лидер КАСКО видит полисы, но не выручку и КВ. Время загрузки
+// факта и плана видно отдельно, поле соответствия названий СК у владельца. Ноутбук 1440 и телефон 360
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -51,11 +52,16 @@ test("владелец загружает хаб, в карточке ОСАГО
   await page.getByTestId("plan-hub-open").click();
   const drawer = page.getByRole("dialog", { name: "ОСАГО по СК из хаба" });
   await expect(drawer.getByTestId("plan-hub-link")).toBeVisible();
+  await expect(drawer.getByTestId("plan-hub-loaded")).toContainText("Факт «Все СК» ещё не загружен. План по СК ещё не загружен.");
+  // Соответствие названий СК правит владелец в той же панели
+  await expect(drawer.getByTestId("plan-hub-aliases")).toBeVisible();
+  await expect(drawer.getByTestId("plan-hub-aliases-save")).toBeDisabled();
   await drawer.getByTestId("plan-hub-check").click();
   const preview = drawer.getByTestId("plan-hub-preview");
   await expect(preview.getByText("Всё читается")).toBeVisible();
-  await expect(preview).toContainText("СК за текущий месяц: 4");
-  await expect(preview).toContainText("План ОСАГО по СК");
+  await expect(preview.getByTestId("plan-hub-fact")).toContainText("СК: 4");
+  await expect(preview.getByTestId("plan-hub-fact")).toContainText("загрузится");
+  await expect(preview.getByTestId("plan-hub-plan")).toContainText("План ОСАГО по СК");
   await shot(page, "hub-drawer");
   await drawer.getByTestId("plan-hub-load").click();
   await expect(page.getByText(/Снимок «Все СК» на .* загружен/).first()).toBeVisible();
@@ -66,8 +72,21 @@ test("владелец загружает хаб, в карточке ОСАГО
   await expect(sk.getByRole("heading", { name: "ОСАГО по СК: план, факт и ранрейт" })).toBeVisible();
   await expect(sk.getByTestId("plan-sk-row")).toHaveCount(4);
   await expect(sk.getByTestId("plan-sk-total")).toContainText("ИТОГО");
-  await expect(sk.getByTestId("plan-sk-method")).toContainText("Прогноз линейный по дням");
-  await expect(sk.getByTestId("plan-sk-lbe")).toContainText("против LBE полисов ОСАГО");
+  // Факт в «Все СК» по вчерашний день: 1-го числа факта за месяц ещё нет, ранрейт не считается; 2-го и 3-го факта меньше
+  // трёх дней, ранрейт и «К плану» появятся с 4-го числа
+  const today = Number(new Date().toLocaleDateString("ru-RU", { timeZone: "Europe/Moscow", day: "numeric" }));
+  if (today === 1) await expect(sk.getByTestId("plan-sk-tomorrow")).toContainText("появится завтра");
+  else if (today <= 3) {
+    await expect(sk.getByTestId("plan-sk-early")).toContainText("появятся с 4-го числа");
+    await expect(sk.getByTestId("plan-sk-forecast")).toHaveCount(0);
+  } else {
+    await expect(sk.getByTestId("plan-sk-method")).toContainText("Прогноз линейный по дням");
+    await expect(sk.getByTestId("plan-sk-method")).toContainText("14 дней с дневным фактом");
+    await expect(sk.getByTestId("plan-sk-forecast")).toHaveCount(5);
+  }
+  await expect(sk.getByTestId("plan-sk-loaded")).toContainText("Факт загружен");
+  await expect(sk.getByTestId("plan-sk-loaded")).toContainText("План загружен");
+  await expect(sk.getByTestId("plan-sk-lbe")).toContainText(today <= 3 ? "LBE полисов ОСАГО на месяц" : "против LBE полисов ОСАГО");
   await expect(sk.getByTestId("plan-sk-stale")).toHaveCount(0);
   // Владелец видит выручку и КВ: на телефоне шапки нет, поэтому проверяем ячейки
   await expect(sk.getByTestId("plan-sk-revenue")).toHaveCount(5);
