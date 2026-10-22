@@ -162,7 +162,7 @@ test("владелец ведёт источники и забирает лен�
   await page.getByTestId("news-filter-deposits").click();
   await expect(page).toHaveURL(/\/news\?d=deposits$/);
   await expect(page.getByTestId("news-item")).toHaveCount(1);
-  await expect(page.getByText("Ключевая ставка сохранена")).toBeVisible();
+  await expect(page.getByTestId("news-list").getByText("Ключевая ставка сохранена")).toBeVisible();
   await page.getByTestId("news-filter-all").click();
   await expect(page.getByTestId("news-item")).toHaveCount(4);
 

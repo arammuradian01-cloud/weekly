@@ -252,10 +252,13 @@ function NewsRow({ item, labels, more = [] }: { item: NewsItemView; labels: Map<
   );
 }
 
-/** Колонка «Официально» на широком экране: регулятор и союзы этой страницы, до шести, без повторов главной */
+/**
+ * Колонка «Официально» на широком экране: регулятор и союзы этой страницы, до шести, без повторов главной. Когда на
+ * странице только официальные новости (например, отбор по одному продукту), колонка лишь повторила бы ленту: её нет
+ */
 function Official({ items, skip }: { items: NewsItemView[]; skip?: string }) {
   const list = items.filter((i) => i.id !== skip && OFFICIAL.test(i.source)).slice(0, 6);
-  if (!list.length) return null;
+  if (!list.length || items.every((i) => OFFICIAL.test(i.source))) return null;
   return (
     <aside aria-labelledby="news-official" className="sv-card hidden self-start overflow-hidden xl:block" data-testid="news-official">
       <h2 id="news-official" className="m-0 border-b border-line bg-canvas px-4 py-2.5 text-body font-semibold text-ink">
