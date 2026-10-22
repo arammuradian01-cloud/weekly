@@ -326,6 +326,11 @@ function link(value: string | null | undefined): string | null {
   return v;
 }
 
+/** Своя транзакция или чужая (этап 67, импорт наполнения: всё одной транзакцией) */
+function inTx<T>(db: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promise<T> {
+  return db ? fn(db) : prisma.$transaction(fn);
+}
+
 async function audit(tx: Tx, actor: Actor, goalId: string, field: string, before?: string | null, after?: string | null, action = "goal.update") {
   await tx.auditLog.create({
     data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: goalId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
@@ -351,10 +356,10 @@ async function checkParent(tx: Tx, nodes: TeamNode[], parentId: string, teamId: 
   return parent;
 }
 
-export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: string }> {
+export async function createGoal(actor: Actor, input: GoalInput, db?: Tx): Promise<{ id: string }> {
   const quarter = input.quarter && QUARTER.test(input.quarter) ? input.quarter : quarterOf(moscowToday());
   const title = text(input.title, LIMITS.title, "Цель") ?? fail("Напишите цель одной мыслью");
-  return prisma.$transaction(async (tx) => {
+  return inTx(db, async (tx) => {
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const teamId = input.team ?? fail("Выберите команду цели");
     const team = nodes.find((n) => n.id === teamId && n.active) ?? fail("Такой команды нет");
@@ -389,8 +394,8 @@ export async function createGoal(actor: Actor, input: GoalInput): Promise<{ id: 
   });
 }
 
-export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }): Promise<void> {
-  await prisma.$transaction(async (tx) => {
+export async function updateGoal(actor: Actor, id: string, input: GoalInput & { atRisk?: boolean; riskNote?: string | null; result?: GoalResult }, db?: Tx): Promise<void> {
+  await inTx(db, async (tx) => {
     const goal = (await tx.goal.findUnique({ where: { id }, include: { team: true, owner: true, parent: true } })) ?? fail("Цели уже нет");
     const { scope, nodes } = await scopeFor(tx, { personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
     const who = { personId: actor.personId, role: actor.role, management: actor.management };
@@ -569,9 +574,9 @@ export async function suggestGoals(who: Who, input: { team: string; due: string;
 }
 
 /** Привязать задачу к цели или отвязать */
-export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null): Promise<{ goal: string | null }> {
+export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<{ goal: string | null }> {
   if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
-  return prisma.$transaction(async (tx) => {
+  return inTx(db, async (tx) => {
     const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management });
     const task = await tx.task.findUnique({ where: { number }, include: { coExecutors: { select: { personId: true } }, goal: true } });
     if (!task || !seesTask(scope, task, actor.personId)) return fail(`Задачи ${number} нет`);

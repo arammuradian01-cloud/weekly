@@ -169,6 +169,9 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     }
     if (entity === "data") return "Задачи и weekly";
     if (entity === "market") return "Рынок КАСКО и ОСАГО: пакет рынка";
+    // Этап 67: импорт наполнения и решения, загруженные без встречи
+    if (entity === "content") return `Импорт наполнения${id ? `: ${id}` : ""}`;
+    if (entity === "decision") return "Решение";
     if (entity === "export") return "Выгрузка в Excel";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";

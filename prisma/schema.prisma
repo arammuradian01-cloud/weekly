@@ -2136,3 +2136,22 @@ model MarketDataset {
 
   @@map("market_datasets")
 }
+
+/// Внешний ключ записи из пакета наполнения (этап 67): по нему повторная загрузка того же пакета находит задачу,
+/// решение, цель или связь задачи с целью и не создаёт её второй раз. payload: запись пакета, какой её загрузили в
+/// последний раз. По ней загрузка понимает, правили ли поле в ресурсе после загрузки: такие поля она не трогает
+model ContentImportKey {
+  /// Вид записи: task, decision, goal, link
+  kind       String
+  key        String
+  /// id задачи, решения или цели; у связи номер задачи
+  entityId   String
+  /// Отпечаток записи пакета: тот же отпечаток значит «без изменений»
+  hash       String
+  payload    Json
+  importedAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([kind, key])
+  @@map("content_import_keys")
+}

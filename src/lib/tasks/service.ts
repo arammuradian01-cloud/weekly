@@ -187,7 +187,9 @@ type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: O
  * Общий ход правки: блокируем строку, проверяем правило, меняем, пишем журнал, отдаём новую задачу и токен отмены.
  * plan получает задачу и права и возвращает изменения. undo: false значит «эту правку не отменяют».
  */
-async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>): Promise<TaskResult> {
+async function mutate(actor: Actor, number: number, plan: (row: TaskRow, can: TaskPermissions, tx: Tx) => Promise<Plan>, db?: Tx): Promise<TaskResult> {
+  // db: правка внутри чужой транзакции (этап 67, импорт наполнения: всё одной транзакцией)
+  if (db) return mutateIn(db, actor, number, plan);
   return prisma.$transaction((tx) => mutateIn(tx, actor, number, plan));
 }
 
@@ -354,12 +356,13 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
 }
 
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
-export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string } = {}): Promise<TaskResult> {
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: { sourceDate?: IsoDate | null } } = {}): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
   if (!isIsoDate(input.due)) fail("Укажите срок");
-  if (input.due < moscowToday()) fail("Срок не может быть в прошлом");
+  // Задача из истории (этап 67, импорт наполнения владельцем): срок из источника мог уже пройти
+  if (input.due < moscowToday() && !opts.history) fail("Срок не может быть в прошлом");
   const sourceNote = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
 
   const scope = await scopeOfActor(tx, actor);
@@ -431,7 +434,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
       originalDue: dbDate(input.due),
       sourceCode,
       sourceNote,
-      sourceDate: sourceCode === "meeting" ? today : null,
+      sourceDate: opts.history?.sourceDate ? dbDate(opts.history.sourceDate) : sourceCode === "meeting" ? today : null,
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
@@ -487,7 +490,7 @@ function pickTeam(scope: Scope, actor: Actor, wanted: string | undefined): strin
 
 // ---------- Правки ----------
 
-export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string): Promise<TaskResult> {
+export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     const pendingApproval = current === "proposed" && row.approvalState === "PENDING";
@@ -573,7 +576,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       // согласованию тоже не отменяется кнопкой: отмена вернула бы задачу в «Предложена» без согласования
       ...(spawned || pendingApproval || reopen ? { undo: false as const } : {}),
     };
-  });
+  }, db);
 }
 
 /**
@@ -784,7 +787,7 @@ export async function changePriority(actor: Actor, number: number, next: Priorit
   });
 }
 
-export async function updateWhere(actor: Actor, number: number, text: string): Promise<TaskResult> {
+export async function updateWhere(actor: Actor, number: number, text: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can) => {
     if (!can.where) fail("«Где сейчас» пишут ответственный и соисполнители");
     const value = required(text, LIMITS.where, "Напишите одну-две фразы о том, где задача сейчас", "Где сейчас");
@@ -798,10 +801,10 @@ export async function updateWhere(actor: Actor, number: number, text: string): P
       data: { whereNow: value, whereUpdatedAt: dbDate(today) },
       changes: [{ field: "Где сейчас", before: row.whereNow || null, after: value }],
     };
-  });
+  }, db);
 }
 
-export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string): Promise<TaskResult> {
+export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string, db?: Tx): Promise<TaskResult> {
   const transferId = `tr_${crypto.randomUUID()}`;
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.due) fail("Срок переносит ответственный, владелец или администратор");
@@ -825,12 +828,12 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
       undo: { removeTransferId: transferId },
     };
-  });
+  }, db);
 }
 
 export type EditInput = { title?: string; outcome?: string; direction?: string; source?: string; sourceNote?: string | null };
 
-export async function editTask(actor: Actor, number: number, input: EditInput): Promise<TaskResult> {
+export async function editTask(actor: Actor, number: number, input: EditInput, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.edit) fail("Задачу правит тот, кто её поставил, владелец или администратор");
     const data: Prisma.TaskUncheckedUpdateInput = {};
@@ -876,7 +879,7 @@ export async function editTask(actor: Actor, number: number, input: EditInput): 
       await notify(tx, { kind: "APPROVAL", recipients: [row.approverId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу из другого департамента для вашего сотрудника поправили: ${essential.join(", ")}` });
     }
     return { data, changes };
-  });
+  }, db);
 }
 
 /** Чья задача для правила согласования (этап 54): сохранённый автор, иначе тот, кто поставил, иначе тот, кто правит */

@@ -1,0 +1,103 @@
+{
+  "format": "weekly-napolnenie/1",
+  "title": "Синтетический пакет для тестов",
+  "createdAt": "2026-10-22",
+  "goals": [
+    {
+      "key": "goal.test.dept-1",
+      "quarter": "2026-Q4",
+      "team": "Топ-команда",
+      "code": "ТД-1",
+      "title": "Вымышленная цель департамента: запустить тестовый продукт",
+      "description": "Проблема: всё выдумано. Что ожидаю: проверить загрузку",
+      "metric": "Число тестовых запусков",
+      "base": "0",
+      "target": "3",
+      "link": "https://example.com/board/test"
+    },
+    {
+      "key": "goal.test.reva-1",
+      "quarter": "2026-Q4",
+      "team": "Топ-команда",
+      "owner": "Рева Тарас",
+      "code": "ТР-1",
+      "title": "Вымышленная цель продукта: собрать тестовую витрину",
+      "metric": "Готовность витрины",
+      "target": "100%",
+      "parent": { "key": "goal.test.dept-1" }
+    }
+  ],
+  "tasks": [
+    {
+      "key": "task.test.open-1",
+      "title": "Собрать тестовую сводку по выдуманным партнёрам",
+      "outcome": "Сводка в одном файле — с выводами",
+      "owner": "Головкин Владислав",
+      "direction": "osago",
+      "due": "2026-12-15",
+      "status": "in-progress",
+      "whereNow": "Собраны данные по двум выдуманным партнёрам",
+      "priority": "high",
+      "source": { "kind": "meeting", "note": "Тестовая встреча", "date": "2026-10-13" },
+      "links": [{ "title": "Пример", "url": "https://example.com/doc" }]
+    },
+    {
+      "key": "task.test.done-1",
+      "title": "Подготовить выдуманный разбор тарифов",
+      "outcome": "Разбор тарифов на одной странице",
+      "owner": "Логинова Светлана",
+      "direction": "red",
+      "due": "2026-09-30",
+      "status": "done",
+      "resolution": "Разбор готов, ссылка в тестовой папке",
+      "source": { "kind": "meeting", "note": "Тестовая встреча", "date": "2026-09-22" }
+    },
+    {
+      "key": "task.test.all-1",
+      "title": "Заполнить тестовые цели в бордах",
+      "outcome": "Каждый лидер заполнил свою вкладку",
+      "owner": "Все лидеры",
+      "direction": "department",
+      "due": "2026-12-20",
+      "status": "clarify"
+    },
+    {
+      "key": "task.test.co-1",
+      "title": "Сверить выдуманные комиссии",
+      "outcome": "Таблица расхождений",
+      "owner": "Фатьянов Евгений",
+      "coExecutors": ["Сахибуллина Алсу", "Сидоров Никто"],
+      "direction": "kasko",
+      "due": "2026-11-30"
+    },
+    {
+      "key": "task.test.missing-1",
+      "title": "Задача человеку, которого нет",
+      "outcome": "Не загрузится",
+      "owner": "Иванов Пётр",
+      "direction": "osago",
+      "due": "2026-11-30"
+    }
+  ],
+  "decisions": [
+    {
+      "key": "decision.test.1",
+      "text": "Тестовые сводки ведём в одном файле",
+      "date": "2026-10-13",
+      "team": "Топ-команда",
+      "owner": "Головкин Владислав",
+      "tasks": [{ "key": "task.test.open-1" }, { "key": "task.test.done-1" }]
+    },
+    {
+      "key": "decision.test.2",
+      "text": "Выдуманный партнёр получает скидку",
+      "date": "2026-09-22",
+      "status": "cancelled",
+      "cancelReason": "Передумали на следующей тестовой встрече"
+    }
+  ],
+  "links": [
+    { "key": "link.test.1", "task": { "key": "task.test.open-1" }, "goal": { "key": "goal.test.dept-1" }, "confidence": "высокая", "reason": "Сводка нужна для запуска" },
+    { "key": "link.test.2", "task": { "key": "task.test.co-1" }, "goal": { "key": "goal.test.reva-1" }, "confidence": "средняя", "reason": "Комиссии влияют на витрину" }
+  ]
+}
