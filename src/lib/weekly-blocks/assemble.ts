@@ -7,17 +7,20 @@
 // - «Неделя к неделе»: цифры недели из недельного отчёта (рост или падение в процентах и абсолютных) и продажи по дням;
 // - «Месяц»: прогноз месяца из LRF против бюджета (план продаж по продуктам и итог), прошлый месяц и прошлый год только
 //   если они есть в LRF, ОСАГО по СК из хаба;
-// - «Конкуренты»: новости за неделю, где есть слова из списка конкурентов. Нет новостей: блок скрыт;
+// - «Конкуренты»: новости за неделю, где есть слова из списка конкурентов (имя самой ленты не считается). Нет новостей:
+//   блок скрыт;
 // - «Продукты» и «Партнёрский канал»: записи weekly по направлению записи, черновик разбора встречи, закрытые задачи;
 // - «Риски»: записи с риском, задачи под риском и заблокированные, цели в риске;
 // - «План на неделю»: задачи со сроком на следующей неделе, «что делаем дальше» и записи с типом «План».
-// Каждая строка подписана продуктом (направлением), у цифр и задач ссылка на источник.
+// Каждая строка подписана продуктом (направлением), у цифр и задач ссылка на источник. Строки с цифрами помечены уровнем
+// доступа (figures): при чтении их видят только те, кому открыты цифры этого уровня.
 
 import { plural } from "@/domain/dates";
 import { formatValue, type Unit } from "@/lib/numbers/parse";
-import { matchedKeywords } from "@/lib/news/match";
+import { matchedKeywords, withoutOwnName } from "@/lib/news/match";
+import { foldText, keywordBody } from "@/lib/news/keywords";
 import { repeatsNumbers } from "@/lib/weekly/rules";
-import { BLOCK_LIMITS, isStandardKey, safeHref, tidy, uniqueLines, type BlockLine, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
+import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, fingerprint, isStandardKey, safeHref, tidy, uniqueLines, type BlockLine, type FigureLevel, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
 
 // ---------- Числа словами ----------
 
@@ -103,7 +106,8 @@ export type MonthInput = {
   partners: { revenue: Pair; href: string } | null;
 };
 
-export type NewsInput = { title: string; url: string; source: string; directions: string[]; summary: string };
+/** feed: лента, откуда новость. Её собственное имя признаком конкурента не считается (на ленте Банки.ру оно в каждой новости) */
+export type NewsInput = { title: string; url: string; source: string; directions: string[]; summary: string; feed?: { name: string; url: string } | null };
 
 export type Competitor = { name: string; keywords: string[] };
 
@@ -140,7 +144,7 @@ export type AssembleInput = {
   goals: GoalInput[];
   /** Черновик weekly из разбора встречи этой недели */
   notion: ReportBlock[] | null;
-  /** Продукты команды: цифры и новости только по ним. null: все */
+  /** Продукты команды: цифры и новости только по ним. null: все (отчёт CEO), пустой список: ни одного */
   focus: string[] | null;
 };
 
@@ -148,12 +152,16 @@ export const NEWS_MAX = 6;
 export const NEWS_PER_PRODUCT = 2;
 export const TASKS_PER_PRODUCT = 3;
 
-const line = (product: string | null, text: string, href: string | null = null, source: string | null = null): BlockLine => ({
+const line = (product: string | null, text: string, href: string | null = null, source: string | null = null, figures?: FigureLevel): BlockLine => ({
   product,
   text: tidy(text, BLOCK_LIMITS.text),
   href: safeHref(href),
   source: href ? tidy(source, BLOCK_LIMITS.source) || null : null,
+  ...(figures ? { figures } : {}),
 });
+
+/** У людей команды нет продуктового направления: цифр по продуктам команды нет, чужие продукты не показываем */
+const NO_FOCUS_NOTE = "Цифр по продуктам команды нет: у людей команды не задано направление продукта";
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 const trimEnd = (s: string) => s.trim().replace(/[.\s]+$/, "");
@@ -178,11 +186,12 @@ export function figureProduct(label: string, products: readonly ProductRef[]): s
 export function wowBlock(input: WowInput | null, products: readonly ProductRef[], focus: string[] | null, fallback: string | null): { lines: BlockLine[]; note: string | null } {
   if (!input) return { lines: [], note: "Нет данных: цифры недели не собирались" };
   if (input.closed) return { lines: [], note: "Цифры недели видят те, кому открыт прогноз" };
+  if (focus && !focus.length) return { lines: [], note: NO_FOCUS_NOTE };
   const lines: BlockLine[] = [];
   const keep = (p: string | null) => !focus || (p !== null && focus.includes(p));
   for (const s of input.sales) {
     if (!keep(s.product)) continue;
-    lines.push(line(s.product, `${s.label}: продажи за неделю ${fmtCount(s.value)} ${plural(Math.round(s.value), ...s.forms)}, ${growthText(s.value, s.prev, "count")} к прошлой неделе`, s.href, "Факт по дням"));
+    lines.push(line(s.product, `${s.label}: продажи за неделю ${fmtCount(s.value)} ${plural(Math.round(s.value), ...s.forms)}, ${growthText(s.value, s.prev, "count")} к прошлой неделе`, s.href, "Факт по дням", "summary"));
   }
   let note: string | null = null;
   if (!input.connected) note = "Нет данных: недельный отчёт не подключён";
@@ -199,7 +208,7 @@ export function wowBlock(input: WowInput | null, products: readonly ProductRef[]
           : f.prev === null
             ? `${label}: ${formatValue(f.value, f.unit)}, прошлой недели в отчёте нет`
             : `${label}: ${formatValue(f.value, f.unit)}, ${growthText(f.value, f.prev, f.unit)} к прошлой неделе`;
-      lines.push(line(product ?? fallback, text, input.href, "Цифры недели"));
+      lines.push(line(product ?? fallback, text, input.href, "Цифры недели", "summary"));
     }
   }
   return { lines, note };
@@ -223,6 +232,7 @@ const vs = (value: number | null, base: number | null | undefined, word: string)
 export function monthBlock(input: MonthInput | "closed" | null, focus: string[] | null, fallback: string | null): { lines: BlockLine[]; note: string | null; partners: BlockLine[] } {
   if (input === "closed") return { lines: [], note: "Прогноз месяца видят те, кому открыт прогноз", partners: [] };
   if (!input) return { lines: [], note: "Нет данных: прогноз месяца ещё не загружен из LRF", partners: [] };
+  if (focus && !focus.length) return { lines: [], note: NO_FOCUS_NOTE, partners: [] };
   const lines: BlockLine[] = [];
   const src = `Прогноз, ${input.monthLabel}`;
   for (const p of input.products) {
@@ -233,24 +243,26 @@ export function monthBlock(input: MonthInput | "closed" | null, focus: string[] 
         : `продажи ${fmtCount(p.units.forecast)} ${plural(Math.round(p.units.forecast), ...p.forms)}${p.units.budget !== null ? ` при плане ${fmtCount(p.units.budget)}` : ""}, ${verdict(p.units)}`;
     const rp = pctChange(p.revenue.forecast, p.revenue.budget);
     const revenue = p.revenue.forecast === null ? null : `выручка ${fmtMln(p.revenue.forecast)}${p.revenue.budget !== null ? ` при бюджете ${fmtMln(p.revenue.budget)}` : ""}${rp !== null ? ` (${fmtPct(rp)})` : ""}`;
+    // Что с чем сравнивается: продажи продукта к прошлому месяцу и к тому же месяцу прошлого года
     const prev = [
       p.prevMonth ? vs(p.units.forecast, p.prevMonth.units, "продажи к прошлому месяцу") : null,
-      p.prevYear ? vs(p.units.forecast, p.prevYear.units, "к прошлому году") : null,
+      p.prevYear ? vs(p.units.forecast, p.prevYear.units, "продажи к прошлому году") : null,
     ].filter(Boolean);
     const parts = [units, revenue, ...prev].filter(Boolean);
     if (!parts.length) continue;
-    lines.push(line(p.product, `${p.label}: ${parts.join("; ")}`, input.href, src));
+    lines.push(line(p.product, `${p.label}: ${parts.join("; ")}`, input.href, src, "summary"));
   }
   if (!focus) {
     const t = input.total;
     if (t.revenue.forecast !== null) {
-      const prev = [vs(t.revenue.forecast, t.prevMonth, "к прошлому месяцу"), vs(t.revenue.forecast, t.prevYear, "к прошлому году")].filter(Boolean);
+      const prev = [vs(t.revenue.forecast, t.prevMonth, "выручка к прошлому месяцу"), vs(t.revenue.forecast, t.prevYear, "выручка к прошлому году")].filter(Boolean);
       lines.push(
         line(
           fallback,
           `Итого по продуктам: выручка ${fmtMln(t.revenue.forecast)}${t.revenue.budget !== null ? ` при бюджете ${fmtMln(t.revenue.budget)}` : ""}, ${verdict(t.revenue)}${prev.length ? `; ${prev.join("; ")}` : ""}`,
           input.href,
           src,
+          "summary",
         ),
       );
     }
@@ -260,30 +272,70 @@ export function monthBlock(input: MonthInput | "closed" | null, focus: string[] 
     const parts = [
       h.mtd !== null ? `факт с начала месяца ${fmtCount(h.mtd)} ${plural(Math.round(h.mtd), "полис", "полиса", "полисов")}${h.day ? ` по ${ddmm(h.day)}` : ""}` : null,
       h.forecast !== null ? `ранрейт ${fmtCount(h.forecast)}${h.plan !== null ? ` при плане ${fmtCount(h.plan)}${pctChange(h.forecast, h.plan) !== null ? ` (${fmtPct(pctChange(h.forecast, h.plan)!)})` : ""}` : ""}` : h.plan !== null ? `план месяца ${fmtCount(h.plan)}` : null,
-      h.forecast !== null ? vs(h.forecast, h.prevTotal, "к прошлому месяцу") : null,
+      h.forecast !== null ? vs(h.forecast, h.prevTotal, "ранрейт к прошлому месяцу") : null,
     ].filter(Boolean);
-    if (parts.length) lines.push(line("osago", `ОСАГО по СК: ${parts.join(", ")}`, h.href, "Хаб: ОСАГО по СК"));
+    if (parts.length) lines.push(line("osago", `ОСАГО по СК: ${parts.join(", ")}`, h.href, "Хаб: ОСАГО по СК", "full"));
   }
-  // Прошлый год и прошлый месяц только из источников: нет данных, так и пишем
+  // Прошлый год и прошлый месяц только из источников: нет данных, так и пишем. Строк по продуктам нет: и писать не о чем
   const missing = [!input.hasPrevMonth ? `к прошлому месяцу (${input.prevMonthLabel})` : null, !input.hasPrevYear ? `к прошлому году (${input.prevYearLabel})` : null].filter(Boolean);
-  if (missing.length) {
-    const what = missing.join(" и ");
-    lines.push(line(fallback, `${what.charAt(0).toUpperCase()}${what.slice(1)}: нет данных, в LRF ${missing.length > 1 ? "этих месяцев" : "этого месяца"} нет`));
+  if (missing.length && lines.length) {
+    lines.push(line(fallback, `Продажи и выручка ${missing.join(" и ")}: нет данных, в LRF ${missing.length > 1 ? "этих месяцев" : "этого месяца"} нет`, null, null, "summary"));
   }
   const partners: BlockLine[] = [];
   if (input.partners && input.partners.revenue.forecast !== null && (!focus || focus.includes("partners"))) {
     const r = input.partners.revenue;
-    partners.push(line("partners", `Партнёрский канал: выручка ${fmtMln(r.forecast!)}${r.budget !== null ? ` при бюджете ${fmtMln(r.budget)}` : ""}, ${verdict(r)}`, input.partners.href, `Прогноз: партнёры, ${input.monthLabel}`));
+    partners.push(line("partners", `Партнёрский канал: выручка ${fmtMln(r.forecast!)}${r.budget !== null ? ` при бюджете ${fmtMln(r.budget)}` : ""}, ${verdict(r)}`, input.partners.href, `Прогноз: партнёры, ${input.monthLabel}`, "full"));
   }
   return { lines, note: input.asOf ? `Прогноз на ${input.asOf}` : null, partners };
 }
 
 // ---------- Новости и конкуренты ----------
 
-/** Конкурент новости: первый из списка, чьё слово есть в заголовке или описании */
-export function competitorOf(item: Pick<NewsInput, "title" | "summary">, competitors: readonly Competitor[]): Competitor | null {
+const WORD = "\\p{L}\\p{N}";
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Минус-слово: слово целиком (со словоформой) вырезается из текста, и дальше его не видят другие слова конкурента */
+function stripWord(folded: string, keyword: string): string {
+  const { body, exact } = keywordBody(keyword);
+  const words = body.split(" ").filter(Boolean).map(escapeRe);
+  if (!words.length) return folded;
+  const re = new RegExp(`(^|[^${WORD}])${words.join(`[${WORD}]*\\s+`)}${exact ? `(?![${WORD}])` : `[${WORD}]*`}`, "gu");
+  return folded.replace(re, "$1 ");
+}
+
+/**
+ * Слова конкурента в тексте. Обычное слово ловится по началу, как ключевые слова новостей; «A + B»: оба слова в одной
+ * фразе («Т-Банк + агрегатор»); «-X»: минус-слово, такое слово в тексте не считается («-Т-Страхован»: страховщик
+ * «Т-Страхование» не делает новость новостью о Т-Банке как агрегаторе)
+ */
+export function competitorMatches(text: string, keywords: readonly string[]): boolean {
+  const minus = keywords.map((k) => k.trim()).filter((k) => k.startsWith("-") && k.length > 1).map((k) => k.slice(1).trim());
+  const plus = keywords.map((k) => k.trim()).filter((k) => k && !k.startsWith("-"));
+  // Фразы: заголовок отдельно, описание по предложениям. Минус-слова вырезаются из каждой
+  const sentences = text
+    .split(/\n+|(?<=[.!?…])\s+/)
+    .map((piece) => minus.reduce((acc, m) => stripWord(acc, m), foldText(piece)))
+    .filter(Boolean);
+  const whole = sentences.join(" ");
+  return plus.some((k) => {
+    const parts = k.split(/\s\+\s/).map((x) => x.trim()).filter(Boolean);
+    if (parts.length < 2) return matchedKeywords(whole, [k]).length > 0;
+    return sentences.some((s) => parts.every((part) => matchedKeywords(s, [part]).length > 0));
+  });
+}
+
+/**
+ * Конкурент новости: первый из списка, чьё слово есть в заголовке или описании. Имя самой ленты признаком не считается:
+ * новости ленты Банки.ру не становятся новостями о Банки.ру
+ */
+export function competitorOf(item: Pick<NewsInput, "title" | "summary" | "feed">, competitors: readonly Competitor[]): Competitor | null {
   const text = `${item.title}\n${item.summary}`;
-  return competitors.find((c) => c.keywords.length && matchedKeywords(text, c.keywords).length > 0) ?? null;
+  return (
+    competitors.find((c) => {
+      const words = item.feed ? [...withoutOwnName({ c: c.keywords.filter((k) => !k.trim().startsWith("-")) }, item.feed).c!, ...c.keywords.filter((k) => k.trim().startsWith("-"))] : c.keywords;
+      return words.some((k) => !k.trim().startsWith("-")) && competitorMatches(text, words);
+    }) ?? null
+  );
 }
 
 export function newsLines(items: readonly NewsInput[], products: readonly ProductRef[], focus: string[] | null): BlockLine[] {
@@ -301,13 +353,15 @@ export function newsLines(items: readonly NewsInput[], products: readonly Produc
   return out;
 }
 
-export function competitorLines(items: readonly NewsInput[], competitors: readonly Competitor[], products: readonly ProductRef[], fallback: string | null): BlockLine[] {
+export function competitorLines(items: readonly NewsInput[], competitors: readonly Competitor[], products: readonly ProductRef[], fallback: string | null, focus: string[] | null = null): BlockLine[] {
   const known = new Set(products.map((p) => p.code));
   const out: BlockLine[] = [];
   for (const n of items) {
     const c = competitorOf(n, competitors);
     if (!c) continue;
-    out.push(line(n.directions.find((d) => known.has(d)) ?? fallback, `${c.name}: ${n.title}`, n.url, n.source));
+    // Отчёт команды: только новости по продуктам команды
+    if (focus && !n.directions.some((d) => focus.includes(d))) continue;
+    out.push(line(n.directions.find((d) => known.has(d) && (!focus || focus.includes(d))) ?? fallback, `${c.name}: ${n.title}`, n.url, n.source));
     if (out.length >= NEWS_MAX) break;
   }
   return out;
@@ -318,13 +372,15 @@ export function competitorLines(items: readonly NewsInput[], competitors: readon
 /**
  * В какой блок идёт запись: блок шаблона, по которому её сдали; иначе по смыслу: риск в «Риски», план в «План на
  * неделю», «Команда и процессы» в новости команды, партнёрка в «Партнёрский канал», остальное в «Продукты». Такого
- * блока нет в шаблоне: в «Продукты», а без них в первый блок шаблона
+ * блока нет в шаблоне: в «Продукты», а без них в первый блок шаблона. Блоки цифр («Неделя к неделе», «Месяц») собирает
+ * ресурс: запись туда не идёт, а раскладывается по смыслу
  */
 export function entryBlockKey(e: Pick<EntryInput, "section" | "type" | "block" | "direction">, keys: readonly string[]): string {
-  if (e.section && keys.includes(e.section)) return e.section;
+  if (e.section && keys.includes(e.section) && !LIVE_FIGURE_KEYS.includes(e.section)) return e.section;
   const want = e.type === "risk" ? "risks" : e.type === "plan" ? "plan" : e.block === "team" ? "news" : e.direction === "partners" ? "partners" : "products";
   if (keys.includes(want)) return want;
-  return keys.includes("products") ? "products" : (keys[0] ?? "products");
+  if (keys.includes("products")) return "products";
+  return keys.find((k) => !LIVE_FIGURE_KEYS.includes(k)) ?? keys[0] ?? "products";
 }
 
 /** Строка записи: что произошло и цифра или факт, если цифра не повторяет текст. Ссылка на первый артефакт записи */
@@ -366,7 +422,7 @@ export function assembleBlocks(input: AssembleInput): ReportBlock[] {
   // Новости рынка (без конкурентов): первыми в блоке новостей
   const market = input.news.filter((n) => !competitorOf(n, input.competitors));
   if (keys.includes("news")) for (const l of newsLines(market, input.products, input.focus)) add("news", l);
-  if (keys.includes("competitors")) for (const l of competitorLines(input.news, input.competitors, input.products, fallback)) add("competitors", l);
+  if (keys.includes("competitors")) for (const l of competitorLines(input.news, input.competitors, input.products, fallback, input.focus)) add("competitors", l);
   if (keys.includes("wow")) {
     const w = wowBlock(input.wow, input.products, input.focus, fallback);
     w.lines.forEach((l) => add("wow", l));
@@ -418,13 +474,16 @@ export function assembleBlocks(input: AssembleInput): ReportBlock[] {
     const list = uniqueLines(lines.get(t.key) ?? []).slice(0, BLOCK_LIMITS.lines);
     const competitors = t.key === "competitors";
     const note = notes.has(t.key) ? notes.get(t.key)! : null;
+    const live = LIVE_FIGURE_KEYS.includes(t.key);
     return {
       key: t.key,
       title: t.title,
       // Конкуренты без новостей скрыты: блок появляется, когда новости по ним есть
       hidden: competitors && !list.length,
       lines: list,
-      note: list.length ? (t.key === "month" || t.key === "wow" ? note : null) : (note ?? (competitors ? "Новостей по конкурентам за неделю нет: блок скрыт" : isStandardKey(t.key) ? EMPTY_NOTE : "Записей по этому блоку нет")),
+      note: list.length ? (live ? note : null) : (note ?? (competitors ? "Новостей по конкурентам за неделю нет: блок скрыт" : isStandardKey(t.key) ? EMPTY_NOTE : "Записей по этому блоку нет")),
+      // Отпечаток живых цифр: поправленный руками блок узнает, что цифры с тех пор обновились
+      ...(live ? { basis: fingerprint(list) } : {}),
     };
   });
 }

@@ -18,7 +18,10 @@ export type RulesOptions = {
 
 /**
  * Разделы заметки. С этапа 66 и смысловые блоки weekly для CEO: «Новости», «Конкуренты», «Партнёры», «Продукты» и
- * разделы с названием продукта («ОСАГО», «Депозиты и инвестиции»). Их строки идут в итоги и в свои блоки черновика
+ * разделы с названием продукта («ОСАГО», «Депозиты и инвестиции»). Их строки идут в итоги и в свои блоки черновика.
+ * Слова этих разделов («Рынок», «Команда», «Партнёры») часто начинают обычную фразу: «Рынок растёт» не заголовок. Поэтому
+ * они считаются заголовком только с двоеточием («Рынок:»), разметкой заголовка («## Рынок», «**Рынок**») или когда
+ * строка целиком название продукта («ОСАГО»)
  */
 type Section = "summary" | "decisions" | "tasks" | "risks" | "next" | "news" | "competitors" | "partners" | "products" | `product:${string}`;
 
@@ -44,6 +47,10 @@ const RESULT_MARK = /(?:^|[\s;(])(?:результат|что на выходе)
 /** Слова перед двоеточием, которые не имя человека */
 const LABELS = new Set(["итог", "итоги", "важно", "решение", "решили", "задача", "вопрос", "риск", "срок", "цель", "результат", "комментарий", "примечание", "статус", "идея", "план", "дальше", "next", "action", "todo", "главное", "договорились", "ответственный", "контекст", "проблема", "кратко", "суть", "пример", "почему", "зачем", "что"]);
 const NAME = /^[А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]*\.?){0,2}$/;
+
+/** Разделы смысловых блоков этапа 66: заголовок только с двоеточием, разметкой или одним названием раздела без слов после */
+const BLOCK_SECTIONS = new Set<Section>(["news", "competitors", "partners", "products"]);
+const BLOCK_SECTION_NAME = /^(новости|новости рынка|новости команды|рынок|по рынку|команда|по команде|конкуренты|партн[её]ры|продукты|по продуктам)$/;
 
 function sectionOf(heading: string, products: readonly ProductRef[] = DEFAULT_PRODUCTS): Section | null {
   const named = productNamed(heading.replace(/^[^\p{L}\p{N}]+/u, ""), products);
@@ -164,20 +171,23 @@ export function parseByRules(text: string, opts: RulesOptions): RawMeeting {
   let section: Section | null = null;
   for (const raw of String(text ?? "").replace(/\r/g, "").split("\n")) {
     if (!raw.trim()) continue;
-    const heading = /^\s*#{1,6}\s+(.+)$/.exec(raw);
+    // Заголовок разметкой: «## Рынок» или строка целиком жирным «**Рынок**»
+    const heading = /^\s*#{1,6}\s+(.+)$/.exec(raw) ?? /^\s*(?:\*\*|__)([^*_]{2,60})(?:\*\*|__)\s*:?\s*$/.exec(raw);
     const isBullet = BULLET.test(raw) || CHECKBOX.test(raw);
     const plain = cleanText(raw.replace(CHECKBOX, "").replace(BULLET, "").replace(/^>\s*/, ""), 2000);
     if (heading) {
       section = sectionOf(heading[1]!, products);
       continue;
     }
-    // «Решения:» или «Итоги встречи» отдельной строкой без точки: подпись раздела
-    if (!isBullet && plain.length <= 60 && (/:$/.test(plain) || (sectionOf(plain, products) && !/[.!?\d]/.test(plain) && plain.split(/\s+/).length <= 3))) {
-      const s = sectionOf(plain.replace(/:$/, ""), products);
-      if (s || /:$/.test(plain)) {
-        section = s;
-        continue;
-      }
+    // «Решения:» или «Итоги встречи» отдельной строкой без точки: подпись раздела. Разделы смысловых блоков («Рынок»,
+    // «Команда», «Партнёры») без двоеточия подписью считаются, только если в строке одно название раздела или продукта:
+    // «Рынок растёт», «Команда укомплектована», «Партнёры подписали договор» остаются фразами
+    const guess = !isBullet && plain.length <= 60 ? sectionOf(plain.replace(/:$/, ""), products) : null;
+    const nameOnly = BLOCK_SECTION_NAME.test(plain.toLowerCase().replace(/ё/g, "е").trim()) || productNamed(plain, products) !== null;
+    const bare = guess && !/[.!?\d]/.test(plain) && plain.split(/\s+/).length <= 3 && (!BLOCK_SECTIONS.has(guess) || nameOnly);
+    if (!isBullet && plain.length <= 60 && (/:$/.test(plain) || bare)) {
+      section = guess;
+      continue;
     }
     if (!plain || plain === "---" || plain.length < 3) continue;
     const kind: Section | "loose" =

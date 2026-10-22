@@ -1,5 +1,6 @@
 // Правки отчёта по блокам в редакторе (этап 66): поднять и опустить блок, скрыть, поправить, добавить и убрать строку,
 // собрать блок заново из свежей автосборки. Чистые функции: каждая возвращает новый список блоков, исходный не меняется.
+// Правка строк помечает блок поправленным руками (edited): живые цифры такого блока сами больше не пересобираются.
 
 import { BLOCK_LIMITS, legacyToBlocks, tidy, type BlockLine, type LegacySections, type ProductRef, type ReportBlock } from "./types";
 
@@ -26,23 +27,23 @@ export function patchLine(blocks: readonly ReportBlock[], key: string, index: nu
     const next = { ...b.lines[index]!, ...patch };
     if (patch.text !== undefined) next.text = patch.text.replace(/[—–‒―]/g, "-").replace(/[→⟶⇒➝➔⟹]/g, "-").replace(/·/g, ",").slice(0, BLOCK_LIMITS.text);
     if (patch.href === null) next.source = null;
-    return { ...b, lines: b.lines.map((l, i) => (i === index ? next : l)) };
+    return { ...b, edited: true, lines: b.lines.map((l, i) => (i === index ? next : l)) };
   });
 }
 
 export function addLine(blocks: readonly ReportBlock[], key: string, product: string | null): ReportBlock[] {
-  return blocks.map((b) => (b.key === key && b.lines.length < BLOCK_LIMITS.lines ? { ...b, hidden: false, lines: [...b.lines, { product, text: "", href: null, source: null }] } : b));
+  return blocks.map((b) => (b.key === key && b.lines.length < BLOCK_LIMITS.lines ? { ...b, hidden: false, edited: true, lines: [...b.lines, { product, text: "", href: null, source: null }] } : b));
 }
 
 export function removeLine(blocks: readonly ReportBlock[], key: string, index: number): ReportBlock[] {
-  return blocks.map((b) => (b.key === key ? { ...b, lines: b.lines.filter((_, i) => i !== index) } : b));
+  return blocks.map((b) => (b.key === key ? { ...b, edited: true, lines: b.lines.filter((_, i) => i !== index) } : b));
 }
 
-/** Собрать один блок заново: строки и пояснение из свежей автосборки, место и название блока остаются */
+/** Собрать один блок заново: строки и пояснение из свежей автосборки, место и название блока остаются. Цифры снова живые */
 export function rebuildBlock(blocks: readonly ReportBlock[], fresh: readonly ReportBlock[], key: string): ReportBlock[] {
   const f = fresh.find((b) => b.key === key);
   if (!f) return [...blocks];
-  return blocks.map((b) => (b.key === key ? { ...b, lines: f.lines.map((l) => ({ ...l })), note: f.note, hidden: f.hidden } : b));
+  return blocks.map((b) => (b.key === key ? { ...b, lines: f.lines.map((l) => ({ ...l })), note: f.note, hidden: f.hidden, basis: f.basis ?? null, edited: false, stale: false } : b));
 }
 
 /** Перед сохранением: пустые строки (человек нажал «Добавить строку» и ничего не написал) отбрасываются */

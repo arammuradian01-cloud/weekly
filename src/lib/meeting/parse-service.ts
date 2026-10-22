@@ -28,7 +28,7 @@ import { ceoContext, type CeoContext } from "@/lib/ceo/assembled";
 import { ceoRecipients, markCeoSentIn, saveCeoBlocksIn } from "@/lib/ceo/report";
 import { assembleCeoBlocks, blocksMeta, type BlocksMeta } from "@/lib/weekly-blocks/sources";
 import { fromLegacy } from "@/lib/weekly-blocks/edit";
-import { DEFAULT_PRODUCTS, DRAFT_TEMPLATE, cleanBlocks, draftBlocksOf, hasBlocksText, mergeBlocks, type MergeMode, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { DEFAULT_PRODUCTS, DRAFT_TEMPLATE, cleanBlocks, draftBlocksOf, hasBlocksText, mergeBlocks, withLiveFigures, type MergeMode, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { meetingIdFor, meetingRights, notionUrlOf, MEETING_LIMITS } from "./service";
 import { NotionError, NOTION_MESSAGES, meaningfulText, notionDepsFromEnv, notionPageIdFromUrl, readNotionPage, type NotionDeps } from "./notion-api";
 import { ClaudeError, claudeDepsFromEnv, parseWithClaude, type ClaudeDeps } from "./claude";
@@ -765,7 +765,8 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
       if (filled && input.mode !== "merge" && input.mode !== "replace") fail("За неделю уже есть отчёт CEO: выберите, дописать черновик по блокам или заменить блоки черновика");
       const mode: MergeMode = filled ? input.mode! : "merge";
       const base = savedBlocks ?? (before && filledLegacy(before) ? fromLegacy({ main: before.main, risks: before.risks, next: before.next }, auto.blocks, meta.products) : auto.blocks);
-      const final = mergeBlocks(base, draft, mode);
+      // Цифры недели и месяца, которые не правили руками, уходят свежими
+      const final = withLiveFigures(mergeBlocks(base, draft, mode), auto.blocks);
       // Проверку «отчёт не поменялся» сделали выше: сохранение без своей сверки, встречи недели остаются
       const saved = await saveCeoBlocksIn(tx, actor, key, final, undefined, undefined, meta);
       const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил weekly для CEO за неделю ${row.meeting.week.isoNumber} по итогам встречи «${rights.teamName}»`, now);

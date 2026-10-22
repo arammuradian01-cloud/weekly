@@ -4,8 +4,13 @@
 // загруженных снимков (недельный отчёт, LRF, хаб).
 //
 // Охват: для отчёта CEO команда страхования и инвестиций (топ-команда, как раньше: её weekly, отмеченные «В отчёт CEO»
-// записи любой команды, задачи команды и её людей); для отчёта команды её руководитель и участники.
+// записи любой команды, задачи команды и её людей); для отчёта команды её руководитель и участники. Задачи и цели: самой
+// команды и её людей (без внешних участников), но не задачи и цели топ-команды: они уходят в отчёт CEO.
+//
+// Автосборка читает много таблиц: за один запрос страницы она считается один раз (кэш на запрос), а в разных запросах
+// заново, чтобы цифры и записи были живыми.
 
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { WeekKey } from "@/domain/types";
@@ -208,11 +213,12 @@ async function weekNews(key: WeekKey): Promise<NewsInput[]> {
   const { start, end } = weekWindow(key);
   const rows = await prisma.newsItem.findMany({
     where: { publishedAt: { gte: start, lt: end }, NOT: { directions: { isEmpty: true } } },
-    select: { title: true, url: true, summary: true, directions: true, source: { select: { name: true } } },
+    select: { title: true, url: true, summary: true, directions: true, source: { select: { name: true, url: true } } },
     orderBy: { publishedAt: "desc" },
     take: 300,
   });
-  return rows.map((r) => ({ title: r.title, url: r.url, summary: r.summary, directions: r.directions, source: r.source.name }));
+  // Лента новости: её собственное имя признаком конкурента не считается
+  return rows.map((r) => ({ title: r.title, url: r.url, summary: r.summary, directions: r.directions, source: r.source.name, feed: { name: r.source.name, url: r.source.url } }));
 }
 
 const entrySelect = {
@@ -244,7 +250,11 @@ function toEntryInput(e: Prisma.WeeklyEntryGetPayload<{ select: typeof entrySele
   };
 }
 
-type Scope = { teamId: string; people: string[]; ceo: boolean };
+/** people: чьи записи weekly берём; owners: чьи задачи и цели, без внешних участников команды */
+type Scope = { teamId: string; people: string[]; owners: string[]; ceo: boolean };
+
+/** Задачи и цели команды: самой команды, а её людей только вне топ-команды (задачи топ-команды уходят в отчёт CEO) */
+const ownWork = (scope: Scope) => [{ teamId: scope.teamId }, { ownerId: { in: scope.owners }, teamId: { not: TOP_TEAM } }];
 
 async function scopeEntries(key: WeekKey, scope: Scope): Promise<{ entries: EntryInput[]; hint: string | null }> {
   const week = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true } });
@@ -287,7 +297,7 @@ function toTask(t: Prisma.TaskGetPayload<{ select: typeof taskSelect }>): TaskIn
 async function scopeTasks(key: WeekKey, scope: Scope) {
   const { start, end } = weekWindow(key);
   const nextKey = shiftWeek(key, 1);
-  const base: Prisma.TaskWhereInput = { archivedAt: null, OR: [{ teamId: scope.teamId }, { ownerId: { in: scope.people } }] };
+  const base: Prisma.TaskWhereInput = { archivedAt: null, OR: ownWork(scope) };
   const [done, atRisk, next] = await Promise.all([
     prisma.task.findMany({ where: { ...base, status: { in: ["DONE", "PARTIAL"] }, closedAt: { gte: start, lt: end } }, select: taskSelect, take: 200, orderBy: { number: "asc" } }),
     prisma.task.findMany({ where: { ...base, status: { in: ["IN_PROGRESS", "CLARIFY"] }, state: { in: ["AT_RISK", "BLOCKED"] } }, select: taskSelect, take: 200, orderBy: { number: "asc" } }),
@@ -298,7 +308,7 @@ async function scopeTasks(key: WeekKey, scope: Scope) {
 
 async function scopeGoals(key: WeekKey, scope: Scope): Promise<GoalInput[]> {
   const rows = await prisma.goal.findMany({
-    where: { quarter: quarterOf(addDays(key, 3)), atRisk: true, result: "IN_PROGRESS", OR: [{ teamId: scope.teamId }, { ownerId: { in: scope.people } }] },
+    where: { quarter: quarterOf(addDays(key, 3)), atRisk: true, result: "IN_PROGRESS", OR: ownWork(scope) },
     select: { code: true, title: true, riskNote: true, owner: { select: { defaultDirection: { select: { code: true } } } } },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     take: 10,
@@ -353,30 +363,55 @@ async function assemble(actor: Actor, key: WeekKey, scope: Scope, template: read
   return { blocks: assembleBlocks(input), hint: entries.hint };
 }
 
-/** Черновик weekly для CEO по стандартным блокам: команда страхования и инвестиций за неделю */
-export async function assembleCeoBlocks(actor: Actor, key: WeekKey, now = new Date()): Promise<Assembly> {
-  return assemble(actor, key, { teamId: TOP_TEAM, people: await topPeople(), ceo: true }, STANDARD_TEMPLATE, null, now);
+/** Автосборки этого запроса страницы: одна и та же сборка второй раз не считается. Вне страницы (тесты) кэша нет */
+const requestAssemblies = cache(() => new Map<string, Promise<Assembly>>());
+
+function memo(sig: string, run: () => Promise<Assembly>): Promise<Assembly> {
+  const map = requestAssemblies();
+  const hit = map.get(sig);
+  if (hit) return hit;
+  const p = run();
+  map.set(sig, p);
+  // Ошибка не застревает в кэше: следующий вызов в том же запросе попробует ещё раз
+  p.catch(() => map.delete(sig));
+  return p;
 }
 
-/** Люди команды страхования и инвестиций: руководитель и участники топ-команды, как у отчёта CEO раньше */
-export async function topPeople(): Promise<string[]> {
-  const top = await prisma.team.findUnique({ where: { id: TOP_TEAM }, select: { leaderId: true, members: { select: { personId: true } } } });
-  return top ? [...new Set([...(top.leaderId ? [top.leaderId] : []), ...top.members.map((m) => m.personId)])] : [];
+const actorSig = (actor: Actor) => `${actor.personId}|${actor.role}|${actor.management ?? ""}|${actor.via ?? ""}`;
+
+/** Черновик weekly для CEO по стандартным блокам: команда страхования и инвестиций за неделю */
+export async function assembleCeoBlocks(actor: Actor, key: WeekKey, now?: Date): Promise<Assembly> {
+  const run = async () => {
+    const top = await topPeople();
+    return assemble(actor, key, { teamId: TOP_TEAM, people: top.people, owners: top.owners, ceo: true }, STANDARD_TEMPLATE, null, now ?? new Date());
+  };
+  return now ? run() : memo(`ceo|${key}|${actorSig(actor)}`, run);
+}
+
+/** Люди команды страхования и инвестиций: руководитель и участники топ-команды, как у отчёта CEO раньше. owners: без внешних */
+export async function topPeople(): Promise<{ people: string[]; owners: string[] }> {
+  const top = await prisma.team.findUnique({ where: { id: TOP_TEAM }, select: { leaderId: true, members: { select: { personId: true, external: true } } } });
+  if (!top) return { people: [], owners: [] };
+  const lead = top.leaderId ? [top.leaderId] : [];
+  return { people: [...new Set([...lead, ...top.members.map((m) => m.personId)])], owners: [...new Set([...lead, ...top.members.filter((m) => !m.external).map((m) => m.personId)])] };
 }
 
 /**
- * Продукты команды для цифр и новостей: направления её людей. Есть кто-то из департамента целиком, страхования в целом
- * или без направления: команда смотрит на все продукты (null)
+ * Продукты команды для цифр и новостей: продуктовые направления её людей. «Департамент» (его получают все люди из
+ * загрузки структуры) и пустое направление продуктом не считаются: команда вне страхования не получает чужие продукты и
+ * итог выручки департамента. Ни одного продукта: пустой список, цифр по продуктам в отчёте команды нет
  */
-export async function teamFocus(people: string[]): Promise<string[] | null> {
-  if (!people.length) return null;
+export async function teamFocus(people: string[]): Promise<string[]> {
+  if (!people.length) return [];
   const rows = await prisma.person.findMany({ where: { id: { in: people }, active: true }, select: { defaultDirection: { select: { code: true } } } });
-  const codes = rows.map((r) => r.defaultDirection?.code ?? null);
-  if (!codes.length || codes.some((c) => !c || c === "department" || c === "insurance")) return null;
-  return [...new Set(codes as string[])];
+  return [...new Set(rows.map((r) => r.defaultDirection?.code ?? null).filter((c): c is string => !!c && c !== "department"))];
 }
 
-/** Черновик weekly команды по её шаблону: записи её людей, задачи и цели команды, цифры по продуктам команды */
-export async function assembleTeamBlocks(actor: Actor, teamId: string, people: string[], template: readonly TemplateBlock[], key: WeekKey, now = new Date()): Promise<Assembly> {
-  return assemble(actor, key, { teamId, people, ceo: false }, template, await teamFocus(people), now);
+/**
+ * Черновик weekly команды по её шаблону: записи её людей, задачи и цели команды и её людей (owners: без внешних
+ * участников), цифры по продуктам команды
+ */
+export async function assembleTeamBlocks(actor: Actor, teamId: string, people: string[], template: readonly TemplateBlock[], key: WeekKey, owners: string[] = people, now?: Date): Promise<Assembly> {
+  const run = async () => assemble(actor, key, { teamId, people, owners, ceo: false }, template, await teamFocus(people), now ?? new Date());
+  return now ? run() : memo(`team|${teamId}|${key}|${template.map((t) => t.key).join(",")}|${actorSig(actor)}`, run);
 }

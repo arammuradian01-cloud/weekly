@@ -24,6 +24,14 @@ export const STANDARD_BLOCKS: readonly StandardBlock[] = [
 
 export const STANDARD_KEYS: readonly StandardBlockKey[] = STANDARD_BLOCKS.map((b) => b.key);
 
+/**
+ * Цифры прогноза и денег в строке (этап 57): summary видят и с «основными цифрами» (неделя к неделе, итог месяца по
+ * продуктам), full только со «всеми цифрами» (хаб ОСАГО по СК, разрез по партнёрам)
+ */
+export type FigureLevel = "summary" | "full";
+/** Уровень зрителя, как numbersLevel этапа 57 */
+export type ViewerLevel = FigureLevel | "none";
+
 /** Строка блока: продукт, текст и ссылка на источник (раздел «Прогноз», хаб, новость, артефакт записи, задача) */
 export type BlockLine = {
   /** Код направления из справочника: строка подписана продуктом. null: общая строка без продукта */
@@ -32,6 +40,8 @@ export type BlockLine = {
   href: string | null;
   /** Подпись ссылки: «Прогноз, октябрь», «Хаб: ОСАГО по СК», название источника новости */
   source: string | null;
+  /** Строка с цифрами: при чтении её видят только те, у кого есть доступ к цифрам этого уровня. Нет поля: строка без цифр */
+  figures?: FigureLevel;
 };
 
 export type ReportBlock = {
@@ -42,6 +52,12 @@ export type ReportBlock = {
   lines: BlockLine[];
   /** Пояснение под заголовком: «нет данных», откуда собрано */
   note: string | null;
+  /** Строки блока правили руками: живые цифры («Неделя к неделе», «Месяц») такого блока сами не пересобираются */
+  edited?: boolean;
+  /** Отпечаток автосборки, из которой собран блок живых цифр: по нему видно, что цифры с тех пор обновились */
+  basis?: string | null;
+  /** Не хранится: блок поправили руками, а автосборка с тех пор изменилась. Экран предлагает собрать блок заново */
+  stale?: boolean;
 };
 
 /** Блок шаблона weekly команды: стандартный или свой (ключ c:...) */
@@ -100,8 +116,33 @@ export function safeHref(value: unknown): string | null {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** Строка блока из формы или базы. directions: допустимые коды продуктов (null: любые непустые) */
-export function cleanLine(raw: unknown, directions: Set<string> | null): BlockLine | null {
+/** Блоки живых цифр: без правок руками они пересобираются при показе и при отправке */
+export const LIVE_FIGURE_KEYS: readonly string[] = ["wow", "month"];
+/** Блоки, где цифры в каждой строке: даже строка, написанная руками, считается строкой с цифрами */
+const FIGURE_BLOCKS: readonly string[] = ["wow", "month"];
+
+const RANK: Record<FigureLevel, number> = { summary: 1, full: 2 };
+const higher = (a: FigureLevel | undefined, b: FigureLevel | undefined): FigureLevel | undefined => (!a ? b : !b ? a : RANK[a] >= RANK[b] ? a : b);
+
+/**
+ * Уровень цифр строки по блоку и источнику: блоки «Неделя к неделе» и «Месяц» целиком, строки со ссылкой на «Прогноз»
+ * и цифры недели. Хаб ОСАГО по СК и разрез по партнёрам только со всеми цифрами
+ */
+export function figuresOf(line: Pick<BlockLine, "href" | "source" | "figures">, blockKey: string | null): FigureLevel | undefined {
+  const source = (line.source ?? "").toLowerCase();
+  const href = line.href ?? "";
+  const full = source.startsWith("хаб") || source.startsWith("прогноз: партн") || /[?&]tab=partners(?:&|$)/.test(href);
+  const summary = (blockKey !== null && FIGURE_BLOCKS.includes(blockKey)) || href.startsWith("/forecast") || source.startsWith("прогноз") || source.startsWith("цифры недели") || source.startsWith("факт по дням");
+  const derived: FigureLevel | undefined = full ? "full" : summary ? "summary" : undefined;
+  return higher(line.figures, derived);
+}
+
+/** Строка вместо цифр, которых зритель не видит */
+export const NUMBERS_HIDDEN_TEXT = "Цифры видны только с доступом к цифрам";
+const isPlaceholder = (l: Pick<BlockLine, "text" | "href">) => !l.href && l.text === NUMBERS_HIDDEN_TEXT;
+
+/** Строка блока из формы или базы. directions: допустимые коды продуктов (null: любые непустые). blockKey: блок строки */
+export function cleanLine(raw: unknown, directions: Set<string> | null, blockKey: string | null = null): BlockLine | null {
   if (!isObj(raw)) return null;
   const text = tidy(raw.text, BLOCK_LIMITS.text);
   if (!text) return null;
@@ -109,7 +150,9 @@ export function cleanLine(raw: unknown, directions: Set<string> | null): BlockLi
   const product = code && (!directions || directions.has(code)) ? code : null;
   const href = safeHref(raw.href);
   const source = href ? tidy(raw.source, BLOCK_LIMITS.source) || null : null;
-  return { product, text, href, source };
+  const explicit = raw.figures === "summary" || raw.figures === "full" ? raw.figures : undefined;
+  const figures = figuresOf({ href, source, figures: explicit }, blockKey);
+  return { product, text, href, source, ...(figures ? { figures } : {}) };
 }
 
 /** Отчёт по блокам из формы или базы: неизвестные ключи, повторы и пустые строки отбрасываются, тексты обрезаются */
@@ -124,10 +167,12 @@ export function cleanBlocks(input: unknown, directions: Set<string> | null): Rep
     seen.add(key);
     const title = tidy(raw.title, BLOCK_LIMITS.title) || standardOf(key)?.title || "Блок";
     const lines = (Array.isArray(raw.lines) ? raw.lines : [])
-      .map((l) => cleanLine(l, directions))
-      .filter((l): l is BlockLine => !!l)
+      .map((l) => cleanLine(l, directions, key))
+      // Строка «цифры видны только с доступом» показывается вместо скрытых цифр и не хранится
+      .filter((l): l is BlockLine => !!l && !isPlaceholder(l))
       .slice(0, BLOCK_LIMITS.lines);
-    out.push({ key, title, hidden: raw.hidden === true, lines, note: tidy(raw.note, BLOCK_LIMITS.note) || null });
+    const basis = typeof raw.basis === "string" && /^[a-z0-9]{1,16}$/.test(raw.basis) ? raw.basis : null;
+    out.push({ key, title, hidden: raw.hidden === true, lines, note: tidy(raw.note, BLOCK_LIMITS.note) || null, ...(raw.edited === true ? { edited: true } : {}), ...(basis ? { basis } : {}) });
     if (out.length >= BLOCK_LIMITS.blocks) break;
   }
   return out;
@@ -193,7 +238,14 @@ const KEYWORDS: [string, RegExp][] = [
   ["osago", new RegExp(`(?<![${W}])(осаго|osago)`, "iu")],
   ["kasko", new RegExp(`(?<![${W}])(каско|casco|kasko)`, "iu")],
   ["red", new RegExp(`(?<![${W}])(ипотек|ипотечн|взр(?![${W}])|ифл(?![${W}])|red(?![${W}])|страхован\\S* имуществ|страхован\\S* путешеств|клещ)`, "iu")],
-  ["deposits", new RegExp(`(?<![${W}])(вклад|депозит|иис(?![${W}])|пиф(?![${W}])|инвестиц)`, "iu")],
+  // «Вклад» и «инвестиции» только в продуктовом смысле: «вклад команды» и «инвестиции в маркетинг» не про депозиты
+  [
+    "deposits",
+    new RegExp(
+      `(?<![${W}])(депозит|вкладчик|вклад(?:ы|ов|ам|ами|ах)(?![${W}])|(?:банковск|срочн|накопительн|сберегательн)[${W}]* вклад|вклад[${W}]* (?:в банк|под \\d|на \\d|со ставк)|ставк[${W}]* по вклад|иис(?![${W}])|пиф(?:ы|ов)?(?![${W}])|инвестиционн[${W}]* (?:продукт|сч[её]т|портфел)|брокерск|инвестиц[${W}]* в (?:акци|облигац|фонд|пиф))`,
+      "iu",
+    ),
+  ],
   ["partners", new RegExp(`(?<![${W}])(партн[её]р|агрегатор|b2b(?![${W}]))`, "iu")],
   ["product", new RegExp(`(?<![${W}])cjm(?![${W}])`, "iu")],
 ];
@@ -364,19 +416,105 @@ export type MergeMode = "merge" | "replace";
 /**
  * Черновик (например, из разбора встречи) и отчёт, который за неделю уже есть. merge: строки черновика дописываются в
  * конец своих блоков, строки, которые там уже есть, второй раз не попадают; пустой блок, получивший строки, открывается.
- * replace: блоки черновика заменяют строки своих блоков целиком. Блоки, которых в черновике нет (цифры недели и месяца,
- * свои блоки), остаются как были
+ * replace: блоки черновика заменяют написанные строки своих блоков, а собранные строки со ссылкой на источник (новости,
+ * задачи, артефакты, цифры) остаются. Пустой блок черновика ничего не заменяет. Блоки, которых в черновике нет (цифры
+ * недели и месяца, свои блоки), остаются как были
  */
 export function mergeBlocks(existing: readonly ReportBlock[], draft: readonly ReportBlock[], mode: MergeMode): ReportBlock[] {
   const byKey = new Map(draft.map((b) => [b.key, b]));
   const out = existing.map((b): ReportBlock => {
     const d = byKey.get(b.key);
-    if (!d) return b;
-    if (mode === "replace") return { ...b, lines: uniqueLines(d.lines).slice(0, BLOCK_LIMITS.lines), hidden: d.lines.length ? false : b.hidden };
+    if (!d || !d.lines.length) return b;
+    if (mode === "replace") return { ...b, lines: uniqueLines([...b.lines.filter((l) => l.href), ...d.lines]).slice(0, BLOCK_LIMITS.lines), hidden: false };
     const add = d.lines.filter((l, i) => !b.lines.some((x) => sameLine(x, l)) && !d.lines.slice(0, i).some((x) => sameLine(x, l)));
     if (!add.length) return b;
     return { ...b, lines: [...b.lines, ...add].slice(0, BLOCK_LIMITS.lines), hidden: b.lines.length ? b.hidden : false };
   });
   for (const d of draft) if (!existing.some((b) => b.key === d.key) && d.lines.length && out.length < BLOCK_LIMITS.blocks) out.push({ ...d, lines: uniqueLines(d.lines) });
   return out;
+}
+
+// ---------- Цифры по уровню зрителя (этап 57) ----------
+
+const visibleAt = (l: BlockLine, level: ViewerLevel) => !l.figures || level === "full" || (level === "summary" && l.figures === "summary");
+
+/**
+ * Отчёт глазами зрителя: без доступа к цифрам строки с цифрами заменяются одной строкой «Цифры видны только с доступом
+ * к цифрам», с основными цифрами уходят хаб ОСАГО по СК и разрез по партнёрам. Режется на сервере: блоки целиком уходят
+ * в данные страницы
+ */
+export function blocksForLevel(blocks: readonly ReportBlock[], level: ViewerLevel): ReportBlock[] {
+  if (level === "full") return [...blocks];
+  return blocks.map((b) => {
+    const keep = b.lines.filter((l) => visibleAt(l, level));
+    if (keep.length === b.lines.length) return b;
+    const hidden: BlockLine = { product: null, text: NUMBERS_HIDDEN_TEXT, href: null, source: null };
+    return { ...b, lines: level === "none" ? [...keep, hidden] : keep };
+  });
+}
+
+/**
+ * Сохранение того, кто видит не все цифры: строки с цифрами, которых ему не показали, возвращаются в свои блоки из
+ * прежней версии, иначе правка текста стёрла бы чужие цифры. Блоки живых цифр без правок руками не трогаются: их строки
+ * и так пересобираются
+ */
+export function restoreHiddenFigures(next: readonly ReportBlock[], before: readonly ReportBlock[], level: ViewerLevel): ReportBlock[] {
+  if (level === "full") return [...next];
+  return next.map((b) => {
+    if (LIVE_FIGURE_KEYS.includes(b.key) && !b.edited) return b;
+    const prev = before.find((x) => x.key === b.key);
+    const lost = (prev?.lines ?? []).filter((l) => !visibleAt(l, level) && !b.lines.some((x) => sameLine(x, l)));
+    return lost.length ? { ...b, lines: [...b.lines, ...lost].slice(0, BLOCK_LIMITS.lines) } : b;
+  });
+}
+
+// ---------- Живые цифры ----------
+
+/** Отпечаток строк автосборки: продукт и текст. Короткий, хранится в блоке */
+export function fingerprint(lines: readonly Pick<BlockLine, "product" | "text">[]): string {
+  let h = 5381;
+  for (const ch of lines.map((l) => `${l.product ?? ""}|${l.text}`).join("\n")) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return h.toString(36);
+}
+
+/**
+ * Живые цифры: блоки «Неделя к неделе» и «Месяц» без правок руками берут строки и пояснение свежей автосборки (при
+ * показе и при отправке), поправленные руками остаются как есть и помечаются stale, если автосборка с тех пор
+ * изменилась. Скрыт блок или нет, решает человек
+ */
+export function withLiveFigures(blocks: readonly ReportBlock[], fresh: readonly ReportBlock[]): ReportBlock[] {
+  return blocks.map((b) => {
+    if (!LIVE_FIGURE_KEYS.includes(b.key)) return b;
+    const f = fresh.find((x) => x.key === b.key);
+    if (!f) return b;
+    if (!b.edited) return { ...b, lines: f.lines.map((l) => ({ ...l })), note: f.note, basis: f.basis ?? null, stale: false };
+    return { ...b, stale: (f.basis ?? null) !== (b.basis ?? null) };
+  });
+}
+
+// ---------- Шаблон команды и сохранённый отчёт ----------
+
+/**
+ * Сохранённый отчёт команды по текущему шаблону: новые блоки шаблона встают на своё место (из автосборки или пустыми),
+ * блоки, которых в шаблоне больше нет, уходят вниз скрытыми со своими строками, названия своих блоков берутся из шаблона
+ */
+export function alignToTemplate(saved: readonly ReportBlock[], template: readonly TemplateBlock[], auto: readonly ReportBlock[]): ReportBlock[] {
+  const title = new Map(template.map((t) => [t.key, t.title]));
+  const out: ReportBlock[] = saved.filter((b) => title.has(b.key)).map((b) => ({ ...b, title: title.get(b.key)! }));
+  const gone = saved.filter((b) => !title.has(b.key)).map((b): ReportBlock => ({ ...b, hidden: true, note: "Блока больше нет в шаблоне команды: скрыт" }));
+  template.forEach((t, i) => {
+    if (out.some((b) => b.key === t.key)) return;
+    const f = auto.find((a) => a.key === t.key);
+    const block: ReportBlock = f ? { ...f, title: t.title, lines: f.lines.map((l) => ({ ...l })) } : { key: t.key, title: t.title, hidden: false, lines: [], note: null };
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.findIndex((b) => b.key === template[j]!.key);
+      if (k >= 0) {
+        at = k + 1;
+        break;
+      }
+    }
+    out.splice(at, 0, block);
+  });
+  return [...out, ...gone];
 }

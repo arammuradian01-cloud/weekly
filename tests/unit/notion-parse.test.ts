@@ -446,6 +446,20 @@ describe("weekly для CEO", () => {
     expect(pairs(draft, "risks")).toEqual([["department", "Задержка выгрузки"]]);
   });
 
+  it("слова разделов в начале обычной фразы не заголовок: «Рынок растёт», «Партнёры подписали договор», «Команда укомплектована»", () => {
+    const raw = parseByRules("Итоги\nРынок растёт\nПартнёры подписали договор\nКоманда укомплектована\nРиски:\n- Срыв сроков", { base: BASE, knows });
+    expect(raw.summary).toEqual(["Рынок растёт", "Партнёры подписали договор", "Команда укомплектована"]);
+    expect(raw.risks).toEqual(["Срыв сроков"]);
+    // Вне разделов короткие фразы тоже не теряются
+    expect(parseByRules("Рынок растёт\nКоманда укомплектована", { base: BASE, knows }).summary).toEqual(["Рынок растёт", "Команда укомплектована"]);
+    // С двоеточием, разметкой заголовка или одним названием раздела это заголовок
+    const marked = parseByRules("Рынок:\n- ЦБ поднял ставку\n**Партнёры**\n- Два новых агрегатора\nКоманда\n- Вышел аналитик\n## Конкуренты\n- Пампаду запустил подписку", { base: BASE, knows });
+    const draft = ceoDraftOf(marked);
+    expect(pairs(draft, "news").map(([, t]) => t)).toEqual(["ЦБ поднял ставку", "Вышел аналитик"]);
+    expect(pairs(draft, "partners")).toEqual([["partners", "Два новых агрегатора"]]);
+    expect(pairs(draft, "competitors").map(([, t]) => t)).toEqual(["Пампаду запустил подписку"]);
+  });
+
   it("дописать по блокам без повторов или заменить блоки черновика целиком", () => {
     const existing = [block("wow", [["osago", "Трафик +2%"]]), block("products", [["osago", "Рост конверсии"], ["department", "Бюджет защищён"]]), block("plan", [["osago", "Встреча с СК"]])];
     const draft = [block("products", [["osago", "рост конверсии."], ["kasko", "Пилот КАСКО"]]), block("risks", [["department", "Срыв сроков"]]), block("plan", [["osago", "Встреча с СК"]])];

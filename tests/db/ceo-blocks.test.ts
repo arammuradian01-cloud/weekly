@@ -18,7 +18,8 @@ import { listInbox } from "@/lib/inbox/service";
 import { addDays } from "@/domain/dates";
 import { dbDate } from "@/lib/tasks/dates";
 import { shiftWeek } from "@/lib/weekly/weeks";
-import type { ReportBlock } from "@/lib/weekly-blocks/types";
+import { NUMBERS_HIDDEN_TEXT, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { NUMBERS_ACCESS_KEY } from "@/lib/plan/access";
 import type { WeekKey } from "@/domain/types";
 
 const actor = {
@@ -47,7 +48,8 @@ async function clean() {
   await prisma.goal.deleteMany({ where: { code: { startsWith: "T66" } } });
   await prisma.planLine.deleteMany();
   await prisma.numbersRow.deleteMany({ where: { key: { startsWith: "t66" } } });
-  await prisma.setting.deleteMany({ where: { key: { in: ["numbers.metrics", "numbers.sourceId", COMPETITORS_KEY] } } });
+  await prisma.setting.deleteMany({ where: { key: { in: ["numbers.metrics", "numbers.sourceId", COMPETITORS_KEY, NUMBERS_ACCESS_KEY] } } });
+  await prisma.person.deleteMany({ where: { slug: "t66-reader" } });
   const week = await prisma.week.findUnique({ where: { start: dbDate(key) } });
   if (week) await prisma.weeklyEntry.deleteMany({ where: { weekId: week.id, importBatch: "t66" } });
 }
@@ -142,8 +144,12 @@ describe("автосборка weekly для CEO из базы", () => {
     const month = byKey(blocks, "month").lines.map((l) => l.text);
     expect(month[0]).toBe("ОСАГО: продажи 41 200 полисов при плане 40 000, план выполняем (+3,0%); выручка 120,5 млн при бюджете 118 млн (+2,1%); продажи к прошлому месяцу +3,0%");
     expect(month[1]).toMatch(/^КАСКО: продажи 900 лидов при плане 1 000, план не выполняем \(-10,0%\)/);
-    expect(month).toContain("Итого по продуктам: выручка 150,5 млн при бюджете 151 млн, план не выполняем (-0,3%); к прошлому месяцу +36,8%");
-    expect(month.at(-1)).toMatch(/^К прошлому году \(.+\): нет данных, в LRF этого месяца нет$/);
+    expect(month).toContain("Итого по продуктам: выручка 150,5 млн при бюджете 151 млн, план не выполняем (-0,3%); выручка к прошлому месяцу +36,8%");
+    expect(month.at(-1)).toMatch(/^Продажи и выручка к прошлому году \(.+\): нет данных, в LRF этого месяца нет$/);
+    // Строки с цифрами помечены уровнем доступа: при чтении их видят только те, кому открыты цифры
+    expect(byKey(blocks, "wow").lines.every((l) => l.figures === "summary")).toBe(true);
+    expect(byKey(blocks, "month").lines.every((l) => l.figures === "summary" || l.figures === "full")).toBe(true);
+    expect(byKey(blocks, "products").lines.every((l) => !l.figures)).toBe(true);
     expect(byKey(blocks, "month").lines[0]!.href).toBe(`/forecast?month=${planMonthOfWeek(key)}`);
     expect(byKey(blocks, "products").lines).toEqual([
       { product: "osago", text: "Конверсия ОСАГО выросла до 12%", href: "https://docs.example/osago", source: "Дашборд конверсии" },
@@ -268,6 +274,57 @@ describe("отправка CEO из отчёта по блокам", () => {
     await prisma.ceoReport.create({ data: { weekId: week.id, main: "- Главное по-старому", risks: "- Риск", next: "- Дальше", sentAt: new Date(), sentById: owner, sentTo: [{ id: await personId("ceo"), name: "CEO" }], sentSnapshot: { main: "- Главное по-старому", risks: "- Риск", next: "- Дальше", meetings: [] } } });
     const seen = await report.ceoSentReports(await actor.ceo(), key);
     expect(seen?.current).toMatchObject({ blocks: null, sections: { main: "- Главное по-старому", risks: "- Риск", next: "- Дальше" } });
+  });
+
+  it("цифры недели и месяца, которые не правили руками, уходят CEO свежими; поправленные руками уходят как есть", async () => {
+    const stale: ReportBlock = { key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "osago", text: "Старая цифра недели", href: null, source: null }] };
+    const mine: ReportBlock = { key: "month", title: "Месяц", hidden: false, note: null, edited: true, lines: [{ product: "osago", text: "Своими словами про месяц", href: null, source: null }] };
+    await report.sendCeoReport(await actor.owner(), key, { blocks: [...BLOCKS, stale, mine], expected: null });
+    const snap = report.snapshotOf((await prisma.ceoReport.findFirstOrThrow()).sentSnapshot)!;
+    // Недельный отчёт не подключён: свежая сборка честно пустая, старая цифра не ушла
+    expect(byKey(snap.blocks!, "wow")).toMatchObject({ lines: [], note: "Нет данных: недельный отчёт не подключён" });
+    expect(byKey(snap.blocks!, "month")).toMatchObject({ edited: true, lines: [{ text: "Своими словами про месяц", figures: "summary" }] });
+  });
+
+  it("получатель без доступа к цифрам видит вместо них строку «Цифры видны только с доступом к цифрам», и в разделах их нет", async () => {
+    const reader = await prisma.person.create({ data: { slug: "t66-reader", fullName: "Читалкин Тест", shortName: "Тест", role: "EMPLOYEE", zone: "Тест 66", active: true } });
+    const week = await weekly.ensureWeek(prisma, key);
+    const blocks: ReportBlock[] = [
+      { key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "osago", text: "Трафик ОСАГО: 512 000", href: `/forecast?tab=week&week=${key}`, source: "Цифры недели", figures: "summary" }] },
+      {
+        key: "month",
+        title: "Месяц",
+        hidden: false,
+        note: null,
+        lines: [
+          { product: "osago", text: "ОСАГО: продажи 41 200 полисов", href: "/forecast?month=2026-10", source: "Прогноз, октябрь 2026", figures: "summary" },
+          { product: "osago", text: "ОСАГО по СК: факт 25 400", href: "/forecast?month=2026-10", source: "Хаб: ОСАГО по СК", figures: "full" },
+        ],
+      },
+      BLOCKS[2]!,
+    ];
+    const snapshot = { main: "Неделя к неделе:\n- ОСАГО. Трафик ОСАГО: 512 000", risks: "", next: "", meetings: [], blocks };
+    await prisma.ceoReport.create({ data: { weekId: week.id, main: snapshot.main, risks: "", next: "", blocks, sentAt: new Date(), sentById: await personId("muradyan"), sentTo: [{ id: reader.id, name: "Читалкин Тест" }], sentSnapshot: snapshot } });
+    const who = { ...(await tasks.actorFor("t66-reader")), via: "PASSWORD" } as tasks.Actor;
+    const none = await report.ceoSentReports(who, key);
+    expect(none?.current?.ctx.level).toBe("none");
+    expect(none?.current?.blocks?.map((b) => b.lines.map((l) => l.text))).toEqual([[NUMBERS_HIDDEN_TEXT], [NUMBERS_HIDDEN_TEXT], ["Пилот такси - в ноябре", NUMBERS_HIDDEN_TEXT]]);
+    expect(JSON.stringify(none)).not.toMatch(/512 000|41 200|25 400|Конверсия 12%/);
+    // Основные цифры: итог месяца и неделя видны, хаб ОСАГО по СК нет
+    await prisma.setting.create({ data: { key: NUMBERS_ACCESS_KEY, value: { full: { units: [], people: [] }, summary: { topManagement: false, units: [], people: ["t66-reader"] } } } });
+    const summary = await report.ceoSentReports(who, key);
+    expect(summary?.current?.blocks?.find((b) => b.key === "month")?.lines.map((l) => l.text)).toEqual(["ОСАГО: продажи 41 200 полисов"]);
+    expect(JSON.stringify(summary)).not.toMatch(/25 400/);
+    // Под общим логином отчёт глазами получателя не открывается
+    expect(await report.ceoSentReports({ ...who, via: "TEAM" }, key)).toBeNull();
+  });
+
+  it("новости ленты конкурента не уходят в «Конкуренты» из-за имени самой ленты", async () => {
+    const source = await prisma.newsSource.create({ data: { name: "Банки.ру: новости", url: "https://test66.banki.example/rss" } });
+    await prisma.newsItem.create({ data: { sourceId: source.id, guid: "b1", urlKey: "test66.banki.example/1", url: "https://test66.banki.example/1", title: "Банки.ру: ставки по вкладам снизились", summary: "", publishedAt: new Date(`${addDays(key, 1)}T09:00:00+03:00`), directions: ["deposits"] } });
+    const { blocks } = await assembleCeoBlocks(await actor.owner(), key);
+    expect(byKey(blocks, "competitors")).toMatchObject({ hidden: true, lines: [] });
+    expect(byKey(blocks, "news").lines.map((l) => l.text)).toContain("Банки.ру: ставки по вкладам снизились");
   });
 
   it("подписи продуктов из справочника базы", async () => {

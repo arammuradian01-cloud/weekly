@@ -508,7 +508,8 @@ describe("weekly для CEO", () => {
     expect(seen?.current).toMatchObject({ blocks: merged.blocks, meetings: merged.meetings });
     await parse.sendParseToCeo(await owner(), id, { ceo: draft, mode: "replace", expected: merged.updatedAt });
     const replaced = await weekly.getCeoReport(key);
-    expect(pairs(replaced.blocks, "news")).toEqual([]);
+    // Пустой блок черновика ничего не заменяет: новости отчёта остались
+    expect(pairs(replaced.blocks, "news")).toEqual([["department", "Бюджет 2027 защищён"]]);
     expect(pairs(replaced.blocks, "plan")).toEqual([["department", "встреча с СК"]]);
     expect(replaced.meetings).toEqual(merged.meetings);
   });

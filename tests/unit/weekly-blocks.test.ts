@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  NUMBERS_HIDDEN_TEXT,
   STANDARD_BLOCKS,
   STANDARD_TEMPLATE,
+  alignToTemplate,
+  blocksForLevel,
   blocksText,
   blocksToLegacy,
   cleanBlocks,
   cleanTemplate,
   draftBlocksOf,
+  fingerprint,
   hasBlocksText,
   legacyToBlocks,
   lineText,
@@ -14,10 +18,14 @@ import {
   newCustomKey,
   productGroups,
   productOfText,
+  restoreHiddenFigures,
   safeHref,
+  withLiveFigures,
+  type BlockLine,
+  type FigureLevel,
   type ReportBlock,
 } from "@/lib/weekly-blocks/types";
-import { assembleBlocks, entryBlockKey, figureProduct, fmtPct, growthText, monthBlock, wowBlock, type AssembleInput, type MonthInput, type NewsInput, type TaskInput } from "@/lib/weekly-blocks/assemble";
+import { assembleBlocks, competitorLines, competitorMatches, competitorOf, entryBlockKey, figureProduct, fmtPct, growthText, monthBlock, wowBlock, type AssembleInput, type MonthInput, type NewsInput, type TaskInput } from "@/lib/weekly-blocks/assemble";
 import { addLine, defaultProduct, fromLegacy, moveBlock, patchLine, rebuildBlock, removeLine, setHidden, withoutEmptyLines } from "@/lib/weekly-blocks/edit";
 import { DEFAULT_COMPETITORS, cleanCompetitors, competitorsOf } from "@/lib/weekly-blocks/competitors";
 import { ceoBlocksText } from "@/lib/ceo/text";
@@ -47,7 +55,9 @@ const block = (key: string, lines: ReportBlock["lines"], extra: Partial<ReportBl
   note: null,
   ...extra,
 });
-const l = (product: string | null, text: string, href: string | null = null, source: string | null = null) => ({ product, text, href, source });
+const l = (product: string | null, text: string, href: string | null = null, source: string | null = null): BlockLine => ({ product, text, href, source });
+/** Строка с цифрами уровня доступа */
+const fig = (line: BlockLine, figures: FigureLevel): BlockLine => ({ ...line, figures });
 
 const EMPTY: AssembleInput = {
   template: STANDARD_TEMPLATE,
@@ -116,6 +126,17 @@ describe("продукт строки", () => {
     // «взрыв» не ВЗР, «осаговский» по началу слова тоже ОСАГО
     expect(productOfText("Взрыв спроса на кофе", PRODUCTS).product).toBeNull();
     expect(productOfText("Задержка данных от СК", PRODUCTS)).toEqual({ product: null, rest: "Задержка данных от СК" });
+  });
+
+  it("«вклад» и «инвестиции» подписывают депозиты только в продуктовом смысле", () => {
+    expect(productOfText("Вклад команды в запуск оценили на встрече", PRODUCTS).product).toBeNull();
+    expect(productOfText("Инвестиции в маркетинг выросли", PRODUCTS).product).toBeNull();
+    expect(productOfText("Ставки по вкладам выросли", PRODUCTS).product).toBe("deposits");
+    expect(productOfText("Запустили новый оффер по вкладам", PRODUCTS).product).toBe("deposits");
+    expect(productOfText("Открыли вклад на 6 месяцев", PRODUCTS).product).toBe("deposits");
+    expect(productOfText("Пилот ИИС для клиентов", PRODUCTS).product).toBe("deposits");
+    expect(productOfText("Инвестиционный продукт для новичков", PRODUCTS).product).toBe("deposits");
+    expect(productOfText("Инвестиции: запустили подборку", PRODUCTS).product).toBe("deposits");
   });
 
   it("продукт цифры недели по её названию", () => {
@@ -226,11 +247,18 @@ describe("слияние черновика с отчётом недели", () 
     expect(byKey(out, "risks")).toMatchObject({ hidden: true, lines: [l("osago", "Риск А"), l("kasko", "Риск Б")] });
   });
 
-  it("заменить: блоки черновика целиком, цифры недели не трогаются", () => {
+  it("заменить: написанные строки блоков черновика, цифры недели не трогаются", () => {
     const out = mergeBlocks(existing, draft, "replace");
     expect(byKey(out, "wow").lines).toEqual([l("osago", "Трафик +2%")]);
     expect(byKey(out, "products").lines).toEqual([l("osago", "конверсия 12 %"), l("kasko", "Пилот такси")]);
     expect(byKey(out, "risks")).toMatchObject({ hidden: false, lines: [l("kasko", "Риск Б")] });
+  });
+
+  it("заменить: пустой блок черновика ничего не стирает, собранные строки со ссылкой на источник остаются", () => {
+    const base = [block("news", [l("osago", "Новость ЦБ", "https://cbr.ru/1", "Банк России"), l("department", "Написали руками")]), block("plan", [l("osago", "Задача 7, срок 28.10", "/tasks/7", "Задача 7")])];
+    const out = mergeBlocks(base, [block("news", [l("kasko", "С встречи")]), block("plan", [])], "replace");
+    expect(byKey(out, "news").lines).toEqual([l("osago", "Новость ЦБ", "https://cbr.ru/1", "Банк России"), l("kasko", "С встречи")]);
+    expect(byKey(out, "plan").lines).toEqual([l("osago", "Задача 7, срок 28.10", "/tasks/7", "Задача 7")]);
   });
 });
 
@@ -265,12 +293,14 @@ describe("неделя к неделе", () => {
       "department",
     );
     expect(w.note).toBeNull();
-    expect(w.lines).toEqual([
-      l("osago", "ОСАГО: продажи за неделю 9 800 полисов, падение на 200 (-2,0%) к прошлой неделе", "/forecast?month=2026-10", "Факт по дням"),
-      l("osago", "Трафик ОСАГО: 512 000, рост на 7 663 (+1,5%) к прошлой неделе", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
-      l("kasko", "CR КАСКО: 10%, падение на 2 п.п. к прошлой неделе", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
-      l("department", "Выручка всего: 120 млн, прошлой недели в отчёте нет", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
-    ]);
+    expect(w.lines).toEqual(
+      [
+        l("osago", "ОСАГО: продажи за неделю 9 800 полисов, падение на 200 (-2,0%) к прошлой неделе", "/forecast?month=2026-10", "Факт по дням"),
+        l("osago", "Трафик ОСАГО: 512 000, рост на 7 663 (+1,5%) к прошлой неделе", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
+        l("kasko", "CR КАСКО: 10%, падение на 2 п.п. к прошлой неделе", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
+        l("department", "Выручка всего: 120 млн, прошлой недели в отчёте нет", "/forecast?tab=week&week=2026-10-12", "Цифры недели"),
+      ].map((x) => fig(x, "summary")),
+    );
     expect(wowBlock({ connected: false, ready: false, week: "2026-10-12", latestWeek: null, href: "/x", figures: [], sales: [] }, PRODUCTS, null, null).note).toBe("Нет данных: недельный отчёт не подключён");
     expect(wowBlock({ connected: true, ready: false, week: "2026-10-12", latestWeek: "2026-10-05", href: "/x", figures: [{ label: "a", unit: "count", value: null, prev: null }], sales: [] }, PRODUCTS, null, null).note).toBe(
       "Нет данных: за неделю с 12.10 цифр в недельном отчёте ещё нет, последняя неделя с 05.10",
@@ -279,6 +309,9 @@ describe("неделя к неделе", () => {
     // Команда смотрит только на свои продукты
     const kasko = wowBlock({ connected: true, ready: true, week: "2026-10-12", latestWeek: null, href: "/x", figures: [{ label: "Трафик ОСАГО", unit: "count", value: 1, prev: 1 }, { label: "Трафик КАСКО", unit: "count", value: 2, prev: 1 }], sales: [] }, PRODUCTS, ["kasko"], null);
     expect(kasko.lines.map((x) => x.product)).toEqual(["kasko"]);
+    // У людей команды нет продуктового направления: ни одной чужой цифры, честная пометка
+    const none = wowBlock({ connected: true, ready: true, week: "2026-10-12", latestWeek: null, href: "/x", figures: [{ label: "Выручка всего", unit: "mln", value: 1, prev: 1 }], sales: [] }, PRODUCTS, [], "department");
+    expect(none).toEqual({ lines: [], note: "Цифр по продуктам команды нет: у людей команды не задано направление продукта" });
   });
 });
 
@@ -304,18 +337,26 @@ describe("месяц", () => {
   it("план продаж по продуктам и итог, прошлый месяц только где есть, прошлого года нет: «нет данных»; хаб и партнёры", () => {
     const m = monthBlock(MONTH, null, "department");
     const src = "Прогноз, октябрь 2026";
+    // Подпись сравнения говорит, что сравнивается: продажи продукта, выручка в итоге, ранрейт хаба
     expect(m.lines).toEqual([
-      l("osago", "ОСАГО: продажи 41 200 полисов при плане 40 000, план выполняем (+3,0%); выручка 120,5 млн при бюджете 118 млн (+2,1%); продажи к прошлому месяцу +3,0%", MONTH.href, src),
-      l("kasko", "КАСКО: продажи 900 лидов при плане 1 000, план не выполняем (-10,0%); выручка 30,0 млн при бюджете 33,0 млн (-9,1%)", MONTH.href, src),
-      l("department", "Итого по продуктам: выручка 150,5 млн при бюджете 151 млн, план не выполняем (-0,3%); к прошлому месяцу +7,5%", MONTH.href, src),
-      l("osago", "ОСАГО по СК: факт с начала месяца 25 400 полисов по 21.10, ранрейт 41 000 при плане 40 000 (+2,5%), к прошлому месяцу +5,1%", MONTH.href, "Хаб: ОСАГО по СК"),
-      l("department", "К прошлому году (октябрь 2025): нет данных, в LRF этого месяца нет"),
+      fig(l("osago", "ОСАГО: продажи 41 200 полисов при плане 40 000, план выполняем (+3,0%); выручка 120,5 млн при бюджете 118 млн (+2,1%); продажи к прошлому месяцу +3,0%", MONTH.href, src), "summary"),
+      fig(l("kasko", "КАСКО: продажи 900 лидов при плане 1 000, план не выполняем (-10,0%); выручка 30,0 млн при бюджете 33,0 млн (-9,1%)", MONTH.href, src), "summary"),
+      fig(l("department", "Итого по продуктам: выручка 150,5 млн при бюджете 151 млн, план не выполняем (-0,3%); выручка к прошлому месяцу +7,5%", MONTH.href, src), "summary"),
+      fig(l("osago", "ОСАГО по СК: факт с начала месяца 25 400 полисов по 21.10, ранрейт 41 000 при плане 40 000 (+2,5%), ранрейт к прошлому месяцу +5,1%", MONTH.href, "Хаб: ОСАГО по СК"), "full"),
+      fig(l("department", "Продажи и выручка к прошлому году (октябрь 2025): нет данных, в LRF этого месяца нет"), "summary"),
     ]);
-    expect(m.partners).toEqual([l("partners", "Партнёрский канал: выручка 50,0 млн при бюджете 55,0 млн, план не выполняем (-9,1%)", "/forecast?tab=partners&month=2026-10", "Прогноз: партнёры, октябрь 2026")]);
+    expect(m.partners).toEqual([fig(l("partners", "Партнёрский канал: выручка 50,0 млн при бюджете 55,0 млн, план не выполняем (-9,1%)", "/forecast?tab=partners&month=2026-10", "Прогноз: партнёры, октябрь 2026"), "full")]);
     expect(monthBlock(null, null, null)).toMatchObject({ lines: [], note: "Нет данных: прогноз месяца ещё не загружен из LRF" });
     expect(monthBlock("closed", null, null).note).toMatch(/видят те, кому открыт прогноз/);
     const both = monthBlock({ ...MONTH, hasPrevMonth: false, hub: null }, null, null);
-    expect(both.lines.at(-1)!.text).toBe("К прошлому месяцу (сентябрь 2026) и к прошлому году (октябрь 2025): нет данных, в LRF этих месяцев нет");
+    expect(both.lines.at(-1)!.text).toBe("Продажи и выручка к прошлому месяцу (сентябрь 2026) и к прошлому году (октябрь 2025): нет данных, в LRF этих месяцев нет");
+    const year = monthBlock({ ...MONTH, products: [{ ...MONTH.products[0]!, prevYear: { units: 38000, revenue: 100 } }], total: { ...MONTH.total, prevYear: 125 }, hasPrevYear: true, hub: null }, null, null);
+    expect(year.lines[0]!.text).toMatch(/; продажи к прошлому году \+8,4%$/);
+    expect(year.lines[1]!.text).toMatch(/; выручка к прошлому году \+20,4%$/);
+    // Команда вне страхования (нет продуктового направления): ни продуктов, ни итога, ни хаба, ни партнёров
+    expect(monthBlock(MONTH, [], "department")).toEqual({ lines: [], note: "Цифр по продуктам команды нет: у людей команды не задано направление продукта", partners: [] });
+    // Команда КАСКО: только КАСКО, без итога департамента и без хаба ОСАГО
+    expect(monthBlock(MONTH, ["kasko"], "department").lines.map((x) => x.text.split(":")[0])).toEqual(["КАСКО", "Продажи и выручка к прошлому году (октябрь 2025)"]);
   });
 });
 
@@ -363,6 +404,10 @@ describe("сборка блоков", () => {
     for (const b of out) for (const x of b.lines) expect(x.product).not.toBeNull();
     expect(entryBlockKey({ section: "c:abcd1234", type: "result", block: "x", direction: "osago" }, ["c:abcd1234", "risks"])).toBe("c:abcd1234");
     expect(entryBlockKey({ section: null, type: "result", block: "x", direction: "osago" }, ["risks", "c:abcd1234"])).toBe("risks");
+    // Блоки цифр собирает ресурс: запись с блоком «Неделя к неделе» раскладывается по смыслу
+    expect(entryBlockKey({ section: "wow", type: "result", block: "numbers", direction: "osago" }, ["wow", "month", "products"])).toBe("products");
+    expect(entryBlockKey({ section: "month", type: "risk", block: "numbers", direction: "osago" }, ["month", "risks"])).toBe("risks");
+    expect(entryBlockKey({ section: "wow", type: "result", block: "numbers", direction: "osago" }, ["wow", "c:abcd1234"])).toBe("c:abcd1234");
   });
 
   it("задачи: выполненные в продукты и партнёрку, под риском и заблокированные в риски, со сроком на неделе в план; не больше трёх на продукт", () => {
@@ -430,6 +475,15 @@ describe("правки редактора", () => {
     expect(blocks[2]!.lines).toHaveLength(2);
   });
 
+  it("правка строк помечает блок поправленным руками, «собрать заново» снимает пометку", () => {
+    expect(patchLine(blocks, "risks", 0, { text: "x" })[2]!.edited).toBe(true);
+    expect(addLine(blocks, "wow", "department")[1]!.edited).toBe(true);
+    expect(removeLine(blocks, "risks", 0)[2]!.edited).toBe(true);
+    expect(setHidden(blocks, "wow", true)[1]!.edited).toBeUndefined();
+    const fresh = [block("wow", [l("osago", "свежая")], { basis: "abc" })];
+    expect(rebuildBlock(patchLine(blocks, "risks", 0, { text: "x" }), fresh, "wow")[1]).toMatchObject({ edited: false, stale: false, basis: "abc" });
+  });
+
   it("собрать блок заново, продукт новой строки, старый отчёт с живыми цифрами", () => {
     const fresh = [block("wow", [l("osago", "свежая цифра")], { note: "Прогноз на сейчас" })];
     expect(rebuildBlock(blocks, fresh, "wow")[1]).toMatchObject({ lines: [l("osago", "свежая цифра")], note: "Прогноз на сейчас" });
@@ -443,6 +497,41 @@ describe("правки редактора", () => {
 });
 
 describe("конкуренты", () => {
+  it("слово по началу, пара «A + B» в одной фразе, минус-слово не считается", () => {
+    const tbank = DEFAULT_COMPETITORS.find((c) => c.name.startsWith("Т-Банк"))!.keywords;
+    expect(competitorMatches("Т-Банк запустил сервис сравнения полисов ОСАГО", tbank)).toBe(true);
+    expect(competitorMatches("Т-Банк стал страховым агрегатором", tbank)).toBe(true);
+    // Страховщик «Т-Страхование» не агрегатор Т-Банка, даже если рядом есть слово «сравнение»
+    expect(competitorMatches("Т-Страхование повысило тарифы КАСКО", tbank)).toBe(false);
+    expect(competitorMatches("Т-Страхование запустило сравнение тарифов", tbank)).toBe(false);
+    expect(competitorMatches("Тинькофф Страхование вышло на рынок ДМС", tbank)).toBe(false);
+    // Т-Банк и агрегатор в разных фразах: не пара
+    expect(competitorMatches("Т-Банк снизил ставки по вкладам. Агрегатор Сравни обновил витрину", tbank)).toBe(false);
+    expect(competitorMatches("Т-Банк снизил ставки по вкладам\nАгрегатор обновил витрину", tbank)).toBe(false);
+    expect(competitorMatches("Пампаду запустил КАСКО", ["Пампаду"])).toBe(true);
+  });
+
+  it("имя самой ленты признаком не считается: новости ленты Банки.ру не про Банки.ру", () => {
+    const item = { title: "Банки.ру: ставки по вкладам снизились", summary: "Обзор banki.ru", feed: { name: "Банки.ру: новости", url: "https://www.banki.ru/xml/news.rss" } };
+    expect(competitorOf(item, DEFAULT_COMPETITORS)).toBeNull();
+    expect(competitorOf({ ...item, feed: null }, DEFAULT_COMPETITORS)?.name).toBe("Банки.ру");
+    // На ленте Банки.ру новость про Пампаду остаётся новостью про Пампаду
+    expect(competitorOf({ ...item, title: "Пампаду привлёк инвестиции" }, DEFAULT_COMPETITORS)?.name).toBe("Пампаду");
+    // В блок новостей рынка новость ленты Банки.ру попадает как обычная новость
+    const out = assembleBlocks({ ...EMPTY, news: [{ title: "Банки.ру: ставки по вкладам снизились", url: "https://banki.ru/1", source: "Банки.ру: новости", directions: ["deposits"], summary: "", feed: item.feed }] });
+    expect(byKey(out, "news").lines.map((x) => x.text)).toEqual(["Банки.ру: ставки по вкладам снизились"]);
+    expect(byKey(out, "competitors").lines).toEqual([]);
+  });
+
+  it("отчёт команды: новости конкурентов только по продуктам команды", () => {
+    const news: NewsInput[] = [
+      { title: "Пампаду запустил КАСКО", url: "https://a.ru/1", source: "А", directions: ["kasko"], summary: "" },
+      { title: "Пампаду и ОСАГО", url: "https://a.ru/2", source: "А", directions: ["osago"], summary: "" },
+    ];
+    expect(competitorLines(news, DEFAULT_COMPETITORS, PRODUCTS, "department", ["kasko"]).map((x) => x.product)).toEqual(["kasko"]);
+    expect(competitorLines(news, DEFAULT_COMPETITORS, PRODUCTS, "department", [])).toEqual([]);
+  });
+
   it("стартовый список, чистка списка с экрана", () => {
     expect(competitorsOf(null).map((c) => c.name)).toEqual(["Банки.ру", "Выберу.ру", "Пампаду", "Т-Банк (агрегатор страхования)", "Инсапп", "Cherehapa", "Финуслуги"]);
     expect(competitorsOf([])).toEqual([]);
@@ -450,6 +539,112 @@ describe("конкуренты", () => {
       { name: "Пампаду", keywords: ["Пампаду", "Pampadu"] },
       { name: "Новый", keywords: ["Новый"] },
     ]);
+    // Одни минус-слова: конкурент ищется и по имени
+    expect(cleanCompetitors([{ name: "Сравнитель", keywords: "-Сравнительно" }])).toEqual([{ name: "Сравнитель", keywords: ["Сравнитель", "-Сравнительно"] }]);
+  });
+});
+
+describe("цифры по уровню доступа", () => {
+  const stored = cleanBlocks(
+    [
+      { key: "wow", title: "Неделя к неделе", lines: [{ product: "osago", text: "Трафик ОСАГО: 512 000", href: "/forecast?tab=week", source: "Цифры недели" }, { product: "department", text: "Цифру написали руками" }] },
+      {
+        key: "month",
+        title: "Месяц",
+        lines: [
+          { product: "osago", text: "ОСАГО: продажи 41 200", href: "/forecast?month=2026-10", source: "Прогноз, октябрь 2026" },
+          { product: "osago", text: "ОСАГО по СК: факт 25 400", href: "/forecast?month=2026-10", source: "Хаб: ОСАГО по СК" },
+        ],
+      },
+      {
+        key: "partners",
+        title: "Партнёрский канал",
+        lines: [
+          { product: "partners", text: "Подключили банк", href: null },
+          { product: "partners", text: "Партнёрский канал: выручка 50 млн", href: "/forecast?tab=partners&month=2026-10", source: "Прогноз: партнёры, октябрь 2026" },
+        ],
+      },
+    ],
+    null,
+  );
+
+  it("строки с цифрами помечаются при чистке: блоки цифр целиком, хаб и партнёры только со всеми цифрами", () => {
+    expect(stored.map((b) => b.lines.map((x) => x.figures ?? "-"))).toEqual([["summary", "summary"], ["summary", "full"], ["-", "full"]]);
+    // Помеченную строку не понизить с экрана
+    expect(cleanBlocks([{ key: "news", title: "x", lines: [{ product: null, text: "Хаб", href: "/forecast?month=1", source: "Хаб: ОСАГО по СК", figures: "summary" }] }], null)[0]!.lines[0]!.figures).toBe("full");
+  });
+
+  it("без доступа: цифры заменены одной строкой; с основными цифрами без хаба и партнёров; со всеми как есть", () => {
+    const none = blocksForLevel(stored, "none");
+    expect(none.map((b) => b.lines.map((x) => x.text))).toEqual([[NUMBERS_HIDDEN_TEXT], [NUMBERS_HIDDEN_TEXT], ["Подключили банк", NUMBERS_HIDDEN_TEXT]]);
+    expect(JSON.stringify(none)).not.toMatch(/512|41 200|25 400|50 млн/);
+    const summary = blocksForLevel(stored, "summary");
+    expect(summary.map((b) => b.lines.map((x) => x.text))).toEqual([["Трафик ОСАГО: 512 000", "Цифру написали руками"], ["ОСАГО: продажи 41 200"], ["Подключили банк"]]);
+    expect(blocksForLevel(stored, "full")).toEqual(stored);
+  });
+
+  it("строка «цифры видны только с доступом» не хранится, а сохранение без доступа возвращает чужие цифры на место", () => {
+    const seen = blocksForLevel(stored, "none");
+    expect(cleanBlocks(seen, null).map((b) => b.lines.length)).toEqual([0, 0, 1]);
+    const edited = cleanBlocks(seen, null).map((b) => (b.key === "partners" ? { ...b, lines: [l("partners", "Подключили два банка")] } : b));
+    const back = restoreHiddenFigures(edited, stored, "none");
+    expect(byKey(back, "partners").lines.map((x) => x.text)).toEqual(["Подключили два банка", "Партнёрский канал: выручка 50 млн"]);
+    // Блоки живых цифр без правок не трогаются: их строки пересоберутся сами
+    expect(byKey(back, "wow").lines).toEqual([]);
+    const fixed = restoreHiddenFigures(edited.map((b) => (b.key === "wow" ? { ...b, edited: true } : b)), stored, "none");
+    expect(byKey(fixed, "wow").lines.map((x) => x.text)).toEqual(["Трафик ОСАГО: 512 000", "Цифру написали руками"]);
+    expect(restoreHiddenFigures(edited, stored, "full")).toEqual(edited);
+  });
+});
+
+describe("живые цифры", () => {
+  const fresh = [block("wow", [l("osago", "Трафик 520 000")], { note: "Свежие", basis: fingerprint([l("osago", "Трафик 520 000")]) }), block("month", [l("osago", "Продажи 42 000")], { basis: fingerprint([l("osago", "Продажи 42 000")]) })];
+
+  it("без правок руками блоки цифр берут свежую автосборку, поправленные остаются и помечаются, если цифры обновились", () => {
+    const saved = [
+      block("wow", [l("osago", "Трафик 512 000")], { basis: fingerprint([l("osago", "Трафик 512 000")]), hidden: true }),
+      block("month", [l("osago", "Продажи около 42 тысяч")], { edited: true, basis: fingerprint([l("osago", "Продажи 41 000")]) }),
+      block("products", [l("osago", "Запустили тест")]),
+    ];
+    const out = withLiveFigures(saved, fresh);
+    expect(byKey(out, "wow")).toMatchObject({ lines: [l("osago", "Трафик 520 000")], note: "Свежие", hidden: true, stale: false });
+    expect(byKey(out, "month")).toMatchObject({ lines: [l("osago", "Продажи около 42 тысяч")], edited: true, stale: true });
+    expect(byKey(out, "products")).toEqual(saved[2]);
+    // Цифры с правки не менялись: пометки нет
+    const same = withLiveFigures([block("month", [l("osago", "Своими словами")], { edited: true, basis: fresh[1]!.basis })], fresh);
+    expect(same[0]!.stale).toBe(false);
+  });
+
+  it("автосборка ставит отпечаток на блоки цифр, пометка stale не хранится", () => {
+    const out = assembleBlocks({ ...EMPTY, wow: { connected: true, ready: true, week: "2026-10-12", latestWeek: null, href: "/x", figures: [{ label: "Трафик ОСАГО", unit: "count", value: 2, prev: 1 }], sales: [] } });
+    expect(byKey(out, "wow").basis).toBe(fingerprint(byKey(out, "wow").lines));
+    expect(byKey(out, "products").basis).toBeUndefined();
+    expect(cleanBlocks([{ ...byKey(out, "wow"), edited: true, stale: true }], null)[0]).toMatchObject({ edited: true, basis: byKey(out, "wow").basis });
+    expect(cleanBlocks([{ ...byKey(out, "wow"), stale: true }], null)[0]!.stale).toBeUndefined();
+  });
+});
+
+describe("шаблон команды и сохранённый отчёт", () => {
+  it("новые блоки шаблона встают на место, убранные скрываются со строками, названия своих блоков из шаблона", () => {
+    const saved = [block("products", [l("osago", "a")]), block("c:hire0001", [l("osago", "Найм")], { title: "Найм" }), block("risks", [l("osago", "Риск")])];
+    const template = [
+      { key: "news", title: "Новости рынка и команды" },
+      { key: "products", title: "Продукты" },
+      { key: "plan", title: "План на неделю" },
+      { key: "c:hire0001", title: "Найм и адаптация" },
+    ];
+    const auto = [block("news", [l("osago", "Новость", "https://x.ru/1", "X")]), block("plan", [])];
+    const out = alignToTemplate(saved, template, auto);
+    expect(out.map((b) => [b.key, b.hidden])).toEqual([
+      ["news", false],
+      ["products", false],
+      ["plan", false],
+      ["c:hire0001", false],
+      ["risks", true],
+    ]);
+    expect(byKey(out, "news").lines).toEqual([l("osago", "Новость", "https://x.ru/1", "X")]);
+    expect(byKey(out, "c:hire0001").title).toBe("Найм и адаптация");
+    expect(byKey(out, "risks")).toMatchObject({ lines: [l("osago", "Риск")], note: "Блока больше нет в шаблоне команды: скрыт" });
   });
 });
 

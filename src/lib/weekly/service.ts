@@ -19,6 +19,7 @@ import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekEndOf, w
 import type { EntrySnapshot } from "./undo";
 import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
 import { cleanBlocks, isBlockKey, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { sectionForAuthor } from "@/lib/weekly-blocks/author";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
@@ -534,7 +535,8 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       next,
       help,
       links: links as unknown as Prisma.InputJsonValue,
-      ...(input.section !== undefined ? { section: typeof input.section === "string" && isBlockKey(input.section) ? input.section : null } : {}),
+      // Блок отчёта команды (этап 66): только блок шаблона, по которому автор записи сдаёт weekly, и не блок цифр
+      ...(input.section !== undefined ? { section: typeof input.section === "string" && isBlockKey(input.section) ? await sectionForAuthor(existing?.authorId ?? actor.personId, input.section, tx) : null } : {}),
     };
     // Черновик с устройства начат со старой версии: если на сервере уже другой текст, поверх не пишем. Тот же текст
     // (ответ на прошлую отправку потерялся по дороге) не конфликт

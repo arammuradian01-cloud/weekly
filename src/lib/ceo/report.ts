@@ -14,8 +14,8 @@ import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
 import { notify } from "@/lib/inbox/notify";
 import { audit, getCeoReport, weekContext, type CeoReportView } from "@/lib/weekly/service";
 import type { CeoSections } from "@/lib/weekly/rules";
-import { blocksMeta, type BlocksMeta } from "@/lib/weekly-blocks/sources";
-import { blocksToLegacy, cleanBlocks, hasBlocksText, lineText, orderedLines, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { assembleCeoBlocks, blocksMeta, type BlocksMeta } from "@/lib/weekly-blocks/sources";
+import { blocksForLevel, blocksToLegacy, cleanBlocks, hasBlocksText, lineText, orderedLines, withLiveFigures, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { cleanMeetings, type CeoMeeting } from "./text";
 import { ceoContext, type CeoContext } from "./assembled";
 
@@ -130,18 +130,24 @@ export async function markCeoSentIn(tx: Tx, actor: Actor, key: WeekKey, saved: C
 
 export type SendCeoReportInput = { blocks: unknown; meetings?: unknown; expected: string | null };
 
-/** Отправить CEO отчёт недели со страницы «Отчёт CEO»: сохранить блоки и пометить отправленным одной транзакцией */
+/**
+ * Отправить CEO отчёт недели со страницы «Отчёт CEO»: сохранить блоки и пометить отправленным одной транзакцией. Цифры
+ * недели и месяца, которые не правили руками, уходят свежими: автосборка считается в момент отправки
+ */
 export async function sendCeoReport(actor: Actor, key: WeekKey, input: SendCeoReportInput, now = new Date()): Promise<CeoReportView> {
   requireEdit(actor);
   if (!personalLogin(actor)) fail("Отправить CEO можно при личном входе: так CEO видит, кто отправил");
   if (!canSendCeo(actor)) fail("Отправить CEO может владелец или администратор в режиме управления");
   const meta = await blocksMeta();
-  if (!hasBlocksText(cleanBlocks(input?.blocks, new Set(meta.order)))) fail("Weekly для CEO пустой: в видимых блоках нет ни одной строки");
+  const clean = cleanBlocks(input?.blocks, new Set(meta.order));
+  if (!hasBlocksText(clean)) fail("Weekly для CEO пустой: в видимых блоках нет ни одной строки");
   const recipients = await ceoRecipients();
   if (!recipients.length) fail("Не найден CEO: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»");
+  // Свежая автосборка до транзакции: она читает много таблиц
+  const blocks = withLiveFigures(clean, (await assembleCeoBlocks(actor, key, now)).blocks);
   await prisma.$transaction(
     async (tx) => {
-      const saved = await saveCeoBlocksIn(tx, actor, key, input.blocks, input.meetings, input.expected ?? null, meta);
+      const saved = await saveCeoBlocksIn(tx, actor, key, blocks, input.meetings, input.expected ?? null, meta);
       const week = await weekContext(tx, key);
       const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил weekly для CEO за неделю ${week.info.number}`, now);
       await audit(tx, actor, "ceo.send", "ceo-report", key, `Weekly для CEO, неделя ${week.info.number}`, null, `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}`);
@@ -176,7 +182,9 @@ export type CeoInboxView = {
 
 /**
  * Отправленные CEO отчёты для CEO: только чтение и только при личном входе. Неделя не задана или не отправлена:
- * последняя отправленная. Цифры, решения и благодарности собираются живыми за ту неделю, цифры по уровню зрителя
+ * последняя отправленная. Цифры, решения и благодарности собираются живыми за ту неделю, цифры по уровню зрителя. Строки
+ * блоков с цифрами тоже по уровню: запасной профиль CEO или другой получатель без доступа к цифрам видит вместо них
+ * «Цифры видны только с доступом к цифрам», и прежние разделы для него собираются из уже урезанных блоков
  */
 export async function ceoSentReports(actor: Actor, key?: string | null): Promise<CeoInboxView | null> {
   if (!personalLogin(actor)) return null;
@@ -194,17 +202,19 @@ export async function ceoSentReports(actor: Actor, key?: string | null): Promise
   if (pick) {
     const snap = snapshotOf(pick.sentSnapshot) ?? { main: pick.main, risks: pick.risks, next: pick.next, meetings: cleanMeetings(pick.meetings), blocks: Array.isArray(pick.blocks) ? cleanBlocks(pick.blocks, null) : null };
     const week = isoFromDbDate(pick.week.start) as WeekKey;
-    const meta = await blocksMeta();
+    const [meta, ctx] = await Promise.all([blocksMeta(), ceoContext(actor, week, { recipient: true })]);
+    const blocks = snap.blocks ? blocksForLevel(snap.blocks, ctx.level) : null;
     current = {
       key: week,
       number: pick.week.isoNumber,
-      sections: { main: snap.main, risks: snap.risks, next: snap.next },
-      blocks: snap.blocks,
+      // Разделы для тех, кто видит не все цифры, из урезанных блоков: в разделах те же строки текстом
+      sections: blocks && ctx.level !== "full" ? blocksToLegacy(blocks, meta.labels, meta.order) : { main: snap.main, risks: snap.risks, next: snap.next },
+      blocks,
       meetings: snap.meetings,
       sentAt: pick.sentAt!.toISOString(),
       sentBy: pick.sentBy?.fullName ?? null,
       editedAfter: pick.updatedAt.getTime() > pick.sentAt!.getTime(),
-      ctx: await ceoContext(actor, week, { recipient: true }),
+      ctx,
       labels: meta.labels,
       order: meta.order,
     };
