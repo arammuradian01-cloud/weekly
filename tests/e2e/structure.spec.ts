@@ -250,7 +250,7 @@ test("этап 53: структура всей компании, генерал�
   await enterByLink(lead, "reva");
   await lead.goto("/people/structure");
   await lead.getByTestId("manage-teams").click();
-  await expect(lead).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(lead).toHaveURL(/\/people\/teams$/);
   await lead.getByTestId("teams-list").getByRole("link", { name: /^Управление продуктового развития \(insurance\)/ }).click();
   const team = (await sql("SELECT id FROM teams WHERE name = 'Управление продуктового развития (insurance)'"))[0]!.id as string;
   const card = lead.getByTestId("team-card");
@@ -274,7 +274,7 @@ test("этап 53: структура всей компании, генерал�
   await boss.goto("/me");
   await boss.getByRole("link", { name: "Запрос в команду" }).first().click();
   // Этап 64: запросы решают на экране «Weekly-команды»
-  await expect(boss).toHaveURL(/\/people\/teams(\?team=[^#&]+)?#join-requests$/);
+  await expect(boss).toHaveURL(/\/people\/teams#join-requests$/);
   await expect(boss.getByTestId("join-requests")).toContainText("Погосова Сабина");
   await shot(boss, "company-join-request");
   await boss.getByRole("button", { name: "Согласовать" }).click();

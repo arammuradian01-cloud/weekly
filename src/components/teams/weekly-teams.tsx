@@ -7,7 +7,7 @@
 // Перетаскивание подразделений и людей осталось помощником «Собрать из структуры», свёрнутым по умолчанию.
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Users } from "lucide-react";
 import type { WeeklyTeam, WeeklyTeamsView } from "@/lib/org/teams";
@@ -29,6 +29,38 @@ import { ManageHint } from "./manage-hint";
 
 /** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
 const NARROW = "(max-width: 1023.98px)";
+
+/** Широкий экран (список и карточка рядом). На сервере и до гидратации считаем узким: подсветку строки решает браузер */
+function subscribeWide(onChange: () => void) {
+  const m = window.matchMedia(NARROW);
+  m.addEventListener("change", onChange);
+  return () => m.removeEventListener("change", onChange);
+}
+const useWide = () => useSyncExternalStore(subscribeWide, () => !window.matchMedia(NARROW).matches, () => false);
+
+/** Помощник «Собрать из структуры» раскрыт: помним на вкладку браузера, чтобы он не сворачивался сам */
+const ASSEMBLE_KEY = "weekly.teams.assemble";
+const assembleListeners = new Set<() => void>();
+function subscribeAssemble(onChange: () => void) {
+  assembleListeners.add(onChange);
+  return () => assembleListeners.delete(onChange);
+}
+function assembleOpen(): boolean {
+  try {
+    return sessionStorage.getItem(ASSEMBLE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function rememberAssemble(open: boolean) {
+  try {
+    if (open) sessionStorage.setItem(ASSEMBLE_KEY, "1");
+    else sessionStorage.removeItem(ASSEMBLE_KEY);
+  } catch {
+    // Хранилище недоступно: помощник просто откроется свёрнутым
+  }
+  for (const l of assembleListeners) l();
+}
 
 function intro(view: WeeklyTeamsView): string {
   if (view.mode === "shared") return "Под общим входом команды только для просмотра. Чтобы управлять своей командой, войдите со своим логином и паролем.";
@@ -163,17 +195,15 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // Карточка: выбранная в адресе команда. На ноутбуке без выбора честно выбирается первая (адрес тоже), на телефоне
-  // без выбора только список, и в нём ничего не подсвечено
+  const wide = useWide();
+  const assembleIsOpen = useSyncExternalStore(subscribeAssemble, assembleOpen, () => false);
+  // Карточка: выбранная в адресе команда. Без выбора на ноутбуке показана и подсвечена первая команда (адрес не
+  // трогаем: выбор строки человеком всегда сильнее и ничем не перебивается), на телефоне только список без подсветки
   const selected = picked ? (view.teams.find((t) => t.id === picked) ?? (view.extra?.id === picked ? view.extra : null)) : null;
   const first = view.teams[0] ?? null;
   const shown = selected ?? first;
+  const current = selected ?? (wide ? first : null);
   const cardMode = !!selected;
-
-  useEffect(() => {
-    if (picked || !first || window.matchMedia(NARROW).matches) return;
-    window.history.replaceState(null, "", `${pathname}?team=${encodeURIComponent(first.id)}${window.location.hash}`);
-  }, [picked, first, pathname]);
 
   useEffect(() => {
     const f = focusRef.current;
@@ -205,7 +235,8 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     if (picked === id) return;
     const url = `${pathname}?team=${encodeURIComponent(id)}`;
     const narrow = window.matchMedia(NARROW).matches;
-    if (picked) window.history.replaceState(null, "", url);
+    // На ноутбуке список виден рядом с карточкой: перебор команд не копит историю
+    if (picked || !narrow) window.history.replaceState(null, "", url);
     else {
       window.history.pushState(null, "", url);
       pushedRef.current = id;
@@ -273,7 +304,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
         {view.toApprove.length ? <JoinRequests list={view.toApprove} /> : null}
 
         {assemble ? (
-          <Collapsible id="assemble" title="Собрать из структуры" hint="Перетащите подразделение или людей в свою команду" testId="assemble">
+          <Collapsible id="assemble" title="Собрать из структуры" hint="Перетащите подразделение или людей в свою команду" testId="assemble" open={assembleIsOpen} onToggle={rememberAssemble}>
             <StructureAssembler units={view.units} persons={view.people} targets={targets} canCreate={view.canCreate} direct={view.owner} me={view.me} onCreateEmpty={() => setCreating(true)} onDone={open} />
           </Collapsible>
         ) : null}
@@ -316,7 +347,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
               {found.length ? (
                 <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
                   {found.map((t) => (
-                    <TeamRow key={t.id} team={t} selected={selected?.id === t.id} onOpen={open} />
+                    <TeamRow key={t.id} team={t} selected={current?.id === t.id} onOpen={open} />
                   ))}
                 </ul>
               ) : (

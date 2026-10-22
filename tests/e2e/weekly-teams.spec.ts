@@ -84,7 +84,7 @@ test("владелец собирает команду поиском из ра�
   await page.getByRole("radio", { name: /Команды/ }).click();
   await expect(page.getByRole("button", { name: "Новая команда" })).toHaveCount(0);
   await page.getByTestId("manage-teams").click();
-  await expect(page).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(page).toHaveURL(/\/people\/teams$/);
   // Режим управления: все команды компании, поиск по названию и людям, пересборка по структуре
   await expect(page.getByRole("button", { name: "Создать команды по структуре" })).toBeVisible();
   const all = page.getByTestId("teams-list");
@@ -100,7 +100,7 @@ test("владелец собирает команду поиском из ра�
   const aram = await personal(browser, page, "Мурадян");
   await aram.goto("/people");
   await aram.getByTestId("people-tab-teams").click();
-  await expect(aram).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(aram).toHaveURL(/\/people\/teams$/);
   await expect(aram.getByRole("heading", { name: "Weekly-команды", level: 2 })).toBeVisible();
   // Без режима управления владелец видит только свои команды, и экран говорит почему
   await expect(aram.getByTestId("manage-hint").first()).toContainText("Включите режим управления, чтобы видеть все команды и назначать руководителей");
@@ -259,7 +259,7 @@ test("руководитель видит свои команды, соглас�
   // Переключатель команды в шапке: внизу «Управлять командами»
   await reva.goto("/tasks");
   await reva.locator(isPhone() ? "#team-switcher-m" : "#team-switcher").selectOption("__manage");
-  await expect(reva).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(reva).toHaveURL(/\/people\/teams$/);
   const list = reva.getByTestId("teams-list");
   await expect(list).toContainText("Управление продуктового развития (insurance)");
   await expect(list).toContainText("Руководитель: вы");
@@ -282,24 +282,26 @@ test("руководитель видит свои команды, соглас�
   await expect(card.getByRole("button", { name: "Закрыть команду" })).toHaveCount(0);
   await shot(reva, "leader-card");
   // Топ-команда: Рева участник, только просмотр
-  // Вкладка «Weekly-команды» при открытой карточке возвращает к списку
+  // Вкладка «Weekly-команды» при открытой карточке возвращает к списку. Адрес без команды: переход закончился,
+  // дальше явный выбор строки ничем не перебивается (на ноутбуке первая команда только подсвечена, адрес не меняется)
   await reva.getByTestId("people-tab-teams").click();
-  await expect(reva).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(reva).toHaveURL(/\/people\/teams$/);
   await expect(list).toBeVisible();
+  if (!isPhone()) await expect(list.locator('[aria-current="true"]')).toHaveCount(1);
   if (isPhone()) await expect(reva.getByTestId("team-card")).toBeHidden();
   const top = await openTeam(reva, "Топ-команда");
   await expect(top.getByTestId("team-card-readonly")).toContainText("Состав топ-команды меняет владелец в режиме управления");
   await expect(top.getByRole("button", { name: "Добавить участников" })).toHaveCount(0);
   // Старый адрес «Weekly-проектов» ведёт сюда
   await reva.goto("/people/projects");
-  await expect(reva).toHaveURL(/\/people\/teams(\?team=[^#&]+)?$/);
+  await expect(reva).toHaveURL(/\/people\/teams$/);
   await reva.close();
 
   // Руководитель Котова видит запрос в «Мне» и соглашается на экране команд
   const lisina = await personal(browser, page, "Лисина");
   await lisina.goto("/me");
   await lisina.getByRole("link", { name: "Запрос в команду" }).first().click();
-  await expect(lisina).toHaveURL(/\/people\/teams(\?team=[^#&]+)?#join-requests$/);
+  await expect(lisina).toHaveURL(/\/people\/teams#join-requests$/);
   const requests = lisina.getByTestId("join-requests");
   await expect(requests).toContainText("Котов Игорь в команду «Управление продуктового развития (insurance)»");
   await shot(lisina, "join-request");
