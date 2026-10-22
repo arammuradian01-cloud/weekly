@@ -13,17 +13,17 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import type { GoalResult } from "@/generated/prisma/enums";
-import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { TaskRuleError, setTaskGoal, type Actor } from "@/lib/tasks/service";
 import { isoFromDbDate, moscowIso, moscowToday } from "@/lib/tasks/dates";
 import { diffDays } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
-import { ancestorsOf, loadScope, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
+import { ancestorsOf, loadTeamNodes, scopeOf, subtreeOf, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
 import { seesTask } from "@/lib/tasks/watch";
 import { NameIndex } from "@/lib/bord/names";
 import { matchPerson } from "@/lib/org/import";
 import { normName } from "@/lib/bord/names";
 import { quarterLabel, quarterOf, readGoalsTable, type GoalProblem, type GoalRow } from "./parse";
-import { fromLeaderBoard, goalFits, othersPersonal, taskPeople } from "./personal";
+import { fromLeaderBoard, othersPersonal, taskPeople } from "./personal";
 import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
 
@@ -112,7 +112,7 @@ function canEditTeam(who: Who, scope: Scope, teamId: string): boolean {
 }
 
 /** Все кварталы, где есть цели, плюс текущий */
-async function quartersList(): Promise<string[]> {
+export async function quartersList(): Promise<string[]> {
   const rows = await prisma.goal.findMany({ distinct: ["quarter"], select: { quarter: true } });
   return [...new Set([quarterOf(moscowToday()), ...rows.map((r) => r.quarter)])].sort().reverse();
 }
@@ -551,7 +551,9 @@ export async function goalOptions(who: Who, number: number): Promise<GoalOption[
 
 /**
  * Цель для новой задачи по её тексту (этап 55): форма новой задачи подставляет лучшую, человек может сменить.
- * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем
+ * Команду проверяем так же, как при постановке: в чужую команду задачу не поставить, её цели не показываем.
+ * Подбор только читает: цель уже заведённой задачи он не меняет, связь, поставленную руками в карточке или
+ * перетаскиванием (этап 65), не перетирает. Это закрепляет tests/db/goals-link.test.ts
  */
 export async function suggestGoals(who: Who, input: { team: string; due: string; title: string; outcome: string; owner?: string | null }): Promise<{ options: GoalOption[]; best: string | null }> {
   // Наблюдатель задач не ставит: подбирать ему нечего
@@ -568,34 +570,14 @@ export async function suggestGoals(who: Who, input: { team: string; due: string;
   return withSuggestions(options, `${input.title} ${input.outcome}`.slice(0, 2000));
 }
 
-/** Привязать задачу к цели или отвязать */
+/**
+ * Привязать задачу к цели или отвязать из карточки задачи. С этапа 65 связь пишет сервис задач (setTaskGoal): те же
+ * права и правила, что у перетаскивания на странице «Цели», журнал и блокировка строки задачи
+ */
 export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null): Promise<{ goal: string | null }> {
-  if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
-  return prisma.$transaction(async (tx) => {
-    const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management });
-    const task = await tx.task.findUnique({ where: { number }, include: { coExecutors: { select: { personId: true } }, goal: true } });
-    if (!task || !seesTask(scope, task, actor.personId)) return fail(`Задачи ${number} нет`);
-    if (task.archivedAt) fail(`Задача ${number} в архиве`);
-    const allowed = !!actor.management || scope.leads.includes(task.teamId) || task.ownerId === actor.personId || task.createdById === actor.personId;
-    if (!allowed) fail("Цель задаче выбирают ответственный, тот, кто поставил задачу, руководитель команды и режим управления");
-    let goal: { id: string; title: string } | null = null;
-    if (goalId) {
-      const g = (await tx.goal.findUnique({ where: { id: goalId } })) ?? fail("Такой цели нет");
-      const nodes = await loadTeamNodes(tx);
-      // Цель своей команды или команды выше, или личная цель ответственного и соисполнителей из борда (этап 31)
-      if (!goalFits(g, task, taskPeople(task), nodes)) fail("Задачу привязывают к цели своей команды или команды выше или к личной цели её ответственного");
-      if (g.result === "DROPPED") fail("Цель снята: выберите другую");
-      const quarters = [quarterOf(moscowToday()), quarterOf(isoFromDbDate(task.due))];
-      if (!quarters.includes(g.quarter)) fail(`Цель из ${quarterLabel(g.quarter)}: задачу привязывают к цели текущего квартала или квартала её срока`);
-      goal = g;
-    }
-    if ((task.goalId ?? null) === (goal?.id ?? null)) fail("Цель уже такая");
-    await tx.task.update({ where: { id: task.id }, data: { goalId: goal?.id ?? null } });
-    await tx.auditLog.create({
-      data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: task.goal?.title ?? undefined, after: goal?.title ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
-    });
-    return { goal: goal?.title ?? null };
-  });
+  await setTaskGoal(actor, number, goalId);
+  const goal = goalId ? await prisma.goal.findUnique({ where: { id: goalId }, select: { title: true } }) : null;
+  return { goal: goal?.title ?? null };
 }
 
 // ---------- Загрузка из таблицы и из Bord ----------

@@ -115,6 +115,18 @@ test("цель департамента, цель сектора ниже и з�
   await antonov.getByRole("button", { name: "Развернуть: Новая форма расчёта на всём трафике" }).click();
   await expect(antonov.getByRole("main").getByText("Выкатить форму на весь трафик")).toBeVisible();
   await shot(antonov, "tree");
+
+  // Этап 65: вкладка «Связать задачи с целями». Цель сектора с задачей, цель департамента выше; задача в «Моих задачах»
+  await antonov.getByTestId("goals-tab-link").click();
+  await expect(antonov).toHaveURL(/\/goals\?mode=link/);
+  const card = antonov.getByTestId(`link-goal-${goal!.id}`);
+  await expect(card).toContainText("закрыто 0 из 1");
+  await card.getByRole("button", { name: /^Задачи 1, цель «Новая форма расчёта/ }).click();
+  await expect(card.getByTestId(`link-goal-task-${task!.number}`)).toContainText("Выкатить форму на весь трафик");
+  await expect(antonov.getByRole("heading", { name: /Цели выше/ }).first()).toBeVisible();
+  await antonov.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Все/ }).click();
+  await expect(antonov.getByTestId(`link-task-${task!.number}`)).toContainText("Новая форма расчёта на всём трафике");
+  await shot(antonov, "link");
   await antonov.close();
 });
 
