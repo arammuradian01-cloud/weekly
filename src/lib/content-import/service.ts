@@ -167,7 +167,8 @@ type GoalPlan = {
 };
 type TaskPlan = {
   t: PackageTask;
-  action: "add" | "update" | "skip";
+  /** adopt: задача уже была в ресурсе до импорта, загрузка подхватывает её по номеру */
+  action: "add" | "update" | "skip" | "adopt";
   teamId?: string;
   owner?: string;
   ownerId?: string | null;
@@ -247,7 +248,10 @@ async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
     const byCode = g.code ? await ctx.db.goal.findFirst({ where: { quarter: g.quarter, teamId: team.id, code: g.code } }) : null;
     if (byCode) {
       const fields: Record<string, string | null> = {};
-      for (const f of ["description", "metric", "base", "target", "link"] as const) if (!byCode[f] && g[f]) fields[f] = g[f];
+      if (g.replace) {
+        // Привести к пакету (цели из бордов): всё, чем цель в ресурсе отличается, кроме номера
+        for (const f of ["title", "description", "metric", "base", "target", "link"] as const) if ((byCode[f] ?? null) !== (g[f] ?? null) && (f !== "title" || g.title)) fields[f] = g[f];
+      } else for (const f of ["description", "metric", "base", "target", "link"] as const) if (!byCode[f] && g[f]) fields[f] = g[f];
       out.push({ g, action: "match", ...base, existingId: byCode.id, fields });
     } else out.push({ g, action: "add", ...base });
   }
@@ -350,6 +354,40 @@ async function planTasks(ctx: Ctx, pkg: ContentPackage): Promise<TaskPlan[]> {
       for (const f of Object.keys(TASK_OTHER)) if (changed(f)) ctx.notes.push({ what: label, text: `поле «${TASK_OTHER[f]}» из пакета загрузка не меняет, поправьте в ресурсе` });
       if (apply.edit || apply.whereNow || apply.due || apply.status) out.push({ t, action: "update", number: row.number, apply });
       else out.push({ t, action: "skip", number: row.number, reason: "изменились только поля, которые загрузка не меняет или которые правили в ресурсе" });
+      continue;
+    }
+    if (t.adopt) {
+      // Задача поставлена в ресурсе до импорта: подхватываем её по номеру и названию, ставить вторую не нужно
+      const row = await ctx.db.task.findUnique({ where: { number: t.adopt.number }, include: { owner: { select: { fullName: true } } } });
+      const label = `Задача ${t.adopt.number}`;
+      if (!row) {
+        out.push({ t, action: "skip", reason: `задачи ${t.adopt.number} нет в ресурсе` });
+        continue;
+      }
+      if (normName(row.title) !== normName(t.adopt.title)) {
+        out.push({ t, action: "skip", reason: `под номером ${t.adopt.number} в ресурсе другая задача: «${short(row.title)}»` });
+        continue;
+      }
+      if (row.archivedAt) {
+        out.push({ t, action: "skip", reason: `задача ${t.adopt.number} в архиве, загрузка её не правит` });
+        continue;
+      }
+      const cur = taskApplied(row);
+      const apply: NonNullable<TaskPlan["apply"]> = {};
+      const closedNow = CLOSED.includes(cur.status);
+      // Название и «что нужно сделать» у подхваченной задачи не трогаем: их ставили в ресурсе
+      if (t.whereNow && t.whereNow !== cur.whereNow) apply.whereNow = t.whereNow;
+      if (t.due !== cur.due) {
+        if (closedNow || t.due < ctx.today) ctx.notes.push({ what: label, text: `срок ${formatLong(t.due)} не перенесён: задача закрыта или срок уже прошёл` });
+        else apply.due = t.due;
+      }
+      if (t.status !== cur.status) {
+        if (closedNow) ctx.notes.push({ what: label, text: "задача закрыта в ресурсе, загрузка её не открывает и не меняет итог" });
+        else apply.status = true;
+      }
+      const ownerName = row.ownerAll ? ALL_LEADERS_NAME : (row.owner?.fullName ?? "");
+      if (normName(t.owner) !== normName(ownerName)) ctx.notes.push({ what: label, text: `в пакете ответственный «${t.owner}», в ресурсе «${ownerName || "не назначен"}»: ответственного загрузка не меняет` });
+      out.push({ t, action: "adopt", number: row.number, apply });
       continue;
     }
     const all = normName(t.owner) === normName(ALL_LEADERS_NAME);
@@ -525,11 +563,14 @@ async function buildPlan(ctx: Ctx, pkg: ContentPackage): Promise<Plan> {
   return { goals, tasks, decisions, links };
 }
 
-function counts<T extends { action: string }>(list: T[]): ImportCounts {
+/** Подхваченная задача без единой правки считается пропущенной: в ресурсе уже всё так */
+const adoptEmpty = (x: { action: string; apply?: TaskPlan["apply"] }) => x.action === "adopt" && !(x.apply && Object.keys(x.apply).length);
+
+function counts<T extends { action: string; apply?: TaskPlan["apply"] }>(list: T[]): ImportCounts {
   return {
     add: list.filter((x) => x.action === "add").length,
-    update: list.filter((x) => x.action === "update" || x.action === "match").length,
-    skip: list.filter((x) => x.action === "skip").length,
+    update: list.filter((x) => x.action === "update" || x.action === "match" || (x.action === "adopt" && !adoptEmpty(x))).length,
+    skip: list.filter((x) => x.action === "skip" || adoptEmpty(x)).length,
   };
 }
 
@@ -537,7 +578,11 @@ function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan, tally?: Record<"ta
   const notes: ImportLine[] = [];
   const skipped = (p: { action: string; reason?: string }) => p.action === "skip" && p.reason && p.reason !== "без изменений";
   for (const p of plan.goals) if (skipped(p)) notes.push({ what: `Цель «${short(p.g.title)}»`, text: p.reason! });
-  for (const p of plan.goals) if (p.action === "match") notes.push({ what: `Цель «${short(p.g.title)}»`, text: `${p.g.code} уже есть в ресурсе: загрузка заполнит только пустые поля` });
+  for (const p of plan.goals) {
+    if (p.action !== "match") continue;
+    const n = Object.keys(p.fields ?? {}).length;
+    notes.push({ what: `Цель ${p.g.code}`, text: p.g.replace ? (n ? `уже есть в ресурсе: загрузка приведёт к пакету ${n} ${n === 1 ? "поле" : n < 5 ? "поля" : "полей"}` : "уже есть в ресурсе и совпадает с пакетом") : "уже есть в ресурсе: загрузка заполнит только пустые поля" });
+  }
   for (const p of plan.tasks) if (skipped(p)) notes.push({ what: `Задача «${short(p.t.title)}»`, text: p.reason! });
   for (const p of plan.decisions) if (skipped(p)) notes.push({ what: `Решение «${short(p.d.text)}»`, text: p.reason! });
   for (const p of plan.links) if (p.reason && p.reason !== "без изменений") notes.push({ what: `Связь ${p.l.key}`, text: p.reason });
@@ -617,7 +662,7 @@ export async function applyContentImport(actor: Actor, pkg: ContentPackage): Pro
         let id = p.existingId;
         if (p.action === "add") {
           id = (await where(`Цель «${short(g.title)}»`, () =>
-            createGoal(actor, { quarter: g.quarter, title: g.title, description: g.description, metric: g.metric, base: g.base, target: g.target, team: p.teamId, owner: p.ownerSlug ?? null, link: g.link, code: g.code }, tx),
+            createGoal(actor, { quarter: g.quarter, title: g.title, description: g.description, metric: g.metric, base: g.base, target: g.target, team: p.teamId, owner: p.ownerSlug ?? null, link: g.link, code: g.code }, tx, { source: g.source ?? undefined }),
           )).id;
           goalIds.set(g.key, id);
         } else if (p.fields && Object.keys(p.fields).length) {

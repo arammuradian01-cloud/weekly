@@ -37,6 +37,11 @@ export type PackageGoal = {
   target: string | null;
   link: string | null;
   parent: GoalRef | null;
+  /** Цель уже есть в ресурсе с тем же номером: true значит привести её к пакету (тексты и целевые как в борде),
+   *  false: заполнить только пустые поля */
+  replace: boolean;
+  /** Откуда цель: leader-board:<вкладка> для целей из бордов лидеров. Пусто: manual */
+  source: string | null;
 };
 
 export type PackageTask = {
@@ -58,6 +63,9 @@ export type PackageTask = {
   priority: (typeof IMPORT_PRIORITIES)[number] | null;
   source: { kind: (typeof IMPORT_SOURCES)[number]; note: string | null; date: IsoDate | null };
   links: { title: string | null; url: string }[];
+  /** Задача уже есть в ресурсе (поставлена до импорта): номер и её название в ресурсе для проверки. Загрузка не
+   *  создаёт новую задачу, а подхватывает эту и приводит статус, «Где сейчас» и срок к пакету */
+  adopt: { number: number; title: string } | null;
 };
 
 export type PackageDecision = {
@@ -269,7 +277,10 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       target: r.str(raw, "target", "Целевое значение", 300),
       link,
       parent: raw.parent === undefined || raw.parent === null ? null : r.goalRef(raw.parent, "Цель выше"),
+      replace: raw.replace === true,
+      source: r.str(raw, "source", "Откуда цель", 120),
     };
+    if (goal.source && !/^(manual|import|leader-board:.+)$/.test(goal.source)) r.problems.push(`цель ${key}: источник цели manual, import или leader-board:<вкладка>`);
     if (!goal.team && !goal.owner) r.problems.push(`цель ${key}: нужна команда или владелец`);
     problems.push(...r.problems);
     return goal;
@@ -309,7 +320,15 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
         date: r.date(src, "date", "Дата источника", false),
       },
       links,
+      adopt: null,
     };
+    if (raw.adopt !== undefined && raw.adopt !== null) {
+      const a = raw.adopt as Raw;
+      const n = Number(a?.number);
+      const title = cleanText(a?.title);
+      if (!Number.isInteger(n) || n <= 0 || !title) r.problems.push(`задача ${key}: adopt это { "number": номер в ресурсе, "title": название в ресурсе }`);
+      else task.adopt = { number: n, title };
+    }
     if (["done", "partial", "failed", "cancelled"].includes(task.status) && !task.resolution) {
       r.problems.push(`задача ${key}: для статуса «${task.status}» нужен итог или причина (resolution)`);
     }
@@ -359,6 +378,14 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   for (const l of links) {
     if ("key" in l.task && l.task.key && !taskKeys.has(l.task.key)) problems.push(`связь ${l.key}: задачи с ключом «${l.task.key}» в пакете нет`);
     if ("key" in l.goal && l.goal.key && !goalKeys.has(l.goal.key)) problems.push(`связь ${l.key}: цели с ключом «${l.goal.key}» в пакете нет`);
+  }
+  // Одну задачу ресурса подхватывает одна запись пакета
+  const adopted = new Map<number, string>();
+  for (const t of tasks) {
+    if (!t.adopt) continue;
+    const was = adopted.get(t.adopt.number);
+    if (was) problems.push(`задачи ${was} и ${t.key}: обе подхватывают задачу ${t.adopt.number}, оставьте одну`);
+    else adopted.set(t.adopt.number, t.key);
   }
   // Одна задача работает на одну цель: две связи одной задачи в пакете противоречат друг другу
   const linked = new Map<string, string>();

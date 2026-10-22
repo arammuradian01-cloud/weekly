@@ -356,7 +356,8 @@ async function checkParent(tx: Tx, nodes: TeamNode[], parentId: string, teamId: 
   return parent;
 }
 
-export async function createGoal(actor: Actor, input: GoalInput, db?: Tx): Promise<{ id: string }> {
+/** opts.source: откуда цель (этап 67: цели из бордов, загруженные импортом наполнения, как при загрузке борда) */
+export async function createGoal(actor: Actor, input: GoalInput, db?: Tx, opts: { source?: string } = {}): Promise<{ id: string }> {
   const quarter = input.quarter && QUARTER.test(input.quarter) ? input.quarter : quarterOf(moscowToday());
   const title = text(input.title, LIMITS.title, "Цель") ?? fail("Напишите цель одной мыслью");
   return inTx(db, async (tx) => {
@@ -387,6 +388,7 @@ export async function createGoal(actor: Actor, input: GoalInput, db?: Tx): Promi
         link: link(input.link),
         sortOrder: (count + 1) * 10,
         createdById: actor.personId,
+        ...(opts.source ? { source: opts.source } : {}),
       },
     });
     await audit(tx, actor, goal.id, "Цель заведена", null, `${quarterLabel(quarter)}, ${team.name}: ${title}`, "goal.create");

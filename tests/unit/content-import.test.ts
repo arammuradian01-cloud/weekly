@@ -79,6 +79,25 @@ describe("разбор пакета", () => {
   });
 });
 
+describe("подхват задач ресурса и цели из бордов", () => {
+  it("adopt: номер и название, один номер на одну запись; replace и источник цели", () => {
+    const p = fixture();
+    p.tasks[0]!.adopt = { number: 8, title: "Запустить досбор согласия" };
+    p.tasks[1]!.adopt = { number: 8, title: "Другая" };
+    p.tasks[2]!.adopt = { number: "x" };
+    p.goals[0]!.replace = true;
+    p.goals[0]!.source = "leader-board:Цели CPO";
+    p.goals[1]!.source = "откуда-то";
+    const { pkg, problems } = parse(p);
+    expect(pkg.tasks[0]!.adopt).toEqual({ number: 8, title: "Запустить досбор согласия" });
+    expect(pkg.goals[0]).toMatchObject({ replace: true, source: "leader-board:Цели CPO" });
+    const text = problems.join("\n");
+    expect(text).toMatch(/обе подхватывают задачу 8/);
+    expect(text).toMatch(/adopt это/);
+    expect(text).toMatch(/источник цели manual, import или leader-board/);
+  });
+});
+
 describe("отпечаток записи", () => {
   it("не зависит от порядка полей и меняется от содержания", () => {
     const a = { key: "x", title: "Задача", owner: "Рева Тарас", links: [{ url: "https://a", title: null }] };

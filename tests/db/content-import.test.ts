@@ -195,7 +195,7 @@ describe("предпросмотр и загрузка", () => {
     const existing = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "ТД-1", title: "Цель из борда", teamId: TOP_TEAM, ownerId: me.id, metric: "Метрика из борда", source: "leader-board:test" } });
     const preview = await previewContentImport(await owner(), pkgOf(raw()));
     expect(preview.goals).toEqual({ add: 1, update: 1, skip: 0 });
-    expect(preview.notes.map((n) => n.text).join("\n")).toMatch(/ТД-1 уже есть в ресурсе: загрузка заполнит только пустые поля/);
+    expect(preview.notes.find((n) => n.what === "Цель ТД-1")?.text).toBe("уже есть в ресурсе: загрузка заполнит только пустые поля");
     await applyContentImport(await owner(), pkgOf(raw()));
     expect(await prisma.goal.count({ where: { code: "ТД-1" } })).toBe(1);
     const g = await prisma.goal.findUniqueOrThrow({ where: { id: existing.id } });
@@ -290,5 +290,56 @@ describe("предпросмотр и загрузка", () => {
     withLink.links.push({ key: "link.test.dropped", task: { number: all.number }, goal: { code: "ТР-1" } });
     const p2 = await previewContentImport(await owner(), pkgOf(withLink));
     expect(p2.notes.find((n) => n.what === "Связь link.test.dropped")?.text).toBe("цель снята в ресурсе");
+  });
+
+  it("задача, поставленная в ресурсе до импорта, подхватывается по номеру: статус, где сейчас и срок как в пакете", async () => {
+    const me = await owner();
+    const made = await tasks.createTask(me, { title: "Старая задача из Bord", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01" });
+    const closed = await tasks.createTask(me, { title: "Уже закрытая в ресурсе", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01" });
+    await tasks.changeStatus(me, closed.task.number, "done", "Закрыли руками");
+    const pkg = raw();
+    pkg.tasks = [
+      { key: "task.test.adopt-1", title: "Старая задача из Bord", outcome: "Как было", owner: "Рева Тарас", direction: "product", due: "2026-12-10", status: "done", resolution: "Выполнена по рабочему Bord", closedAt: "2026-10-13", whereNow: "13.10: сделано", adopt: { number: made.task.number, title: "Старая задача из Bord" } },
+      { key: "task.test.adopt-2", title: "Уже закрытая в ресурсе", outcome: "Как было", owner: "Рева Тарас", direction: "product", due: "2026-12-01", status: "in-progress", adopt: { number: closed.task.number, title: "Уже закрытая в ресурсе" } },
+      { key: "task.test.adopt-3", title: "Чужая", outcome: "Нет", owner: "Рева Тарас", direction: "product", due: "2026-12-01", adopt: { number: made.task.number + 100, title: "Чужая" } },
+    ];
+    pkg.decisions = [];
+    pkg.links = [];
+    const before = await prisma.task.count();
+    const p = await previewContentImport(me, pkgOf(pkg));
+    expect(p.tasks).toEqual({ add: 0, update: 1, skip: 2 });
+    expect(p.notes.map((n) => n.text).join("\n")).toMatch(/задача закрыта в ресурсе, загрузка её не открывает/);
+    expect(p.notes.map((n) => n.text).join("\n")).toMatch(/задачи \d+ нет в ресурсе/);
+    await applyContentImport(me, pkgOf(pkg));
+    expect(await prisma.task.count()).toBe(before);
+    const t = await prisma.task.findUniqueOrThrow({ where: { number: made.task.number }, include: { transfers: true } });
+    expect(t).toMatchObject({ status: "DONE", resolution: "Выполнена по рабочему Bord", whereNow: "13.10: сделано" });
+    expect(t.due.toISOString().slice(0, 10)).toBe("2026-12-10");
+    expect(t.closedAt?.toISOString().slice(0, 10)).toBe("2026-10-13");
+    expect((await prisma.task.findUniqueOrThrow({ where: { number: closed.task.number } })).status).toBe("DONE");
+    expect((await imported("task", "task.test.adopt-1"))!.entityId).toBe(t.id);
+    // Повтор: ничего не меняется
+    const again = await previewContentImport(me, pkgOf(pkg));
+    expect(again.tasks.update + again.tasks.add).toBe(0);
+  });
+
+  it("цель из борда с тем же номером приводится к пакету целиком, новая цель из борда помечается как цель борда", async () => {
+    const me = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "РТ-3", title: "Старое название", target: "10%", teamId: TOP_TEAM, ownerId: reva.id, source: "leader-board:test" } });
+    void me;
+    const pkg = raw();
+    pkg.goals = [
+      { key: "goal.test.rt-3", quarter: "2026-Q4", team: "Топ-команда", owner: "Рева Тарас", code: "РТ-3", title: "Клиентов с 2+ продуктами не ниже 15%", target: "15% в декабре", replace: true, source: "leader-board:Цели CPO" },
+      { key: "goal.test.rt-10", quarter: "2026-Q4", team: "Топ-команда", owner: "Рева Тарас", code: "РТ-10", title: "Новая цель борда", source: "leader-board:Цели CPO" },
+    ];
+    pkg.tasks = [];
+    pkg.decisions = [];
+    pkg.links = [];
+    const p = await previewContentImport(await owner(), pkgOf(pkg));
+    expect(p.goals).toEqual({ add: 1, update: 1, skip: 0 });
+    await applyContentImport(await owner(), pkgOf(pkg));
+    expect(await prisma.goal.findFirstOrThrow({ where: { code: "РТ-3" } })).toMatchObject({ title: "Клиентов с 2+ продуктами не ниже 15%", target: "15% в декабре", source: "leader-board:test" });
+    expect(await prisma.goal.findFirstOrThrow({ where: { code: "РТ-10" } })).toMatchObject({ source: "leader-board:Цели CPO", ownerId: reva.id });
   });
 });
