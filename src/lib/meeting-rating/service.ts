@@ -12,7 +12,7 @@ import { randomInt } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { moscowToday } from "@/lib/tasks/dates";
-import { personalLogin } from "@/lib/one-on-one/rules";
+import { personalLogin } from "@/lib/login/personal";
 import { loadTeamNodes, type ScopeSubject, type TeamNode } from "@/lib/org/scope";
 import { analyticsTeams } from "@/lib/analytics/service";
 import {

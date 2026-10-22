@@ -2,8 +2,8 @@
 //
 // - сроки моих задач в работе: я ответственный или соисполнитель. Событие на весь день в день срока;
 // - срок weekly: если от меня ждут weekly хотя бы в одной команде и на этой неделе я не в отпуске;
-// - встреча команды: команды, где я руковожу или участвую, если в команде есть кто-то кроме меня;
-// - встречи один на один: запланированные, где я один из двух.
+// - встреча команды: команды, где я руковожу или участвую, если в команде есть кто-то кроме меня.
+// Встречи один на один ушли вместе с разделом (этап 76): прежние события пропадут из календаря при следующем обновлении.
 // По умолчанию в календаре только номера, слова «срок», «встреча» и ссылки. Названия задач, имена и названия команд
 // показываются, только если человек сам включил это: сервис календаря хранит всё у себя.
 
@@ -20,8 +20,6 @@ export const WEEKS_BACK = 1;
 export const WEEKS_AHEAD = 8;
 /** Задач в календаре не больше этого: самые ранние сроки */
 export const TASKS_MAX = 300;
-/** Встречи один на один за прошлые дни, которые ещё показываются */
-export const ONE_ON_ONE_DAYS_BACK = 14;
 /** Длительность встречи команды в календаре, если у встречи есть время */
 export const MEETING_MINUTES = 60;
 /** Срок weekly: короткое событие в момент срока */
@@ -48,7 +46,6 @@ export type FeedInput = {
   tasks: { id: string; number: number; title: string; due: IsoDate }[];
   weeks: FeedWeek[];
   nodes: FeedNode[];
-  oneOnOnes: { id: string; pairId: string; date: IsoDate; otherName: string }[];
 };
 
 /**
@@ -124,18 +121,6 @@ export function feedEvents(input: FeedInput): CalEvent[] {
         events.push({ ...common, date, sort: Date.parse(`${date}T00:00:00Z`) });
       }
     }
-  }
-
-  for (const m of input.oneOnOnes) {
-    const url = `${base}/one-on-one?pair=${encodeURIComponent(m.pairId)}`;
-    events.push({
-      uid: uid("one-on-one", m.id),
-      summary: titles ? `Один на один: ${m.otherName}` : "Встреча один на один",
-      description: `Повестка и заметки встречи: ${url}`,
-      url,
-      date: m.date,
-      sort: Date.parse(`${m.date}T00:00:00Z`),
-    });
   }
 
   return events.sort((a, b) => a.sort - b.sort || a.uid.localeCompare(b.uid)).map(({ sort: _sort, ...e }) => e);

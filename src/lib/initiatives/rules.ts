@@ -9,7 +9,7 @@
 // - дни считаются полными сутками от момента записи, не календарными днями: заметка, написанная вечером, станет
 //   «без новостей» тем же вечером через две недели.
 
-import { cleanTopic } from "@/lib/one-on-one/rules";
+import { cleanPhrase } from "@/lib/phrase";
 import type { InitiativeResult, InitiativeState } from "@/generated/prisma/enums";
 
 export const TITLE_MAX = 120;
@@ -54,15 +54,15 @@ export function isResultCode(value: unknown): value is ResultCode {
 }
 
 export function cleanTitle(text: unknown): string {
-  return cleanTopic(text, TITLE_MAX);
+  return cleanPhrase(text, TITLE_MAX);
 }
 
 export function cleanWhy(text: unknown): string {
-  return cleanTopic(text, WHY_MAX);
+  return cleanPhrase(text, WHY_MAX);
 }
 
 export function cleanNote(text: unknown): string {
-  return cleanTopic(text, NOTE_MAX);
+  return cleanPhrase(text, NOTE_MAX);
 }
 
 /** Полных дней между моментами */

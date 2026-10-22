@@ -11,7 +11,7 @@
 // - комментарии показываются по алфавиту.
 
 import type { IsoDate } from "@/domain/dates";
-import { cleanTopic } from "@/lib/one-on-one/rules";
+import { cleanPhrase } from "@/lib/phrase";
 
 /** Месяц вида 2026-10 */
 export type Month = string;
@@ -86,7 +86,7 @@ export function dayLabel(iso: IsoDate): string {
 }
 
 export function cleanRemove(text: unknown): string {
-  return cleanTopic(text, REMOVE_MAX);
+  return cleanPhrase(text, REMOVE_MAX);
 }
 
 export function validScore(value: unknown): number | null {
