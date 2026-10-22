@@ -22,6 +22,7 @@ import { cleanBlocks, isBlockKey, type ReportBlock } from "@/lib/weekly-blocks/t
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
+import { topTeamName } from "@/lib/org/top-name";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -908,7 +909,7 @@ export async function unpromoteEntry(actor: Actor, id: string, by?: PersonSlug):
  */
 export async function setTeamWeekClosed(actor: Actor, teamId: string, key: WeekKey, closed: boolean): Promise<{ closed: boolean }> {
   if (actor.role === "OBSERVER") fail("Наблюдатель неделю не закрывает");
-  if (teamId === TOP_TEAM) fail("Неделю топ-команды закрывают вместе с неделей департамента: «Закрыть неделю» в режиме управления");
+  if (teamId === TOP_TEAM) fail(`Неделю команды «${await topTeamName()}» закрывают вместе с неделей департамента: «Закрыть неделю» в режиме управления`);
   return prisma.$transaction(async (tx) => {
     const team = await tx.team.findUnique({ where: { id: teamId } });
     if (!team || !team.active) return fail("Такой команды нет");

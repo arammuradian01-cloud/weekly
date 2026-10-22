@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireContext } from "@/lib/auth";
 import { getRhythm } from "@/lib/admin/service";
 import { getTeamLogin } from "@/lib/login/service";
+import { topTeamName } from "@/lib/org/top-name";
 import { mailConfigured } from "@/lib/mail";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { PageHeader } from "@/components/page-header";
@@ -28,7 +29,7 @@ function Block({ title, children }: { title: string; children: React.ReactNode }
  */
 export default async function HelpPage() {
   await requireContext();
-  const [rhythm, teamLogin] = await Promise.all([getRhythm(), getTeamLogin()]);
+  const [rhythm, teamLogin, topName] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName()]);
   const mail = mailConfigured();
   const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
   const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
@@ -128,7 +129,7 @@ export default async function HelpPage() {
             <li>Команда продукта корректирует драйверы: трафик сайта и приложения, конверсию, продажи B2B, выручку на продажу, прочую выручку и расходы на продвижение. Продажи, выручка, промо-маржа и прямая маржа пересчитываются сами, ещё до сохранения видно, как поменяется прогноз продукта и итог по продуктам.</li>
             <li>У каждой корректировки причина и обоснование одной фразой. Последняя корректировка показателя действует, все прежние видны в журнале. «Вернуть как в LBE» снимает корректировку.</li>
             <li>Корректируют люди из команды продукта (её задают владелец и администраторы) при личном входе. Под общим логином прогноз только виден.</li>
-            <li>Все цифры прогноза видят департамент страхования и инвестиций, топ-команда, генеральный директор и команды продуктов, основные цифры (итог месяца и цифры недели) видит топ-менеджмент. Кому что видно, владелец настраивает в «Настройках», «Доступ к цифрам». Прогнозы других продуктов появятся позже, каждый для своей команды.</li>
+            <li>Все цифры прогноза видят департамент страхования и инвестиций, команда «{topName}», генеральный директор и команды продуктов, основные цифры (итог месяца и цифры недели) видит топ-менеджмент. Кому что видно, владелец настраивает в «Настройках», «Доступ к цифрам». Прогнозы других продуктов появятся позже, каждый для своей команды.</li>
           </ul>
         </Block>
 

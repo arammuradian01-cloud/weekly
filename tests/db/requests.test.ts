@@ -296,7 +296,7 @@ describe("кто видит просьбу", () => {
     const ivanova = await actor("Иванова");
     const outside = await req.createRequest(ivanova, { to: "reva", text: "Подписать заявку", due: future });
     expect(await req.getRequest(await team("reva"), outside.number)).toBeNull();
-    await expectRule(req.createRequest(await team("reva"), { to: ivanova.slug, text: "Срочно", due: future }), /топ-команды/);
+    await expectRule(req.createRequest(await team("reva"), { to: ivanova.slug, text: "Срочно", due: future }), /только людей команды «Команда страхования и инвестиций»/);
     const inside = await req.createRequest(await team("reva"), { to: "loginova", text: "Внутри команды", due: future });
     expect(await req.getRequest(await team("loginova"), inside.number)).not.toBeNull();
   });

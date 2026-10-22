@@ -274,7 +274,7 @@ describe("состав команд", () => {
     await org.addTeamMember(await actors.owner(), antonovTeam.id, await slugOf("Новикова"));
     await org.removeTeamMember(antonov, antonovTeam.id, await slugOf("Новикова"));
     await expectRule(org.addTeamMember(await actors.reva(), TOP_TEAM, await slugOf("Токов")), /меняют её руководитель и владелец/);
-    await expectRule(org.updateTeam(await actors.owner(), TOP_TEAM, { leader: "reva" }), /Топ-командой руководит владелец/);
+    await expectRule(org.updateTeam(await actors.owner(), TOP_TEAM, { leader: "reva" }), /Командой «Команда страхования и инвестиций» руководит владелец/);
     await expectRule(org.updateTeam(await actors.owner(), (await teamLedBy("Рева")).id, { parent: antonovTeam.id }), /ниже своей же команды/);
     const logs = await prisma.auditLog.findMany({ where: { action: { in: ["team.member.add", "team.member.remove"] }, entityId: antonovTeam.id } });
     expect(logs).toHaveLength(2);

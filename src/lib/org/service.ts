@@ -21,6 +21,7 @@ import { WEEKDAY_NAMES, isSlot, slotMoment, slotOf, slotText, type Slot } from "
 import { getSetting } from "@/lib/settings";
 import type { DeadlineSetting } from "@/lib/week";
 import { deadlineOf, reportingKey } from "@/lib/weekly/weeks";
+import { topTeamName } from "@/lib/org/top-name";
 
 type Tx = Prisma.TransactionClient;
 
@@ -603,7 +604,7 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
     }
     if (input.leader !== undefined) {
       const leader = input.leader ? await personBySlug(tx, input.leader) : null;
-      if (id === TOP_TEAM && (!leader || leader.role !== "OWNER")) fail("Топ-командой руководит владелец ресурса");
+      if (id === TOP_TEAM && (!leader || leader.role !== "OWNER")) fail(`Командой «${team.name}» руководит владелец ресурса`);
       if (leader && !leader.active) fail("Руководитель выключен");
       if ((leader?.id ?? null) !== team.leaderId) {
         data.leaderId = leader?.id ?? null;
@@ -613,7 +614,7 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
       }
     }
     if (input.parent !== undefined) {
-      if (id === TOP_TEAM) fail("Команду выше у топ-команды задаёт структура: при структуре компании это команда генерального директора");
+      if (id === TOP_TEAM) fail(`Команду выше у команды «${team.name}» задаёт структура: при структуре компании это команда генерального директора`);
       const parentId = input.parent || TOP_TEAM;
       if (parentId !== team.parentId) {
         const nodes = await loadTeamNodes(tx);
@@ -627,7 +628,7 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
       }
     }
     if (input.active !== undefined && input.active !== team.active) {
-      if (id === TOP_TEAM) fail("Топ-команду выключить нельзя");
+      if (id === TOP_TEAM) fail(`Команду «${team.name}» выключить нельзя`);
       if (!input.active) {
         const open = await tx.task.count({ where: { teamId: id, status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } });
         if (open) fail(`У команды ${open} открытых задач: сначала передайте их в другую команду или закройте`);
@@ -826,7 +827,7 @@ export async function moveTask(actor: Actor, number: number, teamId: string): Pr
     const target = await teamOrFail(tx, teamId);
     if (!target.active) fail("Команда выключена");
     if (task.teamId === teamId) fail("Задача уже в этой команде");
-    if (task.ownerAll && teamId !== TOP_TEAM) fail("«Все лидеры» бывают только у задач топ-команды: сначала назначьте ответственного");
+    if (task.ownerAll && teamId !== TOP_TEAM) fail(`«Все лидеры» бывают только у задач команды «${await topTeamName(tx)}»: сначала назначьте ответственного`);
     const nodes = await loadTeamNodes(tx);
     const from = nodes.find((n) => n.id === task.teamId)?.name ?? task.teamId;
     // Цель задачи берётся из её команды или команд выше (этап 17): в чужой ветке цель снимается
@@ -1034,7 +1035,7 @@ const describeSlot = (slot: Slot | null, fallback: string) => (slot ? slotText(s
  * в режиме управления любой команде. Срок команды не позже срока департамента, встреча не раньше срока команды
  */
 export async function setTeamRhythm(actor: Actor, teamId: string, input: RhythmInput): Promise<void> {
-  if (teamId === TOP_TEAM) fail("Срок и встреча топ-команды это срок и встреча департамента: они в настройках недели");
+  if (teamId === TOP_TEAM) fail(`Срок и встреча команды «${await topTeamName()}» это срок и встреча департамента: они в настройках недели`);
   if (input.deadline !== null && !isSlot(input.deadline)) fail("Выберите неделю, день и время сдачи");
   if (input.meeting !== null && !isSlot(input.meeting)) fail("Выберите неделю, день и время встречи");
   await prisma.$transaction(async (tx) => {

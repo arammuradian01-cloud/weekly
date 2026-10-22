@@ -1,7 +1,8 @@
 // Этап 66: смысловые блоки weekly команды на настоящей базе. Шаблон блоков задаёт руководитель команды (руководитель выше,
 // режим управления), участник сдаёт записи по блокам шаблона, руководитель видит отчёт команды по блокам, сохраняет его
 // (конфликт двух устройств, журнал) и отправляет своему руководителю: событие в «Мне», получатель видит отправленную
-// версию. У команды страхования и инвестиций шаблона нет: её отчёт это отчёт CEO.
+// версию. У команды страхования и инвестиций шаблона нет: её отчёт это отчёт CEO. Переименование топ-команды
+// повторяемой миграцией: только прежнее имя, ручное не трогается.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
@@ -12,6 +13,9 @@ import { dbDate } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
 import type { ReportBlock } from "@/lib/weekly-blocks/types";
 import type { WeekKey } from "@/domain/types";
+import { readFileSync } from "node:fs";
+import { topTeamName } from "@/lib/org/top-name";
+import { planGoals } from "@/lib/goals/service";
 
 const personal = async (slug: string, management: tasks.Actor["management"] = null): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug, management)), via: "PASSWORD" });
 const shared = async (slug: string): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug)), via: "TEAM" });
@@ -168,5 +172,39 @@ describe("отчёт команды по блокам", () => {
     expect(view.recipients).toEqual(["Головкин Владислав"]);
     // Руководитель выше ведёт отчёт команды ниже
     expect((await team.teamReportView(await personal("golovkin"), teamId, key)).canEdit).toBe(true);
+  });
+});
+
+describe("переименование топ-команды (этап 66)", () => {
+  const sql = readFileSync("prisma/migrations/20261022160620_top_team_name/migration.sql", "utf8");
+  const nameOf = async () => (await prisma.team.findUniqueOrThrow({ where: { id: "top" } })).name;
+
+  it("после миграций топ-команда называется «Команда страхования и инвестиций»; тексты берут имя из базы", async () => {
+    expect(await nameOf()).toBe("Команда страхования и инвестиций");
+    expect(await topTeamName()).toBe("Команда страхования и инвестиций");
+    await expectRule(weekly.setTeamWeekClosed(await personal("reva"), "top", key, true), /Неделю команды «Команда страхования и инвестиций» закрывают/);
+  });
+
+  it("повторяемая миграция переименовывает только прежнее имя, ручное имя не трогает", async () => {
+    expect(sql.trimStart().startsWith("-- повторяемая")).toBe(true);
+    try {
+      await prisma.team.update({ where: { id: "top" }, data: { name: "Топ-команда" } });
+      await prisma.$executeRawUnsafe(sql);
+      expect(await nameOf()).toBe("Команда страхования и инвестиций");
+      // Второй прогон ничего не меняет
+      await prisma.$executeRawUnsafe(sql);
+      expect(await nameOf()).toBe("Команда страхования и инвестиций");
+      // Владелец назвал команду сам: миграция её не трогает, тексты берут его имя
+      await prisma.team.update({ where: { id: "top" }, data: { name: "Команда Арама" } });
+      await prisma.$executeRawUnsafe(sql);
+      expect(await nameOf()).toBe("Команда Арама");
+      expect(await topTeamName()).toBe("Команда Арама");
+      // Старые файлы целей с прежним именем по-прежнему узнают команду
+      const plan = await planGoals(await personal("muradyan", "OWNER"), "ID\tКоманда\tВладелец\tЦель\nT66\tТоп-команда\tМурадян Арам\tПроверка прежнего имени", { team: "top" });
+      expect(plan.problems).toEqual([]);
+      expect(plan.add.map((a) => a.code)).toEqual(["T66"]);
+    } finally {
+      await prisma.team.update({ where: { id: "top" }, data: { name: "Команда страхования и инвестиций" } });
+    }
   });
 });

@@ -25,6 +25,7 @@ import { seesEntry } from "@/lib/discuss/access";
 import { notify, quote } from "@/lib/inbox/notify";
 import { requestSubject } from "./hooks";
 import { PROPOSAL_STALE_DAYS, REMIND_GAP_MS, REQUEST_ANSWER_MAX, REQUEST_TEXT_MAX, isRequestOverdue, isStuck, taskTitleFrom } from "./rules";
+import { topTeamName } from "@/lib/org/top-name";
 
 export { requestSubject };
 
@@ -186,7 +187,7 @@ export async function createRequestIn(tx: Tx, actor: Actor, input: NewRequestInp
   if (!to || !to.active || to.role === "OBSERVER") fail("Выберите, кого просите, из списка");
   if (to!.id === actor.personId) fail("Себя просить не нужно: поставьте себе задачу");
   const a = await accessOf(tx, actor);
-  if (a.limited && !(a.top.has(actor.personId) && a.top.has(to!.id))) fail("По общему логину просить можно только людей топ-команды. Войдите лично");
+  if (a.limited && !(a.top.has(actor.personId) && a.top.has(to!.id))) fail(`По общему логину просить можно только людей команды «${await topTeamName(tx)}». Войдите лично`);
   let taskId: string | null = null;
   if (input.task !== undefined && input.task !== null) {
     const task = await tx.task.findUnique({ where: { number: Number(input.task) }, select: taskSelect });

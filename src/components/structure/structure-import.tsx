@@ -3,6 +3,7 @@
 // Загрузка структуры из таблицы (этап 14): файл CSV или ячейки, вставленные из Google-таблицы.
 // Сначала проверка: что добавится, изменится и уйдёт. База меняется только по кнопке «Загрузить».
 
+import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StructurePlan } from "@/lib/org/import";
@@ -76,7 +77,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
           </p>
           <p className="mt-1 text-muted">
             Несколько департаментов в колонке «Департамент» или строка генерального директора: файл всей компании. Один департамент: файл грузится только в него. Без колонки: в департамент
-            руководителя топ-команды.
+            руководителя команды «{teamName(TOP_TEAM)}».
           </p>
         </div>
         <FileField

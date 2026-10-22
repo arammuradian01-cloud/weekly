@@ -69,7 +69,7 @@ async function main() {
 
   // Топ-команда (этап 14): миграция создаёт её без людей, если база была пустой. Тогда руководитель: владелец,
   // участники: все остальные из стартового состава. Один раз: дальше состав правят в «Структуре», сид его не трогает
-  const top = await prisma.team.upsert({ where: { id: "top" }, update: {}, create: { id: "top", name: "Топ-команда", kind: "TOP" } });
+  const top = await prisma.team.upsert({ where: { id: "top" }, update: {}, create: { id: "top", name: "Команда страхования и инвестиций", kind: "TOP" } });
   if (!top.leaderId) {
     const owner = await prisma.person.findFirst({ where: { role: "OWNER", active: true }, orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }] });
     if (owner) {
