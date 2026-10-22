@@ -70,6 +70,7 @@ export function Modal({
   description,
   children,
   wide,
+  onCloseAutoFocus,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,12 +79,14 @@ export function Modal({
   children: React.ReactNode;
   /** Широкое окно: списки с полями в несколько колонок (приём из Notion, этап 23) */
   wide?: boolean;
+  /** Куда вернуть фокус после закрытия (этап 65): кнопки, с которой открыли окно, может уже не быть на экране */
+  onCloseAutoFocus?: (event: Event) => void;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-overlay" />
-        <Dialog.Content onEscapeKeyDown={keepOpenOnListEscape} className={cn("fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-panel bg-surface p-5 shadow-medium outline-none sm:px-6 sm:py-5", wide ? "max-w-[760px]" : "max-w-[560px]")}>
+        <Dialog.Content onEscapeKeyDown={keepOpenOnListEscape} onCloseAutoFocus={onCloseAutoFocus} className={cn("fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto overscroll-contain rounded-panel bg-surface p-5 shadow-medium outline-none sm:px-6 sm:py-5", wide ? "max-w-[760px]" : "max-w-[560px]")}>
           <Dialog.Title className="sv-modal__title block">{title}</Dialog.Title>
           {description ? (
             <Dialog.Description className="mt-1 text-body text-text-secondary">{description}</Dialog.Description>

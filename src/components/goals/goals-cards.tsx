@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
+import { goalTasksText } from "@/lib/goals/links";
 import { formatShort, plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/badge";
@@ -102,7 +103,7 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
         <div className="flex flex-col gap-1">
           <div className="flex justify-between gap-2 text-caption text-muted">
             <span>{g.metric ? g.metric : "без числа"}</span>
-            <span className="font-semibold text-ink">{g.progress.total ? `задачи ${g.progress.done} из ${g.progress.total}` : "задач пока нет"}</span>
+            <span className="font-semibold text-ink">{goalTasksText(g.progress.done, g.progress.total)}</span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-field" aria-hidden="true">
             <div className="h-full rounded-full bg-green" style={{ width: `${pct}%` }} />
@@ -119,7 +120,7 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-3 text-caption text-muted">
         {g.owner ? <span className="font-semibold text-ink">{g.owner.fullName}</span> : null}
-        {g.numeric && g.progress.total ? <span>задачи {g.progress.done} из {g.progress.total}</span> : null}
+        {g.numeric && g.progress.total ? <span>задач {goalTasksText(g.progress.done, g.progress.total)}</span> : null}
         {g.progress.overdue ? <span className="font-semibold text-danger-ink">просрочено {g.progress.overdue}</span> : null}
         {g.below.total ? <span>целей ниже {g.below.achieved} из {g.below.total}</span> : null}
         <button

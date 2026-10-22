@@ -38,7 +38,7 @@ async function seed() {
     [q],
   );
   await sql(`INSERT INTO goal_facts (id, "goalId", value, number, "authorId", at) VALUES ('d68-f1', 'd68-g1', '141', 141, ${person("muradyan")}, now())`);
-  // Задача работает на цель подписки: в карточке цели видно «задачи 0 из 1»
+  // Задача работает на цель подписки: в карточке цели видно «закрыто 0 из 1»
   await sql(`UPDATE tasks SET "goalId" = 'd68-g2' WHERE number = (SELECT min(number) FROM tasks WHERE "ownerId" = ${person("reva")} AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`);
 
   await sql(

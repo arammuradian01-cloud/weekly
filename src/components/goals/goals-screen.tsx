@@ -241,7 +241,11 @@ export function GoalsScreen({
           {view.unlinked
             .map((u) => `${u.name}: ${u.withoutGoal} из ${u.open} ${plural(u.open, "открытой", "открытых", "открытых")}${u.highWithoutGoal ? ` (высокий приоритет у ${u.highWithoutGoal})` : ""}`)
             .join("; ")}
-          . Задачи с высоким приоритетом должны работать на цель квартала: привяжите цель в карточке задачи, список{" "}
+          . Задачи с высоким приоритетом должны работать на цель квартала: перетащите их к целям на вкладке{" "}
+          <Link href={`/goals?mode=link&q=${view.quarter}`} className="font-semibold text-link hover:underline" data-testid="goals-unlinked-link">
+            «Связать задачи с целями»
+          </Link>{" "}
+          или выберите цель в карточке задачи, список{" "}
           <Link href="/tasks?group=goal" className="font-semibold text-link hover:underline">
             задачи по целям
           </Link>

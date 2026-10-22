@@ -10,6 +10,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-r
 import type { GoalNode } from "@/lib/goals/service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { factProblem, goalProgress, parseGoalNumber, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
+import { goalTasksText } from "@/lib/goals/links";
 import { formatShort } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { setGoalFactAction, updateGoalAction } from "@/app/(app)/goals/actions";
@@ -241,7 +242,7 @@ export function GoalsTable({
                   </td>
                   <td data-label="Задачи">
                     <span className="flex flex-col text-caption">
-                      <span className="tabular-nums text-ink">{g.progress.total ? `закрыто ${g.progress.done} из ${g.progress.total}` : "нет задач"}</span>
+                      <span className="tabular-nums text-ink">{goalTasksText(g.progress.done, g.progress.total)}</span>
                       {g.progress.overdue ? <span className="font-semibold text-danger-ink">просрочено {g.progress.overdue}</span> : null}
                     </span>
                   </td>
