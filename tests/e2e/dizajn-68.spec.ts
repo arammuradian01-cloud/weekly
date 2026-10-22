@@ -397,10 +397,11 @@ test("«Моя неделя»: «Ещё N в «Мне»» ведёт в груп
   const reva = person("reva");
   // Задачи Ревы и «Все лидеры» (они тоже его) на время проверки: срок далеко, потом шесть своих задач по сценарию
   const mine = `status IN ('IN_PROGRESS', 'CLARIFY', 'PROPOSED') AND "archivedAt" IS NULL AND ("ownerId" = ${reva} OR "ownerId" IS NULL OR id IN (SELECT "taskId" FROM task_co_executors WHERE "personId" = ${reva}))`;
-  const saved = await sql(`SELECT number, "ownerId", due::text AS due FROM tasks WHERE ${mine} OR number IN (SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL ORDER BY number LIMIT 6)`);
+  const saved = await sql(`SELECT number, "ownerId", due::text AS due FROM tasks WHERE ${mine} OR number IN (SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "ownerId" IS NOT NULL ORDER BY number LIMIT 6)`);
   try {
     await sql(`UPDATE tasks SET due = ${MSK} + 20 WHERE ${mine}`);
-    const six = (await sql(`SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL ORDER BY number LIMIT 6`)).map((r) => r.number as number);
+    // Только задачи с одним ответственным: у задачи «Все лидеры» ответственного не поставить (ownerAll)
+    const six = (await sql(`SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "ownerId" IS NOT NULL ORDER BY number LIMIT 6`)).map((r) => r.number as number);
     await sql(`UPDATE tasks SET "ownerId" = ${reva}, due = ${MSK} - 3 WHERE number = ANY($1)`, [six]);
     await enter(page, "Рева Тарас");
     // Шесть просроченных: пять в списке, шестая просроченная, ссылка на «Срок прошёл»

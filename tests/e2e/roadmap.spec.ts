@@ -262,6 +262,8 @@ test("карта сроков: обрезанный край встаёт на �
 
   // Обрезанный левый край: ручка есть; тянем её на 10-е число второго месяца карты, начало встаёт на эту дату
   await expect(bar(cut)).toHaveAttribute("data-cut", "start");
+  // Мышь работает в пределах экрана: строка задачи прокручивается в вид до замеров
+  await bar(cut).scrollIntoViewIfNeeded();
   const handle = bar(cut).locator("[data-handle='start']");
   const h = (await handle.boundingBox())!;
   const second = (await page.getByTestId("roadmap-timeline").locator("div.sticky span").nth(1).boundingBox())!;
@@ -273,6 +275,7 @@ test("карта сроков: обрезанный край встаёт на �
 
   // Короткая полоса: ручки снаружи, за середину сдвигается вся (окно причины про срок и начало), «Отмена» ничего не меняет
   const shortBefore = await state(short);
+  await bar(short).scrollIntoViewIfNeeded();
   const sb = (await bar(short).boundingBox())!;
   await dragBy(page, sb.x + sb.width / 2, sb.y + sb.height / 2, 40);
   const dialog = page.getByRole("dialog", { name: `Перенести срок задачи ${short}` });
