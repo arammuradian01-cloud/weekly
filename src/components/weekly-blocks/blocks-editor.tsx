@@ -73,7 +73,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
             />
           );
         return (
-          <section key={b.key} aria-labelledby={id} className={cn("flex min-w-0 flex-col gap-3 sv-card sv-card--soft px-4 py-4 sm:px-5", b.hidden && "opacity-80")} data-testid={`${idPrefix}-block-${b.key}`}>
+          <section key={b.key} aria-labelledby={id} className={cn("flex min-w-0 flex-col gap-3 sv-card sv-card--soft px-4 py-4 sm:px-5", b.hidden && "border border-dashed border-line")} data-testid={`${idPrefix}-block-${b.key}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <H id={id} className="text-title-sm font-semibold text-ink">
