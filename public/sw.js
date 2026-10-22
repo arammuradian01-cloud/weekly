@@ -1,12 +1,14 @@
 /* Служебный обработчик ресурса Weekly (этап 26, модуль М11).
  *
  * - Уведомления в браузере: показывает «кто и что» и открывает предмет по нажатию.
- * - Без сети: вместо пустого экрана показывает страницу «Нет сети».
+ * - Без сети или когда сервер не отвечает: вместо пустого экрана или страницы ошибки хостинга показывает свою страницу
+ *   («Нет сети» или «Ошибка 503», этап 75).
  * - Страницы с данными и ответы сервера НЕ кэшируются: на общем устройстве после выхода чужие данные не всплывут.
  *   Кэшируются только неизменяемые файлы сборки (в имени отпечаток содержимого), шрифты, значки и страница «Нет сети».
  */
 
-const VERSION = "weekly-v1";
+// Этап 75: новая страница ошибки, версия кэша сменена, чтобы устройства взяли её заново
+const VERSION = "weekly-v2";
 const STATIC_CACHE = `${VERSION}-static`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE = [OFFLINE_URL, "/icons/icon-192.png", "/icons/badge-96.png", "/logo/sravni_sign.svg"];
@@ -48,8 +50,19 @@ async function trim(cache) {
   for (const k of build.slice(0, Math.max(0, build.length - MAX_STATIC))) await cache.delete(k);
 }
 
-const offlinePage = () =>
-  caches.match(OFFLINE_URL).then((hit) => hit || new Response("Нет сети", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } }));
+/** Ответы прокси хостинга, когда приложение не отвечает (перезапуск, выкладка): вместо его страницы показываем свою */
+const GATEWAY = [502, 503, 504];
+
+/**
+ * Своя страница ошибки: без сети на ней «Нет сети», при живой сети «Ошибка <код>». Код 503, если сервер не ответил
+ * вовсе, или код прокси хостинга
+ */
+const offlinePage = (code = 503) =>
+  caches.match(OFFLINE_URL).then(async (hit) => {
+    if (!hit) return new Response(`Ошибка ${code}`, { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    const html = (await hit.text()).replace('data-code="503"', `data-code="${code}"`);
+    return new Response(html, { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  });
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
@@ -57,9 +70,13 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Переход по странице: всегда в сеть. Сети нет: страница «Нет сети», а не ошибка браузера
+  // Переход по странице: всегда в сеть. Сети нет или сервер не отвечает: своя страница, а не ошибка браузера или хостинга
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(offlinePage));
+    event.respondWith(
+      fetch(request)
+        .then((res) => (GATEWAY.includes(res.status) ? offlinePage(res.status) : res))
+        .catch(() => offlinePage()),
+    );
     return;
   }
 

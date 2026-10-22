@@ -36,7 +36,11 @@ describe("служебный обработчик", () => {
   const sw = readFileSync("public/sw.js", "utf8");
   it("страницы с данными не кэширует: переход идёт в сеть, без сети страница «Нет сети»", () => {
     expect(sw).toContain('request.mode === "navigate"');
-    expect(sw).toContain("event.respondWith(fetch(request).catch(offlinePage))");
+    expect(sw).toContain(".catch(() => offlinePage())");
+    // Этап 75: ответ прокси хостинга 502-504 на переход тоже заменяется своей страницей с кодом
+    expect(sw).toContain("const GATEWAY = [502, 503, 504];");
+    expect(sw).toContain("GATEWAY.includes(res.status) ? offlinePage(res.status) : res");
+    expect(sw).toContain('const VERSION = "weekly-v2";');
     // Кэш пополняется только в ветке файлов сборки и значков, старые файлы сборки вытесняются
     expect(sw.match(/cache\.put\(/g)?.length).toBe(1);
     expect(sw).toContain("if (isBuild(url) || isBrand(url)) {");
@@ -52,6 +56,10 @@ describe("служебный обработчик", () => {
   it("страница «Нет сети» самостоятельная и есть в списке заранее загруженного", () => {
     const html = readFileSync("public/offline.html", "utf8");
     expect(html).toContain("Нет сети");
+    // Этап 75: при живой сети заголовок «Ошибка <код>», код подставляет обработчик
+    expect(html).toContain('<main data-code="503">');
+    expect(html).toContain('"Ошибка " + code');
+    expect(html).toContain("Черновик weekly, который вы писали, сохранён на этом устройстве");
     expect(html).toContain("prefers-color-scheme: dark");
     expect(sw).toContain('const OFFLINE_URL = "/offline.html"');
   });

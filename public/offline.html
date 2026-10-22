@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <title>Нет сети | Weekly</title>
+    <title>Ошибка 503 | Weekly</title>
     <style>
       :root {
         --bg: #f6f5f4;
@@ -64,15 +64,42 @@
     </style>
   </head>
   <body>
-    <main>
+    <!-- Код ошибки подставляет служебный обработчик (sw.js): 503, когда сервер не ответил, или код прокси хостинга 502-504 -->
+    <main data-code="503">
       <img src="/logo/sravni_sign.svg" alt="" />
-      <h1>Нет сети</h1>
-      <p>Страница откроется, когда телефон снова будет в сети.</p>
+      <h1 id="title">Ошибка 503</h1>
+      <p id="why" hidden>Страница откроется, когда телефон снова будет в сети.</p>
       <p>Черновик weekly, который вы писали, сохранён на этом устройстве и уйдёт на сервер сам, как только связь вернётся.</p>
       <button type="button" onclick="location.reload()">Попробовать снова</button>
     </main>
     <script>
-      window.addEventListener("online", function () { location.reload(); });
+      (function () {
+        // Решение Арама 23.10: при живой сети, когда не отвечает сервер (перезапуск, выкладка), заголовок «Ошибка <код>».
+        // «Нет сети» только когда сети действительно нет
+        var main = document.querySelector("main");
+        var code = /^\d{3}$/.test(main.getAttribute("data-code") || "") ? main.getAttribute("data-code") : "503";
+        var title = document.getElementById("title");
+        var why = document.getElementById("why");
+        function show() {
+          var offline = navigator.onLine === false;
+          title.textContent = offline ? "Нет сети" : "Ошибка " + code;
+          why.hidden = !offline;
+          document.title = (offline ? "Нет сети" : "Ошибка " + code) + " | Weekly";
+        }
+        show();
+        window.addEventListener("offline", show);
+        window.addEventListener("online", function () { location.reload(); });
+        // Сеть есть, а сервер не отвечал: раз в 15 секунд спрашиваем проверку живости и, когда он вернулся, открываем
+        // страницу заново. На самой странице /offline.html не перезагружаемся: она и так откроется снова
+        if (location.pathname !== "/offline.html") {
+          setInterval(function () {
+            if (navigator.onLine === false) return;
+            fetch("/api/live", { cache: "no-store" })
+              .then(function (r) { if (r.ok) location.reload(); })
+              .catch(function () {});
+          }, 15000);
+        }
+      })();
     </script>
   </body>
 </html>

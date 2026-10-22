@@ -46,10 +46,17 @@ test("приложение на экран «Домой»: описание, з�
   // Страницы с данными в кэш не попадают
   await page.goto("/login");
   expect(await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (k) => (await (await caches.open(k)).keys()).map((r) => new URL(r.url).pathname)))).flat().filter((p) => !p.startsWith("/_next/static/") && !p.startsWith("/icons/") && !p.startsWith("/logo/")))).toEqual(["/offline.html"]);
+  // Этап 75: при живой сети на странице «Ошибка 503» (сервер не ответил), без сети «Нет сети»
   await page.goto("/offline.html");
-  await expect(page.getByRole("heading", { name: "Нет сети" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ошибка 503" })).toBeVisible();
   await expect(page.getByText("Черновик weekly, который вы писали, сохранён на этом устройстве")).toBeVisible();
+  await expect(page.getByText("Страница откроется, когда телефон снова будет в сети")).toBeHidden();
+  await shot(page, "offline-server");
+  await page.context().setOffline(true);
+  await expect(page.getByRole("heading", { name: "Нет сети" })).toBeVisible();
+  await expect(page.getByText("Страница откроется, когда телефон снова будет в сети")).toBeVisible();
   await shot(page, "offline");
+  await page.context().setOffline(false);
 });
 
 test("черновик weekly без сети: запись не теряется, уходит сама, когда связь вернулась, и не задваивается", async ({ page }) => {
