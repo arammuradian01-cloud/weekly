@@ -152,7 +152,7 @@ export function CommandPalette({ management, market = false }: { management: "OW
       ["/initiatives", "Инициативы", Target, "крупные инициативы шкала готовности ищем делаем проекты"],
       ["/people", "Люди, вкладка «Команда»", Users, "команда люди состав"],
       ["/people/structure", "Люди, вкладка «Структура»", Users, "структура дерево подчинённых подразделения команды"],
-      ["/people/projects", "Люди, вкладка «Weekly-проекты»", Users, "проекты weekly-проект готовые команды money партнёрка собрать команду перетащить"],
+      ["/people/teams", "Люди, вкладка «Weekly-команды»", Users, "команды weekly-команды управлять командами состав участники добавить проекты weekly-проект собрать команду создать команду"],
     ];
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
     // Рынок КАСКО и ОСАГО (этап 62): только тем, кому открыт раздел

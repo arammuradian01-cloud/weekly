@@ -51,7 +51,7 @@ export async function canCreateProject(actor: Pick<Actor, "personId" | "role" | 
 /** Название: пробелы схлопнуты, длинное тире заменено, длина ограничена */
 function cleanName(value: unknown): string {
   const name = String(value ?? "").replace(/[—–]/g, "-").replace(/\s+/g, " ").trim();
-  if (!name) fail("Напишите название проекта");
+  if (!name) fail("Напишите название команды");
   if (name.length > NAME_MAX) fail(`Название длиннее ${NAME_MAX} знаков`);
   return name;
 }
@@ -60,72 +60,12 @@ async function audit(tx: Tx, actor: Actor, action: string, entityId: string, fie
   await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
 }
 
-export type ProjectUnit = { id: string; name: string; kind: string; parentId: string | null; head: string | null };
-export type ProjectPerson = { slug: string; fullName: string; position: string | null; unitId: string | null };
-export type ProjectView = {
-  id: string;
-  name: string;
-  kind: "UNIT" | "CUSTOM";
-  /** Свой weekly-проект: его можно переименовать и закрыть */
-  project: boolean;
-  members: { slug: string; fullName: string; external: boolean }[];
-  waiting: { id: string; slug: string; fullName: string; approver: string }[];
-};
-export type ProjectsView = {
-  units: ProjectUnit[];
-  people: ProjectPerson[];
-  projects: ProjectView[];
-  canCreate: boolean;
-  /** Режим управления владельца: люди других веток входят сразу, без согласия */
-  direct: boolean;
-  me: string;
-};
-
-/** Всё для страницы проектов: подразделения и люди компании, свои команды и проекты */
-export async function projectsView(actor: Actor): Promise<ProjectsView> {
-  const limited = teamLogin(actor);
-  const [units, people, teams, canCreate] = await Promise.all([
-    prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, name: true, kind: true, parentId: true, head: { select: { slug: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
-    prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, select: { slug: true, fullName: true, position: true, unitId: true }, orderBy: [{ fullName: "asc" }] }),
-    prisma.team.findMany({
-      // Топ-команду собирают в «Структуре» в режиме управления, здесь только свои команды и проекты
-      where: { leaderId: actor.personId, active: true, kind: { not: "TOP" } },
-      select: {
-        id: true,
-        name: true,
-        kind: true,
-        project: true,
-        members: { select: { external: true, person: { select: { slug: true, fullName: true, active: true } } } },
-        joinRequests: { where: { status: "PENDING" }, select: { id: true, person: { select: { slug: true, fullName: true } }, approver: { select: { fullName: true } } } },
-      },
-      orderBy: [{ kind: "asc" }, { sortOrder: "asc" }],
-    }),
-    canCreateProject(actor),
-  ]);
-  return {
-    units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head?.slug ?? null })),
-    people,
-    projects: teams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      kind: t.kind as ProjectView["kind"],
-      project: t.project,
-      members: t.members.filter((m) => m.person.active).map((m) => ({ slug: m.person.slug, fullName: m.person.fullName, external: m.external })).sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")),
-      // Под общим логином запросы и согласующие не показываем, как и в «Структуре»
-      waiting: limited ? [] : t.joinRequests.map((r) => ({ id: r.id, slug: r.person.slug, fullName: r.person.fullName, approver: r.approver.fullName })),
-    })),
-    canCreate,
-    direct: canManagePeople(actor),
-    me: actor.slug,
-  };
-}
-
 /** Люди подразделения со всеми подразделениями ниже. Корень компании целиком не берётся: это не команда, а все */
 export async function unitPeople(unitId: string): Promise<string[]> {
   const units = await prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, parentId: true, kind: true } });
   const root = units.find((u) => u.id === unitId);
   if (!root) fail("Такого подразделения нет");
-  if (root!.kind === "COMPANY") fail("Всю компанию в проект не добавить: выберите департамент или подразделение");
+  if (root!.kind === "COMPANY") fail("Всю компанию в команду не добавить: выберите департамент или подразделение");
   const below = new Set<string>([unitId]);
   let grew = true;
   while (grew) {
@@ -140,9 +80,9 @@ export async function unitPeople(unitId: string): Promise<string[]> {
   return people.map((p) => p.slug);
 }
 
-/** Куда встаёт новый проект: под команду руководителя по структуре, иначе под команду генерального директора */
-async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
-  const own = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, kind: { in: ["TOP", "UNIT"] } }, orderBy: [{ kind: "asc" }, { sortOrder: "asc" }], select: { id: true } });
+/** Куда встаёт новый проект: под команду его руководителя по структуре, иначе под команду генерального директора */
+async function parentFor(tx: Tx, leaderId: string): Promise<string | null> {
+  const own = await tx.team.findFirst({ where: { leaderId, active: true, kind: { in: ["TOP", "UNIT"] } }, orderBy: [{ kind: "asc" }, { sortOrder: "asc" }], select: { id: true } });
   if (own) return own.id;
   const company = await tx.orgUnit.findFirst({ where: { kind: "COMPANY", active: true }, orderBy: { createdAt: "asc" }, select: { id: true } });
   // Структура одного департамента, как до этапа 53: команды без команды выше стоят под топ-командой
@@ -151,23 +91,41 @@ async function parentFor(tx: Tx, actor: Actor): Promise<string | null> {
   return companyTeam?.id ?? null;
 }
 
-async function createIn(tx: Tx, actor: Actor, rawName: unknown): Promise<{ id: string; name: string }> {
-  if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Проект собирают, войдя лично, со своим логином и паролем" : "Проекты собирают руководители");
+/**
+ * Новый проект. Руководит им тот, кто создаёт, либо (этап 64) человек, которого сразу назначил владелец в режиме
+ * управления: тогда место в дереве, дубль названия, предел своих команд и очередь считаются по руководителю, как
+ * будто он создал команду сам
+ */
+async function createIn(tx: Tx, actor: Actor, rawName: unknown, leaderSlug?: string | null): Promise<{ id: string; name: string; leaderName: string }> {
+  if (!(await canCreateProject(actor, tx))) fail(teamLogin(actor) ? "Команду собирают, войдя лично, со своим логином и паролем" : "Команды собирают руководители");
   const name = cleanName(rawName);
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${actor.personId}`}))`;
-  const same = await tx.team.findFirst({ where: { leaderId: actor.personId, active: true, name } });
-  if (same) fail(`Проект «${name}» у вас уже есть`);
-  const mine = await tx.team.count({ where: { leaderId: actor.personId, active: true, project: true } });
-  if (mine >= PROJECTS_MAX) fail(`У вас уже ${PROJECTS_MAX} проектов: закройте те, что больше не нужны`);
+  let leader = { id: actor.personId, fullName: actor.fullName };
+  if (leaderSlug && leaderSlug !== actor.slug) {
+    if (!canManagePeople(actor)) fail("Другого руководителя назначает владелец в режиме управления: создайте команду и назначьте его в карточке");
+    const p = await tx.person.findUnique({ where: { slug: String(leaderSlug) }, select: { id: true, fullName: true, active: true, role: true } });
+    if (!p) fail("Такого человека нет");
+    if (!p!.active) fail(`${p!.fullName} выключен`);
+    if (p!.role === "OBSERVER") fail("Наблюдатель командой не руководит");
+    leader = { id: p!.id, fullName: p!.fullName };
+  }
+  const own = leader.id === actor.personId;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`projects:${leader.id}`}))`;
+  const same = await tx.team.findFirst({ where: { leaderId: leader.id, active: true, name } });
+  if (same) fail(own ? `Команда «${name}» у вас уже есть` : `Команда «${name}» у ${leader.fullName} уже есть`);
+  const mine = await tx.team.count({ where: { leaderId: leader.id, active: true, project: true } });
+  if (mine >= PROJECTS_MAX) fail(own ? `У вас уже ${PROJECTS_MAX} своих команд: закройте те, что больше не нужны` : `У ${leader.fullName} уже ${PROJECTS_MAX} своих команд: пусть закроет те, что больше не нужны`);
   const count = await tx.team.count();
-  const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: actor.personId, parentId: await parentFor(tx, actor), sortOrder: (count + 1) * 10 } });
-  await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${actor.fullName}`);
-  return { id: team.id, name };
+  const team = await tx.team.create({ data: { name, kind: "CUSTOM", project: true, leaderId: leader.id, parentId: await parentFor(tx, leader.id), sortOrder: (count + 1) * 10 } });
+  await audit(tx, actor, "team.create", team.id, "Weekly-проект создан", null, `${name}, руководитель ${leader.fullName}`);
+  return { id: team.id, name, leaderName: leader.fullName };
 }
 
 /** Новый weekly-проект: команда, которой руководит тот, кто её собирает */
 export async function createProject(actor: Actor, input: { name: string }): Promise<{ id: string; name: string }> {
-  return prisma.$transaction((tx) => createIn(tx, actor, input?.name));
+  return prisma.$transaction(async (tx) => {
+    const { id, name } = await createIn(tx, actor, input?.name);
+    return { id, name };
+  });
 }
 
 export type AddPeopleResult = {
@@ -193,7 +151,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
   // Права на команду один раз, до людей
   const team = await tx.team.findUnique({ where: { id: String(teamId) }, include: { leader: { select: { fullName: true } } } });
-  if (!team || !team.active) fail("Такого проекта нет или он закрыт");
+  if (!team || !team.active) fail("Такой команды нет или она закрыта");
   if (!owner && (team!.id === TOP_TEAM || team!.leaderId !== actor.personId)) fail("Состав команды меняют её руководитель и владелец в режиме управления");
 
   // По очереди: внутри транзакции запросы и так идут одним соединением
@@ -322,7 +280,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
 
 /** Повтор в ту же секунду из другой вкладки: второй ожидающий запрос запрещён индексом, говорим понятно */
 function concurrent(error: unknown): never {
-  if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") fail("Состав проекта только что поменялся: обновите страницу и повторите");
+  if (error && typeof error === "object" && (error as { code?: string }).code === "P2002") fail("Состав команды только что поменялся: обновите страницу и повторите");
   throw error;
 }
 
@@ -331,13 +289,22 @@ export async function addProjectPeople(actor: Actor, teamId: string, slugs: stri
   return prisma.$transaction((tx) => addIn(tx, actor, teamId, slugs, now), { timeout: 30_000 }).catch(concurrent);
 }
 
-/** Новый проект сразу с людьми: одна транзакция, без пустого проекта при сбое */
-export async function createProjectWith(actor: Actor, name: string, slugs: string[], now = new Date()): Promise<{ id: string; name: string; result: AddPeopleResult | null }> {
+/**
+ * Новый проект сразу с людьми: одна транзакция, без пустого проекта при сбое. leader: другой руководитель (только
+ * владелец в режиме управления, этап 64): команда сразу с ним, люди добавляются по его ветке, события называют его
+ */
+export async function createProjectWith(
+  actor: Actor,
+  name: string,
+  slugs: string[],
+  opts: { leader?: string | null; now?: Date } = {},
+): Promise<{ id: string; name: string; leader: string; result: AddPeopleResult | null }> {
+  const now = opts.now ?? new Date();
   return prisma
     .$transaction(
       async (tx) => {
-        const team = await createIn(tx, actor, name);
-        return { ...team, result: slugs.length ? await addIn(tx, actor, team.id, slugs, now) : null };
+        const team = await createIn(tx, actor, name, opts.leader);
+        return { id: team.id, name: team.name, leader: team.leaderName, result: slugs.length ? await addIn(tx, actor, team.id, slugs, now) : null };
       },
       { timeout: 30_000 },
     )
@@ -349,10 +316,10 @@ async function ownProject(tx: Tx, actor: Actor, teamId: string) {
   // Та же блокировка, что у пачки людей: закрытие не разойдётся с добавлением
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${String(teamId)}`}))`;
   const team = await tx.team.findUnique({ where: { id: String(teamId) } });
-  if (!team || !team.active || !team.project) fail("Такого проекта нет или он закрыт");
+  if (!team || !team.active || !team.project) fail("Такой команды нет или она закрыта");
   if (!canManagePeople(actor)) {
-    if (teamLogin(actor)) fail("Проект меняют, войдя лично, со своим логином и паролем");
-    if (team!.leaderId !== actor.personId) fail("Проект меняет его руководитель и владелец в режиме управления");
+    if (teamLogin(actor)) fail("Команду меняют, войдя лично, со своим логином и паролем");
+    if (team!.leaderId !== actor.personId) fail("Команду меняют её руководитель и владелец в режиме управления");
   }
   return team!;
 }
@@ -363,7 +330,7 @@ export async function renameProject(actor: Actor, teamId: string, rawName: strin
     const name = cleanName(rawName);
     if (name === team.name) return { id: team.id, name };
     const same = await tx.team.findFirst({ where: { leaderId: team.leaderId, active: true, name, id: { not: team.id } } });
-    if (same) fail(`Проект «${name}» у вас уже есть`);
+    if (same) fail(`Команда «${name}» у вас уже есть`);
     await tx.team.update({ where: { id: team.id }, data: { name } });
     await audit(tx, actor, "team.update", team.id, "Название проекта", team.name, name);
     return { id: team.id, name };
@@ -375,7 +342,7 @@ export async function closeProject(actor: Actor, teamId: string, now = new Date(
   await prisma.$transaction(async (tx) => {
     const team = await ownProject(tx, actor, teamId);
     const open = await tx.task.count({ where: { teamId: team.id, status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } });
-    if (open) fail(`В проекте ${open} открытых задач: сначала передайте их в другую команду или закройте`);
+    if (open) fail(`В команде ${open} открытых задач: сначала передайте их в другую команду или закройте`);
     await tx.teamJoinRequest.updateMany({ where: { teamId: team.id, status: "PENDING" }, data: { status: "CANCELLED", decidedAt: now } });
     await tx.team.update({ where: { id: team.id }, data: { active: false } });
     await audit(tx, actor, "team.off", team.id, `Проект закрыт: ${team.name}`, null, null);

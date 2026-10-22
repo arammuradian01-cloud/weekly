@@ -16,6 +16,7 @@ export function Collapsible({
   className,
   flush = false,
   testId,
+  onToggle,
 }: {
   id: string;
   title: React.ReactNode;
@@ -28,10 +29,12 @@ export function Collapsible({
   /** Содержимое со своими отступами (модуль, таблица во всю ширину): тело блока без внутреннего отступа */
   flush?: boolean;
   testId?: string;
+  /** Блок раскрыли или свернули: чтобы помнить это, например, после обновления данных */
+  onToggle?: (open: boolean) => void;
 }) {
   const H = headingLevel === 2 ? "h2" : "h3";
   return (
-    <details id={id} className={cn("sv-collapse sv-card sv-card--soft", className)} open={open} data-testid={testId}>
+    <details id={id} className={cn("sv-collapse sv-card sv-card--soft", className)} open={open} data-testid={testId} onToggle={onToggle ? (e) => onToggle(e.currentTarget.open) : undefined}>
       {/* Заголовок и подсказка прямыми детьми summary: без лишней обёртки вокруг заголовка */}
       <summary className="sv-collapse__head">
         <H className="sv-collapse__title" id={`${id}-title`}>

@@ -7,6 +7,7 @@ import { prisma } from "@/lib/db";
 import * as svc from "@/lib/tasks/service";
 import * as org from "@/lib/org/service";
 import * as projects from "@/lib/org/projects";
+import * as teams from "@/lib/org/teams";
 import { NUMBERS_ACCESS_KEY, briefFor, canSeeNumbers, numbersAccessView, numbersLevel, saveNumbersAccess, summaryBrief, withNumbers } from "@/lib/plan/access";
 import { TOP_TEAM } from "@/lib/org/scope";
 
@@ -80,7 +81,7 @@ afterAll(async () => {
 
 describe("готовые команды по структуре", () => {
   it("департаменты под компанией: Money и партнёрства отдельными командами со всеми людьми ветки", async () => {
-    const view = await projects.projectsView(await personal("Ершов"));
+    const view = await teams.teamsView(await personal("Ершов"));
     const company = view.units.find((u) => u.kind === "COMPANY")!;
     const ready = view.units.filter((u) => u.parentId === company.id).map((u) => u.name);
     expect(ready).toEqual(expect.arrayContaining([INS, MONEY, PARTNERS]));
@@ -89,12 +90,12 @@ describe("готовые команды по структуре", () => {
     const names = (await prisma.person.findMany({ where: { slug: { in: slugs } }, select: { fullName: true } })).map((p) => p.fullName).sort();
     expect(names).toEqual(["Ершов Пётр", "Котов Игорь", "Лисина Анна"]);
     expect(view.units.find((u) => u.id === money.id)?.head).toBe((await person("Ершов")).slug);
-    // Руководитель из файла с ролью сотрудника собирает проекты; его команда по структуре уже среди его проектов
+    // Руководитель из файла с ролью сотрудника собирает проекты; его команда по структуре уже среди его команд
     expect(view.canCreate).toBe(true);
-    expect(view.projects.map((p) => p.kind)).toEqual(["UNIT"]);
-    // Топ-команды среди проектов нет даже у её руководителя: её собирают в структуре в режиме управления
-    const aram = await projects.projectsView({ ...(await owner()), management: null, via: "PASSWORD" });
-    expect(aram.projects.some((p) => p.id === TOP_TEAM)).toBe(false);
+    expect(view.teams.filter((t) => t.relation === "leader").map((t) => t.kind)).toEqual(["UNIT"]);
+    // Состав топ-команды даже её руководитель без режима управления не меняет: его меняет владелец в режиме управления
+    const aram = await teams.teamsView({ ...(await owner()), management: null, via: "PASSWORD" });
+    expect(aram.teams.find((t) => t.id === TOP_TEAM)?.rights.members).toBe(false);
   });
 });
 
@@ -136,10 +137,10 @@ describe("свой weekly-проект по образцу", () => {
     expect((await prisma.inboxEvent.findFirstOrThrow({ where: { subject: `join:${request.id}` }, include: { recipient: true } })).recipient.fullName).toBe("Лисина Анна");
     expect(await prisma.teamMember.count({ where: { teamId: team.id, personId: kotov.id } })).toBe(0);
     // Ждущий виден в проекте; повтор не создаёт второй запрос, а объясняет, почему
-    const view = await projects.projectsView(golovkin);
-    const mine = view.projects.find((p) => p.id === team.id)!;
+    const view = await teams.teamsView(golovkin);
+    const mine = view.teams.find((p) => p.id === team.id)!;
     expect(mine.members.map((m) => m.fullName)).toEqual(["Фатьянов Евгений"]);
-    expect(mine.waiting).toEqual([{ id: request.id, slug: kotov.slug, fullName: "Котов Игорь", approver: "Лисина Анна" }]);
+    expect(mine.waiting).toEqual([{ id: request.id, slug: kotov.slug, fullName: "Котов Игорь", approver: "Лисина Анна", requestedBy: "Головкин Владислав", canCancel: true }]);
     const again = await projects.addProjectPeople(golovkin, team.id, [kotov.slug]);
     expect(again).toEqual({ added: [], requested: [], already: ["Котов Игорь"], skipped: [] });
     expect(await prisma.teamJoinRequest.count({ where: { teamId: team.id, personId: kotov.id } })).toBe(1);
@@ -155,7 +156,7 @@ describe("свой weekly-проект по образцу", () => {
     await expectRule(projects.addProjectPeople(ershov, golovkinTeam.id, [(await person("Седов")).slug]), /меняют её руководитель/);
     const kotov = await personal("Котов");
     expect(await projects.canCreateProject(kotov)).toBe(false);
-    await expectRule(projects.createProject(kotov, { name: "Мой проект" }), /Проекты собирают руководители/);
+    await expectRule(projects.createProject(kotov, { name: "Мой проект" }), /Команды собирают руководители/);
     const viaTeam = { ...(await personal("Головкин")), via: "TEAM" as const };
     expect(await projects.canCreateProject(viaTeam)).toBe(false);
     await expectRule(projects.createProject(viaTeam, { name: "Ещё проект" }), /войдя лично/);
@@ -169,7 +170,7 @@ describe("пачки, гонки и границы после проверки �
   it("одна транзакция на пачку: несуществующий и закрытый проект отказывают сразу, вся компания и больше 150 человек нет", async () => {
     const ershov = await personal("Ершов");
     const kotov = await person("Котов");
-    await expectRule(projects.addProjectPeople(ershov, "нет-такого", [kotov.slug]), /нет или он закрыт/);
+    await expectRule(projects.addProjectPeople(ershov, "нет-такого", [kotov.slug]), /нет или она закрыта/);
     const company = await prisma.orgUnit.findFirstOrThrow({ where: { kind: "COMPANY", active: true } });
     await expectRule(projects.unitPeople(company.id), /Всю компанию/);
     const many = Array.from({ length: projects.BATCH_MAX + 1 }, (_, i) => `slug-${i}`);
@@ -215,7 +216,7 @@ describe("пачки, гонки и границы после проверки �
     const golovkin = await personal("Головкин");
     await expectRule(projects.renameProject(golovkin, own.id, "Чужое"), /руководитель/);
     const unitTeam = await prisma.team.findFirstOrThrow({ where: { leaderId: ershov.personId, kind: "UNIT" } });
-    await expectRule(projects.closeProject(ershov, unitTeam.id), /нет или он закрыт/);
+    await expectRule(projects.closeProject(ershov, unitTeam.id), /нет или она закрыта/);
     // Открытая задача держит проект
     const kotov = await person("Котов");
     await svc.createTask(ershov, { title: "Отчёт по кредитам", outcome: "Отчёт готов", owner: kotov.slug, direction: "department", due: "2027-01-15", team: own.id });
@@ -223,7 +224,7 @@ describe("пачки, гонки и границы после проверки �
     await prisma.task.deleteMany({ where: { teamId: own.id } });
     await projects.closeProject(ershov, own.id);
     expect((await prisma.team.findUniqueOrThrow({ where: { id: own.id } })).active).toBe(false);
-    await expectRule(projects.addProjectPeople(ershov, own.id, [kotov.slug]), /нет или он закрыт/);
+    await expectRule(projects.addProjectPeople(ershov, own.id, [kotov.slug]), /нет или она закрыта/);
     // Ожидающий запрос отменяет тот, кто просил
     const cross = await prisma.team.findFirstOrThrow({ where: { name: "Кредиты и страхование" } });
     const req = await prisma.teamJoinRequest.findFirstOrThrow({ where: { teamId: cross.id, status: "PENDING" } });
@@ -276,10 +277,12 @@ describe("второй круг проверки кода", () => {
     const ownerActor = await owner();
     const t = await org.createTeam(ownerActor, { name: "Команда владельца", leader: (await person("Ершов")).slug });
     const ershov = await personal("Ершов");
-    await expectRule(projects.renameProject(ershov, t.id, "Моё название"), /нет или он закрыт/);
-    await expectRule(projects.closeProject(ershov, t.id), /нет или он закрыт/);
-    const view = await projects.projectsView(ershov);
-    expect(view.projects.find((x) => x.id === t.id)?.project).toBe(false);
+    await expectRule(projects.renameProject(ershov, t.id, "Моё название"), /нет или она закрыта/);
+    await expectRule(projects.closeProject(ershov, t.id), /нет или она закрыта/);
+    const view = await teams.teamsView(ershov);
+    const row = view.teams.find((x) => x.id === t.id)!;
+    expect(row.project).toBe(false);
+    expect(row.rights).toMatchObject({ members: true, rename: false, close: false, leader: false });
   });
 
   it("основные цифры: итог месяца без корректировок команд и партнёров", () => {
