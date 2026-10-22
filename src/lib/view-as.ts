@@ -89,6 +89,11 @@ export async function verifyViewAs(token: string | undefined, secret: string, no
   }
 }
 
+/** Пометка просмотра в названии вкладки: «Как <ФИО>». Вкладки просмотра не спутать с обычными */
+export function viewAsTitleMark(fullName: string): string {
+  return `Как ${fullName}`;
+}
+
 export const VIEW_AS_TEXTS = {
   ownerOnly: "«Смотреть как» доступно только владельцу",
   personal: "«Смотреть как» включается только при личном входе, не по общему логину",

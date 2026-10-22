@@ -32,7 +32,7 @@ import { ALL_TEAMS } from "@/domain/teams";
 import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
 import { canViewAs } from "@/lib/view-as-service";
 import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
-import { VIEW_AS_END_TEXTS, viewAsTabState } from "@/lib/view-as";
+import { VIEW_AS_END_TEXTS, viewAsTabState, viewAsTitleMark } from "@/lib/view-as";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   const ctx = await requireContext();
   if (!ctx.viewAs) return {};
-  const mark = `Как ${ctx.person.fullName}`;
+  const mark = viewAsTitleMark(ctx.person.fullName);
   return { title: { default: `${mark} | Weekly`, template: `${mark}: %s | Weekly` } };
 }
 
