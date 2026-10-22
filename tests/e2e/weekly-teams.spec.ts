@@ -39,13 +39,13 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-wt-${name}.png`, fullPage: true });
 }
 
-async function loadCompany(page: Page) {
+async function loadCompany(page: Page, company = COMPANY) {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/people/structure");
   await page.getByRole("button", { name: "Загрузить структуру" }).click();
   const drawer = page.getByRole("dialog", { name: "Загрузить структуру" });
-  await drawer.getByLabel("Или вставьте ячейки из таблицы").fill(COMPANY);
+  await drawer.getByLabel("Или вставьте ячейки из таблицы").fill(company);
   await drawer.getByRole("button", { name: "Проверить" }).click();
   await expect(drawer.getByTestId("structure-root")).toContainText("Структура всей компании");
   await drawer.getByRole("button", { name: "Загрузить", exact: true }).click();
@@ -400,4 +400,35 @@ test("новая команда открывается без перезагру
     await openTeam(page, "Департамент Money");
     expect(await page.evaluate(() => window.history.length)).toBe(length);
   }
+});
+
+test("карточка большой команды на ноутбуке не выше окна: последний участник виден прокруткой карточки и убирается", async ({ page }) => {
+  test.skip(isPhone(), "на телефоне карточка не липкая: её листают вместе со страницей");
+  test.setTimeout(120_000);
+  // Этап 70: 30 человек в департаменте партнёрств, все подчинены Беловой и входят в её команду по структуре
+  const surnames = ["Абрамов", "Богданов", "Васильев", "Григорьев", "Давыдов", "Егоров"];
+  const names = ["Антон", "Борис", "Виктор", "Глеб", "Денис"];
+  const crowd = surnames.flatMap((s) => names.map((n) => `${s} ${n}`));
+  await loadCompany(page, [COMPANY, ...crowd.map((n) => [n, "Partner manager", "Департамент партнёрств", "Управление партнёрских продаж", ""].join("\t"))].join("\n"));
+  await page.goto("/people/teams");
+  const card = await openTeam(page, "Департамент партнёрств");
+  await expect(card).toContainText("в команде 32 человека");
+  const column = page.getByRole("complementary", { name: "Карточка команды" });
+  // Карточка длиннее окна: прокручивается сама колонка, а не только страница, и вбок не уезжает
+  expect(await column.evaluate((el) => el.scrollHeight > el.clientHeight + 200)).toBe(true);
+  expect(await column.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  // Страница пролистана до конца: колонка целиком в окне, низ карточки не уходит за край
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  const box = (await column.boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+  // Последний участник по алфавиту внизу карточки: виден прокруткой колонки, кнопка «Убрать» нажимается
+  const last = [...crowd, "Седов Максим"].sort((a, b) => a.localeCompare(b, "ru")).at(-1)!;
+  const remove = column.getByRole("button", { name: `Убрать из команды: ${last}` });
+  await expect(remove).not.toBeInViewport();
+  await column.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(remove).toBeInViewport();
+  await remove.click();
+  await expect(page.getByText(`${last} убран из команды`).first()).toBeVisible();
+  await expect(card.getByTestId("team-members")).not.toContainText(last);
 });

@@ -26,6 +26,7 @@ import { WeeklyLine } from "./weekly-line";
 import { AddPeopleModal, CloseModal, CreateTeamModal, LeaderModal, RenameModal, RhythmModal } from "./team-dialogs";
 import { StructureAssembler } from "./structure-assembler";
 import { ManageHint } from "./manage-hint";
+import { STICKY_COLUMN } from "./sticky-column";
 import { TOP_TEAM_NAME } from "@/domain/teams";
 
 /** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
@@ -395,7 +396,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
           ) : null}
         </section>
         {shown ? (
-          <aside aria-label="Карточка команды" className={cn("min-w-0 self-start lg:sticky lg:top-20", cardMode ? "block" : "hidden lg:block")}>
+          <aside aria-label="Карточка команды" className={cn("min-w-0", STICKY_COLUMN, cardMode ? "block" : "hidden lg:block")}>
             <TeamCard key={shown.id} team={shown} view={view} onAction={act} onBack={back} />
           </aside>
         ) : null}
