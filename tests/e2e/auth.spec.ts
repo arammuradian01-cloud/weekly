@@ -32,6 +32,8 @@ async function signIn(page: Page, password = E2E_PASSWORDS.team) {
 
 async function chooseMe(page: Page, fullName: string) {
   await expect(page).toHaveURL(/\/choose$/);
+  // Этап 71: в списке все люди структуры, сразу видны первые 100: человека находят поиском
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill(fullName);
   await page.getByRole("button", { name: new RegExp(fullName) }).click();
   await expect(page).toHaveURL(/\/$/);
 }

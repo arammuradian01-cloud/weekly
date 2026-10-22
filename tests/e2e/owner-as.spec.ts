@@ -32,6 +32,11 @@ test.beforeEach(async () => {
   execSync(`npx tsx scripts/load-structure.ts ${file} --yes`, { env: { ...process.env, DATABASE_URL: process.env.E2E_DATABASE_URL }, stdio: "ignore" });
 });
 
+// Длинный список людей для экрана выбора не остаётся следующим файлам: не все из них сбрасывают базу
+test.afterEach(async () => {
+  await sql(`DELETE FROM people WHERE slug LIKE 's71p%'`);
+});
+
 async function shot(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
@@ -128,18 +133,34 @@ test("владелец входит в профиль руководителя �
 
 test("общий логин находит поиском человека вне топ-команды, владельцев и людей с личным паролем в списке нет", async ({ page }) => {
   await sql(`UPDATE people SET "passwordHash" = 'x' WHERE slug = 'loginova'`);
+  // Длинный список: полторы сотни человек с длинными ФИО и должностями, на экране первые 100 и поиск
+  await sql(
+    `INSERT INTO people (id, slug, "fullName", "shortName", role, zone, position, "updatedAt")
+     SELECT 's71p' || i, 's71p' || i, 'Константинопольская-Длиннофамильная Анастасия ' || lpad(i::text, 3, '0'), 'Анастасия', 'EMPLOYEE', '', 'Ведущий специалист по развитию партнёрских продаж и сопровождению ' || i, now()
+     FROM generate_series(1, 150) AS i`,
+  );
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");
   await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
   await page.getByRole("button", { name: "Войти" }).click();
   await expect(page).toHaveURL(/\/choose$/);
   await expect(page.getByText(/Можно выбрать: \d+/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Логинова Светлана/ })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
+  await expect(page.getByText(/Ещё \d+: уточните поиск/)).toBeVisible();
   await shot(page, "choose");
+  const search = page.getByLabel("Поиск по ФИО, должности или подразделению");
+  // Владельца и человека с личным паролем поиск не находит, остальных находит
+  for (const name of ["мурадян", "логинова"]) {
+    await search.fill(name);
+    await expect(page.getByText("Никого не нашли: проверьте написание")).toBeVisible();
+  }
+  await search.fill("рева");
+  await expect(page.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
 
-  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("product designer");
+  await search.fill("сопровождению 149");
+  await expect(page.getByText("Нашлось 1 человек")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Длиннофамильная Анастасия 149/ })).toBeVisible();
+  await shot(page, "choose-search");
+  await search.fill("product designer");
   await expect(page.getByText("Нашлось 1 человек")).toBeVisible();
   await page.getByRole("button", { name: /Чемоданова Алиса/ }).click();
   await expect(page).toHaveURL(/\/$/);
@@ -149,6 +170,7 @@ test("общий логин находит поиском человека вн�
   await openProfileMenu(page);
   await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
   await expect(page).toHaveURL(/\/choose$/);
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill("чемоданова");
   await expect(page.getByRole("button", { name: /Чемоданова Алиса/ })).toContainText("Сейчас");
 });
 

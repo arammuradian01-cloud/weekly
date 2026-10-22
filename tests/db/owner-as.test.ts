@@ -44,6 +44,7 @@ import * as ownerAs from "@/app/actions/owner-as";
 import * as viewAs from "@/app/actions/view-as";
 import { chooseProfile, confirmStepUpAction, enterManagement, exitManagement, logout, requestStepUpAction } from "@/app/actions/auth";
 import { addCommentAction, createTaskAction } from "@/app/(app)/tasks/actions";
+import { setTeamAction } from "@/app/actions/team";
 import {
   calendarTitlesAction,
   cancelEmailBindingAction,
@@ -356,6 +357,19 @@ describe("вход владельца в профиль и возврат", () =
     // Второй возврат: «вы и так в своём профиле»
     expect(await ownerAs.returnToOwnProfileAction()).toEqual({ ok: false, error: OWNER_AS_TEXTS.notInside });
     expect(await ownerAsAudit()).toHaveLength(2);
+  });
+
+  it("команда, выбранная во входе, живёт в своей cookie и снимается при возврате", async () => {
+    await signIn("muradyan");
+    // Выбор владельца: cookie «team» не должна меняться во входе
+    http.cookies.set("team", "owner-choice");
+    await enterAs("reva");
+    expect(await setTeamAction("top")).toEqual({ ok: true });
+    expect(http.cookies.get("team_view")).toBe("top");
+    expect(http.cookies.get("team")).toBe("owner-choice");
+    expect(await ownerAs.returnToOwnProfileAction()).toEqual({ ok: true, value: null });
+    expect(http.cookies.has("team_view")).toBe(false);
+    expect(http.cookies.get("team")).toBe("owner-choice");
   });
 
   it("выход во время входа: конец «выход из ресурса», вход владельца на устройстве завершён", async () => {

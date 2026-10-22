@@ -34,14 +34,16 @@ function reloadHome() {
 
 /**
  * Вернуться в свой профиль. Сначала черновики человека с этого устройства уходят на сервер (не дольше 5 секунд) от его
- * имени с пометкой владельца и стираются: после возврата они не уйдут ни от владельца, ни от самого человека. Сервер
- * отказал из-за смены профиля в другой вкладке: черновики остаются до следующего входа в этот профиль.
+ * имени с пометкой владельца и стираются: после возврата они не уйдут ни от владельца, ни от самого человека. Нет сети
+ * или сервер отказал из-за смены профиля в другой вкладке: черновики остаются до следующего входа в этот профиль.
  * Возвращает текст ошибки или null. Возврата нет (владельца выключили, сняли роль): сервер уводит на экран входа
  */
 export async function returnToOwnProfile(targetSlug: string | null): Promise<string | null> {
   if (targetSlug) {
     const flushed = await Promise.race([flushOfflineDrafts(targetSlug).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
-    if (!flushed?.blocked) clearOfflineDraftsFor(targetSlug);
+    // Всё ушло или отклонено правилом: стираем. Нет сети, не успели или отказ входа: черновики остаются до следующего
+    // входа в этот профиль, написанное не пропадает
+    if (flushed && !flushed.blocked && !flushed.offline) clearOfflineDraftsFor(targetSlug);
   }
   const r = await returnToOwnProfileAction();
   if (!r.ok) return r.error;
