@@ -1,8 +1,10 @@
 "use server";
 
 // Действия новостей (этап 60): источники и ключевые слова для владельца, дайджест в профиле, «Забрать сейчас».
-// Права проверяет сервис.
+// Права проверяет сервис. «Забрать сейчас» не держит запрос: забор лент идёт до полутора минут, поэтому экран сразу
+// получает «Забор запущен», а сам забор идёт после ответа (after). Итог виден в настройках и в журнале.
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { runAction, type Result } from "@/lib/action-runner";
 import * as news from "@/lib/news/service";
@@ -12,12 +14,14 @@ async function done<T>(result: Result<T>, path = "/settings"): Promise<Result<T>
   return result;
 }
 
-export async function addNewsSourceAction(input: { name: string; url: string }) {
-  return done(await runAction("Новый источник новостей", (a) => news.addSource(a, { name: String(input?.name ?? ""), url: String(input?.url ?? "") })));
+const sourceInput = (input: { name: string; url: string; strict?: boolean }) => ({ name: String(input?.name ?? ""), url: String(input?.url ?? ""), strict: input?.strict === true });
+
+export async function addNewsSourceAction(input: { name: string; url: string; strict?: boolean }) {
+  return done(await runAction("Новый источник новостей", (a) => news.addSource(a, sourceInput(input))));
 }
 
-export async function updateNewsSourceAction(id: string, input: { name: string; url: string }) {
-  return done(await runAction("Правка источника новостей", (a) => news.updateSource(a, String(id), { name: String(input?.name ?? ""), url: String(input?.url ?? "") })));
+export async function updateNewsSourceAction(id: string, input: { name: string; url: string; strict?: boolean }) {
+  return done(await runAction("Правка источника новостей", (a) => news.updateSource(a, String(id), sourceInput(input))));
 }
 
 export async function setNewsSourceActiveAction(id: string, active: boolean) {
@@ -35,8 +39,16 @@ export async function saveNewsKeywordsAction(input: Record<string, string>) {
 }
 
 export async function fetchNewsNowAction() {
-  const result = await runAction("Забор новостей", (a) => news.fetchNow(a));
-  if (result.ok) revalidatePath("/", "layout");
+  const result = await runAction("Забор новостей", async (a) => {
+    await news.startFetchNow(a);
+    after(() =>
+      news.runFetchNow(a).catch((error: unknown) => {
+        console.error("Забор новостей вручную не прошёл:", error instanceof Error ? error.message : error);
+      }),
+    );
+    return { started: true as const };
+  });
+  if (result.ok) revalidatePath("/settings");
   return result;
 }
 

@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
 import { Figures } from "@/components/ui/data";
 import { plural } from "@/domain/dates";
-import { claudeStatus, lastFetchAt, listSources, loadKeywords, newsDirections } from "@/lib/news/service";
+import { claudeStatus, lastFetchAt, listSources, loadKeywords, manualFetchState, newsDirections } from "@/lib/news/service";
 
 export const metadata: Metadata = { title: "Настройки" };
 
@@ -44,7 +44,7 @@ export default async function SettingsPage() {
   const numbersAccess = owner ? await numbersAccessView() : undefined;
   // Новости (этап 60): источники, ключевые слова и состояние забора, только владельцу
   const news = owner
-    ? { sources: await listSources(), keywords: await loadKeywords(), directions: await newsDirections(), lastFetchAt: (await lastFetchAt())?.toISOString() ?? null, claude: claudeStatus() }
+    ? { sources: await listSources(), keywords: await loadKeywords(), directions: await newsDirections(), lastFetchAt: (await lastFetchAt())?.toISOString() ?? null, claude: await claudeStatus(), manual: await manualFetchState() }
     : undefined;
   const active = people.filter((p) => p.active).length;
   const off = people.length - active;
