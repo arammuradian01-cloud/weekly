@@ -204,6 +204,30 @@ test("лента weekly: «Что решить» колонками, лидер�
   await page.getByRole("button", { name: "Развернуть всех" }).click();
   await expect(page.getByRole("button", { name: "Свернуть всех" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Записи: \d+, / })).toHaveCount(0);
+  // С любым фильтром карточки лидеров не сворачиваются: отобранные записи видны сразу, кнопок «Записи» нет
+  await page.goto("/weekly?week=2026-09-21");
+  await expect(page.getByRole("button", { name: /^Записи: \d+, / }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Фильтры" }).click();
+  await page.locator("#f-type").selectOption({ index: 1 });
+  await expect(page.locator("[data-testid^='weekly-leader-']").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /^(Записи: \d+|Свернуть записи): / })).toHaveCount(0);
+});
+
+test("люди: «сдают все» в подсказке и у команды со сроком департамента", async ({ page }) => {
+  await sql(`INSERT INTO teams (id, name, kind, "leaderId", "specialistsWeekly", "updatedAt") VALUES ('e2e-team68', 'Тест 68: команда вкладов', 'CUSTOM', ${person("reva")}, true, now()) ON CONFLICT (id) DO NOTHING`);
+  await sql(`INSERT INTO team_members ("teamId", "personId") SELECT 'e2e-team68', id FROM people WHERE slug = 'cheychenets' ON CONFLICT DO NOTHING`);
+  try {
+    await enter(page, "Рева Тарас");
+    await page.context().addCookies([{ name: "team", value: "e2e-team68", url: "http://localhost:3100" }]);
+    await page.goto("/people");
+    await expect(page.getByRole("heading", { name: "Тест 68: команда вкладов", level: 2 })).toBeVisible();
+    // Свой срок не задан (срок департамента): срок не пишется, «сдают все» пишется
+    await expect(page.getByText("Задачи и weekly за отчётную неделю, сдают все", { exact: true })).toBeVisible();
+  } finally {
+    // Команда Ревы только для этой проверки: остальные тесты файла видят прежнюю структуру
+    await sql(`DELETE FROM team_members WHERE "teamId" = 'e2e-team68'`);
+    await sql(`DELETE FROM teams WHERE id = 'e2e-team68'`);
+  }
 });
 
 test("новости: главная новость сверху, одна тема из разных источников под одной строкой, колонка «Официально» на ноутбуке", async ({ page }) => {
