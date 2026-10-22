@@ -3,7 +3,7 @@
 // Действия с задачами из экранов. Права и правила проверяет сервис: экран лишь прячет то, что нельзя.
 
 import { unstable_rethrow } from "next/navigation";
-import { requestIp, requireContext } from "@/lib/auth";
+import { requestIp, requireContext, requireWriteContext, type AppContext } from "@/lib/auth";
 import * as svc from "@/lib/tasks/service";
 import { canSeeTaskHistory } from "@/lib/tasks/rules";
 import type { EditInput, NewTaskInput } from "@/lib/tasks/service";
@@ -18,8 +18,7 @@ import { blockOnPerson } from "@/lib/requests/service";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string } | { ok: false; error: string };
 
-async function actor(): Promise<svc.Actor> {
-  const ctx = await requireContext();
+async function actorOf(ctx: AppContext): Promise<svc.Actor> {
   return {
     personId: ctx.person.id,
     slug: ctx.person.slug as PersonSlug,
@@ -29,6 +28,16 @@ async function actor(): Promise<svc.Actor> {
     ip: await requestIp(),
     via: ctx.via,
   };
+}
+
+/** Кто меняет задачу: в режиме «Смотреть как» отказ (этап 63) */
+async function actor(): Promise<svc.Actor> {
+  return actorOf(await requireWriteContext());
+}
+
+/** Кто читает задачу: карточка, история, связи. Работает и в режиме «Смотреть как» */
+async function reader(): Promise<svc.Actor> {
+  return actorOf(await requireContext());
 }
 
 /** Кто читает задачи: общий логин без режима управления видит только топ-команду (этап 14) */
@@ -86,7 +95,7 @@ export async function handOverAction(number: number, to: string, comment: string
 /** Связи задачи для карточки: что ждёт и кто ждёт её (этап 21) */
 export async function taskLinksAction(number: number): Promise<{ ok: true; value: NonNullable<Awaited<ReturnType<typeof svc.taskLinks>>> } | { ok: false; error: string }> {
   try {
-    const value = await svc.taskLinks(await actor(), checkNumber(number));
+    const value = await svc.taskLinks(await reader(), checkNumber(number));
     if (!value) return { ok: false, error: `Задачи ${number} нет` };
     return { ok: true, value };
   } catch (error) {
@@ -164,7 +173,7 @@ export async function undoAction(token: string): Promise<TaskActionResult> {
 
 /** Задача целиком: карточка дозагружает её, если в списке она пришла без комментариев (этап 14) */
 export async function getTaskAction(number: number): Promise<TaskActionResult> {
-  const a = await actor();
+  const a = await reader();
   const task = await svc.getTask(checkNumber(number), readerOf(a));
   if (!task || (task.archived && a.management !== "OWNER")) return { ok: false, error: `Задачи ${number} нет` };
   return { ok: true, task, number };
@@ -187,7 +196,7 @@ export async function moveTaskAction(number: number, team: string): Promise<Task
 
 /** История задачи (матрица раздела 2): лидер видит историю своих задач, владелец и администраторы всю */
 export async function taskHistoryAction(number: number): Promise<{ ok: true; items: HistoryItem[] } | { ok: false; error: string }> {
-  const a = await actor();
+  const a = await reader();
   const task = await svc.getTask(checkNumber(number), readerOf(a));
   if (!task) return { ok: false, error: `Задачи ${number} нет` };
   if (task.archived && a.management !== "OWNER") return { ok: false, error: `Задача ${number} в архиве` };
@@ -205,7 +214,7 @@ export type TaskExtras = { watching: boolean; canAsk: boolean; spans: StatusSpan
 /** Для карточки: подписка, можно ли попросить обновить, сколько дней задача была в каждом статусе */
 export async function taskExtrasAction(number: number): Promise<{ ok: true; extras: TaskExtras } | { ok: false; error: string }> {
   try {
-    const a = await actor();
+    const a = await reader();
     const n = checkNumber(number);
     const task = await svc.getTask(n, readerOf(a));
     if (!task) return { ok: false, error: `Задачи ${n} нет` };
@@ -255,8 +264,9 @@ export type BulkActionResult = { ok: true; value: svc.BulkResult } | { ok: false
 
 export async function bulkChangeAction(numbers: number[], change: svc.BulkChange): Promise<BulkActionResult> {
   try {
+    const a = await actor();
     if (!Array.isArray(numbers)) throw new svc.TaskRuleError("Выберите задачи");
-    const value = await svc.bulkChange(await actor(), numbers.map(checkNumber), change);
+    const value = await svc.bulkChange(a, numbers.map(checkNumber), change);
     return { ok: true, value };
   } catch (error) {
     unstable_rethrow(error);

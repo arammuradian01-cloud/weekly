@@ -501,10 +501,14 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
   const [source, setSource] = useState(hub.sourceId);
   const [link, setLink] = useState("");
   const [sourceBusy, setSourceBusy] = useState(false);
+  // Подсказка у поля хаба, если «Задать хаб» нажали без ссылки (этап 59)
+  const [sourceHint, setSourceHint] = useState<string | null>(null);
   // Соответствие названий СК (настройка plan.skAliases): правит владелец
   const [aliases, setAliases] = useState(hub.aliases ?? "");
   const [savedAliases, setSavedAliases] = useState(hub.aliases ?? "");
   const [aliasesBusy, setAliasesBusy] = useState(false);
+  // Строка «сохранено» у поля (этап 59): кнопка после сохранения уходит, фокус возвращается в поле, а не теряется
+  const [aliasesSaved, setAliasesSaved] = useState(false);
 
   const saveAliases = async () => {
     setError(null);
@@ -514,6 +518,8 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
     if (!r.ok) return setError(r.error);
     setAliases(r.value);
     setSavedAliases(r.value);
+    setAliasesSaved(true);
+    document.getElementById("plan-hub-aliases-text")?.focus();
     setPreview(null);
     notify("Соответствие названий СК сохранено");
     router.refresh();
@@ -521,6 +527,8 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
 
   const changeSource = async () => {
     setError(null);
+    // Кнопка не выключена серым (этап 59): без ссылки она говорит у поля, чего не хватает
+    if (!link.trim()) return setSourceHint("Вставьте ссылку на Google-таблицу хаба");
     setSourceBusy(true);
     const r = await setHubSourceAction(link);
     setSourceBusy(false);
@@ -568,7 +576,8 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
       onOpenChange={onOpenChange}
       wide
       title="ОСАГО по СК из хаба"
-      description="Ресурс читает хаб «Единая воронка: данные» только на чтение: лист «Все СК» даёт факт по СК с начала месяца по вчерашний день, лист плана по СК даёт план месяца из модели. Части загружаются независимо: что прошло проверку, то и загрузится. Снимок делается на сегодня, повторная загрузка в тот же день его заменяет"
+      // Одна строка о результате (этап 59), устройство загрузки свёрнуто ниже
+      description="Загрузит факт по СК с начала месяца по вчерашний день и план месяца по СК."
       footer={
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => void check()} loading={busy === "check"} disabled={busy !== null} data-testid="plan-hub-check">
@@ -591,19 +600,48 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
             ) : (
               <span data-testid="plan-hub-link">хаб ещё не задан</span>
             )}
-            . В хабе листы боевых файлов подтягиваются формулой IMPORTRANGE, руками там ничего не правят.
           </p>
-          {mode === "google" && serviceEmail ? <p>Если не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на хаб.</p> : null}
           <p data-testid="plan-hub-loaded">
             {hubLoaded("Факт «Все СК»", hub.fact)}. {hubLoaded("План по СК", hub.plan)}.
           </p>
         </div>
+        {/* Подробности для того, кто разбирается, почему не читается: свёрнуты (этап 59) */}
+        <details className="text-caption text-text-secondary" data-testid="plan-hub-details">
+          <summary className="cursor-pointer rounded-tag py-1 font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Как устроена загрузка</summary>
+          <ul className="mt-1 flex list-disc flex-col gap-1 pl-5">
+            <li>Хаб «Единая воронка: данные» ресурс только читает: лист «Все СК» даёт факт по СК с начала месяца по вчерашний день, лист плана по СК даёт план месяца из модели.</li>
+            <li>В хабе листы боевых файлов подтягиваются формулой IMPORTRANGE, руками там ничего не правят.</li>
+            <li>Факт и план загружаются независимо: что прошло проверку, то и загрузится.</li>
+            <li>Снимок делается на сегодня, повторная загрузка в тот же день его заменяет.</li>
+            {mode === "google" && serviceEmail ? <li>Если хаб не читается, у служебного аккаунта {serviceEmail} должно быть право «Читатель» на хаб.</li> : null}
+          </ul>
+        </details>
         {canSource ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <TextInput id="plan-hub-source" label="Таблица хаба" placeholder="Ссылка на Google-таблицу" value={link} onChange={(e) => setLink(e.target.value)} autoComplete="off" className="min-w-0 flex-1" />
-            <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy || !link.trim()} className="sm:shrink-0" data-testid="plan-hub-source-save">
-              Задать хаб
-            </Button>
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <TextInput
+                id="plan-hub-source"
+                label="Таблица хаба"
+                placeholder="Ссылка на Google-таблицу"
+                value={link}
+                onChange={(e) => {
+                  setLink(e.target.value);
+                  setSourceHint(null);
+                }}
+                autoComplete="off"
+                className="min-w-0 flex-1"
+                aria-invalid={sourceHint ? true : undefined}
+                aria-describedby={sourceHint ? "plan-hub-source-error" : undefined}
+              />
+              <Button variant="secondary" onClick={() => void changeSource()} loading={sourceBusy} disabled={sourceBusy} className="sm:shrink-0" data-testid="plan-hub-source-save">
+                Задать хаб
+              </Button>
+            </div>
+            {sourceHint ? (
+              <p id="plan-hub-source-error" role="alert" className="text-caption text-danger-ink">
+                {sourceHint}
+              </p>
+            ) : null}
           </div>
         ) : null}
         {canSource ? (
@@ -613,15 +651,26 @@ export function HubDrawer({ open, onOpenChange, source: hub, canSource }: { open
               label="Соответствие названий СК"
               rows={4}
               value={aliases}
-              onChange={(e) => setAliases(e.target.value)}
+              onChange={(e) => {
+                setAliases(e.target.value);
+                setAliasesSaved(false);
+              }}
               placeholder={"Росгосстрах = РГС\nСбербанк страхование = СберСтрахование"}
               hint="По строке: название в «Все СК» = название в плане. Регистр, пробелы, кавычки, ё, дефисы и форма собственности (АО, ПАО, САО, СПАО, СК) и так не в счёт: сюда только разные написания одной СК"
             />
-            <div>
-              <Button variant="secondary" onClick={() => void saveAliases()} loading={aliasesBusy} disabled={aliasesBusy || aliases === savedAliases} data-testid="plan-hub-aliases-save">
-                Сохранить соответствие
-              </Button>
-            </div>
+            {/* Кнопка появляется после правки (этап 59), как у «где сейчас»: выключенная серая читалась подписью */}
+            {aliases !== savedAliases ? (
+              <div>
+                <Button variant="secondary" onClick={() => void saveAliases()} loading={aliasesBusy} disabled={aliasesBusy} data-testid="plan-hub-aliases-save">
+                  Сохранить соответствие
+                </Button>
+              </div>
+            ) : null}
+            {aliasesSaved && aliases === savedAliases ? (
+              <p className="text-caption text-success-ink" data-testid="plan-hub-aliases-saved">
+                Соответствие сохранено
+              </p>
+            ) : null}
           </div>
         ) : null}
         {mode === "off" ? <p className="sv-alert sv-alert--warning">{source ? "Ключ служебного аккаунта Google не задан на сервере: хаб не прочитать." : "Хаб не задан: вставьте ссылку на таблицу «Единая воронка: данные»."}</p> : null}

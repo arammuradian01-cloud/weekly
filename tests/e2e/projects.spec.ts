@@ -4,7 +4,8 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 
 // Этап 57: weekly-проекты. Готовые команды департаментов по структуре, Money и партнёрства отдельно. Руководитель
 // забирает к себе целую команду или человека: свои входят сразу, люди других веток ждут согласия своего
-// непосредственного руководителя. На ноутбуке перетаскиванием, на телефоне кнопкой «Добавить в проект».
+// непосредственного руководителя. На ноутбуке перетаскиванием, на телефоне кнопкой «В команду». С этапа 64 это
+// помощник «Собрать из структуры» на экране «Weekly-команды», основной путь в tests/e2e/weekly-teams.spec.ts.
 // Цифры прогноза пока только у страхования и инвестиций. Ноутбук 1440 и телефон 360
 
 const SHOTS = "tests/e2e/screenshots";
@@ -73,14 +74,18 @@ async function drag(page: Page, from: Locator, to: Locator) {
   await page.mouse.up();
 }
 
-test("руководитель собирает weekly-проект из готовой команды другого департамента и своего человека", async ({ page, browser }) => {
+test("помощник «Собрать из структуры»: руководитель забирает готовую команду другого департамента и своего человека", async ({ page, browser }) => {
   test.setTimeout(150_000);
   await loadCompany(page);
   const reva = await personal(browser, page, "Рева");
   await reva.goto("/people");
-  await reva.getByTestId("people-tab-projects").click();
-  await expect(reva).toHaveURL(/\/people\/projects$/);
-  await expect(reva.getByRole("heading", { name: "Готовые команды по структуре" })).toBeVisible();
+  await reva.getByTestId("people-tab-teams").click();
+  await expect(reva).toHaveURL(/\/people\/teams$/);
+  // Этап 64: перетаскивание осталось помощником, свёрнутым по умолчанию
+  const helper = reva.getByTestId("assemble");
+  await expect(helper.getByRole("heading", { name: "Готовые команды по структуре" })).toBeHidden();
+  await helper.locator("summary").click();
+  await expect(helper.getByRole("heading", { name: "Готовые команды по структуре" })).toBeVisible();
   // Money и партнёрства отдельными командами, рядом департамент страхования
   const money = await unitId("Департамент Money");
   const partners = await unitId("Департамент партнёрств");
@@ -89,23 +94,23 @@ test("руководитель собирает weekly-проект из гот�
   await expect(ready.getByTestId(`unit-${money}`)).toContainText("Ершов Пётр, 3 человека");
   await expect(ready.getByTestId(`unit-${partners}`)).toContainText("Белова Ольга, 2 человека");
   await expect(ready.getByTestId(`unit-${ins}`)).toBeVisible();
-  // Своя команда по структуре уже среди проектов
-  await expect(reva.getByRole("heading", { name: "Управление продуктового развития (insurance)", level: 3 })).toBeVisible();
+  // Своя команда по структуре уже среди команд, куда можно добавить
+  await expect(helper.getByRole("heading", { name: "Управление продуктового развития (insurance)", level: 3 })).toBeVisible();
   await shot(reva, "start");
 
   const name = "Weekly: Департамент Money";
   if (isPhone()) {
-    await ready.getByRole("button", { name: "Департамент Money, 3 человека: добавить в проект" }).click();
-    await reva.getByRole("menuitem", { name: "Новый проект" }).click();
+    await ready.getByRole("button", { name: "Департамент Money, 3 человека: добавить в команду" }).click();
+    await reva.getByRole("menuitem", { name: "Новая команда" }).click();
   } else {
-    await drag(reva, reva.getByTestId(`drag-unit-${money}`), reva.getByTestId("project-new"));
+    await drag(reva, reva.getByTestId(`drag-unit-${money}`), reva.getByTestId("assemble-new"));
   }
-  const dialog = reva.getByRole("dialog", { name: "Новый weekly-проект" });
+  const dialog = reva.getByRole("dialog", { name: "Новая weekly-команда" });
   await expect(dialog).toContainText("3 человека из «Департамент Money»");
-  await expect(dialog.getByLabel("Название проекта")).toHaveValue(name);
+  await expect(dialog.getByRole("textbox", { name: "Название команды" })).toHaveValue(name);
   await shot(reva, "new-dialog");
-  await dialog.getByRole("button", { name: "Создать проект" }).click();
-  await expect(reva.getByText(`Проект «${name}»: добавлено 0, ждут согласия руководителя 3`).first()).toBeVisible();
+  await dialog.getByRole("button", { name: "Создать команду" }).click();
+  await expect(reva.getByText(`Команда «${name}»: добавлено 0, ждут согласия руководителя 3`).first()).toBeVisible();
   const [team] = await sql("SELECT id, kind, \"parentId\" FROM teams WHERE name = $1", [name]);
   expect(team!.kind).toBe("CUSTOM");
   // Каждого согласует его непосредственный руководитель по структуре
@@ -114,58 +119,54 @@ test("руководитель собирает weekly-проект из гот�
     [team!.id],
   );
   expect(requests.map((r) => `${r.who}: ${r.approver}`)).toEqual(["Ершов Пётр: Крайник Александр", "Котов Игорь: Лисина Анна", "Лисина Анна: Ершов Пётр"]);
-  const card = reva.getByTestId(`project-${team!.id}`);
-  await expect(card).toContainText("Котов Игорь: ждёт согласия, Лисина Анна");
-  await expect(card).toContainText("0 участников, ждут согласия 3");
+  // Карточка новой команды открылась сама
+  const card = reva.getByTestId("team-card");
+  await expect(card.getByRole("heading", { name, level: 2 })).toBeVisible();
+  await expect(card.getByTestId("team-waiting")).toContainText("согласует Лисина Анна");
+  const target = reva.getByTestId(`assemble-target-${team!.id}`);
+  await expect(target).toContainText("в команде 1 человек, ждут согласия 3");
 
   // Свой человек из ветки входит сразу: на ноутбуке перетаскиванием, на телефоне кнопкой через поиск
   const tokov = await slugOf("Токов");
   if (isPhone()) {
+    await card.getByRole("button", { name: "К списку команд" }).click();
     await reva.getByLabel("Найти человека или подразделение").fill("токов");
-    await reva.getByTestId("projects-found").getByRole("button", { name: "Токов Никита Андреевич: добавить в проект" }).click();
+    await reva.getByTestId("assemble-found").getByRole("button", { name: "Токов Никита Андреевич: добавить в команду" }).click();
     await reva.getByRole("menuitem", { name }).click();
   } else {
-    await ready.getByRole("button", { name: new RegExp(`^${INS} Мурадян`) }).click();
-    await reva.getByRole("button", { name: /^Управление продуктового развития \(insurance\) Рева/ }).click();
-    await drag(reva, reva.getByTestId(`drag-person-${tokov}`), card);
+    // Окно создания закрыто, помощник по-прежнему раскрыт (он помнит это сам): раскрываем департамент и управление
+    await expect(reva.getByRole("dialog")).toHaveCount(0);
+    await expect(helper).toHaveAttribute("open", "");
+    const insToggle = ready.getByTestId(`unit-${ins}`).locator("button[aria-expanded]").first();
+    await expect(insToggle).toContainText(INS);
+    await insToggle.click();
+    await expect(insToggle).toHaveAttribute("aria-expanded", "true");
+    const product = ready.getByTestId(`unit-${await unitId("Управление продуктового развития (insurance)")}`).locator("button[aria-expanded]").first();
+    await product.click();
+    await expect(product).toHaveAttribute("aria-expanded", "true");
+    await drag(reva, reva.getByTestId(`drag-person-${tokov}`), target);
   }
-  const add = reva.getByRole("dialog", { name: `В проект «${name}»` });
+  const add = reva.getByRole("dialog", { name: `В команду «${name}»` });
   await expect(add).toContainText("Токов Никита Андреевич");
   await add.getByRole("button", { name: "Добавить" }).click();
-  await expect(reva.getByText(`Проект «${name}»: добавлено 1`).first()).toBeVisible();
-  await expect(card).toContainText("1 участник, ждут согласия 3");
+  await expect(reva.getByText(`Команда «${name}»: добавлено 1`).first()).toBeVisible();
+  await expect(target).toContainText("в команде 2 человека, ждут согласия 3");
+  await expect(card.getByTestId("team-members")).toContainText("Токов Никита Андреевич");
   expect((await sql('SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = $1 AND p.slug = $2', [team!.id, tokov]))[0]?.external).toBe(false);
   await shot(reva, "project");
 
-  // Человека убирают из проекта крестиком
-  await card.getByRole("button", { name: `Убрать из проекта «${name}»: Токов Никита Андреевич` }).click();
-  await expect(reva.getByText("Токов Никита Андреевич убран из проекта").first()).toBeVisible();
-  await expect(card).toContainText("0 участников, ждут согласия 3");
-
-  // Пустой проект кнопкой: название обязательно
-  await reva.getByTestId("project-new").click();
-  const empty = reva.getByRole("dialog", { name: "Новый weekly-проект" });
-  await empty.getByLabel("Название проекта").fill("");
-  await expect(empty.getByRole("button", { name: "Создать проект" })).toBeDisabled();
-  await empty.getByLabel("Название проекта").fill("Кросс-продажи");
-  await empty.getByRole("button", { name: "Создать проект" }).click();
-  await expect(reva.getByText("Проект «Кросс-продажи» создан").first()).toBeVisible();
-  await expect(reva.getByRole("heading", { name: "Кросс-продажи", level: 3 })).toBeVisible();
-
-  // Ожидающий запрос отменяет тот, кто просил; проект переименовывают из меню карточки
-  await card.getByRole("button", { name: "Отменить запрос: Котов Игорь" }).click();
-  await expect(reva.getByText("Запрос отменён: Котов Игорь").first()).toBeVisible();
-  await expect(card).toContainText("0 участников, ждут согласия 2");
-  await card.getByRole("button", { name: `Проект «${name}»: действия` }).click();
-  await reva.getByRole("menuitem", { name: "Переименовать" }).click();
-  const rename = reva.getByRole("dialog", { name: "Название проекта" });
-  await rename.getByLabel("Название проекта").fill("Money и страхование");
-  await rename.getByRole("button", { name: "Сохранить" }).click();
-  await expect(reva.getByText("Проект переименован").first()).toBeVisible();
-  await expect(reva.getByRole("heading", { name: "Money и страхование", level: 3 })).toBeVisible();
+  // Пустая команда из помощника: обычное окно создания, название обязательно
+  if (isPhone()) await card.getByRole("button", { name: "К списку команд" }).click();
+  await reva.getByTestId("assemble-new").click();
+  const empty = reva.getByRole("dialog", { name: "Новая weekly-команда" });
+  await expect(empty.getByRole("button", { name: "Создать команду" })).toBeDisabled();
+  await empty.getByRole("textbox", { name: "Название команды" }).fill("Кросс-продажи");
+  await empty.getByRole("button", { name: "Создать команду" }).click();
+  await expect(reva.getByText("Команда «Кросс-продажи» создана").first()).toBeVisible();
+  await expect(reva.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
 });
 
-test("сотрудник Money: цифры прогноза закрыты, проектов не собирает, под логотипом нет департамента", async ({ page, browser }) => {
+test("сотрудник Money: цифры прогноза закрыты, команды только для просмотра, под логотипом нет департамента", async ({ page, browser }) => {
   test.setTimeout(120_000);
   await loadCompany(page);
   const kotov = await personal(browser, page, "Котов");
@@ -178,12 +179,17 @@ test("сотрудник Money: цифры прогноза закрыты, пр
   await shot(kotov, "forecast-closed");
   const exported = await kotov.request.get("/forecast/export");
   expect(exported.status()).toBe(403);
-  await kotov.goto("/people/structure");
-  await expect(kotov.getByTestId("people-tab-projects")).toHaveCount(0);
-  // По адресу страница открывается только для просмотра структуры
+  // Этап 64: вкладку команд видят все; прежний адрес проектов ведёт туда же. Своя команда только для просмотра
   await kotov.goto("/people/projects");
-  await expect(kotov.getByText("Собирать weekly-проекты могут руководители, войдя лично.")).toBeVisible();
-  await expect(kotov.getByTestId("project-new")).toHaveCount(0);
+  await expect(kotov).toHaveURL(/\/people\/teams$/);
+  await expect(kotov.getByTestId("people-tab-teams")).toBeVisible();
+  await expect(kotov.getByTestId("teams-list")).toContainText("Управление кредитных продуктов");
+  await expect(kotov.getByTestId("team-create")).toHaveCount(0);
+  await expect(kotov.getByTestId("assemble")).toHaveCount(0);
+  // Одна команда: переключателя в шапке нет, на его месте ссылка на экран команд
+  await kotov.goto("/tasks");
+  await kotov.getByTestId(isPhone() ? "team-manage-link-m" : "team-manage-link").click();
+  await expect(kotov).toHaveURL(/\/people\/teams$/);
 
   // Сотрудник страхования с ролью сотрудника видит все цифры
   const tokov = await personal(browser, page, "Токов");

@@ -3,7 +3,7 @@
 // Просьбы коллегам (этап 21): создать, ответить, напомнить, отозвать, сделать задачей.
 
 import { revalidatePath } from "next/cache";
-import { runAction } from "@/lib/action-runner";
+import { runAction, runRead } from "@/lib/action-runner";
 import {
   acceptRequest,
   completeRequest,
@@ -60,5 +60,5 @@ export async function requestToTaskAction(number: number, direction: string | nu
 
 /** Просьбы по задаче для карточки: грузятся при открытии */
 export async function taskRequestsAction(taskNumber: number) {
-  return runAction("Просьбы по задаче", (a) => requestsForTask(a, num(taskNumber)));
+  return runRead("Просьбы по задаче", (a) => requestsForTask(a, num(taskNumber)));
 }

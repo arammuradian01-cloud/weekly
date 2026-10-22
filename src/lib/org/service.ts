@@ -593,6 +593,9 @@ export async function createTeam(actor: Actor, input: TeamInput): Promise<{ id: 
 export async function updateTeam(actor: Actor, id: string, input: TeamInput): Promise<void> {
   requireOwner(actor);
   await prisma.$transaction(async (tx) => {
+    // Выключение: сначала та же блокировка, что у пачки людей в команду (этап 57), и только потом чтение команды,
+    // чтобы выключение не разошлось с добавлением
+    if (input.active === false) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`team:${id}`}))`;
     const team = await teamOrFail(tx, id);
     const data: Prisma.TeamUncheckedUpdateInput = {};
     if (input.name !== undefined) {
@@ -632,6 +635,8 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
       if (!input.active) {
         const open = await tx.task.count({ where: { teamId: id, status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null } });
         if (open) fail(`У команды ${open} открытых задач: сначала передайте их в другую команду или закройте`);
+        // Этап 64: как при закрытии проекта, ожидающие запросы в выключенную команду отменяются той же транзакцией
+        await tx.teamJoinRequest.updateMany({ where: { teamId: id, status: "PENDING" }, data: { status: "CANCELLED", decidedAt: new Date() } });
       }
       data.active = input.active;
       await audit(tx, actor, input.active ? "team.on" : "team.off", "team", id, `Команда ${input.active ? "включена" : "выключена"}: ${team.name}`, null, null);

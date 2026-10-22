@@ -28,6 +28,15 @@ export default async function OneOnOnePairPage({ params }: { params: Promise<{ s
       </>
     );
   }
+  // «Смотреть как» (этап 63): встречи один на один видят только двое участников
+  if (ctx.viewAs) {
+    return (
+      <>
+        <PageHeader title="Один на один">{back}</PageHeader>
+        <EmptyState title="Встречи один на один в просмотре закрыты">Их видят только двое участников. Роль владельца и режим «Смотреть как» их не открывают.</EmptyState>
+      </>
+    );
+  }
   let view;
   try {
     let other = slug;

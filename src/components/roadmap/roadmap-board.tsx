@@ -210,7 +210,8 @@ export function RoadmapBoard() {
       ) : wide ? (
         // Широкий экран: столбцы сроков общие для всех направлений, строка столбцов липнет под верхней панелью
         <div data-testid="roadmap-grid" key={`${team.id}-${chosen}-${onlyImportant}`}>
-          <div className="sticky top-16 z-10 grid grid-cols-5 gap-3 border-b border-line bg-canvas py-2" aria-hidden="true">
+          {/* В просмотре «Смотреть как» (этап 63) под верхней панелью липнет плашка: строка столбцов встаёт под ней */}
+          <div className="sticky top-[calc(4rem+var(--view-as-h,0px))] z-10 grid grid-cols-5 gap-3 border-b border-line bg-canvas py-2" aria-hidden="true">
             {board.periods.map((p) => (
               <p key={p.key} className={cn("m-0 text-small font-semibold", p.key === "overdue" ? "text-danger-ink" : "text-muted")}>
                 {p.label}

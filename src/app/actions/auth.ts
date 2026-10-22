@@ -14,14 +14,17 @@ import { formatTime } from "@/lib/week";
 import {
   baseUrl,
   clearSession,
+  closeViewAs,
   readSession,
   requestIp,
   requestUserAgent,
   requireContext,
   requireSignedIn,
   writeSession,
+  type AppContext,
 } from "@/lib/auth";
-import { currentActor } from "@/lib/action-runner";
+import { actorOf } from "@/lib/action-runner";
+import { VIEW_AS_DENIED } from "@/lib/view-as";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { confirmEmail } from "@/lib/login/email";
@@ -86,6 +89,8 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
 
   // Личный вход, который был в этом браузере, заменяется общим: завершаем его и в базе, как при смене личного входа.
   // Иначе запись устройства жила бы ещё 30 дней, и уведомления прежнего человека приходили бы в этот браузер (этап 26)
+  // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
+  await closeViewAs("login");
   const previous = (await readSession())?.sid ?? null;
   if (previous) await prisma.deviceSession.updateMany({ where: { id: previous, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
   const { epoch } = await getEpochs();
@@ -100,6 +105,8 @@ async function personalLogin(loginValue: string, password: string): Promise<Form
   const previous = (await readSession())?.sid ?? null;
   const result = await loginWithPassword(loginValue, password, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
   if (!result.ok) return { error: result.error };
+  // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
+  await closeViewAs("login");
   const { epoch } = await getEpochs();
   await writeSession({ epoch, personId: result.personId, sid: result.sessionId, via: "PASSWORD" });
   redirect("/");
@@ -121,8 +128,20 @@ export async function chooseProfile(formData: FormData): Promise<void> {
   redirect("/");
 }
 
-export async function enterManagement(_prev: FormState, formData: FormData): Promise<FormState> {
+/**
+ * Режим управления (этап 63): во время просмотра «Смотреть как» отказ ответом. После того как просмотр закончился
+ * сам, включить и выключить режим можно из любой вкладки, иначе владелец застрял бы; при этом закончившийся просмотр
+ * закрывается (конец уже в журнале, cookie снимается)
+ */
+async function managementContext(): Promise<{ ctx: AppContext; error?: undefined } | { ctx?: undefined; error: string }> {
   const ctx = await requireContext();
+  if (ctx.viewAs) return { error: VIEW_AS_DENIED };
+  return { ctx };
+}
+
+export async function enterManagement(_prev: FormState, formData: FormData): Promise<FormState> {
+  const { ctx, error } = await managementContext();
+  if (!ctx) return { error };
   const ip = await requestIp();
   const actor = { actorId: ctx.person.id, actorName: ctx.person.fullName, ip, via: ctx.via };
   if (!ctx.managementRole) {
@@ -150,6 +169,7 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   }
   await markAttemptOk(prisma, reserved.attemptId);
 
+  if (ctx.viewAsEnded) await closeViewAs("stop");
   const { managementEpoch } = await getEpochs();
   await writeSession({
     ...ctx.session,
@@ -159,8 +179,10 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   redirect(safeNext(formData.get("next")));
 }
 
-export async function exitManagement(): Promise<void> {
-  const ctx = await requireContext();
+export async function exitManagement(): Promise<{ error: string } | void> {
+  const { ctx, error } = await managementContext();
+  if (!ctx) return { error };
+  if (ctx.viewAsEnded) await closeViewAs("stop");
   const { management: _dropped, ...rest } = ctx.session;
   await writeSession(rest);
   await writeAudit({
@@ -178,6 +200,9 @@ export async function logout(): Promise<void> {
   const person = session?.personId
     ? await prisma.person.findUnique({ where: { id: session.personId } })
     : null;
+  // Выход во время «Смотреть как» (этап 63): просмотр заканчивается, в журнале кого смотрели. Если он закончился сам
+  // и конец уже записан, второй записи нет. До завершения устройства: иначе причиной стал бы «вход завершён»
+  await closeViewAs("logout");
   // Личный вход завершается и в базе: cookie с этого устройства больше не откроет ресурс
   if (session?.sid) {
     await prisma.deviceSession.updateMany({ where: { id: session.sid, revokedAt: null }, data: { revokedAt: new Date(), revokedBy: "self" } });
@@ -206,6 +231,7 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
     const previous = (await readSession())?.sid ?? null;
     // Без пароля входят только по ссылке из письма: по ссылке от владельца человек сначала задаёт пароль
     const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous, ["EMAIL"]);
+    await closeViewAs("login");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";
@@ -236,6 +262,7 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
       new Date(),
       previous,
     );
+    await closeViewAs("login");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
     // Первый вход (этап 52): если рабочей почты ещё нет, ресурс предлагает её указать
@@ -278,8 +305,9 @@ export async function requestEmailLinkAction(_prev: EmailFormState, formData: Fo
 /** Режим управления по ссылке на почту вместо пароля */
 export async function requestStepUpAction(_prev: EmailFormState): Promise<EmailFormState> {
   try {
-    const ctx = await requireContext();
-    await requestStepUp(await currentActor(), ctx.deviceId, await baseUrl());
+    const { ctx, error } = await managementContext();
+    if (!ctx) return { error };
+    await requestStepUp(actorOf(ctx, await requestIp()), ctx.deviceId, await baseUrl());
     return { sent: true };
   } catch (error) {
     const message = ruleError(error);
@@ -291,10 +319,11 @@ export async function requestStepUpAction(_prev: EmailFormState): Promise<EmailF
 
 /** Ссылка подтверждения из письма: включает режим управления на 12 часов */
 export async function confirmStepUpAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const ctx = await requireContext();
+  const { ctx, error: denied } = await managementContext();
+  if (!ctx) return { error: denied };
   if (!ctx.managementRole) return { error: "Режим управления доступен только владельцу и администраторам" };
   try {
-    await consumeStepUp(String(formData.get("token") ?? ""), await currentActor(), ctx.deviceId);
+    await consumeStepUp(String(formData.get("token") ?? ""), actorOf(ctx, await requestIp()), ctx.deviceId);
   } catch (error) {
     const message = ruleError(error);
     if (!message) {
@@ -304,6 +333,7 @@ export async function confirmStepUpAction(_prev: FormState, formData: FormData):
     return { error: message };
   }
   const now = Date.now();
+  if (ctx.viewAsEnded) await closeViewAs("stop");
   const { managementEpoch } = await getEpochs();
   await writeSession({ ...ctx.session, management: { role: ctx.managementRole, until: now + MANAGEMENT_TTL_MS, epoch: managementEpoch } });
   await writeAudit({ action: "management.enter", actorId: ctx.person.id, actorName: ctx.person.fullName, ip: await requestIp(), via: ctx.via, after: { role: ctx.managementRole, by: "email" } });

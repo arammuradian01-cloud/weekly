@@ -185,13 +185,14 @@ export function ProductCard({ month, product, summary, input, total, canOwners, 
       flush
     >
       {partner ? <PartnerBand partner={partner} product={product} summary={summary} onApply={(p) => (setPreset(p), setEditing("unitsB2b"))} /> : null}
+      {/* На телефоне поля как у шапки модуля (этап 59): таблице по СК остаётся больше места */}
       {product.facts ? (
-        <div className="border-b border-border px-5 py-4">
+        <div className="border-b border-border px-4 py-3 sm:px-5 sm:py-4">
           <PlanFacts month={month} facts={product.facts} summary={summary} label={spec.label} />
         </div>
       ) : null}
       {sk ? (
-        <div className="border-b border-border px-5 py-4">
+        <div className="border-b border-border px-4 py-3 sm:px-5 sm:py-4">
           <PlanSk sk={sk} />
         </div>
       ) : null}

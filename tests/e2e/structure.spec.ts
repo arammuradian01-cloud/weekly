@@ -55,8 +55,10 @@ test("владелец загружает структуру, команды п�
   await expect(page.getByText("Вакансии: PO KASKO")).toBeVisible();
   await shot(page, "units");
 
-  // Команды: сектор Антонова под командой Тараса, Тарас под топ-командой
+  // Команды: сектор Антонова под командой Тараса, Тарас под топ-командой. С этапа 64 здесь только просмотр
   await page.getByRole("radio", { name: /Команды/ }).click();
+  await expect(page.getByTestId("manage-teams")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ритм weekly" })).toHaveCount(0);
   await expect(main.getByText("Сектор автострахования", { exact: true })).toBeVisible();
   await expect(main.getByText(/Руководитель: Антонов Дмитрий, участников 1/)).toBeVisible();
   await shot(page, "teams");
@@ -243,23 +245,25 @@ test("этап 53: структура всей компании, генерал�
   await expect(main.getByText("Команда генерального директора", { exact: true })).toBeVisible();
   await shot(page, "company-teams");
 
-  // Рева собирает свою команду: находит человека из финансового департамента поиском
+  // Рева собирает свою команду на экране «Weekly-команды» (этап 64): находит человека из финансового департамента поиском
   const lead = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" })).newPage();
   await enterByLink(lead, "reva");
   await lead.goto("/people/structure");
-  await lead.getByRole("radio", { name: /Команды/ }).click();
-  await lead.getByRole("button", { name: "Показать участников: Управление продуктового развития (insurance)" }).click();
+  await lead.getByTestId("manage-teams").click();
+  await expect(lead).toHaveURL(/\/people\/teams$/);
+  await lead.getByTestId("teams-list").getByRole("link", { name: /^Управление продуктового развития \(insurance\)/ }).click();
   const team = (await sql("SELECT id FROM teams WHERE name = 'Управление продуктового развития (insurance)'"))[0]!.id as string;
-  const search = lead.getByRole("combobox", { name: "Добавить участника" });
-  await search.fill("погос");
-  const option = lead.getByRole("option", { name: /Погосова Сабина/ });
-  await expect(option).toContainText("другая ветка");
-  await option.click();
-  await expect(lead.getByTestId(`add-${team}-external`)).toContainText("не из вашей ветки");
+  const card = lead.getByTestId("team-card");
+  await card.getByRole("button", { name: "Добавить участников" }).click();
+  const add = lead.getByRole("dialog", { name: "Добавить участников: Управление продуктового развития (insurance)" });
+  await add.getByLabel("Найти человека").fill("погос");
+  await expect(add.getByRole("list", { name: "Найденные люди" }).getByRole("listitem").filter({ hasText: "Погосова Сабина" })).toContainText("другая ветка");
+  await add.getByRole("checkbox", { name: /Погосова Сабина/ }).check();
+  await expect(add.getByTestId("team-add-external")).toContainText("войдут в команду, когда согласится их руководитель");
   await shot(lead, "company-add-external");
-  await lead.getByRole("button", { name: "Попросить", exact: true }).click();
-  await expect(lead.getByText(/Запрос отправлен: Погосова Сабина.*согласится Кацемба Наталья/).first()).toBeVisible();
-  await expect(lead.getByText(/ждёт согласия: Кацемба Наталья/)).toBeVisible();
+  await add.getByRole("button", { name: "Добавить", exact: true }).click();
+  await expect(lead.getByText("Команда «Управление продуктового развития (insurance)»: добавлено 0, ждут согласия руководителя 1").first()).toBeVisible();
+  await expect(card.getByTestId("team-waiting")).toContainText("согласует Кацемба Наталья");
   const [none] = await sql(`SELECT count(*)::int AS n FROM team_members WHERE "teamId" = '${team}'`);
   expect(none!.n).toBe(1);
 
@@ -269,6 +273,8 @@ test("этап 53: структура всей компании, генерал�
   await enterByLink(boss, katsemba);
   await boss.goto("/me");
   await boss.getByRole("link", { name: "Запрос в команду" }).first().click();
+  // Этап 64: запросы решают на экране «Weekly-команды»
+  await expect(boss).toHaveURL(/\/people\/teams#join-requests$/);
   await expect(boss.getByTestId("join-requests")).toContainText("Погосова Сабина");
   await shot(boss, "company-join-request");
   await boss.getByRole("button", { name: "Согласовать" }).click();

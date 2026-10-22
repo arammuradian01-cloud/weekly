@@ -3,9 +3,10 @@ import Link from "next/link";
 import { Newspaper, Settings } from "lucide-react";
 import { requireContext } from "@/lib/auth";
 import { digestView, lastFetchAt, listNews, newsDirections, personDirections } from "@/lib/news/service";
-import { formatDateTime } from "@/lib/week";
+import { formatDateTime, formatTime } from "@/lib/week";
 import { PageHeader } from "@/components/page-header";
-import { NewsList } from "@/components/news/news-list";
+import { NewsList, dayLabel } from "@/components/news/news-list";
+import { NewsFilter } from "@/components/news/news-filter";
 import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { SeenMark } from "@/components/inbox/seen-mark";
@@ -23,6 +24,12 @@ const first = (v: string | string[] | undefined): string | undefined => (Array.i
 function parseFilter(raw: string | undefined, known: Set<string>): string[] {
   if (!raw) return [];
   return [...new Set(raw.split(",").map((s) => s.trim()).filter((s) => known.has(s)))];
+}
+
+/** Когда обновлены ленты: «сегодня в 08:43», «вчера в 08:43», «19 октября в 08:43», без секунд */
+function updatedLabel(at: Date, now: Date): string {
+  const day = dayLabel(at.toISOString(), now);
+  return `${day === "Сегодня" || day === "Вчера" ? day.toLowerCase() : day} в ${formatTime(at)}`;
 }
 
 /** Ссылка на страницу ленты с тем же фильтром: «my» остаётся «my», а не превращается в список кодов */
@@ -95,11 +102,11 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
     <>
       <PageHeader
         title="Новости"
+        // Одна строка (этап 59): что за новости и когда обновлены. Источник и ссылка на статью видны в каждой карточке
         description={
-          <>
-            Публичные новости рынка по продуктам: регулятор, союзы страховщиков, деловые СМИ. Ресурс хранит заголовок, дату, источник, ссылку и короткое описание; статья целиком открывается на
-            сайте источника.{fetched ? ` Ленты обновлены ${formatDateTime(fetched)}.` : " Ленты ещё не забирались."}
-          </>
+          <span data-testid="news-updated">
+            Новости рынка по продуктам. {fetched ? `Обновлено ${updatedLabel(fetched, now)}.` : "Ленты ещё не забирались."}
+          </span>
         }
       >
         <Link href="/profile?tab=mail" className={buttonClass("secondary", "sm")}>
@@ -113,13 +120,14 @@ export default async function NewsPage({ searchParams }: { searchParams: Promise
         ) : null}
       </PageHeader>
 
-      <nav aria-label="Продукты" className="mb-5 flex flex-wrap gap-2" data-testid="news-filter">
+      {/* Продукты в одну строку (этап 59): на телефоне прокручиваются вбок, а не занимают четыре строки над лентой */}
+      <NewsFilter active={my ? "my" : selected.join(",")}>
         {pill([], "Все", !selected.length && !my, "news-filter-all")}
         <Link href="/news?d=my" className={cn("sv-pill", my && "is-active")} aria-current={my ? "page" : undefined} data-testid="news-filter-my">
           Мои продукты
         </Link>
         {active.map((d) => pill([d.code], d.label, !my && selected.length === 1 && selected[0] === d.code, `news-filter-${d.code}`))}
-      </nav>
+      </NewsFilter>
 
       {noProducts ? (
         <EmptyState title="Продукты не выбраны" icon={Newspaper}>

@@ -306,7 +306,8 @@ function ProductsTable({
       rows.push(
         <tr key={`${key}-card`} className="sv-datatable__row--expanded">
           <td colSpan={8} className="is-wide">
-            {expanded}
+            {/* Карточка не шире таблицы (этап 59): широкая таблица по СК прокручивается внутри карточки */}
+            <div className="sv-datatable__expanded">{expanded}</div>
           </td>
         </tr>,
       );

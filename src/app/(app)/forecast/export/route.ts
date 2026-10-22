@@ -1,6 +1,8 @@
 // Выгрузка прогноза месяца в Excel (этап 35): управление и команды продуктов при личном входе. Каждая выгрузка в журнале
 
-import { currentActor } from "@/lib/action-runner";
+import { writingActor } from "@/lib/action-runner";
+import { ViewAsReadOnlyError } from "@/lib/view-as";
+import type { Actor } from "@/lib/tasks/service";
 import { writeAudit } from "@/lib/audit";
 import { monthLabel } from "@/lib/forecast/codes";
 import { canExportPlan, isMonth, monthPlan, ownersMap } from "@/lib/plan/service";
@@ -9,8 +11,17 @@ import { canSeeNumbers } from "@/lib/plan/access";
 
 export const dynamic = "force-dynamic";
 
+const TEXT = { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" };
+
 export async function GET(request: Request) {
-  const actor = await currentActor();
+  // Выгрузка пишется в журнал от имени того, кто выгружает: в режиме «Смотреть как» её нет (этап 63)
+  let actor: Actor;
+  try {
+    actor = await writingActor();
+  } catch (error) {
+    if (error instanceof ViewAsReadOnlyError) return new Response(error.message, { status: 403, headers: TEXT });
+    throw error;
+  }
   if (!(await canSeeNumbers(actor)) || !canExportPlan(actor, await ownersMap())) {
     return new Response("Выгрузку прогноза берут владелец, администраторы и команды продуктов при личном входе", { status: 403, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
   }
