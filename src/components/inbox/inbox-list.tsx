@@ -134,11 +134,11 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                     Дайджест новостей
                   </Link>
                 ) : item.subject.startsWith("team:") ? (
-                  <Link href={`/people/structure?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
+                  <Link href={`/people/teams?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}`} className="sv-event__text font-semibold hover:text-link">
                     Состав команды
                   </Link>
                 ) : item.subject.startsWith("join:") ? (
-                  <Link href="/people/structure#join-requests" className="sv-event__text font-semibold hover:text-link">
+                  <Link href="/people/teams#join-requests" className="sv-event__text font-semibold hover:text-link">
                     Запрос в команду
                   </Link>
                 ) : item.subject.startsWith("approval-co:") ? (

@@ -4,6 +4,7 @@
 // Список и weekly показывают выбранную команду, «Мои задачи» и «Моя неделя» собирают свои задачи из всех команд.
 // Вид по дизайн-системе (navigation/TeamSwitcher.jsx): кнопка с иконкой людей, названием, ролью и стрелкой.
 // Сам выбор остаётся системным списком поверх кнопки: так работают экранный диктор, клавиатура и телефон.
+// Этап 64: последний пункт «Управлять командами» ведёт на экран «Weekly-команды», команду он не меняет.
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -12,6 +13,9 @@ import { usePrototype } from "@/domain/store";
 import { ALL_TEAMS } from "@/domain/teams";
 import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
+
+/** Пункт списка, который ведёт на экран команд, а не выбирает команду */
+const MANAGE = "__manage";
 
 export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
   const { team, notify } = usePrototype();
@@ -40,6 +44,11 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
         aria-busy={pending}
         onChange={(e) => {
           const next = e.target.value;
+          // Выбор остаётся прежним: список управляемый, React вернёт значение текущей команды
+          if (next === MANAGE) {
+            router.push("/people/teams");
+            return;
+          }
           start(async () => {
             const r = await setTeamAction(next);
             if (!r.ok) notify(r.error, "error");
@@ -54,6 +63,7 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
           </option>
         ))}
         <option value={ALL_TEAMS}>Все мои команды</option>
+        <option value={MANAGE}>Управлять командами</option>
       </select>
     </div>
   );

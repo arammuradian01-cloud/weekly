@@ -60,66 +60,6 @@ async function audit(tx: Tx, actor: Actor, action: string, entityId: string, fie
   await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
 }
 
-export type ProjectUnit = { id: string; name: string; kind: string; parentId: string | null; head: string | null };
-export type ProjectPerson = { slug: string; fullName: string; position: string | null; unitId: string | null };
-export type ProjectView = {
-  id: string;
-  name: string;
-  kind: "UNIT" | "CUSTOM";
-  /** Свой weekly-проект: его можно переименовать и закрыть */
-  project: boolean;
-  members: { slug: string; fullName: string; external: boolean }[];
-  waiting: { id: string; slug: string; fullName: string; approver: string }[];
-};
-export type ProjectsView = {
-  units: ProjectUnit[];
-  people: ProjectPerson[];
-  projects: ProjectView[];
-  canCreate: boolean;
-  /** Режим управления владельца: люди других веток входят сразу, без согласия */
-  direct: boolean;
-  me: string;
-};
-
-/** Всё для страницы проектов: подразделения и люди компании, свои команды и проекты */
-export async function projectsView(actor: Actor): Promise<ProjectsView> {
-  const limited = teamLogin(actor);
-  const [units, people, teams, canCreate] = await Promise.all([
-    prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, name: true, kind: true, parentId: true, head: { select: { slug: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
-    prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, select: { slug: true, fullName: true, position: true, unitId: true }, orderBy: [{ fullName: "asc" }] }),
-    prisma.team.findMany({
-      // Топ-команду собирают в «Структуре» в режиме управления, здесь только свои команды и проекты
-      where: { leaderId: actor.personId, active: true, kind: { not: "TOP" } },
-      select: {
-        id: true,
-        name: true,
-        kind: true,
-        project: true,
-        members: { select: { external: true, person: { select: { slug: true, fullName: true, active: true } } } },
-        joinRequests: { where: { status: "PENDING" }, select: { id: true, person: { select: { slug: true, fullName: true } }, approver: { select: { fullName: true } } } },
-      },
-      orderBy: [{ kind: "asc" }, { sortOrder: "asc" }],
-    }),
-    canCreateProject(actor),
-  ]);
-  return {
-    units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head?.slug ?? null })),
-    people,
-    projects: teams.map((t) => ({
-      id: t.id,
-      name: t.name,
-      kind: t.kind as ProjectView["kind"],
-      project: t.project,
-      members: t.members.filter((m) => m.person.active).map((m) => ({ slug: m.person.slug, fullName: m.person.fullName, external: m.external })).sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")),
-      // Под общим логином запросы и согласующие не показываем, как и в «Структуре»
-      waiting: limited ? [] : t.joinRequests.map((r) => ({ id: r.id, slug: r.person.slug, fullName: r.person.fullName, approver: r.approver.fullName })),
-    })),
-    canCreate,
-    direct: canManagePeople(actor),
-    me: actor.slug,
-  };
-}
-
 /** Люди подразделения со всеми подразделениями ниже. Корень компании целиком не берётся: это не команда, а все */
 export async function unitPeople(unitId: string): Promise<string[]> {
   const units = await prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, parentId: true, kind: true } });

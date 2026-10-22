@@ -1,29 +1,30 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/auth";
 import { structureView } from "@/lib/org/view";
 import { peopleTree } from "@/lib/org/people-tree";
 import { joinRequestsFor, memberCandidates } from "@/lib/org/service";
 import { currentActor } from "@/lib/action-runner";
 import { StructureScreen } from "@/components/structure/structure-screen";
-import { TOP_TEAM } from "@/domain/teams";
-import { loadScope } from "@/lib/org/scope";
 import { subjectOf } from "@/lib/org/current";
-import { prisma } from "@/lib/db";
 
 export const metadata: Metadata = { title: "Люди: структура" };
 
-/** Структура департамента и команды (этап 14), дерево подчинённых (этап 34). Видят все, правит владелец, состав своей команды правит её руководитель */
+/**
+ * Структура компании (этап 14), дерево подчинённых (этап 34). Видят все, людей и подразделения правит владелец.
+ * Этап 64: команды здесь только для просмотра, управляют ими на экране «Weekly-команды»
+ */
 export default async function StructurePage({ searchParams }: { searchParams: Promise<{ person?: string; team?: string }> }) {
-  const ctx = await requireContext();
   const { person, team } = await searchParams;
+  // Прежние ссылки на команду (события «Мне» и письма этапа 53) ведут в карточку команды
+  if (team) redirect(`/people/teams?team=${encodeURIComponent(team)}`);
+  const ctx = await requireContext();
   const owner = ctx.management?.role === "OWNER";
   const subject = subjectOf(ctx);
   const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner }), peopleTree(subject)]);
-  const leadsTeam = view.teams.some((t) => t.id !== TOP_TEAM && t.leader?.slug === ctx.person.slug);
-  const candidates = owner || leadsTeam ? await memberCandidates(await currentActor()) : [];
-  // Ритм weekly задают руководители своих команд и команд ниже (этап 15)
-  const scope = await loadScope(prisma, subject);
-  // Запросы в команды из других веток (этап 53): по общему логину не показываем, профиль там выбирают сами
-  const requests = ctx.via === "TEAM" ? { toApprove: [], waiting: [] } : await joinRequestsFor(await currentActor());
-  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} leads={scope.leads} focus={person ?? null} focusTeam={team ?? null} requests={requests} />;
+  // Люди для правки подразделений и руководителей: только владельцу
+  const candidates = owner ? await memberCandidates(await currentActor()) : [];
+  // Запросы в команды из других веток (этап 53) решают в «Weekly-командах», здесь только сколько их. По общему логину нет
+  const toApprove = ctx.via === "TEAM" ? 0 : (await joinRequestsFor(await currentActor())).toApprove.length;
+  return <StructureScreen view={view} tree={tree} owner={owner} me={ctx.person.slug} candidates={candidates} focus={person ?? null} toApprove={toApprove} />;
 }
