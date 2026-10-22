@@ -45,6 +45,8 @@ export default async function SettingsPage() {
   const numbersAccess = owner ? await numbersAccessView() : undefined;
   // Этап 62: кто видит рынок КАСКО и ОСАГО и у каких команд разбор на встрече
   const market = owner ? await marketSettingsView() : undefined;
+  // Этап 67: импорт наполнения, только владельцу при личном входе в режиме управления
+  const contentImport = owner && ctx.person.role === "OWNER" && !!ctx.via && ctx.via !== "TEAM";
   // Новости (этап 60): источники, ключевые слова и состояние забора, только владельцу
   const news = owner
     ? { sources: await listSources(), keywords: await loadKeywords(), directions: await newsDirections(), lastFetchAt: (await lastFetchAt())?.toISOString() ?? null, claude: await claudeStatus(), manual: await manualFetchState() }
@@ -81,7 +83,7 @@ export default async function SettingsPage() {
           ) : null
         }
       />
-      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} market={market} news={news} />
+      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} market={market} news={news} contentImport={contentImport} />
     </>
   );
 }

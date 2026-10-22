@@ -160,6 +160,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "plan.facts": "Прогноз месяца: факт по дням",
   "plan.export": "Прогноз месяца: выгрузка в Excel",
   "market.upload": "Загружен пакет рынка КАСКО и ОСАГО",
+  "content.import": "Загружено наполнение из истории проекта",
   "settings.marketAccess": "Доступ к рынку КАСКО и ОСАГО",
   "settings.marketMeeting": "Разбор рынка на встрече",
 };

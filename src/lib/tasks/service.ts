@@ -196,7 +196,9 @@ type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: O
  */
 type PlanFn = (row: TaskRow, can: TaskPermissions, tx: Tx, scope: Scope) => Promise<Plan>;
 
-async function mutate(actor: Actor, number: number, plan: PlanFn): Promise<TaskResult> {
+async function mutate(actor: Actor, number: number, plan: PlanFn, db?: Tx): Promise<TaskResult> {
+  // db: правка внутри чужой транзакции (этап 67, импорт наполнения: всё одной транзакцией)
+  if (db) return mutateIn(db, actor, number, plan);
   return prisma.$transaction((tx) => mutateIn(tx, actor, number, plan));
 }
 
@@ -344,31 +346,63 @@ function repeatDb(input: RepeatInput | null | undefined): { repeat: RepeatKind |
   return { repeat, repeatMode };
 }
 
-/** Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе */
-async function nextNumber(tx: Tx): Promise<number> {
+/**
+ * Номер новой задачи: следующий после настройки tasks.nextNumber и после самой старшей задачи в базе. count: сразу
+ * несколько номеров подряд (отдаётся первый). Строка настройки заперта до конца транзакции
+ */
+async function nextNumber(tx: Tx, count = 1): Promise<number> {
   const rows = await tx.$queryRaw<{ n: number }[]>`
     UPDATE "settings"
-    SET "value" = to_jsonb(GREATEST(("value" #>> '{}')::int, (SELECT COALESCE(MAX("number"), 0) + 1 FROM "tasks")) + 1), "updatedAt" = now()
+    SET "value" = to_jsonb(GREATEST(("value" #>> '{}')::int, (SELECT COALESCE(MAX("number"), 0) + 1 FROM "tasks")) + ${count}::int), "updatedAt" = now()
     WHERE "key" = 'tasks.nextNumber'
-    RETURNING (("value" #>> '{}')::int - 1) AS n`;
+    RETURNING (("value" #>> '{}')::int - ${count}::int) AS n`;
   if (rows[0]) return Number(rows[0].n);
   const max = await tx.task.aggregate({ _max: { number: true } });
   const n = Math.max(52, (max._max.number ?? 0) + 1);
-  await tx.setting.create({ data: { key: "tasks.nextNumber", value: n + 1 } });
+  await tx.setting.create({ data: { key: "tasks.nextNumber", value: n + count } });
   return n;
+}
+
+/**
+ * Номера для нескольких новых задач заранее, короткой своей транзакцией (этап 67, импорт наполнения): долгая загрузка
+ * не держит строку настройки номеров, и задачи, которые в это время ставят люди, не ждут её
+ */
+export async function reserveTaskNumbers(count: number): Promise<number[]> {
+  if (count <= 0) return [];
+  const first = await prisma.$transaction((tx) => nextNumber(tx, count));
+  return Array.from({ length: count }, (_, i) => first + i);
+}
+
+/**
+ * Вернуть неиспользованные заранее взятые номера from..to-1: только если после них никто номер не брал (в настройке
+ * всё ещё to). Иначе номера пропадают, это не ошибка
+ */
+export async function releaseTaskNumbers(from: number, to: number): Promise<void> {
+  if (from >= to) return;
+  await prisma.$executeRaw`
+    UPDATE "settings" SET "value" = to_jsonb(${from}::int), "updatedAt" = now()
+    WHERE "key" = 'tasks.nextNumber' AND ("value" #>> '{}')::int = ${to}::int`;
 }
 
 export async function createTask(actor: Actor, input: NewTaskInput): Promise<TaskResult> {
   return prisma.$transaction((tx) => createTaskIn(tx, actor, input));
 }
 
+/**
+ * Задача из истории (этап 67, импорт наполнения владельцем): sourceDate дата источника как есть (нет даты: пусто, а не
+ * «сегодня», иначе задача со встречи попала бы в повестку как поручение прошлой встречи). closed: задачу сразу
+ * закрывают, только ей срок может быть в прошлом. originalDue: исходный срок из истории, когда срок задачи сдвинут
+ * (открытая задача, у которой срок в истории уже прошёл)
+ */
+export type HistoryOptions = { sourceDate?: IsoDate | null; closed?: boolean; originalDue?: IsoDate | null };
+
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
-export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string } = {}): Promise<TaskResult> {
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: HistoryOptions; number?: number } = {}): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
   if (!isIsoDate(input.due)) fail("Укажите срок");
-  if (input.due < moscowToday()) fail("Срок не может быть в прошлом");
+  if (input.due < moscowToday() && !opts.history?.closed) fail("Срок не может быть в прошлом");
   const sourceNote = optional(input.sourceNote, LIMITS.sourceNote, "Подробнее об источнике");
 
   const scope = await scopeOfActor(tx, actor);
@@ -422,7 +456,8 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
   const rule = await approvalRule(tx, requester, ownerId);
   const pending = rule?.mode === "approve" && !actor.management;
   if (pending) status = "proposed";
-  const number = await nextNumber(tx);
+  // Номер, взятый заранее (reserveTaskNumbers), или следующий
+  const number = opts.number ?? (await nextNumber(tx));
   const today = dbDate(moscowToday());
   const row = await tx.task.create({
     data: {
@@ -437,10 +472,10 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
       state: "ON_TRACK",
       whereUpdatedAt: today,
       due: dbDate(input.due),
-      originalDue: dbDate(input.due),
+      originalDue: opts.history && opts.history.originalDue !== undefined ? (opts.history.originalDue && isIsoDate(opts.history.originalDue) ? dbDate(opts.history.originalDue) : null) : dbDate(input.due),
       sourceCode,
       sourceNote,
-      sourceDate: sourceCode === "meeting" ? today : null,
+      sourceDate: opts.history ? (opts.history.sourceDate ? dbDate(opts.history.sourceDate) : null) : sourceCode === "meeting" ? today : null,
       createdById: actor.personId,
       weeklyEntryId: input.weeklyEntryId ?? null,
       teamId,
@@ -496,7 +531,7 @@ function pickTeam(scope: Scope, actor: Actor, wanted: string | undefined): strin
 
 // ---------- Правки ----------
 
-export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string): Promise<TaskResult> {
+export async function changeStatus(actor: Actor, number: number, next: StatusCode, note?: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     const current = statusCode(row.status);
     const pendingApproval = current === "proposed" && row.approvalState === "PENDING";
@@ -582,7 +617,7 @@ export async function changeStatus(actor: Actor, number: number, next: StatusCod
       // согласованию тоже не отменяется кнопкой: отмена вернула бы задачу в «Предложена» без согласования
       ...(spawned || pendingApproval || reopen ? { undo: false as const } : {}),
     };
-  });
+  }, db);
 }
 
 /**
@@ -793,7 +828,7 @@ export async function changePriority(actor: Actor, number: number, next: Priorit
   });
 }
 
-export async function updateWhere(actor: Actor, number: number, text: string): Promise<TaskResult> {
+export async function updateWhere(actor: Actor, number: number, text: string, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can) => {
     if (!can.where) fail("«Где сейчас» пишут ответственный и соисполнители");
     const value = required(text, LIMITS.where, "Напишите одну-две фразы о том, где задача сейчас", "Где сейчас");
@@ -807,10 +842,10 @@ export async function updateWhere(actor: Actor, number: number, text: string): P
       data: { whereNow: value, whereUpdatedAt: dbDate(today) },
       changes: [{ field: "Где сейчас", before: row.whereNow || null, after: value }],
     };
-  });
+  }, db);
 }
 
-export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string): Promise<TaskResult> {
+export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string, db?: Tx): Promise<TaskResult> {
   const transferId = `tr_${crypto.randomUUID()}`;
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.due) fail("Срок переносит ответственный, владелец или администратор");
@@ -834,12 +869,12 @@ export async function transferDue(actor: Actor, number: number, to: IsoDate, rea
       changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
       undo: { removeTransferId: transferId },
     };
-  });
+  }, db);
 }
 
 export type EditInput = { title?: string; outcome?: string; direction?: string; source?: string; sourceNote?: string | null };
 
-export async function editTask(actor: Actor, number: number, input: EditInput): Promise<TaskResult> {
+export async function editTask(actor: Actor, number: number, input: EditInput, db?: Tx): Promise<TaskResult> {
   return mutate(actor, number, async (row, can, tx) => {
     if (!can.edit) fail("Задачу правит тот, кто её поставил, владелец или администратор");
     const data: Prisma.TaskUncheckedUpdateInput = {};
@@ -885,7 +920,7 @@ export async function editTask(actor: Actor, number: number, input: EditInput): 
       await notify(tx, { kind: "APPROVAL", recipients: [row.approverId], actor, subject: taskSubject(number), taskId: row.id, text: `Задачу из другого департамента для вашего сотрудника поправили: ${essential.join(", ")}` });
     }
     return { data, changes };
-  });
+  }, db);
 }
 
 /** Чья задача для правила согласования (этап 54): сохранённый автор, иначе тот, кто поставил, иначе тот, кто правит */
@@ -1453,9 +1488,13 @@ export async function requestUpdate(actor: Actor, number: number, now = new Date
  * Подбор цели по тексту (этап 55) только предлагает цель новой задаче и сам цель существующей задачи не меняет:
  * связь, которую поставили здесь, живёт, пока её не поменяют руками
  */
-export async function setTaskGoal(actor: Actor, number: number, goalId: string | null): Promise<TaskResult> {
+/** db: внутри чужой транзакции (этап 67, импорт наполнения ставит связь задачи с целью в своей транзакции) */
+export async function setTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
-  return mutate(actor, number, async (row, _can, tx, scope) => {
+  return mutate(
+    actor,
+    number,
+    async (row, _can, tx, scope) => {
     if (row.archivedAt) fail(`Задача ${number} в архиве`);
     if (!canChangeGoal(row, actor, scope)) fail("Цель задаче выбирают ответственный, соисполнители, тот, кто поставил задачу, руководитель команды и режим управления");
     let goal: { id: string; title: string } | null = null;
@@ -1469,7 +1508,9 @@ export async function setTaskGoal(actor: Actor, number: number, goalId: string |
     }
     if ((row.goalId ?? null) === (goal?.id ?? null)) throw new SameGoalError("Цель уже такая");
     return { data: { goalId: goal?.id ?? null }, changes: [{ field: "Цель", before: row.goal?.title ?? null, after: goal?.title ?? null }] };
-  });
+    },
+    db,
+  );
 }
 
 /** done: связь стоит; task и undo только у задач, которые поменялись (у задачи с той же целью отменять нечего) */
