@@ -271,11 +271,12 @@ describe("серверное действие", () => {
     }
   }
 
-  it("главный владелец при личном входе в режиме управления задаёт подпись; по общему логину отказ текстом", async () => {
+  it("главный владелец при личном входе в режиме управления задаёт подпись; по общему логину не входит вовсе", async () => {
     await signIn("muradyan", { management: true });
     expect(await setOwnerTitleAction("muradyan", "ex-Владелец")).toEqual({ ok: true, value: { slug: "muradyan", title: "ex-Владелец", label: "ex-Владелец", changed: true } });
+    // Этап 71: владелец по общему логину не входит: сессия общего логина с его профилем уводит на выбор себя
     await signIn("muradyan", { management: true, team: true });
-    expect(await setOwnerTitleAction("muradyan", "Владелец")).toEqual({ ok: false, error: admin.OWNER_TITLE_RULES.personal });
+    expect(await settle(() => setOwnerTitleAction("muradyan", "Владелец"))).toBe("redirect");
     expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец" });
   });
 

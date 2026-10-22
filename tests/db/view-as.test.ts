@@ -147,8 +147,9 @@ describe("кто включает «Смотреть как»", () => {
   it("без режима управления, по общему логину, администратор, лидер: нельзя", async () => {
     await signIn("muradyan");
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.management });
+    // Этап 71: владелец по общему логину не входит вовсе: сессия общего логина с его профилем уводит на выбор себя
     await signIn("muradyan", { management: true, team: true });
-    expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.personal });
+    expect(await startAs("reva")).toBe("redirect");
     await signIn("golovkin", { management: true });
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.ownerOnly });
     await signIn("reva");

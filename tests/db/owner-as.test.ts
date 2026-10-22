@@ -65,7 +65,10 @@ const person = (slug: string) => prisma.person.findUniqueOrThrow({ where: { slug
 const future = addDays(moscowToday(), 10);
 const PASSWORD = "Пароль владельца 2026";
 
-/** Люди этого файла: совладелец, человек вне топ-команды, человек с личным паролем, выключенный, человек для выключения */
+/**
+ * Люди этого файла: совладелец, человек вне топ-команды, человек с личным паролем, выключенный, человек для выключения.
+ * В конце списка людей: главным владельцем по умолчанию остаётся первый владелец списка, а не совладелец этого файла
+ */
 const EXTRA = [
   { slug: "s71-coowner", fullName: "Совладельцев Олег", shortName: "Олег", role: "OWNER" as const, zone: "Совладелец", active: true },
   { slug: "s71-lead", fullName: "Структурный Лидер", shortName: "Лидер", role: "LEADER" as const, zone: "", position: "Product Owner ОСАГО", active: true },
@@ -130,7 +133,7 @@ beforeAll(async () => {
   await prisma.setting.upsert({ where: { key: PASSWORD_SETTING_KEYS.owner }, update: { value: await hashPassword(PASSWORD) }, create: { key: PASSWORD_SETTING_KEYS.owner, value: await hashPassword(PASSWORD) } });
   for (const p of EXTRA) {
     const { position, ...rest } = p as typeof p & { position?: string };
-    await prisma.person.upsert({ where: { slug: p.slug }, update: { ...rest, position: position ?? null }, create: { ...rest, position: position ?? null } });
+    await prisma.person.upsert({ where: { slug: p.slug }, update: { ...rest, position: position ?? null, sortOrder: 9000 }, create: { ...rest, position: position ?? null, sortOrder: 9000 } });
   }
   await prisma.person.update({ where: { slug: "s71-pw" }, data: { passwordHash: await hashPassword("Пароль Петра 2026") } });
   const owner = await tasks.actorFor("muradyan", "OWNER");
