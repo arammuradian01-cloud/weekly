@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase } from "./helpers";
+import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 67: импорт наполнения. Владелец при личном входе в режиме управления выбирает файл пакета в «Настройках»
 // (синтетический tests/fixtures/content-import/package.json, данные выдуманные), видит предпросмотр: что добавится,
@@ -154,15 +155,18 @@ test("без режима управления, по общему логину �
   expect(res.status()).toBe(403);
   expect((await res.json()).error).toBe("Наполнение загружает владелец при личном входе в режиме управления");
 
-  // Общий логин с режимом управления владельца: остальные настройки есть, импорта нет
+  // Общий логин: с этапа 71 владелец по нему не входит вовсе (его нет на экране выбора себя), а без выбранного профиля
+  // обработчик отказывает. Правило «не по общему логину» в самом импорте проверяют тесты базы
   const team = await newPage(browser, page);
-  await enter(team, "Мурадян Арам");
-  await enterManagement(team, "owner");
-  await team.goto("/settings");
-  await expect(team.getByRole("heading", { name: "Настройки" })).toBeVisible();
-  await expect(team.getByTestId("content-import")).toHaveCount(0);
+  await team.goto("/login");
+  await team.getByLabel("Логин").fill("team");
+  await team.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
+  await team.getByRole("button", { name: "Войти" }).click();
+  await expect(team).toHaveURL(/\/choose$/);
+  await team.getByLabel("Поиск по ФИО, должности или подразделению").fill("мурадян");
+  await expect(team.getByText("Никого не нашли: проверьте написание")).toBeVisible();
   const teamRes = await team.request.post("/api/content-import?mode=apply", { headers: { "Content-Type": "application/json" }, data: readFileSync(PACKAGE) });
-  expect(teamRes.status()).toBe(403);
+  expect([401, 403]).toContain(teamRes.status());
 
   // Администратор в режиме управления: раздела нет
   const admin = await newPage(browser, page);
