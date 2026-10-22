@@ -575,10 +575,14 @@ export async function suggestGoals(who: Who, input: { team: string; due: string;
   return withSuggestions(options, `${input.title} ${input.outcome}`.slice(0, 2000));
 }
 
-/** Привязать задачу к цели или отвязать */
+/**
+ * Привязать задачу к цели или отвязать. db: внутри чужой транзакции (этап 67, импорт наполнения). Сама связь пишется
+ * одним шагом, название цели для ответа читается после него тем же клиентом (db ?? prisma): так этот код сливается с
+ * этапом 65, где связь пишет сервис задач (setTaskGoal)
+ */
 export async function linkTaskGoal(actor: Actor, number: number, goalId: string | null, db?: Tx): Promise<{ goal: string | null }> {
   if (actor.role === "OBSERVER") fail("Наблюдатель только смотрит");
-  return inTx(db, async (tx) => {
+  await inTx(db, async (tx) => {
     const scope = await loadScope(tx, { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management });
     const task = await tx.task.findUnique({ where: { number }, include: { coExecutors: { select: { personId: true } }, goal: true } });
     if (!task || !seesTask(scope, task, actor.personId)) return fail(`Задачи ${number} нет`);
@@ -601,8 +605,9 @@ export async function linkTaskGoal(actor: Actor, number: number, goalId: string 
     await tx.auditLog.create({
       data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: task.goal?.title ?? undefined, after: goal?.title ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
     });
-    return { goal: goal?.title ?? null };
   });
+  const goal = goalId ? await (db ?? prisma).goal.findUnique({ where: { id: goalId }, select: { title: true } }) : null;
+  return { goal: goal?.title ?? null };
 }
 
 // ---------- Загрузка из таблицы и из Bord ----------
