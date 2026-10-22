@@ -66,8 +66,13 @@ export function searchFromState(state: MarketState): string {
   return s ? `?${s}` : "";
 }
 
-/** Сообщения окна дашборда родителю */
-export type FrameMessage = { type: "ready" } | { type: "height"; height: number } | { type: "params"; params: MarketParams } | { type: "link"; link: string };
+/**
+ * Сообщения окна дашборда родителю. doc у ready: случайный номер документа окна, его среда придумывает при каждой
+ * загрузке документа. По нему родитель отдаёт данные каждому документу один раз
+ */
+export type FrameMessage = { type: "ready"; doc: string } | { type: "height"; height: number } | { type: "params"; params: MarketParams } | { type: "link"; link: string };
+
+const DOC_ID = /^[A-Za-z0-9]{8,64}$/;
 
 /** Одноразовая метка окна: 128 случайных бит в шестнадцатеричном виде. Работает и без HTTPS (randomUUID там нет) */
 export function marketNonce(): string {
@@ -87,7 +92,7 @@ export function readFrameMessage(data: unknown, nonce: string): FrameMessage | n
   if (!nonce || typeof m.nonce !== "string" || m.nonce !== nonce) return null;
   switch (m.type) {
     case "ready":
-      return { type: "ready" };
+      return typeof m.doc === "string" && DOC_ID.test(m.doc) ? { type: "ready", doc: m.doc } : null;
     case "height": {
       const h = m.height;
       if (typeof h !== "number" || !Number.isFinite(h)) return null;
@@ -106,28 +111,29 @@ export function readFrameMessage(data: unknown, nonce: string): FrameMessage | n
 }
 
 /**
- * Когда отдавать окну данные (init, мегабайты): один раз на каждое событие load у iframe. load приходит, когда
- * документ окна разобран и его среда уже слушает сообщения. ready от окна данные не дублирует: в пределах одного load
- * они уже ушли, а ready до первого load ждёт его. Каждая новая загрузка документа окна (новый srcdoc, перезагрузка
- * изнутри) получает данные заново
+ * Когда отдавать окну данные (init, мегабайты). Только в ответ на ready с верной меткой окна (метку сверяет
+ * readFrameMessage до вызова): событие load само данных не отправляет никогда. Иначе страница, на которую окно ушло
+ * бы по ссылке, получила бы все наборы на своём load, ничего не доказав. Данные уходят не чаще одного раза между
+ * соседними событиями load и каждому документу окна (doc) один раз: повторные ready того же документа, пока он
+ * разбирает присланные данные, 5 МБ не дублируют. Новый документ окна (новый srcdoc, перезагрузка изнутри) получает
+ * данные заново: его среда шлёт ready и после своего load
  */
 export function createInitGate() {
   let loads = 0;
-  let sentFor = 0;
-  const take = () => {
-    if (loads === 0 || sentFor === loads) return false;
-    sentFor = loads;
-    return true;
-  };
+  let sentIn = -1;
+  const answered = new Set<string>();
   return {
-    /** Событие load у iframe: true, если данные надо отправить */
+    /** Событие load у iframe: начинается новый цикл. Отправлять ли данные сейчас: никогда, false */
     load(): boolean {
       loads++;
-      return take();
+      return false;
     },
-    /** Сообщение ready от окна: true, только если в этом load данные ещё не уходили */
-    ready(): boolean {
-      return take();
+    /** ready с верной меткой от документа doc: true, если в этом цикле load данные ещё не уходили и этому документу тоже */
+    ready(doc: string): boolean {
+      if (!doc || answered.has(doc) || sentIn === loads) return false;
+      answered.add(doc);
+      sentIn = loads;
+      return true;
     },
   };
 }

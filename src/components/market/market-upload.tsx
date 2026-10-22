@@ -10,19 +10,20 @@ import { usePrototype } from "@/domain/store";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/field";
 import { MARKET_MAX_BYTES } from "@/lib/market/bundle";
+import { MARKET_ANSWER_TEXTS, readMarketAnswer, type MarketAnswer } from "@/lib/market/answers";
 import { plural } from "@/domain/dates";
 
-type Answer = { ok: true; value: { datasetsCount: number; rowsTotal: number } } | { ok: false; error: string };
+type Uploaded = { value: { datasetsCount: number; rowsTotal: number } };
 
-async function postBundle(file: File): Promise<Answer> {
+async function postBundle(file: File): Promise<MarketAnswer<Uploaded>> {
   let res: Response;
   try {
     res = await fetch("/api/market/upload", { method: "POST", body: file, headers: { "Content-Type": "application/json" } });
   } catch {
     return { ok: false, error: "Нет связи с сервером: пакет не отправился" };
   }
-  if (res.redirected || !(res.headers.get("content-type") ?? "").includes("application/json")) return { ok: false, error: "Вход закончился: обновите страницу, войдите и загрузите пакет снова" };
-  return (await res.json().catch(() => null)) ?? { ok: false, error: "Не получилось прочитать ответ сервера. Обновите страницу и попробуйте ещё раз" };
+  // Статус разбирается: 401 вход закончился, 413 файл слишком большой, ошибка проверки текстом сервера, иначе общий текст
+  return readMarketAnswer<Uploaded>(res, "upload");
 }
 
 export function MarketUpload() {
@@ -34,7 +35,7 @@ export function MarketUpload() {
 
   const send = async (file: File) => {
     if (file.size > MARKET_MAX_BYTES) {
-      setError("Файл больше 25 МБ: пакет рынка может быть не больше 25 МБ");
+      setError(MARKET_ANSWER_TEXTS.upload.tooBig);
       return;
     }
     setBusy(true);
@@ -45,7 +46,7 @@ export function MarketUpload() {
       setError(r.error);
       return;
     }
-    const { datasetsCount: n, rowsTotal: rows } = r.value;
+    const { datasetsCount: n, rowsTotal: rows } = r.value.value;
     notify(`Пакет рынка загружен: ${n} ${plural(n, "набор", "набора", "наборов")} данных, ${rows} ${plural(rows, "строка", "строки", "строк")}`);
     router.refresh();
   };

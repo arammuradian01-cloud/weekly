@@ -12,6 +12,7 @@ import * as m from "@/lib/meeting/service";
 import { canSeeMarket, loadMarketMeeting, marketSettingsView, saveMarketSettings, MARKET_ACCESS_KEY, MARKET_MEETING_KEY } from "@/lib/market/access";
 import { marketDataBody, marketMeta, marketPayload, resetMarketBodyCache, uploadMarketBundle } from "@/lib/market/service";
 import { journalEvents } from "@/lib/journal";
+import { buildExport } from "@/lib/admin/export";
 import { parseBundle, type MarketBundleInput } from "@/lib/market/bundle";
 import { TOP_TEAM } from "@/lib/org/scope";
 import type { WeekKey } from "@/domain/types";
@@ -193,7 +194,7 @@ describe("готовый ответ с данными", () => {
 });
 
 describe("события рынка в журнале", () => {
-  it("администратор без доступа к рынку не видит загрузку пакета и список людей; тем, кому раздел открыт, всё видно", async () => {
+  it("администратор без доступа к рынку не видит загрузку пакета и список людей ни в журнале, ни в выгрузке; тем, кому раздел открыт, всё видно", async () => {
     await uploadMarketBundle(await personal("muradyan"), bundle(), 100);
     await saveMarketSettings(await personal("muradyan", "OWNER"), { people: ["reva"], teamIds: [revaTeam] });
     // Соседние события: без объекта и настройка без ключа. Они видны всем, кто видит журнал (журнал только
@@ -219,6 +220,26 @@ describe("события рынка в журнале", () => {
     for (const field of ["Событие без объекта", "Настройка без ключа", "Ритм недели"]) {
       expect(hidden.events.some((e) => e.field === field || (field === "Событие без объекта" && e.object === "test.marketJournal")), field).toBe(true);
     }
+    // Выгрузка в Excel: тот же фильтр по тому, кто выгружает
+    const ExcelJS = (await import("exceljs")).default;
+    const sheetText = async (market: boolean) => {
+      const { buffer, summary } = await buildExport({ market });
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(buffer as unknown as ArrayBuffer);
+      const rows: string[] = [];
+      wb.getWorksheet("Журнал")!.eachRow((r) => rows.push((r.values as unknown[]).map((v) => String(v ?? "")).join(" | ")));
+      return { rows, summary };
+    };
+    const plain = await sheetText(false);
+    const full = await sheetText(true);
+    const marketRow = /Пакет рынка КАСКО и ОСАГО|Рынок: люди с доступом|Рынок: разбор на первой встрече|market\.access|market\.meeting|Наборов \d/;
+    expect(plain.rows.filter((r) => marketRow.test(r))).toEqual([]);
+    expect(full.rows.filter((r) => marketRow.test(r)).length).toBeGreaterThanOrEqual(3);
+    expect(plain.rows.some((r) => r.includes("Настройка без ключа"))).toBe(true);
+    const allMarket = await prisma.auditLog.count({ where: { OR: [{ action: { startsWith: "market." } }, { action: { startsWith: "settings.market" } }] } });
+    expect(full.summary.audit - plain.summary.audit).toBe(allMarket);
+    expect((await buildExport()).summary.audit).toBe(plain.summary.audit);
+
     // Фильтр по типу «Настройки» тоже без событий рынка
     expect(market(await journalEvents({ days, kind: "settings", limit: 5000 }))).toEqual([]);
     expect(market(await journalEvents({ days, kind: "settings", limit: 5000, market: true })).length).toBeGreaterThanOrEqual(2);

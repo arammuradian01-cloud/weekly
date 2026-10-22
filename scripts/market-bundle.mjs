@@ -12,8 +12,8 @@
 // Скрипт только читает файлы выгрузки как данные (JSON.parse) и ничего из них не запускает. Пакет с цифрами
 // в репозиторий не кладём: путь --out внутри папки репозитория скрипт не принимает (и через ссылки на папки тоже),
 // имя market-bundle*.json вдобавок в .gitignore.
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Папка репозитория: на уровень выше папки scripts, где лежит этот скрипт */
@@ -42,14 +42,29 @@ function args(argv) {
   return out;
 }
 
-/** Файл пакета вне репозитория: настоящий путь папки (ссылки на папки раскрыты) не внутри REPO */
+/** Внутри ли путь папки репозитория. Папка с именем вроде «..данные» внутри репозитория тоже внутри */
+function insideRepo(real) {
+  const rel = relative(REPO, real);
+  return !(rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel));
+}
+
+/**
+ * Файл пакета вне репозитория: настоящий путь папки (ссылки на папки раскрыты) плюс имя файла не внутри REPO. Если
+ * по этому пути уже лежит ссылка, скрипт отказывает: запись пошла бы туда, куда она ведёт
+ */
 function outsideRepo(out) {
   const path = resolve(out);
   const dir = dirname(path);
   if (!existsSync(dir)) fail(`папки ${dir} нет: создайте её или укажите другую для --out`);
   const real = join(realpathSync(dir), basename(path));
-  const rel = relative(REPO, real);
-  if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) {
+  let link = false;
+  try {
+    link = lstatSync(real).isSymbolicLink();
+  } catch {
+    link = false;
+  }
+  if (link) fail(`--out ${path} это ссылка: укажите обычный файл вне папки проекта`);
+  if (insideRepo(real)) {
     fail(`--out ${path} внутри репозитория ${REPO}: цифры рынка не должны попасть в git. Сохраните пакет вне папки проекта, например в домашнюю папку`);
   }
   return real;

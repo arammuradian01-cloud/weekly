@@ -5,14 +5,19 @@
 // перед кодом дашборда.
 //
 // Как работает:
-// - данные приходят от родителя сообщением {type:"init", version, datasets, params}; до него всё «loading»;
+// - данные приходят от родителя сообщением {type:"init", version, datasets, params, link, theme} в ответ на ready;
+//   до него всё «loading». Вкладка, фильтры и тема в init текущие: после перезагрузки документа окна вернутся они,
+//   а не те, что вшиты в srcdoc при его сборке;
 // - расчёт считается лениво при первом обращении и хранится до смены данных; исключение в расчёте даёт «error»;
 // - setParams сливает фильтры, перерисовывает через подписчиков onData и сообщает родителю: он пишет их в адрес;
 // - setLink сообщает родителю вкладку; при открытии окна вкладка из адреса ставится в location.hash до кода дашборда;
 // - высоту содержимого окно сообщает родителю ({type:"height"}), ResizeObserver следит за изменениями;
 // - смена ширины окна перерисовывает графики; тема приходит сообщением {type:"theme"};
-// - каждое сообщение родителю несёт одноразовую метку окна (nonce из __MARKET_BOOT__): родитель сверяет её и
-//   читает только свои сообщения; метка остаётся в замыкании среды, из загрузочных данных она убирается.
+// - каждое сообщение родителю несёт одноразовую метку окна (nonce из __MARKET_BOOT__) и случайный номер документа:
+//   родитель читает только сообщения со своей меткой и отдаёт данные каждому документу один раз. Среда запоминает
+//   метку и убирает её из объекта __MARKET_BOOT__, но в тексте встроенного скрипта страницы окна она остаётся: метка
+//   отсекает чужие окна и страницу, на которую окно ушло бы по ссылке, а не код самого пакета;
+// - окно никуда не уходит по ссылкам: щелчок по ссылке не на якорь (#...) гасится, window.open ничего не открывает.
 // Родитель принимает сообщения только от этого окна и проверяет их схему. Окно без allow-same-origin: у него
 // непрозрачный источник, cookies и API приложения ему недоступны, сеть закрыта политикой CSP.
 //
@@ -23,10 +28,12 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
   "use strict";
   var doc = win.document;
   var boot = win.__MARKET_BOOT__ || {};
+  // Метка окна: из объекта загрузочных данных убирается (в тексте встроенного скрипта она остаётся)
   var nonce = typeof boot.nonce === "string" ? boot.nonce : "";
   try {
     delete boot.nonce;
   } catch (e) {}
+  var docId = randomId();
   var KEY = /^[A-Za-z0-9_]{1,40}$/;
   var LINK = /^[A-Za-z0-9_-]{1,60}$/;
   var palettes = boot.palettes || {};
@@ -63,8 +70,22 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
   var params = clean(boot.params);
   var link = typeof boot.link === "string" && LINK.test(boot.link) ? boot.link : "";
 
+  function randomId() {
+    var out = "";
+    try {
+      var bytes = new Uint8Array(12);
+      win.crypto.getRandomValues(bytes);
+      for (var i = 0; i < bytes.length; i++) out += ("0" + bytes[i].toString(16)).slice(-2);
+    } catch (e) {
+      while (out.length < 24) out += Math.random().toString(36).slice(2);
+      out = out.replace(/[^a-z0-9]/g, "").slice(0, 24);
+    }
+    return out;
+  }
+
   function post(msg) {
     msg.nonce = nonce;
+    msg.doc = docId;
     try {
       win.parent.postMessage(msg, "*");
     } catch (e) {}
@@ -203,6 +224,15 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
     }
   }
 
+  /** Вкладка от родителя после перезагрузки документа: в адрес окна и событием hashchange для кода дашборда */
+  function showLink(value) {
+    link = value;
+    setHash(value);
+    try {
+      win.dispatchEvent(new win.HashChangeEvent("hashchange"));
+    } catch (e) {}
+  }
+
   function setLink(value) {
     value = String(value == null ? "" : value);
     if (!LINK.test(value)) return;
@@ -252,6 +282,8 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
       version = msg.version;
       cache = Object.create(null);
       if (msg.params && typeof msg.params === "object") params = clean(msg.params);
+      if (msg.theme === "dark" || msg.theme === "light") applyTheme(msg.theme);
+      if (typeof msg.link === "string" && LINK.test(msg.link) && msg.link !== link) showLink(msg.link);
       if (pingTimer) win.clearTimeout(pingTimer);
       redrawSoon();
     } else if (msg.type === "theme") {
@@ -271,7 +303,29 @@ export const MARKET_RUNTIME_FACTORY = String.raw`function (win) {
     }, 150);
   });
 
-  win.addEventListener("load", measureSoon);
+  // После своего load документ ещё раз просит данные: родитель отдаёт их только в ответ на ready с меткой
+  win.addEventListener("load", function () {
+    measureSoon();
+    if (datasets === null) post({ type: "ready" });
+  });
+
+  // Окно никуда не уходит: ссылки только на якоря внутри страницы, новые окна не открываются
+  function stayHere(event) {
+    var t = event.target;
+    var a = t && typeof t.closest === "function" ? t.closest("a, area") : null;
+    if (!a) return;
+    var href = a.getAttribute("href");
+    if (href === null) href = a.getAttribute("xlink:href");
+    if (href === null) return;
+    if (String(href).charAt(0) !== "#") event.preventDefault();
+  }
+  doc.addEventListener("click", stayHere, true);
+  doc.addEventListener("auxclick", stayHere, true);
+  try {
+    win.open = function () {
+      return null;
+    };
+  } catch (e) {}
 
   if (typeof win.ResizeObserver === "function") {
     var observer = new win.ResizeObserver(measureSoon);

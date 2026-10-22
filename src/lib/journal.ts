@@ -70,9 +70,9 @@ const SOURCE_DB: Record<JournalEvent["source"], ChangeSource> = { app: "APP", sh
 /**
  * События рынка КАСКО и ОСАГО (этап 62): записи об объекте «рынок» и настройки с ключами market.*, а также их
  * действия (market.*, settings.market*). Условие только по заполненным полям: записи без объекта под него не
- * попадают, поэтому NOT не прячет лишнего
+ * попадают, поэтому NOT не прячет лишнего. Тот же фильтр у выгрузки в Excel (src/lib/admin/export.ts)
  */
-const MARKET_EVENTS: Prisma.AuditLogWhereInput = {
+export const MARKET_EVENTS: Prisma.AuditLogWhereInput = {
   OR: [
     { action: { startsWith: "market." } },
     { action: { startsWith: "settings.market" } },

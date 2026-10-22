@@ -7,11 +7,12 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canUploadMarket } from "@/lib/market/access";
 import { MARKET_MAX_BYTES, MarketBundleError, parseBundle } from "@/lib/market/bundle";
 import { MARKET_UPLOAD_ONLY, uploadMarketBundle } from "@/lib/market/service";
+import { MARKET_ANSWER_TEXTS } from "@/lib/market/answers";
 
 export const dynamic = "force-dynamic";
 
-const MARKET_TOO_BIG = "Файл больше 25 МБ: пакет рынка может быть не больше 25 МБ";
-const MARKET_SIGNED_OUT = "Вход закончился: обновите страницу, войдите и загрузите пакет снова";
+const MARKET_TOO_BIG = MARKET_ANSWER_TEXTS.upload.tooBig;
+const MARKET_SIGNED_OUT = MARKET_ANSWER_TEXTS.upload.signedOut;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 const answer = (status: number, error: string) => NextResponse.json({ ok: false, error }, { status, headers: NO_STORE });

@@ -3,14 +3,17 @@
 // Окно дашборда рынка КАСКО и ОСАГО (этап 62). Код дашборда из пакета живёт в изолированном iframe: sandbox только
 // allow-scripts, без allow-same-origin, поэтому у окна непрозрачный источник и ему недоступны cookies и API
 // приложения, а сеть закрыта политикой CSP внутри srcdoc. Данные страница берёт сама (/api/market/data с проверкой
-// доступа) и передаёт окну сообщением: один раз на каждое событие load у iframe (повторные ready от окна данные не
-// дублируют). Сообщения от окна принимаются только от него, только с одноразовой меткой этого окна (nonce в
-// __MARKET_BOOT__) и только по схеме: высота, вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы, чтобы
-// ссылкой можно было поделиться.
+// доступа) и передаёт окну сообщением только в ответ на ready с одноразовой меткой этого окна (nonce в
+// __MARKET_BOOT__), не чаще раза на цикл load и каждому документу окна один раз: событие load само данных не
+// отправляет, иначе их получила бы страница, на которую окно ушло бы по ссылке. Вместе с данными уходят текущие
+// вкладка, фильтры и тема: после перезагрузки документа окна вернутся они. Сообщения от окна принимаются только от
+// него, только с меткой и только по схеме: высота, вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы,
+// чтобы ссылкой можно было поделиться.
 
 import { useEffect, useRef, useState } from "react";
 import { buildSrcdoc } from "@/lib/market/srcdoc";
 import { createInitGate, marketNonce, readFrameMessage, searchFromState, type MarketState } from "@/lib/market/params";
+import { readMarketAnswer } from "@/lib/market/answers";
 import type { MarketTheme } from "@/lib/market/theme";
 import { Skeleton } from "@/components/ui/primitives";
 
@@ -25,17 +28,15 @@ async function loadPayload(): Promise<Payload> {
   } catch {
     throw new Error("Нет связи с сервером: данные рынка не загрузились");
   }
-  // Вход закончился: сервер отправил на страницу входа, а не ответ
-  if (res.redirected || !(res.headers.get("content-type") ?? "").includes("application/json")) throw new Error("Вход закончился: обновите страницу и войдите снова");
-  const body = (await res.json().catch(() => null)) as ({ ok: true } & Payload) | { ok: false; error: string } | null;
-  if (!body) throw new Error("Не получилось прочитать данные рынка. Обновите страницу");
-  if (!body.ok) throw new Error(body.error);
-  return { version: body.version, files: body.files, datasets: body.datasets };
+  // Статус разбирается: вход закончился, нет доступа (текст сервера) или общий сбой
+  const answer = await readMarketAnswer<Payload>(res, "data");
+  if (!answer.ok) throw new Error(answer.error);
+  return { version: answer.value.version, files: answer.value.files, datasets: answer.value.datasets };
 }
 
-/** Данные окну: наборы и фильтры из адреса. Код страницы окно уже получило в srcdoc */
+/** Данные окну: наборы, текущие вкладка, фильтры и тема. Код страницы окно уже получило в srcdoc */
 function postInit(win: Window | null | undefined, p: Payload | null, state: MarketState) {
-  if (win && p) win.postMessage({ type: "init", version: p.version, datasets: p.datasets, params: state.params }, "*");
+  if (win && p) win.postMessage({ type: "init", version: p.version, datasets: p.datasets, params: state.params, link: state.link, theme: themeNow() }, "*");
 }
 
 /** Окно пересоздаётся по отпечатку пакета (stamp): загрузили новый пакет, страница берёт свежие код и данные */
@@ -43,7 +44,7 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
   const frame = useRef<HTMLIFrameElement>(null);
   const state = useRef<MarketState>(initial);
   const payload = useRef<Payload | null>(null);
-  // Одноразовая метка текущего документа окна и учёт событий load: данные уходят один раз на каждый load
+  // Одноразовая метка окна и учёт событий load: данные уходят только в ответ на ready с меткой, раз на цикл load
   const nonce = useRef("");
   const gate = useRef(createInitGate());
   const [doc, setDoc] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
       const msg = readFrameMessage(event.data, nonce.current);
       if (!msg) return;
       if (msg.type === "ready") {
-        if (gate.current.ready()) postInit(win, payload.current, state.current);
+        if (gate.current.ready(msg.doc)) postInit(win, payload.current, state.current);
         return;
       }
       if (msg.type === "height") {
@@ -119,9 +120,8 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
       title="Рынок КАСКО и ОСАГО"
       sandbox="allow-scripts"
       srcDoc={doc}
-      onLoad={() => {
-        if (gate.current.load()) postInit(frame.current?.contentWindow, payload.current, state.current);
-      }}
+      // Новый цикл load: данные не отправляются, пока документ окна не пришлёт ready с меткой
+      onLoad={() => gate.current.load()}
       style={{ height }}
       className="block w-full border-0"
       data-testid="market-frame"

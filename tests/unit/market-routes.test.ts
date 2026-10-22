@@ -12,10 +12,13 @@ const state = vi.hoisted(() => ({
   seesMarket: true,
   uploads: [] as { bytes: number; datasets: number }[],
   body: null as null | { stamp: string; version: number; body: string },
+  exports: [] as { market?: boolean }[],
 }));
 
 vi.mock("@/lib/auth", () => ({
   readSession: async () => state.session,
+  requestIp: async () => "127.0.0.1",
+  requireManagement: async () => ({ person: { id: "p1", fullName: "Мурадян Арам", role: "OWNER" }, via: "PASSWORD", management: { role: "OWNER" } }),
   requireContext: async () => {
     if (!state.session) redirect("/login");
     return { person: { id: "p1", role: "OWNER" }, via: "PASSWORD" };
@@ -38,7 +41,16 @@ vi.mock("@/lib/market/service", () => ({
   marketDataBody: async () => state.body,
 }));
 
+vi.mock("@/lib/admin/export", () => ({
+  buildExport: async (options: { market?: boolean } = {}) => {
+    state.exports.push(options);
+    return { buffer: Buffer.from("xlsx"), summary: { tasks: 0, entries: 0, audit: 0 } };
+  },
+}));
+vi.mock("@/lib/audit", () => ({ writeAudit: async () => undefined }));
+
 const { POST } = await import("@/app/api/market/upload/route");
+const { GET: exportExcel } = await import("@/app/(app)/settings/export/route");
 const { GET } = await import("@/app/api/market/data/route");
 
 const FIXTURE = readFileSync("tests/fixtures/market/bundle.json");
@@ -73,6 +85,7 @@ beforeEach(() => {
   state.seesMarket = true;
   state.uploads = [];
   state.body = null;
+  state.exports = [];
 });
 
 describe("загрузка пакета рынка", () => {
@@ -157,5 +170,15 @@ describe("данные рынка для окна", () => {
     const empty = await GET();
     expect(empty.status).toBe(404);
     expect(empty.headers.get("cache-control")).toBe("no-store");
+  });
+});
+
+describe("выгрузка в Excel", () => {
+  it("события рынка в выгрузке только тому, кому открыт раздел", async () => {
+    state.seesMarket = false;
+    expect((await exportExcel()).status).toBe(200);
+    state.seesMarket = true;
+    await exportExcel();
+    expect(state.exports).toEqual([{ market: false }, { market: true }]);
   });
 });

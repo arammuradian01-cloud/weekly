@@ -112,7 +112,11 @@ describe("адрес страницы и сообщения окна", () => {
   it("сообщения окна по схеме и с меткой окна, остальное отбрасывается", () => {
     const n = "a1b2";
     const read = (m: Record<string, unknown>) => readFrameMessage({ ...m, nonce: n }, n);
-    expect(read({ type: "ready" })).toEqual({ type: "ready" });
+    expect(read({ type: "ready", doc: "d0c1d2e3f4" })).toEqual({ type: "ready", doc: "d0c1d2e3f4" });
+    // ready без номера документа или с непонятным номером не читается
+    expect(read({ type: "ready" })).toBeNull();
+    expect(read({ type: "ready", doc: "x" })).toBeNull();
+    expect(read({ type: "ready", doc: "<script>alert(1)" })).toBeNull();
     expect(read({ type: "height", height: 812.4 })).toEqual({ type: "height", height: 812 });
     expect(read({ type: "height", height: 1e9 })).toEqual({ type: "height", height: 20000 });
     expect(read({ type: "height", height: "800" })).toBeNull();
@@ -124,10 +128,10 @@ describe("адрес страницы и сообщения окна", () => {
     expect(readFrameMessage("ready", n)).toBeNull();
     expect(readFrameMessage(null, n)).toBeNull();
     // Без метки, с чужой меткой или когда метки у родителя ещё нет: не читается
-    expect(readFrameMessage({ type: "ready" }, n)).toBeNull();
-    expect(readFrameMessage({ type: "ready", nonce: "other" }, n)).toBeNull();
-    expect(readFrameMessage({ type: "ready", nonce: 5 }, n)).toBeNull();
-    expect(readFrameMessage({ type: "ready", nonce: "" }, "")).toBeNull();
+    expect(readFrameMessage({ type: "ready", doc: "d0c1d2e3f4" }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", doc: "d0c1d2e3f4", nonce: "other" }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", doc: "d0c1d2e3f4", nonce: 5 }, n)).toBeNull();
+    expect(readFrameMessage({ type: "ready", doc: "d0c1d2e3f4", nonce: "" }, "")).toBeNull();
   });
 
   it("метка окна: 32 шестнадцатеричных знака, каждый раз новая", () => {
@@ -136,18 +140,33 @@ describe("адрес страницы и сообщения окна", () => {
     expect(marketNonce()).not.toBe(a);
   });
 
-  it("данные окну один раз на каждый load, повторные ready их не дублируют", () => {
+  it("данные окну только в ответ на ready с меткой: load без ready данных не даёт", () => {
     const gate = createInitGate();
-    // ready до первого load: документ ещё разбирается, данные уйдут на load
-    expect(gate.ready()).toBe(false);
-    expect(gate.load()).toBe(true);
-    expect(gate.ready()).toBe(false);
-    expect(gate.ready()).toBe(false);
-    // Документ окна загрузился заново: данные снова один раз
-    expect(gate.ready()).toBe(false);
-    expect(gate.load()).toBe(true);
-    expect(gate.ready()).toBe(false);
-    expect(gate.load()).toBe(true);
+    // Окно ушло по ссылке на чужую страницу: её load приходит, ready с меткой нет, данных нет
+    expect(gate.load()).toBe(false);
+    expect(gate.load()).toBe(false);
+    expect(gate.ready("")).toBe(false);
+    expect(gate.load()).toBe(false);
+  });
+
+  it("раз на цикл load и каждому документу окна один раз, повторные ready 5 МБ не дублируют", () => {
+    const gate = createInitGate();
+    // Первый документ просит данные, пока разбирается (до load): получает сразу
+    expect(gate.ready("docA0001")).toBe(true);
+    expect(gate.ready("docA0001")).toBe(false);
+    expect(gate.load()).toBe(false);
+    // Он же ещё раз, пока разбирает присланное: не дублируется
+    expect(gate.ready("docA0001")).toBe(false);
+    // Документ окна загрузился заново: новый документ получает данные один раз
+    expect(gate.ready("docB0002")).toBe(true);
+    expect(gate.ready("docB0002")).toBe(false);
+    expect(gate.load()).toBe(false);
+    expect(gate.ready("docB0002")).toBe(false);
+    // В одном цикле load второй раз данные не уходят, после следующего load уходят
+    expect(gate.ready("docC0003")).toBe(true);
+    expect(gate.ready("docD0004")).toBe(false);
+    expect(gate.load()).toBe(false);
+    expect(gate.ready("docD0004")).toBe(true);
   });
 });
 
@@ -204,8 +223,9 @@ describe("страница окна", () => {
 });
 
 /** Поддельное окно для среды window.dash: сообщения родителю, таймеры по команде, события */
-function fakeWindow(boot: Record<string, unknown>) {
+function fakeWindow(boot: Record<string, unknown>, extra: Record<string, unknown> = {}) {
   const listeners: Record<string, ((e: unknown) => void)[]> = {};
+  const docListeners: Record<string, ((e: unknown) => void)[]> = {};
   const posted: Record<string, unknown>[] = [];
   const timers: (() => void)[] = [];
   const attrs: Record<string, string> = {};
@@ -216,13 +236,19 @@ function fakeWindow(boot: Record<string, unknown>) {
     parent,
     innerWidth: 1000,
     scrollY: 0,
-    document: { documentElement: { setAttribute: (k: string, v: string) => (attrs[k] = v) }, getElementById: (id: string) => (id === "dash-root" ? root : null), body: root },
+    document: {
+      documentElement: { setAttribute: (k: string, v: string) => (attrs[k] = v) },
+      getElementById: (id: string) => (id === "dash-root" ? root : null),
+      body: root,
+      addEventListener: (type: string, cb: (e: unknown) => void) => (docListeners[type] ??= []).push(cb),
+    },
     addEventListener: (type: string, cb: (e: unknown) => void) => (listeners[type] ??= []).push(cb),
     setTimeout: (cb: () => void) => timers.push(cb),
     clearTimeout: () => undefined,
     history: { state: null, replaceState: (_s: unknown, _t: string, url: string) => ((win.location as { href: string }).href = url) },
     location: { href: "about:srcdoc" },
     console: { error: () => undefined },
+    ...extra,
   };
   vm.runInNewContext(MARKET_RUNTIME_JS, { window: win });
   const flush = () => {
@@ -231,7 +257,7 @@ function fakeWindow(boot: Record<string, unknown>) {
   const fromParent = (data: unknown) => (listeners.message ?? []).forEach((cb) => cb({ source: parent, data }));
   type Res = { status: string; data: Record<string, unknown>[]; error?: string };
   const dash = win.dash as { calc: (n: string, s: unknown) => void; data: (n: string) => Res; onData: (cb: () => void) => () => void; params: () => Record<string, unknown>; setParams: (p: unknown) => void; setLink: (t: unknown) => void; colors: string[] };
-  return { win, dash, posted, flush, fromParent, listeners, attrs };
+  return { win, dash, posted, flush, fromParent, listeners, docListeners, attrs };
 }
 
 describe("среда window.dash", () => {
@@ -244,7 +270,7 @@ describe("среда window.dash", () => {
     const w = fakeWindow({ link: "osago", params: { metric: "prem", bad: { x: 1 } }, theme: "light", palettes: MARKET_PALETTES, nonce: "n1" });
     // Вкладка из адреса стоит в location.hash до кода дашборда, окно просит данные с меткой окна
     expect((w.win.location as { href: string }).href).toBe("about:srcdoc#osago");
-    expect(w.posted[0]).toEqual({ type: "ready", nonce: "n1" });
+    expect(w.posted[0]).toEqual({ type: "ready", nonce: "n1", doc: expect.stringMatching(/^[a-z0-9]{8,64}$/) });
     // Метка остаётся только в среде: в загрузочных данных её больше нет
     expect((w.win.__MARKET_BOOT__ as Record<string, unknown>).nonce).toBeUndefined();
     let calls = 0;
@@ -269,8 +295,11 @@ describe("среда window.dash", () => {
     expect(w.dash.data("total").data).toEqual([{ cnt: 1 }]);
     expect(calls).toBe(2);
     // Высота содержимого ушла родителю, каждое сообщение с меткой окна
-    expect(w.posted).toContainEqual({ type: "height", height: 481, nonce: "n1" });
-    expect(w.posted.every((m) => m.nonce === "n1")).toBe(true);
+    expect(w.posted).toContainEqual({ type: "height", height: 481, nonce: "n1", doc: w.posted[0]!.doc });
+    expect(w.posted.every((m) => m.nonce === "n1" && m.doc === w.posted[0]!.doc)).toBe(true);
+    // Каждый документ окна со своим номером; в браузере номер из crypto.getRandomValues
+    expect(fakeWindow({ nonce: "n1" }).posted[0]!.doc).not.toBe(w.posted[0]!.doc);
+    expect(fakeWindow({ nonce: "n1" }, { crypto: globalThis.crypto }).posted[0]!.doc).toMatch(/^[0-9a-f]{24}$/);
   });
 
   it("ошибка в расчёте и ответ не списком дают error, остальное работает", () => {
@@ -299,11 +328,11 @@ describe("среда window.dash", () => {
     w.dash.setParams({ geo: "top4" });
     w.flush();
     expect(w.dash.params()).toEqual({ gm: "cnt", geo: "top4" });
-    expect(w.posted.filter((m) => m.type === "params")).toEqual([{ type: "params", params: { gm: "cnt", geo: "top4" }, nonce: "n2" }]);
+    expect(w.posted.filter((m) => m.type === "params")).toMatchObject([{ type: "params", params: { gm: "cnt", geo: "top4" }, nonce: "n2" }]);
     expect(draws).toBe(2);
     w.dash.setLink("o-insurers");
     w.dash.setLink("javascript:alert(1)");
-    expect(w.posted.filter((m) => m.type === "link")).toEqual([{ type: "link", link: "o-insurers", nonce: "n2" }]);
+    expect(w.posted.filter((m) => m.type === "link")).toMatchObject([{ type: "link", link: "o-insurers", nonce: "n2" }]);
     expect((w.win.location as { href: string }).href).toBe("about:srcdoc#o-insurers");
   });
 
@@ -317,6 +346,58 @@ describe("среда window.dash", () => {
     expect(w.dash.colors).toBe(colors);
     expect(colors).toEqual([...MARKET_PALETTES.dark]);
     expect(w.attrs["data-theme"]).toBe("dark");
+  });
+
+  it("после перезагрузки документа init возвращает текущие тему, вкладку и фильтры, а не вшитые в srcdoc", () => {
+    // srcdoc собран со светлой темой, вкладкой kasko и фильтром cnt; человек с тех пор переключил всё
+    const w = fakeWindow({ theme: "light", link: "kasko", params: { metric: "cnt" }, palettes: MARKET_PALETTES });
+    expect((w.win.location as { href: string }).href).toBe("about:srcdoc#kasko");
+    w.fromParent({ type: "init", version: 1, datasets: { k_demo: rows }, params: { metric: "prem" }, link: "osago", theme: "dark" });
+    expect(w.attrs["data-theme"]).toBe("dark");
+    expect(w.dash.colors).toEqual([...MARKET_PALETTES.dark]);
+    expect(w.dash.params()).toEqual({ metric: "prem" });
+    expect((w.win.location as { href: string }).href).toBe("about:srcdoc#osago");
+    // Непонятные вкладка и тема не применяются
+    const v = fakeWindow({ theme: "light", link: "kasko", palettes: MARKET_PALETTES });
+    v.fromParent({ type: "init", version: 1, datasets: { k_demo: rows }, link: "javascript:alert(1)", theme: "neon" });
+    expect(v.attrs["data-theme"]).toBe("light");
+    expect((v.win.location as { href: string }).href).toBe("about:srcdoc#kasko");
+  });
+
+  it("после своего load документ ещё раз просит данные, если их ещё нет", () => {
+    const w = fakeWindow({ nonce: "n3" });
+    const before = w.posted.filter((m) => m.type === "ready").length;
+    (w.listeners.load ?? []).forEach((cb) => cb({}));
+    expect(w.posted.filter((m) => m.type === "ready")).toHaveLength(before + 1);
+    w.fromParent({ type: "init", version: 1, datasets: { k_demo: rows } });
+    (w.listeners.load ?? []).forEach((cb) => cb({}));
+    expect(w.posted.filter((m) => m.type === "ready")).toHaveLength(before + 1);
+  });
+
+  it("окно никуда не уходит: щелчок по ссылке не на якорь гасится, window.open ничего не открывает", () => {
+    const w = fakeWindow({});
+    const click = (href: string | null, attr = "href") => {
+      let prevented = false;
+      const a = { getAttribute: (name: string) => (name === attr ? href : null) };
+      const event = { target: { closest: (sel: string) => (sel === "a, area" ? a : null) }, preventDefault: () => (prevented = true) };
+      for (const cb of w.docListeners.click ?? []) cb(event);
+      return prevented;
+    };
+    expect(click("https://evil.example/steal")).toBe(true);
+    expect(click("//evil.example")).toBe(true);
+    expect(click("javascript:alert(1)")).toBe(true);
+    expect(click("other.html")).toBe(true);
+    expect(click("https://evil.example", "xlink:href")).toBe(true);
+    // Якоря внутри страницы и ссылки без адреса работают как обычно
+    expect(click("#osago")).toBe(false);
+    expect(click(null)).toBe(false);
+    // Щелчок не по ссылке не трогается
+    let prevented = false;
+    for (const cb of w.docListeners.click ?? []) cb({ target: { closest: () => null }, preventDefault: () => (prevented = true) });
+    expect(prevented).toBe(false);
+    // Средняя кнопка тоже
+    expect(w.docListeners.auxclick).toHaveLength(1);
+    expect((w.win.open as () => unknown)()).toBeNull();
   });
 });
 
@@ -446,6 +527,26 @@ describe("скрипт сборки пакета", () => {
       expect(r2.status).toBe(1);
       expect(r2.stderr).toContain("внутри репозитория");
       expect(existsSync(join(process.cwd(), "tests", "market-bundle-test.json"))).toBe(false);
+
+      // Папка с именем, похожим на выход наверх («..данные»), внутри репозитория: тоже внутри
+      const dotted = join(process.cwd(), "..market-bundle-test");
+      mkdirSync(dotted, { recursive: true });
+      try {
+        const r3 = run([src, "--out", join(dotted, "bundle.json"), "--d3", join(src, "d3.min.js")]);
+        expect(r3.status).toBe(1);
+        expect(r3.stderr).toContain("внутри репозитория");
+        expect(existsSync(join(dotted, "bundle.json"))).toBe(false);
+      } finally {
+        rmSync(dotted, { recursive: true, force: true });
+      }
+      // --out уже существует и это ссылка (вне репозитория, ведёт в репозиторий): запись пошла бы по ссылке, отказ
+      const target = join(process.cwd(), "tests", "market-bundle-link-target.json");
+      const outLink = join(src, "out-link.json");
+      symlinkSync(target, outLink);
+      const r4 = run([src, "--out", outLink, "--d3", join(src, "d3.min.js")]);
+      expect(r4.status).toBe(1);
+      expect(r4.stderr).toContain("это ссылка");
+      expect(existsSync(target)).toBe(false);
 
       const out = join(src, "bundle.json");
       const ok = run([src, "--out", out, "--d3", join(src, "d3.min.js")]);
