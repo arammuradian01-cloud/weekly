@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_COOKIE, SESSION_TTL_SEC, refreshSessionToken, verifySession } from "@/lib/session";
 import { sessionSecretFromEnv } from "@/lib/database-url";
+import { APP_URL_REDIRECT, appUrlRedirect } from "@/lib/app-url";
 
 // Без входа открыты экран входа, первичная настройка паролей и проверки здоровья для хостинга. Календарь сроков
 // (этап 29) забирают сервисы календарей без cookie: доступ даёт секретная часть адреса
@@ -8,6 +9,16 @@ const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live", "/api/cale
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // Свой адрес приложения (этап 69): с REDIRECT_TO_APP_URL=1 страницы, открытые по другому адресу (например по
+  // техническому адресу хостинга), уходят переходом 308 на тот же путь основного адреса из APP_URL, раньше проверки
+  // входа и открытых путей. /api, загрузки и серверные действия не переводятся. Ответ не кэшируется: выключенный
+  // переход перестаёт действовать сразу. Правила в src/lib/app-url.ts
+  const moved = appUrlRedirect({ method: request.method, pathname, search: request.nextUrl.search, headers: request.headers });
+  if (moved) {
+    const response = NextResponse.redirect(moved, APP_URL_REDIRECT.status);
+    for (const [key, value] of Object.entries(APP_URL_REDIRECT.headers)) response.headers.set(key, value);
+    return response;
+  }
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next();
   }

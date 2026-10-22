@@ -6,7 +6,7 @@ import { TOP_TEAM } from "@/domain/teams";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
 import type { Person, PersonWeekly, Task } from "@/domain/types";
 import { AbsentBadge, substituteText } from "@/components/weekly/absence";
-import { personRoleLabel } from "@/lib/roles";
+import { roleLabelOf, type OwnerLabels } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { Figures } from "@/components/ui/data";
@@ -22,8 +22,19 @@ type Row = {
   stale: number;
 };
 
+const NO_OWNERS: OwnerLabels = { primary: null, titles: {} };
+
 /** Сводка по каждому, как сводка по лидерам над таблицей задач сейчас (раздел 4 ТЗ) */
-export function TeamSummary({ reports, weekNumber, primaryOwner = null }: { reports: PersonWeekly[]; weekNumber: number; /** Главный владелец: остальные владельцы подписаны «Совладелец» (этап 52) */ primaryOwner?: string | null }) {
+export function TeamSummary({
+  reports,
+  weekNumber,
+  owners = NO_OWNERS,
+}: {
+  reports: PersonWeekly[];
+  weekNumber: number;
+  /** Главный владелец и подписи владельцев: остальные владельцы подписаны «Совладелец» (этап 52) или своей подписью (этап 69) */
+  owners?: OwnerLabels;
+}) {
   const { data, me, teamPeople } = usePrototype();
   // Выключенные с открытыми задачами остаются в сводке, пока их задачи не передали другим
   const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !teamPeople.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
@@ -95,7 +106,7 @@ export function TeamSummary({ reports, weekNumber, primaryOwner = null }: { repo
                     <PersonName slug={r.person.slug} name={r.person.fullName} className="font-semibold text-ink" fallbackHref={`/tasks/review?person=${r.person.slug}`} />
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <span className="block text-caption text-muted">
-                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${personRoleLabel(r.person.role, r.person.slug === primaryOwner)}, ${r.person.zone}`}
+                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${roleLabelOf(r.person, owners)}, ${r.person.zone}`}
                     </span>
                   </th>
                   <td className="is-num" data-label="Всего">{num(r.total)}</td>

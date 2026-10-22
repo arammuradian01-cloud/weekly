@@ -6,6 +6,8 @@
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { TaskRuleError } from "@/lib/tasks/service";
+import { OWNER_TITLES_KEY, ownerTitlesFrom } from "@/lib/owner-title";
+import type { OwnerLabels } from "@/lib/roles";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -27,6 +29,19 @@ export async function primaryOwnerSlug(db: Db = prisma): Promise<string | null> 
 export async function primaryOwner(db: Db = prisma) {
   const slug = await primaryOwnerSlug(db);
   return slug ? db.person.findUnique({ where: { slug } }) : null;
+}
+
+/** Подписи ролей владельцев (этап 69): { слаг: подпись }. Подпись задаёт главный владелец в «Настройках» */
+export async function ownerTitles(db: Db = prisma): Promise<Record<string, string>> {
+  const row = await db.setting.findUnique({ where: { key: OWNER_TITLES_KEY } });
+  return ownerTitlesFrom(row?.value);
+}
+
+/** Главный владелец и подписи владельцев: всё, что нужно экранам для подписи роли (roleLabelOf) */
+export async function ownerLabels(db: Db = prisma): Promise<OwnerLabels> {
+  // По очереди: в транзакции запросы идут по одному соединению
+  const primary = await primaryOwnerSlug(db);
+  return { primary, titles: await ownerTitles(db) };
 }
 
 /** Действие над главным владельцем делает только он сам. what: «понижает роль», «сбрасывает пароль» */

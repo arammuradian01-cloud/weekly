@@ -202,6 +202,10 @@ test("лидер перетаскивает задачи к целям: прив
   await handle.focus();
   await page.keyboard.press("Space");
   await expect(page.getByText(new RegExp(`Взяли: задача ${a}`))).toBeAttached();
+  // dnd-kit подключает стрелки к взятой задаче через setTimeout после пробела. Человек так быстро не жмёт, а тест
+  // жмёт: стрелка, пришедшая раньше этого таймера, терялась (CI 22.10). Таймер страницы с нулевой задержкой
+  // срабатывает после таймера dnd-kit, поставленного раньше, поэтому после него стрелки уже слушаются
+  await page.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
   await page.keyboard.press("ArrowDown");
   await expect(page.getByText(`Над: цель «${name(D1)}»`)).toBeAttached();
   await page.keyboard.press("Space");

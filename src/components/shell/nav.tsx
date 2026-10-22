@@ -74,10 +74,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Бизнес",
     items: [
       { href: "/forecast", label: "Прогноз", icon: TrendingUp },
+      // Рынок КАСКО и ОСАГО (этап 62): только тем, кому владелец открыл раздел, и только при личном входе.
+      // Сразу под прогнозом (решение Арама 22.10)
+      { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },
       // Новости по продуктам (этап 60)
       { href: "/news", label: "Новости", icon: Rss },
-      // Рынок КАСКО и ОСАГО (этап 62): только тем, кому владелец открыл раздел, и только при личном входе
-      { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },
     ],
   },
 ];

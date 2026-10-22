@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sameSiteOrigin } from "@/lib/app-url";
 import { unstable_rethrow } from "next/navigation";
 import { writingActor } from "@/lib/action-runner";
 import { ViewAsReadOnlyError } from "@/lib/view-as";
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
   try {
     // Запрос только со страницы ресурса: чужой сайт не отправит форму от имени вошедшего человека
     const origin = request.headers.get("origin");
-    if (origin && !sameSite(origin, request.url)) return NextResponse.json({ ok: false, error: "Запрос с чужого сайта" }, { status: 403 });
+    if (origin && !sameSiteOrigin(origin, request)) return NextResponse.json({ ok: false, error: "Запрос с чужого сайта" }, { status: 403 });
     // В режиме «Смотреть как» загрузка отказывает до чтения файла (этап 63)
     const actor = await writingActor();
     if (!canLoadLeaderBoard(actor)) return NextResponse.json({ ok: false, error: LEADER_MANAGE_ONLY }, { status: 403 });
@@ -42,12 +43,3 @@ export async function POST(request: Request) {
 }
 
 const TOO_BIG = "Файл больше 9 МБ: удалите из копии борда лишние вкладки и скачайте снова";
-
-function sameSite(origin: string, url: string): boolean {
-  if (origin === process.env.APP_URL?.replace(/\/+$/, "")) return true;
-  try {
-    return new URL(origin).host === new URL(url).host;
-  } catch {
-    return false;
-  }
-}

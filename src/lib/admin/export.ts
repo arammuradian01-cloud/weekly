@@ -4,8 +4,8 @@
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { listTasks } from "@/lib/tasks/service";
-import { personRoleLabel } from "@/lib/roles";
-import { primaryOwnerSlug } from "@/lib/login/primary";
+import { roleLabelOf } from "@/lib/roles";
+import { ownerLabels } from "@/lib/login/primary";
 import { AUDIT_ACTION_LABELS } from "@/lib/audit";
 import { MARKET_EVENTS } from "@/lib/journal";
 import { DICT_TITLES } from "./labels";
@@ -70,7 +70,7 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
       orderBy: { number: "asc" },
     }),
   ]);
-  const primary = await primaryOwnerSlug();
+  const owners = await ownerLabels();
   const name = new Map(people.map((p) => [p.slug, p.fullName]));
   const nameById = new Map(people.map((p) => [p.id, p.fullName]));
   const who = (slug: string | null | undefined) => (slug ? (slug === "all" ? "Все лидеры" : (name.get(slug) ?? slug)) : "");
@@ -325,7 +325,7 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
       { header: "Направление", width: 18 },
       { header: "В команде", width: 10 },
     ],
-    people.map((p) => [p.fullName, p.shortName, personRoleLabel(p.role, p.slug === primary), p.zone, p.defaultDirection?.label ?? "", p.active ? "да" : "выключен"]),
+    people.map((p) => [p.fullName, p.shortName, roleLabelOf(p, owners), p.zone, p.defaultDirection?.label ?? "", p.active ? "да" : "выключен"]),
   );
 
   sheet(

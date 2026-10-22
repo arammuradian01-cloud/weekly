@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { colleaguesOf } from "@/lib/org/people";
 import { requireContext } from "@/lib/auth";
-import { personRoleLabel } from "@/lib/roles";
+import { roleLabelOf } from "@/lib/roles";
 import { loginOf } from "@/lib/login/password";
 import { allowedEmailDomains } from "@/lib/login/email";
 import { EmailBinding } from "@/components/profile/email-binding";
-import { primaryOwnerSlug } from "@/lib/admin/service";
+import { ownerLabels } from "@/lib/login/primary";
 import { listDevices } from "@/lib/login/service";
 import { LOGIN_METHOD_LABELS } from "@/lib/login/labels";
 import { PageHeader } from "@/components/page-header";
@@ -90,7 +90,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         <>
           <dl className="flex flex-col gap-3">
             <Row label="Имя">{ctx.person.fullName}</Row>
-            <Row label="Роль">{personRoleLabel(ctx.person.role, (await primaryOwnerSlug()) === ctx.person.slug)}</Row>
+            <Row label="Роль">{roleLabelOf(ctx.person, await ownerLabels())}</Row>
             <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
             <Row label="Логин">{login}</Row>
             <Row label="Почта">{ctx.person.email ?? (ctx.person.pendingEmail ? `${ctx.person.pendingEmail}, ждёт подтверждения` : "не указана")}</Row>
