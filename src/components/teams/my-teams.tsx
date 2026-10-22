@@ -71,7 +71,7 @@ export function MyTeams({ panel }: { panel: Panel }) {
         description="Название команды ниже открывает её панель"
         flush
       >
-        <ul className="m-0 grid list-none gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5" data-testid="mt-teams-table" aria-label="Команды: weekly и задачи">
+        <ul className="m-0 grid list-none gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-4 sm:p-5" data-testid="mt-team-cards" aria-label="Команды: weekly и задачи">
           {panel.teams.map((t) => (
             <TeamCard key={t.id} team={t} />
           ))}

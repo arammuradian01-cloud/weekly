@@ -86,20 +86,30 @@ function timeOf(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 }
 
+/**
+ * Слово целиком (этап 68): \b в JavaScript не видит границ кириллических слов, поэтому границы по буквам Юникода.
+ * Так «РСА» не находится внутри «РСАТ», а «Банк России» внутри «Банк Россия Холдинг» находится только целиком
+ */
+const word = (body: string) => new RegExp(`(?<!\\p{L})(?:${body})(?!\\p{L})`, "iu");
+const CBR = word("банк россии|цб рф");
+const RSA = word("рса");
+const VSS = word("всероссийский союз страховщиков|союз страховщиков");
+
 /** Значок источника: две первые буквы названия, «Банк России» как «ЦБ» */
 function monogram(source: string): string {
-  if (/банк росс/i.test(source)) return "ЦБ";
-  if (/^рса/i.test(source)) return "РСА";
-  if (/союз страховщиков/i.test(source)) return "ВСС";
+  if (CBR.test(source)) return "ЦБ";
+  if (RSA.test(source)) return "РСА";
+  if (VSS.test(source)) return "ВСС";
   return source.replace(/[^A-Za-zА-Яа-яЁё ]/g, "").trim().slice(0, 2).toUpperCase();
 }
 
-/** Официальные источники: регулятор и союзы. Их свежая новость становится главной */
-const OFFICIAL = /банк росс|рса|союз страховщиков|союз автостраховщиков/i;
+/** Официальные источники: регулятор и союзы страховщиков, словами целиком. Их свежая новость становится главной */
+const OFFICIAL = word("банк россии|цб рф|рса|союз страховщиков|союз автостраховщиков|всероссийский союз страховщиков");
 
 /**
- * Главная новость (этап 68): свежая новость официального источника за сегодня,
- * иначе первая в ленте. Только на первой странице без дайджеста
+ * Главная новость (этап 68): среди новостей за сегодня первая официальная (регулятор или союзы), иначе первая
+ * сегодняшняя; за сегодня новостей нет: главной нет. NewsList показывает её только с lead, страница ленты передаёт lead
+ * на первой странице
  */
 export function pickLead(items: NewsItemView[], now = new Date()): NewsItemView | null {
   if (!items.length) return null;

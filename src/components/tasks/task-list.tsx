@@ -265,7 +265,11 @@ function GoalCell({ goal, className }: { goal: NonNullable<Task["goal"]>; classN
     >
       <Target className="mt-0.5 h-3.5 w-3.5 shrink-0 text-info-ink" strokeWidth={1.75} aria-hidden="true" />
       <span className="min-w-0">
-        {goal.code ? <span className="mr-1 font-semibold tabular-nums">{goal.code}</span> : null}
+        {goal.code ? (
+          <>
+            <span className="font-semibold tabular-nums">{goal.code}</span>{" "}
+          </>
+        ) : null}
         <span className="line-clamp-2 group-hover:underline">{name}</span>
       </span>
     </Link>

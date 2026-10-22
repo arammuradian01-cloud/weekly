@@ -89,7 +89,8 @@ function Group({ id, title, count, tone, hint, testId, children }: { id: string;
   return (
     <section aria-labelledby={id} className="sv-section !mt-0 scroll-mt-24" data-testid={testId}>
       <div className="sv-section__head">
-        <h2 id={id} className={cn("sv-section__title inline-flex items-center gap-2", tone === "danger" && "text-danger-ink", tone === "warning" && "text-warning-ink")}>
+        {/* Якорь группы на заголовке (ссылки «Моей недели» /me#me-late): отступ под липкую шапку и плашку «Смотреть как» */}
+        <h2 id={id} className={cn("sv-section__title inline-flex scroll-mt-[calc(6rem+var(--view-as-h,0px))] items-center gap-2", tone === "danger" && "text-danger-ink", tone === "warning" && "text-warning-ink")}>
           <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", DOT[tone ?? "neutral"])} aria-hidden="true" />
           {title} <span className="sv-section__count">{count}</span>
         </h2>

@@ -196,9 +196,8 @@ export function WeeklyFeed({
 
   return (
     <div>
-      {/* Этап 68: под шапкой три колонки «Что решить», лидеры строками с раскрытием.
-          Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели. Этап 43: строкой, не больше трёх,
-          нули не показываются: «нужна помощь» и «риски» важнее «результатов» и «в отчёт CEO» */}
+      {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели строкой (этап 43). Этап 68: в шапке только
+          записи за неделю и «в отчёт CEO»; помощь, риски и результаты колонками «Что решить» над лидерами */}
       <PageHeader
         title="Weekly"
         description="Итоги недели команды по людям и по блокам"
@@ -375,7 +374,7 @@ export function WeeklyFeed({
               onType={(t) => setType(t)}
             />
           ) : null}
-          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} only={author || undefined} />
+          <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} only={author || undefined} filtered={filtersOn} />
         </div>
       ) : (
         <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} />
@@ -469,7 +468,8 @@ function CeoDigest({
             })}
           </ul>
           {c.list.length > DIGEST_LIMIT ? (
-            <button type="button" onClick={c.more} className="mt-auto min-h-11 border-t border-line px-4 py-2.5 text-left text-small font-semibold text-link hover:underline">
+            // Рамка фокуса внутрь кнопки: у карточки overflow hidden, наружная рамка обрезалась бы
+            <button type="button" onClick={c.more} className="mt-auto min-h-11 border-t border-line px-4 py-2.5 text-left text-small font-semibold text-link hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus">
               Ещё {c.list.length - DIGEST_LIMIT}: показать в ленте
             </button>
           ) : null}
@@ -487,6 +487,7 @@ function PeopleView({
   promoteFrom,
   closed,
   only,
+  filtered = false,
 }: {
   reports: PersonWeekly[];
   entries: WeeklyEntry[];
@@ -496,6 +497,8 @@ function PeopleView({
   closed: boolean;
   /** Отбор по автору: в ленте только его карточка, без пустых карточек остальных */
   only?: PersonSlug;
+  /** Включён любой отбор (тип, «Нужна помощь», направление, блок, автор): карточки не сворачиваются, иначе отобранное спрятано */
+  filtered?: boolean;
 }) {
   const { manage, teamPeople, me } = usePrototype();
   const run = useRunWeekly();
@@ -516,11 +519,11 @@ function PeopleView({
   const assignAuthor = (id: string, slug: PersonSlug) =>
     void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${personOf(slug).fullName}`);
   const common = entries.filter((e) => !e.author);
-  // Этап 68: лидеры строками, записи под раскрытием. Свёрнуто, когда лидеров больше двух и нет отбора по автору.
-  // Своя карточка раскрыта сразу: свои записи человек ищет первыми
-  // «Развернуть всех» раскрывает каждую карточку, а не включает общий режим: так любую карточку потом можно свернуть отдельно
+  // Этап 68: лидеры строками, записи под раскрытием. Свёрнуто, когда лидеров больше двух и никакой отбор не включён.
+  // Своя карточка раскрыта сразу: свои записи человек ищет первыми. «Развернуть всех» раскрывает каждую карточку, а не
+  // включает общий режим: так любую карточку потом можно свернуть отдельно
   const [opened, setOpened] = useState<Set<PersonSlug>>(() => new Set([me.slug]));
-  const collapsible = !only && authors.length > 2;
+  const collapsible = !only && !filtered && authors.length > 2;
   const isOpen = (slug: PersonSlug) => !collapsible || opened.has(slug);
   const allOpen = authors.every((p) => opened.has(p.slug));
   const toggle = (slug: PersonSlug) =>

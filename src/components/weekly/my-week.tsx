@@ -7,10 +7,9 @@ import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { CalendarClock, FileText, Hand, MessageSquare, PenLine, Presentation } from "lucide-react";
 import { IconCircle } from "@/components/ui/tile";
 import { hotTasks } from "@/components/inbox/me-tasks";
-import { plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
+import { diffDays, formatShort, plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
-import { diffDays, formatShort } from "@/domain/dates";
 import { isMine, isOverdue, overdueDays } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { buttonClass } from "@/components/ui/button";
@@ -96,9 +95,10 @@ export function MyWeek({
           <div className="flex min-w-0 items-center gap-5">
             {/* Этап 68: до сдачи срок крупно: главное на странице видно с первого взгляда */}
             {!submitted && !weekly.absent ? (
-              <div className={cn("hidden shrink-0 flex-col border-r border-line pr-5 sm:flex", late && "text-danger-ink")} data-testid="my-deadline">
-                <span className="text-caption font-semibold uppercase tracking-wide text-text-secondary">{late ? "Срок прошёл" : "До срока"}</span>
-                <span className="text-title font-semibold tabular-nums text-ink">{late ? "сдать сейчас" : timeLeft}</span>
+              // Срок прошёл: подпись и значение красные (цвет у каждой строки, вложенный цвет не перебивает), 4,5:1 в обеих темах
+              <div className="hidden shrink-0 flex-col border-r border-line pr-5 sm:flex" data-testid="my-deadline" data-late={late || undefined}>
+                <span className={cn("text-caption font-semibold uppercase tracking-wide", late ? "text-danger-ink" : "text-text-secondary")}>{late ? "Срок прошёл" : "До срока"}</span>
+                <span className={cn("text-title font-semibold tabular-nums", late ? "text-danger-ink" : "text-ink")}>{late ? "сдать сейчас" : timeLeft}</span>
               </div>
             ) : (
               <IconCircle icon={FileText} tone={submitted ? "success" : "accent"} size={48} className="hidden sm:inline-flex" />
@@ -190,7 +190,8 @@ export function MyWeek({
                     })}
                   </ul>
                   {urgent.length > 5 ? (
-                    <Link href="/me#me-late" className="mt-2 inline-block text-small font-semibold text-link hover:underline">
+                    // Ссылка ведёт на группу «Мне», где остались непоказанные задачи: просроченные идут первыми
+                    <Link href={hot.late.length > 5 ? "/me#me-late" : "/me#me-soon"} className="mt-2 inline-block text-small font-semibold text-link hover:underline" data-testid="my-urgent-more">
                       Ещё {urgent.length - 5} в «Мне»
                     </Link>
                   ) : null}
