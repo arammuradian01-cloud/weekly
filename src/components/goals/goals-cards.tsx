@@ -19,15 +19,20 @@ import { Meter, goalStatus } from "./goals-table";
 
 export type QuarterSlice = { key: string; label: string; count: number; color: string; active: boolean; onClick: () => void };
 
-/** Шкала квартала: одна полоса из статусов и подписи-кнопки под ней. Нулевые отрезки не рисуются */
-export function QuarterBar({ total, slices, onAll, allActive }: { total: number; slices: QuarterSlice[]; onAll: () => void; allActive: boolean }) {
+/**
+ * Шкала квартала: одна полоса из взаимоисключающих отборов (их считает goals-screen.tsx) и подписи-кнопки под ней.
+ * Ширина отрезка: доля целей от всех, серый отрезок в конце: цели в работе без отбора. Нулевые отрезки не рисуются
+ */
+export function QuarterBar({ total, slices, rest, onAll, allActive }: { total: number; slices: QuarterSlice[]; rest: number; onAll: () => void; allActive: boolean }) {
   const shown = slices.filter((s) => s.count > 0);
+  const width = (n: number) => `${total ? (n / total) * 100 : 0}%`;
   return (
     <section aria-label="Цели квартала по статусам" className="sv-card flex flex-col gap-3 px-5 py-4" data-testid="goals-quarter-bar">
       <div className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-field" aria-hidden="true">
         {shown.map((s) => (
-          <span key={s.key} className={cn("h-full", s.color)} style={{ flex: s.count }} />
+          <span key={s.key} className={cn("h-full shrink-0", s.color)} style={{ width: width(s.count) }} data-testid={`goals-bar-${s.key}`} />
         ))}
+        {rest > 0 ? <span className="h-full shrink-0 bg-border-strong" style={{ width: width(rest) }} title={`В работе: ${rest}`} data-testid="goals-bar-rest" /> : null}
       </div>
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={onAll} aria-pressed={allActive} className={cn("sv-pill", allActive && "is-active")}>
@@ -40,6 +45,11 @@ export function QuarterBar({ total, slices, onAll, allActive }: { total: number;
             <span className="sv-counter sv-counter--neutral">{s.count}</span>
           </button>
         ))}
+        {rest > 0 ? (
+          <span className="inline-flex items-center gap-2 px-2 text-small text-muted">
+            <span className="h-2 w-2 rounded-full bg-border-strong" aria-hidden="true" />в работе {rest}
+          </span>
+        ) : null}
       </div>
     </section>
   );
@@ -158,8 +168,9 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
             <p className="m-0 text-small text-muted">Задач нет: привяжите их в карточке задачи, поле «Цель».</p>
           )}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
-            {/* Факт вписывается в строке таблицы (редактор с прогрессом и историей): кнопка открывает таблицу на этой цели */}
-            {g.numeric || g.target ? (
+            {/* Факт вписывается в строке таблицы (редактор с прогрессом и историей): кнопка открывает таблицу с раскрытой
+                строкой этой цели. Только тем, кто может вписать факт или править цель */}
+            {(g.canFact || g.canEdit) && (g.numeric || g.target) ? (
               <button type="button" className="inline-flex min-h-8 items-center text-small font-medium text-link hover:underline" onClick={() => onFact(g)}>
                 Факт
               </button>
