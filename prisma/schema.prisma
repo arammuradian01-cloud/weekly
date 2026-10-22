@@ -196,6 +196,7 @@ model Person {
   ownedGoals             Goal[]                  @relation("GoalOwner")
   createdGoals           Goal[]                  @relation("GoalCreator")
   entryComments          EntryComment[]
+  reportComments         LeaderReportComment[]
   entryWatches           EntryWatch[]
   reactions              Reaction[]              @relation("ReactionPerson")
   discussed              Reaction[]              @relation("ReactionDiscussedBy")
@@ -825,6 +826,8 @@ model Week {
   forecasts  Forecast[]
   /// Weekly команд по блокам (этап 66)
   teamReports TeamWeeklyReport[]
+  /// Комментарии к отправленным отчётам руководителю (этап 73)
+  reportComments LeaderReportComment[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -1064,6 +1067,10 @@ enum InboxKind {
   THANKS
   /// Встреча (этап 23): протокол готов, вы владелец решения
   MEETING
+  /// Комментарий к отправленному отчёту руководителю или ответ на него (этап 73)
+  REPORT_COMMENT
+  /// Руководитель напомнил сдать weekly за неделю (этап 73)
+  WEEKLY_REMIND
   /// Встреча один на один (этап 28): новая тема от второго участника, встреча назначена
   ONE_ON_ONE
   /// Крупная инициатива (этап 30): вас назначили ответственным, сменилось состояние
@@ -1219,6 +1226,8 @@ model Team {
   /// Weekly по смысловым блокам (этап 66): шаблон блоков команды и собранные отчёты команды по неделям
   weeklyTemplate TeamWeeklyTemplate?
   weeklyReports  TeamWeeklyReport[]
+  /// Комментарии к отправленным отчётам руководителю (этап 73)
+  reportComments LeaderReportComment[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -1258,6 +1267,32 @@ model TeamWeeklyReport {
   @@unique([teamId, weekId])
   @@index([weekId])
   @@map("team_weekly_reports")
+}
+
+/// Комментарий к отправленному отчёту руководителю (этап 73): получатель пишет к отчёту целиком (blockKey пусто) или к строке
+/// блока (blockKey, lineText: цитата строки в момент комментария, lineIndex: её место в отправленной версии). Ответ
+/// (parentId) пишут автор отчёта и получатель. Видят только автор (руководитель команды и тот, кто отправил),
+/// получатель и владельцы; участники команды нет. Отчёт: команда и неделя, у команды страхования и инвестиций это бывший
+/// отчёт CEO (ceo_reports), у остальных отчёт команды (team_weekly_reports)
+model LeaderReportComment {
+  id        String                @id @default(cuid())
+  teamId    String
+  team      Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  weekId    String
+  week      Week                  @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    Person                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    LeaderReportComment?  @relation("ReportCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   LeaderReportComment[] @relation("ReportCommentReplies")
+  blockKey  String?
+  lineIndex Int?
+  lineText  String?
+  text      String
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@index([teamId, weekId])
+  @@map("leader_report_comments")
 }
 
 /// Руководитель команды просит человека из другой ветки (этап 53). Человек входит в команду, когда согласится его

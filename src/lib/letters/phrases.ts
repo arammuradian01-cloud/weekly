@@ -50,6 +50,10 @@ export function eventPhrase(e: EventLine): string {
       return `${who}прогноз месяца: проверьте после загрузки LBE`;
     case "TEAM":
       return `${who}состав команды`;
+    case "REPORT_COMMENT":
+      return `${who}комментарий к отчёту руководителю`;
+    case "WEEKLY_REMIND":
+      return `${who}напоминание сдать weekly`;
     case "NEWS":
       return "дайджест новостей по вашим продуктам";
     case "APPROVAL":
@@ -72,12 +76,30 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   // Состав команды (этап 53): карточка команды на экране «Weekly-команды» (этап 64), запрос в команду: список запросов там же
   if (e.subject?.startsWith("team:")) return `/people/teams?team=${encodeURIComponent(e.subject.split(":")[1] ?? "")}`;
   if (e.subject?.startsWith("join:")) return "/people/teams#join-requests";
+  // Отчёт руководителю (этап 73): комментарий к отправленному отчёту, отправленный отчёт, напоминание сдать weekly
+  if (e.subject?.startsWith("report-comment:") || e.subject?.startsWith("ceo-report:") || e.subject?.startsWith("team-report:")) return reportHref(e.subject);
+  if (e.subject?.startsWith("weekly-remind:")) return `/weekly/submit?week=${encodeURIComponent(e.subject.split(":")[1] ?? "")}`;
   // Дайджест новостей (этап 60): страница дайджеста
   if (e.subject?.startsWith("news:")) return `/news?digest=${encodeURIComponent(e.subject.slice(5))}`;
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;
   return "/me";
+}
+
+/**
+ * Адрес отчёта руководителю по предмету события (этап 73). report-comment:<sent|received>:<команда>:<неделя> ведёт в
+ * «Отправленные» автору и в «Полученные» получателю; ceo-report:<неделя> и team-report:<команда>:<неделя> это
+ * отправленный отчёт, его открывает получатель
+ */
+export function reportHref(subject: string): string {
+  const parts = subject.split(":");
+  if (parts[0] === "report-comment") {
+    const tab = parts[1] === "sent" ? "sent" : "received";
+    return `/leader-report?tab=${tab}&team=${encodeURIComponent(parts[2] ?? "")}&week=${encodeURIComponent(parts[3] ?? "")}`;
+  }
+  if (parts[0] === "ceo-report") return `/leader-report?tab=received&team=top&week=${encodeURIComponent(parts[1] ?? "")}`;
+  return `/leader-report?tab=received&team=${encodeURIComponent(parts[1] ?? "")}&week=${encodeURIComponent(parts[2] ?? "")}`;
 }
 
 /** Склонение по числу: 1 событие, 2 события, 5 событий */

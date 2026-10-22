@@ -18,6 +18,7 @@ import { assembleCeoBlocks, blocksMeta, type BlocksMeta } from "@/lib/weekly-blo
 import { blocksForLevel, blocksToLegacy, cleanBlocks, hasBlocksText, lineText, orderedLines, sentBlocks, withLiveBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { cleanMeetings, type CeoMeeting } from "./text";
 import { ceoContext, type CeoContext } from "./assembled";
+import { TOP_TEAM } from "@/lib/org/scope";
 
 type Tx = Prisma.TransactionClient;
 
@@ -26,11 +27,31 @@ const fail = (message: string): never => {
 };
 
 export const personalLogin = (actor: Pick<Actor, "via">) => actor.via !== "TEAM";
-/** Отправить CEO: владелец или администратор в режиме управления при личном входе */
+/** Отправить из разбора встречи (этап 61): владелец или администратор в режиме управления при личном входе */
 export const canSendCeo = (actor: Pick<Actor, "via" | "management">) => personalLogin(actor) && (actor.management === "OWNER" || actor.management === "ADMIN");
 
-function requireEdit(actor: Actor) {
-  if (!actor.management || actor.role === "OBSERVER") fail("Отчёт CEO правят: только владелец и администраторы в режиме управления");
+/**
+ * Кто ведёт отчёт руководителю команды страхования и инвестиций, бывший отчёт CEO (этап 73): владелец и администраторы
+ * в режиме управления, как раньше, и руководитель этой команды при личном входе: каждый руководитель делает weekly для
+ * своего руководителя
+ */
+export async function canEditTop(actor: Actor, db: Tx | typeof prisma = prisma): Promise<boolean> {
+  if (actor.role === "OBSERVER") return false;
+  if (actor.management === "OWNER" || actor.management === "ADMIN") return true;
+  if (!personalLogin(actor)) return false;
+  const top = await db.team.findUnique({ where: { id: TOP_TEAM }, select: { leaderId: true, active: true } });
+  return !!top?.active && top.leaderId === actor.personId;
+}
+
+/** Отправить отчёт руководителю команды страхования и инвестиций: тот, кто его ведёт, при личном входе */
+export async function canSendTop(actor: Actor): Promise<boolean> {
+  return personalLogin(actor) && (await canEditTop(actor));
+}
+
+export const TOP_EDIT_TEXT = "Отчёт руководителю этой команды ведут её руководитель при личном входе, владелец и администраторы в режиме управления";
+
+async function requireEdit(actor: Actor, db: Tx | typeof prisma = prisma) {
+  if (!(await canEditTop(actor, db))) fail(TOP_EDIT_TEXT);
 }
 
 // ---------- Кто CEO ----------
@@ -65,7 +86,7 @@ const meetingsText = (list: CeoMeeting[]) => list.map((m) => `${m.title || "Вс
  * ошибка, а не тихая перезапись
  */
 export async function saveCeoBlocksIn(tx: Tx, actor: Actor, key: WeekKey, input: unknown, meetings: unknown, expected: string | null | undefined, meta?: BlocksMeta): Promise<CeoReportView> {
-  requireEdit(actor);
+  await requireEdit(actor, tx);
   const m = meta ?? (await blocksMeta());
   const blocks = cleanBlocks(input, new Set(m.order));
   if (!blocks.length) fail("В отчёте нет ни одного блока: обновите страницу");
@@ -98,7 +119,7 @@ export async function saveCeoBlocksIn(tx: Tx, actor: Actor, key: WeekKey, input:
 }
 
 export async function saveCeoBlocks(actor: Actor, key: WeekKey, blocks: unknown, meetings: unknown, expected: string | null | undefined): Promise<CeoReportView> {
-  requireEdit(actor);
+  await requireEdit(actor);
   const meta = await blocksMeta();
   return prisma.$transaction((tx) => saveCeoBlocksIn(tx, actor, key, blocks, meetings, expected, meta));
 }
@@ -136,9 +157,8 @@ export type SendCeoReportInput = { blocks: unknown; meetings?: unknown; expected
  * недели и месяца, которые не правили руками, уходят свежими: автосборка считается в момент отправки
  */
 export async function sendCeoReport(actor: Actor, key: WeekKey, input: SendCeoReportInput, now = new Date()): Promise<CeoReportView> {
-  requireEdit(actor);
-  if (!personalLogin(actor)) fail("Отправить CEO можно при личном входе: так CEO видит, кто отправил");
-  if (!canSendCeo(actor)) fail("Отправить CEO может владелец или администратор в режиме управления");
+  await requireEdit(actor);
+  if (!personalLogin(actor)) fail("Отправить руководителю можно при личном входе: так получатель видит, кто отправил");
   const meta = await blocksMeta();
   const clean = cleanBlocks(input?.blocks, new Set(meta.order));
   if (!hasBlocksText(clean)) fail("Weekly для CEO пустой: в видимых блоках нет ни одной строки");

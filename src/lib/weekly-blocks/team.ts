@@ -23,6 +23,7 @@ import { ensureWeek } from "@/lib/weekly/service";
 import { isWeekKey, weekNumberOf } from "@/lib/weekly/weeks";
 import { numbersLevel } from "@/lib/plan/access";
 import { assembleTeamBlocks, blocksMeta, type BlocksMeta } from "./sources";
+import { recipientCandidates } from "@/lib/leader-report/rules";
 import { alignToTemplate, blocksForLevel, cleanBlocks, cleanTemplate, hasBlocksText, keepLockedBlocks, lineText, orderedLines, restoreHiddenFigures, sentBlocks, withLiveBlocks, type ReportBlock, type TemplateBlock, type ViewerLevel } from "./types";
 
 // Шаблон автора записи живёт отдельно (его читает и сохранение записи weekly): отсюда он доступен как раньше
@@ -48,6 +49,16 @@ async function access(actor: Actor, teamId: string): Promise<Access> {
   if (!scope.all && !scope.visible.includes(node.id) && !member) fail("Weekly этой команды вы не видите");
   const canLead = actor.role !== "OBSERVER" && (!!actor.management || (actor.via !== "TEAM" && (node.leaderId === actor.personId || scope.leads.includes(node.id))));
   return { node, nodes, canLead, member };
+}
+
+/** Может ли человек вести отчёт команды (этап 73): руководитель команды при личном входе, руководитель выше, режим управления */
+export async function canLeadTeamReport(actor: Actor, teamId: string): Promise<boolean> {
+  try {
+    return (await access(actor, teamId)).canLead;
+  } catch (error) {
+    if (error instanceof TaskRuleError) return false;
+    throw error;
+  }
 }
 
 const TOP_TEXT = "Weekly команды страхования и инвестиций это отчёт CEO: он уже по смысловым блокам, его собирают на странице «Отчёт CEO»";
@@ -108,15 +119,14 @@ export async function saveTeamTemplate(actor: Actor, teamId: string, input: unkn
  * руководителя команды. Получатель считается для команды, а не для того, кто нажал «Отправить»: руководитель выше,
  * который сам ведёт отчёт команды ниже, остаётся его получателем, и отправить отчёт самому себе он не может
  */
-async function recipientsOf(a: Access): Promise<{ id: string; fullName: string }[]> {
-  const parent = a.node.parentId ? a.nodes.find((n) => n.id === a.node.parentId) : undefined;
-  const candidates: string[] = [];
-  if (parent?.active && parent.leaderId && parent.leaderId !== a.node.leaderId) candidates.push(parent.leaderId);
-  if (a.node.leaderId) {
-    const leader = await prisma.person.findUnique({ where: { id: a.node.leaderId }, select: { managerId: true } });
-    if (leader?.managerId) candidates.push(leader.managerId);
-  }
-  const ids = [...new Set(candidates)].filter((id) => id !== a.node.leaderId);
+async function recipientsOf(a: Pick<Access, "node" | "nodes">): Promise<{ id: string; fullName: string }[]> {
+  return recipientsOfNode(a.node, a.nodes);
+}
+
+/** Получатель отчёта команды по правилу выше (этап 73: им пользуется и раздел «Отчёт руководителю») */
+export async function recipientsOfNode(node: TeamNode, nodes: TeamNode[]): Promise<{ id: string; fullName: string }[]> {
+  const leader = node.leaderId ? await prisma.person.findUnique({ where: { id: node.leaderId }, select: { managerId: true } }) : null;
+  const ids = recipientCandidates(node, nodes, leader?.managerId ?? null);
   if (!ids.length) return [];
   const people = await prisma.person.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, fullName: true } });
   const first = ids.map((id) => people.find((p) => p.id === id)).find((p) => !!p);
