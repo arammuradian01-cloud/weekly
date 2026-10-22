@@ -24,6 +24,7 @@ import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
 import { topTeamName } from "@/lib/org/top-name";
+import { auditVia } from "@/lib/audit";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -329,7 +330,7 @@ function checkLinks(links: unknown): Link[] {
 
 export async function audit(db: Tx, actor: Actor, action: string, entity: string, entityId: string, field: string, before?: string | null, after?: string | null) {
   await db.auditLog.create({
-    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 

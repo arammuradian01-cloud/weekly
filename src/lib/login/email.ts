@@ -23,6 +23,8 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { advisoryLock } from "./attempts";
 import { checkCurrentPassword } from "./password";
 import { createLinkTx, linkUrl, maskEmail, normalizeEmail, takeLinkTx } from "./service";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -53,6 +55,8 @@ export function domainAllowed(email: string, domains: string[]): boolean {
  * входе: по общему логину можно выбрать чужой профиль. Если пароль уже задан, нужен текущий пароль
  */
 export async function requestEmailBinding(actor: Actor, emailInput: string, currentPassword: string, baseUrl: string, now = new Date()): Promise<{ email: string }> {
+  // Этап 71: во время входа владельца в профиль человека почту для входа меняет только сам человек
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") fail("Почту указывают при личном входе: по общему логину можно выбрать чужой профиль");
   // По почте администратор подтверждает режим управления: из чужой открытой сессии почту так не подменить
   if ((actor.role === "OWNER" || actor.role === "ADMIN") && !actor.management) fail("Владельцы и администраторы указывают почту в режиме управления: по ней подтверждается режим");
@@ -77,14 +81,14 @@ export async function requestEmailBinding(actor: Actor, emailInput: string, curr
     // Чей адрес, не говорим: по ответу не узнать, кто есть в ресурсе. Проверка после счётчика
     if (taken) {
       await tx.auditLog.create({
-        data: { action: "auth.email.taken", at: now, actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта уже привязана к другому человеку", ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "auth.email.taken", at: now, actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта уже привязана к другому человеку", ip: actor.ip ?? null, ...auditVia(actor) },
       });
       return null;
     }
     await tx.person.update({ where: { id: person.id }, data: { pendingEmail: email } });
     const link = await createLinkTx(tx, "EMAIL_CONFIRM", person.id, EMAIL_CONFIRM_TTL_MS, now, person.id, null, email);
     await tx.auditLog.create({
-      data: { action: "auth.email.request", at: now, actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта на подтверждении", after: email, ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.email.request", at: now, actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта на подтверждении", after: email, ip: actor.ip ?? null, ...auditVia(actor) },
     });
     return {
       to: email,
@@ -109,6 +113,7 @@ export async function requestEmailBinding(actor: Actor, emailInput: string, curr
 
 /** Человек передумал: неподтверждённый адрес и ссылки на него гаснут. Только при личном входе, с записью в журнал */
 export async function cancelEmailBinding(actor: Actor, now = new Date()): Promise<void> {
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") fail("Почту меняют при личном входе: по общему логину можно выбрать чужой профиль");
   await prisma.$transaction(async (tx) => {
     const person = await tx.person.findUniqueOrThrow({ where: { id: actor.personId } });
@@ -116,7 +121,7 @@ export async function cancelEmailBinding(actor: Actor, now = new Date()): Promis
     await tx.person.update({ where: { id: person.id }, data: { pendingEmail: null } });
     await tx.loginLink.updateMany({ where: { personId: person.id, kind: "EMAIL_CONFIRM", usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
     await tx.auditLog.create({
-      data: { action: "auth.email.cancel", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта на подтверждении", before: person.pendingEmail ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.email.cancel", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: "Почта на подтверждении", before: person.pendingEmail ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) },
     });
   });
 }

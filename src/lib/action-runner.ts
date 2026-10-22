@@ -15,6 +15,8 @@ export function actorOf(ctx: AppContext, ip: string): Actor {
     management: ctx.management?.role ?? null,
     ip,
     via: ctx.via,
+    // Этап 71: владелец вошёл в профиль этого человека. Каждая запись журнала берёт пометку отсюда (auditVia)
+    asOwner: ctx.ownerAs ? { id: ctx.ownerAs.owner.id, fullName: ctx.ownerAs.owner.fullName } : null,
   };
 }
 

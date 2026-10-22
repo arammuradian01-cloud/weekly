@@ -148,8 +148,9 @@ test("владелец смотрит как Рева: его неделя и we
 });
 
 test("общий логин не видит «Смотреть как» ни в меню, ни в командной строке, даже в режиме управления", async ({ page }) => {
-  await enter(page, "Мурадян Арам");
-  await enterManagement(page, "owner");
+  // Этап 71: владелец по общему логину не входит вовсе, поэтому общий логин здесь у администратора в режиме управления
+  await enter(page, "Головкин Владислав");
+  await enterManagement(page, "admin");
   await openProfileMenu(page);
   await expect(page.getByRole("menuitem", { name: "Выключить режим управления" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Смотреть как…" })).toHaveCount(0);

@@ -20,6 +20,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { PRODUCTS } from "@/lib/plan/spec";
 import { PARTNER_DEFAULT_OWNERS, PARTNER_OWNER_CODE } from "@/lib/plan/partners";
 import type { PlanBrief } from "@/lib/plan/brief";
+import { auditVia } from "@/lib/audit";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 type Who = { personId: string; role: string; management?: string | null; slug?: string };
@@ -242,7 +243,7 @@ export async function saveNumbersAccess(actor: Actor, input: { full: { units: st
     for (const [field, from, to] of lines) {
       if (from === to) continue;
       await tx.auditLog.create({
-        data: { action: "settings.numbersAccess", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: NUMBERS_ACCESS_KEY, field: `Доступ к цифрам: ${field}`, before: from.slice(0, 1000), after: to.slice(0, 1000), ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "settings.numbersAccess", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: NUMBERS_ACCESS_KEY, field: `Доступ к цифрам: ${field}`, before: from.slice(0, 1000), after: to.slice(0, 1000), ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
   });

@@ -24,6 +24,7 @@ import { feedFor } from "@/lib/calendar/service";
 import { CalendarFeedSettings } from "@/components/profile/calendar-feed";
 import { NewsPrefsForm } from "@/components/news/news-prefs";
 import { newsDirections, newsPrefsFor, personDirections } from "@/lib/news/service";
+import { OWNER_AS_TEXTS } from "@/lib/owner-as";
 
 export const metadata: Metadata = { title: "Профиль" };
 
@@ -44,12 +45,15 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   const ctx = await requireContext();
   const observer = ctx.person.role === "OBSERVER";
   const personal = ctx.via !== "TEAM";
+  // Этап 71: владелец вошёл в профиль человека. Учётная запись человека закрыта: пароль, почта, входы, календарь,
+  // письма и уведомления он меняет только сам. Сервер отказывает и сам, экран только не показывает формы
+  const accountLock = ctx.ownerAs ? OWNER_AS_TEXTS.account : null;
   const sp = await searchParams;
   const requested = TABS.find((t) => t === sp.tab) ?? "profile";
   const tab: ProfileTab = requested === "absences" && observer ? "profile" : requested;
   // Этап 50: грузится только то, что нужно открытой вкладке
   const [devices, absences, weeks, colleagues, prefs, pushKey, pushPrefs, pushList, feed] = await Promise.all([
-    tab === "login" && ctx.via !== "TEAM" ? listDevices(ctx.person.id) : Promise.resolve([]),
+    tab === "login" && ctx.via !== "TEAM" && !accountLock ? listDevices(ctx.person.id) : Promise.resolve([]),
     tab === "absences" && !observer ? upcomingAbsences(ctx.person.id) : Promise.resolve([]),
     tab === "absences" ? absenceWeeks() : Promise.resolve([]),
     tab === "absences"
@@ -60,14 +64,16 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         })
       : Promise.resolve([]),
     tab === "mail" ? mailPrefsFor(ctx.person.id) : Promise.resolve(null),
-    tab === "mail" && personal ? pushPublicKey() : Promise.resolve(""),
+    tab === "mail" && personal && !accountLock ? pushPublicKey() : Promise.resolve(""),
     tab === "mail" ? pushPrefsFor(ctx.person.id) : Promise.resolve(null),
-    tab === "mail" && personal ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
+    tab === "mail" && personal && !accountLock ? pushDevices(ctx.person.id, ctx.deviceId) : Promise.resolve([]),
     // По общему логину и наблюдателю состояние ссылки не отдаём: по нему видно, когда чужой календарь забирал данные
-    tab === "profile" && personal && !observer ? feedFor(ctx.person.id) : Promise.resolve(null),
+    tab === "profile" && personal && !observer && !accountLock ? feedFor(ctx.person.id) : Promise.resolve(null),
   ]);
   // Календарь сроков (этап 29): ссылка личная, по общему логину её не выдаём
-  const calendarLocked = !personal
+  const calendarLocked = accountLock
+    ? accountLock
+    : !personal
     ? "Календарь сроков подключается при личном входе: по общему логину можно выбрать чужой профиль."
     : observer
       ? "У наблюдателя нет своих сроков и встреч."
@@ -93,7 +99,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
             <Row label="Логин">{login}</Row>
             <Row label="Почта">{ctx.person.email ?? (ctx.person.pendingEmail ? `${ctx.person.pendingEmail}, ждёт подтверждения` : "не указана")}</Row>
-            <Row label="Как вы вошли">{LOGIN_METHOD_LABELS[ctx.via]}</Row>
+            <Row label="Как вы вошли">{ctx.ownerAs ? `владелец ${ctx.ownerAs.owner.fullName} вошёл в этот профиль` : LOGIN_METHOD_LABELS[ctx.via]}</Row>
           </dl>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="calendar-feed">
@@ -119,7 +125,16 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
         </section>
       ) : null}
 
-      {tab === "login" ? (
+      {tab === "login" && accountLock ? (
+        <section aria-labelledby="password-head">
+          <h2 id="password-head" className="text-title font-semibold text-ink">Вход и пароль</h2>
+          <p role="status" className="sv-alert sv-alert--info mt-3" data-testid="owner-as-account">
+            {accountLock}
+          </p>
+        </section>
+      ) : null}
+
+      {tab === "login" && !accountLock ? (
         <>
           <section aria-labelledby="password-head">
             <h2 id="password-head" className="text-title font-semibold text-ink">Пароль</h2>
@@ -179,7 +194,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             </p>
             {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
             {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
-            <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM"} />
+            {accountLock ? <p className="mt-2 text-small text-muted">{accountLock}</p> : null}
+            <MailPrefsForm initial={prefs} locked={ctx.via === "TEAM" || !!accountLock} />
           </section>
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="news-head">
@@ -192,7 +208,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
               initial={await newsPrefsFor(ctx.person.id)}
               directions={(await newsDirections()).filter((d) => d.active).map((d) => ({ code: d.code, label: d.label }))}
               defaults={await personDirections(ctx.person.id)}
-              locked={ctx.via === "TEAM"}
+              locked={ctx.via === "TEAM" || !!accountLock}
             />
           </section>
 
@@ -202,7 +218,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             </h2>
             <p className="mt-1 text-small text-muted">Ответить на просьбу, обновить задачу, прочитать ленту и повестку можно с телефона в два нажатия.</p>
             <InstallApp />
-            <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />
+            {accountLock ? <p className="mt-2 text-small text-muted">{accountLock}</p> : <PushSettings publicKey={pushKey} locked={!personal} prefs={pushPrefs} devices={pushList} />}
           </section>
         </>
       ) : null}

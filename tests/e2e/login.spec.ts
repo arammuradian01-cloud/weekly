@@ -49,9 +49,9 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva.getByText(/только из цифр/)).toBeVisible();
   await setPasswordByLink(reva, url);
 
-  // Профиль из списка не выбирается: «Сменить профиль» нет, есть «Профиль»
+  // Профиль из списка не выбирается: «Сменить профиль» при личном входе выходит из системы (этап 71), есть «Профиль»
   await reva.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
-  await expect(reva.getByRole("menuitem", { name: "Сменить профиль" })).toHaveCount(0);
+  await expect(reva.getByRole("menuitem", { name: "Сменить профиль" })).toBeVisible();
   await reva.getByRole("menuitem", { name: "Профиль" }).click();
   await expect(reva).toHaveURL(/\/profile$/);
   await expect(reva.getByText("ссылка от владельца").first()).toBeVisible();

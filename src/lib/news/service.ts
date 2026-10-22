@@ -33,6 +33,8 @@ import { matchDirections, ruleSummary, withoutOwnName } from "./match";
 import { NEWS_FREQUENCY_LABELS, directionsFor, newsPrefsOf, type NewsFrequency, type NewsPrefs } from "./prefs";
 import { BATCH, TIMEOUT_MS as CLAUDE_TIMEOUT_MS, claudeConfigured, claudeModel, enrichWithClaude, narrowDirections, safeErrorMessage } from "./claude";
 import { DEFAULT_SOURCES } from "./sources";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -129,7 +131,7 @@ export async function saveKeywords(actor: Actor, input: Record<string, string | 
       const b = (next[d.code] ?? []).join(", ");
       if (a === b) continue;
       await tx.auditLog.create({
-        data: { action: "settings.news.keywords", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: KEYWORDS_KEY, field: `Ключевые слова: ${d.label}`, before: a, after: b, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "settings.news.keywords", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: KEYWORDS_KEY, field: `Ключевые слова: ${d.label}`, before: a, after: b, ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
   });
@@ -200,7 +202,7 @@ const strictLabel = (v: boolean) => (v ? "два признака" : "один �
 
 async function sourceAudit(tx: Db, actor: Actor, id: string, field: string, before: string, after: string) {
   await tx.auditLog.create({
-    data: { action: "settings.news.source", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "news_source", entityId: id, field, before, after, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action: "settings.news.source", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "news_source", entityId: id, field, before, after, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 
@@ -513,7 +515,7 @@ export async function runFetchNow(actor: Actor): Promise<FetchPass> {
         before: "",
         after: `лент ${results.length}, с ошибкой ${failed}, новых новостей ${added}${pass.postponed ? `, отложено до следующего часа ${pass.postponed}` : ""}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   }
@@ -689,6 +691,7 @@ export async function newsPrefsFor(personId: string): Promise<NewsPrefs> {
 
 /** Частота и продукты дайджеста. Только при личном входе: по общему логину можно выбрать чужой профиль */
 export async function saveNewsPrefs(actor: Actor, input: unknown): Promise<NewsPrefs> {
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") fail("Дайджест настраивается при личном входе");
   const before = await newsPrefsFor(actor.personId);
   // Частоту не прислали: остаётся прежняя (в том числе умолчание)
@@ -701,7 +704,7 @@ export async function saveNewsPrefs(actor: Actor, input: unknown): Promise<NewsP
     const show = (p: NewsPrefs) => `${NEWS_FREQUENCY_LABELS[p.frequency]}; продукты: ${p.directions ? p.directions.join(", ") || "ни одного" : "по направлению"}`;
     if (show(before) !== show(prefs)) {
       await tx.auditLog.create({
-        data: { action: "settings.news.prefs", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "person", entityId: actor.slug, field: "Дайджест новостей", before: show(before), after: show(prefs), ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "settings.news.prefs", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "person", entityId: actor.slug, field: "Дайджест новостей", before: show(before), after: show(prefs), ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
   });

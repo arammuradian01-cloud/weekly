@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { expect, type Page } from "@playwright/test";
 import pg from "pg";
+import bcrypt from "bcryptjs";
 import { E2E_PASSWORDS } from "./global-setup";
 
 /** Снимает блокировку входа и возвращает задачи и weekly к выгрузке таблицы: тесты меняют их в базе */
@@ -98,13 +99,37 @@ export async function sql(text: string, values: unknown[] = []) {
   }
 }
 
+/**
+ * Вход под человеком. Этап 71: владельцы и люди с личным паролем по общему логину не выбираются, они входят своим
+ * логином и паролем (enterPersonal). Остальные: общий логин team и выбор себя поиском на экране «Выберите себя»
+ */
 export async function enter(page: Page, fullName: string) {
+  const [row] = await sql(`SELECT slug, role, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" = $1 AND active`, [fullName]);
+  if (row && (row.role === "OWNER" || row.personal)) return enterPersonal(page, row.slug as string);
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");
   await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
   await page.getByRole("button", { name: "Войти" }).click();
   await expect(page).toHaveURL(/\/choose$/);
+  // Людей в списке может быть несколько сотен: сначала поиск, потом строка
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill(fullName);
   await page.getByRole("button", { name: new RegExp(fullName) }).click();
+  await expect(page).toHaveURL(/\/$/);
+}
+
+let testHash: string | null = null;
+
+/**
+ * Личный вход логином и паролем (этап 71): пароль TEST_PASSWORD записывается прямо в базу (хэш с малой стоимостью, вход
+ * сверяет его так же), потом обычный вход на экране входа. После входа логином и паролем открывается главная страница
+ */
+export async function enterPersonal(page: Page, slug: string, password = TEST_PASSWORD) {
+  testHash ??= await bcrypt.hash(TEST_PASSWORD, 4);
+  if (password === TEST_PASSWORD) await sql(`UPDATE people SET "passwordHash" = $1, "passwordSetAt" = coalesce("passwordSetAt", now()) WHERE slug = $2`, [testHash, slug]);
+  await page.goto("/login");
+  await page.getByLabel("Логин").fill(slug);
+  await page.getByLabel("Пароль").fill(password);
+  await page.getByRole("button", { name: "Войти" }).click();
   await expect(page).toHaveURL(/\/$/);
 }
 

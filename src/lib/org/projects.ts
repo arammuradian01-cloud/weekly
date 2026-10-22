@@ -18,6 +18,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canManagePeople } from "@/lib/admin/service";
 import { notify } from "@/lib/inbox/notify";
 import { TOP_TEAM } from "./scope";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -57,7 +58,7 @@ function cleanName(value: unknown): string {
 }
 
 async function audit(tx: Tx, actor: Actor, action: string, entityId: string, field: string, before: string | null, after: string | null) {
-  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 /** Люди подразделения со всеми подразделениями ниже. Корень компании целиком не берётся: это не команда, а все */
@@ -237,7 +238,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
   if (join.length) {
     await tx.teamMember.createMany({ data: join.map((j) => ({ teamId: team!.id, personId: j.person.id, addedById: actor.personId, external: j.external })), skipDuplicates: true });
     await tx.auditLog.createMany({
-      data: join.map((j) => ({ action: "team.member.add", actorId: actor.personId, actorName: actor.fullName, source: "APP" as const, entity: "team", entityId: team!.id, field: `Участник добавлен: ${team!.name}`, after: j.external ? `${j.person.fullName} (из другой ветки)` : j.person.fullName, ip: actor.ip ?? null, via: actor.via ?? null })),
+      data: join.map((j) => ({ action: "team.member.add", actorId: actor.personId, actorName: actor.fullName, source: "APP" as const, entity: "team", entityId: team!.id, field: `Участник добавлен: ${team!.name}`, after: j.external ? `${j.person.fullName} (из другой ветки)` : j.person.fullName, ip: actor.ip ?? null, ...auditVia(actor) })),
     });
     out.added.push(...join.map((j) => j.person.fullName));
     // Из другой ветки сразу (режим управления или согласие уже есть): каждый человек узнаёт в «Мне», а его
@@ -264,7 +265,7 @@ async function addIn(tx: Tx, actor: Actor, teamId: string, slugs: string[], now:
       select: { id: true },
     });
     await tx.auditLog.createMany({
-      data: group.map((p) => ({ action: "team.join.request", actorId: actor.personId, actorName: actor.fullName, source: "APP" as const, entity: "team", entityId: team!.id, field: `Запрос в команду: ${team!.name}`, after: `${p.fullName}, согласует ${approver.fullName}`, ip: actor.ip ?? null, via: actor.via ?? null })),
+      data: group.map((p) => ({ action: "team.join.request", actorId: actor.personId, actorName: actor.fullName, source: "APP" as const, entity: "team", entityId: team!.id, field: `Запрос в команду: ${team!.name}`, after: `${p.fullName}, согласует ${approver.fullName}`, ip: actor.ip ?? null, ...auditVia(actor) })),
     });
     const names = group.map((p) => p.fullName);
     const who = names.length === 1 ? `вашего сотрудника ${names[0]}` : `ваших сотрудников (${names.length}): ${names.slice(0, 5).join(", ")}${names.length > 5 ? ` и ещё ${names.length - 5}` : ""}`;

@@ -100,7 +100,7 @@ test("владелец загружает структуру, команды п�
   await lead.close();
 });
 
-test("общий логин предлагает только людей топ-команды", async ({ page }) => {
+test("общий логин предлагает всех людей структуры без личного пароля, кроме владельцев (этап 71)", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await loadStructure(page);
@@ -112,7 +112,9 @@ test("общий логин предлагает только людей топ-
   await p.getByRole("button", { name: "Войти" }).click();
   await expect(p).toHaveURL(/\/choose$/);
   await expect(p.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
-  await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toHaveCount(0);
+  await expect(p.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
+  await p.getByLabel("Поиск по ФИО, должности или подразделению").fill("антонов");
+  await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toBeVisible();
   await other.close();
 });
 

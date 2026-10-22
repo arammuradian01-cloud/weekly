@@ -4,6 +4,7 @@
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "./service";
 import { APPROVAL_KEY, APPROVAL_MODE_LABELS, APPROVAL_MODES, approvalDepartments, loadApprovalSetting, type ApprovalMode, type ApprovalSetting } from "./approval";
+import { auditVia } from "@/lib/audit";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -35,7 +36,7 @@ export async function saveApprovalSetting(actor: Actor, input: ApprovalSetting):
     }
     for (const [field, from, to] of lines) {
       await tx.auditLog.create({
-        data: { action: "settings.approval", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: APPROVAL_KEY, field: `Задачи в другие департаменты: ${field}`, before: from, after: to, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "settings.approval", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: APPROVAL_KEY, field: `Задачи в другие департаменты: ${field}`, before: from, after: to, ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
     return next;

@@ -1,17 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { ChevronDown, KeyRound, CircleHelp, Eye, EyeOff, LayoutGrid, LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
+import { ChevronDown, KeyRound, CircleHelp, Eye, EyeOff, LayoutGrid, LogOut, ShieldCheck, Undo2, UserRound, UserRoundCog, Users } from "lucide-react";
 import { exitManagement, logout } from "@/app/actions/auth";
 import { endViewAsForLogoutAction, stopViewAsAction } from "@/app/actions/view-as";
 import { markTabSelf, openViewAs } from "./view-as";
+import { openOwnerAs, returnToOwnProfile } from "./owner-as";
 import { cn } from "@/lib/cn";
 import { ThemeSwitch } from "./theme-switch";
 import { avatarTone } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/overlays";
 import { forgetThisDevice } from "@/lib/offline/sign-out";
 import { usePrototype } from "@/domain/store";
+
+/**
+ * Что делает «Сменить профиль» (этап 71): общий логин выбирает себя из списка, владелец при личном входе входит в
+ * профиль другого человека, остальные при личном входе выходят и входят заново под другим логином. null: пункта нет
+ * (идёт просмотр «Смотреть как» или владелец уже в чужом профиле, тогда в меню возврат)
+ */
+export type SwitchProfile = "team" | "owner" | "logout" | null;
 
 type Props = {
   fullName: string;
@@ -20,8 +31,12 @@ type Props = {
   canManage: boolean;
   management: "OWNER" | "ADMIN" | null;
   managementUntil: string | null;
-  /** Личный вход: профиль не выбирается из списка, «Сменить профиль» не нужен */
-  personal: boolean;
+  /** «Сменить профиль» (этап 71): что делает пункт, null: пункта нет */
+  switchProfile: SwitchProfile;
+  /** Владелец в чужом профиле (этап 71): кто вошёл и чьи черновики отправить перед возвратом. Тогда в меню возврат */
+  ownerAs?: { ownerName: string; targetSlug: string } | null;
+  /** Вход владельца в чужой профиль закончился сам, владелец ещё не вернулся: в меню возврат */
+  ownerAsEnded?: boolean;
   /** Владелец может открыть «Смотреть как…» (этап 63): личный вход, режим управления владельца */
   canViewAs?: boolean;
   /** Идёт просмотр «Смотреть как»: меню показывает выбранного человека и выход из просмотра */
@@ -39,12 +54,41 @@ function initials(fullName: string) {
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
 const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
 
-export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, personal, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
+export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, switchProfile, ownerAs = null, ownerAsEnded = false, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
   const { me, notify } = usePrototype();
   const dark = tone === "dark";
+  /** Подтверждение «Выйти и сменить» у тех, кто вошёл лично и не владелец (этап 71) */
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const inside = !!ownerAs || ownerAsEnded;
+
+  /**
+   * Выход: «Выйти» и «Выйти и сменить». Сначала снимается просмотр «Смотреть как», если он был (сервер это знает сам), и
+   * вкладка становится своей: сервер примет черновики самого владельца с устройства. Во входе владельца в чужой профиль
+   * (этап 71) метка вкладки остаётся: черновики человека уходят от его имени с пометкой владельца. Отказал: черновики
+   * остаются. Потом обычный выход на экран входа, после нового входа главная страница
+   */
+  const signOut = () =>
+    startTransition(async () => {
+      await endViewAsForLogoutAction();
+      if (!inside) markTabSelf();
+      await forgetThisDevice(viewing ? (ownerSlug ?? undefined) : me.slug);
+      await logout();
+    });
+
+  const goBack = () =>
+    startTransition(async () => {
+      try {
+        const error = await returnToOwnProfile(ownerAs?.targetSlug ?? null);
+        if (error) notify(error, "error");
+      } catch (e) {
+        unstable_rethrow(e);
+        notify("Нет связи с сервером. Попробуйте ещё раз", "error");
+      }
+    });
 
   return (
+    <>
     <Menu.Root>
       <Menu.Trigger
         className={cn(
@@ -64,7 +108,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
         </span>
         <span className={cn("min-w-0 flex-1", tone === "light" && "hidden sm:block")}>
           <span className="sv-sidebar__profile__name block">{shortName}</span>
-          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-text-secondary")}>{viewing ? "Просмотр, только чтение" : management ? "Режим управления" : roleLabel}</span>
+          <span className={cn("block truncate text-caption", dark ? "text-sidebar-muted" : "text-text-secondary")}>{viewing ? "Просмотр, только чтение" : ownerAs ? "Вход владельца" : management ? "Режим управления" : roleLabel}</span>
         </span>
         <ChevronDown className={cn("h-4 w-4 shrink-0", dark ? "text-sidebar-muted" : "text-text-secondary")} strokeWidth={1.5} aria-hidden="true" />
       </Menu.Trigger>
@@ -82,7 +126,17 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
               <div className="mt-1 text-caption text-blue-700">Режим управления до {managementUntil}</div>
             ) : null}
             {viewing ? <div className="mt-1 text-caption text-blue-700">Вы смотрите как этот человек, изменения недоступны</div> : null}
+            {ownerAs ? <div className="mt-1 text-caption text-blue-700">Вы в этом профиле как владелец {ownerAs.ownerName}</div> : null}
           </div>
+          {inside ? (
+            <>
+              <Menu.Separator className="my-1 h-px bg-line" />
+              <Menu.Item className={itemClass} disabled={pending} onSelect={goBack}>
+                <Undo2 className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+                Вернуться в свой профиль
+              </Menu.Item>
+            </>
+          ) : null}
           {viewing ? (
             <>
               <Menu.Separator className="my-1 h-px bg-line" />
@@ -123,14 +177,29 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             </Menu.Item>
           ) : null}
 
-          {personal ? null : (
+          {switchProfile === "team" ? (
             <Menu.Item asChild>
               <Link href="/choose" className={itemClass}>
                 <Users className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
                 Сменить профиль
               </Link>
             </Menu.Item>
-          )}
+          ) : null}
+
+          {/* Этап 71: владелец входит в профиль другого человека, остальные выходят и входят заново под другим логином */}
+          {switchProfile === "owner" ? (
+            <Menu.Item className={itemClass} onSelect={() => openOwnerAs()}>
+              <UserRoundCog className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+              Сменить профиль
+            </Menu.Item>
+          ) : null}
+
+          {switchProfile === "logout" ? (
+            <Menu.Item className={itemClass} disabled={pending} onSelect={() => setConfirmSwitch(true)}>
+              <Users className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
+              Сменить профиль
+            </Menu.Item>
+          ) : null}
 
           {canViewAs ? (
             <Menu.Item className={itemClass} onSelect={() => openViewAs()}>
@@ -165,25 +234,25 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
             </Menu.Item>
           ) : null}
 
-          <Menu.Item
-            className={itemClass}
-            disabled={pending}
-            onSelect={() =>
-              startTransition(async () => {
-                // «Смотреть как» (этап 63): сначала снимается просмотр, если он был (сервер это знает сам), и вкладка
-                // становится своей: сервер примет черновики самого владельца с устройства. Отказал: черновики остаются
-                await endViewAsForLogoutAction();
-                markTabSelf();
-                await forgetThisDevice(viewing ? (ownerSlug ?? undefined) : me.slug);
-                await logout();
-              })
-            }
-          >
+          <Menu.Item className={itemClass} disabled={pending} onSelect={signOut}>
             <LogOut className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />
             Выйти
           </Menu.Item>
         </Menu.Content>
       </Menu.Portal>
     </Menu.Root>
+    {switchProfile === "logout" ? (
+      <Modal open={confirmSwitch} onOpenChange={(open) => !pending && setConfirmSwitch(open)} title="Точно хотите выйти из системы и сменить профиль?" description="Черновики с этого устройства уйдут на сервер, потом откроется экран входа. Войдите под другим логином и паролем, после входа откроется главная страница.">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" disabled={pending} onClick={() => setConfirmSwitch(false)}>
+            Отмена
+          </Button>
+          <Button variant="dark" loading={pending} disabled={pending} onClick={signOut} autoFocus>
+            Выйти и сменить
+          </Button>
+        </div>
+      </Modal>
+    ) : null}
+    </>
   );
 }

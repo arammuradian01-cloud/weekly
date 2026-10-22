@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
-import { enter } from "./helpers";
+import { enter, enterPersonal } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -69,6 +69,8 @@ test("5 неверных паролей закрывают вход на 15 ми
 test("лидер входит, выбирает себя и видит свою неделю без режима управления", async ({ page }) => {
   await signIn(page);
   await expect(page).toHaveURL(/\/choose$/);
+  // Этап 71: владельцы по общему логину не входят, их в списке нет
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
   await shot(page, "03-choose");
   await chooseMe(page, "Рева Тарас");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
@@ -91,8 +93,8 @@ test("лидер входит, выбирает себя и видит свою 
 });
 
 test("владелец включает режим управления только своим паролем", async ({ page }) => {
-  await signIn(page);
-  await chooseMe(page, "Мурадян Арам");
+  // Этап 71: владелец входит только своим логином и паролем
+  await enterPersonal(page, "muradyan");
   await openProfileMenu(page);
   await page.getByRole("menuitem", { name: "Включить режим управления" }).click();
   await expect(page).toHaveURL(/\/manage/);

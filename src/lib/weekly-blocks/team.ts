@@ -24,6 +24,7 @@ import { isWeekKey, weekNumberOf } from "@/lib/weekly/weeks";
 import { numbersLevel } from "@/lib/plan/access";
 import { assembleTeamBlocks, blocksMeta, type BlocksMeta } from "./sources";
 import { alignToTemplate, blocksForLevel, cleanBlocks, cleanTemplate, hasBlocksText, keepLockedBlocks, lineText, orderedLines, restoreHiddenFigures, sentBlocks, withLiveBlocks, type ReportBlock, type TemplateBlock, type ViewerLevel } from "./types";
+import { auditVia } from "@/lib/audit";
 
 // Шаблон автора записи живёт отдельно (его читает и сохранение записи weekly): отсюда он доступен как раньше
 export { sectionForAuthor, templateForAuthor } from "./author";
@@ -58,7 +59,7 @@ function requireLead(a: Access, what: string) {
 }
 
 async function audit(db: Prisma.TransactionClient, actor: Actor, action: string, entityId: string, field: string, before: string | null, after: string | null) {
-  await db.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await db.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "team", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 // ---------- Шаблон ----------

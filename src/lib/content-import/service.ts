@@ -44,6 +44,7 @@ import { addDays, diffDays, formatLong, plural, toCalendar, type IsoDate } from 
 import { moscowDateTime } from "@/lib/week";
 import { sameTask } from "@/lib/meeting/parse-types";
 import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageLink, type PackageTask } from "./package";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -1392,7 +1393,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
         },
       });
       await tx.auditLog.create({
-        data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: row.id, field: "Решение из наполнения", after: `${formatLong(d.date)}: ${d.text}`, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: row.id, field: "Решение из наполнения", after: `${formatLong(d.date)}: ${d.text}`, ip: actor.ip ?? null, ...auditVia(actor) },
       });
       await remember(tx, "decision", d.key, row.id, d, { text: d.text, ownerId: p.ownerId ?? null, status: d.status });
     } else {
@@ -1400,7 +1401,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       if (Object.keys(p.data ?? {}).length) {
         await tx.decision.update({ where: { id: cur.id }, data: p.data! });
         await tx.auditLog.create({
-          data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: cur.id, field: "Решение обновлено из наполнения", before: cur.text, after: p.data!.text === undefined ? cur.text : d.text, ip: actor.ip ?? null, via: actor.via ?? null },
+          data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: cur.id, field: "Решение обновлено из наполнения", before: cur.text, after: p.data!.text === undefined ? cur.text : d.text, ip: actor.ip ?? null, ...auditVia(actor) },
         });
       }
       // Новые связи с задачами добавляем, прежние не убираем
@@ -1444,7 +1445,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       field: "Загружено наполнение",
       after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}`,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
   return result;

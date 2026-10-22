@@ -23,6 +23,8 @@ import type { Person, Prisma, Role } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
 import { ATTEMPT_TX, BUSY_ERROR, QueueBusy, advisoryLock, lockTimeout, markAttemptOk, serialAll } from "./attempts";
 import { guardPrimary } from "./primary";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -250,6 +252,8 @@ export async function setPasswordByLink(token: string, password: string, repeat:
  * завершаются, текущее устройство остаётся, ссылка на календарь сроков отключается
  */
 export async function changePassword(actor: Actor, deviceId: string | null, current: string, next: string, repeat: string, now = new Date()): Promise<void> {
+  // Этап 71: во время входа владельца в профиль человека его пароль не меняется
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM" || !deviceId) fail("Пароль меняют при личном входе: по общему логину можно выбрать чужой профиль");
   if (next !== repeat) fail("Новые пароли не совпадают");
   const person = await prisma.person.findUniqueOrThrow({ where: { id: actor.personId } });
@@ -264,7 +268,7 @@ export async function changePassword(actor: Actor, deviceId: string | null, curr
     // И ссылка на календарь сроков (этап 29): смену пароля делают и тогда, когда прежний мог кто-то узнать
     await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
     await tx.auditLog.create({
-      data: { action: "auth.password.set", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: person.passwordHash ? "Пароль изменён" : "Пароль задан", ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.password.set", actorId: person.id, actorName: person.fullName, entity: "person", entityId: person.slug, field: person.passwordHash ? "Пароль изменён" : "Пароль задан", ip: actor.ip ?? null, ...auditVia(actor) },
     });
   });
 }
@@ -301,7 +305,7 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
     await tx.loginLink.updateMany({ where: { personId: person.id, usedAt: null, expiresAt: { gt: now } }, data: { expiresAt: now } });
     await tx.calendarFeed.deleteMany({ where: { personId: person.id } });
     await tx.auditLog.create({
-      data: { action: "auth.password.reset", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: person.slug, field: person.fullName, after: "пароль сброшен, входы и ссылка на календарь отключены", ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.password.reset", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: person.slug, field: person.fullName, after: "пароль сброшен, входы и ссылка на календарь отключены", ip: actor.ip ?? null, ...auditVia(actor) },
     });
   });
 }
@@ -337,7 +341,7 @@ export async function issueInvitesForAll(actor: Actor, now = new Date(), days = 
       out.push({ slug: p.slug, fullName: p.fullName, login: loginOf(p), position: p.position, token, expiresAt });
     }
     await tx.auditLog.create({
-      data: { action: "auth.invite.bulk", actorId: actor.personId, actorName: actor.fullName, entity: "person", field: "Ссылки всем без пароля", after: `выдано ссылок: ${people.length}, действуют ${days} дн.`, ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "auth.invite.bulk", actorId: actor.personId, actorName: actor.fullName, entity: "person", field: "Ссылки всем без пароля", after: `выдано ссылок: ${people.length}, действуют ${days} дн.`, ip: actor.ip ?? null, ...auditVia(actor) },
     });
   }, { timeout: 30_000 });
   return out;

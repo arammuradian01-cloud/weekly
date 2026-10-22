@@ -29,6 +29,7 @@ import { SUGGEST_MIN, bestGoal, rankGoals, type GoalDoc } from "./match";
 import { FACT_STALE_DAYS, factProblem, goalNumbers, goalProgress, measurableTarget, type GoalProgress } from "./progress";
 import { countsForGoal, doneForGoal } from "./links";
 import { TOP_TEAM_OLD_NAME } from "@/lib/org/top-name";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -337,7 +338,7 @@ function inTx<T>(db: Tx | undefined, fn: (tx: Tx) => Promise<T>): Promise<T> {
 
 async function audit(tx: Tx, actor: Actor, goalId: string, field: string, before?: string | null, after?: string | null, action = "goal.update") {
   await tx.auditLog.create({
-    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: goalId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: goalId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 

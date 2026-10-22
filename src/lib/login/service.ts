@@ -17,6 +17,8 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { LinkKind, LoginMethod } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
 import { guardPrimary } from "./primary";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -95,7 +97,7 @@ export async function saveTeamLogin(actor: Actor, mode: TeamLogin): Promise<Team
         before: before === "on" ? "работает" : "выключен",
         after: mode === "on" ? "работает" : "выключен",
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -131,6 +133,7 @@ export function maskEmail(email: string): string {
 
 /** Владелец выдаёт человеку ссылку для входа: показывается один раз, отправляется лично */
 export async function issueInvite(actor: Actor, slug: string, now = new Date()): Promise<{ token: string; expiresAt: Date; fullName: string }> {
+  refuseOwnerAs(actor);
   if (actor.management !== "OWNER" || actor.role === "OBSERVER") fail("Ссылку для входа выдаёт только владелец в режиме управления");
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
@@ -149,7 +152,7 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
         field: person!.fullName,
         after: `действует до ${until(created.expiresAt)}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
     return created;
@@ -292,6 +295,7 @@ export async function requestEmailLink(emailInput: string, ctx: { ip: string; ba
  * с которого её запросили. Владелец включает режим только паролем: доступ к одной почте не должен давать права владельца
  */
 export async function requestStepUp(actor: Actor, deviceId: string | null, baseUrl: string, now = new Date()): Promise<{ email: string }> {
+  refuseOwnerAs(actor);
   if (actor.role === "OWNER") fail("Владелец включает режим управления паролем владельца");
   if (actor.role !== "ADMIN") fail("Режим управления доступен только владельцу и администраторам");
   if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе. Войдите по своей ссылке или введите пароль управления");
@@ -320,6 +324,7 @@ export async function requestStepUp(actor: Actor, deviceId: string | null, baseU
 
 /** Ссылка подтверждения работает только у того же человека, на том же устройстве и только при личном входе */
 export async function consumeStepUp(token: string, actor: Actor, deviceId: string | null, now = new Date()): Promise<void> {
+  refuseOwnerAs(actor);
   if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе");
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (link && link.kind === "STEP_UP" && link.personId !== actor.personId) fail("Эта ссылка выдана другому человеку");
@@ -355,18 +360,21 @@ export async function listDevices(personId: string, now = new Date()): Promise<D
 
 /** Человек завершает вход на одном своём устройстве */
 export async function revokeDevice(actor: Actor, id: string, now = new Date()): Promise<void> {
+  // Этап 71: входы человека на его устройствах во время входа владельца в его профиль не завершаются
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
   const device = await prisma.deviceSession.findUnique({ where: { id } });
   if (!device || device.personId !== actor.personId) fail("Устройство не найдено");
   if (device!.revokedAt) return;
   await prisma.deviceSession.update({ where: { id }, data: { revokedAt: now, revokedBy: "self" } });
   await prisma.auditLog.create({
-    data: { action: "auth.device.revoke", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: actor.slug, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action: "auth.device.revoke", actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: actor.slug, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 
 /** «Выйти везде»: свои устройства или, для владельца, все устройства человека */
 export async function revokeAllDevices(actor: Actor, slug: string, now = new Date()): Promise<number> {
+  refuseOwnerAs(actor);
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
   const own = person!.id === actor.personId;
@@ -393,7 +401,7 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
       field: person!.fullName,
       after: `завершено входов: ${result.count}`,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
   return result.count;

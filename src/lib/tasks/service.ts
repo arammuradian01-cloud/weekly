@@ -28,6 +28,7 @@ import { approvalRule, closeApprovalEvents, type ApprovalRule } from "./approval
 import { topTeamName } from "@/lib/org/top-name";
 import { TaskRuleError } from "@/lib/rule-error";
 import { canChangeGoal } from "@/lib/goals/links";
+import { auditVia, type AsOwner } from "@/lib/audit";
 
 export const LIMITS = { title: 120, outcome: 1000, where: 500, note: 1000, reason: 500, comment: 2000, linkTitle: 120, url: 500, sourceNote: 200 };
 
@@ -41,6 +42,8 @@ export type Actor = {
   ip?: string | null;
   /** Как вошёл: общий логин или личная ссылка. Пишется в журнал рядом с автором (этап 9) */
   via?: LoginMethod | null;
+  /** Этап 71: владелец вошёл в профиль этого человека (via OWNER_AS): кто из владельцев. Пишется в журнал через auditVia */
+  asOwner?: AsOwner | null;
 };
 
 /** Ошибка правила: текст показывается человеку как есть. Живёт в отдельном модуле без базы (этап 63) */
@@ -183,7 +186,7 @@ async function audit(db: Db, actor: Actor, number: number, changes: Change[]): P
       before: c.before ?? undefined,
       after: c.after ?? undefined,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     })),
   });
 }

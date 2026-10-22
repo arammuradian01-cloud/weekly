@@ -424,7 +424,17 @@ const READ = new Set([
   "weekViewAction",
 ]);
 /** Сам просмотр: выбор и начало отвечают «сначала выйдите из просмотра», выход (кнопкой и перед выходом из ресурса) проверен отдельно */
-const SPECIAL = new Set(["viewAsPeopleAction", "startViewAsAction", "stopViewAsAction", "endViewAsForLogoutAction"]);
+const SPECIAL = new Set([
+  "viewAsPeopleAction",
+  "startViewAsAction",
+  "stopViewAsAction",
+  "endViewAsForLogoutAction",
+  // «Сменить профиль» у владельца (этап 71): выбор и вход отвечают «сначала выйдите из просмотра», возврат без входа в
+  // чужой профиль отвечает «вы и так в своём профиле». Проверено в tests/db/owner-as.test.ts
+  "ownerAsPeopleAction",
+  "startOwnerAsAction",
+  "returnToOwnProfileAction",
+]);
 
 type Outcome = "denied" | string;
 

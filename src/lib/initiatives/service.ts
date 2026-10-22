@@ -29,6 +29,7 @@ import {
   type ResultCode,
   type StateCode,
 } from "./rules";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -159,7 +160,7 @@ function requireManage(actor: Actor, what: string) {
 }
 
 async function audit(tx: Tx, actor: Actor, action: string, id: string, title: string, after: string) {
-  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 export type InitiativeInput = { title: unknown; why?: unknown; owner: unknown; team?: unknown; goal?: unknown; note?: unknown };
