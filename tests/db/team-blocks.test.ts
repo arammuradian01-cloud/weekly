@@ -15,6 +15,7 @@ import { NUMBERS_HIDDEN_TEXT, type ReportBlock } from "@/lib/weekly-blocks/types
 import { NUMBERS_ACCESS_KEY } from "@/lib/plan/access";
 import { planMonthOfWeek } from "@/lib/plan/brief";
 import { quarterOf } from "@/lib/goals/parse";
+import * as plan from "@/lib/plan/service";
 import type { WeekKey } from "@/domain/types";
 import { readFileSync } from "node:fs";
 import { topTeamName } from "@/lib/org/top-name";
@@ -267,13 +268,127 @@ describe("отчёт команды: правки по проверке", () => 
     expect(stored).not.toMatch(new RegExp(NUMBERS_HIDDEN_TEXT));
   });
 
-  it("кому уходит отчёт: команда выше выключена или её руководитель выключен, тогда руководитель по структуре; себе не уходит", async () => {
+  it("блок цифр, который руководитель видит не целиком, для него только для чтения: подставленные правки сервер не берёт", async () => {
+    const none = await noNumbersPerson();
+    const parent = await prisma.team.create({ data: { name: "Тест 66 управление без цифр", kind: "CUSTOM", leaderId: none.id } });
+    await prisma.team.update({ where: { id: teamId }, data: { parentId: parent.id } });
+    await team.saveTeamTemplate(await personal("reva"), teamId, NUMBERED_TEMPLATE);
+    const first = await team.saveTeamReport(await personal("reva"), teamId, key, NUMBERED, null);
+    const before = (await prisma.teamWeeklyReport.findFirstOrThrow({ where: { teamId } })).blocks as unknown as ReportBlock[];
+    const lead = await personal("t66-none");
+    const view = await team.teamReportView(lead, teamId, key);
+    expect(view.blocks.filter((b) => b.locked).map((b) => b.key)).toEqual(["wow", "month"]);
+    // Ни ложной пометки «цифры обновились», ни отпечатка у закрытых блоков
+    expect(view.blocks.filter((b) => b.locked).every((b) => !b.stale && !b.basis)).toBe(true);
+    // Экран прислал подменённые блоки цифр: свои строки, «не правлен руками», и скрыл «Месяц»
+    const forged = view.blocks.map((b) =>
+      b.key === "wow" ? { ...b, edited: false, lines: [{ product: "deposits", text: "Подменённая строка", href: null, source: null }] } : b.key === "month" ? { ...b, hidden: true, lines: [] } : b,
+    );
+    await team.saveTeamReport(lead, teamId, key, forged, first.updatedAt);
+    const after = (await prisma.teamWeeklyReport.findFirstOrThrow({ where: { teamId } })).blocks as unknown as ReportBlock[];
+    const pick = (list: ReportBlock[], k: string) => list.find((b) => b.key === k)!;
+    expect(pick(after, "wow")).toMatchObject({ edited: true, lines: pick(before, "wow").lines });
+    expect(JSON.stringify(after)).not.toMatch(/Подменённая строка/);
+    // Раскладка от руководителя (скрыл блок), строки из прежней версии
+    expect(pick(after, "month")).toMatchObject({ hidden: true, edited: true, lines: pick(before, "month").lines });
+  });
+
+  it("руководитель с основными цифрами: в автосборке и в отчёте нет выручки партнёров, у руководителя со всеми цифрами есть", async () => {
+    process.env.SHEET_FAKE = "1";
+    try {
+      await plan.applyPull(await personal("muradyan", "OWNER"), planMonthOfWeek(key));
+      const none = await noNumbersPerson();
+      await prisma.setting.create({ data: { key: NUMBERS_ACCESS_KEY, value: { full: { units: null, people: [] }, summary: { topManagement: false, units: [], people: ["t66-none"] } } } });
+      const parent = await prisma.team.create({ data: { name: "Тест 66 управление с основными цифрами", kind: "CUSTOM", leaderId: none.id } });
+      await prisma.team.update({ where: { id: teamId }, data: { parentId: parent.id } });
+      await team.saveTeamTemplate(await personal("reva"), teamId, [{ key: "month", title: "Месяц" }, { key: "partners", title: "Партнёрский канал" }]);
+      const revenue = /^Партнёрский канал: выручка/;
+      const full = await team.teamReportView(await personal("reva"), teamId, key);
+      expect(full.auto.find((b) => b.key === "partners")!.lines.find((l) => revenue.test(l.text))).toMatchObject({ figures: "full" });
+      const summary = await team.teamReportView(await personal("t66-none"), teamId, key);
+      expect(summary.allFigures).toBe(false);
+      for (const list of [summary.auto, summary.blocks]) expect(list.find((b) => b.key === "partners")!.lines.some((l) => revenue.test(l.text))).toBe(false);
+      expect(JSON.stringify(summary)).not.toMatch(/Партнёрский канал: выручка/);
+      // Итог месяца по продуктам команды ему виден
+      expect(summary.auto.find((b) => b.key === "month")!.lines.length).toBeGreaterThan(0);
+    } finally {
+      delete process.env.SHEET_FAKE;
+      await prisma.planPartnerAdjustment.deleteMany();
+      await prisma.planPartnerTotal.deleteMany();
+      await prisma.planPartner.deleteMany();
+      await prisma.planCheck.deleteMany();
+      await prisma.planPull.deleteMany();
+      await prisma.planAdjustment.deleteMany();
+      await prisma.planLine.deleteMany();
+      await prisma.setting.deleteMany({ where: { key: { startsWith: "plan." } } });
+    }
+  });
+
+  it("скрытый блок не уходит ни в снимок отправки, ни в данные страницы получателя", async () => {
+    await team.saveTeamTemplate(await personal("reva"), teamId, TEMPLATE);
+    await seedWeek();
+    const reva = await personal("reva");
+    const view = await team.teamReportView(reva, teamId, key);
+    const blocks = view.blocks.map((b) => (b.key === "c:hire0001" ? { ...b, hidden: true, lines: [...b.lines, { product: "deposits", text: "Внутреннее: не для руководителя", href: null, source: null }] } : b));
+    await team.sendTeamReport(reva, teamId, key, blocks, view.updatedAt);
+    const row = await prisma.teamWeeklyReport.findFirstOrThrow({ where: { teamId } });
+    expect(JSON.stringify(row.sentSnapshot)).not.toMatch(/Внутреннее|Закрыли вакансию/);
+    const seen = await team.teamReportView(await personal("fatyanov"), teamId, key);
+    expect(seen.sent!.blocks.map((b) => b.key)).toEqual(["products", "risks", "plan"]);
+    expect(JSON.stringify(seen)).not.toMatch(/Внутреннее: не для руководителя/);
+  });
+
+  it("получатель, руководитель команды выше: по умолчанию отправленная версия, по ссылке текущая; отправить самому себе нельзя", async () => {
+    const parent = await prisma.team.create({ data: { name: "Тест 66 управление", kind: "CUSTOM", leaderId: await id("golovkin") } });
+    await prisma.team.update({ where: { id: teamId }, data: { parentId: parent.id } });
+    await team.saveTeamTemplate(await personal("reva"), teamId, TEMPLATE);
+    await seedWeek();
+    const reva = await personal("reva");
+    const view = await team.teamReportView(reva, teamId, key);
+    const sent = await team.sendTeamReport(reva, teamId, key, view.blocks, view.updatedAt);
+    expect(sent.sent!.to).toEqual(["Головкин Владислав"]);
+    // Рева поправил после отправки
+    await team.saveTeamReport(reva, teamId, key, sent.blocks.map((b) => (b.key === "plan" ? { ...b, lines: [{ product: "deposits", text: "Новая строка после отправки", href: null, source: null }] } : b)), sent.updatedAt);
+    const golovkin = await personal("golovkin");
+    const seen = await team.teamReportView(golovkin, teamId, key);
+    expect(seen).toMatchObject({ mode: "sent", canOpenCurrent: true, canEdit: false, canSend: false, blocks: [], auto: [], isRecipient: true });
+    expect(seen.sent!.editedAfter).toBe(true);
+    expect(JSON.stringify(seen.sent)).not.toMatch(/Новая строка после отправки/);
+    // Текущая версия команды: править может, отправить нет, он сам получатель
+    const current = await team.teamReportView(golovkin, teamId, key, { current: true });
+    expect(current).toMatchObject({ mode: "edit", canEdit: true, canSend: false, recipients: ["Головкин Владислав"], sendHint: expect.stringMatching(/^Вы получатель этого отчёта/) });
+    expect(pairs(current.blocks, "plan")).toContainEqual(["deposits", "Новая строка после отправки"]);
+    await expectRule(team.sendTeamReport(golovkin, teamId, key, current.blocks, current.updatedAt), /отправить отчёт самому себе нельзя/);
+    // Без отправленного отчёта руководитель выше сразу в текущей версии, но и тогда сам себе не отправляет
+    await prisma.teamWeeklyReport.deleteMany({ where: { teamId } });
+    expect(await team.teamReportView(golovkin, teamId, key)).toMatchObject({ mode: "edit", isRecipient: true, canSend: false });
+  });
+
+  it("живой блок «Конкуренты»: после сохранения без правок появляется сам, когда появилась новость", async () => {
+    await team.saveTeamTemplate(await personal("reva"), teamId, [{ key: "competitors", title: "Конкуренты" }, ...TEMPLATE]);
+    const reva = await personal("reva");
+    const view = await team.teamReportView(reva, teamId, key);
+    expect(view.blocks.find((b) => b.key === "competitors")).toMatchObject({ hidden: true, lines: [] });
+    await team.saveTeamReport(reva, teamId, key, view.blocks, view.updatedAt);
+    const source = await prisma.newsSource.create({ data: { name: "Тест 66 лента", url: "https://test66team.example/rss" } });
+    try {
+      await prisma.newsItem.create({ data: { sourceId: source.id, guid: "c1", urlKey: "test66team.example/1", url: "https://test66team.example/1", title: "Пампаду запустил подбор вкладов", summary: "", publishedAt: new Date(`${addDays(key, 1)}T09:00:00+03:00`), directions: ["deposits"] } });
+      const after = await team.teamReportView(reva, teamId, key);
+      expect(after.blocks.find((b) => b.key === "competitors")).toMatchObject({ hidden: false, lines: [{ product: "deposits", text: "Пампаду: Пампаду запустил подбор вкладов" }] });
+    } finally {
+      await prisma.newsItem.deleteMany({ where: { sourceId: source.id } });
+      await prisma.newsSource.delete({ where: { id: source.id } });
+    }
+  });
+
+  it("кому уходит отчёт: команда выше выключена или её руководитель выключен, тогда руководитель по структуре", async () => {
     const parent = await prisma.team.create({ data: { name: "Тест 66 управление", kind: "CUSTOM", leaderId: await id("golovkin") } });
     await prisma.team.update({ where: { id: teamId }, data: { parentId: parent.id } });
     await team.saveTeamTemplate(await personal("reva"), teamId, TEMPLATE);
     expect((await team.teamReportView(await personal("reva"), teamId, key)).recipients).toEqual(["Головкин Владислав"]);
-    // Руководитель выше сам ведёт отчёт команды ниже: себе не отправляет, отчёт уходит руководителю по структуре
-    expect((await team.teamReportView(await personal("golovkin"), teamId, key)).recipients).toEqual(["Фатьянов Евгений"]);
+    // Получатель считается для команды: руководитель выше, который сам ведёт отчёт команды ниже, остаётся получателем
+    // и отправить его не может (отчёт чужой команды не уходит его руководителю)
+    expect(await team.teamReportView(await personal("golovkin"), teamId, key)).toMatchObject({ recipients: ["Головкин Владислав"], canSend: false });
     // Команда выше выключена
     await prisma.team.update({ where: { id: parent.id }, data: { active: false } });
     expect((await team.teamReportView(await personal("reva"), teamId, key)).recipients).toEqual(["Фатьянов Евгений"]);

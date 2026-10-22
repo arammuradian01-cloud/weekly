@@ -10,7 +10,7 @@ import { ArrowDown, ArrowUp, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Trash2,
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { addLine, defaultProduct, moveBlock, patchLine, removeLine, setHidden } from "@/lib/weekly-blocks/edit";
-import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, NUMBERS_HIDDEN_TEXT, labelOf, lineText, productGroups, type BlockLine, type Labels, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, LIVE_KEYS, NUMBERS_HIDDEN_TEXT, labelOf, lineText, productGroups, type BlockLine, type Labels, type ProductRef, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 const external = (href: string) => /^https?:\/\//.test(href);
 const rowsFor = (text: string) => Math.min(6, Math.max(1, Math.ceil(text.length / 72) + (text.includes("\n") ? 1 : 0)));
@@ -30,9 +30,17 @@ type Props = {
   /** Отчёт прошлой недели для сравнения: под каждым блоком его строки */
   compare?: { number: number; blocks: ReportBlock[] } | null;
   headingLevel?: 2 | 3;
+  /** Подсказка в пустой строке: кому пишем */
+  placeholder?: string;
 };
 
-export function BlocksEditor({ blocks, onChange, products, labels, order, idPrefix, readOnly = false, fixedLayout = false, onRebuild, compare, headingLevel = 2 }: Props) {
+/** Пометки живого блока: цифры недели и месяца или новости конкурентов */
+const liveText = (key: string) =>
+  LIVE_FIGURE_KEYS.includes(key)
+    ? { edited: "Цифры поправлены руками и сами не обновляются", stale: "Цифры обновились, а этот блок поправлен руками. Пересобрать его по свежим цифрам?" }
+    : { edited: "Строки поправлены руками и сами не обновляются", stale: "Появились новые новости конкурентов, а этот блок поправлен руками. Пересобрать его?" };
+
+export function BlocksEditor({ blocks, onChange, products, labels, order, idPrefix, readOnly = false, fixedLayout = false, onRebuild, compare, headingLevel = 2, placeholder = "Что важно знать CEO, с цифрой" }: Props) {
   const H = headingLevel === 2 ? "h2" : "h3";
   const Sub = headingLevel === 2 ? "h3" : "h4";
   return (
@@ -40,6 +48,9 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
       {blocks.map((b, bi) => {
         const id = `${idPrefix}-${b.key.replace(":", "-")}`;
         const prev = compare?.blocks.find((x) => x.key === b.key);
+        // Блок цифр, который зритель видит не целиком: только для чтения, без «Пересобрать» и «Добавить строку»
+        const fixed = readOnly || !!b.locked;
+        const live = LIVE_KEYS.includes(b.key) ? liveText(b.key) : null;
         const row = (line: BlockLine, index: number, n: number) =>
           // Вместо цифр, которых зритель не видит: строка только для чтения, при сохранении цифры возвращаются на место
           !line.href && line.text === NUMBERS_HIDDEN_TEXT ? (
@@ -55,7 +66,8 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
               block={b}
               products={products}
               labels={labels}
-              readOnly={readOnly}
+              readOnly={fixed}
+              placeholder={placeholder}
               onPatch={(patch) => onChange(patchLine(blocks, b.key, index, patch))}
               onRemove={() => onChange(removeLine(blocks, b.key, index))}
             />
@@ -74,9 +86,13 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 ) : b.note ? (
                   <p className="mt-0.5 text-caption text-muted">{b.note}</p>
                 ) : null}
-                {!readOnly && b.edited && LIVE_FIGURE_KEYS.includes(b.key) && !b.stale ? (
+                {b.locked && !readOnly ? (
+                  <p className="mt-0.5 text-caption text-muted" data-testid="block-locked">
+                    Часть цифр этого блока вам не видна: блок правят те, у кого есть доступ ко всем его цифрам
+                  </p>
+                ) : !fixed && live && b.edited && !b.stale ? (
                   <p className="mt-0.5 text-caption text-muted" data-testid="block-edited">
-                    Цифры поправлены руками и сами не обновляются
+                    {live.edited}
                   </p>
                 ) : null}
               </div>
@@ -92,7 +108,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                     {b.hidden ? <Eye className="h-4 w-4" aria-hidden="true" /> : <EyeOff className="h-4 w-4" aria-hidden="true" />}
                     {b.hidden ? "Показать" : "Скрыть"}
                   </Button>
-                  {onRebuild ? (
+                  {onRebuild && !b.locked ? (
                     <Button type="button" size="sm" variant="ghost" aria-label={`Собрать блок «${b.title}» заново`} onClick={() => onRebuild(b.key)}>
                       <RefreshCw className="h-4 w-4" aria-hidden="true" />
                     </Button>
@@ -100,9 +116,9 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 </div>
               ) : null}
             </div>
-            {b.stale && !readOnly && onRebuild ? (
+            {b.stale && !fixed && onRebuild && live ? (
               <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status" data-testid="block-stale">
-                <p>Цифры обновились, а этот блок поправлен руками. Пересобрать его по свежим цифрам?</p>
+                <p>{live.stale}</p>
                 <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => onRebuild(b.key)}>
                   <RefreshCw className="h-4 w-4" aria-hidden="true" />
                   Пересобрать
@@ -127,7 +143,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 ) : (
                   <p className="text-small text-muted">Строк нет</p>
                 )}
-                {!readOnly && b.lines.length < BLOCK_LIMITS.lines ? (
+                {!fixed && b.lines.length < BLOCK_LIMITS.lines ? (
                   <div>
                     <Button type="button" size="sm" variant="soft" onClick={() => onChange(addLine(blocks, b.key, defaultProduct(b.key, products)))}>
                       <Plus className="h-4 w-4" aria-hidden="true" />
@@ -168,6 +184,7 @@ function LineRow({
   products,
   labels,
   readOnly,
+  placeholder,
   onPatch,
   onRemove,
 }: {
@@ -178,6 +195,7 @@ function LineRow({
   products: readonly ProductRef[];
   labels: Labels;
   readOnly: boolean;
+  placeholder: string;
   onPatch: (patch: Partial<BlockLine>) => void;
   onRemove: () => void;
 }) {
@@ -215,7 +233,7 @@ function LineRow({
           value={line.text}
           maxLength={BLOCK_LIMITS.text}
           readOnly={readOnly}
-          placeholder="Что важно знать CEO, с цифрой"
+          placeholder={placeholder}
           onChange={(e) => onPatch({ text: e.target.value })}
         />
         {line.href ? (

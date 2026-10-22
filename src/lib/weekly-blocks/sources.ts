@@ -38,15 +38,15 @@ import { STANDARD_TEMPLATE, draftBlocksOf, type Labels, type ProductRef, type Re
 
 export type BlocksMeta = { labels: Labels; order: string[]; products: ProductRef[] };
 
-/** Продукты для блоков: направления из справочника. Подписи у всех (старые строки), в выборе только видимые */
-export async function blocksMeta(): Promise<BlocksMeta> {
+/** Продукты для блоков: направления из справочника. Подписи у всех (старые строки), в выборе только видимые. Один раз на запрос */
+export const blocksMeta = cache(async (): Promise<BlocksMeta> => {
   const rows = await prisma.dictionaryItem.findMany({ where: { kind: "DIRECTION" }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }], select: { code: true, label: true, active: true } });
   return {
     labels: Object.fromEntries(rows.map((r) => [r.code, r.label])),
     order: rows.map((r) => r.code),
     products: rows.filter((r) => r.active).map((r) => ({ code: r.code, label: r.label })),
   };
-}
+});
 
 export async function loadCompetitors() {
   return competitorsOf(await getSetting<unknown>(COMPETITORS_KEY, null));
@@ -330,10 +330,15 @@ async function notionDraft(key: WeekKey, teamId: string, products: ProductRef[])
 
 export type Assembly = { blocks: ReportBlock[]; hint: string | null };
 
-async function assemble(actor: Actor, key: WeekKey, scope: Scope, template: readonly TemplateBlock[], focus: string[] | null, now: Date): Promise<Assembly> {
+/**
+ * level: уровень цифр сборки. Не задан: уровень того, кто собирает. Отчёт команды собирается со всеми цифрами, а
+ * зрителю строки режутся по его уровню (blocksForLevel): так пометка «цифры обновились» и закрытые блоки считаются по
+ * полной версии, а не по урезанной
+ */
+async function assemble(actor: Actor, key: WeekKey, scope: Scope, template: readonly TemplateBlock[], focus: string[] | null, now: Date, levelOverride?: NumbersLevel): Promise<Assembly> {
   const keys = new Set(template.map((t) => t.key));
   const needs = (k: string) => keys.has(k);
-  const [meta, level] = await Promise.all([blocksMeta(), numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management })]);
+  const [meta, level] = await Promise.all([blocksMeta(), levelOverride ?? numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management })]);
   const numbersOn = level !== "none";
   const [wow, month, news, competitors, entries, tasks, goals, notion] = await Promise.all([
     needs("wow") ? (numbersOn ? wowInput(key) : Promise.resolve({ closed: true } as WowInput)) : Promise.resolve(null),
@@ -409,9 +414,10 @@ export async function teamFocus(people: string[]): Promise<string[]> {
 
 /**
  * Черновик weekly команды по её шаблону: записи её людей, задачи и цели команды и её людей (owners: без внешних
- * участников), цифры по продуктам команды
+ * участников), цифры по продуктам команды. Всегда со всеми цифрами: в данные страницы он уходит только через
+ * blocksForLevel по уровню зрителя
  */
 export async function assembleTeamBlocks(actor: Actor, teamId: string, people: string[], template: readonly TemplateBlock[], key: WeekKey, owners: string[] = people, now?: Date): Promise<Assembly> {
-  const run = async () => assemble(actor, key, { teamId, people, owners, ceo: false }, template, await teamFocus(people), now ?? new Date());
-  return now ? run() : memo(`team|${teamId}|${key}|${template.map((t) => t.key).join(",")}|${actorSig(actor)}`, run);
+  const run = async () => assemble(actor, key, { teamId, people, owners, ceo: false }, template, await teamFocus(people), now ?? new Date(), "full");
+  return now ? run() : memo(`team|${teamId}|${key}|${template.map((t) => t.key).join(",")}`, run);
 }

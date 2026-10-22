@@ -12,7 +12,9 @@ import {
   draftBlocksOf,
   fingerprint,
   hasBlocksText,
+  keepLockedBlocks,
   legacyToBlocks,
+  lockedFor,
   lineText,
   mergeBlocks,
   newCustomKey,
@@ -20,7 +22,8 @@ import {
   productOfText,
   restoreHiddenFigures,
   safeHref,
-  withLiveFigures,
+  sentBlocks,
+  withLiveBlocks,
   type BlockLine,
   type FigureLevel,
   type ReportBlock,
@@ -509,6 +512,14 @@ describe("конкуренты", () => {
     expect(competitorMatches("Т-Банк снизил ставки по вкладам. Агрегатор Сравни обновил витрину", tbank)).toBe(false);
     expect(competitorMatches("Т-Банк снизил ставки по вкладам\nАгрегатор обновил витрину", tbank)).toBe(false);
     expect(competitorMatches("Пампаду запустил КАСКО", ["Пампаду"])).toBe(true);
+    // Т-Банк как витрина страховок
+    expect(competitorMatches("Т-Банк запустил витрину ОСАГО", tbank)).toBe(true);
+    expect(competitorMatches("Тинькофф открыл витрину страховых продуктов", tbank)).toBe(true);
+    // Неразрывный дефис, короткое и длинное тире как обычный дефис
+    expect(competitorMatches("Т\u2011Банк запустил сравнение ОСАГО", tbank)).toBe(true);
+    expect(competitorMatches("Т\u2013Банк запустил сравнение ОСАГО", tbank)).toBe(true);
+    expect(competitorMatches("Т\u2011Страхование запустило сравнение тарифов", tbank)).toBe(false);
+    expect(competitorMatches("Т\u2011Страхование повысило тарифы", ["Т\u2011Страхован"])).toBe(true);
   });
 
   it("имя самой ленты признаком не считается: новости ленты Банки.ру не про Банки.ру", () => {
@@ -606,12 +617,12 @@ describe("живые цифры", () => {
       block("month", [l("osago", "Продажи около 42 тысяч")], { edited: true, basis: fingerprint([l("osago", "Продажи 41 000")]) }),
       block("products", [l("osago", "Запустили тест")]),
     ];
-    const out = withLiveFigures(saved, fresh);
+    const out = withLiveBlocks(saved, fresh);
     expect(byKey(out, "wow")).toMatchObject({ lines: [l("osago", "Трафик 520 000")], note: "Свежие", hidden: true, stale: false });
     expect(byKey(out, "month")).toMatchObject({ lines: [l("osago", "Продажи около 42 тысяч")], edited: true, stale: true });
     expect(byKey(out, "products")).toEqual(saved[2]);
     // Цифры с правки не менялись: пометки нет
-    const same = withLiveFigures([block("month", [l("osago", "Своими словами")], { edited: true, basis: fresh[1]!.basis })], fresh);
+    const same = withLiveBlocks([block("month", [l("osago", "Своими словами")], { edited: true, basis: fresh[1]!.basis })], fresh);
     expect(same[0]!.stale).toBe(false);
   });
 
@@ -621,6 +632,85 @@ describe("живые цифры", () => {
     expect(byKey(out, "products").basis).toBeUndefined();
     expect(cleanBlocks([{ ...byKey(out, "wow"), edited: true, stale: true }], null)[0]).toMatchObject({ edited: true, basis: byKey(out, "wow").basis });
     expect(cleanBlocks([{ ...byKey(out, "wow"), stale: true }], null)[0]!.stale).toBeUndefined();
+  });
+});
+
+describe("руководитель видит не все цифры (второй круг проверки)", () => {
+  const P = [{ code: "osago", label: "ОСАГО" }, { code: "department", label: "Департамент" }];
+  const T = [{ key: "wow", title: "Неделя к неделе" }];
+  const base = { ...EMPTY, template: T, products: P, month: "closed" as const, competitors: [] };
+  const week = (value: number, prev: number, w = "2026-10-12") => assembleBlocks({ ...base, wow: { connected: true, ready: true, week: w, latestWeek: null, href: "/f", figures: [{ label: "Трафик ОСАГО", unit: "count", value, prev }], sales: [] } });
+  const autoOld = week(500000, 490000);
+  const autoNew = week(520000, 500000, "2026-10-19");
+
+  it("блок цифр, который зритель видит не целиком, только для чтения: без отпечатка и без ложной пометки «цифры обновились»", () => {
+    // Рева со всеми цифрами поправил «Неделю к неделе» руками, цифры с тех пор обновились
+    const stored = cleanBlocks([{ ...autoOld[0]!, edited: true, lines: [l("osago", "Трафик ОСАГО: 500 000, поправили руками")] }], null);
+    const truth = withLiveBlocks(stored, autoNew);
+    expect(truth[0]!.stale).toBe(true);
+    const seen = blocksForLevel(truth, "none");
+    expect(seen[0]).toMatchObject({ locked: true, lines: [{ text: NUMBERS_HIDDEN_TEXT }] });
+    expect(seen[0]!.stale).toBeUndefined();
+    expect(seen[0]!.basis).toBeUndefined();
+    // Со всеми цифрами блок не закрыт и пометка настоящая
+    expect(blocksForLevel(truth, "full")[0]).toMatchObject({ stale: true });
+    expect(blocksForLevel(truth, "full")[0]!.locked).toBeUndefined();
+    // С основными цифрами «Месяц» с хабом закрыт, «Неделя к неделе» нет
+    const month = cleanBlocks([{ key: "month", title: "Месяц", lines: [{ product: "osago", text: "ОСАГО: продажи", href: "/forecast?month=1", source: "Прогноз" }, { product: "osago", text: "Хаб", href: "/forecast?month=1", source: "Хаб: ОСАГО по СК" }] }], null)[0]!;
+    expect(lockedFor(month, "summary")).toBe(true);
+    expect(lockedFor(truth[0]!, "summary")).toBe(false);
+    expect(lockedFor({ key: "partners", lines: month.lines }, "none")).toBe(false);
+  });
+
+  it("сценарий А: руководитель без цифр жмёт «Собрать заново» и сохраняет, правка Ревы остаётся", () => {
+    const stored = cleanBlocks([{ ...autoOld[0]!, edited: true, lines: [l("osago", "Трафик ОСАГО: 500 000, поправили руками")] }], null);
+    const truth = withLiveBlocks(stored, autoNew);
+    const seen = blocksForLevel(truth, "none");
+    const rebuilt = rebuildBlock(seen, blocksForLevel(autoNew, "none"), "wow");
+    const saved = keepLockedBlocks(cleanBlocks(rebuilt, null), truth, stored, "none");
+    expect(saved[0]).toMatchObject({ edited: true, basis: stored[0]!.basis, lines: [{ text: "Трафик ОСАГО: 500 000, поправили руками", figures: "summary" }] });
+  });
+
+  it("сценарий Б: руководитель без цифр добавляет строку в блок цифр, цифры не замерзают", () => {
+    const stored = cleanBlocks(withLiveBlocks([{ key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [] }], autoOld), null);
+    const seen = blocksForLevel(withLiveBlocks(stored, autoNew), "none");
+    let edited = addLine(seen, "wow", "department");
+    edited = patchLine(edited, "wow", edited[0]!.lines.length - 1, { text: "Комментарий руководителя" });
+    const truth = withLiveBlocks(stored, autoNew);
+    const saved = withLiveBlocks(keepLockedBlocks(cleanBlocks(edited, null), truth, stored, "none"), autoNew);
+    expect(saved[0]!.edited).toBeUndefined();
+    expect(saved[0]!.lines.map((x) => x.text)).toEqual([expect.stringMatching(/^Трафик ОСАГО: 520 000/)]);
+    // Скрыть блок можно: раскладка от зрителя, строки из прежней версии
+    expect(keepLockedBlocks(cleanBlocks(setHidden(seen, "wow", true), null), truth, stored, "none")[0]).toMatchObject({ hidden: true, lines: stored[0]!.lines });
+    // Со всеми цифрами правки принимаются как есть
+    expect(keepLockedBlocks(cleanBlocks(edited, null), truth, stored, "full")[0]!.lines.at(-1)!.text).toBe("Комментарий руководителя");
+  });
+});
+
+describe("живой блок конкурентов и отправленная версия", () => {
+  const news = (title: string): NewsInput => ({ title, url: "https://a.ru/1", source: "А", directions: ["kasko"], summary: "" });
+  const T = [{ key: "competitors", title: "Конкуренты" }];
+  const autoOf = (items: NewsInput[]) => assembleBlocks({ ...EMPTY, template: T, news: items });
+
+  it("без правок руками пересобирается и появляется, когда появилась новость; скрытый руками со строками остаётся скрытым; поправленный помечается", () => {
+    const empty = cleanBlocks(autoOf([]), null);
+    expect(empty[0]).toMatchObject({ hidden: true, lines: [] });
+    const fresh = autoOf([news("Пампаду запустил КАСКО по подписке")]);
+    expect(withLiveBlocks(empty, fresh)[0]).toMatchObject({ hidden: false, lines: [{ text: "Пампаду: Пампаду запустил КАСКО по подписке" }] });
+    const shown = cleanBlocks(withLiveBlocks(empty, fresh), null);
+    expect(withLiveBlocks(setHidden(shown, "competitors", true), fresh)[0]!.hidden).toBe(true);
+    // Новости кончились: блок снова скрыт сам
+    expect(withLiveBlocks(shown, autoOf([]))[0]).toMatchObject({ hidden: true, lines: [] });
+    const mine = patchLine(shown, "competitors", 0, { text: "Пампаду: подписка на КАСКО, следим" });
+    const more = autoOf([news("Пампаду запустил КАСКО по подписке"), news("Инсапп снизил тарифы КАСКО")]);
+    expect(withLiveBlocks(mine, more)[0]).toMatchObject({ edited: true, stale: true, lines: [{ text: "Пампаду: подписка на КАСКО, следим" }] });
+  });
+
+  it("в отправленную версию скрытые блоки не попадают", () => {
+    const out = sentBlocks([block("news", [l("osago", "a")]), block("risks", [l("osago", "Скрытый риск")], { hidden: true }), block("plan", [], { stale: true, locked: true })]);
+    expect(out.map((b) => b.key)).toEqual(["news", "plan"]);
+    expect(out[1]).not.toHaveProperty("stale");
+    expect(JSON.stringify(out)).not.toMatch(/Скрытый риск/);
   });
 });
 

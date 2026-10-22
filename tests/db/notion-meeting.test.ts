@@ -462,7 +462,8 @@ describe("weekly для CEO", () => {
     expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/отправил weekly для CEO/) });
     // CEO видит собранный отчёт только для чтения и только при личном входе; цифры по его уровню (у генерального все)
     const seen = await parse.ceoSentReports(krainik, key);
-    expect(seen?.current).toMatchObject({ blocks: report.blocks, sentBy: "Мурадян Арам", editedAfter: false });
+    // Скрытые блоки (конкуренты без новостей) CEO не уходят
+    expect(seen?.current).toMatchObject({ blocks: report.blocks!.filter((b) => !b.hidden), sentBy: "Мурадян Арам", editedAfter: false });
     expect(seen?.current?.ctx).toMatchObject({ week: key, level: "full" });
     expect(await parse.ceoSentReports({ ...krainik, via: "TEAM" }, key)).toBeNull();
     expect(await parse.ceoSentReports(await actorOf("Токов"))).toBeNull();
@@ -505,7 +506,7 @@ describe("weekly для CEO", () => {
     expect(merged.meetings).toEqual([{ title: "Встреча с ВСК", text: "Договорились о планах." }]);
     // Снимок того, что ушло CEO: блоки после слияния и «Мои встречи»
     const seen = await parse.ceoSentReports(await actorOf("Крайник"), key);
-    expect(seen?.current).toMatchObject({ blocks: merged.blocks, meetings: merged.meetings });
+    expect(seen?.current).toMatchObject({ blocks: merged.blocks!.filter((b) => !b.hidden), meetings: merged.meetings });
     await parse.sendParseToCeo(await owner(), id, { ceo: draft, mode: "replace", expected: merged.updatedAt });
     const replaced = await weekly.getCeoReport(key);
     // Пустой блок черновика ничего не заменяет: новости отчёта остались

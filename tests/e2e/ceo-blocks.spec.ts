@@ -125,7 +125,8 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   await expect(page.getByText(/Weekly отправлен CEO/).first()).toBeVisible();
   await expect(page.getByTestId("ceo-report-sent")).toContainText("Отправлен CEO");
   const [report] = await sql(`SELECT "sentAt" IS NOT NULL AS sent, jsonb_array_length("sentSnapshot"->'blocks') AS blocks, main FROM ceo_reports`);
-  expect(report).toMatchObject({ sent: true, blocks: 8 });
+  // Скрытый блок «Новости рынка и команды» в снимок отправки не уходит
+  expect(report).toMatchObject({ sent: true, blocks: 7 });
   expect(report!.main).toContain("- КАСКО. Пилот КАСКО для такси запускаем в ноябре");
   await shot(page, "ceo-sent-owner");
 
@@ -235,5 +236,43 @@ test("этап 66: руководитель задаёт блоки weekly ко�
   await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Найм и команда" })).toContainText("Закрыли вакансию аналитика вкладов");
   await expect(boss.getByRole("button", { name: "Отправить руководителю" })).toHaveCount(0);
   await shot(boss, "team-report-boss");
+  await boss.close();
+});
+
+test("этап 66: получатель отчёта команды, руководитель команды выше, видит отправленную версию, по ссылке текущую и сам себе не отправляет", async ({ page, browser }) => {
+  test.setTimeout(150_000);
+  await sql(`INSERT INTO teams (id, name, kind, "leaderId", "updatedAt") VALUES ('e2e-parent66', 'Тест 66: управление', 'CUSTOM', (SELECT id FROM people WHERE slug = 'golovkin'), now())`);
+  await sql(`INSERT INTO teams (id, name, kind, "leaderId", "parentId", "specialistsWeekly", "updatedAt") VALUES ('e2e-team66b', 'Тест 66: команда КАСКО', 'CUSTOM', (SELECT id FROM people WHERE slug = 'reva'), 'e2e-parent66', true, now())`);
+  await sql(`INSERT INTO team_members ("teamId", "personId") SELECT 'e2e-team66b', id FROM people WHERE slug = 'fatyanov'`);
+  await sql(`INSERT INTO team_weekly_templates ("teamId", blocks, "updatedAt") VALUES ('e2e-team66b', '[{"key":"products","title":"Продукты"},{"key":"plan","title":"План на неделю"}]'::jsonb, now())`);
+
+  // Рева пишет строку и отправляет: получатель руководитель команды выше
+  await enterByLink(page, "reva");
+  await page.goto("/weekly/team-report?team=e2e-team66b");
+  const products = page.getByTestId("team-block-products");
+  await products.getByRole("button", { name: "Добавить строку" }).click();
+  // Строки в «Продуктах» идут подразделами продуктов: новую ищем по пустому тексту
+  const empty = (await products.getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value))).indexOf("");
+  await products.getByRole("textbox").nth(empty).fill("Пилот КАСКО для такси запускаем в ноябре");
+  await page.getByRole("button", { name: "Отправить руководителю" }).click();
+  const dialog = page.getByRole("dialog", { name: "Отправить weekly команды?" });
+  await expect(dialog).toContainText("Головкин Владислав");
+  await dialog.getByRole("button", { name: "Отправить", exact: true }).click();
+  await expect(page.getByTestId("team-report-sent")).toContainText("Получил: Головкин Владислав");
+
+  // Головкин по событию в «Мне» видит отправленную версию, а не редактор
+  const boss = await personal(browser, page, "golovkin");
+  await boss.goto("/me");
+  await boss.getByRole("link", { name: "Weekly команды по блокам" }).click();
+  await expect(boss).toHaveURL(/\/weekly\/team-report\?team=e2e-team66b/);
+  await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");
+  await expect(boss.getByTestId("team-editor")).toHaveCount(0);
+  await shot(boss, "team-report-parent-sent");
+  // По ссылке текущая версия команды: править может, отправить самому себе нет
+  await boss.getByTestId("team-report-current").click();
+  await expect(boss.getByTestId("team-editor")).toBeVisible();
+  await expect(boss.getByRole("button", { name: /Отправить руководителю|Отправить ещё раз/ })).toHaveCount(0);
+  await expect(boss.getByText(/Вы получатель этого отчёта/)).toBeVisible();
+  await shot(boss, "team-report-parent-current");
   await boss.close();
 });

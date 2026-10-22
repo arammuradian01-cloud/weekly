@@ -20,7 +20,7 @@ import { formatValue, type Unit } from "@/lib/numbers/parse";
 import { matchedKeywords, withoutOwnName } from "@/lib/news/match";
 import { foldText, keywordBody } from "@/lib/news/keywords";
 import { repeatsNumbers } from "@/lib/weekly/rules";
-import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, fingerprint, isStandardKey, safeHref, tidy, uniqueLines, type BlockLine, type FigureLevel, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
+import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, LIVE_KEYS, fingerprint, isStandardKey, safeHref, tidy, uniqueLines, type BlockLine, type FigureLevel, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
 
 // ---------- Числа словами ----------
 
@@ -294,6 +294,9 @@ export function monthBlock(input: MonthInput | "closed" | null, focus: string[] 
 const WORD = "\\p{L}\\p{N}";
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Неразрывный дефис, короткое и длинное тире внутри слова как обычный дефис: «Т‑Банк» и «Т–Банк» это «Т-Банк» */
+const dashes = (s: string) => s.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212\uFE63\uFF0D]/g, "-");
+
 /** Минус-слово: слово целиком (со словоформой) вырезается из текста, и дальше его не видят другие слова конкурента */
 function stripWord(folded: string, keyword: string): string {
   const { body, exact } = keywordBody(keyword);
@@ -309,10 +312,11 @@ function stripWord(folded: string, keyword: string): string {
  * «Т-Страхование» не делает новость новостью о Т-Банке как агрегаторе)
  */
 export function competitorMatches(text: string, keywords: readonly string[]): boolean {
-  const minus = keywords.map((k) => k.trim()).filter((k) => k.startsWith("-") && k.length > 1).map((k) => k.slice(1).trim());
-  const plus = keywords.map((k) => k.trim()).filter((k) => k && !k.startsWith("-"));
+  const words = keywords.map((k) => dashes(k).trim());
+  const minus = words.filter((k) => k.startsWith("-") && k.length > 1).map((k) => k.slice(1).trim());
+  const plus = words.filter((k) => k && !k.startsWith("-"));
   // Фразы: заголовок отдельно, описание по предложениям. Минус-слова вырезаются из каждой
-  const sentences = text
+  const sentences = dashes(text)
     .split(/\n+|(?<=[.!?…])\s+/)
     .map((piece) => minus.reduce((acc, m) => stripWord(acc, m), foldText(piece)))
     .filter(Boolean);
@@ -474,16 +478,16 @@ export function assembleBlocks(input: AssembleInput): ReportBlock[] {
     const list = uniqueLines(lines.get(t.key) ?? []).slice(0, BLOCK_LIMITS.lines);
     const competitors = t.key === "competitors";
     const note = notes.has(t.key) ? notes.get(t.key)! : null;
-    const live = LIVE_FIGURE_KEYS.includes(t.key);
+    const figures = LIVE_FIGURE_KEYS.includes(t.key);
     return {
       key: t.key,
       title: t.title,
       // Конкуренты без новостей скрыты: блок появляется, когда новости по ним есть
       hidden: competitors && !list.length,
       lines: list,
-      note: list.length ? (live ? note : null) : (note ?? (competitors ? "Новостей по конкурентам за неделю нет: блок скрыт" : isStandardKey(t.key) ? EMPTY_NOTE : "Записей по этому блоку нет")),
-      // Отпечаток живых цифр: поправленный руками блок узнает, что цифры с тех пор обновились
-      ...(live ? { basis: fingerprint(list) } : {}),
+      note: list.length ? (figures ? note : null) : (note ?? (competitors ? "Новостей по конкурентам за неделю нет: блок скрыт" : isStandardKey(t.key) ? EMPTY_NOTE : "Записей по этому блоку нет")),
+      // Отпечаток живого блока (цифры, конкуренты): поправленный руками блок узнает, что автосборка с тех пор изменилась
+      ...(LIVE_KEYS.includes(t.key) ? { basis: fingerprint(list) } : {}),
     };
   });
 }

@@ -58,6 +58,8 @@ export type ReportBlock = {
   basis?: string | null;
   /** Не хранится: блок поправили руками, а автосборка с тех пор изменилась. Экран предлагает собрать блок заново */
   stale?: boolean;
+  /** Не хранится: блок цифр, который зритель видит не целиком. Для него только для чтения, сервер его правки не берёт */
+  locked?: boolean;
 };
 
 /** Блок шаблона weekly команды: стандартный или свой (ключ c:...) */
@@ -116,8 +118,10 @@ export function safeHref(value: unknown): string | null {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** Блоки живых цифр: без правок руками они пересобираются при показе и при отправке */
+/** Блоки цифр: их собирает ресурс, запись weekly в них не ставится */
 export const LIVE_FIGURE_KEYS: readonly string[] = ["wow", "month"];
+/** Живые блоки: без правок руками пересобираются при показе и при отправке. Цифры недели и месяца и конкуренты */
+export const LIVE_KEYS: readonly string[] = [...LIVE_FIGURE_KEYS, "competitors"];
 /** Блоки, где цифры в каждой строке: даже строка, написанная руками, считается строкой с цифрами */
 const FIGURE_BLOCKS: readonly string[] = ["wow", "month"];
 
@@ -438,10 +442,16 @@ export function mergeBlocks(existing: readonly ReportBlock[], draft: readonly Re
 
 const visibleAt = (l: BlockLine, level: ViewerLevel) => !l.figures || level === "full" || (level === "summary" && l.figures === "summary");
 
+/** Блок цифр, который зритель видит не целиком (хотя бы одна строка ему закрыта): для него только для чтения */
+export function lockedFor(block: Pick<ReportBlock, "key" | "lines">, level: ViewerLevel): boolean {
+  return level !== "full" && LIVE_FIGURE_KEYS.includes(block.key) && block.lines.some((l) => !visibleAt(l, level));
+}
+
 /**
  * Отчёт глазами зрителя: без доступа к цифрам строки с цифрами заменяются одной строкой «Цифры видны только с доступом
- * к цифрам», с основными цифрами уходят хаб ОСАГО по СК и разрез по партнёрам. Режется на сервере: блоки целиком уходят
- * в данные страницы
+ * к цифрам», с основными цифрами уходят хаб ОСАГО по СК и разрез по партнёрам. Блок цифр, который зритель видит не
+ * целиком, помечается только для чтения (locked), без отпечатка и без пометки «цифры обновились»: пересобрать его может
+ * только тот, кто видит все его цифры. Режется на сервере: блоки целиком уходят в данные страницы
  */
 export function blocksForLevel(blocks: readonly ReportBlock[], level: ViewerLevel): ReportBlock[] {
   if (level === "full") return [...blocks];
@@ -449,19 +459,35 @@ export function blocksForLevel(blocks: readonly ReportBlock[], level: ViewerLeve
     const keep = b.lines.filter((l) => visibleAt(l, level));
     if (keep.length === b.lines.length) return b;
     const hidden: BlockLine = { product: null, text: NUMBERS_HIDDEN_TEXT, href: null, source: null };
-    return { ...b, lines: level === "none" ? [...keep, hidden] : keep };
+    const { basis: _basis, stale: _stale, ...rest } = b;
+    return { ...rest, lines: level === "none" ? [...keep, hidden] : keep, ...(lockedFor(b, level) ? { locked: true } : {}) };
+  });
+}
+
+/**
+ * Сохранение того, кто видит не все цифры: блоки цифр, закрытые для него (по текущей полной версии truth), берутся из
+ * прежней версии целиком (строки, правки руками, отпечаток), от него остаются только место блока и «скрыт». Его правки
+ * таких блоков (в том числе подставленные с экрана) не принимаются
+ */
+export function keepLockedBlocks(next: readonly ReportBlock[], truth: readonly ReportBlock[], prev: readonly ReportBlock[], level: ViewerLevel): ReportBlock[] {
+  if (level === "full") return [...next];
+  return next.map((b) => {
+    const t = truth.find((x) => x.key === b.key);
+    if (!t || !lockedFor(t, level)) return b;
+    const p = prev.find((x) => x.key === b.key) ?? t;
+    return { key: b.key, title: b.title, hidden: b.hidden, lines: p.lines.map((l) => ({ ...l })), note: p.note, ...(p.edited ? { edited: true } : {}), ...(p.basis ? { basis: p.basis } : {}) };
   });
 }
 
 /**
  * Сохранение того, кто видит не все цифры: строки с цифрами, которых ему не показали, возвращаются в свои блоки из
- * прежней версии, иначе правка текста стёрла бы чужие цифры. Блоки живых цифр без правок руками не трогаются: их строки
- * и так пересобираются
+ * прежней версии, иначе правка текста стёрла бы чужие цифры. Живые блоки без правок руками не трогаются: их строки и так
+ * пересобираются
  */
 export function restoreHiddenFigures(next: readonly ReportBlock[], before: readonly ReportBlock[], level: ViewerLevel): ReportBlock[] {
   if (level === "full") return [...next];
   return next.map((b) => {
-    if (LIVE_FIGURE_KEYS.includes(b.key) && !b.edited) return b;
+    if (LIVE_KEYS.includes(b.key) && !b.edited) return b;
     const prev = before.find((x) => x.key === b.key);
     const lost = (prev?.lines ?? []).filter((l) => !visibleAt(l, level) && !b.lines.some((x) => sameLine(x, l)));
     return lost.length ? { ...b, lines: [...b.lines, ...lost].slice(0, BLOCK_LIMITS.lines) } : b;
@@ -478,19 +504,26 @@ export function fingerprint(lines: readonly Pick<BlockLine, "product" | "text">[
 }
 
 /**
- * Живые цифры: блоки «Неделя к неделе» и «Месяц» без правок руками берут строки и пояснение свежей автосборки (при
- * показе и при отправке), поправленные руками остаются как есть и помечаются stale, если автосборка с тех пор
- * изменилась. Скрыт блок или нет, решает человек
+ * Живые блоки: «Неделя к неделе», «Месяц» и «Конкуренты» без правок руками берут строки и пояснение свежей автосборки
+ * (при показе и при отправке), поправленные руками остаются как есть и помечаются stale, если автосборка с тех пор
+ * изменилась. Скрыт блок или нет, решает человек; только «Конкуренты», скрытые потому, что новостей не было, появляются
+ * сами, когда новости появились. fresh: автосборка со всеми цифрами, иначе пометка stale была бы ложной
  */
-export function withLiveFigures(blocks: readonly ReportBlock[], fresh: readonly ReportBlock[]): ReportBlock[] {
+export function withLiveBlocks(blocks: readonly ReportBlock[], fresh: readonly ReportBlock[]): ReportBlock[] {
   return blocks.map((b) => {
-    if (!LIVE_FIGURE_KEYS.includes(b.key)) return b;
+    if (!LIVE_KEYS.includes(b.key)) return b;
     const f = fresh.find((x) => x.key === b.key);
     if (!f) return b;
-    if (!b.edited) return { ...b, lines: f.lines.map((l) => ({ ...l })), note: f.note, basis: f.basis ?? null, stale: false };
+    if (!b.edited) {
+      const hidden = b.key === "competitors" ? (b.hidden && b.lines.length > 0) || f.hidden : b.hidden;
+      return { ...b, hidden, lines: f.lines.map((l) => ({ ...l })), note: f.note, basis: f.basis ?? null, stale: false };
+    }
     return { ...b, stale: (f.basis ?? null) !== (b.basis ?? null) };
   });
 }
+
+/** Отправленная версия: только видимые блоки. Скрытый блок не уходит ни в снимок, ни в данные страницы получателя */
+export const sentBlocks = (blocks: readonly ReportBlock[]): ReportBlock[] => blocks.filter((b) => !b.hidden).map(({ stale: _s, locked: _l, ...b }) => b);
 
 // ---------- Шаблон команды и сохранённый отчёт ----------
 

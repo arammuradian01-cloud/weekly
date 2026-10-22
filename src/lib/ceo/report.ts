@@ -15,7 +15,7 @@ import { notify } from "@/lib/inbox/notify";
 import { audit, getCeoReport, weekContext, type CeoReportView } from "@/lib/weekly/service";
 import type { CeoSections } from "@/lib/weekly/rules";
 import { assembleCeoBlocks, blocksMeta, type BlocksMeta } from "@/lib/weekly-blocks/sources";
-import { blocksForLevel, blocksToLegacy, cleanBlocks, hasBlocksText, lineText, orderedLines, withLiveFigures, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { blocksForLevel, blocksToLegacy, cleanBlocks, hasBlocksText, lineText, orderedLines, sentBlocks, withLiveBlocks, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { cleanMeetings, type CeoMeeting } from "./text";
 import { ceoContext, type CeoContext } from "./assembled";
 
@@ -122,7 +122,8 @@ export function snapshotOf(value: unknown): CeoSnapshot | null {
 export async function markCeoSentIn(tx: Tx, actor: Actor, key: WeekKey, saved: CeoReportView, recipients: { id: string; fullName: string }[], text: string, now = new Date()): Promise<{ id: string; name: string }[]> {
   const week = await tx.week.findUniqueOrThrow({ where: { start: dbDate(key) }, select: { id: true } });
   const to = recipients.map((r) => ({ id: r.id, name: r.fullName }));
-  const snapshot: CeoSnapshot = { ...(saved.sections ?? { main: "", risks: "", next: "" }), meetings: saved.meetings, blocks: saved.blocks };
+  // В снимке только видимые блоки: скрытый блок CEO не уходит, в данные его страницы тоже
+  const snapshot: CeoSnapshot = { ...(saved.sections ?? { main: "", risks: "", next: "" }), meetings: saved.meetings, blocks: saved.blocks ? sentBlocks(saved.blocks) : null };
   await tx.$executeRaw`UPDATE ceo_reports SET "sentAt" = "updatedAt", "sentById" = ${actor.personId}, "sentTo" = ${JSON.stringify(to)}::jsonb, "sentSnapshot" = ${JSON.stringify(snapshot)}::jsonb WHERE "weekId" = ${week.id}`;
   await notify(tx, { kind: "MEETING", recipients: recipients.map((r) => r.id), actor, subject: `ceo-report:${key}`, text }, now);
   return to;
@@ -144,7 +145,7 @@ export async function sendCeoReport(actor: Actor, key: WeekKey, input: SendCeoRe
   const recipients = await ceoRecipients();
   if (!recipients.length) fail("Не найден CEO: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»");
   // Свежая автосборка до транзакции: она читает много таблиц
-  const blocks = withLiveFigures(clean, (await assembleCeoBlocks(actor, key, now)).blocks);
+  const blocks = withLiveBlocks(clean, (await assembleCeoBlocks(actor, key, now)).blocks);
   await prisma.$transaction(
     async (tx) => {
       const saved = await saveCeoBlocksIn(tx, actor, key, blocks, input.meetings, input.expected ?? null, meta);
@@ -203,7 +204,7 @@ export async function ceoSentReports(actor: Actor, key?: string | null): Promise
     const snap = snapshotOf(pick.sentSnapshot) ?? { main: pick.main, risks: pick.risks, next: pick.next, meetings: cleanMeetings(pick.meetings), blocks: Array.isArray(pick.blocks) ? cleanBlocks(pick.blocks, null) : null };
     const week = isoFromDbDate(pick.week.start) as WeekKey;
     const [meta, ctx] = await Promise.all([blocksMeta(), ceoContext(actor, week, { recipient: true })]);
-    const blocks = snap.blocks ? blocksForLevel(snap.blocks, ctx.level) : null;
+    const blocks = snap.blocks ? blocksForLevel(sentBlocks(snap.blocks), ctx.level) : null;
     current = {
       key: week,
       number: pick.week.isoNumber,

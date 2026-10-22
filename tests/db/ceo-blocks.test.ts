@@ -249,7 +249,8 @@ describe("отправка CEO из отчёта по блокам", () => {
     const row = await prisma.ceoReport.findFirstOrThrow();
     expect(row.sentAt!.getTime()).toBe(row.updatedAt.getTime());
     const snap = report.snapshotOf(row.sentSnapshot)!;
-    expect(snap.blocks!.map((b) => b.key)).toEqual(["news", "competitors", "products", "risks", "plan"]);
+    // Скрытый блок «Конкуренты» в снимок не ушёл
+    expect(snap.blocks!.map((b) => b.key)).toEqual(["news", "products", "risks", "plan"]);
     expect(snap.meetings).toEqual([{ title: "Встреча", text: "Текст." }]);
     expect(snap.next).toBe("- КАСКО. Итоги пилота");
     const ceo = await actor.ceo();
@@ -317,6 +318,18 @@ describe("отправка CEO из отчёта по блокам", () => {
     expect(JSON.stringify(summary)).not.toMatch(/25 400/);
     // Под общим логином отчёт глазами получателя не открывается
     expect(await report.ceoSentReports({ ...who, via: "TEAM" }, key)).toBeNull();
+  });
+
+  it("живой блок «Конкуренты»: сохранённый пустым, при отправке появляется с новостью недели", async () => {
+    const owner = await actor.owner();
+    const { blocks } = await assembleCeoBlocks(owner, key);
+    expect(byKey(blocks, "competitors")).toMatchObject({ hidden: true, lines: [] });
+    const saved = await report.saveCeoBlocks(owner, key, blocks.map((b) => (b.key === "products" ? { ...b, lines: [{ product: "osago", text: "Строка для отправки", href: null, source: null }] } : b)), undefined, null);
+    const source = await prisma.newsSource.create({ data: { name: "Тестовая лента 66", url: "https://test66.live.example/rss" } });
+    await prisma.newsItem.create({ data: { sourceId: source.id, guid: "l1", urlKey: "test66.live.example/1", url: "https://test66.live.example/1", title: "Пампаду запустил КАСКО по подписке", summary: "", publishedAt: new Date(`${addDays(key, 1)}T09:00:00+03:00`), directions: ["kasko"] } });
+    await report.sendCeoReport(owner, key, { blocks: saved.blocks, expected: saved.updatedAt! });
+    const snap = report.snapshotOf((await prisma.ceoReport.findFirstOrThrow()).sentSnapshot)!;
+    expect(byKey(snap.blocks!, "competitors")).toMatchObject({ hidden: false, lines: [{ product: "kasko", text: "Пампаду: Пампаду запустил КАСКО по подписке" }] });
   });
 
   it("новости ленты конкурента не уходят в «Конкуренты» из-за имени самой ленты", async () => {

@@ -20,7 +20,7 @@ export const metadata: Metadata = { title: "Weekly команды по блок�
  * Weekly команды по смысловым блокам (этап 66): шаблон блоков команды, отчёт команды за неделю по ним и отправка своему
  * руководителю. Команда из адреса, иначе выбранная команда. У команды страхования и инвестиций это отчёт CEO
  */
-export default async function TeamReportPage({ searchParams }: { searchParams: Promise<{ team?: string; week?: string }> }) {
+export default async function TeamReportPage({ searchParams }: { searchParams: Promise<{ team?: string; week?: string; view?: string }> }) {
   const ctx = await requireContext();
   const params = await searchParams;
   const one = (v: unknown) => (Array.isArray(v) ? (v[0] as string | undefined) : (v as string | undefined));
@@ -54,7 +54,8 @@ export default async function TeamReportPage({ searchParams }: { searchParams: P
   let view: TeamReportView;
   let template: TeamTemplateView | null;
   try {
-    [view, template] = await Promise.all([teamReportView(actor, teamId, key), teamTemplateView(actor, teamId).catch(() => null)]);
+    // Получатель по умолчанию видит отправленную версию; view=current открывает текущую, если он может править
+    [view, template] = await Promise.all([teamReportView(actor, teamId, key, { current: one(params.view) === "current" }), teamTemplateView(actor, teamId).catch(() => null)]);
   } catch (error) {
     if (!(error instanceof TaskRuleError)) throw error;
     return (
@@ -85,7 +86,7 @@ export default async function TeamReportPage({ searchParams }: { searchParams: P
       </nav>
       {/* Ключ и по блокам шаблона: шаблон поменяли, сервер выравнивает сохранённый отчёт по нему (новые блоки добавлены из
           автосборки или пустыми, убранные скрыты со своими строками), и редактор берёт отчёт заново */}
-      <TeamReportScreen key={`${view.team.id}:${view.week}:${view.template?.map((b) => b.key).join(",") ?? "-"}`} view={view} template={template} />
+      <TeamReportScreen key={`${view.team.id}:${view.week}:${view.mode}:${view.template?.map((b) => b.key).join(",") ?? "-"}`} view={view} template={template} />
     </>
   );
 }

@@ -5,6 +5,7 @@
 // Права и правила проверяют сервисы.
 
 import { runAction, type Result } from "@/lib/action-runner";
+import { TaskRuleError } from "@/lib/tasks/service";
 import type { WeekKey } from "@/domain/types";
 import type { CeoReportView } from "@/lib/weekly/service";
 import * as ceo from "@/lib/ceo/report";
@@ -14,15 +15,26 @@ import type { Competitor } from "@/lib/weekly-blocks/assemble";
 
 const STALE = "Страница устарела: обновите её, чтобы сохранить отчёт. Свои правки сначала скопируйте";
 
-/** Экран обязан прислать момент прошлого сохранения, который он видел (null: отчёт ещё не сохраняли) */
+/**
+ * Экран обязан прислать момент прошлого сохранения, который он видел (null: отчёт ещё не сохраняли). Проверка внутри
+ * runAction: сначала его проверки (режим «Смотреть как» и права), потом устаревшая вкладка
+ */
+function requireExpected(expected: unknown): asserts expected is string | null {
+  if (expected !== null && typeof expected !== "string") throw new TaskRuleError(STALE);
+}
+
 export async function saveCeoBlocksAction(week: WeekKey, blocks: unknown, meetings: unknown, expected: string | null): Promise<Result<CeoReportView>> {
-  if (expected !== null && typeof expected !== "string") return { ok: false, error: STALE };
-  return runAction("Отчёт CEO по блокам", (a) => ceo.saveCeoBlocks(a, week, blocks, meetings, expected));
+  return runAction("Отчёт CEO по блокам", (a) => {
+    requireExpected(expected);
+    return ceo.saveCeoBlocks(a, week, blocks, meetings, expected);
+  });
 }
 
 export async function sendCeoReportAction(week: WeekKey, blocks: unknown, meetings: unknown, expected: string | null): Promise<Result<CeoReportView>> {
-  if (expected !== null && typeof expected !== "string") return { ok: false, error: STALE };
-  return runAction("Отправка weekly CEO", (a) => ceo.sendCeoReport(a, week, { blocks, meetings, expected }));
+  return runAction("Отправка weekly CEO", (a) => {
+    requireExpected(expected);
+    return ceo.sendCeoReport(a, week, { blocks, meetings, expected });
+  });
 }
 
 export async function saveCompetitorsAction(list: unknown): Promise<Result<Competitor[]>> {
@@ -36,11 +48,15 @@ export async function saveTeamTemplateAction(teamId: string, blocks: unknown): P
 }
 
 export async function saveTeamReportAction(teamId: string, week: WeekKey, blocks: unknown, expected: string | null): Promise<Result<team.TeamReportView>> {
-  if (expected !== null && typeof expected !== "string") return { ok: false, error: STALE };
-  return runAction("Weekly команды по блокам", (a) => team.saveTeamReport(a, String(teamId), week, blocks, expected));
+  return runAction("Weekly команды по блокам", (a) => {
+    requireExpected(expected);
+    return team.saveTeamReport(a, String(teamId), week, blocks, expected);
+  });
 }
 
 export async function sendTeamReportAction(teamId: string, week: WeekKey, blocks: unknown, expected: string | null): Promise<Result<team.TeamReportView>> {
-  if (expected !== null && typeof expected !== "string") return { ok: false, error: STALE };
-  return runAction("Отправка weekly команды", (a) => team.sendTeamReport(a, String(teamId), week, blocks, expected));
+  return runAction("Отправка weekly команды", (a) => {
+    requireExpected(expected);
+    return team.sendTeamReport(a, String(teamId), week, blocks, expected);
+  });
 }
