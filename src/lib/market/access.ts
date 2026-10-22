@@ -1,6 +1,9 @@
-// Кто видит раздел «Рынок» (этап 62). Решение Арама 22.10: рынок КАСКО и ОСАГО открыт только отдельным людям.
-// Видят: владельцы всегда и люди из списка, который ведёт владелец в «Настройках»; только при личном входе, по
-// общему логину раздела нет. Тех, кому раздел закрыт, не пускают ни страница, ни обработчик данных.
+// Кто видит раздел «Рынок» (этап 62, этап 72). Решение Арама 22.10: рынок КАСКО и ОСАГО открыт отдельным людям.
+// Решение Арама 23.10 (этап 72): вход по общему логину открывает раздел любому выбранному профилю. При личном входе
+// видят владельцы всегда (и те, кто станет владельцем позже: роль читается из базы на каждом запросе) и люди из
+// списка, который ведёт владелец в «Настройках». Тех, кому раздел закрыт, не пускают ни страница, ни обработчик
+// данных. Загружает пакет по-прежнему только владелец при личном входе. События рынка в журнале и выгрузке остаются
+// по правилу личного входа: права журнала этап 72 не меняет.
 // Там же владелец выбирает команды, у которых на первой встрече месяца первым пунктом встаёт разбор рынка: по
 // умолчанию топ-команда.
 
@@ -16,7 +19,6 @@ export const MARKET_ACCESS_KEY = "market.access";
 export const MARKET_MEETING_KEY = "market.meeting";
 
 export const MARKET_CLOSED_TEXT = "Раздел открыт отдельным людям, доступ даёт владелец.";
-export const MARKET_TEAM_LOGIN_TEXT = "По общему логину раздела нет: он открывается только при личном входе.";
 
 export type MarketAccess = { people: string[] };
 export type MarketMeeting = { teamIds: string[] };
@@ -44,19 +46,35 @@ export async function loadMarketMeeting(db: Db = prisma): Promise<MarketMeeting>
 
 export type MarketViewer = { slug: string; role: Role; active?: boolean; via?: LoginMethod | null };
 
-/** Открыт ли раздел: личный вход, включённый профиль, владелец или человек из списка */
+/**
+ * Открыт ли раздел. Общий логин: да любому включённому профилю (этап 72). Личный вход: владелец или человек из
+ * списка. Способ входа неизвестен или профиль выключен: нет
+ */
 export function canSeeMarketWith(viewer: MarketViewer, access: MarketAccess): boolean {
-  if (!viewer.via || viewer.via === "TEAM") return false;
+  if (!viewer.via) return false;
   if (viewer.active === false) return false;
+  if (viewer.via === "TEAM") return true;
   return viewer.role === "OWNER" || access.people.includes(viewer.slug);
 }
 
-/** То же по базе: профиль перечитывается, выключенный человек раздел не видит */
+/** То же по базе: профиль перечитывается, выключенный человек раздел не видит, новая роль владельца действует сразу */
 export async function canSeeMarket(viewer: { personId: string; via?: LoginMethod | null }, db: Db = prisma): Promise<boolean> {
-  if (!viewer.via || viewer.via === "TEAM") return false;
-  const [person, access] = await Promise.all([db.person.findUnique({ where: { id: viewer.personId }, select: { slug: true, role: true, active: true } }), loadMarketAccess(db)]);
+  if (!viewer.via) return false;
+  const [person, access] = await Promise.all([
+    db.person.findUnique({ where: { id: viewer.personId }, select: { slug: true, role: true, active: true } }),
+    viewer.via === "TEAM" ? Promise.resolve({ people: [] }) : loadMarketAccess(db),
+  ]);
   if (!person) return false;
   return canSeeMarketWith({ ...person, via: viewer.via }, access);
+}
+
+/**
+ * События рынка в журнале и в выгрузке в Excel (этап 62): по правилу личного входа, владелец или человек из списка.
+ * Общий логин открывает сам раздел (этап 72), но права журнала не меняются: по общему логину событий рынка нет
+ */
+export async function canSeeMarketEvents(viewer: { personId: string; via?: LoginMethod | null }, db: Db = prisma): Promise<boolean> {
+  if (!viewer.via || viewer.via === "TEAM") return false;
+  return canSeeMarket(viewer, db);
 }
 
 /** Загружает пакет рынка владелец при личном входе: режим управления не нужен, общий логин не годится */
@@ -72,7 +90,7 @@ export type MarketSettingsView = {
   /** Все включённые люди для выбора */
   options: { slug: string; name: string; hint: string | null }[];
   teams: { id: string; name: string }[];
-  /** Сколько человек видят раздел при личном входе: владельцы и люди из списка */
+  /** Сколько человек видят раздел при личном входе: владельцы и люди из списка. По общему логину видят все */
   count: number;
   owners: number;
   /** Люди и команды из настройки, которых больше нет или они выключены: доступ и пункт у них молча не работают */
@@ -102,22 +120,31 @@ export async function marketSettingsView(db: Db = prisma): Promise<MarketSetting
   };
 }
 
-export async function saveMarketSettings(actor: Actor, input: { people: string[]; teamIds: string[] }): Promise<MarketSettingsView> {
+/**
+ * Сохраняет настройку рынка. Список, которого нет во входе, не меняется (этап 72): «Сохранить доступ» под людьми
+ * сохраняет только людей, строка под командами только команды, нижняя кнопка оба списка
+ */
+export async function saveMarketSettings(actor: Actor, input: { people?: string[]; teamIds?: string[] }): Promise<MarketSettingsView> {
   if (actor.management !== "OWNER" || actor.role === "OBSERVER") throw new TaskRuleError("Доступ к рынку настраивает владелец в режиме управления");
   const people = new Map((await prisma.person.findMany({ where: { active: true }, select: { slug: true, fullName: true } })).map((p) => [p.slug, p.fullName]));
   const teams = new Map((await prisma.team.findMany({ where: { active: true }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
-  const next: MarketAccess = { people: strings(input?.people).filter((s) => people.has(s)) };
-  const nextMeeting: MarketMeeting = { teamIds: strings(input?.teamIds).filter((id) => teams.has(id)) };
+  const givenPeople = Array.isArray(input?.people) ? strings(input.people).filter((s) => people.has(s)) : null;
+  const givenTeams = Array.isArray(input?.teamIds) ? strings(input.teamIds).filter((id) => teams.has(id)) : null;
   await prisma.$transaction(async (tx) => {
     const before = await loadMarketAccess(tx);
     const beforeMeeting = await loadMarketMeeting(tx);
-    await tx.setting.upsert({ where: { key: MARKET_ACCESS_KEY }, update: { value: next }, create: { key: MARKET_ACCESS_KEY, value: next } });
-    await tx.setting.upsert({ where: { key: MARKET_MEETING_KEY }, update: { value: nextMeeting }, create: { key: MARKET_MEETING_KEY, value: nextMeeting } });
+    const lines: [string, string, string, string][] = [];
     const names = (ids: string[], map: Map<string, string>, empty: string) => ids.map((id) => map.get(id) ?? id).join(", ") || empty;
-    const lines: [string, string, string, string][] = [
-      ["settings.marketAccess", "Рынок: люди с доступом", names(before.people, people, "только владельцы"), names(next.people, people, "только владельцы")],
-      ["settings.marketMeeting", "Рынок: разбор на первой встрече месяца", names(beforeMeeting.teamIds, teams, "ни у кого"), names(nextMeeting.teamIds, teams, "ни у кого")],
-    ];
+    if (givenPeople) {
+      const next: MarketAccess = { people: givenPeople };
+      await tx.setting.upsert({ where: { key: MARKET_ACCESS_KEY }, update: { value: next }, create: { key: MARKET_ACCESS_KEY, value: next } });
+      lines.push(["settings.marketAccess", "Рынок: люди с доступом", names(before.people, people, "только владельцы"), names(next.people, people, "только владельцы")]);
+    }
+    if (givenTeams) {
+      const nextMeeting: MarketMeeting = { teamIds: givenTeams };
+      await tx.setting.upsert({ where: { key: MARKET_MEETING_KEY }, update: { value: nextMeeting }, create: { key: MARKET_MEETING_KEY, value: nextMeeting } });
+      lines.push(["settings.marketMeeting", "Рынок: разбор на первой встрече месяца", names(beforeMeeting.teamIds, teams, "ни у кого"), names(nextMeeting.teamIds, teams, "ни у кого")]);
+    }
     for (const [action, field, from, to] of lines) {
       if (from === to) continue;
       await tx.auditLog.create({

@@ -36,7 +36,12 @@ vi.mock("@/lib/action-runner", () => {
   // Загрузка пакета берёт того, кто меняет, через writingActor (этап 63: в режиме «Смотреть как» отказ)
   return { currentActor: actor, writingActor: actor };
 });
-vi.mock("@/lib/market/access", async (original) => ({ ...(await original<typeof import("@/lib/market/access")>()), canSeeMarket: async () => state.seesMarket }));
+vi.mock("@/lib/market/access", async (original) => ({
+  ...(await original<typeof import("@/lib/market/access")>()),
+  canSeeMarket: async () => state.seesMarket,
+  // Этап 72: события рынка в выгрузке по правилу личного входа, отдельной проверкой
+  canSeeMarketEvents: async () => state.seesMarket,
+}));
 vi.mock("@/lib/market/service", () => ({
   MARKET_UPLOAD_ONLY: "Пакет рынка загружает владелец при личном входе",
   uploadMarketBundle: async (_actor: Actor, bundle: { datasetsCount: number }, bytes: number) => {

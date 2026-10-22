@@ -182,7 +182,8 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
   const { meeting } = await weekSettings();
   const key = isoFromDbDate(row.week.start);
   const slot = teamMeeting(key, a.node, meetingOf(key, meeting));
-  // Этап 62: кнопка «Открыть рынок» и подпись пункта рынка (от какого дня данные) только тем, кому открыт раздел.
+  // Этап 62: кнопка «Открыть рынок» и подпись пункта рынка (от какого дня данные) только тем, кому открыт раздел
+  // (этап 72: по общему логину всем).
   // Подпись считается сейчас из текущего пакета: загрузили свежий, подпись уже новая
   const canOpenMarket = await canSeeMarket({ personId: a.actor.personId, via: a.actor.via }, db);
   const marketNote = canOpenMarket && row.items.some((i) => i.kind === "MARKET") ? await marketAgendaNoteNow(isoFromDbDate(row.date), db) : null;

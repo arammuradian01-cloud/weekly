@@ -444,21 +444,36 @@ describe("оформление окна", () => {
 describe("доступ к рынку", () => {
   const access = marketAccessOf({ people: ["reva", "reva", 5] });
 
-  it("владелец и люди из списка, только при личном входе и включённом профиле", () => {
+  it("личный вход: владелец и люди из списка при включённом профиле", () => {
     expect(access).toEqual({ people: ["reva"] });
     expect(canSeeMarketWith({ slug: "muradyan", role: "OWNER", via: "PASSWORD" }, access)).toBe(true);
-    expect(canSeeMarketWith({ slug: "muradyan", role: "OWNER", via: "TEAM" }, access)).toBe(false);
     expect(canSeeMarketWith({ slug: "muradyan", role: "OWNER", via: null }, access)).toBe(false);
+    expect(canSeeMarketWith({ slug: "muradyan", role: "OWNER", via: undefined }, access)).toBe(false);
     expect(canSeeMarketWith({ slug: "reva", role: "EMPLOYEE", via: "EMAIL" }, access)).toBe(true);
     expect(canSeeMarketWith({ slug: "reva", role: "EMPLOYEE", via: "INVITE", active: false }, access)).toBe(false);
     expect(canSeeMarketWith({ slug: "golovkin", role: "ADMIN", via: "PASSWORD" }, access)).toBe(false);
     expect(canSeeMarketWith({ slug: "loginova", role: "LEADER", via: "PASSWORD" }, access)).toBe(false);
+    expect(canSeeMarketWith({ slug: "ceo", role: "OBSERVER", via: "PASSWORD" }, access)).toBe(false);
+    // Новый владелец без списка видит сразу: правило по роли, а не по списку
+    expect(canSeeMarketWith({ slug: "golovkin", role: "OWNER", via: "PASSWORD" }, { people: [] })).toBe(true);
+  });
+
+  it("этап 72: общий логин видит раздел любым выбранным профилем, кроме выключенного", () => {
+    for (const [slug, role] of [["muradyan", "OWNER"], ["reva", "LEADER"], ["loginova", "LEADER"], ["golovkin", "ADMIN"], ["ceo", "OBSERVER"], ["ivanov", "EMPLOYEE"]] as const) {
+      expect(canSeeMarketWith({ slug, role, via: "TEAM" }, access), slug).toBe(true);
+      expect(canSeeMarketWith({ slug, role, via: "TEAM" }, { people: [] }), slug).toBe(true);
+    }
+    expect(canSeeMarketWith({ slug: "loginova", role: "LEADER", via: "TEAM", active: false }, access)).toBe(false);
   });
 
   it("загружает владелец при личном входе; команды встречи по умолчанию топ-команда", () => {
     expect(canUploadMarket({ role: "OWNER", via: "PASSWORD" })).toBe(true);
+    expect(canUploadMarket({ role: "OWNER", via: "EMAIL" })).toBe(true);
+    // Общий логин раздел видит, но не загружает (этап 72 загрузку не меняет)
     expect(canUploadMarket({ role: "OWNER", via: "TEAM" })).toBe(false);
+    expect(canUploadMarket({ role: "OWNER", via: null })).toBe(false);
     expect(canUploadMarket({ role: "ADMIN", via: "PASSWORD" })).toBe(false);
+    expect(canUploadMarket({ role: "LEADER", via: "TEAM" })).toBe(false);
     expect(marketMeetingOf(undefined)).toEqual({ teamIds: ["top"] });
     expect(marketMeetingOf({ teamIds: [] })).toEqual({ teamIds: [] });
   });

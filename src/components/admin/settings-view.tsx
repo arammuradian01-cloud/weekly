@@ -198,7 +198,7 @@ export function SettingsView({
           {approval ? <ApprovalSection setting={approval.setting} departments={approval.departments} /> : null}
 
           {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
-          {market ? <MarketSettingsSection initial={market} /> : null}
+          {market ? <MarketSettingsSection initial={market} teamLogin={login.team === "on"} /> : null}
           {news ? <NewsSettings {...news} /> : null}
           {contentImport ? <ContentImportSection /> : null}
 

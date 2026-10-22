@@ -1,5 +1,6 @@
-// Этап 62: рынок КАСКО и ОСАГО на настоящей базе. Кто видит раздел (владелец и люди из списка, только при личном
-// входе), настройка в журнале и устаревшие люди, события рынка в журнале только тем, кому раздел открыт, загрузка
+// Этап 62: рынок КАСКО и ОСАГО на настоящей базе. Кто видит раздел (этап 72: общий логин любым профилем; при личном
+// входе владелец, в том числе новый, и люди из списка), настройка в журнале и устаревшие люди, сохранение одного
+// списка без другого, события рынка в журнале только тем, кому раздел открыт, загрузка
 // пакета владельцем с заменой прежнего одной транзакцией, данные для окна и готовый ответ в памяти по версии пакета,
 // пункт повестки на первой встрече месяца у выбранных команд без дублей, подпись пункта при показе и только тем, у
 // кого доступ, без неё в протоколе. Пакет синтетический: tests/fixtures/market/bundle.json
@@ -9,7 +10,8 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as org from "@/lib/org/service";
 import * as m from "@/lib/meeting/service";
-import { canSeeMarket, loadMarketMeeting, marketSettingsView, saveMarketSettings, MARKET_ACCESS_KEY, MARKET_MEETING_KEY } from "@/lib/market/access";
+import { canSeeMarket, canSeeMarketEvents, loadMarketAccess, loadMarketMeeting, marketSettingsView, saveMarketSettings, MARKET_ACCESS_KEY, MARKET_MEETING_KEY } from "@/lib/market/access";
+import * as admin from "@/lib/admin/service";
 import { marketDataBody, marketMeta, marketPayload, resetMarketBodyCache, uploadMarketBundle } from "@/lib/market/service";
 import { journalEvents } from "@/lib/journal";
 import { buildExport } from "@/lib/admin/export";
@@ -40,6 +42,8 @@ async function reset() {
   await prisma.marketBundle.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { in: [MARKET_ACCESS_KEY, MARKET_MEETING_KEY] } } });
   await prisma.person.updateMany({ where: { slug: { in: ["reva", "loginova"] } }, data: { active: true } });
+  // Этап 72: проверка роли владельца возвращает Головкину роль администратора
+  await prisma.person.updateMany({ where: { slug: "golovkin" }, data: { role: "ADMIN" } });
   await prisma.setting.upsert({ where: { key: "week.meeting" }, update: { value: { weekday: 2 } }, create: { key: "week.meeting", value: { weekday: 2 } } });
 }
 
@@ -56,24 +60,82 @@ afterAll(async () => {
 });
 
 describe("доступ к разделу", () => {
-  it("владелец при личном входе видит, по общему логину нет; остальные только из списка", async () => {
+  it("личный вход: владелец видит, остальные только из списка; общий логин видит любым профилем (этап 72)", async () => {
     expect(await sees(await personal("muradyan"))).toBe(true);
-    expect(await sees(await team("muradyan", "OWNER"))).toBe(false);
     expect(await sees(await personal("golovkin", "ADMIN"))).toBe(false);
     expect(await sees(await personal("reva"))).toBe(false);
+    // Общий логин: раздел открыт всем выбранным профилям, список не нужен
+    for (const slug of ["muradyan", "golovkin", "reva", "loginova", "fatyanov"]) expect(await sees(await team(slug)), slug).toBe(true);
+    expect(await sees(await team("muradyan", "OWNER"))).toBe(true);
 
     const view = await saveMarketSettings(await personal("muradyan", "OWNER"), { people: ["reva", "nobody"], teamIds: [TOP_TEAM, revaTeam, "nope"] });
     expect(view.people).toEqual(["reva"]);
     expect(view.teamIds.sort()).toEqual([TOP_TEAM, revaTeam].sort());
     expect(await sees(await personal("reva"))).toBe(true);
-    expect(await sees(await team("reva"))).toBe(false);
+    expect(await sees(await team("reva"))).toBe(true);
     expect(await sees(await personal("loginova"))).toBe(false);
-    // Выключенный человек раздел не видит, в настройке он считается устаревшим
+    expect(await sees(await team("loginova"))).toBe(true);
+    // Выключенный человек раздел не видит ни лично, ни по общему логину, в настройке он считается устаревшим
     await prisma.person.update({ where: { slug: "reva" }, data: { active: false } });
     expect(await sees(await personal("reva"))).toBe(false);
+    expect(await canSeeMarket({ personId: (await personal("reva")).personId, via: "TEAM" })).toBe(false);
     const stale = await marketSettingsView();
     expect(stale.stale).toEqual({ people: 1, teams: 0 });
     expect(stale.people).toEqual([]);
+  });
+
+  it("роль владельца даёт доступ сразу без списка, снятая роль закрывает раздел тому, кого нет в списке", async () => {
+    const owner = await personal("muradyan", "OWNER");
+    const golovkin = (await personal("golovkin")).personId;
+    expect(await canSeeMarket({ personId: golovkin, via: "PASSWORD" })).toBe(false);
+    const before = await marketSettingsView();
+    try {
+      await admin.updatePerson(owner, "golovkin", { role: "OWNER" });
+      // Тот же вход, роль перечитывается из базы: раздел открыт сразу, список не тронут
+      expect(await canSeeMarket({ personId: golovkin, via: "PASSWORD" })).toBe(true);
+      expect(await canSeeMarketEvents({ personId: golovkin, via: "PASSWORD" })).toBe(true);
+      expect(await loadMarketAccess()).toEqual({ people: [] });
+      const asOwner = await marketSettingsView();
+      expect(asOwner.owners).toBe(before.owners + 1);
+      expect(asOwner.count).toBe(before.count + 1);
+      await admin.updatePerson(owner, "golovkin", { role: "ADMIN" });
+      expect(await canSeeMarket({ personId: golovkin, via: "PASSWORD" })).toBe(false);
+      expect((await marketSettingsView()).count).toBe(before.count);
+      // В списке: после снятия роли раздел остаётся открыт
+      await saveMarketSettings(owner, { people: ["golovkin"] });
+      await admin.updatePerson(owner, "golovkin", { role: "OWNER" });
+      await admin.updatePerson(owner, "golovkin", { role: "ADMIN" });
+      expect(await canSeeMarket({ personId: golovkin, via: "PASSWORD" })).toBe(true);
+    } finally {
+      await prisma.person.updateMany({ where: { slug: "golovkin" }, data: { role: "ADMIN" } });
+    }
+  });
+
+  it("сохраняется только переданный список: люди без команд и команды без людей (этап 72)", async () => {
+    const owner = await personal("muradyan", "OWNER");
+    await saveMarketSettings(owner, { people: ["reva"], teamIds: [revaTeam] });
+    const since = await lastLogId();
+    // «Сохранить доступ»: только люди, команды разбора не трогаются
+    let view = await saveMarketSettings(owner, { people: ["reva", "loginova"] });
+    expect(view.people.sort()).toEqual(["loginova", "reva"]);
+    expect(view.teamIds).toEqual([revaTeam]);
+    expect(view.count).toBe(view.owners + 2);
+    // «Сохранить разбор»: только команды, люди не трогаются
+    view = await saveMarketSettings(owner, { teamIds: [TOP_TEAM] });
+    expect(view.people.sort()).toEqual(["loginova", "reva"]);
+    expect(view.teamIds).toEqual([TOP_TEAM]);
+    const log = await prisma.auditLog.findMany({ where: { id: { gt: since }, action: { in: ["settings.marketAccess", "settings.marketMeeting"] } }, orderBy: { id: "asc" } });
+    expect(log.map((l) => l.action)).toEqual(["settings.marketAccess", "settings.marketMeeting"]);
+    // Пустой запрос ничего не меняет и в журнал не пишет
+    const quiet = await lastLogId();
+    view = await saveMarketSettings(owner, {});
+    expect(view.people.sort()).toEqual(["loginova", "reva"]);
+    expect(view.teamIds).toEqual([TOP_TEAM]);
+    expect(await prisma.auditLog.count({ where: { id: { gt: quiet }, action: { startsWith: "settings.market" } } })).toBe(0);
+    // Пустой список людей это «только владельцы», а не «без изменений»
+    view = await saveMarketSettings(owner, { people: [] });
+    expect(view.people).toEqual([]);
+    expect(view.count).toBe(view.owners);
   });
 
   it("настройку ведёт владелец в режиме управления, правка в журнале было и стало", async () => {
@@ -197,6 +259,14 @@ describe("события рынка в журнале", () => {
   it("администратор без доступа к рынку не видит загрузку пакета и список людей ни в журнале, ни в выгрузке; тем, кому раздел открыт, всё видно", async () => {
     await uploadMarketBundle(await personal("muradyan"), bundle(), 100);
     await saveMarketSettings(await personal("muradyan", "OWNER"), { people: ["reva"], teamIds: [revaTeam] });
+    // Кому события рынка видны (этап 72 права журнала не меняет): по правилу личного входа, общий логин их не видит,
+    // хотя сам раздел ему открыт
+    const events = async (a: tasks.Actor) => canSeeMarketEvents({ personId: a.personId, via: a.via });
+    expect(await events(await personal("muradyan", "OWNER"))).toBe(true);
+    expect(await events(await personal("reva"))).toBe(true);
+    expect(await events(await personal("golovkin", "ADMIN"))).toBe(false);
+    expect(await events(await team("muradyan", "OWNER"))).toBe(false);
+    expect(await sees(await team("muradyan", "OWNER"))).toBe(true);
     // Соседние события: без объекта и настройка без ключа. Они видны всем, кто видит журнал (журнал только
     // дописывается, записи остаются)
     await prisma.auditLog.createMany({
@@ -304,10 +374,15 @@ describe("разбор рынка на встрече", () => {
     expect(loginova?.canOpenMarket).toBe(false);
     expect(loginova?.items[0]).toMatchObject({ kind: "market", title: "Рынок КАСКО и ОСАГО: итоги сентября" });
     expect(loginova?.items[0]).not.toHaveProperty("note");
-    // Владелец по общему логину даже в режиме управления раздела не видит, подписи у него тоже нет
-    const teamOwner = await m.getMeeting(await team("muradyan", "OWNER"), revaTeam, FIRST);
-    expect(teamOwner?.canOpenMarket).toBe(false);
-    expect(teamOwner?.items[0]).not.toHaveProperty("note");
+    // Этап 72: по общему логину раздел открыт, кнопка и подпись есть даже у тех, кого нет в списке. Логинова по
+    // общему логину видит встречи топ-команды: разбор включается и там
+    expect((await m.getMeeting(await team("muradyan", "OWNER"), revaTeam, FIRST))?.canOpenMarket).toBe(true);
+    await saveMarketSettings(owner, { teamIds: [revaTeam, TOP_TEAM] });
+    expect(titles(await m.buildAgenda(owner, TOP_TEAM, FIRST))).toEqual(["Рынок КАСКО и ОСАГО: итоги сентября"]);
+    const teamLoginova = await m.getMeeting(await team("loginova"), TOP_TEAM, FIRST);
+    expect(teamLoginova?.canOpenMarket).toBe(true);
+    expect(teamLoginova?.items[0]).toMatchObject({ kind: "market", note: "Свежий пакет рынка в этом месяце ещё не загружали: данные от 20 сентября." });
+    expect((await m.getMeeting(await personal("loginova"), TOP_TEAM, FIRST))?.canOpenMarket).toBe(false);
     expect((await m.getMeeting(await personal("muradyan"), revaTeam, FIRST))?.canOpenMarket).toBe(true);
 
     // Загрузили свежий пакет: подпись уже новая без пересборки повестки
