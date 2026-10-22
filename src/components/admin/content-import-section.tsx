@@ -29,17 +29,22 @@ type Preview = {
 type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; problems?: string[] };
 
-async function post<T>(mode: "preview" | "apply", file: File): Promise<Answer<T>> {
+const SIGNED_OUT = "Вход больше не действует: войдите заново и загрузите пакет ещё раз";
+
+/** Пакет уходит тем текстом, который был в предпросмотре: файл на диске могли поменять между шагами */
+async function post<T>(mode: "preview" | "apply", text: string): Promise<Answer<T>> {
   let res: Response;
   try {
-    res = await fetch(`/api/content-import?mode=${mode}`, { method: "POST", body: await file.text(), headers: { "Content-Type": "application/json" } });
+    res = await fetch(`/api/content-import?mode=${mode}`, { method: "POST", body: text, headers: { "Content-Type": "application/json" }, redirect: "manual" });
   } catch {
     return { ok: false, error: "Нет связи с сервером: пакет не отправился" };
   }
+  // Вход закончился: proxy отправляет на страницу входа, а не отвечает 401
+  if (res.type === "opaqueredirect" || res.status === 401 || res.redirected) return { ok: false, error: SIGNED_OUT };
   try {
     return (await res.json()) as Answer<T>;
   } catch {
-    return { ok: false, error: res.status === 401 ? "Вход больше не действует: войдите заново" : "Не получилось прочитать ответ сервера. Обновите страницу и попробуйте ещё раз" };
+    return { ok: false, error: "Не получилось прочитать ответ сервера. Обновите страницу и попробуйте ещё раз" };
   }
 }
 
@@ -59,6 +64,7 @@ export function ContentImportSection() {
   const router = useRouter();
   const { notify } = usePrototype();
   const [file, setFile] = useState<File | null>(null);
+  const [text, setText] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [done, setDone] = useState<Applied | null>(null);
   const [busy, setBusy] = useState<"preview" | "apply" | null>(null);
@@ -76,6 +82,7 @@ export function ContentImportSection() {
 
   const check = async (f: File | null) => {
     setFile(f);
+    setText(null);
     reset();
     if (!f) return;
     if (f.size > PACKAGE_MAX_BYTES) {
@@ -83,7 +90,9 @@ export function ContentImportSection() {
       return;
     }
     setBusy("preview");
-    const r = await post<Preview>("preview", f);
+    const body = await f.text();
+    setText(body);
+    const r = await post<Preview>("preview", body);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -94,10 +103,10 @@ export function ContentImportSection() {
   };
 
   const apply = async () => {
-    if (!file) return;
+    if (!text) return;
     setBusy("apply");
     setError(undefined);
-    const r = await post<Applied>("apply", file);
+    const r = await post<Applied>("apply", text);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -106,6 +115,9 @@ export function ContentImportSection() {
     }
     setPreview(null);
     setDone(r.value);
+    setText(null);
+    // Поле файла с чистого листа: тот же файл можно выбрать снова и увидеть, что загружать нечего
+    setRound((x) => x + 1);
     const n = r.value.applied.tasks.length;
     notify(`Наполнение загружено: ${n} ${plural(n, "новая задача", "новые задачи", "новых задач")}, решений ${r.value.applied.decisions}, целей ${r.value.applied.goals}, связей ${r.value.applied.links}`);
     router.refresh();
@@ -169,7 +181,7 @@ export function ContentImportSection() {
             ) : null}
             {!done && shown.notified ? (
               <p className="text-small text-muted">
-                {shown.notified} {plural(shown.notified, "человек узнает", "человека узнают", "человек узнают")} о новых открытых задачах в «Мне». О закрытых задачах из истории
+                {shown.notified} {plural(shown.notified, "человек узнает", "человека узнают", "человек узнают")} о новых открытых задачах в «Мне» (ответственные и соисполнители). О закрытых задачах из истории
                 событий не будет.
               </p>
             ) : null}
@@ -195,6 +207,7 @@ export function ContentImportSection() {
                   disabled={!!busy}
                   onClick={() => {
                     setFile(null);
+                    setText(null);
                     setRound((r) => r + 1);
                     reset();
                   }}

@@ -356,7 +356,7 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
 }
 
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
-export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: { sourceDate?: IsoDate | null } } = {}): Promise<TaskResult> {
+export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: { sourceDate?: IsoDate | null; number?: number } } = {}): Promise<TaskResult> {
   if (actor.role === "OBSERVER") fail("Наблюдатель задачи не ставит");
   const title = required(input.title, LIMITS.title, "Напишите задачу одной мыслью", "Задача");
   const outcome = required(input.outcome, LIMITS.outcome, "Напишите, по чему понять, что задача сделана", "Что нужно сделать");
@@ -416,7 +416,8 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
   const rule = await approvalRule(tx, requester, ownerId);
   const pending = rule?.mode === "approve" && !actor.management;
   if (pending) status = "proposed";
-  const number = await nextNumber(tx);
+  // Импорт наполнения (этап 67) выделяет номера заранее короткой транзакцией: длинная загрузка не держит счётчик номеров
+  const number = opts.history?.number ?? (await nextNumber(tx));
   const today = dbDate(moscowToday());
   const row = await tx.task.create({
     data: {

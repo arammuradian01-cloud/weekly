@@ -50,6 +50,8 @@ export type PackageTask = {
   team: string | null;
   due: IsoDate;
   status: ImportStatus;
+  /** Когда задачу закрыли (для закрытых статусов). Пусто: срок, если он прошёл, иначе дата источника */
+  closedAt: IsoDate | null;
   /** Итог или причина: обязательны для закрытых статусов */
   resolution: string | null;
   whereNow: string | null;
@@ -297,6 +299,7 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       team: r.str(raw, "team", "Команда", 120),
       due: r.date(raw, "due", "Срок", true) ?? "",
       status: r.oneOf(raw, "status", "Статус", IMPORT_STATUSES, "in-progress") ?? "in-progress",
+      closedAt: r.date(raw, "closedAt", "Дата закрытия", false),
       resolution: r.str(raw, "resolution", "Итог или причина", 1000),
       whereNow: r.str(raw, "whereNow", "Где сейчас", 500),
       priority: r.oneOf(raw, "priority", "Приоритет", IMPORT_PRIORITIES, null),
@@ -369,7 +372,7 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   return {
     pkg: {
       format: PACKAGE_FORMAT,
-      title: cleanText(r0.title) || null,
+      title: cleanText(r0.title).slice(0, 200) || null,
       createdAt: cleanText(r0.createdAt) || null,
       goals,
       tasks,

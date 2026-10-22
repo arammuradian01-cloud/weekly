@@ -74,8 +74,9 @@ describe("предпросмотр и загрузка", () => {
     expect(p.missingTeams).toEqual([]);
     expect(p.notes.map((n) => n.text).join("\n")).toMatch(/ответственный «Иванов Пётр» не найден/);
     expect(p.notes.map((n) => n.text).join("\n")).toMatch(/соисполнитель «Сидоров Никто» не найден/);
-    // Открытые новые задачи: Головкин и Фатьянов («Все лидеры» и закрытая задача Логиновой не в счёт)
-    expect(p.notified).toBe(2);
+    // Открытые новые задачи: Головкин, Фатьянов и его соисполнитель Сахибуллина («Все лидеры» и закрытая задача
+    // Логиновой не в счёт)
+    expect(p.notified).toBe(3);
     expect(await prisma.task.count()).toBe(0);
     expect(await prisma.goal.count()).toBe(0);
     expect(await prisma.auditLog.count({ where: { id: { gt: since } } })).toBe(0);
@@ -97,7 +98,8 @@ describe("предпросмотр и загрузка", () => {
     const done = (await taskByKey("task.test.done-1"))!;
     expect(done).toMatchObject({ status: "DONE", resolution: "Разбор готов, ссылка в тестовой папке" });
     expect(done.due.toISOString().slice(0, 10)).toBe("2026-09-30");
-    expect(done.closedAt).not.toBeNull();
+    // Закрыта тогда, когда закрыли в истории (срок 30.09), а не в день загрузки: в «Закрыто за неделю» не попадёт
+    expect(done.closedAt?.toISOString().slice(0, 10)).toBe("2026-09-30");
     expect(await prisma.inboxEvent.count({ where: { taskId: done.id } })).toBe(0);
     // Открытая задача: ответственный узнаёт о ней в «Мне»
     expect(await prisma.inboxEvent.count({ where: { taskId: open.id, kind: "TASK_ASSIGNED" } })).toBe(1);
@@ -218,17 +220,75 @@ describe("предпросмотр и загрузка", () => {
     expect((await prisma.task.findUniqueOrThrow({ where: { id: all.id } })).goalId).toBe(dept.id);
   });
 
-  it("ошибка правила откатывает всю загрузку: база остаётся как была", async () => {
-    const since = await lastLogId();
+  it("петля целей в пакете видна в предпросмотре и не ломает загрузку", async () => {
     const bad = raw();
-    // Две цели ставят друг друга выше: вторая связь даёт петлю, служба целей её не пускает
     bad.goals[0]!.parent = { key: "goal.test.reva-1" };
-    await expectRule(applyContentImport(await owner(), pkgOf(bad)), /Загрузка не прошла, база не тронута\. Цель .*не может стоять ниже самой себя/);
+    const p = await previewContentImport(await owner(), pkgOf(bad));
+    expect(p.notes.map((n) => n.text).join("\n")).toMatch(/ставят друг друга выше по кругу/);
+    await applyContentImport(await owner(), pkgOf(bad));
+    const dept = await prisma.goal.findFirstOrThrow({ where: { code: "ТД-1" } });
+    const reva = await prisma.goal.findFirstOrThrow({ where: { code: "ТР-1" } });
+    expect(dept.parentId).toBeNull();
+    expect(reva.parentId).toBe(dept.id);
+  });
+
+  it("ошибка посреди загрузки откатывает всё: база остаётся как была", async () => {
+    const since = await lastLogId();
+    // Ошибка базы на втором решении, уже после задач и целей: имитация сбоя триггером
+    await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION test_fail_decision() RETURNS trigger AS $$ BEGIN IF NEW.text = 'Выдуманный партнёр получает скидку' THEN RAISE EXCEPTION 'тестовый сбой'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER test_fail_decision BEFORE INSERT ON decisions FOR EACH ROW EXECUTE FUNCTION test_fail_decision()`);
+    try {
+      await expect(applyContentImport(await owner(), pkgOf(raw()))).rejects.toThrow(/тестовый сбой/);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS test_fail_decision ON decisions`);
+      await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS test_fail_decision()`);
+    }
     expect(await prisma.task.count()).toBe(0);
     expect(await prisma.goal.count()).toBe(0);
     expect(await prisma.decision.count()).toBe(0);
     expect(await prisma.contentImportKey.count()).toBe(0);
     // Журнал тоже откатился: ни задач, ни записи об импорте
     expect(await prisma.auditLog.count({ where: { id: { gt: since } } })).toBe(0);
+  });
+
+  it("номера новых задач выделяются заранее: пока идёт загрузка, задачи ставят как обычно", async () => {
+    const [res, other] = await Promise.all([applyContentImport(await owner(), pkgOf(raw())), (async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      return tasks.createTask(await personal("golovkin", "ADMIN"), { title: "Обычная задача во время загрузки", outcome: "Поставлена", owner: "golovkin", direction: "osago", due: "2026-12-30" });
+    })()]);
+    const numbers = [...res.applied.tasks, other.task.number];
+    expect(new Set(numbers).size).toBe(5);
+  });
+
+  it("история: только итог поменялся, поля, которые загрузка не меняет, снятая цель, выключенный ответственный", async () => {
+    await applyContentImport(await owner(), pkgOf(raw()));
+    const next = raw();
+    next.tasks[1]!.resolution = "Другой итог";
+    next.tasks[0]!.priority = "low";
+    next.tasks[0]!.owner = "Рева Тарас";
+    const p = await previewContentImport(await owner(), pkgOf(next));
+    const text = p.notes.map((n) => n.text).join("\n");
+    expect(text).toMatch(/итог поменялся только в пакете/);
+    expect(text).toMatch(/поле «Ответственный» из пакета загрузка не меняет/);
+    expect(text).toMatch(/поле «Приоритет» из пакета загрузка не меняет/);
+    expect(p.tasks).toEqual({ add: 0, update: 0, skip: 5 });
+
+    // Ответственного выключили после загрузки: его задача находится по ключу, а не теряется
+    await prisma.person.update({ where: { slug: "golovkin" }, data: { active: false } });
+    try {
+      const again = await previewContentImport(await owner(), pkgOf(raw()));
+      expect(again.tasks).toEqual({ add: 0, update: 0, skip: 5 });
+      expect(again.notes.map((n) => n.text).join("\n")).not.toMatch(/Головкин/);
+    } finally {
+      await prisma.person.update({ where: { slug: "golovkin" }, data: { active: true } });
+    }
+
+    // Снятая цель: новая связь пропускается ещё в предпросмотре
+    await prisma.goal.updateMany({ where: { code: "ТР-1" }, data: { result: "DROPPED" } });
+    const all = (await taskByKey("task.test.all-1"))!;
+    const withLink = raw();
+    withLink.links.push({ key: "link.test.dropped", task: { number: all.number }, goal: { code: "ТР-1" } });
+    const p2 = await previewContentImport(await owner(), pkgOf(withLink));
+    expect(p2.notes.find((n) => n.what === "Связь link.test.dropped")?.text).toBe("цель снята в ресурсе");
   });
 });
