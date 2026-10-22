@@ -334,7 +334,7 @@ export function RoadmapTimeline({
                           <span className="absolute inset-y-0 left-0 border-l-[3px] border-dashed border-current" aria-hidden="true" />
                         ) : null}
                         {/* Звёздочки и текст внутри своей обёртки с обрезкой: у узкой полосы они не вылезают, ручки снаружи видны */}
-                        <span className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap", barPx < 40 ? "px-1" : "px-3")}>
+                        <span className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap", barPx < 40 && !bar.outside ? "px-1" : "px-3")}>
                           {bar.importance ? (
                             // Звёздочки цветом текста полосы: цветные звёздочки доски на тёмной и синей полосе не видны
                             <span className="inline-flex shrink-0 items-center" aria-hidden="true">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { barOf, dragSpan, spanPlan, startOf, timelineRange } from "@/lib/tasks/timeline";
+import { barOf, canMoveBar, dayAtX, dragSpan, handleInside, HANDLE_PX, spanPlan, startOf, timelineRange } from "@/lib/tasks/timeline";
 import type { Task } from "@/domain/types";
+import { diffDays } from "@/domain/dates";
 
 const task = (over: Partial<Task>): Task => ({ number: 1, due: "2026-10-25", createdAt: "2026-10-10", status: "in-progress", priority: "medium", ...over }) as Task;
 
@@ -87,4 +88,52 @@ describe("spanPlan", () => {
   it("только начало: без причины", () => expect(spanPlan(before, { start: "2026-10-18", end: "2026-10-30" })).toEqual({ kind: "start", start: "2026-10-18", due: "2026-10-30" }));
   it("только срок: перенос с причиной", () => expect(spanPlan(before, { start: "2026-10-20", end: "2026-11-02" }).kind).toBe("due"));
   it("ничего не поменялось", () => expect(spanPlan(before, { start: "2026-10-20", end: "2026-10-30" }).kind).toBeNull());
+});
+
+describe("canMoveBar", () => {
+  const own = task({ owner: "reva", coExecutors: [], team: "top" } as Partial<Task>);
+  const reva = { slug: "reva" as const };
+  it("свою открытую задачу владелец тянет на ноутбуке", () => expect(canMoveBar(own, reva, { viewing: false, coarse: false })).toBe(true));
+  it("на сенсорном экране (pointer: coarse) полосы не двигаются", () => expect(canMoveBar(own, reva, { viewing: false, coarse: true })).toBe(false));
+  it("в «Смотреть как» полосы не двигаются", () => expect(canMoveBar(own, reva, { viewing: true, coarse: false })).toBe(false));
+  it("без прав на срок не двигается: чужая задача, наблюдатель", () => {
+    expect(canMoveBar(own, { slug: "loginova" }, { viewing: false, coarse: false })).toBe(false);
+    expect(canMoveBar(own, { slug: "reva", observer: true }, { viewing: false, coarse: false })).toBe(false);
+  });
+});
+
+describe("dayAtX: обрезанный край встаёт на день под указателем", () => {
+  const r = timelineRange("2026-10-22");
+  it("по доле ширины трека", () => {
+    expect(dayAtX(r, 0, 1230)).toBe("2026-10-01");
+    expect(dayAtX(r, 1230 * (31 / r.days) + 1, 1230)).toBe("2026-11-01");
+  });
+  it("за краями трека прижимается к первому и последнему дню", () => {
+    expect(dayAtX(r, -40, 1230)).toBe("2026-10-01");
+    expect(dayAtX(r, 5000, 1230)).toBe("2027-01-31");
+  });
+  it("обрезанное начало ставится на дату под указателем, а не сдвигом от невидимой даты", () => {
+    // Задача началась 20 сентября (до окна), указатель на 10 октября: начало 10 октября
+    const base = { start: "2026-09-20", end: "2026-11-15" };
+    const day = dayAtX(r, 1230 * (9.5 / r.days), 1230);
+    expect(day).toBe("2026-10-10");
+    // Как в карте: сдвиг считается от настоящей даты края до дня под указателем
+    expect(dragSpan(base, "start", diffDays(base.start, day), "2026-10-22").start).toBe("2026-10-10");
+  });
+});
+
+describe("handleInside: ручки не закрывают середину узкой полосы", () => {
+  it("у узкой полосы (уже 32 px) ручки целиком снаружи", () => {
+    expect(handleInside(12)).toBe(0);
+    expect(handleInside(31)).toBe(0);
+  });
+  it("внутри не больше четверти ширины и не больше половины ручки", () => {
+    expect(handleInside(40)).toBe(10);
+    expect(handleInside(400)).toBe(HANDLE_PX / 2);
+    for (const w of [32, 48, 64, 100]) expect(handleInside(w)).toBeLessThanOrEqual(w / 4);
+  });
+  it("обрезанный правый край у края карты: у широкой полосы ручка целиком внутри", () => {
+    expect(handleInside(400, true)).toBe(HANDLE_PX);
+    expect(handleInside(60, true)).toBe(15);
+  });
 });

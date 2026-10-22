@@ -191,6 +191,7 @@ test("карта сроков: без прав на срок и в «Смотр�
     await expect(bar).toBeVisible();
     // Без прав нет подсказки про клавиатуру у полосы и нет ручек краёв
     await expect(bar).not.toHaveAttribute("aria-describedby", "timeline-keys");
+    await expect(bar.locator("[data-handle]")).toHaveCount(0);
     const box = (await bar.boundingBox())!;
     await dragBy(p, box.x + box.width / 2, box.y + box.height / 2, 80);
     await expect(p.getByRole("dialog", { name: /Перенести срок задачи/ })).toHaveCount(0);
@@ -222,4 +223,81 @@ test("карта сроков: без прав на срок и в «Смотр�
   await tryDrag(op, b);
   expect(await snapshot()).toEqual(before);
   await owner.close();
+});
+
+test("карта сроков: обрезанный край встаёт на дату под указателем, обрубки за окном, короткая полоса за середину, Enter во время сохранения", async ({ page }) => {
+  test.skip(test.info().project.name === "phone", "Карта сроков только на широком экране");
+  test.setTimeout(120_000);
+  const open = await sql(`SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "ownerId" IS NOT NULL ORDER BY number LIMIT 4`);
+  const [cut, after, before, short] = open.map((r) => r.number as number);
+  const month = `date_trunc('month', ${MSK}::timestamp)`;
+  // Началась до окна карты, срок в окне; целиком после окна; срок до окна (просрочена); короткая полоса в два дня
+  await sql(`UPDATE tasks SET "startOn" = (${month} - interval '20 days')::date, due = ${MSK} + 30 WHERE number = $1`, [cut]);
+  await sql(`UPDATE tasks SET "startOn" = ${MSK} + 150, due = ${MSK} + 160 WHERE number = $1`, [after]);
+  await sql(`UPDATE tasks SET "startOn" = NULL, due = (${month} - interval '10 days')::date WHERE number = $1`, [before]);
+  await sql(`UPDATE tasks SET "startOn" = ${MSK} + 10, due = ${MSK} + 11 WHERE number = $1`, [short]);
+  const state = async (n: number) => (await sql(`SELECT "startOn"::text AS start, due::text AS due FROM tasks WHERE number = $1`, [n]))[0]!;
+
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/roadmap");
+  const bar = (n: number) => page.getByTestId(`timeline-bar-${n}`);
+  await expect(bar(cut)).toBeVisible();
+
+  // Обрубки за окном: у правого и левого края трека, с датой, ничего не обрезано, ручек нет
+  for (const [n, side, text] of [
+    [after, "after", "срок"],
+    [before, "before", "просрочено с"],
+  ] as const) {
+    const b = bar(n);
+    await expect(b).toHaveAttribute("data-outside", side);
+    await expect(b).toContainText(text);
+    await expect(b.locator("[data-handle]")).toHaveCount(0);
+    const box = (await b.boundingBox())!;
+    const track = (await b.locator("xpath=..").boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(track.x - 1);
+    expect(box.x + box.width).toBeLessThanOrEqual(track.x + track.width + 1);
+    expect(await b.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  }
+
+  // Обрезанный левый край: ручка есть; тянем её на 10-е число второго месяца карты, начало встаёт на эту дату
+  await expect(bar(cut)).toHaveAttribute("data-cut", "start");
+  const handle = bar(cut).locator("[data-handle='start']");
+  const h = (await handle.boundingBox())!;
+  const second = (await page.getByTestId("roadmap-timeline").locator("div.sticky span").nth(1).boundingBox())!;
+  const [{ want, days }] = await sql(`SELECT (${month} + interval '1 month' + interval '9 days')::date::text AS want, extract(day from ${month} + interval '2 month' - interval '1 day')::int AS days`);
+  await dragBy(page, h.x + h.width * 0.75, h.y + h.height / 2, second.x + second.width * (9.5 / (days as number)) - (h.x + h.width * 0.75));
+  await expect(page.getByText(`Начало задачи ${cut}:`).first()).toBeVisible();
+  await expect.poll(async () => (await state(cut)).start).toBe(want);
+  await expect(bar(cut)).not.toHaveAttribute("data-cut", "start");
+
+  // Короткая полоса: ручки снаружи, за середину сдвигается вся (окно причины про срок и начало), «Отмена» ничего не меняет
+  const shortBefore = await state(short);
+  const sb = (await bar(short).boundingBox())!;
+  await dragBy(page, sb.x + sb.width / 2, sb.y + sb.height / 2, 40);
+  const dialog = page.getByRole("dialog", { name: `Перенести срок задачи ${short}` });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Начало");
+  await dialog.getByRole("button", { name: "Отмена" }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await state(short)).toEqual(shortBefore);
+
+  // Enter во время сохранения: ответ сервера задержан, три Enter подряд отправляют одну правку
+  let posts = 0;
+  await page.route(/\/roadmap(\?.*)?$/, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) {
+      posts += 1;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await route.continue();
+  });
+  await bar(short).focus();
+  await page.keyboard.press("Alt+ArrowRight");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(`Начало задачи ${short}:`).first()).toBeVisible();
+  await page.unroute(/\/roadmap(\?.*)?$/);
+  expect(posts).toBe(1);
+  expect((await state(short)).start).not.toBe(shortBefore.start);
 });

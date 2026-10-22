@@ -255,11 +255,32 @@ describe("правила просрочки и переносов (раздел 
     expect(back.task!.transfers).toHaveLength(transfers);
   });
 
-  it("сдвиг полосы целиком (этап 68): правила срока и начала, одна транзакция, без прав отказ, срок раньше начала ставит начало на срок", async () => {
+  it("сдвиг полосы целиком (этап 68): одна транзакция, сбой после записи переноса откатывает и срок, и начало, и перенос", async () => {
     const fat = await actors.fatyanov();
     await svc.transferDue(fat, 13, addDays(today, 20), "Ждём ВСК");
     await svc.setTaskStart(fat, 13, addDays(today, 10));
-    // Без причины не сохраняется ничего, и начало тоже: одна транзакция
+    const transfers = (await svc.getTask(13))!.transfers.length;
+    // Сбой на последнем шаге: журнал не принимает строку «Начало». К этому моменту перенос записан, срок и начало
+    // обновлены; транзакция откатывает всё
+    await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION t68_fail_start() RETURNS trigger AS $$ BEGIN IF NEW.field = 'Начало' THEN RAISE EXCEPTION 't68: сбой журнала'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`);
+    await prisma.$executeRawUnsafe(`CREATE TRIGGER t68_fail_start BEFORE INSERT ON audit_log FOR EACH ROW EXECUTE FUNCTION t68_fail_start()`);
+    try {
+      await expect(svc.moveTaskSpan(fat, 13, addDays(today, 12), addDays(today, 22), "Партнёр сдвинул запуск")).rejects.toThrow();
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS t68_fail_start ON audit_log`);
+      await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS t68_fail_start()`);
+    }
+    const after = (await svc.getTask(13))!;
+    expect(after).toMatchObject({ start: addDays(today, 10), due: addDays(today, 20) });
+    expect(after.transfers).toHaveLength(transfers);
+    expect(after.transfers.some((t) => t.reason === "Партнёр сдвинул запуск")).toBe(false);
+  });
+
+  it("сдвиг полосы целиком (этап 68): правила срока и начала, без прав отказ, срок раньше начала ставит начало на срок", async () => {
+    const fat = await actors.fatyanov();
+    await svc.transferDue(fat, 13, addDays(today, 20), "Ждём ВСК");
+    await svc.setTaskStart(fat, 13, addDays(today, 10));
+    // Без причины отказ до любых записей: начало тоже не меняется
     await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 12), addDays(today, 22), "  "), /Без причины/);
     expect((await svc.getTask(13))!).toMatchObject({ start: addDays(today, 10), due: addDays(today, 20) });
     await expectRule(svc.moveTaskSpan(fat, 13, addDays(today, 1), addDays(today, -1), "Причина"), /в прошлом/);
