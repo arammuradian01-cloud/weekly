@@ -18,7 +18,7 @@ import { FACT_STALE_DAYS } from "@/lib/goals/progress";
 import { usePrototype } from "@/domain/store";
 import { allPeople } from "@/domain/people";
 import { teamOf, teamPeople } from "@/domain/teams";
-import { Button } from "@/components/ui/button";
+import { Button, buttonClass } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
@@ -251,22 +251,34 @@ export function GoalsScreen({
       )}
 
       {view.unlinked.length ? (
-        // Этап 46: одной фразой со ссылкой вместо таблицы из одной-двух строк
-        <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink" id="unlinked" data-testid="goals-unlinked">
-          <span className="font-semibold">Задачи без цели:</span>{" "}
-          {view.unlinked
-            .map((u) => `${u.name}: ${u.withoutGoal} из ${u.open} ${plural(u.open, "открытой", "открытых", "открытых")}${u.highWithoutGoal ? ` (высокий приоритет у ${u.highWithoutGoal})` : ""}`)
-            .join("; ")}
-          . Задачи с высоким приоритетом должны работать на цель квартала: перетащите их к целям на вкладке{" "}
-          <Link href={`/goals?mode=link&q=${view.quarter}`} className="font-semibold text-link hover:underline" data-testid="goals-unlinked-link">
-            «Связать задачи с целями»
-          </Link>{" "}
-          или выберите цель в карточке задачи, список{" "}
-          <Link href="/tasks?group=goal" className="font-semibold text-link hover:underline">
-            задачи по целям
-          </Link>
-          .
-        </p>
+        // Этап 68в: плашка вместо предложения на четыре строки. Сколько задач без цели и одно действие; по командам числа
+        // строкой ниже, мелко. Текст на жёлтой подложке цветом её тона: серый и синий на ней в тёмной теме не держат 4,5:1
+        <div className="flex flex-col gap-2 rounded-card border border-warning-ink/30 bg-warning-soft px-5 py-3.5 sm:flex-row sm:items-center sm:gap-4" id="unlinked" data-testid="goals-unlinked">
+          <div className="min-w-0 flex-1 text-warning-ink">
+            <p className="m-0 text-body font-semibold">
+              {(() => {
+                const n = view.unlinked.reduce((sum, u) => sum + u.withoutGoal, 0);
+                return `У ${n} ${plural(n, "задачи", "задач", "задач")} нет цели`;
+              })()}
+            </p>
+            {(() => {
+              const detail = view.unlinked.map((u) => `${u.name} ${u.withoutGoal}${u.highWithoutGoal ? `, важных ${u.highWithoutGoal}` : ""}`).join("; ");
+              return (
+                <p className="m-0 truncate text-caption" title={detail}>
+                  {detail}
+                </p>
+              );
+            })()}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            <Link href={`/goals?mode=link&q=${view.quarter}`} className={buttonClass("primary", "sm")} data-testid="goals-unlinked-link">
+              Связать задачи с целями
+            </Link>
+            <Link href="/tasks?group=goal" className="text-small font-semibold text-warning-ink underline underline-offset-2 hover:no-underline">
+              Задачи по целям
+            </Link>
+          </div>
+        </div>
       ) : null}
 
       {creating ? (

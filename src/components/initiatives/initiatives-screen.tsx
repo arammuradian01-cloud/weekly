@@ -5,13 +5,14 @@
 // новостей: метка словами, такие инициативы сами встают в повестку встречи команды ответственного.
 // Этап 67г: инициативы видят все и делятся по департаментам (заголовок раздела), внутри по продуктам; у каждого
 // продукта свои две колонки. Общие для департамента (без продукта) идут первыми, дальше продукты по порядку справочника.
-// Этап 68: колонки подложкой своего цвета (ищем тёплая, делаем зелёная), пояснение над колонками в одну строку, на
-// карточке заметка главной строкой, ответственный, команда и цель одной строкой, у долгого поиска и тишины метка
-// «в повестке встречи». Текст на цветной подложке цветом её тона: серый на ней в тёмной теме не держит 4,5:1.
+// Этап 68в (третий пакет дизайнера): сверху путь инициативы тремя шагами (ищем, делаем, закрыто) и что встаёт в повестку
+// встречи. Колонки «ищем» и «делаем» внутри каждого продукта строками: цветная полоса слева (красная у того, что в
+// повестке), название, кто и где, заметка в две строки, срок в статусе, действия одной строкой; «зачем» и история под
+// «История и подробности». Текст на цветной подложке цветом её тона: серый на ней в тёмной теме не держит 4,5:1.
 
 import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useEffect, useId, useState } from "react";
-import { Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import type { InitiativeView, InitiativesPage } from "@/lib/initiatives/service";
 import { NOTE_MAX, NOTE_PROMPTS, RESULT_LABELS, STATE_LABELS, TITLE_MAX, WHY_MAX, weeksText, type ResultCode, type StateCode } from "@/lib/initiatives/rules";
 import {
@@ -28,7 +29,6 @@ import { Modal } from "@/components/ui/overlays";
 import { markSeenAction } from "@/app/(app)/me/actions";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
-import { Figures } from "@/components/ui/data";
 
 const when = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date(iso));
 /** Фраза с точкой в конце, без двойной: «...в ноябре.» и «Почему?» остаются как есть */
@@ -119,27 +119,52 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Этап 36: шкала в цифрах плитками вместо фразы */}
+      {/* Этап 68в: путь инициативы тремя шагами по порядку, под ним что встаёт в повестку встречи. Числа шагов те же, что
+          были плитками (data-testid ini-fig-*): «долго ищут» и «без новостей» теперь списком повестки */}
       {data.active.length || data.closed.length ? (
-        <Figures
-          label="Инициативы в цифрах"
-          items={[
-            { label: "Уже делаем", value: doing.length, testId: "ini-fig-doing" },
-            { label: "Ещё ищем, как сделать", value: searching.length, testId: "ini-fig-searching" },
-            { label: "Долго ищут", value: longSearch, tone: "warning", testId: "ini-fig-long" },
-            { label: "Без новостей 2 недели", value: stale, tone: "warning", testId: "ini-fig-stale" },
-            { label: "Закрыто", value: data.closed.length, testId: "ini-fig-closed" },
-          ]}
-        />
+        <section aria-label="Инициативы по этапам" className="sv-card flex flex-col gap-4 px-5 py-4">
+          <ol aria-label="Инициативы в цифрах" className="m-0 grid list-none grid-cols-3 gap-2 p-0">
+            {[
+              { n: searching.length, label: "Ищем, как сделать", cls: "bg-warning-soft text-warning-ink", testId: "ini-fig-searching" },
+              { n: doing.length, label: "Уже делаем", cls: "bg-green-soft text-green-ink", testId: "ini-fig-doing" },
+              { n: data.closed.length, label: "Закрыто", cls: "bg-field text-text-secondary", testId: "ini-fig-closed" },
+            ].map((f, k) => (
+              <li key={f.testId} className={cn("relative flex min-w-0 flex-col rounded-control-lg px-3 py-3 sm:px-4", f.cls)} data-testid={f.testId}>
+                <span className="text-title font-semibold tabular-nums leading-none">{f.n}</span>
+                <span className="mt-1 text-small font-semibold [overflow-wrap:anywhere]">{f.label}</span>
+                {/* Следующий шаг: значок между плитками, не текст */}
+                {k < 2 ? <ChevronRight className="absolute -right-2.5 top-1/2 z-[1] hidden h-4 w-4 -translate-y-1/2 text-muted sm:block" aria-hidden="true" /> : null}
+              </li>
+            ))}
+          </ol>
+          {longSearch || stale ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3 text-small" data-testid="ini-agenda">
+              <span className="font-semibold text-danger-ink">В повестке встречи:</span>
+              {data.active
+                .filter((i) => i.flags.longSearch || i.flags.stale)
+                .map((i) => (
+                  // Метка переносится внутри себя: длинное название не раздвигает страницу на телефоне
+                  <a key={i.id} href={`#i-${i.id}`} className="inline-block max-w-full rounded-control bg-field px-2 py-1 text-caption font-semibold text-ink [overflow-wrap:anywhere] hover:underline">
+                    {i.title}
+                    <span className="font-normal text-muted">, {i.flags.stale ? `без новостей ${i.flags.staleDays} дн.` : `ищем ${weeksText(i.flags.searchDays)}`}</span>
+                  </a>
+                ))}
+              <span className="sr-only" data-testid="ini-fig-long">
+                Долго ищут: {longSearch}
+              </span>
+              <span className="sr-only" data-testid="ini-fig-stale">
+                Без новостей 2 недели: {stale}
+              </span>
+            </div>
+          ) : null}
+        </section>
       ) : null}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-body text-text-secondary" aria-live="polite">
-          {data.active.length
-            ? "По департаментам и продуктам, у каждого продукта «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи"
-            : "Крупных инициатив пока нет."}
+          {data.active.length ? "Самые крупные дела по департаментам и продуктам" : "Крупных инициатив пока нет."}
         </p>
         {data.canManage ? (
-          <Button size="sm" className="shrink-0 self-start" onClick={() => setDialog({ kind: "edit", item: null })}>
+          <Button size="sm" className="shrink-0" onClick={() => setDialog({ kind: "edit", item: null })}>
             <Plus className="h-4 w-4" aria-hidden="true" />
             Новая инициатива
           </Button>
@@ -147,7 +172,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
       </div>
       {data.active.length > data.softMax ? (
         <p className="text-small text-warning-ink">
-          Открытых инициатив {data.active.length}, а шкала задумана для {data.softMax} самых крупных. Мелкие удобнее вести задачами.
+          Открытых {data.active.length} при задуманных {data.softMax}: мелкие удобнее вести задачами.
         </p>
       ) : null}
 
@@ -235,23 +260,20 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
   );
 }
 
-/** Две колонки шкалы для одного продукта: «Ещё ищем, как сделать» и «Уже делаем» */
+/** Две колонки шкалы для одного продукта: «Ещё ищем, как сделать» и «Уже делаем», строками с точкой цвета у заголовка */
 function StateColumns({ group, items, target, canManage, busy, onDialog }: { group: string; items: InitiativeView[]; target: string | null; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid items-start gap-6 xl:grid-cols-2">
       {(["searching", "doing"] as const).map((state) => {
         const list = items.filter((i) => i.state === state);
         return (
-          <section
-            key={state}
-            aria-labelledby={`col-${state}-${group}`}
-            className={cn("flex min-w-0 flex-col gap-3 rounded-card p-3", state === "searching" ? "bg-warning-soft" : "bg-green-soft")}
-          >
-            <h4 id={`col-${state}-${group}`} className={cn("px-1 text-small font-semibold", state === "searching" ? "text-warning-ink" : "text-green-ink")}>
-              {STATE_LABELS[state]} <span className="font-normal">{list.length}</span>
+          <section key={state} aria-labelledby={`col-${state}-${group}`} className="flex min-w-0 flex-col gap-2">
+            <h4 id={`col-${state}-${group}`} className="m-0 flex items-center gap-2 text-small font-semibold text-ink">
+              <span className={cn("h-2.5 w-2.5 rounded-full", state === "searching" ? "bg-warning" : "bg-green")} aria-hidden="true" />
+              {STATE_LABELS[state]} <span className="font-normal text-muted">{list.length}</span>
             </h4>
             {list.length ? (
-              <ul className="flex flex-col gap-3">
+              <ul className="m-0 flex list-none flex-col gap-2 p-0">
                 {list.map((i) => (
                   <li key={i.id}>
                     <Card item={i} highlighted={target === `i-${i.id}`} canManage={canManage} busy={busy} onDialog={onDialog} />
@@ -259,7 +281,7 @@ function StateColumns({ group, items, target, canManage, busy, onDialog }: { gro
                 ))}
               </ul>
             ) : (
-              <p className={cn("px-1 text-small", state === "searching" ? "text-warning-ink" : "text-green-ink")}>{state === "searching" ? "Все инициативы продукта уже в работе." : "Пока ни одна инициатива продукта не перешла в работу."}</p>
+              <p className="sv-card sv-card--soft m-0 px-4 py-3 text-small text-text-secondary">{state === "searching" ? "Все инициативы продукта уже в работе." : "Пока ни одна инициатива продукта не перешла в работу."}</p>
             )}
           </section>
         );
@@ -271,82 +293,92 @@ function StateColumns({ group, items, target, canManage, busy, onDialog }: { gro
 function Card({ item, highlighted, canManage, busy, onDialog }: { item: InitiativeView; highlighted: boolean; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
   const id = useId();
   const other: StateCode = item.state === "searching" ? "doing" : "searching";
+  // Встаёт в повестку встречи: долго ищем или давно без новостей. Полоса слева красная
+  const alert = item.flags.longSearch || item.flags.stale;
   return (
     <article
       id={`i-${item.id}`}
       aria-labelledby={`${id}-t`}
-      className={cn("sv-card flex flex-col gap-3 p-4 [overflow-wrap:anywhere]", highlighted && "outline outline-2 outline-offset-2 outline-[var(--color-focus)]")}
+      className={cn("sv-card relative flex flex-col gap-2.5 overflow-hidden py-3.5 pl-5 pr-4 [overflow-wrap:anywhere]", highlighted && "outline outline-2 outline-offset-2 outline-[var(--color-focus)]")}
     >
-      <div className="flex flex-col gap-1">
-        <h3 id={`${id}-t`} className="text-body font-semibold text-ink">
-          {item.title}
-        </h3>
-        <p className="text-caption text-muted">
-          {item.owner.fullName}
-          {item.owner.active ? "" : " (выключен)"}
-          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
-          {item.goal ? `, цель ${item.goal.code ?? item.goal.title}` : ""}
-        </p>
-      </div>
-      {/* Заметка главной строкой: что сейчас происходит. «Зачем» и вопрос к заметке в подсказке и в истории */}
-      <p className="text-body text-ink" title={NOTE_PROMPTS[item.state]}>
-        {/* Заметка отдельным элементом внутри кавычек: её текст ищется поиском по странице и в тестах целиком */}
-        {item.note ? (
-          <>
-            «<span>{item.note}</span>»
-          </>
-        ) : (
-          <span className="text-muted">Заметки пока нет</span>
-        )}
-      </p>
-      {item.why ? <p className="line-clamp-2 text-small text-text-secondary">{item.why}</p> : null}
-      <div className="flex flex-wrap items-center gap-2">
+      <span className={cn("absolute inset-y-0 left-0 w-1", alert ? "bg-danger" : item.state === "searching" ? "bg-warning" : "bg-green")} aria-hidden="true" />
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
+        <div className="min-w-0 flex-1">
+          {/* Заголовок карточки на уровень ниже заголовка колонки (h4) */}
+          <h5 id={`${id}-t`} className="m-0 text-body font-semibold leading-snug text-ink">
+            {item.title}
+          </h5>
+          <p className="m-0 text-caption text-muted">
+            {item.owner.fullName}
+            {item.owner.active ? "" : " (выключен)"}
+            {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
+            {item.goal ? `, цель ${item.goal.code ?? item.goal.title}` : ""}
+          </p>
+        </div>
         {item.state === "searching" ? (
           <Badge tone={item.flags.longSearch ? "yellow" : "gray"}>Ищем {weeksText(item.flags.searchDays)}</Badge>
         ) : (
           <Badge tone="green">Делаем с {when(item.stateSince)}</Badge>
         )}
-        {item.flags.stale ? <Badge tone="yellow">Без новостей {item.flags.staleDays} дн.</Badge> : <span className="text-caption text-muted">Обновлено {when(item.noteAt)}</span>}
-        {item.flags.longSearch || item.flags.stale ? <span className="text-caption font-semibold text-danger-ink">в повестке встречи</span> : null}
       </div>
-      {item.canUpdate ? (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={other === "doing" ? "primary" : "secondary"}
-            aria-label={`${other === "doing" ? "Уже делаем" : "Вернуть в поиск"}: ${item.title}`}
-            disabled={busy}
-            onClick={() => onDialog({ kind: "state", item, to: other })}
-          >
-            {other === "doing" ? "Уже делаем" : "Вернуть в поиск"}
-          </Button>
-          <Button size="sm" variant="secondary" aria-label={`Обновить заметку: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "note", item })}>
-            Обновить заметку
-          </Button>
-          {canManage ? (
-            <>
-              <Button size="sm" variant="ghost" aria-label={`Править: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "edit", item })}>
-                Править
-              </Button>
-              <Button size="sm" variant="ghost" aria-label={`Закрыть: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "close", item })}>
-                Закрыть
-              </Button>
-            </>
-          ) : null}
-        </div>
-      ) : null}
-      {item.history.length ? (
-        <details>
-          <summary className="cursor-pointer text-small font-medium text-link">История</summary>
-          <ul className="mt-2 flex flex-col gap-1 text-small text-muted">
-            {item.history.map((h, n) => (
-              <li key={`${h.at}-${n}`}>
-                {when(h.at)}. {h.kind === "state" && h.to ? STATE_LABELS[h.to] : (CHANGE_WORDS[h.kind] ?? "Изменение")}
-                {h.note && h.kind !== "owner" ? `: ${h.note}` : h.kind === "owner" && h.note ? `. ${h.note}` : ""}
-                {h.by ? ` (${h.by})` : ""}
-              </li>
-            ))}
-          </ul>
+      {/* Заметка: что сейчас происходит, в две строки; целиком в подсказке. Вопрос к заметке, пока её нет */}
+      <p className="m-0 line-clamp-2 text-small text-ink" title={item.note ?? NOTE_PROMPTS[item.state]}>
+        {item.note ? item.note : <span className="text-muted">Заметки пока нет</span>}
+      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className={cn("text-caption", item.flags.stale ? "font-semibold text-danger-ink" : "text-muted")}>
+          {item.flags.stale ? `Без новостей ${item.flags.staleDays} дн.` : `Обновлено ${when(item.noteAt)}`}
+          {alert ? ", в повестке встречи" : ""}
+        </span>
+        {item.canUpdate ? (
+          <div className="ml-auto flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              variant={other === "doing" ? "primary" : "secondary"}
+              aria-label={`${other === "doing" ? "Уже делаем" : "Вернуть в поиск"}: ${item.title}`}
+              disabled={busy}
+              onClick={() => onDialog({ kind: "state", item, to: other })}
+            >
+              {other === "doing" ? "Уже делаем" : "Вернуть в поиск"}
+            </Button>
+            <Button size="sm" variant="secondary" aria-label={`Обновить заметку: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "note", item })}>
+              Заметка
+            </Button>
+            {canManage ? (
+              <>
+                <Button size="sm" variant="ghost" aria-label={`Править: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "edit", item })}>
+                  Править
+                </Button>
+                <Button size="sm" variant="ghost" aria-label={`Закрыть: ${item.title}`} disabled={busy} onClick={() => onDialog({ kind: "close", item })}>
+                  Закрыть
+                </Button>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {item.why || item.history.length ? (
+        <details className="text-small">
+          <summary className="cursor-pointer font-semibold text-link">История и подробности</summary>
+          <div className="mt-2 flex flex-col gap-2">
+            {item.why ? (
+              <p className="m-0 text-text-secondary">
+                <span className="font-semibold text-ink">Зачем: </span>
+                {item.why}
+              </p>
+            ) : null}
+            {item.history.length ? (
+              <ul className="m-0 flex list-none flex-col gap-1 border-l-2 border-line pl-3 text-muted">
+                {item.history.map((h, n) => (
+                  <li key={`${h.at}-${n}`}>
+                    <span className="font-semibold text-text-secondary">{when(h.at)}.</span> {h.kind === "state" && h.to ? STATE_LABELS[h.to] : (CHANGE_WORDS[h.kind] ?? "Изменение")}
+                    {h.note && h.kind !== "owner" ? `: ${h.note}` : h.kind === "owner" && h.note ? `. ${h.note}` : ""}
+                    {h.by ? ` (${h.by})` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </details>
       ) : null}
     </article>
