@@ -211,7 +211,8 @@ test("настройки: «Не сохранено» под людьми, «О�
   await expect(count).toHaveText("Сейчас раздел видит 1 человек, из них владельцев 1, плюс все, кто входит по общему логину.");
   await expect(section.getByText("Раздел «Рынок» всегда видят владельцы и все, кто входит по общему логину.", { exact: false })).toBeVisible();
   const add = async (query: string, name: RegExp) => {
-    await section.getByLabel("Люди с доступом").fill(query);
+    // Точное имя: список плашек подписан «Люди с доступом к рынку»
+    await section.getByLabel("Люди с доступом", { exact: true }).fill(query);
     await page.getByRole("option", { name }).click();
   };
   const unsaved = section.getByTestId("market-people-unsaved");
