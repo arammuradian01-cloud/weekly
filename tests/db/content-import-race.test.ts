@@ -30,6 +30,7 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import { parsePackage, type ContentPackage } from "@/lib/content-import/package";
 import { applyContentImport } from "@/lib/content-import/service";
+import { updateGoal } from "@/lib/goals/service";
 import { TOP_TEAM } from "@/lib/org/scope";
 
 const FIXTURE = readFileSync("tests/fixtures/content-import/package.json", "utf8");
@@ -126,5 +127,42 @@ describe("правки ресурса во время загрузки", () => {
     expect(await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ status: "DONE", resolution: "Готово по пакету" });
     // Закрытие сотрудника прошло после загрузки и увидело, что задача уже закрыта
     await expect(box.close!.promise).rejects.toThrow(/Статус уже такой/);
+  });
+});
+
+describe("что загрузка запирает", () => {
+  it("только строки, которые пишет: цель с тем же номером в другом квартале и задача из решения правятся во время загрузки", async () => {
+    const me = await owner();
+    const p1 = raw();
+    p1.goals = [];
+    p1.links = [];
+    p1.decisions = [];
+    p1.tasks = [p1.tasks[0]!];
+    await applyContentImport(me, pkgOf(p1));
+    const t = await taskByKey("task.test.open-1");
+    const other = (await tasks.createTask(me, { title: "Задача только в решении", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01" })).task;
+    const unrelated = await prisma.goal.create({ data: { quarter: "2027-Q2", code: "1", title: "Чужая цель с номером 1 в другом квартале", teamId: TOP_TEAM } });
+    const p2 = JSON.parse(JSON.stringify(p1)) as Raw;
+    p2.tasks[0]!.whereNow = "Пакет: новое";
+    p2.goals = [{ key: "goal.test.one", quarter: "2026-Q4", team: "Топ-команда", code: "1", title: "Цель пакета с номером 1" }];
+    p2.decisions = [{ key: "decision.test.one", text: "Решение со ссылкой на задачу", date: "2026-10-20", team: "Топ-команда", tasks: [{ number: other.number }] }];
+    const box: { goal?: ReturnType<typeof meanwhile>; task?: ReturnType<typeof meanwhile>; own?: ReturnType<typeof meanwhile> } = {};
+    hooks.beforeWhere = async () => {
+      box.goal = meanwhile(async () => updateGoal(me, unrelated.id, { title: "Чужая цель: правка" }));
+      box.task = meanwhile(async () => tasks.updateWhere(await tasks.actorFor("reva"), other.number, "Сотрудник пишет"));
+      box.own = meanwhile(async () => tasks.updateWhere(await tasks.actorFor("golovkin"), t.number, "Сотрудник: правка своей задачи"));
+      await pause(1500);
+      // Чужая цель и задача из решения не заперты, задача, которую загрузка пишет, заперта
+      expect(box.goal.state.settled).toBe(true);
+      expect(box.task.state.settled).toBe(true);
+      expect(box.own.state.settled).toBe(false);
+    };
+    await applyContentImport(me, pkgOf(p2));
+    await box.goal!.promise;
+    await box.task!.promise;
+    await box.own!.promise;
+    expect((await prisma.goal.findUniqueOrThrow({ where: { id: unrelated.id } })).title).toBe("Чужая цель: правка");
+    expect((await prisma.task.findUniqueOrThrow({ where: { number: other.number } })).whereNow).toBe("Сотрудник пишет");
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).whereNow).toBe("Сотрудник: правка своей задачи");
   });
 });

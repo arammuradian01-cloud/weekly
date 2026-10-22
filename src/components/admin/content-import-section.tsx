@@ -250,9 +250,8 @@ export function ContentImportSection() {
             {shown.bound.length ? (
               <div className="text-small text-ink" data-testid="content-import-bound">
                 <p className="font-medium">
-                  {done ? "Привязано" : "Привяжется"} к ресурсу ({shown.bound.length}):{" "}
-                  {plural(shown.bound.length, "запись уже есть в ресурсе и совпадает", "записи уже есть в ресурсе и совпадают", "записей уже есть в ресурсе и совпадают")} с пакетом,
-                  загрузка запоминает ключи и ничего в них не меняет.
+                  {done ? "Привязано" : "Привяжется"} к ресурсу ({shown.bound.length}): {plural(shown.bound.length, "запись уже есть", "записи уже есть", "записей уже есть")} в
+                  ресурсе, загрузка запоминает их ключи и ничего в них не меняет. Где поля в ресурсе отличаются от пакета, они перечислены.
                 </p>
                 <Lines items={shown.bound} testId="content-import-bound-list" />
               </div>

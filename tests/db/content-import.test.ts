@@ -564,14 +564,17 @@ describe("что не загружается", () => {
     p.tasks[0]!.whereNow = "Ждём решения по окладу аналитика";
     delete p.decisions[1]!.team;
     const preview = await previewContentImport(await owner(), pkgOf(p));
+    // Запись с кадровыми сведениями подписана без её текста: вид, номер в пакете и ключ, поле без кадрового слова
     expect(preview.errors).toEqual([
-      { what: "Задача «Собрать тестовую сводку по выдуманным партнёрам»", text: "кадровые сведения («окладу» в поле «Где сейчас»): такие записи в ресурс не загружаются, уберите их из пакета" },
+      { what: "Задача 1 в пакете (ключ task.test.open-1)", text: "кадровые сведения в поле «Где сейчас»: запись не загрузится, уберите их из пакета" },
       { what: "Решение «Выдуманный партнёр получает скидку»", text: "нет команды: решение без команды не загружается, укажите команду в пакете" },
     ]);
     expect(preview.tasks).toEqual({ add: 3, update: 0, skip: 2 });
     expect(preview.decisions).toEqual({ add: 1, update: 0, skip: 1 });
     expect(preview.links).toEqual({ add: 1, update: 0, skip: 1 });
-    expect(texts(preview.notes)).toMatch(/Связь link.test.1: задача «Собрать тестовую сводку по выдуманным партнёрам» не загружается: кадровые сведения/);
+    expect(texts(preview.notes)).toMatch(/Связь link.test.1: задача 1 в пакете \(ключ task.test.open-1\) не загружается: кадровые сведения/);
+    // Текст отсечённой записи нигде в предпросмотре не повторяется
+    expect(JSON.stringify(preview)).not.toMatch(/оклад|Собрать тестовую сводку/);
     await applyContentImport(await owner(), pkgOf(p));
     expect(await imported("task", "task.test.open-1")).toBeNull();
     expect(await prisma.task.count({ where: { whereNow: { contains: "оклад" } } })).toBe(0);
@@ -754,7 +757,7 @@ describe("подхват задач ресурса и цели из бордов
     pkg.decisions = [];
     pkg.links = [];
     const p = await previewContentImport(me, pkgOf(pkg));
-    expect(p.errors).toEqual([{ what: "Задача «Сверить выдуманные комиссии партнёра»", text: "кадровые сведения («окладу» в поле «Где сейчас»): такие записи в ресурс не загружаются, уберите их из пакета" }]);
+    expect(p.errors).toEqual([{ what: "Задача 1 в пакете (ключ task.test.adopt-hr)", text: "кадровые сведения в поле «Где сейчас»: запись не загрузится, уберите их из пакета" }]);
     // Страховая премия в итоге не кадровое: вторая задача подхватывается и закрывается
     expect(p.tasks).toEqual({ add: 0, update: 1, skip: 1 });
     await applyContentImport(me, pkgOf(pkg));
@@ -996,9 +999,9 @@ describe("правки по проверке: стыки, гонка, повто
     p.goals[1]!.base = "ФОТ 2026: 45 млн";
     p.links[0]!.reason = "Связана с пересмотром окладов аналитиков";
     const preview = await previewContentImport(me, pkgOf(p));
-    expect(preview.errors.map((e) => e.what)).toEqual(["Цель «Вымышленная цель продукта: собрать тестовую витрину»", "Связь link.test.1"]);
-    expect(preview.errors[0]!.text).toMatch(/«фот» в поле «База»/);
-    expect(preview.errors[1]!.text).toMatch(/«окладов» в поле «Причина связи»/);
+    expect(preview.errors.map((e) => e.what)).toEqual(["Цель 2 в пакете (ключ goal.test.reva-1)", "Связь 1 в пакете (ключ link.test.1)"]);
+    expect(preview.errors[0]!.text).toMatch(/^кадровые сведения в поле «База»/);
+    expect(preview.errors[1]!.text).toMatch(/^кадровые сведения в поле «Причина связи»/);
     await applyContentImport(me, pkgOf(p));
     expect(await prisma.goal.count({ where: { code: "ТР-1" } })).toBe(0);
     expect(await imported("link", "link.test.1")).toBeNull();
@@ -1121,5 +1124,200 @@ describe("правки по проверке: стыки, гонка, повто
     expect(preview.warnings).toEqual([]);
     await applyContentImport(await owner(), pkgOf(p));
     expect(await prisma.goal.findUniqueOrThrow({ where: { id: board.id } })).toMatchObject({ ownerId: reva.id, parentId: newParent.id });
+  });
+});
+
+describe("третий круг проверки", () => {
+  const empty = () => {
+    const p = raw();
+    p.tasks = [];
+    p.goals = [];
+    p.decisions = [];
+    p.links = [];
+    return p;
+  };
+
+  it("цель борда без replace: цель выше, которую ставил борд, загрузка не меняет и во второй раз", async () => {
+    const me = await owner();
+    const golovkin = await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } });
+    const a = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-1", title: "Цель выше A", teamId: TOP_TEAM } });
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-2", title: "Цель выше B", teamId: TOP_TEAM } });
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-3", title: "Цель выше C", teamId: TOP_TEAM } });
+    const board = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-5", title: "Цель из борда", teamId: TOP_TEAM, ownerId: golovkin.id, parentId: a.id, source: "leader-board:test" } });
+    const p1 = empty();
+    p1.goals = [{ key: "goal.test.r5", quarter: "2026-Q4", team: "Топ-команда", code: "Р-5", title: "Цель из борда", parent: { code: "Р-2" } }];
+    const first = await previewContentImport(me, pkgOf(p1));
+    expect(texts(first.warnings)).toMatch(/Цель «Цель из борда»: цель выше уже задана в ресурсе, загрузка её не тронет/);
+    await applyContentImport(me, pkgOf(p1));
+    expect((await payloadOf("goal", "goal.test.r5")).parentOwned).toBe(false);
+    const p2 = empty();
+    p2.goals = [{ ...p1.goals[0]!, parent: { code: "Р-3" } }];
+    const second = await previewContentImport(me, pkgOf(p2));
+    expect(texts(second.warnings)).toMatch(/цель выше уже задана в ресурсе, загрузка её не тронет/);
+    await applyContentImport(me, pkgOf(p2));
+    expect((await prisma.goal.findUniqueOrThrow({ where: { id: board.id } })).parentId).toBe(a.id);
+  });
+
+  it("replace во второй загрузке приводит цель выше к пакету", async () => {
+    const me = await owner();
+    const a = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-1", title: "Цель выше A", teamId: TOP_TEAM } });
+    const b = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-2", title: "Цель выше B", teamId: TOP_TEAM } });
+    const board = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-5", title: "Цель из борда", teamId: TOP_TEAM, parentId: a.id, source: "leader-board:test" } });
+    const goal = { key: "goal.test.r5", quarter: "2026-Q4", team: "Топ-команда", code: "Р-5", title: "Цель из борда", target: "10", parent: { code: "Р-2" } };
+    const p1 = empty();
+    p1.goals = [goal];
+    await applyContentImport(me, pkgOf(p1));
+    expect((await prisma.goal.findUniqueOrThrow({ where: { id: board.id } })).parentId).toBe(a.id);
+    const p2 = empty();
+    p2.goals = [{ ...goal, replace: true }];
+    const preview = await previewContentImport(me, pkgOf(p2));
+    expect(preview.goals).toEqual({ add: 0, update: 1, skip: 0 });
+    expect(preview.warnings).toEqual([]);
+    await applyContentImport(me, pkgOf(p2));
+    expect((await prisma.goal.findUniqueOrThrow({ where: { id: board.id } })).parentId).toBe(b.id);
+    expect((await payloadOf("goal", "goal.test.r5")).parentOwned).toBe(true);
+  });
+
+  it("подхват без команды в пакете и с ответственным, которого нет в ресурсе, не делается", async () => {
+    const me = await owner();
+    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
+    const child = await prisma.team.create({ data: { name: "Тестовая команда Ревы", kind: "CUSTOM", parentId: TOP_TEAM, leaderId: reva.id } });
+    const t = (await tasks.createTask(me, { title: "Задача команды Ревы", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01", team: child.id })).task;
+    const p = empty();
+    p.tasks = [{ key: "task.test.adopt-nobody", title: "Задача команды Ревы", outcome: "Как было", owner: "Несуществующий Человек", direction: "product", due: "2026-12-01", whereNow: "Из пакета", adopt: { number: t.number, title: "Задача команды Ревы" } }];
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.errors).toEqual([{ what: "Задача «Задача команды Ревы»", text: "в пакете нет команды, а ответственного «Несуществующий Человек» нет в ресурсе: сверить команду задачи не с чем, укажите команду в пакете" }]);
+    await applyContentImport(me, pkgOf(p));
+    expect((await prisma.task.findUniqueOrThrow({ where: { number: t.number } })).whereNow).toBe("");
+    expect(await imported("task", "task.test.adopt-nobody")).toBeNull();
+  });
+
+  it("цель с тем же номером и другими полями привязывается, а подпись перечисляет поля, которые останутся как в ресурсе", async () => {
+    const me = await owner();
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-7", title: "Борд: заголовок", target: "10", metric: "м", base: "0", description: "д", link: "https://example.com/b", teamId: TOP_TEAM } });
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Р-8", title: "Борд: такая же", teamId: TOP_TEAM } });
+    const p = empty();
+    p.goals = [
+      { key: "goal.test.r7", quarter: "2026-Q4", team: "Топ-команда", code: "Р-7", title: "Пакет: совсем другой заголовок", target: "20", metric: "x", base: "5", description: "y", link: "https://example.com/p" },
+      { key: "goal.test.r8", quarter: "2026-Q4", team: "Топ-команда", code: "Р-8", title: "Борд: такая же" },
+    ];
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.goals).toEqual({ add: 0, update: 0, skip: 0 });
+    expect(preview.bound).toEqual([
+      { what: "Цель Р-7", text: "уже есть в ресурсе: загрузка запомнит её ключ, поля в ресурсе останутся: Цель, Описание, Метрика, База, Целевое значение, Ссылка" },
+      { what: "Цель Р-8", text: "уже есть в ресурсе и совпадает с пакетом: загрузка запомнит её ключ" },
+    ]);
+  });
+
+  it("две связи одной задачи в одном пакете (по ключу и по номеру): вторая в ошибках, цель ставит первая", async () => {
+    const me = await owner();
+    const p1 = empty();
+    p1.tasks = [{ key: "task.test.two", title: "Задача с двумя связями", outcome: "Сделано", owner: "Рева Тарас", direction: "product", due: "2026-12-01" }];
+    await applyContentImport(me, pkgOf(p1));
+    const t = (await taskByKey("task.test.two"))!;
+    const g1 = await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Г-1", title: "Цель один", teamId: TOP_TEAM } });
+    await prisma.goal.create({ data: { quarter: "2026-Q4", code: "Г-2", title: "Цель два", teamId: TOP_TEAM } });
+    const p2 = empty();
+    p2.tasks = p1.tasks;
+    p2.links = [
+      { key: "link.test.a", task: { key: "task.test.two" }, goal: { code: "Г-1" } },
+      { key: "link.test.b", task: { number: t.number }, goal: { code: "Г-2" } },
+    ];
+    const preview = await previewContentImport(me, pkgOf(p2));
+    expect(preview.links).toEqual({ add: 1, update: 0, skip: 1 });
+    expect(preview.errors).toEqual([{ what: "Связь link.test.b", text: "задачу уже привязывает связь link.test.a этого пакета: у задачи одна цель, оставьте одну связь" }]);
+    await applyContentImport(me, pkgOf(p2));
+    expect((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).goalId).toBe(g1.id);
+    expect(await imported("link", "link.test.b")).toBeNull();
+  });
+
+  it("кадровое в источнике цели и в названии подхвата: записи не грузятся, в ключи и цели не попадает", async () => {
+    const me = await owner();
+    const t = (await tasks.createTask(me, { title: "Пересмотр окладов КЦ", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01" })).task;
+    const p = empty();
+    p.goals = [{ key: "goal.test.src", quarter: "2026-Q4", team: "Топ-команда", owner: "Рева Тарас", code: "Р-9", title: "Цель борда", source: "leader-board:Премии менеджеров и ФОТ" }];
+    p.tasks = [{ key: "task.test.adopt-hr-title", title: "Сверка по КЦ", outcome: "Сделано", owner: "Рева Тарас", direction: "product", due: "2026-12-01", whereNow: "Из пакета", adopt: { number: t.number, title: "Пересмотр окладов КЦ" } }];
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.errors.map((e) => `${e.what}: ${e.text.split(":")[0]}`)).toEqual([
+      "Цель 1 в пакете (ключ goal.test.src): кадровые сведения в поле «Откуда цель»",
+      "Задача 1 в пакете (ключ task.test.adopt-hr-title): кадровые сведения в поле «Название в ресурсе (adopt)»",
+    ]);
+    await applyContentImport(me, pkgOf(p));
+    expect(await prisma.goal.count({ where: { code: "Р-9" } })).toBe(0);
+    expect(JSON.stringify((await prisma.contentImportKey.findMany()).map((k) => k.payload))).not.toMatch(/оклад|ФОТ|Премии менеджеров/);
+  });
+
+  it("заметки предпросмотра не повторяют текст отсечённой записи: ни ошибка, ни решение, ни связь, ни цель выше", async () => {
+    const me = await owner();
+    const p = empty();
+    p.goals = [
+      { key: "goal.test.hr", quarter: "2026-Q4", team: "Топ-команда", code: "Н-0", title: "Оклады аналитиков по рынку" },
+      { key: "goal.test.child", quarter: "2026-Q4", team: "Топ-команда", code: "Н-1", title: "Цель ниже", parent: { key: "goal.test.hr" } },
+    ];
+    p.tasks = [
+      { key: "task.test.hr", title: "Уволить Петрова до конца месяца", outcome: "Сделано", owner: "Рева Тарас", direction: "product", due: "2026-12-01" },
+      { key: "task.test.ok", title: "Обычная выдуманная задача", outcome: "Сделано", owner: "Рева Тарас", direction: "product", due: "2026-12-01" },
+    ];
+    p.decisions = [{ key: "decision.test.hr", text: "Решение по задаче", date: "2026-10-20", team: "Топ-команда", tasks: [{ key: "task.test.hr" }] }];
+    p.links = [
+      { key: "link.test.hr", task: { key: "task.test.hr" }, goal: { key: "goal.test.child" } },
+      { key: "link.test.hr-goal", task: { key: "task.test.ok" }, goal: { key: "goal.test.hr" } },
+    ];
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.errors.map((e) => e.what)).toEqual(["Цель 1 в пакете (ключ goal.test.hr)", "Задача 1 в пакете (ключ task.test.hr)"]);
+    expect(JSON.stringify(preview)).not.toMatch(/Уволить|Петров|Оклады|увол|оклад/i);
+    expect(texts(preview.notes)).toMatch(/Решение «Решение по задаче»: задача 1 в пакете \(ключ task.test.hr\) не загружается/);
+    expect(texts(preview.notes)).toMatch(/Связь link.test.hr: задача 1 в пакете \(ключ task.test.hr\) не загружается/);
+    expect(texts(preview.notes)).toMatch(/Связь link.test.hr-goal: цель 1 в пакете \(ключ goal.test.hr\) не загружается/);
+    expect(texts(preview.warnings)).toMatch(/Цель «Цель ниже»: цель выше не загружается: кадровые сведения в поле «Название»/);
+  });
+
+  it("кадровый фильтр с фамилиями людей ресурса: «премия Реве» не грузится, хотя без базы фамилию не узнать", async () => {
+    const me = await owner();
+    const p = empty();
+    p.tasks = [{ key: "task.test.surname", title: "Премия Реве за квартал", outcome: "Сделано", owner: "Головкин Владислав", direction: "osago", due: "2026-12-01" }];
+    expect(pkgOf(p).excluded).toEqual([]);
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.errors).toEqual([{ what: "Задача 1 в пакете (ключ task.test.surname)", text: "кадровые сведения в поле «Название»: запись не загрузится, уберите их из пакета" }]);
+    await applyContentImport(me, pkgOf(p));
+    expect(await imported("task", "task.test.surname")).toBeNull();
+  });
+
+  it("подхват сверяет названия после одной и той же чистки: знаки, которые пакет убирает, в ресурсе не мешают", async () => {
+    const me = await owner();
+    const t = (await tasks.createTask(me, { title: "Сводка · партнёры ‒ витрина", outcome: "Как было", owner: "reva", direction: "product", due: "2026-12-01" })).task;
+    const p = empty();
+    p.tasks = [{ key: "task.test.adopt-chars", title: "Сводка по партнёрам", outcome: "Как было", owner: "Рева Тарас", direction: "product", due: "2026-12-01", whereNow: "Из пакета", adopt: { number: t.number, title: "Сводка · партнёры ‒ витрина" } }];
+    const preview = await previewContentImport(me, pkgOf(p));
+    expect(preview.tasks).toEqual({ add: 0, update: 1, skip: 0 });
+    await applyContentImport(me, pkgOf(p));
+    expect((await prisma.task.findUniqueOrThrow({ where: { number: t.number } })).whereNow).toBe("Из пакета");
+  });
+
+  it("открываемой задаче с прошедшим сроком нет заметки «срок не перенесён»: она получает срок по умолчанию", async () => {
+    const me = await owner();
+    const p1 = empty();
+    p1.tasks = [{ key: "task.test.reopen-note", title: "Выдуманный разбор", outcome: "Разбор", owner: "Рева Тарас", direction: "product", due: addDays(today, -20), status: "done", resolution: "Готово" }];
+    await applyContentImport(me, pkgOf(p1));
+    const p2 = JSON.parse(JSON.stringify(p1)) as Raw;
+    p2.tasks[0]!.status = "in-progress";
+    p2.tasks[0]!.due = addDays(today, -10);
+    delete p2.tasks[0]!.resolution;
+    const preview = await previewContentImport(me, pkgOf(p2));
+    expect(texts(preview.notes)).not.toMatch(/не перенесён/);
+    expect(preview.staleTasks.map((x) => x.key)).toEqual(["task.test.reopen-note"]);
+    await applyContentImport(me, pkgOf(p2));
+    expect((await taskByKey("task.test.reopen-note"))!.due.toISOString().slice(0, 10)).toBe(addDays(today, 14));
+  });
+
+  it("взаимная блокировка или конфликт записи: понятная причина, база не тронута, номера вернулись", async () => {
+    const numbersBefore = await nextNumberSetting();
+    hooks.beforeLink = async () => {
+      throw Object.assign(new Error("deadlock detected"), { code: "P2034" });
+    };
+    await expectRule(applyContentImport(await owner(), pkgOf(raw())), /^Загрузку прервала одновременная правка в ресурсе, база не тронута\. Повторите загрузку$/);
+    expect(await prisma.task.count()).toBe(0);
+    expect(await prisma.contentImportKey.count()).toBe(0);
+    expect(await nextNumberSetting()).toBe(numbersBefore ?? 52);
   });
 });

@@ -116,7 +116,9 @@ test("кадровые сведения и решение без команды 
   await preview.getByText(/Подробнее: что пропустится и почему/).click();
   await expect(preview.getByTestId("content-import-notes")).toContainText("задача 52 уже загружена из пакета с ключом task.test.open-1");
   const errors = preview.getByTestId("content-import-errors");
-  await expect(errors).toContainText("Задача «Пересмотреть оклады аналитиков»: кадровые сведения («оклады» в поле «Задача»)");
+  // Запись с кадровыми сведениями подписана без её текста: номер в пакете, ключ и поле
+  await expect(errors).toContainText("Задача 7 в пакете (ключ task.test.hr-1): кадровые сведения в поле «Название»: запись не загрузится");
+  await expect(preview).not.toContainText("оклады");
   await expect(errors).toContainText("Решение «Решение без команды»: нет команды");
 
   // Задачи без актуального срока: список и одна дата на все, по умолчанию через две недели

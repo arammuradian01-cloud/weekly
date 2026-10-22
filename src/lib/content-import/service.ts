@@ -21,10 +21,12 @@
 // - план считается один раз и для предпросмотра, и для загрузки: что предпросмотр обещал, то загрузка и делает. Правила
 //   служб, которые иначе уронили бы загрузку, проверяются в плане: такая запись пропускается с причиной;
 // - номера новых задач берутся заранее короткой транзакцией, лишние возвращаются;
-// - внутри транзакции строки задач, целей и решений пакета запираются (FOR UPDATE, по порядку id) до расчёта плана:
-//   правка ресурса во время загрузки ждёт её конца и не теряется, а план видит ресурс таким, каким загрузка его пишет;
-// - запись, которая уже есть в ресурсе и совпадает с пакетом (подхват без правок, цель с тем же номером, задача уже с
-//   этой целью), привязывается к ресурсу: загрузка только запоминает её ключ;
+// - план считается без блокировок, потом запираются только строки, которые загрузка запишет (FOR UPDATE, по порядку
+//   id), и план считается заново по ним. Правка такой строки во время загрузки ждёт её конца и может не дождаться
+//   (у служб ресурса своё время ожидания); то, что в ресурсе уже так, загрузка считает без изменений. Взаимную
+//   блокировку Postgres снимает: загрузка откатывается с понятной причиной, её повторяют;
+// - запись, которая уже есть в ресурсе (подхват без правок, цель с тем же номером без новых полей, задача уже с этой
+//   целью), привязывается к ресурсу: загрузка только запоминает её ключ;
 // - любая ошибка правила при загрузке откатывает всё: база остаётся как была, владелец видит запись и причину.
 
 import { prisma } from "@/lib/db";
@@ -41,7 +43,7 @@ import { statusCode } from "@/lib/tasks/codes";
 import { addDays, diffDays, formatLong, plural, toCalendar, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
 import { sameTask } from "@/lib/meeting/parse-types";
-import { recordHash, shortText as short, type ContentPackage, type PackageDecision, type PackageGoal, type PackageLink, type PackageTask } from "./package";
+import { cleanText, personnelExclusions, recordHash, shortText as short, surnameStems, type ContentPackage, type PackageDecision, type PackageGoal, type PackageLink, type PackageTask } from "./package";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -130,7 +132,8 @@ type Ctx = {
   keys: Map<string, KeyRow>;
   /** Задачи, у которых уже есть ключ пакета: id задачи и ключ (одну задачу ресурса подхватывает один ключ) */
   taskKeys: Map<string, string>;
-  excluded: Map<string, string>;
+  /** Записи с кадровыми сведениями: подпись без текста записи и причина */
+  excluded: Map<string, { what: string; text: string }>;
   /** Срок для открытых задач со сроком в прошлом */
   staleDue: IsoDate;
   /** Задачи ресурса для поиска дублей: owner это id ответственного или «all» */
@@ -146,6 +149,13 @@ type Ctx = {
 };
 
 const key = (kind: Kind, k: string) => `${kind}/${k}`;
+
+/** Как назвать запись пакета в пояснении: запись с кадровыми сведениями только видом, номером и ключом, без её текста */
+function nameOf(ctx: Ctx, kind: "task" | "goal", k: string, title: string): string {
+  const hr = ctx.excluded.get(key(kind, k));
+  if (hr) return hr.what.charAt(0).toLowerCase() + hr.what.slice(1);
+  return `${kind === "task" ? "задача" : "цель"} «${short(title)}»`;
+}
 
 async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOptions): Promise<Ctx> {
   const dates = [...new Set(pkg.decisions.map((d) => d.date).filter(Boolean))];
@@ -172,7 +182,8 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
     sources: new Set(dict.filter((d) => d.kind === "TASK_SOURCE").map((d) => d.code)),
     keys: new Map(keys.map((k) => [key(k.kind as Kind, k.key), k])),
     taskKeys: new Map(keys.filter((k) => k.kind === "task").map((k) => [k.entityId, k.key])),
-    excluded: new Map(pkg.excluded.map((e) => [key(e.kind, e.key), e.text])),
+    // Кадровый фильтр ещё раз, теперь с фамилиями людей ресурса: «Премия Реве» узнаётся и без окончания фамилии
+    excluded: new Map(personnelExclusions(pkg, surnameStems(people.map((p) => p.fullName))).map((e) => [key(e.kind, e.key), { what: e.what, text: e.text }])),
     tasks: tasks.map((t) => ({ number: t.number, title: t.title, owner: t.ownerAll ? "all" : t.ownerId, due: isoFromDbDate(t.due) })),
     decisions: decisions.map((d) => ({ teamId: d.teamId, date: isoFromDbDate(d.date), text: d.text })),
     approvers: new Map(),
@@ -289,6 +300,10 @@ type GoalPlan = Step & {
   kept?: Record<string, unknown>;
   parent?: ParentTarget;
   parentNote?: string;
+  /** Цель выше в ресурсе уже та, что в пакете */
+  parentMatches?: boolean;
+  /** Поля цели с тем же номером, которые в ресурсе заполнены иначе, чем в пакете (без replace останутся как в ресурсе) */
+  differs?: string[];
 };
 /** reopen: пакет открывает закрытую задачу (срок переносится после открытия); stale: срок в пакете прошёл, задача
  *  встаёт со сроком для задач без актуального срока */
@@ -316,7 +331,8 @@ type DecisionPlan = Step & {
   data?: Prisma.DecisionUncheckedUpdateInput;
   kept?: Record<string, unknown>;
 };
-type LinkPlan = Step & { l: PackageLink; goal?: ParentTarget; entityId?: string; kept?: Record<string, unknown> };
+/** taskId: задача в ресурсе, которой загрузка поставит цель (её строку загрузка запирает) */
+type LinkPlan = Step & { l: PackageLink; goal?: ParentTarget; entityId?: string; taskId?: string; kept?: Record<string, unknown> };
 
 type Plan = { goals: GoalPlan[]; tasks: TaskPlan[]; decisions: DecisionPlan[]; links: LinkPlan[] };
 
@@ -351,7 +367,7 @@ async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
   for (const g of pkg.goals) {
     const hr = ctx.excluded.get(key("goal", g.key));
     if (hr) {
-      out.push({ g, action: "skip", level: "error", reason: hr });
+      out.push({ g, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
     const next = goalPayload(g);
@@ -409,6 +425,9 @@ async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
         out.push({ ...at, input, notes, kept: { ...next }, reason: n ? `уже есть в ресурсе: загрузка приведёт к пакету ${n} ${plural(n, "поле", "поля", "полей")}` : "уже есть в ресурсе и совпадает с пакетом" });
       } else {
         const owned: string[] = [];
+        // Поля, которые в ресурсе заполнены иначе, чем в пакете: они останутся как в ресурсе
+        const differs = REPLACE_FIELDS.filter((f) => now[f] && next[f] && !same(now[f], next[f])).map((f) => GOAL_LABELS[f]!);
+        Object.assign(at, { differs });
         for (const f of GOAL_FIELDS) {
           if (!now[f] && next[f]) {
             input[f] = next[f];
@@ -467,6 +486,7 @@ async function planGoalUpdate(ctx: Ctx, g: PackageGoal, old: Record<string, unkn
   }
   if (owned) kept.owned = owned;
   if ("parentId" in old) kept.parentId = old.parentId ?? null;
+  if ("parentOwned" in old) kept.parentOwned = old.parentOwned === true;
   if (record) for (const f of Object.keys(GOAL_OTHER)) if (!(upgrade && f === "owner") && !same(record[f], (g as Record<string, unknown>)[f])) notes.push(`поле «${GOAL_OTHER[f]}» из пакета загрузка не меняет, поправьте в ресурсе`);
   return { input, kept, notes };
 }
@@ -486,14 +506,15 @@ async function planParents(ctx: Ctx, goals: GoalPlan[]): Promise<void> {
     const no = (text: string) => {
       p.parentNote = text;
     };
-    // Цель выше, которую загрузка может сменить: цель с replace и уже загруженная цель, у которой цель выше не трогали
+    // Цель выше, которую загрузка может сменить: с replace (цель приводится к пакету) и ту, что загрузка сама ставила и
+    // в ресурсе её не трогали. Цель выше, которую ставил борд или человек, без replace загрузка не меняет, пустую ставит
     let movable = p.g.replace;
     const known = p.existingId ? ctx.keys.get(key("goal", p.g.key)) : undefined;
     if (known) {
       const old = asRecord(known.payload);
       const record = recordOf(old);
       const packageMoved = !record || !same(record.parent, p.g.parent);
-      if ("parentId" in old) {
+      if ("parentId" in old && old.parentOwned === true) {
         const base = (old.parentId as string | null) ?? null;
         if ((p.parentId ?? null) !== base) {
           if (packageMoved && p.g.parent) no("цель выше поменяли в ресурсе после загрузки, загрузка её не тронет");
@@ -501,10 +522,10 @@ async function planParents(ctx: Ctx, goals: GoalPlan[]): Promise<void> {
         }
         if (base && !packageMoved) continue;
         movable = true;
-      } else if (!packageMoved) continue;
+      } else if (!("parentId" in old) && !packageMoved && !p.g.replace) continue;
     }
     if (!p.g.parent) {
-      if (p.g.replace && p.parentId && !known) no("цели выше в пакете нет: в ресурсе она осталась прежней");
+      if (p.g.replace && p.parentId) no("цели выше в пакете нет: в ресурсе она осталась прежней");
       continue;
     }
     let target: ParentTarget | null = null;
@@ -527,7 +548,10 @@ async function planParents(ctx: Ctx, goals: GoalPlan[]): Promise<void> {
       parent = { node: found[0]!.id, teamId: found[0]!.teamId, quarter: found[0]!.quarter };
     }
     const self = nodeOf(p);
-    if (p.parentId && "id" in target && p.parentId === target.id) continue;
+    if (p.parentId && "id" in target && p.parentId === target.id) {
+      p.parentMatches = true;
+      continue;
+    }
     // Цель выше, заданную в ресурсе, меняет только replace или пакет у цели, где загрузка её и ставила
     if (p.parentId && !movable) {
       no("цель выше уже задана в ресурсе, загрузка её не тронет");
@@ -567,7 +591,10 @@ async function planParents(ctx: Ctx, goals: GoalPlan[]): Promise<void> {
     // Уже загруженная цель, которой загрузке нечего записать: пропуск, ключ запомнит новую запись пакета
     else if (p.action === "update" && !Object.keys(p.input ?? {}).length && !p.parent) Object.assign(p, { action: "skip", reason: ONLY_OTHER, remember: true });
     // Цель с тем же номером совпадает с пакетом: привязка к ресурсу
-    else if (p.action === "match" && !Object.keys(p.input ?? {}).length && !p.parent) Object.assign(p, { action: "bind", reason: "уже есть в ресурсе и совпадает с пакетом: загрузка запомнит её ключ" });
+    else if (p.action === "match" && !Object.keys(p.input ?? {}).length && !p.parent) {
+      const differs = p.differs ?? [];
+      Object.assign(p, { action: "bind", reason: differs.length ? `уже есть в ресурсе: загрузка запомнит её ключ, поля в ресурсе останутся: ${differs.join(", ")}` : "уже есть в ресурсе и совпадает с пакетом: загрузка запомнит её ключ" });
+    }
   }
 }
 
@@ -600,7 +627,7 @@ async function planTasks(ctx: Ctx, pkg: ContentPackage): Promise<TaskPlan[]> {
     // Кадровый фильтр первым: и для новой задачи, и для уже загруженной, и для подхваченной
     const hr = ctx.excluded.get(key("task", t.key));
     if (hr) {
-      out.push({ t, action: "skip", level: "error", reason: hr });
+      out.push({ t, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
     // Уже загружена: сначала ключ, потом люди (ответственного могли выключить, команду переименовать)
@@ -685,7 +712,8 @@ async function planAdopt(ctx: Ctx, t: PackageTask): Promise<TaskPlan> {
   const n = t.adopt!.number;
   const row = await ctx.db.task.findUnique({ where: { number: n }, include: { owner: { select: { id: true, fullName: true } } } });
   if (!row) return { t, action: "skip", reason: `задачи ${n} нет в ресурсе` };
-  if (normName(row.title) !== normName(t.adopt!.title)) return { t, action: "skip", reason: `под номером ${n} в ресурсе другая задача: «${short(row.title)}»` };
+  // Названия сравниваются после одной и той же чистки: в ресурсе могут быть знаки, которые пакет уже убрал
+  if (normName(cleanText(row.title)) !== normName(cleanText(t.adopt!.title))) return { t, action: "skip", reason: `под номером ${n} в ресурсе другая задача: «${short(row.title)}»` };
   if (row.archivedAt) return { t, action: "skip", reason: `задача ${n} в архиве, загрузка её не правит` };
   const other = ctx.taskKeys.get(row.id);
   if (other) return { t, action: "skip", reason: `задача ${n} уже загружена из пакета с ключом ${other}` };
@@ -693,11 +721,14 @@ async function planAdopt(ctx: Ctx, t: PackageTask): Promise<TaskPlan> {
   const all = normName(t.owner) === normName(ALL_LEADERS_NAME);
   const owner = all ? null : quietPerson(ctx, t.owner);
   const rowTeam = ctx.nodes.find((x) => x.id === row.teamId)?.name ?? row.teamId;
+  if (!t.team && !all && !owner) {
+    return { t, action: "skip", level: "error", reason: `в пакете нет команды, а ответственного «${t.owner}» нет в ресурсе: сверить команду задачи не с чем, укажите команду в пакете` };
+  }
   if (t.team) {
     const team = teamByName(ctx, t.team);
     if (!team) return { t, action: "skip", reason: `команды «${t.team}» нет в ресурсе` };
     if (team.id !== row.teamId) return { t, action: "skip", level: "error", reason: `задача ${n} в ресурсе в команде «${rowTeam}», а в пакете в команде «${team.name}»: задачу другой команды загрузка не подхватывает` };
-  } else if (all ? row.teamId !== TOP_TEAM : owner && !ctx.nodes.some((x) => x.id === row.teamId && (x.leaderId === owner.id || x.members.includes(owner.id)))) {
+  } else if (all ? row.teamId !== TOP_TEAM : !ctx.nodes.some((x) => x.id === row.teamId && (x.leaderId === owner!.id || x.members.includes(owner!.id)))) {
     return { t, action: "skip", level: "error", reason: `задача ${n} в ресурсе в команде «${rowTeam}», а ${all ? "«Все лидеры» бывают только в топ-команде" : `${owner!.fullName} не в этой команде`}: задачу другой команды загрузка не подхватывает, укажите команду в пакете` };
   }
   const now = taskNow(row);
@@ -787,8 +818,10 @@ function planTaskUpdate(ctx: Ctx, t: PackageTask, old: Record<string, unknown>, 
       kept.due = t.due;
       kept.dueRaw = t.due;
     } else if (way === "edited") edited("due");
-    else if (closedAtTransfer || t.due < ctx.today) notes.push(`срок ${formatLong(t.due)} не перенесён: задача закрыта или срок уже прошёл`);
-    else {
+    else if (closedAtTransfer || t.due < ctx.today) {
+      // Открываемой задаче с прошедшим сроком срок ставится ниже (срок для задач без актуального срока): без заметки
+      if (!(update.reopen && cur.due < ctx.today)) notes.push(`срок ${formatLong(t.due)} не перенесён: задача закрыта или срок уже прошёл`);
+    } else {
       update.due = t.due;
       kept.due = t.due;
       kept.dueRaw = t.due;
@@ -813,7 +846,7 @@ async function planDecisions(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[]): 
   for (const d of pkg.decisions) {
     const hr = ctx.excluded.get(key("decision", d.key));
     if (hr) {
-      out.push({ d, action: "skip", level: "error", reason: hr });
+      out.push({ d, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
     // Задачи решения: из пакета (по ключу, если задача загружается, подхвачена или уже загружена) или из ресурса по номеру
@@ -828,7 +861,7 @@ async function planDecisions(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[]): 
       }
       const tp = tasks.find((p) => p.t.key === ref.key);
       if (tp && (tp.action === "add" || tp.number)) refs.push(ref);
-      else refNotes.push(`задача «${short(tp?.t.title ?? ref.key)}» не загружается, решение загрузится без неё`);
+      else refNotes.push(`${nameOf(ctx, "task", ref.key, tp?.t.title ?? ref.key)} не загружается, решение загрузится без неё`);
     }
     // Уже загружено: сначала ключ, потом команда и люди
     const known = ctx.keys.get(key("decision", d.key));
@@ -926,7 +959,7 @@ async function goalOfLink(ctx: Ctx, l: PackageLink, goals: GoalPlan[], quarters:
       const leader = ctx.nodes.find((n) => n.id === plan.teamId)?.leaderId ?? null;
       return { id: null, pending: plan.g.key, teamId: plan.teamId, ownerId: plan.ownerId ?? leader, source: plan.g.source ?? "manual", quarter: plan.g.quarter };
     }
-    if (!plan.existingId) return { id: null, skip: `цель «${short(plan.g.title)}» не загружается: ${plan.reason}` };
+    if (!plan.existingId) return { id: null, skip: `${nameOf(ctx, "goal", plan.g.key, plan.g.title)} не загружается: ${plan.reason}` };
     const g = await ctx.db.goal.findUnique({ where: { id: plan.existingId }, select });
     if (!g) return { id: null, skip: "цель удалили в ресурсе, связь пропущена" };
     if (g.result === "DROPPED") return { id: null, skip: "цель снята в ресурсе" };
@@ -941,11 +974,13 @@ async function goalOfLink(ctx: Ctx, l: PackageLink, goals: GoalPlan[], quarters:
 
 async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals: GoalPlan[]): Promise<LinkPlan[]> {
   const out: LinkPlan[] = [];
+  // Одна задача в одном пакете привязывается одной связью: по ключу и по номеру это та же задача
+  const linkedBy = new Map<string, string>();
   for (const l of pkg.links) {
     // Кадровые сведения в причине связи: связь не грузится, причина не попадает в ключ
     const hr = ctx.excluded.get(key("link", l.key));
     if (hr) {
-      out.push({ l, action: "skip", level: "error", reason: hr });
+      out.push({ l, action: "skip", level: "error", label: hr.what, reason: hr.text });
       continue;
     }
     const known = ctx.keys.get(key("link", l.key));
@@ -956,7 +991,7 @@ async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals
     // Задача: из пакета по ключу, по номеру (и тогда её запись в пакете, если задача загружена или подхвачена) или новая
     const tp = "key" in l.task ? tasks.find((p) => p.t.key === (l.task as { key: string }).key) : tasks.find((p) => p.number === (l.task as { number: number }).number);
     if ("key" in l.task && tp && tp.action === "skip" && !tp.number) {
-      out.push({ l, action: "skip", reason: `задача «${short(tp.t.title)}» не загружается: ${tp.reason}` });
+      out.push({ l, action: "skip", reason: `${nameOf(ctx, "task", tp.t.key, tp.t.title)} не загружается: ${tp.reason}` });
       continue;
     }
     const number = "number" in l.task ? l.task.number : tp?.number;
@@ -993,6 +1028,13 @@ async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals
     }
     const target: ParentTarget = goal.pending ? { key: goal.pending } : { id: goal.id! };
     const notes: string[] = [];
+    const identity = row ? `id:${row.id}` : `key:${tp!.t.key}`;
+    const first = linkedBy.get(identity);
+    if (first) {
+      out.push({ l, action: "skip", level: "error", reason: `задачу уже привязывает связь ${first} этого пакета: у задачи одна цель, оставьте одну связь` });
+      continue;
+    }
+    linkedBy.set(identity, l.key);
     if (known) {
       const old = asRecord(known.payload);
       const record = recordOf(old);
@@ -1001,7 +1043,7 @@ async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals
         if ((row?.goalId ?? null) !== (old.goalId ?? null)) out.push({ l, action: "skip", reason: "цель задачи поменяли в ресурсе после прошлой загрузки" });
         // Поменялись только уверенность или причина: в ресурсе им места нет, ключ запомнит новую запись
         else if (record && same(record.goal, l.goal)) out.push({ l, action: "skip", reason: UNCHANGED, remember: true, entityId: known.entityId, kept: { goalId: old.goalId ?? null } });
-        else out.push({ l, action: "update", goal: target });
+        else out.push({ l, action: "update", goal: target, taskId: row?.id });
         continue;
       }
       // Пакет перенёс связь на другую задачу: она проверяется как новая связь, прежняя задача свою цель сохраняет
@@ -1016,7 +1058,7 @@ async function planLinks(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[], goals
       out.push({ l, action: known ? "update" : "bind", goal: target, reason: known ? undefined : "задача уже с этой целью: загрузка запомнит ключ связи", notes });
       continue;
     }
-    out.push({ l, action: known ? "update" : "add", goal: target, notes });
+    out.push({ l, action: known ? "update" : "add", goal: target, notes, taskId: row?.id });
   }
   return out;
 }
@@ -1124,29 +1166,36 @@ function historyClosedAt(t: PackageTask, today: IsoDate): Date {
 }
 
 /**
- * Запереть строки задач, целей и решений, которые пакет может тронуть: уже загруженные по ключам, подхваченные и
- * связанные по номеру задачи, цели с номерами из пакета. FOR UPDATE в порядке id, внутри транзакции до расчёта плана:
- * правка такой строки в ресурсе ждёт конца загрузки и не теряется, встречная загрузка ждёт ещё раньше (advisory lock)
+ * Строки ресурса, которые загрузка по плану запишет: задачи (правка, подхват с правками, цель задачи), цели (поля,
+ * владелец, цель выше), решения (текст, владелец, статус). Строки, на которые план только ссылается (цель выше, задача
+ * решения, цель связи), и записи без изменений не запираются
  */
-async function lockRows(tx: Tx, pkg: ContentPackage): Promise<void> {
-  const keys = await tx.contentImportKey.findMany({ select: { kind: true, key: true, entityId: true } });
-  const ids = (kind: Kind, wanted: Set<string>) => keys.filter((k) => k.kind === kind && wanted.has(k.key)).map((k) => k.entityId);
-  const taskIds = [...ids("task", new Set(pkg.tasks.map((t) => t.key))), ...ids("link", new Set(pkg.links.map((l) => l.key)))];
-  const numbers = [
-    ...pkg.tasks.flatMap((t) => (t.adopt ? [t.adopt.number] : [])),
-    ...pkg.links.flatMap((l) => ("number" in l.task ? [l.task.number] : [])),
-    ...pkg.decisions.flatMap((d) => d.tasks.flatMap((r) => ("number" in r ? [r.number] : []))),
-  ];
-  const goalIds = ids("goal", new Set(pkg.goals.map((g) => g.key)));
-  const codes = [
-    ...pkg.goals.flatMap((g) => [g.code, g.parent && "code" in g.parent ? g.parent.code : null]),
-    ...pkg.links.map((l) => ("code" in l.goal ? l.goal.code : null)),
-  ].filter((c): c is string => !!c);
-  const decisionIds = ids("decision", new Set(pkg.decisions.map((d) => d.key)));
-  if (taskIds.length || numbers.length) await tx.$queryRaw`SELECT "id" FROM "tasks" WHERE "id" = ANY(${taskIds}::text[]) OR "number" = ANY(${numbers}::int[]) ORDER BY "id" FOR UPDATE`;
-  if (goalIds.length || codes.length) await tx.$queryRaw`SELECT "id" FROM "goals" WHERE "id" = ANY(${goalIds}::text[]) OR "code" = ANY(${codes}::text[]) ORDER BY "id" FOR UPDATE`;
-  if (decisionIds.length) await tx.$queryRaw`SELECT "id" FROM "decisions" WHERE "id" = ANY(${decisionIds}::text[]) ORDER BY "id" FOR UPDATE`;
+function writtenRows(plan: Plan): { tasks: string[]; goals: string[]; decisions: string[] } {
+  const tasks = new Set<string>();
+  const goals = new Set<string>();
+  const decisions = new Set<string>();
+  for (const p of plan.tasks) if ((p.action === "update" || p.action === "adopt") && p.entityId) tasks.add(p.entityId);
+  for (const p of plan.links) if ((p.action === "add" || p.action === "update") && p.taskId) tasks.add(p.taskId);
+  for (const p of plan.goals) if ((p.action === "update" || p.action === "match") && p.existingId && (Object.keys(p.input ?? {}).length || p.parent)) goals.add(p.existingId);
+  for (const p of plan.decisions) if (p.action === "update" && p.existingId && Object.keys(p.data ?? {}).length) decisions.add(p.existingId);
+  return { tasks: [...tasks], goals: [...goals], decisions: [...decisions] };
 }
+
+/** Запереть строки FOR UPDATE в порядке id: встречные правки ждут конца загрузки */
+async function lockIds(tx: Tx, ids: { tasks: string[]; goals: string[]; decisions: string[] }): Promise<void> {
+  if (ids.tasks.length) await tx.$queryRaw`SELECT "id" FROM "tasks" WHERE "id" = ANY(${ids.tasks}::text[]) ORDER BY "id" FOR UPDATE`;
+  if (ids.goals.length) await tx.$queryRaw`SELECT "id" FROM "goals" WHERE "id" = ANY(${ids.goals}::text[]) ORDER BY "id" FOR UPDATE`;
+  if (ids.decisions.length) await tx.$queryRaw`SELECT "id" FROM "decisions" WHERE "id" = ANY(${ids.decisions}::text[]) ORDER BY "id" FOR UPDATE`;
+}
+
+/** Postgres снял загрузку из-за встречной правки (взаимная блокировка, конфликт записи) */
+function conflictOf(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: unknown; message?: unknown; cause?: unknown };
+  const text = `${String(e.code ?? "")} ${String(e.message ?? "")} ${JSON.stringify(e.cause ?? null)}`;
+  return e.code === "P2034" || /40P01|40001|deadlock|could not serialize/i.test(text);
+}
+export const IMPORT_CONFLICT = "Загрузку прервала одновременная правка в ресурсе, база не тронута. Повторите загрузку";
 
 /** Сколько номеров задач взять заранее: новые задачи по плану (лишние номера потом возвращаются) */
 async function newTaskCount(actor: Actor, pkg: ContentPackage, opts: ImportOptions): Promise<number> {
@@ -1167,6 +1216,7 @@ export async function applyContentImport(actor: Actor, pkg: ContentPackage, opts
     result = await prisma.$transaction((tx) => applyIn(tx, actor, pkg, opts, free), { timeout: 300_000, maxWait: 15_000 });
   } catch (error) {
     if (reserved.length) await releaseTaskNumbers(reserved[0]!, end).catch(() => undefined);
+    if (!(error instanceof TaskRuleError) && conflictOf(error)) throw new TaskRuleError(IMPORT_CONFLICT);
     throw error;
   }
   if (free.length) await releaseTaskNumbers(free[0]!, end).catch(() => undefined);
@@ -1176,10 +1226,22 @@ export async function applyContentImport(actor: Actor, pkg: ContentPackage, opts
 async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOptions, free: number[]): Promise<ImportResult> {
   // Две загрузки сразу идут по очереди: вторая видит ключи первой и ничего не дублирует
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('content.import'))`;
-  // Строки пакета заперты до расчёта плана: правка ресурса во время загрузки ждёт её конца, а план не устаревает
-  await lockRows(tx, pkg);
-  const ctx = await context(tx, actor, pkg, opts);
-  const plan = await buildPlan(ctx, pkg);
+  // План без блокировок, потом запираются только строки, которые загрузка запишет, и план считается заново по ним:
+  // то, что поменяли в ресурсе до блокировки, план уже видит, а правка во время записи ждёт её конца
+  let ctx = await context(tx, actor, pkg, opts);
+  let plan = await buildPlan(ctx, pkg);
+  const locked = { tasks: new Set<string>(), goals: new Set<string>(), decisions: new Set<string>() };
+  for (let round = 0; round < 3; round++) {
+    const want = writtenRows(plan);
+    const fresh = { tasks: want.tasks.filter((id) => !locked.tasks.has(id)), goals: want.goals.filter((id) => !locked.goals.has(id)), decisions: want.decisions.filter((id) => !locked.decisions.has(id)) };
+    if (!fresh.tasks.length && !fresh.goals.length && !fresh.decisions.length) break;
+    await lockIds(tx, fresh);
+    for (const id of fresh.tasks) locked.tasks.add(id);
+    for (const id of fresh.goals) locked.goals.add(id);
+    for (const id of fresh.decisions) locked.decisions.add(id);
+    ctx = await context(tx, actor, pkg, opts);
+    plan = await buildPlan(ctx, pkg);
+  }
   const where = <T>(what: string, run: () => Promise<T>): Promise<T> =>
     run().catch((error: unknown) => {
       if (error instanceof TaskRuleError) throw new TaskRuleError(`Загрузка не прошла, база не тронута. ${what}: ${error.message}`);
@@ -1213,11 +1275,16 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
     if (id && parentId) await where(`Цель «${short(p.g.title)}»`, () => updateGoal(actor, id, { parent: parentId }, tx));
   }
   for (const { p, id } of goalKeys) {
-    // База цели выше: поставленная сейчас или та, что была в ресурсе при первой загрузке. Не поставленная загрузкой
-    // цель выше базу не сдвигает: так её снятие в ресурсе живёт и после следующих загрузок
+    // База цели выше и чья она (parentOwned): загрузке принадлежит только цель выше, которую она сама поставила (или
+    // replace, когда в ресурсе уже та, что в пакете). Свою цель выше, снятую в ресурсе, загрузка не возвращает: база
+    // остаётся прежней. Цель выше от борда или человека база только отмечает
     const row = await tx.goal.findUniqueOrThrow({ where: { id }, select: { parentId: true } });
-    const parentId = !p.parent && p.kept && "parentId" in p.kept ? (p.kept.parentId ?? null) : row.parentId;
-    await remember(tx, "goal", p.g.key, id, p.g, { ...p.kept, parentId });
+    const kept = p.kept ?? {};
+    let parent: { parentId: string | null; parentOwned: boolean };
+    if (p.parent) parent = { parentId: row.parentId, parentOwned: true };
+    else if (kept.parentOwned === true) parent = { parentId: (kept.parentId as string | null) ?? null, parentOwned: true };
+    else parent = { parentId: row.parentId, parentOwned: !!p.parentMatches && p.g.replace };
+    await remember(tx, "goal", p.g.key, id, p.g, { ...kept, ...parent });
   }
 
   // Задачи: служба задач ставит их от имени того, кто загружает

@@ -150,72 +150,183 @@ export function shortText(text: string, max = 60): string {
 }
 
 // Кадровые сведения: зарплаты, оценки и судьбы людей в ресурс из пакета не попадают (как личные вкладки бордов лидеров,
-// src/lib/goals/leader-board.ts). Лучше лишний раз не загрузить кадровое, чем загрузить. Слово с начала, иначе «доклад»
-// сойдёт за «оклад», а «апгрейд» за «грейд». Страховые и банковские термины не повод: страховая премия (сбор, объём,
-// рост премии по продукту), зарплатный проект, клиент и карта, выплата по больничному и на больничном (продукт НС),
-// калибровка оценок риска, убытков и скоринга, сокращение сроков и расходов, ставки КВ и комиссии, человеко-часы.
-// Поэтому больничный, сокращение, премия и бонус кадровые только рядом с людьми и штатом
+// src/lib/goals/leader-board.ts). Жёсткое правило: лучше не загрузить лишнее, чем загрузить кадровое. Ложное срабатывание
+// видно в предпросмотре и чинится переформулировкой в пакете, пропуск означает кадровые данные в ресурсе. Поэтому
+// страховой смысл снимает правило только у самой связки слов («сбор премии», «страховая премия», «премия по ОСАГО»,
+// «ставка КВ», «калибровка оценок убытков»), а не у всего текста: «Премии менеджеров КАСКО: 10% от сбора» кадровое.
+//
+// Как устроено: связки по словам текста (премия или бонус рядом с людьми или фамилией, оценка и калибровка людей,
+// сокращение и оптимизация штата), потом слова и связки, которые кадровые всегда (оклад, ФОТ, увольнение, штатное
+// расписание, оффер кандидату). Слово с начала, иначе «доклад» сойдёт за «оклад», а «апгрейд» за «грейд»
 const START = "(?:^|[^а-яa-z0-9])";
-const END = "(?![а-яa-z0-9])";
-const NUMERAL = "(?:[0-9]+|дв(?:а|е|ух|ум|ое)|тр(?:и|ех|ем|ое)|четыр(?:е|ех)|пят(?:ь|и|ерых)|нескольк(?:о|их)|одн(?:ого|у|а)|в|на|из)";
-/** Штат: люди и штатные единицы. Ставка только штатная (не ставка КВ, комиссии, тарифа, кредита, не «до 15%»), человек не в «человеко-часах» */
-const STAFF =
-  "(?:штат|отдел|команд|менеджер|сотрудник|персонал|позици|должност|ваканси|человек(?!о-)|ставк(?![а-я]*\\s+(?:(?:кв|по|для|до|на|от|с)(?![а-я])|комисси|вознагражд|агентск|тариф|страхов|процент|кредит|ипотек|депозит|вклад|\\d)))";
-/** Люди, которым платят и которых оценивают */
-const PERSON = "(?:сотрудник|менеджер|лидер|руководител|аналитик|оператор|специалист|директор|персонал)";
-/** Кому: «премия сотрудникам», «бонусы МПП», «премии лидерам», «премия команде» */
-const TO_PERSON = `(?:${PERSON}(?:ам|ям|у|ю)${END}|команде${END}|штату${END}|мпп${END})`;
-/** Чья: «премия команды», «премии менеджеров». Так говорят и о страховой премии, которую собирают люди */
-const OF_PERSON = `(?:${PERSON}(?:ов|ей|а|я)?${END}|команд(?:ы|а)${END}|отдела${END}|штата${END})`;
-const PERSONNEL = new RegExp(
+const HARD = new RegExp(
   `${START}(${[
-    "зарплат(?!н[а-я]*\\s+(?:проект|клиент|карт))[а-я]*",
+    "зарплат(?!н[а-я]*\\s+(?:проект|клиент|карт|банк))[а-я]*",
     "заработн[а-я]*\\s+плат[а-я]*",
-    "зп(?![а-яa-z0-9])",
-    "з/п(?![а-яa-z0-9])",
-    "фот(?![а-яa-z0-9])",
+    "зп(?![а-яa-z0-9])(?!\\s*-?\\s*проект)",
+    "з/пл?(?![а-яa-z0-9])",
+    "фот(?:а|у|ом|е)?(?![а-яa-z0-9])",
     "фонд[а-я]*\\s+оплаты",
     "оплат[а-я]*\\s+труда",
     "оклад[а-я]*",
-    "грейд[а-я]*",
-    "калибровк[а-я]*\\s+(?:оцен[а-я]*(?![а-я])(?!\\s+(?:риск|скоринг|убыт|ущерб|резерв|тариф|стоимост|модел|вероятност|частот|прогноз|продукт|полис|каско|осаго|(?:по|для)(?![а-я])))|грейд[а-я]*|сотрудник[а-я]*|персонал[а-я]*)",
+    "(?<!(?:инвестиционн|кредитн)[а-я]*\\s)грейд[а-я]*",
     "декрет[а-я]*",
+    "отпуск[а-я]*\\s+по\\s+уходу",
     "(?<!(?:выплат|пособи|страхов|покрыти)[а-я]*\\s)на\\s+больничн[а-я]*",
     "больничн[а-я]*\\s+(?:сотрудник|менеджер)[а-я]*",
     "(?:сотрудник|менеджер)[а-я]*\\s+больничн[а-я]*",
     "увол[а-я]*",
-    `(?:сокращ|сократ)[а-я]*\\s+(?:${NUMERAL}\\s+)?${STAFF}[а-я]*`,
-    `оценк[а-я]*\\s+(?:(?:эффективност|работ|результат)[а-я]*\\s+)?${PERSON}[а-я]*`,
-    "аттестац[а-я]*",
-    "премирован[а-я]*",
-    `(?:преми|бонус)[а-я]*\\s+(?:[а-я0-9]+\\s+){0,2}?${TO_PERSON}`,
+    "расста(?:ться|емся|немся|лись|вани)[а-я]*",
+    "уход[а-я]*\\s+(?:[а-я]+\\s+){0,2}из\\s+компани[а-я]*",
+    "покида[а-я]*\\s+компани[а-я]*",
+    "испытательн[а-я]*\\s+срок[а-я]*",
+    "кандидат[а-я]*",
+    "вилк[а-я]*\\s+(?:для|по|от|на|зарплат|[0-9])",
+    "[0-9][0-9 .,]*(?:тыс|к|млн)[а-я.]*\\s+на\\s+руки",
+    "гросс(?![а-я])",
+    "компенсационн[а-я]*\\s+пакет[а-я]*",
+    "штатн(?![а-я]*\\s+(?:режим|ситуац|работ))[а-я]*",
+    "численност[а-я]*\\s+(?:сотрудник|персонал|штат|департамент|отдел|команд|кц)[а-я]*",
+    "хедкаунт[а-я]*",
+    "headcount",
+    "fte(?![a-z])",
+    "кадров[а-я]*",
+    "перформанс[а-я-]*",
+    "performance[\\s-]*review",
+    "премир(?:ова|у)[а-я]*",
+    "премиальн[а-я]*\\s+(?:фонд|выплат|част|пул)[а-я]*",
+    "бонусн[а-я]*\\s+(?:фонд|пул|част|выплат)[а-я]*",
+    "переменн[а-я]*\\s+част[а-я]*",
+    "повы(?:сить|шени|шаем|сили|шать|шу|сим)[а-я]*\\s+(?:[а-яa-z]+\\s+){0,3}?до\\s+(?:руководител|директор|начальник|старш|ведущ|главн|лидер|менеджер)[а-я]*",
+    "аттестац(?![а-я]*\\s+(?:информационн|систем|объект|рабоч|агент|по\\s+152))[а-я]*",
     "salary",
+    "payroll",
+    "zarplat",
+    "oklad",
+    "uvol",
+    "bonus",
+    "premi(?:ya|ia|ja|i)(?![a-z])",
   ].join("|")})`,
 );
-/** Премия или бонус человеку по фамилии: «Премия Иванову», «бонус Петровой» (по исходному тексту, с заглавной) */
-const PAY_TO_NAME = /(?:^|[^А-Яа-яЁёA-Za-z0-9])((?:[Пп]реми|[Бб]онус)[а-яё]*\s+[А-ЯЁ][а-яё]{2,}(?:у|ю|ой|ей|е)(?![А-Яа-яЁё]))/;
-const PAY_OF = new RegExp(`${START}((?:преми|бонус)[а-я]*\\s+${OF_PERSON})`);
-/** Страховая премия: сбор, объём, продукт, ставка КВ, проценты */
-const INSURANCE = new RegExp(`${START}(?:(?:сбор|объем|страхов|полис|каско|осаго|ипотек|продукт|портфел|убыт|тариф|брутто|нетто)[а-я]*|(?:взр|дмс|нсж|нс|кв)${END})|%`);
 
-/** Кадровое слово в тексте или null */
-export function personnelMarker(text: string | null | undefined): string | null {
-  if (!text) return null;
-  const low = text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ");
-  const m = PERSONNEL.exec(low);
-  if (m) return m[1]!;
-  const name = PAY_TO_NAME.exec(text.replace(/\s+/g, " "));
-  if (name) return name[1]!.toLowerCase().replace(/ё/g, "е");
-  const of = PAY_OF.exec(low);
-  return of && !INSURANCE.test(low) ? of[1]! : null;
+/** Слово текста: как в тексте (фамилия с заглавной) и в нижнем регистре с «е» вместо «ё» */
+type Word = { raw: string; low: string };
+function wordsOf(text: string): Word[] {
+  const out: Word[] = [];
+  for (const m of text.matchAll(/[A-Za-zА-Яа-яЁё0-9%][A-Za-zА-Яа-яЁё0-9%/,.-]*/g)) {
+    const raw = m[0].replace(/[.,/-]+$/, "");
+    if (raw) out.push({ raw, low: raw.toLowerCase().replace(/ё/g, "е") });
+  }
+  return out;
 }
 
-function personnelHit(fields: [string, string | null][]): string | null {
-  for (const [label, text] of fields) {
-    const marker = personnelMarker(text);
-    if (marker) return `кадровые сведения («${marker}» в поле «${label}»): такие записи в ресурс не загружаются, уберите их из пакета`;
+/** Похоже на фамилию: с заглавной и с окончанием русской фамилии в любом падеже (Иванову, Петровой, Мурадяну) */
+const SURNAME = /^[А-ЯЁ][а-яё]+(?:(?:ов|ев|ёв|ин|ын)(?:а|у|ым|ом|ой|ою|ую|е|ы|ых|ыми)?|(?:ск|цк)(?:ий|ого|ому|им|ом|ая|ой|ую)|ян(?:а|у|ом|е)?|енко|швили|дзе)$/;
+/** Основы фамилий людей ресурса: «Рева» ловится и как «Реве», «Ревой» */
+export type Surnames = string[];
+function surnameLike(raw: string, names: Surnames): boolean {
+  if (!/^[А-ЯЁ]/.test(raw)) return false;
+  if (SURNAME.test(raw)) return true;
+  const low = raw.toLowerCase().replace(/ё/g, "е");
+  return names.some((stem) => low.startsWith(stem) && low.length <= stem.length + 3);
+}
+
+/** Основы фамилий из ФИО людей ресурса (фамилия первая): без конечных гласных, не короче трёх букв */
+export function surnameStems(fullNames: string[]): Surnames {
+  const stems = fullNames.map((n) => (n.trim().split(/\s+/)[0] ?? "").toLowerCase().replace(/ё/g, "е").replace(/[аяоеыиуюйь]+$/, "")).filter((s) => s.length >= 3);
+  return [...new Set(stems)];
+}
+
+/** Слово про людей компании. Не про людей: «лидер рынка», «специалисты Банка России», «оператор связи», «персональные» */
+function isPerson(w: Word[], i: number, names: Surnames): boolean {
+  const x = w[i]?.low;
+  if (!x) return false;
+  const next = w[i + 1]?.low ?? "";
+  if (["мпп", "кц", "bdm", "люди", "людей", "людям", "людьми"].includes(x)) return true;
+  if (/^(?:персональн|командиров|отделени|отдельн|штатн|человеко)/.test(x)) return false;
+  if (/^лидер/.test(x) && /^(?:рынк|отрасл|сегмент|мнени)/.test(next)) return false;
+  if (/^(?:специалист|аналитик|руководител|директор|эксперт)/.test(x) && /^(?:банк|цб$|регулятор|рынк|компани|ск$|агентств|рейтинг)/.test(next)) return false;
+  if (/^оператор/.test(x) && /^(?:связи|фискальн|данных|платеж|сотов)/.test(next)) return false;
+  if (/^(?:сотрудник|сотрудниц|менеджер|руководител|аналитик|оператор|специалист|директор|персонал|команд|коллектив|отдел|штат|работник|продавц|лидер|человек)/.test(x)) return true;
+  return surnameLike(w[i]!.raw, names);
+}
+
+/** Кому: дательный падеж («сотрудникам», «менеджеру», «команде») */
+const dative = (x: string) => /(?:ам|ям)$/.test(x) || x === "команде" || /^(?:сотрудник|менеджер|руководител|аналитик|оператор|специалист|директор|работник|лидер)(?:у|ю)$/.test(x);
+/** Премия или бонус (не «премиальный», «бонусный», «премиум», «премировать»: у них свои правила) */
+const isPay = (x: string) => /^(?:преми(?!альн|ум|ров|ру)|бонус(?!н))/.test(x);
+const PRODUCT = /^(?:продукт|полис|осаго|каско|нс$|нсж|ипотек|взр|дмс|страхован|договор|пул|риск|портфел|сегмент|канал)/;
+const INSURER = /^(?:ск$|ск-|вск|согаз|ингосстрах|ресо|альфастрах|ренессанс|росгосстрах|сбер|тинькоф|абсолют|согласи|зетта|энергогарант|югори|страховщик|страхов)/;
+const AWARD = /^(?:конференц|конкурс|номинац|фестивал|форум|церемони|награжд|лауреат)/;
+/** Страховая премия: «сбор премии», «страховая премия», «объём премии», «премия по ОСАГО», «премия ВСК», «премия по полису» */
+function insurancePay(w: Word[], i: number): boolean {
+  const prev = w[i - 1]?.low ?? "";
+  const next = w[i + 1]?.low ?? "";
+  const next2 = w[i + 2]?.low ?? "";
+  if (/^(?:страхов|сбор|объем|брутто|нетто|начисленн|подписанн|валов|собранн)/.test(prev)) return true;
+  if (PRODUCT.test(next) || INSURER.test(next)) return true;
+  return /^(?:по|в)$/.test(next) && (PRODUCT.test(next2) || INSURER.test(next2));
+}
+/** Калибровка оценок с явным предметом: убытков, риска, скоринга, качества лидов, моделей */
+const CALIBRATED = /^(?:убыт|риск|скоринг|качеств|лид|модел|тариф|резерв|вероятност|частот|ущерб|стоимост|прогноз|спрос|конверс)/;
+const NUMERAL = /^(?:на|в|во|до|из|по|у|с|со|от|\d+(?:[.,]\d+)?%?|один|одна|одного|одну|два|две|двух|двум|двое|двоих|три|трех|трем|трое|троих|четыре|четырех|четверо|четверых|пять|пяти|пятерых|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти|несколько|нескольких|оба|обоих|половину|треть|четверть)$/;
+/** Ставка не штатная: КВ, комиссия, вознаграждение, тариф, ставка партнёрам и банкам, процентная ставка, «ставка 15%» */
+const RATE_OK = /^(?:кв$|комисси|вознагражд|тариф|партн|банк|агент|брокер|страховщ|дилер|площадк|ск$|ипотек|кредит|депозит|вклад|рефинансир|ключев)/;
+const percent = (x: string | undefined) => !!x && /^\d+(?:[.,]\d+)?%$/.test(x);
+/** Штат: люди и штатные единицы (позиции, должности, вакансии, ставки, численность) */
+function isStaff(w: Word[], j: number, names: Surnames): boolean {
+  const x = w[j]?.low ?? "";
+  const next = w[j + 1]?.low ?? "";
+  if (/^(?:ставк|ставок)/.test(x)) {
+    if (/^процентн/.test(w[j - 1]?.low ?? "") || RATE_OK.test(next) || percent(next) || (/^(?:до|с|на|в)$/.test(next) && percent(w[j + 2]?.low))) return false;
+    return true;
   }
-  return null;
+  if (/^позици/.test(x)) return !/^(?:ск$|страхов|компани|банк|выдач|рейтинг|поиск|топ)/.test(next);
+  if (/^(?:должност|ваканси|численност|единиц|хедкаунт|fte$|штат(?!н))/.test(x)) return true;
+  return isPerson(w, j, names);
+}
+const phrase = (w: Word[], a: number, b: number) =>
+  w
+    .slice(a, b + 1)
+    .map((x) => x.low)
+    .join(" ");
+
+/**
+ * Кадровое слово или связка в тексте, иначе null. names: основы фамилий людей ресурса (без них фамилию узнают по
+ * окончанию). Сам маркер на экран не идёт: запись подписывается без её текста
+ */
+export function personnelMarker(text: string | null | undefined, names: Surnames = []): string | null {
+  if (!text) return null;
+  const w = wordsOf(text);
+  for (let i = 0; i < w.length; i++) {
+    const x = w[i]!.low;
+    // Премия или бонус рядом с людьми или фамилией. Страховая премия только у самой связки; награда на конференции
+    // команде (не «сотрудникам») не кадровое
+    if (isPay(x) && !insurancePay(w, i)) {
+      const award = w.slice(i + 1, i + 7).some((y) => AWARD.test(y.low));
+      for (let j = Math.max(0, i - 4); j <= Math.min(w.length - 1, i + 5); j++) {
+        if (j !== i && isPerson(w, j, names) && !(award && !dative(w[j]!.low))) return phrase(w, Math.min(i, j), Math.max(i, j));
+      }
+    }
+    // Оценка людей: «оценка эффективности менеджеров», «оценка команды». Не «по оценке аналитиков»
+    if (/^(?:оценк|ревью)/.test(x) && w[i - 1]?.low !== "по") {
+      for (let j = i + 1; j <= Math.min(w.length - 1, i + 3); j++) if (isPerson(w, j, names)) return phrase(w, i, j);
+    }
+    // Калибровка оценок (кроме явного предмета: убытков, риска, скоринга), грейдов и людей
+    if (/^калибровк/.test(x)) {
+      const n = w[i + 1]?.low ?? "";
+      if (/^оцен/.test(n) && !CALIBRATED.test(w[i + 2]?.low ?? "")) return phrase(w, i, i + 1);
+      if (/^грейд/.test(n) || isPerson(w, i + 1, names)) return phrase(w, i, i + 1);
+    }
+    // Сокращение и оптимизация штата: «сократить на 2 человека отдел», «сокращение двух ставок», «оптимизация штата»
+    if (/^(?:сокращ|сократ|оптимиз|урез|уменьш)/.test(x)) {
+      let j = i + 1;
+      while (j < w.length && j <= i + 3 && NUMERAL.test(w[j]!.low)) j++;
+      if (j < w.length && isStaff(w, j, names)) return phrase(w, i, j);
+    }
+  }
+  const hard = HARD.exec(text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " "));
+  return hard ? hard[1]! : null;
 }
 
 function validUrl(value: string): boolean {
@@ -226,6 +337,80 @@ function validUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+// ---------- Кадровые сведения в записях пакета ----------
+
+/** Поля, которые фильтр не проверяет: ФИО и названия команд (фамилия не кадровое сведение) */
+const NOT_CHECKED = new Set(["owner", "coExecutors", "team"]);
+const FIELD_LABELS: Record<string, string> = {
+  key: "Ключ",
+  title: "Название",
+  outcome: "Что нужно сделать",
+  whereNow: "Где сейчас",
+  resolution: "Итог или причина",
+  direction: "Направление",
+  status: "Статус",
+  priority: "Приоритет",
+  due: "Срок",
+  closedAt: "Дата закрытия",
+  "source.kind": "Источник",
+  "source.note": "Подробнее об источнике",
+  "source.date": "Дата источника",
+  "links.title": "Подпись ссылки",
+  "links.url": "Адрес ссылки",
+  "adopt.title": "Название в ресурсе (adopt)",
+  quarter: "Квартал",
+  code: "Номер цели",
+  description: "Описание",
+  metric: "Метрика",
+  base: "База",
+  target: "Целевое значение",
+  link: "Ссылка",
+  "parent.key": "Цель выше",
+  "parent.code": "Цель выше",
+  source: "Откуда цель",
+  text: "Решение",
+  date: "Дата",
+  cancelReason: "Почему отменено",
+  "tasks.key": "Задачи решения",
+  "task.key": "Задача",
+  "goal.key": "Цель",
+  "goal.code": "Цель",
+  confidence: "Уверенность",
+  reason: "Причина связи",
+};
+/** Все строки записи с путём поля, кроме ФИО и команд */
+function stringsOf(value: unknown, path = ""): [string, string][] {
+  if (typeof value === "string") return [[path, value]];
+  if (Array.isArray(value)) return value.flatMap((v) => stringsOf(v, path));
+  if (value && typeof value === "object") {
+    return Object.entries(value as Raw).flatMap(([k, v]) => (path === "" && NOT_CHECKED.has(k) ? [] : stringsOf(v, path ? `${path}.${k}` : k)));
+  }
+  return [];
+}
+const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь" };
+
+/**
+ * Записи пакета с кадровыми сведениями в любой строке (кроме ФИО и названий команд). Запись подписывается без её текста:
+ * вид, номер по порядку в пакете и ключ (если в ключе нет кадрового); маркер не показывается. names: основы фамилий
+ * людей ресурса, служба импорта передаёт их из базы
+ */
+export function personnelExclusions(pkg: Pick<ContentPackage, "goals" | "tasks" | "decisions" | "links">, names: Surnames = []): ExcludedRecord[] {
+  const out: ExcludedRecord[] = [];
+  const scan = (kind: ExcludedRecord["kind"], records: { key: string }[]) =>
+    records.forEach((record, i) => {
+      const hit = stringsOf(record).find(([, text]) => personnelMarker(text, names));
+      if (!hit) return;
+      const keyClean = !personnelMarker(record.key, names);
+      const what = `${KIND_LABELS[kind]} ${i + 1} в пакете${keyClean ? ` (ключ ${record.key})` : ""}`;
+      out.push({ kind, key: record.key, what, text: `кадровые сведения в поле «${FIELD_LABELS[hit[0]] ?? hit[0]}»: запись не загрузится, уберите их из пакета` });
+    });
+  scan("goal", pkg.goals);
+  scan("task", pkg.tasks);
+  scan("decision", pkg.decisions);
+  scan("link", pkg.links);
+  return out;
 }
 
 /** Каноническая запись: ключи по алфавиту. Отпечаток не зависит от порядка полей в файле */
@@ -357,7 +542,6 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   const r0 = root as Raw;
   if (r0.format !== PACKAGE_FORMAT) throw new PackageError(`Это не пакет наполнения: в поле format должно быть «${PACKAGE_FORMAT}»`);
   const problems: string[] = [];
-  const excluded: ExcludedRecord[] = [];
 
   const goalKeys = new Set<string>();
   const goals: PackageGoal[] = list(r0, "goals", problems).map((raw, i) => {
@@ -385,17 +569,6 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     };
     if (goal.source && !/^(manual|import|leader-board:.+)$/.test(goal.source)) r.problems.push(`цель ${key}: источник цели manual, import или leader-board:<вкладка>`);
     if (!goal.team && !goal.owner) r.problems.push(`цель ${key}: нужна команда или владелец`);
-    // Все текстовые поля записи (кроме ФИО и названий команд: фамилия не кадровое сведение)
-    const hr = personnelHit([
-      ["Цель", goal.title],
-      ["Описание", goal.description],
-      ["Метрика", goal.metric],
-      ["База", goal.base],
-      ["Целевое значение", goal.target],
-      ["Номер цели", goal.code],
-      ["Ссылка", goal.link],
-    ]);
-    if (hr) excluded.push({ kind: "goal", key, what: `Цель «${shortText(goal.title)}»`, text: hr });
     problems.push(...r.problems);
     return goal;
   });
@@ -455,19 +628,6 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
     if (["done", "partial", "failed", "cancelled"].includes(task.status) && !task.resolution) {
       r.problems.push(`задача ${key}: для статуса «${task.status}» нужен итог или причина (resolution)`);
     }
-    const hr = personnelHit([
-      ["Задача", task.title],
-      ["Что нужно сделать", task.outcome],
-      ["Где сейчас", task.whereNow],
-      ["Итог или причина", task.resolution],
-      ["Подробнее об источнике", task.source.note],
-      ["Направление", task.direction],
-      ...task.links.flatMap((l): [string, string | null][] => [
-        ["Подпись ссылки", l.title],
-        ["Адрес ссылки", l.url],
-      ]),
-    ]);
-    if (hr) excluded.push({ kind: "task", key, what: `Задача «${shortText(task.title)}»`, text: hr });
     problems.push(...r.problems);
     return task;
   });
@@ -489,11 +649,6 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       cancelReason: r.str(raw, "cancelReason", "Почему отменено", 300),
     };
     if (status === "cancelled" && !decision.cancelReason) r.problems.push(`решение ${key}: для отменённого решения нужна причина (cancelReason)`);
-    const hr = personnelHit([
-      ["Решение", decision.text],
-      ["Почему отменено", decision.cancelReason],
-    ]);
-    if (hr) excluded.push({ kind: "decision", key, what: `Решение «${shortText(decision.text)}»`, text: hr });
     problems.push(...r.problems);
     return decision;
   });
@@ -509,9 +664,6 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       confidence: r.oneOf(raw, "confidence", "Уверенность", CONFIDENCE, null),
       reason: r.str(raw, "reason", "Причина связи", 500),
     };
-    // Связь с кадровыми сведениями в причине не грузится, и причина не попадает в ключ загрузки
-    const hr = personnelHit([["Причина связи", link.reason]]);
-    if (hr) excluded.push({ kind: "link", key, what: `Связь ${key}`, text: hr });
     problems.push(...r.problems);
     return link;
   });
@@ -545,13 +697,13 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   const head = new Reader("пакет");
   const title = head.str(r0, "title", "Название пакета", PACKAGE_TITLE_MAX);
   const createdAt = head.str(r0, "createdAt", "Дата сборки пакета", 40);
-  // Название пакета пишется в журнал: кадровых сведений в нём быть не должно
-  const titleHr = personnelHit([["Название пакета", title]]);
-  if (titleHr) head.problems.push(`пакет: ${titleHr}`);
+  // Название и дата пакета пишутся в журнал: кадровых сведений в них быть не должно (без маркера, только поле)
+  for (const [label, value] of [["Название пакета", title], ["Дата сборки пакета", createdAt]] as const) {
+    if (personnelMarker(value)) head.problems.push(`пакет: кадровые сведения в поле «${label}», уберите их из пакета`);
+  }
   problems.unshift(...head.problems);
 
-  return {
-    pkg: { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, excluded },
-    problems,
-  };
+  const pkg: ContentPackage = { format: PACKAGE_FORMAT, title, createdAt, goals, tasks, decisions, links, excluded: [] };
+  pkg.excluded = personnelExclusions(pkg);
+  return { pkg, problems };
 }
