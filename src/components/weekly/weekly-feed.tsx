@@ -183,8 +183,6 @@ export function WeeklyFeed({
   const keepQuery = author ? `&author=${encodeURIComponent(author)}` : showElsewhere ? `&author=${encodeURIComponent(focus!.slug)}` : "";
   const helpEntries = entries.filter((e) => e.help);
   const helpEntriesAll = all.filter((e) => e.help).length;
-  const risks = all.filter((e) => e.type === "risk").length;
-  const results = all.filter((e) => e.type === "result").length;
   const filtersOn = !!(direction || block || type || author || helpOnly);
   // Что включено в раскрывающихся фильтрах: число на кнопке и чипы, когда списки свёрнуты
   const active = [
@@ -198,7 +196,8 @@ export function WeeklyFeed({
 
   return (
     <div>
-      {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели. Этап 43: строкой, не больше трёх,
+      {/* Этап 68: под шапкой три колонки «Что решить», лидеры строками с раскрытием.
+          Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели. Этап 43: строкой, не больше трёх,
           нули не показываются: «нужна помощь» и «риски» важнее «результатов» и «в отчёт CEO» */}
       <PageHeader
         title="Weekly"
@@ -211,9 +210,7 @@ export function WeeklyFeed({
               max={3}
               items={[
                 { label: `${plural(all.length, "запись", "записи", "записей")} за неделю`, value: all.length, testId: "weekly-fig-entries", keepZero: true },
-                { label: plural(helpEntriesAll, "просьба о помощи", "просьбы о помощи", "просьб о помощи"), value: helpEntriesAll, tone: "warning", testId: "weekly-fig-help" },
-                { label: plural(risks, "риск", "риска", "рисков"), value: risks, tone: "warning", testId: "weekly-fig-risks" },
-                { label: plural(results, "результат", "результата", "результатов"), value: results, testId: "weekly-fig-results" },
+                // Этап 68: помощь, риски и результаты теперь колонками «Что решить» под шапкой, здесь не повторяются
                 { label: "в отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
               ]}
             />
@@ -369,7 +366,15 @@ export function WeeklyFeed({
         </EmptyState>
       ) : view === "people" ? (
         <div className="mt-6 flex flex-col gap-6">
-          {helpEntries.length && !helpOnly ? <HelpBlock entries={helpEntries} /> : null}
+          {!helpOnly && !type ? (
+            <CeoDigest
+              help={helpEntries}
+              risks={entries.filter((e) => e.type === "risk")}
+              results={entries.filter((e) => e.type === "result")}
+              onHelp={() => setHelpOnly(true)}
+              onType={(t) => setType(t)}
+            />
+          ) : null}
           <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} only={author || undefined} />
         </div>
       ) : (
@@ -415,22 +420,62 @@ function FocusElsewhere({ focus }: { focus: AuthorFocus }) {
   );
 }
 
-/** Запросы помощи поднимаются наверх ленты: с них удобно начинать встречу */
-function HelpBlock({ entries }: { entries: WeeklyEntry[] }) {
+/** Сколько записей в колонке «Что решить» видно сразу: остальное кнопкой «Ещё», она включает фильтр ленты */
+const DIGEST_LIMIT = 3;
+
+/**
+ * «Что решить» (этап 68): помощь, риски и результаты тремя колонками над лидерами. С них начинается встреча и
+ * чтение CEO. В строке автор, что произошло и одна вторая строка: просьба о помощи, цифра или «дальше».
+ * Пустая колонка не показывается, без всех трёх блока нет
+ */
+function CeoDigest({
+  help,
+  risks,
+  results,
+  onHelp,
+  onType,
+}: {
+  help: WeeklyEntry[];
+  risks: WeeklyEntry[];
+  results: WeeklyEntry[];
+  onHelp: () => void;
+  onType: (type: EntryTypeCode) => void;
+}) {
+  const cols = [
+    { id: "help", title: "Нужна помощь", dot: "bg-warning", list: help, second: (e: WeeklyEntry) => e.help, secondTone: "text-warning-ink", more: onHelp },
+    { id: "risk", title: "Риски", dot: "bg-danger", list: risks, second: (e: WeeklyEntry) => e.fact || e.next, secondTone: "text-text-secondary", more: () => onType("risk") },
+    { id: "result", title: "Результаты", dot: "bg-green", list: results, second: (e: WeeklyEntry) => e.fact || e.impact, secondTone: "text-green-ink", more: () => onType("result") },
+  ].filter((c) => c.list.length);
+  if (!cols.length) return null;
   return (
-    <section aria-labelledby="help-title" className="rounded-xl border border-warning-line bg-warning-soft/50 px-5 py-4">
-      <h2 id="help-title" className="text-title-sm font-semibold text-ink">
-        Нужна помощь <span className="font-normal text-muted">{entries.length}</span>
-      </h2>
-      <ul className="mt-3 flex flex-col gap-3">
-        {entries.map((e) => (
-          <li key={e.id} className="text-body">
-            <span className="font-semibold text-ink">{authorName(e.author, "short", "Общее")}:</span> {e.what}.{" "}
-            <span className="font-medium text-warning-ink">{e.help}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className={cn("grid gap-4", cols.length === 3 ? "lg:grid-cols-3" : cols.length === 2 ? "lg:grid-cols-2" : "")} data-testid="weekly-digest">
+      {cols.map((c) => (
+        <section key={c.id} aria-labelledby={`dg-${c.id}`} className="sv-card flex flex-col overflow-hidden">
+          <h2 id={`dg-${c.id}`} className="m-0 flex items-center gap-2 border-b border-line px-4 py-3 text-body font-semibold text-ink">
+            <span className={cn("h-2.5 w-2.5 rounded-full", c.dot)} aria-hidden="true" />
+            {c.title}
+            <span className="font-normal text-muted">{c.list.length}</span>
+          </h2>
+          <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+            {c.list.slice(0, DIGEST_LIMIT).map((e) => {
+              const second = c.second(e);
+              return (
+                <li key={e.id} className="px-4 py-3">
+                  <p className="m-0 text-caption font-semibold text-text-secondary">{authorName(e.author, "short", "Общее")}</p>
+                  <p className="m-0 line-clamp-2 text-body font-semibold leading-snug text-ink [overflow-wrap:anywhere]">{e.what}</p>
+                  {second ? <p className={cn("m-0 mt-0.5 line-clamp-2 text-small", c.secondTone)}>{second}</p> : null}
+                </li>
+              );
+            })}
+          </ul>
+          {c.list.length > DIGEST_LIMIT ? (
+            <button type="button" onClick={c.more} className="mt-auto min-h-11 border-t border-line px-4 py-2.5 text-left text-small font-semibold text-link hover:underline">
+              Ещё {c.list.length - DIGEST_LIMIT}: показать в ленте
+            </button>
+          ) : null}
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -452,7 +497,7 @@ function PeopleView({
   /** Отбор по автору: в ленте только его карточка, без пустых карточек остальных */
   only?: PersonSlug;
 }) {
-  const { manage, teamPeople } = usePrototype();
+  const { manage, teamPeople, me } = usePrototype();
   const run = useRunWeekly();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
   const reportOf = (slug: PersonSlug) => reports.find((w) => w.author === slug);
@@ -471,10 +516,34 @@ function PeopleView({
   const assignAuthor = (id: string, slug: PersonSlug) =>
     void run(() => assignEntryAuthorAction(id, slug), `Запись передана: ${personOf(slug).fullName}`);
   const common = entries.filter((e) => !e.author);
+  // Этап 68: лидеры строками, записи под раскрытием. Свёрнуто, когда лидеров больше двух и нет отбора по автору.
+  // Своя карточка раскрыта сразу: свои записи человек ищет первыми
+  // «Развернуть всех» раскрывает каждую карточку, а не включает общий режим: так любую карточку потом можно свернуть отдельно
+  const [opened, setOpened] = useState<Set<PersonSlug>>(() => new Set([me.slug]));
+  const collapsible = !only && authors.length > 2;
+  const isOpen = (slug: PersonSlug) => !collapsible || opened.has(slug);
+  const allOpen = authors.every((p) => opened.has(p.slug));
+  const toggle = (slug: PersonSlug) =>
+    setOpened((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-2">
+    <div className="flex flex-col gap-4">
+      {collapsible ? (
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="m-0 text-title-sm font-semibold text-ink">
+            Лидеры <span className="font-normal text-muted">{authors.length}</span>
+          </h2>
+          <button type="button" onClick={() => setOpened(allOpen ? new Set() : new Set(authors.map((p) => p.slug)))} className="inline-flex min-h-8 items-center text-small font-semibold text-link hover:underline">
+            {allOpen ? "Свернуть всех" : "Развернуть всех"}
+          </button>
+        </div>
+      ) : null}
       {common.length ? (
-        <section aria-labelledby="wk-common" className="flex flex-col sv-card sv-card--soft xl:col-span-2">
+        <section aria-labelledby="wk-common" className="flex flex-col sv-card sv-card--soft">
           <header className="border-b border-line px-5 py-4">
             <h2 id="wk-common" className="text-title-sm font-semibold text-ink">
               Общее, без автора <span className="font-normal text-muted">{common.length}</span>
@@ -507,9 +576,15 @@ function PeopleView({
         const own = entries.filter((e) => e.author === p.slug && ownFeed(e));
         const fromTeam = feedAuthors?.includes(p.slug) ?? true ? promotedBy(p.slug) : [];
         const state = weekly?.state ?? "not-started";
+        const open = isOpen(p.slug);
+        const counts = [
+          { n: own.filter((e) => e.type === "result").length, label: (n: number) => `${n} ${plural(n, "результат", "результата", "результатов")}`, cls: "bg-green-soft text-green-ink" },
+          { n: own.filter((e) => e.type === "risk").length, label: (n: number) => `${n} ${plural(n, "риск", "риска", "рисков")}`, cls: "bg-danger-soft text-danger-ink" },
+          { n: own.filter((e) => !!e.help).length, label: () => "нужна помощь", cls: "bg-warning-soft text-warning-ink" },
+        ].filter((c) => c.n > 0);
         return (
-          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col sv-card sv-card--soft">
-            <header className="border-b border-line px-5 py-4">
+          <section key={p.slug} aria-labelledby={`wk-${p.slug}`} className="flex flex-col sv-card sv-card--soft" data-testid={`weekly-leader-${p.slug}`}>
+            <header className={cn("px-5 py-4", open && "border-b border-line")}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 id={`wk-${p.slug}`} className="text-title-sm font-semibold text-ink">
                   {p.fullName}
@@ -527,11 +602,31 @@ function PeopleView({
               ) : reporting ? (
                 <p className="mt-2 text-body text-muted">{state === "not-started" ? "Weekly ещё не начат" : "Главная фраза пока не написана"}</p>
               ) : null}
-              {weekly?.thanks ? (
+              {weekly?.thanks && open ? (
                 <p className="mt-1.5 text-body text-ink">{weekly.thanks}</p>
               ) : null}
+              {collapsible ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {counts.map((c) => (
+                    <span key={c.cls} className={cn("inline-flex h-6 items-center rounded-full px-2 text-caption font-semibold", c.cls)}>
+                      {c.label(c.n)}
+                    </span>
+                  ))}
+                  {own.length || fromTeam.length ? (
+                    <button
+                      type="button"
+                      onClick={() => toggle(p.slug)}
+                      aria-expanded={open}
+                      aria-label={open ? `Свернуть записи: ${p.fullName}` : `Записи: ${own.length + fromTeam.length}, ${p.fullName}`}
+                      className="ml-auto inline-flex min-h-8 items-center text-small font-semibold text-link hover:underline"
+                    >
+                      {open ? "Свернуть" : `Записи: ${own.length + fromTeam.length}`}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </header>
-            {own.length ? (
+            {!open ? null : own.length ? (
               <ul className="flex flex-col divide-y divide-line">
                 {own.map((e) => (
                   <li key={e.id} className="flex flex-col gap-2 px-5 py-4">
@@ -544,7 +639,7 @@ function PeopleView({
             ) : fromTeam.length ? null : (
               <p className={cn("px-5 py-4 text-body text-muted")}>Записей нет</p>
             )}
-            {fromTeam.length ? (
+            {open && fromTeam.length ? (
               <div className="border-t border-line bg-field/60">
                 <h3 className="px-5 pt-3 text-small font-semibold text-ink">
                   Из команды <span className="font-normal text-muted">{fromTeam.length}</span>

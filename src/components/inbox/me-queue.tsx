@@ -33,7 +33,7 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
   if (empty) {
     return (
       <div>
-        <EmptyState title="Всё разобрано">Здесь появится то, что ждёт вас: просьбы и упоминания коллег, новые и просроченные задачи, задачи со сроком сегодня или завтра.</EmptyState>
+        <EmptyState title="Всё разобрано" tone="success">Новые просьбы, упоминания и срочные задачи появятся здесь.</EmptyState>
         {snoozed ? <p className="mt-3 text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}
       </div>
     );
@@ -62,7 +62,7 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
         </Group>
       ) : null}
       {req.answer.length ? (
-        <Group id="me-answer" title="Ответить" count={req.answer.length} hint="Просьбы коллег без ответа: примите со сроком, отклоните с причиной или сделайте своей задачей">
+        <Group id="me-answer" title="Ответить" count={req.answer.length} tone="info" hint="Примите со сроком, отклоните с причиной или сделайте задачей">
           {req.answer.map((r) => (
             <RequestRow key={r.number} request={r} mode="incoming" />
           ))}
@@ -70,7 +70,7 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
       ) : null}
       {items.length ? <InboxEvents items={items} /> : null}
       {req.later.length ? (
-        <Group id="me-later" title="Принятые, срок позже" count={req.later.length} hint="Просьбы, которые вы приняли: автор видит их в «Жду от коллег»">
+        <Group id="me-later" title="Принятые, срок позже" count={req.later.length} hint="Автор видит их в «Жду от коллег»">
           {req.later.map((r) => (
             <RequestRow key={r.number} request={r} mode="incoming" />
           ))}
@@ -81,16 +81,21 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
   );
 }
 
-function Group({ id, title, count, tone, hint, testId, children }: { id: string; title: string; count: number; tone?: "danger" | "warning"; hint?: string; testId?: string; children: React.ReactNode }) {
+// Этап 68: у группы цветная точка срочности, у «Срок прошёл»
+// красноватая рамка списка. Подсказка группы в одну строку и только на широком экране: смысл ясен из названия
+const DOT = { danger: "bg-danger", warning: "bg-warning", info: "bg-blue", neutral: "bg-steel" } as const;
+
+function Group({ id, title, count, tone, hint, testId, children }: { id: string; title: string; count: number; tone?: "danger" | "warning" | "info" | "neutral"; hint?: string; testId?: string; children: React.ReactNode }) {
   return (
     <section aria-labelledby={id} className="sv-section !mt-0 scroll-mt-24" data-testid={testId}>
       <div className="sv-section__head">
-        <h2 id={id} className={cn("sv-section__title", tone === "danger" && "text-danger-ink", tone === "warning" && "text-warning-ink")}>
+        <h2 id={id} className={cn("sv-section__title inline-flex items-center gap-2", tone === "danger" && "text-danger-ink", tone === "warning" && "text-warning-ink")}>
+          <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", DOT[tone ?? "neutral"])} aria-hidden="true" />
           {title} <span className="sv-section__count">{count}</span>
         </h2>
-        {hint ? <span className="sv-section__hint">{hint}</span> : null}
+        {hint ? <span className="sv-section__hint hidden truncate lg:inline">{hint}</span> : null}
       </div>
-      <ul className="sv-queue flex flex-col divide-y divide-line sv-card sv-card--soft">{children}</ul>
+      <ul className={cn("sv-queue flex flex-col divide-y divide-line sv-card sv-card--soft", tone === "danger" && "border-danger-ink/30")}>{children}</ul>
     </section>
   );
 }

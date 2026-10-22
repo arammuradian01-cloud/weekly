@@ -16,6 +16,7 @@ import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPro
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/empty-state";
 import { OverdueNote, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
 import { TextArea } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/overlays";
@@ -42,7 +43,8 @@ function nowTime() {
 /**
  * Сдача weekly в четыре шага на одном экране (раздел 3 ТЗ, этап 22): итоги обещаний прошлой недели,
  * обновить свои задачи, написать главное и записи, проверить и сдать.
- * Черновик сохраняется на сервере сам: главная фраза через пару секунд после ввода, записи так же
+ * Черновик сохраняется на сервере сам: главная фраза через пару секунд после ввода, записи так же.
+ * Этап 68 (из разбора этапа 59): шаги видны и на телефоне лентой под заголовком, кнопки без многоточий, в состоянии ожидания спиннер
  */
 export function WeeklySubmit({
   week,
@@ -335,8 +337,15 @@ export function WeeklySubmit({
   const problems = [
     !headline.trim() ? "Нет главной фразы недели" : null,
     entries.length === 0 && promoted.length === 0 ? "Нет ни одной записи" : null,
-    headline.length > HEADLINE_MAX ? "Главная фраза длиннее 150 знаков" : null,
+    headline.length > HEADLINE_MAX ? `Главная фраза длиннее ${HEADLINE_MAX} знаков` : null,
   ].filter(Boolean) as string[];
+
+  const steps = [
+    { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}`, done: submitted },
+    { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}`, done: submitted || tasks.length === 0 },
+    { href: "#step-entries", label: "Главное и записи", note: `${entries.length}`, done: submitted },
+    { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "", done: submitted },
+  ];
 
   return (
     <div className="lg:grid lg:grid-cols-[248px_minmax(0,840px)] lg:gap-10">
@@ -377,12 +386,14 @@ export function WeeklySubmit({
           <Button onClick={() => void reopen()}>Вернуть в черновик</Button>
         </div>
       </Modal>
-      <aside className="mb-6 lg:mb-0">
+      <aside className="mb-4 lg:mb-0">
         <div className="lg:sticky lg:top-24">
-          <WeeklyBadge state={weekly.state} />
-          <p className="mt-3 text-small text-muted">
-            Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 lg:block">
+            <WeeklyBadge state={weekly.state} />
+            <p className="text-small text-muted lg:mt-3">
+              Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
+            </p>
+          </div>
           {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
           <p className="mt-2 inline-flex items-center gap-1.5 text-caption text-muted" aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
@@ -402,19 +413,15 @@ export function WeeklySubmit({
               </span>
             </p>
           ) : null}
-          <nav aria-label="Шаги сдачи" className="mt-6 hidden lg:block">
-            {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный */}
-            <ol className="sv-steps m-0 list-none p-0">
-              {[
-                { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}`, done: submitted },
-                { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}`, done: submitted || tasks.length === 0 },
-                { href: "#step-entries", label: "Главное и записи", note: `${entries.length}`, done: submitted },
-                { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "", done: submitted },
-              ].map((s, i) => (
+          {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный. Этап 68: на планшете
+              и телефоне шаги лентой под заголовком (sv-steps--row), раньше они были скрыты и человек не видел, сколько осталось */}
+          <nav aria-label="Шаги сдачи" className="mt-4 lg:mt-6">
+            <ol className="sv-steps sv-steps--row sv-steps--strip m-0 list-none p-0 lg:flex-col lg:gap-[2px] lg:overflow-visible">
+              {steps.map((s, i) => (
                 <li key={s.href}>
-                  <a href={s.href} className={cn("sv-step w-full", s.done && "is-done")}>
+                  <a href={s.href} className={cn("sv-step lg:w-full", s.done && "is-done")}>
                     <span className="sv-step__n">{s.done ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" /> : i + 1}</span>
-                    <span className="flex-1">{s.label}</span>
+                    <span className="lg:flex-1">{s.label}</span>
                     <span className="text-caption tabular-nums text-text-secondary">{s.note}</span>
                   </a>
                 </li>
@@ -433,14 +440,14 @@ export function WeeklySubmit({
         ) : null}
         {expectedIn && expectedIn.length === 0 && !submitted ? (
           <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">
-            Weekly от вас сейчас не ждут: в вашей команде его сдают руководители. Достаточно обновлять задачи, а если за неделю было важное, его можно записать и сдать.
+            Weekly от вас не ждут: в вашей команде его сдают руководители. Обновляйте задачи, а важное за неделю можно записать и сдать.
           </p>
         ) : null}
         <Step
           id="step-promises"
           n={1}
           title="Что вы обещали на прошлой неделе"
-          description="Итог по каждому плану и одна фраза. Невыполненное можно перенести в план: через неделю оно снова будет здесь"
+          description="Итог по каждому плану. Невыполненное можно перенести на следующую неделю"
         >
           <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
         </Step>
@@ -449,10 +456,13 @@ export function WeeklySubmit({
           id="step-tasks"
           n={2}
           title="Обновить задачи"
-          description="Только то, что требует внимания: просроченные, срок на этой и следующей неделе, давно без обновлений, «В графике» без оснований"
+          description="Просроченные, со сроком на этой и следующей неделе, давно без обновлений"
         >
           {tasks.length === 0 ? (
-            <p className="text-body text-muted">Срочных задач нет. Можно сразу писать главное за неделю.</p>
+            // Этап 68: пустое состояние компонентом, как во всех остальных блоках (было простым текстом)
+            <EmptyState title="Срочных задач нет" tone="success" icon={CheckCircle2}>
+              Можно сразу писать главное за неделю
+            </EmptyState>
           ) : (
             <ul className="divide-y divide-line sv-card sv-card--soft">
               {tasks.map((t) => (
@@ -462,7 +472,7 @@ export function WeeklySubmit({
           )}
         </Step>
 
-        <Step id="step-entries" n={3} title="Главное за неделю" description="Одна фраза о главном и записи о событиях, обычно от 3 до 7">
+        <Step id="step-entries" n={3} title="Главное за неделю" description="Одна фраза и записи о событиях, обычно от 3 до 7">
           <TextArea
             label="Главное одной фразой"
             id="headline"
@@ -559,7 +569,7 @@ export function WeeklySubmit({
           </div>
         </Step>
 
-        <Step id="step-submit" n={4} title="Проверить и сдать" description="После сдачи править можно до закрытия недели. Каждая правка попадает в журнал">
+        <Step id="step-submit" n={4} title="Проверить и сдать" description="Править можно до закрытия недели">
           {submitted ? (
             <div className="flex flex-col gap-3 sv-card sv-card--soft bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
               <p className="inline-flex items-start gap-2 text-lead text-green-ink">
@@ -574,9 +584,9 @@ export function WeeklySubmit({
                   Открыть ленту недели
                 </Link>
                 {canEdit ? (
-                  <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening}>
+                  <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening} loading={reopening}>
                     <Undo2 className="h-4 w-4" aria-hidden="true" />
-                    {reopening ? "Возвращаю…" : "Вернуть в черновик"}
+                    Вернуть в черновик
                   </Button>
                 ) : null}
               </div>
@@ -627,8 +637,8 @@ export function WeeklySubmit({
                     </p>
                   ) : null}
                 </div>
-                <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} className="sm:min-w-44">
-                  {submitting ? "Сдаю…" : "Сдать weekly"}
+                <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} loading={submitting} className="sm:min-w-44">
+                  Сдать weekly
                 </Button>
               </div>
             </div>
@@ -641,7 +651,7 @@ export function WeeklySubmit({
 
 function Step({ id, n, title, description, children }: { id: string; n: number; title: string; description: string; children: React.ReactNode }) {
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-24">
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-32 lg:scroll-mt-24">
       <div className="mb-4 flex items-start gap-3">
         <span className="sv-step__n mt-1 !h-8 !w-8 !border-link !text-body !text-link" aria-hidden="true">
           {n}
@@ -659,7 +669,7 @@ function Step({ id, n, title, description, children }: { id: string; n: number; 
   );
 }
 
-/** Строка задачи в первом шаге: статус, состояние и «где сейчас» меняются без открытия карточки */
+/** Строка задачи во втором шаге: статус, состояние и «где сейчас» меняются без открытия карточки */
 function TaskUpdateRow({ task }: { task: Task }) {
   const { data } = usePrototype();
   const actions = useTaskActions();
