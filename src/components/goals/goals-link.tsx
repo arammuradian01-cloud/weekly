@@ -243,11 +243,13 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
     const back = event.code === "ArrowUp" || event.code === "ArrowLeft";
     if (!forward && !back) return undefined;
     event.preventDefault();
-    const { droppableRects, droppableContainers } = context;
+    // Цели берутся по порядку, без их размеров: размеры dnd-kit меряет уже после начала перетаскивания, и первая
+    // стрелка, нажатая сразу после пробела, иначе пропадала (цели ещё не измерены)
+    const { droppableContainers } = context;
     const order = (data: unknown) => (data as DropData | undefined)?.order ?? 0;
     const targets = droppableContainers
       .getEnabled()
-      .filter((c) => !c.disabled && droppableRects.has(c.id))
+      .filter((c) => !c.disabled)
       .sort((a, b) => order(a.data.current) - order(b.data.current));
     const next = stepTarget(targets.length, targets.findIndex((t) => t.id === keyTarget.current), forward);
     if (next < 0) return undefined;
