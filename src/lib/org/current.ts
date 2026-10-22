@@ -34,8 +34,8 @@ export function pickCurrent(options: TeamOption[], wanted: string | undefined): 
 }
 
 /** Чей доступ: профиль и как вошли. Общий логин без режима управления видит только топ-команду. viewAs: «Смотреть как» (этап 63) */
-export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown; viewAs?: unknown }): ScopeSubject {
-  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management, shared: ctx.via === "TEAM", ...(ctx.viewAs ? { viewAs: true } : {}) };
+export function subjectOf(ctx: { person: { id: string; role: Role }; via: string; management: unknown; viewAs?: unknown; ownerAs?: unknown }): ScopeSubject {
+  return { id: ctx.person.id, role: ctx.person.role, limited: ctx.via === "TEAM" && !ctx.management, shared: ctx.via === "TEAM", ...(ctx.viewAs ? { viewAs: true } : {}), ...(ctx.ownerAs ? { ownerAs: true } : {}) };
 }
 
 export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
@@ -46,8 +46,9 @@ export async function currentTeam(person: ScopeSubject): Promise<CurrentTeam> {
   ]);
   const scope = scopeOf(nodes, person, functional.map((p) => p.id));
   const options = teamOptions(nodes, scope, person.id);
-  // «Смотреть как» (этап 63): команда, выбранная в просмотре, живёт в своей cookie и не трогает выбор владельца
-  const id = pickCurrent(options, jar.get(person.viewAs ? TEAM_VIEW_COOKIE : TEAM_COOKIE)?.value);
+  // «Смотреть как» (этап 63) и вход владельца в чужой профиль (этап 71): команда, выбранная там, живёт в своей cookie и
+  // не трогает выбор владельца
+  const id = pickCurrent(options, jar.get(person.viewAs || person.ownerAs ? TEAM_VIEW_COOKIE : TEAM_COOKIE)?.value);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   let people: string[];
   let name: string;

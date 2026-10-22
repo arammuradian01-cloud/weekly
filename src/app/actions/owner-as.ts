@@ -4,12 +4,14 @@
 // идут от имени человека с пометкой в журнале, кто из владельцев вошёл. Выбор, вход и возврат. Правила в
 // src/lib/owner-as.ts, журнал начала и конца в src/lib/owner-as-service.ts.
 
+import { cookies } from "next/headers";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { clearSession, closeViewAs, readSession, requestIp, requireContext, writeSession, type AppContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { loadDevice } from "@/lib/login/service";
 import { TaskRuleError } from "@/lib/rule-error";
 import { OWNER_AS_TEXTS } from "@/lib/owner-as";
+import { TEAM_VIEW_COOKIE } from "@/lib/view-as";
 import { beginOwnerAs, endOwnerAs, ownerAsPeople, ownerAsTarget, type OwnerAsOwner } from "@/lib/owner-as-service";
 import type { ViewAsPerson } from "@/lib/view-as-service";
 
@@ -51,6 +53,8 @@ export async function startOwnerAsAction(personId: string): Promise<OwnerAsResul
     const grant = await beginOwnerAs(owner, target);
     const { management: _management, ownerAs: _ownerAs, ...rest } = ctx.session;
     await writeSession({ ...rest, ownerAs: grant });
+    // Команда, выбранная во входе, живёт в своей cookie: человек начинает со своей команды, выбор владельца не меняется
+    (await cookies()).delete(TEAM_VIEW_COOKIE);
     return { ok: true, value: null };
   } catch (error) {
     return failure("Вход в профиль", error);
@@ -84,5 +88,6 @@ export async function returnToOwnProfileAction(): Promise<OwnerAsResult<null>> {
   await endOwnerAs(owner, grant, "return", { ip, via: device.method });
   const { ownerAs: _ownerAs, management: _management, ...rest } = session;
   await writeSession(rest);
+  (await cookies()).delete(TEAM_VIEW_COOKIE);
   return { ok: true, value: null };
 }
