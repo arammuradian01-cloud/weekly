@@ -7,6 +7,7 @@ import {
   canChangeGoal,
   countsForGoal,
   dragSet,
+  edgeScroll,
   edgeStep,
   failedText,
   filterCounts,
@@ -270,6 +271,25 @@ describe("автопрокрутка колонки целей у краёв", (
     expect(edgeStep(810, 100, 800)).toBe(0);
     // Колонка ниже двух зон у края не крутится вовсе
     expect(edgeStep(105, 100, 180)).toBe(0);
+  });
+
+  it("низ колонки за краем окна: сначала окно и не дальше низа колонки, потом сама колонка; окно вверх не едет", () => {
+    const col = { top: 440, bottom: 935, left: 280, right: 830 };
+    // Курсор у края окна над колонкой: едет окно, не больше спрятанной части колонки
+    const first = edgeScroll({ x: 555, y: 895 }, col, 900, true);
+    expect(first.page).toBeGreaterThan(0);
+    expect(first.page).toBeLessThanOrEqual(35);
+    expect(first.column).toBe(0);
+    expect(edgeScroll({ x: 555, y: 899 }, { ...col, bottom: 902 }, 900, true)).toEqual({ page: 2, column: 0 });
+    // Колонка видна целиком (прилипла к верху): окно стоит, крутится колонка, если ей есть куда
+    const pinned = { top: 80, bottom: 884, left: 280, right: 830 };
+    expect(edgeScroll({ x: 555, y: 872 }, pinned, 900, true).page).toBe(0);
+    expect(edgeScroll({ x: 555, y: 872 }, pinned, 900, true).column).toBeGreaterThan(0);
+    expect(edgeScroll({ x: 555, y: 872 }, pinned, 900, false)).toEqual({ page: 0, column: 0 });
+    expect(edgeScroll({ x: 555, y: 90 }, pinned, 900, true)).toEqual({ page: 0, column: edgeStep(90, 80, 884) });
+    // Курсор не над колонкой или в её середине: ничего не крутится
+    expect(edgeScroll({ x: 1000, y: 895 }, col, 900, true)).toEqual({ page: 0, column: 0 });
+    expect(edgeScroll({ x: 555, y: 600 }, col, 900, true)).toEqual({ page: 0, column: 0 });
   });
 });
 

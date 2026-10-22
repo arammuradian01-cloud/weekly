@@ -296,6 +296,25 @@ export function edgeStep(y: number, top: number, bottom: number, zone = 56, max 
   return 0;
 }
 
+/**
+ * Автопрокрутка у краёв закреплённой колонки целей за кадр (ноутбук). Края по видимой части колонки. Низ колонки за
+ * краем окна (страницу ещё не прокрутили): у нижнего края сначала едет окно, и только пока колонка не покажется
+ * целиком; дальше крутится сама колонка, если ей есть куда. Дальше окно не едет: закреплённой колонке это ничего не
+ * даёт, а цели уезжали бы из-под курсора. page: сдвиг окна, column: сдвиг колонки, в точках
+ */
+export function edgeScroll(
+  pointer: { x: number; y: number },
+  rect: { top: number; bottom: number; left: number; right: number },
+  viewport: number,
+  scrollable: boolean,
+): { page: number; column: number } {
+  if (pointer.x < rect.left || pointer.x > rect.right) return { page: 0, column: 0 };
+  const step = edgeStep(pointer.y, Math.max(rect.top, 0), Math.min(rect.bottom, viewport));
+  const hidden = Math.ceil(rect.bottom - viewport);
+  if (step > 0 && hidden > 0) return { page: Math.min(step, hidden), column: 0 };
+  return { page: 0, column: scrollable ? step : 0 };
+}
+
 /** «Задача 12» или «Задачи 12, 15 и 17» */
 export function numbersText(numbers: number[]): string {
   if (numbers.length === 1) return `Задача ${numbers[0]}`;

@@ -61,10 +61,13 @@ const goalOf = async (number: number) => ((await sql(`SELECT "goalId" FROM tasks
  * Перетаскивание мышью: dnd-kit начинает после сдвига на 6 точек. Перетаскивание началось, когда под указателем
  * карточка взятого (dragged: её текст). Диктор «Взяли» проверять здесь нельзя: у задачи из карточки цели указатель
  * сразу над этой целью, и «Над: …» тут же сменяет «Взяли» в живой области. Отпускаем, только когда цель уже под
- * задачей («Над: …»): иначе отпускание могло бы опередить перерисовку и уйти мимо цели
+ * задачей («Над: …»): иначе отпускание могло бы опередить перерисовку и уйти мимо цели. Возвращает, на сколько окно
+ * прокрутилось само, пока задачу держали
  */
-async function drag(page: Page, from: Locator, to: Locator, over: string, dragged: string | RegExp = /./, startOver?: string) {
+async function drag(page: Page, from: Locator, to: Locator, over: string, dragged: string | RegExp = /./, startOver?: string): Promise<number> {
   await from.scrollIntoViewIfNeeded();
+  const scrolled = () => page.evaluate(() => window.scrollY);
+  const before = await scrolled();
   const a = (await from.boundingBox())!;
   await page.mouse.move(a.x + 8, a.y + a.height / 2);
   await page.mouse.down();
@@ -72,9 +75,16 @@ async function drag(page: Page, from: Locator, to: Locator, over: string, dragge
   await expect(page.getByTestId("link-drag-overlay")).toHaveText(dragged);
   if (startOver) await expect(page.getByText(`Над: ${startOver}`)).toBeAttached();
   const b = (await to.boundingBox())!;
-  await page.mouse.move(b.x + b.width / 2, b.y + Math.min(b.height / 2, 30), { steps: 15 });
+  const x = b.x + b.width / 2;
+  const y = b.y + Math.min(b.height / 2, 30);
+  await page.mouse.move(x, y, { steps: 15 });
   await expect(page.getByText(`Над: ${over}`)).toBeAttached();
+  // Карточка взятого под указателем, как бы ни прокрутились окно и колонка (рамка карточки размером со строку задачи)
+  const card = (await page.getByTestId("link-drag-overlay").locator("..").boundingBox())!;
+  expect(x >= card.x && x <= card.x + card.width && y >= card.y && y <= card.y + card.height, "карточка взятого под указателем").toBe(true);
+  const moved = (await scrolled()) - before;
   await page.mouse.up();
+  return moved;
 }
 
 async function openLinkMode(page: Page) {
@@ -172,9 +182,10 @@ test("лидер перетаскивает задачи к целям: прив
   await expect.poll(() => goalOf(a)).toBe(D2.id);
   await expect(d1.getByTestId(`link-goal-task-${a}`)).toHaveCount(0);
 
-  // В «Без цели» задача отвязывается
+  // В «Без цели» задача отвязывается и на прокрученной странице: колонка целей прилипла к верху окна, окно само не едет
   await d2.getByRole("button", { name: new RegExp(`^Задачи 1, цель «${D2.code}`) }).click();
-  await drag(page, d2.getByTestId(`drag-goal-task-${a}`), page.getByTestId("link-none"), "без цели, цель снимется");
+  await page.evaluate(() => window.scrollTo(0, 600));
+  expect(await drag(page, d2.getByTestId(`drag-goal-task-${a}`), page.getByTestId("link-none"), "без цели, цель снимется"), "окно во время перетаскивания само не едет").toBe(0);
   await expect(status).toContainText(`Задача ${a} отвязана от цели`);
   await expect.poll(() => goalOf(a)).toBeNull();
 

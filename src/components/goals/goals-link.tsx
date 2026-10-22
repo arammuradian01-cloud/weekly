@@ -29,7 +29,6 @@ import {
   type Announcements,
   type CollisionDetection,
   type DragEndEvent,
-  type DragMoveEvent,
   type DragStartEvent,
   type KeyboardCoordinateGetter,
   type UniqueIdentifier,
@@ -41,7 +40,7 @@ import {
   WHICH_GOALS,
   WHO_LINKS,
   dragSet,
-  edgeStep,
+  edgeScroll,
   failedText,
   filterCounts,
   focusAfter,
@@ -100,14 +99,14 @@ function caption(task: LinkTask, today: IsoDate) {
   return { overdue, when, reason };
 }
 
-/** Где курсор или палец сейчас: точка начала перетаскивания плюс сдвиг. С клавиатуры точки нет */
-function pointerOf(event: Event | null, delta: { x: number; y: number }): { x: number; y: number } | null {
+/** Где курсор или палец по событию мыши или касания, в точках окна. С клавиатуры точки нет */
+function pointerOf(event: Event | null): { x: number; y: number } | null {
   if (!event) return null;
   if (typeof TouchEvent !== "undefined" && event instanceof TouchEvent) {
     const t = event.touches[0] ?? event.changedTouches[0];
-    return t ? { x: t.clientX + delta.x, y: t.clientY + delta.y } : null;
+    return t ? { x: t.clientX, y: t.clientY } : null;
   }
-  if (event instanceof MouseEvent) return { x: event.clientX + delta.x, y: event.clientY + delta.y };
+  if (event instanceof MouseEvent) return { x: event.clientX, y: event.clientY };
   return null;
 }
 
@@ -159,9 +158,11 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   const pickerFocus = useRef<Finder | null>(null);
   // Цель, к которой задачу подвели стрелками. С клавиатуры «над чем задача» решает выбор стрелкой, а не геометрия
   const keyTarget = useRef<UniqueIdentifier | null>(null);
-  // Закреплённая колонка целей и где курсор, пока задачу тянут: для автопрокрутки у краёв колонки
+  // Закреплённая колонка целей и где курсор, пока задачу тянут: для автопрокрутки у краёв колонки.
+  // pinned: колонка закреплена (ноутбук), меряется в начале перетаскивания
   const columnRef = useRef<HTMLElement | null>(null);
   const pointer = useRef<{ x: number; y: number } | null>(null);
+  const pinned = useRef(false);
   // Свежие данные с сервера: правки, на которые сервер уже ответил, в них есть. Ждущие ответа правки остаются
   const [seen, setSeen] = useState(board);
   if (seen !== board) {
@@ -176,27 +177,41 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   });
 
   const isDragging = dragging !== null;
-  // Автопрокрутка колонки целей: курсор у верхнего или нижнего края колонки крутит её, пока задачу держат
+  // Автопрокрутка у краёв закреплённой колонки целей, пока задачу держат: колонка, а пока её низ за краем окна, окно
   useEffect(() => {
     if (!isDragging) return;
+    // Курсор берётся из событий мыши и касания: в сдвиге из dnd-kit сидит ещё и прокрутка колонки и окна
+    const track = (e: MouseEvent | TouchEvent) => {
+      pointer.current = pointerOf(e) ?? pointer.current;
+    };
+    window.addEventListener("mousemove", track, { capture: true, passive: true });
+    window.addEventListener("touchmove", track, { capture: true, passive: true });
     let frame = 0;
     const tick = () => {
       const col = columnRef.current;
       const p = pointer.current;
-      if (col && p && col.scrollHeight > col.clientHeight) {
-        // Края считаются по видимой части колонки: её низ может уходить за край окна, пока страницу не прокрутили
-        const r = col.getBoundingClientRect();
-        const step = p.x >= r.left && p.x <= r.right ? edgeStep(p.y, Math.max(r.top, 0), Math.min(r.bottom, window.innerHeight)) : 0;
-        if (step) col.scrollTop += step;
+      if (col && p && pinned.current) {
+        const { page, column } = edgeScroll(p, col.getBoundingClientRect(), window.innerHeight, col.scrollHeight > col.clientHeight);
+        if (page) window.scrollBy(0, page);
+        if (column) col.scrollTop += column;
       }
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => {
+      window.removeEventListener("mousemove", track, { capture: true });
+      window.removeEventListener("touchmove", track, { capture: true });
       cancelAnimationFrame(frame);
       pointer.current = null;
     };
   }, [isDragging]);
+  /**
+   * Автопрокрутка dnd-kit крутит окно, когда курсор у края окна. На ноутбуке колонка целей закреплена, и окно ей там не
+   * отдаём: колонка уезжала из-под курсора, пока не прилипнет, а дальше окно ехало до самого низа страницы, ничего в
+   * колонке не сдвигая, и цель под курсором терялась. Колонку и её непоказанный низ докручивает своя автопрокрутка
+   * выше. На телефоне колонка не закреплена, цели над списком: окно крутит dnd-kit, иначе до них пальцем не дотянуть
+   */
+  const autoScroll = useMemo(() => ({ canScroll: (el: Element) => !(pinned.current && el === document.scrollingElement) }), []);
 
   /** Показать цель в закреплённой колонке, не трогая прокрутку страницы. На телефоне колонка не своя: ближайшая прокрутка */
   const revealInColumn = (node: HTMLElement | null) => {
@@ -409,11 +424,10 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
   const dragNumbers = (data: DragData | undefined) => (data ? dragSet(data.number, data.from === "list", selectedVisible) : []);
   const onDragStart = (e: DragStartEvent) => {
     keyTarget.current = null;
-    pointer.current = null;
+    const col = columnRef.current;
+    pinned.current = !!col && getComputedStyle(col).position === "sticky";
+    pointer.current = pointerOf(e.activatorEvent);
     setDragging(dragNumbers(e.active.data.current as DragData | undefined));
-  };
-  const onDragMove = (e: DragMoveEvent) => {
-    pointer.current = pointerOf(e.activatorEvent, e.delta);
   };
   const onDragEnd = (e: DragEndEvent) => {
     const numbers = dragNumbers(e.active.data.current as DragData | undefined);
@@ -474,8 +488,8 @@ export function GoalsLink({ board }: { board: GoalLinkBoard }) {
     <DndContext
       sensors={sensors}
       collisionDetection={collision}
+      autoScroll={autoScroll}
       onDragStart={onDragStart}
-      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
       onDragCancel={() => {
         keyTarget.current = null;
