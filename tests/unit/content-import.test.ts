@@ -12,7 +12,7 @@ import { PACKAGE_MAX_BYTES, PackageError, cleanText, parsePackage, personnelMark
 const state = vi.hoisted(() => ({
   session: null as null | Record<string, unknown>,
   actor: null as null | Record<string, unknown> | "redirect",
-  calls: [] as { mode: string; duplicates: boolean; tasks: number }[],
+  calls: [] as { mode: string; duplicates: boolean; tasks: number; keys?: string[]; due?: string }[],
 }));
 
 vi.mock("@/lib/auth", () => ({
@@ -29,12 +29,12 @@ vi.mock("@/lib/action-runner", () => ({
 vi.mock("@/lib/content-import/service", () => ({
   IMPORT_ONLY: "Наполнение загружает владелец при личном входе в режиме управления",
   canImportContent: (a: { role: string; management: string | null; via?: string | null }) => a.role === "OWNER" && a.management === "OWNER" && !!a.via && a.via !== "TEAM",
-  previewContentImport: async (_actor: unknown, pkg: { tasks: unknown[] }, opts: { duplicates?: boolean }) => {
-    state.calls.push({ mode: "preview", duplicates: !!opts.duplicates, tasks: pkg.tasks.length });
+  previewContentImport: async (_actor: unknown, pkg: { tasks: unknown[] }, opts: { duplicates?: boolean; duplicateKeys?: string[]; staleDue?: string }) => {
+    state.calls.push({ mode: "preview", duplicates: !!opts.duplicates, tasks: pkg.tasks.length, ...(opts.duplicateKeys?.length ? { keys: opts.duplicateKeys } : {}), ...(opts.staleDue ? { due: opts.staleDue } : {}) });
     return { title: "пакет" };
   },
-  applyContentImport: async (_actor: unknown, pkg: { tasks: unknown[] }, opts: { duplicates?: boolean }) => {
-    state.calls.push({ mode: "apply", duplicates: !!opts.duplicates, tasks: pkg.tasks.length });
+  applyContentImport: async (_actor: unknown, pkg: { tasks: unknown[] }, opts: { duplicates?: boolean; duplicateKeys?: string[]; staleDue?: string }) => {
+    state.calls.push({ mode: "apply", duplicates: !!opts.duplicates, tasks: pkg.tasks.length, ...(opts.duplicateKeys?.length ? { keys: opts.duplicateKeys } : {}), ...(opts.staleDue ? { due: opts.staleDue } : {}) });
     return { title: "пакет", applied: { tasks: [] } };
   },
 }));
@@ -198,23 +198,65 @@ describe("кадровые сведения", () => {
     for (const [text, marker] of [
       ["Пересмотреть оклады отдела", "оклады"],
       ["Подготовить ревизию грейдов", "грейдов"],
+      ["Фонд зарплаты на 2027", "зарплаты"],
+      ["Зарплата аналитика партнёрств", "зарплата"],
+      ["Заработная плата аналитиков", "заработная плата"],
+      ["Поднять ЗП аналитику", "зп"],
+      ["Пересмотр з/п команды", "з/п"],
+      ["ФОТ на 2027 по департаменту", "фот"],
+      ["Фонд оплаты труда департамента", "фонд оплаты"],
+      ["Оплата труда менеджеров КЦ", "оплата труда"],
       ["Калибровка оценок сотрудников до 30.11", "калибровка оценок"],
-      ["Годовая премия команды продаж", "годовая премия"],
+      ["Калибровка грейдов в команде", "калибровка грейдов"],
       ["Уволить менеджера по партнёрам", "уволить"],
       ["Замена на время декрета", "декрета"],
-      ["Пока на больничном", "больничном"],
+      ["Пока на больничном", "на больничном"],
+      ["Менеджер на больничном до пятницы", "на больничном"],
+      ["Ушёл на больничный, задачи передать", "на больничный"],
+      ["Больничный сотрудника продаж", "больничный сотрудника"],
       ["Сокращение штата КЦ", "сокращение штата"],
+      ["Сокращение отдела партнёрств", "сокращение отдела"],
+      ["Сократить двух менеджеров", "сократить двух менеджеров"],
+      ["Сократить 3 ставки в КЦ", "сократить 3 ставки"],
+      ["Сокращение в команде КЦ", "сокращение в команде"],
       ["Оценка сотрудников КЦ по итогам квартала", "оценка сотрудников"],
+      ["Оценка эффективности сотрудников продаж", "оценка эффективности сотрудников"],
+      ["Аттестация аналитиков в декабре", "аттестация"],
+      ["Премия сотрудникам КЦ за квартал", "премия сотрудникам"],
+      ["Бонусы менеджерам за квартал", "бонусы менеджерам"],
+      ["Годовая премия команды продаж", "премия команды"],
       ["Бонусы сотрудникам за квартал", "бонусы сотрудникам"],
-      ["Фонд зарплаты на 2027", "зарплаты"],
-      ["Поднять ЗП аналитику", "зп"],
     ] as const) {
       expect(personnelMarker(text), text).toBe(marker);
     }
   });
 
-  it("не кадровое: доклад, апгрейд, страховая премия, калибровка пула, мотивация продаж", () => {
-    for (const text of ["Доклад на встрече топ-команды", "Апгрейд витрины ОСАГО", "Страховая премия по КАСКО выросла", "Премия по полису", "Калибровка пула ОСАГО по СК", "Мотивация менеджеров прямых продаж КАСКО", "Оценка рынка КАСКО"]) {
+  it("не кадровое: страховые и банковские термины, сроки и расходы, слова с похожим началом", () => {
+    for (const text of [
+      "Доклад на встрече топ-команды",
+      "Апгрейд витрины ОСАГО",
+      "Страховая премия по КАСКО выросла",
+      "Премия по полису",
+      "Годовая премия по КАСКО у партнёра",
+      "Зарплатный проект с банком-партнёром",
+      "Зарплатные клиенты банка",
+      "Предложение для держателей зарплатной карты",
+      "Калибровка пула ОСАГО по СК",
+      "Калибровка оценок риска по КАСКО",
+      "Калибровка оценки рисков в скоринге",
+      "Калибровка скоринга",
+      "Калибровка скоринговой модели",
+      "Выплата по больничному листу (продукт НС)",
+      "Выплата по больничному в коробке НС",
+      "Сокращение сроков урегулирования",
+      "Сократить расходы отдела",
+      "Сократить траты команды на рекламу",
+      "Фото полиса в карточке",
+      "Фотофиксация ущерба",
+      "Мотивация менеджеров прямых продаж КАСКО",
+      "Оценка рынка КАСКО",
+      "Оценка эффективности канала",
+    ]) {
       expect(personnelMarker(text), text).toBeNull();
     }
   });
@@ -222,7 +264,7 @@ describe("кадровые сведения", () => {
   it("запись с кадровыми сведениями остаётся в пакете, но уходит в список «не загрузятся»; пакет без ошибок", () => {
     const p = fixture();
     p.tasks[0]!.whereNow = "Ждём решения по окладу аналитика";
-    p.decisions[0]!.text = "Годовые премии лидерам считаем по новой схеме";
+    p.decisions[0]!.text = "Премии сотрудникам считаем по новой схеме";
     p.goals[1]!.metric = "Калибровка грейдов в команде";
     p.tasks[2]!.title = "Подготовить доклад по рынку";
     const { pkg, problems } = parse(p);
@@ -294,10 +336,17 @@ describe("обработчик импорта мимо proxy", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({ ok: true, value: { title: "пакет" } });
     expect((await send(FIXTURE, "mode=apply&duplicates=1")).status).toBe(200);
+    // Выбранные дубли и срок для задач без актуального срока; чужие строки в списке дублей отбрасываются
+    expect((await send(FIXTURE, "mode=apply&dup=task/task.test.open-1,decision/decision.test.1,goal/x,task/плохой&due=2026-11-05")).status).toBe(200);
     expect(state.calls).toEqual([
       { mode: "preview", duplicates: false, tasks: 5 },
       { mode: "apply", duplicates: true, tasks: 5 },
+      { mode: "apply", duplicates: false, tasks: 5, keys: ["task/task.test.open-1", "decision/decision.test.1"], due: "2026-11-05" },
     ]);
+    const bad = await send(FIXTURE, "mode=preview&due=05.11.2026");
+    expect(bad.status).toBe(400);
+    expect((await bad.json()).error).toBe("Срок для задач без актуального срока: дата в виде ГГГГ-ММ-ДД");
+    expect(state.calls).toHaveLength(3);
   });
 
   it("чужой сайт, нет входа, вход больше не действует, не владелец: ответ сразу текстом, тело не читается", async () => {

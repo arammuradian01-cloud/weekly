@@ -382,9 +382,10 @@ export async function createTask(actor: Actor, input: NewTaskInput): Promise<Tas
 /**
  * Задача из истории (этап 67, импорт наполнения владельцем): sourceDate дата источника как есть (нет даты: пусто, а не
  * «сегодня», иначе задача со встречи попала бы в повестку как поручение прошлой встречи). closed: задачу сразу
- * закрывают, только ей срок может быть в прошлом
+ * закрывают, только ей срок может быть в прошлом. originalDue: исходный срок из истории, когда срок задачи сдвинут
+ * (открытая задача, у которой срок в истории уже прошёл)
  */
-export type HistoryOptions = { sourceDate?: IsoDate | null; closed?: boolean };
+export type HistoryOptions = { sourceDate?: IsoDate | null; closed?: boolean; originalDue?: IsoDate | null };
 
 /** Новая задача внутри чужой транзакции: так её ставит, например, «Сделать задачей» у просьбы (этап 21) */
 export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, opts: { requester?: string; history?: HistoryOptions; number?: number } = {}): Promise<TaskResult> {
@@ -462,7 +463,7 @@ export async function createTaskIn(tx: Tx, actor: Actor, input: NewTaskInput, op
       state: "ON_TRACK",
       whereUpdatedAt: today,
       due: dbDate(input.due),
-      originalDue: dbDate(input.due),
+      originalDue: opts.history && opts.history.originalDue !== undefined ? (opts.history.originalDue && isIsoDate(opts.history.originalDue) ? dbDate(opts.history.originalDue) : null) : dbDate(input.due),
       sourceCode,
       sourceNote,
       sourceDate: opts.history ? (opts.history.sourceDate ? dbDate(opts.history.sourceDate) : null) : sourceCode === "meeting" ? today : null,

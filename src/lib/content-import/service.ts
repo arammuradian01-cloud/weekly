@@ -25,9 +25,9 @@ import { approvalRule } from "@/lib/tasks/approval";
 import { createGoal, linkTaskGoal, updateGoal } from "@/lib/goals/service";
 import { goalFits } from "@/lib/goals/personal";
 import { quarterOf } from "@/lib/goals/parse";
-import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
+import { dbDate, isIsoDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { statusCode } from "@/lib/tasks/codes";
-import { formatLong, toCalendar, type IsoDate } from "@/domain/dates";
+import { addDays, diffDays, formatLong, toCalendar, type IsoDate } from "@/domain/dates";
 import { moscowDateTime } from "@/lib/week";
 import { sameTask } from "@/lib/meeting/parse-types";
 import { recordHash, shortText as short, type ContentPackage, type PackageDecision, type PackageGoal, type PackageLink, type PackageTask } from "./package";
@@ -49,8 +49,22 @@ export function canImportContent(actor: Pick<Actor, "role" | "management" | "via
   return actor.role === "OWNER" && actor.management === "OWNER" && !!actor.via && actor.via !== "TEAM";
 }
 
-/** duplicates: загружать и вероятные дубли того, что уже есть в ресурсе (по умолчанию они пропускаются) */
-export type ImportOptions = { duplicates?: boolean };
+/** Срок по умолчанию для открытых задач, у которых срок в пакете уже прошёл: через две недели после загрузки */
+export const STALE_DUE_DAYS = 14;
+/** Дальше этого сроки двух задач с похожим названием считаются разными задачами, а не дублем */
+const DUPLICATE_DUE_DAYS = 21;
+
+export type ImportOptions = {
+  /** Загружать все вероятные дубли того, что уже есть в ресурсе (по умолчанию они пропускаются) */
+  duplicates?: boolean;
+  /** Загружать выбранные дубли: «task/ключ» и «decision/ключ» */
+  duplicateKeys?: string[];
+  /** Срок для открытых задач, у которых срок в пакете уже прошёл. По умолчанию сегодня плюс 14 дней */
+  staleDue?: IsoDate;
+};
+
+/** Вероятный дубль в предпросмотре: id «task/ключ» или «decision/ключ», on: загрузится */
+export type DuplicateLine = { id: string; what: string; text: string; on: boolean };
 
 export type ImportCounts = { add: number; update: number; skip: number };
 export type ImportLine = { what: string; text: string };
@@ -66,12 +80,16 @@ export type ImportPreview = {
   missingTeams: string[];
   /** Не загрузятся, пока их не исправят в пакете: кадровые сведения, решение без команды, правило службы */
   errors: ImportLine[];
-  /** Загрузятся, но не так, как в пакете: срок в прошлом у открытой задачи, цель выше не подошла */
+  /** Загрузятся, но не так, как в пакете: цель выше не подошла или не загружается */
   warnings: ImportLine[];
-  /** Вероятные дубли того, что уже есть в ресурсе: по умолчанию пропускаются */
-  duplicates: ImportLine[];
-  /** Загрузка возьмёт и вероятные дубли */
+  /** Вероятные дубли того, что уже есть в ресурсе: по умолчанию пропускаются, по одному или все можно включить */
+  duplicates: DuplicateLine[];
+  /** Загрузка возьмёт все вероятные дубли */
   withDuplicates: boolean;
+  /** Открытые задачи, у которых срок в пакете уже прошёл: встанут со сроком staleDue */
+  staleTasks: { key: string; title: string; due: IsoDate }[];
+  /** Срок для задач без актуального срока: выбранный владельцем или сегодня плюс 14 дней */
+  staleDue: IsoDate;
   /** Что пропустится и почему, и что обновится не целиком */
   notes: ImportLine[];
   /** Сколько человек узнают о новых открытых задачах в «Мне»: ответственные, соисполнители, согласующие */
@@ -95,8 +113,10 @@ type Ctx = {
   sources: Set<string>;
   keys: Map<string, KeyRow>;
   excluded: Map<string, string>;
+  /** Срок для открытых задач со сроком в прошлом */
+  staleDue: IsoDate;
   /** Задачи ресурса для поиска дублей: owner это id ответственного или «all» */
-  tasks: { number: number; title: string; owner: string | null }[];
+  tasks: { number: number; title: string; owner: string | null; due: IsoDate }[];
   /** Решения ресурса за даты пакета для поиска дублей */
   decisions: { teamId: string; date: IsoDate; text: string }[];
   /** Согласующий человека из другого департамента для того, кто загружает (кеш на одну загрузку) */
@@ -117,14 +137,18 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
     db.dictionaryItem.findMany({ where: { kind: "DIRECTION", active: true }, select: { code: true } }),
     db.dictionaryItem.findMany({ where: { kind: "TASK_SOURCE", active: true }, select: { code: true } }),
     db.contentImportKey.findMany(),
-    db.task.findMany({ where: { archivedAt: null }, select: { number: true, title: true, ownerId: true, ownerAll: true } }),
+    db.task.findMany({ where: { archivedAt: null }, select: { number: true, title: true, ownerId: true, ownerAll: true, due: true } }),
     dates.length ? db.decision.findMany({ where: { date: { in: dates.map(dbDate) } }, select: { teamId: true, date: true, text: true } }) : Promise.resolve([]),
   ]);
+  const today = moscowToday();
+  const staleDue = opts.staleDue ?? addDays(today, STALE_DUE_DAYS);
+  if (!isIsoDate(staleDue) || staleDue < today) fail("Срок для задач без актуального срока: дата не раньше сегодняшней");
   return {
     db,
     actor,
     opts,
-    today: moscowToday(),
+    today,
+    staleDue,
     people,
     index: new NameIndex(people.filter((p) => p.active)),
     nodes,
@@ -132,7 +156,7 @@ async function context(db: Db, actor: Actor, pkg: ContentPackage, opts: ImportOp
     sources: new Set(sources.map((d) => d.code)),
     keys: new Map(keys.map((k) => [key(k.kind as Kind, k.key), k])),
     excluded: new Map(pkg.excluded.map((e) => [key(e.kind, e.key), e.text])),
-    tasks: tasks.map((t) => ({ number: t.number, title: t.title, owner: t.ownerAll ? "all" : t.ownerId })),
+    tasks: tasks.map((t) => ({ number: t.number, title: t.title, owner: t.ownerAll ? "all" : t.ownerId, due: isoFromDbDate(t.due) })),
     decisions: decisions.map((d) => ({ teamId: d.teamId, date: isoFromDbDate(d.date), text: d.text })),
     approvers: new Map(),
     missingPeople: new Set(),
@@ -180,8 +204,12 @@ async function approverOf(ctx: Ctx, personId: string): Promise<string | null> {
 const asRecord = (v: Prisma.JsonValue | undefined): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const CLOSED = ["done", "partial", "failed", "cancelled"];
-/** Похожий текст: то же без учёта регистра и знаков или почти те же слова (то же правило, что у разбора встречи) */
-const similar = (a: string, b: string) => sameTask({ title: a, owner: "x" }, { title: b, owner: "x" });
+/** Числа текста (даты, годы, номера) без ведущих нулей: «Сверка за 2026» и «Сверка за 2027» разные записи */
+const numbersOf = (text: string) => (text.match(/\d+/g) ?? []).map((n) => String(Number(n))).sort().join(",");
+/** Похожий текст: то же без учёта регистра и знаков или почти те же слова (то же правило, что у разбора встречи), и те же числа */
+const similar = (a: string, b: string) => numbersOf(a) === numbersOf(b) && sameTask({ title: a, owner: "x" }, { title: b, owner: "x" });
+/** Дубль загружается: включены все дубли или выбран этот */
+const duplicateOn = (ctx: Ctx, id: string) => !!ctx.opts.duplicates || !!ctx.opts.duplicateKeys?.includes(id);
 
 /**
  * Поле по трём значениям: база в ключе (old), ресурс сейчас (cur), пакет (next). Пакет поле не менял: ничего. Ресурс
@@ -198,7 +226,7 @@ function threeWay(old: unknown, cur: unknown, next: unknown): "keep" | "moved" |
 // ---------- План ----------
 
 type Level = "error" | "duplicate" | "warning";
-type Step = { action: "add" | "update" | "skip" | "match"; reason?: string; level?: Level; notes?: string[] };
+type Step = { action: "add" | "update" | "skip" | "match"; reason?: string; level?: Level; notes?: string[]; duplicate?: string };
 
 type ParentTarget = { key: string } | { id: string };
 type GoalPlan = Step & {
@@ -254,6 +282,16 @@ const goalKept = (g: PackageGoal, fields: Record<string, unknown>) => ({ ...fiel
 
 async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
   const out: GoalPlan[] = [];
+  // Номер цели в команде за квартал один: вторая цель пакета с тем же номером не загружается (служба целей откажет)
+  const codes = new Set<string>();
+  const taken = (quarter: string, teamId: string, code: string | null) => {
+    if (!code) return false;
+    const k = `${quarter}|${teamId}|${code.toLowerCase()}`;
+    if (codes.has(k)) return true;
+    codes.add(k);
+    return false;
+  };
+  const repeated = (g: PackageGoal): GoalPlan => ({ g, action: "skip", level: "error", reason: `номер ${g.code} уже у другой цели пакета в той же команде и квартале: оставьте одну` });
   for (const g of pkg.goals) {
     const hr = ctx.excluded.get(key("goal", g.key));
     if (hr) {
@@ -280,6 +318,10 @@ async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
         continue;
       }
       const at = { ...base, teamId: cur.teamId, existingId: cur.id, quarter: cur.quarter, parentId: cur.parentId };
+      if (taken(cur.quarter, cur.teamId, g.code)) {
+        out.push(repeated(g));
+        continue;
+      }
       if (known.hash === recordHash(g)) {
         out.push({ ...at, action: "skip", reason: UNCHANGED });
         continue;
@@ -317,6 +359,10 @@ async function planGoals(ctx: Ctx, pkg: ContentPackage): Promise<GoalPlan[]> {
     }
     // Цель с тем же номером уже есть в команде (например, из борда лидера): ключ привязывается к ней, загрузка
     // заполняет только пустые поля, и только они дальше принадлежат загрузке
+    if (taken(g.quarter, team.id, g.code)) {
+      out.push(repeated(g));
+      continue;
+    }
     const byCode = g.code ? await ctx.db.goal.findFirst({ where: { quarter: g.quarter, teamId: team.id, code: g.code } }) : null;
     if (byCode) {
       const input: Record<string, string | null> = {};
@@ -463,22 +509,25 @@ async function planTasks(ctx: Ctx, pkg: ContentPackage): Promise<TaskPlan[]> {
       }
       continue;
     }
-    // Открытая задача со сроком в прошлом встаёт со сроком на сегодня: служба задач не ставит открытых задач в прошлое
+    // Открытая задача со сроком в прошлом встаёт со сроком, который выбрал владелец (по умолчанию через две недели):
+    // служба задач не ставит открытых задач в прошлое, а срок «сегодня» дал бы просрочку уже на неделе загрузки
     const closed = CLOSED.includes(t.status);
-    const due = !closed && t.due < ctx.today ? ctx.today : t.due;
+    const due = !closed && t.due < ctx.today ? ctx.staleDue : t.due;
     const step: TaskPlan = { ...base, action: "add", due };
-    // Вероятный дубль: тот же ответственный и похожее название у задачи, которая уже есть в ресурсе
-    const twin = ctx.tasks.find((e) => sameTask({ title: t.title, owner: base.owner === "all" ? "all" : base.ownerId }, e));
+    // Вероятный дубль: тот же ответственный, похожее название с теми же числами и срок не дальше трёх недель
+    const owned = base.owner === "all" ? "all" : base.ownerId;
+    const twin = ctx.tasks.find((e) => numbersOf(e.title) === numbersOf(t.title) && Math.abs(diffDays(e.due, due)) <= DUPLICATE_DUE_DAYS && sameTask({ title: t.title, owner: owned }, e));
     if (twin) {
-      const text = `похожа на задачу ${twin.number} «${short(twin.title)}»: тот же ответственный и похожее название`;
-      if (!ctx.opts.duplicates) {
-        out.push({ ...step, action: "skip", level: "duplicate", reason: `${text}, пропустится` });
+      const id = `task/${t.key}`;
+      const text = `похожа на задачу ${twin.number} «${short(twin.title)}»: тот же ответственный, похожее название и близкий срок`;
+      if (!duplicateOn(ctx, id)) {
+        out.push({ ...step, action: "skip", level: "duplicate", duplicate: id, reason: `${text}, пропустится` });
         continue;
       }
       step.level = "duplicate";
+      step.duplicate = id;
       step.reason = `${text}, загрузится, как вы выбрали`;
     }
-    if (due !== t.due) ctx.warnings.push({ what: `Задача «${short(t.title)}»`, text: `срок ${formatLong(t.due)} уже прошёл, а задача открыта: встанет со сроком на сегодня, ${formatLong(due)}. Поправьте срок в пакете или в ресурсе` });
     out.push(step);
   }
   return out;
@@ -506,17 +555,22 @@ function planTaskUpdate(ctx: Ctx, t: PackageTask, old: Record<string, unknown>, 
   if (where === "edited") edited("whereNow");
   if (where === "apply" && !next.whereNow) notes.push("«Где сейчас» в пакете пустое: в ресурсе останется прежний текст, стирают его только в карточке");
 
-  // Срок: меняется, только если в пакете поменялся сам срок. База: срок, с которым задача стоит после загрузки
+  // Срок: меняется, только если в пакете поменялся сам срок. База: срок, с которым задача стоит после загрузки, и срок
+  // пакета, который загрузка учла. Срок не записан: обе базы прежние
   const curStatusClosed = CLOSED.includes(String(cur.status));
   kept.due = old.due ?? null;
+  kept.dueRaw = old.dueRaw ?? old.due ?? null;
   if (!same(old.dueRaw ?? old.due, t.due)) {
     const way = same(cur.due, t.due) ? "moved" : same(cur.due, old.due) ? "apply" : "edited";
-    if (way === "moved") kept.due = t.due;
-    else if (way === "edited") edited("due");
+    if (way === "moved") {
+      kept.due = t.due;
+      kept.dueRaw = t.due;
+    } else if (way === "edited") edited("due");
     else if (curStatusClosed || t.due < ctx.today) notes.push(`срок ${formatLong(t.due)} не перенесён: задача закрыта или срок уже прошёл`);
     else {
       update.due = t.due;
       kept.due = t.due;
+      kept.dueRaw = t.due;
     }
   }
 
@@ -589,15 +643,17 @@ async function planDecisions(ctx: Ctx, pkg: ContentPackage, tasks: TaskPlan[]): 
       continue;
     }
     const step: DecisionPlan = { ...base, action: "add" };
-    // Вероятный дубль: решение той же команды за ту же дату с похожим текстом уже есть в ресурсе
+    // Вероятный дубль: решение той же команды за ту же дату с похожим текстом и теми же числами уже есть в ресурсе
     const twin = ctx.decisions.find((e) => e.teamId === team.id && e.date === d.date && similar(e.text, d.text));
     if (twin) {
+      const id = `decision/${d.key}`;
       const text = `похоже на решение команды за ${formatLong(d.date)} «${short(twin.text)}»`;
-      if (!ctx.opts.duplicates) {
-        out.push({ ...step, action: "skip", level: "duplicate", reason: `${text}, пропустится` });
+      if (!duplicateOn(ctx, id)) {
+        out.push({ ...step, action: "skip", level: "duplicate", duplicate: id, reason: `${text}, пропустится` });
         continue;
       }
       step.level = "duplicate";
+      step.duplicate = id;
       step.reason = `${text}, загрузится, как вы выбрали`;
     }
     out.push(step);
@@ -750,11 +806,12 @@ async function notifiedPeople(ctx: Ctx, plan: Plan): Promise<number> {
 }
 
 async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<ImportPreview> {
-  const lists: Record<"errors" | "duplicates" | "notes" | "warnings", ImportLine[]> = { errors: [], duplicates: [], notes: [], warnings: [] };
+  const lists: Record<"errors" | "notes" | "warnings", ImportLine[]> = { errors: [], notes: [], warnings: [] };
+  const duplicates: DuplicateLine[] = [];
   const put = (what: string, p: Step) => {
     if (p.reason && p.reason !== UNCHANGED) {
-      const list = p.level === "error" ? lists.errors : p.level === "duplicate" ? lists.duplicates : p.level === "warning" ? lists.warnings : lists.notes;
-      list.push({ what, text: p.reason });
+      if (p.level === "duplicate" && p.duplicate) duplicates.push({ id: p.duplicate, what, text: p.reason, on: p.action === "add" });
+      else (p.level === "error" ? lists.errors : p.level === "warning" ? lists.warnings : lists.notes).push({ what, text: p.reason });
     }
     for (const text of p.notes ?? []) lists.notes.push({ what, text });
   };
@@ -777,8 +834,10 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
     missingTeams: [...ctx.missingTeams].sort((a, b) => a.localeCompare(b, "ru")),
     errors: lists.errors.slice(0, 300),
     warnings: [...ctx.warnings, ...lists.warnings].slice(0, 300),
-    duplicates: lists.duplicates.slice(0, 300),
+    duplicates: duplicates.slice(0, 300),
     withDuplicates: !!ctx.opts.duplicates,
+    staleTasks: plan.tasks.filter((p) => p.action === "add" && p.due !== p.t.due).map((p) => ({ key: p.t.key, title: p.t.title, due: p.t.due })),
+    staleDue: ctx.staleDue,
     notes: [...lists.notes, ...ctx.notes].slice(0, 300),
     notified: await notifiedPeople(ctx, plan),
   };
@@ -805,13 +864,10 @@ function historyClosedAt(t: PackageTask, today: IsoDate): Date {
   return moscowDateTime(toCalendar(day), 12, 0);
 }
 
-/** Сколько номеров задач взять заранее: задачи пакета, которых ещё нет по ключу (лишние номера потом возвращаются) */
-async function newTaskCount(pkg: ContentPackage): Promise<number> {
-  const excluded = new Set(pkg.excluded.filter((e) => e.kind === "task").map((e) => e.key));
-  const keys = pkg.tasks.map((t) => t.key).filter((k) => !excluded.has(k));
-  if (!keys.length) return 0;
-  const known = await prisma.contentImportKey.count({ where: { kind: "task", key: { in: keys } } });
-  return Math.max(0, keys.length - known);
+/** Сколько номеров задач взять заранее: новые задачи по плану (лишние номера потом возвращаются) */
+async function newTaskCount(actor: Actor, pkg: ContentPackage, opts: ImportOptions): Promise<number> {
+  const ctx = await context(prisma, actor, pkg, opts);
+  return (await planTasks(ctx, pkg)).filter((p) => p.action === "add").length;
 }
 
 export type ImportResult = ImportPreview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
@@ -821,7 +877,7 @@ export async function applyContentImport(actor: Actor, pkg: ContentPackage, opts
   // Номера новых задач берём заранее короткой транзакцией: иначе загрузка держала бы строку настройки номеров всю
   // долгую транзакцию, и задачи, которые в это время ставят люди, падали бы по ожиданию. Неиспользованный хвост и
   // номера отменённой загрузки возвращаются, если после них никто номер не брал
-  const reserved = await reserveTaskNumbers(await newTaskCount(pkg));
+  const reserved = await reserveTaskNumbers(await newTaskCount(actor, pkg, opts));
   const free = [...reserved];
   const end = reserved.length ? reserved[reserved.length - 1]! + 1 : 0;
   let result: ImportResult;
@@ -897,7 +953,8 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
             links: t.links.map((l) => ({ title: l.title ?? undefined, url: l.url })),
             team: p.teamId,
           },
-          { history: { sourceDate: t.source.date, closed }, number: free.shift() },
+          // Срок сдвинут (открытая задача со сроком в прошлом): исходным сроком остаётся срок из пакета
+          { history: { sourceDate: t.source.date, closed, ...(p.due !== t.due ? { originalDue: t.due } : {}) }, number: free.shift() },
         ),
       )) as { task: { number: number } };
       const number = res.task.number;

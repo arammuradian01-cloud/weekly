@@ -2,9 +2,10 @@
 
 // Импорт наполнения (этап 67): владелец при личном входе в режиме управления загружает пакет с задачами, решениями,
 // целями и связями задач с целями, собранный из истории проекта. Сначала предпросмотр: сколько добавится, обновится
-// и пропустится, кого и каких команд нет в ресурсе, что не загрузится и почему, вероятные дубли того, что уже есть в
-// ресурсе (по умолчанию пропускаются, их можно включить). Потом загрузка по подтверждению. Загрузка ничего не удаляет,
-// повторная загрузка того же пакета ничего не дублирует
+// и пропустится, кого и каких команд нет в ресурсе, что не загрузится и почему, открытые задачи без актуального срока
+// (одна дата на все, по умолчанию через две недели), вероятные дубли того, что уже есть в ресурсе (по умолчанию
+// пропускаются, их можно включить по одному или все). Потом загрузка по подтверждению с теми же настройками. Загрузка
+// ничего не удаляет, повторная загрузка того же пакета ничего не дублирует
 
 import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -12,7 +13,8 @@ import { usePrototype } from "@/domain/store";
 import { Button } from "@/components/ui/button";
 import { FileField } from "@/components/ui/file-field";
 import { FormError } from "@/components/ui/field";
-import { plural } from "@/domain/dates";
+import { TextInput } from "@/components/ui/primitives";
+import { formatLong, plural, type IsoDate } from "@/domain/dates";
 import { PACKAGE_MAX_BYTES, PACKAGE_MAX_LABEL } from "@/lib/content-import/limits";
 
 type Counts = { add: number; update: number; skip: number };
@@ -26,19 +28,28 @@ type Preview = {
   missingTeams: string[];
   errors: Line[];
   warnings: Line[];
-  duplicates: Line[];
+  duplicates: (Line & { id: string; on: boolean })[];
   withDuplicates: boolean;
+  staleTasks: { key: string; title: string; due: IsoDate }[];
+  staleDue: IsoDate;
   notes: Line[];
   notified: number;
 };
 type Line = { what: string; text: string };
+/** Настройки загрузки: все дубли, выбранные дубли, срок для задач без актуального срока (null: по умолчанию) */
+type Options = { all: boolean; picked: string[]; due: string | null };
+const DEFAULTS: Options = { all: false, picked: [], due: null };
 type Applied = Preview & { applied: { tasks: number[]; goals: number; decisions: number; links: number } };
 type Answer<T> = { ok: true; value: T } | { ok: false; error: string; problems?: string[] };
 
-async function post<T>(mode: "preview" | "apply", file: File, duplicates: boolean): Promise<Answer<T>> {
+async function post<T>(mode: "preview" | "apply", file: File, o: Options): Promise<Answer<T>> {
+  const query = new URLSearchParams({ mode });
+  if (o.all) query.set("duplicates", "1");
+  else if (o.picked.length) query.set("dup", o.picked.join(","));
+  if (o.due) query.set("due", o.due);
   let res: Response;
   try {
-    res = await fetch(`/api/content-import?mode=${mode}${duplicates ? "&duplicates=1" : ""}`, { method: "POST", body: await file.text(), headers: { "Content-Type": "application/json" } });
+    res = await fetch(`/api/content-import?${query.toString()}`, { method: "POST", body: await file.text(), headers: { "Content-Type": "application/json" } });
   } catch {
     return { ok: false, error: "Нет связи с сервером: пакет не отправился" };
   }
@@ -82,8 +93,9 @@ export function ContentImportSection() {
   const [busy, setBusy] = useState<"preview" | "apply" | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [problems, setProblems] = useState<string[]>([]);
-  // Вероятные дубли по умолчанию пропускаются; владелец может включить их загрузку
-  const [duplicates, setDuplicates] = useState(false);
+  // Вероятные дубли по умолчанию пропускаются, владелец включает их по одному или все; срок для задач без актуального
+  // срока по умолчанию выбирает сервер (через две недели)
+  const [options, setOptions] = useState<Options>(DEFAULTS);
   // Новый круг поля файла после «Отменить»: тот же файл можно выбрать снова
   const [round, setRound] = useState(0);
 
@@ -94,8 +106,9 @@ export function ContentImportSection() {
     setProblems([]);
   };
 
-  // keep: пересчёт того же файла (включили или выключили дубли), прежний предпросмотр виден, пока не придёт новый
-  const check = async (f: File | null, withDuplicates = duplicates, keep = false) => {
+  // keep: пересчёт того же файла (поменяли дубли или срок), прежний предпросмотр виден, пока не придёт новый
+  const check = async (f: File | null, o: Options = options, keep = false) => {
+    setOptions(o);
     setFile(f);
     if (keep) {
       setError(undefined);
@@ -107,7 +120,7 @@ export function ContentImportSection() {
       return;
     }
     setBusy("preview");
-    const r = await post<Preview>("preview", f, withDuplicates);
+    const r = await post<Preview>("preview", f, o);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -121,7 +134,7 @@ export function ContentImportSection() {
     if (!file) return;
     setBusy("apply");
     setError(undefined);
-    const r = await post<Applied>("apply", file, duplicates);
+    const r = await post<Applied>("apply", file, options);
     setBusy(null);
     if (!r.ok) {
       setError(r.error);
@@ -158,11 +171,8 @@ export function ContentImportSection() {
           accept=".json,application/json"
           fileName={file?.name ?? null}
           hint={`JSON до ${PACKAGE_MAX_LABEL}`}
-          onChange={(f) => {
-            // Новый файл: вероятные дубли снова пропускаются, пока их не включить
-            setDuplicates(false);
-            void check(f, false);
-          }}
+          // Новый файл: настройки по умолчанию, дубли снова пропускаются, пока их не включить
+          onChange={(f) => void check(f, DEFAULTS)}
         />
         {busy === "preview" ? (
           <p className="text-small text-muted" role="status">
@@ -221,24 +231,68 @@ export function ContentImportSection() {
                 <Lines items={shown.warnings} testId="content-import-warnings" />
               </div>
             ) : null}
+            {shown.staleTasks.length ? (
+              <div className="flex flex-col gap-2 text-small text-ink" data-testid="content-import-stale">
+                <p className="font-medium">
+                  Задачи без актуального срока ({shown.staleTasks.length}): срок в пакете уже прошёл, а задача открыта. {done ? "Встали" : "Встанут"} со сроком{" "}
+                  {formatLong(shown.staleDue)}, исходный срок из пакета сохранится.
+                </p>
+                <ul className="m-0 flex list-disc flex-col gap-1 pl-5" data-testid="content-import-stale-list">
+                  {shown.staleTasks.map((t) => (
+                    <li key={t.key}>
+                      «{t.title}», срок в пакете {formatLong(t.due)}
+                    </li>
+                  ))}
+                </ul>
+                {!done ? (
+                  <TextInput
+                    type="date"
+                    id="content-import-stale-due"
+                    label="Срок для задач без актуального срока"
+                    hint="Одна дата на все такие задачи, по умолчанию через две недели. Поправить срок по одной можно потом в карточке задачи"
+                    className="w-full max-w-[260px]"
+                    value={options.due ?? shown.staleDue}
+                    disabled={!!busy}
+                    onChange={(e) => {
+                      if (e.target.value) void check(file, { ...options, due: e.target.value }, true);
+                    }}
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {shown.duplicates.length ? (
               <div className="text-small text-ink">
-                <p className="font-medium">Похоже на то, что уже есть в ресурсе ({shown.duplicates.length}):</p>
-                <Lines items={shown.duplicates} testId="content-import-duplicates" />
+                <p className="font-medium">Похоже на то, что уже есть в ресурсе ({shown.duplicates.length}). Отмеченные загрузятся, остальные пропустятся:</p>
+                <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" data-testid="content-import-duplicates">
+                  {shown.duplicates.map((d) => (
+                    <li key={d.id}>
+                      <label className="flex min-h-9 items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-1 h-4 w-4 shrink-0"
+                          checked={d.on}
+                          disabled={!!busy || !!done || options.all}
+                          data-testid={`content-import-duplicate-${d.id}`}
+                          onChange={(e) => void check(file, { ...options, picked: e.target.checked ? [...options.picked, d.id] : options.picked.filter((id) => id !== d.id) }, true)}
+                        />
+                        <span>
+                          {d.what}: {d.text}
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
                 {!done ? (
                   <label className="mt-2 flex min-h-9 items-center gap-2 text-body text-ink">
                     <input
                       type="checkbox"
                       className="h-4 w-4"
-                      checked={duplicates}
+                      checked={options.all}
                       disabled={!!busy}
                       data-testid="content-import-with-duplicates"
-                      onChange={(e) => {
-                        setDuplicates(e.target.checked);
-                        void check(file, e.target.checked, true);
-                      }}
+                      onChange={(e) => void check(file, { ...options, all: e.target.checked }, true)}
                     />
-                    Загрузить и их
+                    Загрузить все дубли
                   </label>
                 ) : null}
               </div>
@@ -260,7 +314,7 @@ export function ContentImportSection() {
                   onClick={() => {
                     setFile(null);
                     setRound((r) => r + 1);
-                    setDuplicates(false);
+                    setOptions(DEFAULTS);
                     reset();
                   }}
                 >

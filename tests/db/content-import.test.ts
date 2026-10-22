@@ -11,11 +11,12 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import { parsePackage, type ContentPackage } from "@/lib/content-import/package";
 import { applyContentImport, previewContentImport } from "@/lib/content-import/service";
+import { overdueAt } from "@/lib/analytics/rules";
 import { updateGoal } from "@/lib/goals/service";
 import { reloadFromBord } from "@/lib/admin/reload";
 import { TOP_TEAM } from "@/lib/org/scope";
 import { dbDate, moscowToday } from "@/lib/tasks/dates";
-import { addDays, formatLong } from "@/domain/dates";
+import { addDays } from "@/domain/dates";
 
 // Шаг загрузки посреди транзакции: связь задачи с целью идёт после постановки задач. Тест подкладывает сюда проверку
 // (номера задач не заперты) или ошибку правила (откат всей загрузки)
@@ -319,6 +320,14 @@ describe("предпросмотр и загрузка", () => {
     await applyContentImport(await owner(), pkgOf(p3));
     expect((await taskByKey("task.test.done-1"))!).toMatchObject({ status: "DONE", resolution: "Готово, правили в ресурсе" });
     expect(await payloadOf("task", "task.test.done-1")).toMatchObject({ status: "done", resolution: firstResolution });
+
+    // Срок перенесли в ресурсе, пакет меняет срок: срок не трогается, и в ключе обе базы срока прежние
+    await tasks.transferDue(await owner(), open.number, "2026-12-20", "Перенесли на встрече");
+    const p4 = JSON.parse(JSON.stringify(p3)) as Raw;
+    p4.tasks[0]!.due = "2026-12-22";
+    await applyContentImport(await owner(), pkgOf(p4));
+    expect((await taskByKey("task.test.open-1"))!.due.toISOString().slice(0, 10)).toBe("2026-12-20");
+    expect(await payloadOf("task", "task.test.open-1")).toMatchObject({ due: "2026-12-15", dueRaw: "2026-12-15" });
   });
 
   it("цель с тем же номером в команде уже есть: ключ привязывается к ней, заполняются только пустые поля", async () => {
@@ -332,6 +341,22 @@ describe("предпросмотр и загрузка", () => {
     const g = await prisma.goal.findUniqueOrThrow({ where: { id: existing.id } });
     expect(g).toMatchObject({ title: "Цель из борда", metric: "Метрика из борда", target: "3", base: "0", link: "https://example.com/board/test" });
     expect((await imported("goal", "goal.test.dept-1"))!.entityId).toBe(existing.id);
+  });
+
+  it("две цели пакета с одним номером в той же команде и квартале: вторая в ошибках, загрузка не падает", async () => {
+    const p = raw();
+    p.goals.push({ key: "goal.test.dept-copy", quarter: "2026-Q4", team: "top", code: "ТД-1", title: "Вторая цель с тем же номером" });
+    // Тот же номер в другом квартале: не повтор
+    p.goals.push({ key: "goal.test.dept-q1", quarter: "2027-Q1", team: "Топ-команда", code: "ТД-1", title: "Цель с тем же номером в следующем квартале" });
+    const preview = await previewContentImport(await owner(), pkgOf(p));
+    expect(preview.goals).toEqual({ add: 3, update: 0, skip: 1 });
+    expect(preview.errors).toEqual([{ what: "Цель «Вторая цель с тем же номером»", text: "номер ТД-1 уже у другой цели пакета в той же команде и квартале: оставьте одну" }]);
+    const res = await applyContentImport(await owner(), pkgOf(p));
+    expect(res.applied.goals).toBe(3);
+    expect(await prisma.goal.count({ where: { code: "ТД-1", quarter: "2026-Q4" } })).toBe(1);
+    expect(await imported("goal", "goal.test.dept-copy")).toBeNull();
+    // Повтор того же пакета: цель с ключом и вторая цель с её номером, по-прежнему одна ошибка
+    expect((await previewContentImport(await owner(), pkgOf(p))).errors).toHaveLength(1);
   });
 
   it("связь с целью по номеру из ресурса и с задачей по номеру; чужая цель задачи не перезаписывается", async () => {
@@ -373,7 +398,9 @@ describe("номера задач во время загрузки", () => {
   it("настройка номеров не заперта на всю загрузку: задача, поставленная в это время, проходит сразу", async () => {
     let locked: boolean | null = null;
     let during: number | null = null;
+    let reservedEnd: unknown = null;
     hooks.beforeLink = async () => {
+      reservedEnd = await nextNumberSetting();
       try {
         await prisma.$queryRaw`SELECT "key" FROM "settings" WHERE "key" = 'tasks.nextNumber' FOR UPDATE NOWAIT`;
         locked = false;
@@ -384,6 +411,8 @@ describe("номера задач во время загрузки", () => {
     };
     const res = await applyContentImport(await owner(), pkgOf(raw()));
     expect(locked).toBe(false);
+    // Взято столько номеров, сколько новых задач по плану (4), а не задач в пакете (5)
+    expect(reservedEnd).toBe(res.applied.tasks[0]! + 4);
     expect(during).not.toBeNull();
     expect(res.applied.tasks).not.toContain(during);
     // Задача человека получила номер после взятых загрузкой
@@ -392,31 +421,53 @@ describe("номера задач во время загрузки", () => {
 });
 
 describe("сроки и даты из истории", () => {
-  it("открытая задача со сроком в прошлом встаёт со сроком на сегодня и видна в предпросмотре; дата источника не подменяется сегодняшней", async () => {
+  it("открытая задача со сроком в прошлом встаёт со сроком через две недели или выбранным, исходный срок из пакета остаётся; дата источника не подменяется сегодняшней", async () => {
     const past = addDays(today, -20);
+    const later = addDays(today, 14);
     const p = raw();
     p.tasks[3]!.due = past;
     p.tasks[2]!.source = { kind: "meeting" };
     const preview = await previewContentImport(await owner(), pkgOf(p));
     expect(preview.tasks.add).toBe(4);
-    expect(preview.warnings).toEqual([
-      { what: "Задача «Сверить выдуманные комиссии»", text: `срок ${formatLong(past)} уже прошёл, а задача открыта: встанет со сроком на сегодня, ${formatLong(today)}. Поправьте срок в пакете или в ресурсе` },
-    ]);
-    await applyContentImport(await owner(), pkgOf(p));
+    expect(preview.staleDue).toBe(later);
+    expect(preview.staleTasks).toEqual([{ key: "task.test.co-1", title: "Сверить выдуманные комиссии", due: past }]);
+    expect(preview.warnings).toEqual([]);
+    // Срок в прошлом для таких задач владелец выбрать не может
+    await expectRule(previewContentImport(await owner(), pkgOf(p), { staleDue: addDays(today, -1) }), /Срок для задач без актуального срока: дата не раньше сегодняшней/);
+    // Выбранная владельцем дата уходит в загрузку
+    const chosen = addDays(today, 30);
+    expect((await previewContentImport(await owner(), pkgOf(p), { staleDue: chosen })).staleDue).toBe(chosen);
+    await applyContentImport(await owner(), pkgOf(p), { staleDue: chosen });
     const co = (await taskByKey("task.test.co-1"))!;
-    expect(co.due.toISOString().slice(0, 10)).toBe(today);
-    expect(await payloadOf("task", "task.test.co-1")).toMatchObject({ due: today, dueRaw: past });
+    expect(co.due.toISOString().slice(0, 10)).toBe(chosen);
+    expect(co.originalDue?.toISOString().slice(0, 10)).toBe(past);
+    expect(co.transfers).toEqual([]);
+    expect(await payloadOf("task", "task.test.co-1")).toMatchObject({ due: chosen, dueRaw: past });
+    // Аналитика: на конец недели загрузки задача не просрочена
+    const endOfWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+    expect(overdueAt({ status: co.status, due: chosen, createdAt: co.createdAt, closedAt: co.closedAt, archivedAt: null, transfers: [] }, endOfWeek, addDays(today, 7))).toBe(false);
     // Встреча без даты: даты источника нет, в повестку как поручение прошлой встречи задача не попадёт
     expect((await taskByKey("task.test.all-1"))!).toMatchObject({ sourceCode: "meeting", sourceDate: null });
+    // Задача с актуальным сроком: исходный срок тот же, что срок
+    const open = (await taskByKey("task.test.open-1"))!;
+    expect(open.originalDue?.toISOString().slice(0, 10)).toBe("2026-12-15");
 
     // Повтор и правка другого поля: срок не трогается и о нём не пишется
     expect((await previewContentImport(await owner(), pkgOf(p))).tasks.update).toBe(0);
     p.tasks[3]!.title = "Сверить выдуманные комиссии по всем СК";
     const again = await previewContentImport(await owner(), pkgOf(p));
     expect(again.tasks.update).toBe(1);
+    expect(again.staleTasks).toEqual([]);
     expect(texts(again.notes)).not.toMatch(/срок/);
     await applyContentImport(await owner(), pkgOf(p));
-    expect((await taskByKey("task.test.co-1"))!.due.toISOString().slice(0, 10)).toBe(today);
+    expect((await taskByKey("task.test.co-1"))!.due.toISOString().slice(0, 10)).toBe(chosen);
+  });
+
+  it("без выбора срок для задач без актуального срока: сегодня плюс 14 дней", async () => {
+    const p = raw();
+    p.tasks[0]!.due = addDays(today, -3);
+    await applyContentImport(await owner(), pkgOf(p));
+    expect((await taskByKey("task.test.open-1"))!.due.toISOString().slice(0, 10)).toBe(addDays(today, 14));
   });
 
   it("служба задач: срок в прошлом только у задачи из истории, которую сразу закрывают", async () => {
@@ -455,30 +506,45 @@ describe("что не загружается", () => {
     expect(d1.tasks).toHaveLength(1);
   });
 
-  it("вероятные дубли того, что уже есть в ресурсе, по умолчанию пропускаются, их можно включить", async () => {
+  it("вероятные дубли того, что уже есть в ресурсе, по умолчанию пропускаются, их можно включить по одному или все", async () => {
     const me = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
-    const twin = (await tasks.createTask(await owner(), { title: "Собрать тестовую сводку по выдуманным партнёрам", outcome: "Уже есть в ресурсе", owner: "golovkin", direction: "osago", due: addDays(today, 30), source: "weekly" })).task;
+    const twin = (await tasks.createTask(await owner(), { title: "Собрать тестовую сводку по выдуманным партнёрам", outcome: "Уже есть в ресурсе", owner: "golovkin", direction: "osago", due: "2026-12-10", source: "weekly" })).task;
+    // Не дубли: в названии другое число; срок дальше трёх недель
+    await tasks.createTask(await owner(), { title: "Сверить выдуманные комиссии за 2025", outcome: "Прошлый год", owner: "fatyanov", direction: "kasko", due: "2026-11-30", source: "weekly" });
+    await tasks.createTask(await owner(), { title: "Подготовить выдуманный разбор тарифов", outcome: "Другая волна", owner: "loginova", direction: "red", due: "2026-12-30", source: "weekly" });
     await prisma.decision.create({ data: { teamId: TOP_TEAM, text: "Тестовые сводки ведём в одном файле.", date: dbDate("2026-10-13"), createdById: me.id } });
+    // Не дубль: другое число в тексте решения за ту же дату
+    await prisma.decision.create({ data: { teamId: TOP_TEAM, text: "Выдуманный партнёр получает скидку 10%", date: dbDate("2026-09-22"), createdById: me.id } });
     const preview = await previewContentImport(await owner(), pkgOf(raw()));
     expect(preview.tasks).toEqual({ add: 3, update: 0, skip: 2 });
     expect(preview.decisions).toEqual({ add: 1, update: 0, skip: 1 });
     expect(preview.links).toEqual({ add: 1, update: 0, skip: 1 });
-    expect(texts(preview.duplicates)).toBe(
-      [
-        `Задача «Собрать тестовую сводку по выдуманным партнёрам»: похожа на задачу ${twin.number} «Собрать тестовую сводку по выдуманным партнёрам»: тот же ответственный и похожее название, пропустится`,
-        "Решение «Тестовые сводки ведём в одном файле»: похоже на решение команды за 13 октября «Тестовые сводки ведём в одном файле.», пропустится",
-      ].join("\n"),
-    );
-    await applyContentImport(await owner(), pkgOf(raw()));
-    expect(await imported("task", "task.test.open-1")).toBeNull();
+    expect(preview.duplicates).toEqual([
+      {
+        id: "task/task.test.open-1",
+        what: "Задача «Собрать тестовую сводку по выдуманным партнёрам»",
+        text: `похожа на задачу ${twin.number} «Собрать тестовую сводку по выдуманным партнёрам»: тот же ответственный, похожее название и близкий срок, пропустится`,
+        on: false,
+      },
+      { id: "decision/decision.test.1", what: "Решение «Тестовые сводки ведём в одном файле»", text: "похоже на решение команды за 13 октября «Тестовые сводки ведём в одном файле.», пропустится", on: false },
+    ]);
+
+    // Владелец выбрал только задачу: она загружается, решение-дубль пропускается
+    const picked = await previewContentImport(await owner(), pkgOf(raw()), { duplicateKeys: ["task/task.test.open-1"] });
+    expect(picked).toMatchObject({ tasks: { add: 4 }, decisions: { add: 1, skip: 1 }, withDuplicates: false });
+    expect(picked.duplicates.map((d) => [d.id, d.on])).toEqual([
+      ["task/task.test.open-1", true],
+      ["decision/decision.test.1", false],
+    ]);
+    await applyContentImport(await owner(), pkgOf(raw()), { duplicateKeys: ["task/task.test.open-1"] });
+    expect(await imported("task", "task.test.open-1")).not.toBeNull();
     expect(await prisma.decision.count({ where: { text: { startsWith: "Тестовые сводки" } } })).toBe(1);
 
-    // Владелец включил дубли: загружаются
-    const withDuplicates = await previewContentImport(await owner(), pkgOf(raw()), { duplicates: true });
-    expect(withDuplicates).toMatchObject({ withDuplicates: true, tasks: { add: 1 }, decisions: { add: 1 }, links: { add: 1 } });
-    expect(texts(withDuplicates.duplicates)).toMatch(/загрузится, как вы выбрали/);
+    // Потом «Загрузить все дубли»: оставшееся решение загружается
+    const all = await previewContentImport(await owner(), pkgOf(raw()), { duplicates: true });
+    expect(all).toMatchObject({ withDuplicates: true, decisions: { add: 1 } });
+    expect(all.duplicates).toEqual([expect.objectContaining({ id: "decision/decision.test.1", on: true, text: expect.stringMatching(/загрузится, как вы выбрали$/) })]);
     await applyContentImport(await owner(), pkgOf(raw()), { duplicates: true });
-    expect(await imported("task", "task.test.open-1")).not.toBeNull();
     expect(await prisma.decision.count({ where: { text: { startsWith: "Тестовые сводки" } } })).toBe(2);
   });
 

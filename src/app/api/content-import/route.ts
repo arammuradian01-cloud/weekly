@@ -4,6 +4,7 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { currentActor } from "@/lib/action-runner";
 import { readSession } from "@/lib/auth";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { isIsoDate } from "@/lib/tasks/dates";
 import { PACKAGE_MAX_BYTES, PACKAGE_MAX_LABEL, PackageError, parsePackage } from "@/lib/content-import/package";
 import { IMPORT_ONLY, applyContentImport, canImportContent, previewContentImport } from "@/lib/content-import/service";
 
@@ -17,8 +18,9 @@ const answer = (status: number, error: string, problems?: string[]) => NextRespo
 
 /**
  * Импорт наполнения (этап 67). Тело: файл пакета JSON целиком. ?mode=preview только считает, что добавится,
- * обновится и пропустится; ?mode=apply загружает одной транзакцией. &duplicates=1: загружать и вероятные дубли.
- * Владелец при личном входе в режиме управления.
+ * обновится и пропустится; ?mode=apply загружает одной транзакцией. &duplicates=1: загружать все вероятные дубли,
+ * &dup=task/ключ,decision/ключ: только выбранные. &due=ГГГГ-ММ-ДД: срок для открытых задач, у которых срок в пакете уже
+ * прошёл (по умолчанию через две недели). Владелец при личном входе в режиме управления.
  *
  * Путь идёт мимо proxy (src/proxy.ts), как загрузка пакета рынка: иначе Next прочитал бы всё тело в память до вызова
  * обработчика. Поэтому до чтения тела обработчик сам проверяет адрес страницы (Origin), вход (подпись cookie, затем
@@ -42,7 +44,13 @@ export async function POST(request: Request) {
     if (!body) return answer(413, TOO_BIG);
     const { pkg, problems } = parsePackage(body.text, body.bytes);
     if (problems.length) return answer(400, `В пакете ошибки: ${problems.length}. Исправьте их в файле, база не тронута`, problems.slice(0, 100));
-    const opts = { duplicates: params.get("duplicates") === "1" };
+    const due = params.get("due");
+    if (due && !isIsoDate(due)) return answer(400, "Срок для задач без актуального срока: дата в виде ГГГГ-ММ-ДД");
+    const duplicateKeys = (params.get("dup") ?? "")
+      .split(",")
+      .filter((id) => /^(task|decision)\/[A-Za-z0-9._:-]{3,120}$/.test(id))
+      .slice(0, 2000);
+    const opts = { duplicates: params.get("duplicates") === "1", duplicateKeys, ...(due ? { staleDue: due } : {}) };
     const value = mode === "preview" ? await previewContentImport(actor, pkg, opts) : await applyContentImport(actor, pkg, opts);
     return NextResponse.json({ ok: true, value }, { headers: NO_STORE });
   } catch (error) {
