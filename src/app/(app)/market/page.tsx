@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { ChartLine, Lock } from "lucide-react";
 import { requireContext } from "@/lib/auth";
-import { canSeeMarket, canUploadMarket, MARKET_CLOSED_TEXT, MARKET_TEAM_LOGIN_TEXT } from "@/lib/market/access";
+import { canSeeMarket, canUploadMarket, MARKET_CLOSED_TEXT } from "@/lib/market/access";
 import { marketMeta } from "@/lib/market/service";
 import { stateFromSearch } from "@/lib/market/params";
 import { formatDateTime } from "@/lib/week";
@@ -13,17 +13,19 @@ import { MarketUpload } from "@/components/market/market-upload";
 export const metadata: Metadata = { title: "Рынок" };
 
 /**
- * Рынок КАСКО и ОСАГО (этап 62): дашборд из пакета рынка, который загружает владелец. Раздел открыт владельцам и
- * людям из списка в «Настройках», только при личном входе. Остальным страница пишет, что раздел закрыт, без цифр.
+ * Рынок КАСКО и ОСАГО (этап 62): дашборд из пакета рынка, который загружает владелец при личном входе. Раздел всегда
+ * открыт владельцам, всем в режиме управления и всем, кто вошёл по общему логину (этап 72), а при личном входе без
+ * режима управления людям из списка в «Настройках».
+ * Остальным страница пишет, что раздел закрыт, без цифр.
  * Вкладки КАСКО и ОСАГО внутри самого дашборда, вкладка и фильтры в адресе
  */
 export default async function MarketPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const ctx = await requireContext();
-  if (!(await canSeeMarket({ personId: ctx.person.id, via: ctx.via }))) {
+  if (!(await canSeeMarket({ personId: ctx.person.id, via: ctx.via, management: ctx.management?.role ?? null }))) {
     return (
       <>
         <PageHeader title="Рынок" />
-        <EmptyState icon={Lock} title="Раздел закрыт" centered className="mx-auto max-w-xl" stage={ctx.via === "TEAM" ? MARKET_TEAM_LOGIN_TEXT : undefined}>
+        <EmptyState icon={Lock} title="Раздел закрыт" centered className="mx-auto max-w-xl">
           <span data-testid="market-closed">{MARKET_CLOSED_TEXT}</span>
         </EmptyState>
       </>
