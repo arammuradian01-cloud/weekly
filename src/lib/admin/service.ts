@@ -4,7 +4,7 @@
 
 import { fillMissingLogins, lockPeopleNames, loginProblem, reservedLogins, takenNames } from "@/lib/login/logins";
 import { refreshApprovals } from "@/lib/tasks/approval";
-import { guardPrimary, ownerTitles, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
+import { ownerTitles, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
 import { checkOwnerTitle, OWNER_TITLES_KEY, titleOf } from "@/lib/owner-title";
 import { personalLogin } from "@/lib/one-on-one/rules";
 import { TOP_TEAM } from "@/domain/teams";
@@ -261,18 +261,18 @@ export { PRIMARY_OWNER_KEY, primaryOwnerSlug };
 
 /**
  * Сделать владельца главным: он вершина ресурса, остальные владельцы становятся совладельцами с теми же правами.
- * Передаёт главенство только сам главный владелец
+ * Назначает любой владелец в режиме управления
  */
 export async function setPrimaryOwner(actor: Actor, slug: string) {
   requirePeople(actor);
   if (actor.management !== "OWNER") fail("Главного владельца назначает владелец в режиме управления");
   return prisma.$transaction(async (tx) => {
+    await lockOwners(tx);
     const p = await tx.person.findUnique({ where: { slug } });
     if (!p || !p.active) return fail("Такого человека нет или он выключен");
     if (p.role !== "OWNER") fail("Главным можно сделать только владельца: сначала поменяйте роль");
     const before = await primaryOwnerSlug(tx);
     if (before === slug) return { slug };
-    if (before && before !== actor.slug) fail("Главного владельца назначает только сам главный владелец");
     await tx.setting.upsert({ where: { key: PRIMARY_OWNER_KEY }, update: { value: slug }, create: { key: PRIMARY_OWNER_KEY, value: slug } });
     const prev = before ? await tx.person.findUnique({ where: { slug: before }, select: { fullName: true } }) : null;
     await audit(tx, actor, "settings.person.update", "person", slug, "Главный владелец", prev?.fullName ?? null, p.fullName);
@@ -282,7 +282,6 @@ export async function setPrimaryOwner(actor: Actor, slug: string) {
 
 export const OWNER_TITLE_RULES = {
   personal: "Подпись роли задаётся при личном входе: по общему логину можно выбрать чужой профиль",
-  primaryOnly: "Подпись роли владельцев задаёт только главный владелец",
   ownerOnly: "Подпись роли бывает только у владельца",
   inactive: "Выключенному владельцу подпись роли можно только снять: оставьте поле пустым",
 } as const;
@@ -299,10 +298,8 @@ async function lockOwnerTitles(tx: Tx): Promise<void> {
 const titleForLog = (title: string | null, primary: boolean) => title ?? `${personRoleLabel("OWNER", primary)}, по умолчанию`;
 
 /**
- * Подпись роли владельца (этап 69): например «ex-Владелец» главному и «Владелец» совладельцу. Задаёт только главный
- * владелец при личном входе в режиме управления, себе и совладельцам. Пустая подпись возвращает правило по
- * умолчанию; у выключенного владельца подпись можно только снять. Подпись только текст: права решают роль и главный
- * владелец. Журнал пишет, что было и что стало
+ * Подпись роли владельца задаёт любой владелец при личном входе в режиме управления. Пустая подпись возвращает
+ * правило по умолчанию; у выключенного владельца подпись можно только снять. Подпись не меняет права.
  */
 export async function setOwnerTitle(actor: Actor, slug: string, input: string | null) {
   requirePeople(actor);
@@ -314,7 +311,6 @@ export async function setOwnerTitle(actor: Actor, slug: string, input: string | 
     // Замок до чтения людей и подписей: снятие роли владельца ждёт эту правку или она ждёт его
     await lockOwnerTitles(tx);
     const primary = await primaryOwnerSlug(tx);
-    if (primary !== actor.slug) fail(OWNER_TITLE_RULES.primaryOnly);
     const p = await tx.person.findUnique({ where: { slug } });
     if (!p || p.role !== "OWNER") return fail(OWNER_TITLE_RULES.ownerOnly);
     if (!p.active && title !== null) fail(OWNER_TITLE_RULES.inactive);
@@ -329,6 +325,11 @@ export async function setOwnerTitle(actor: Actor, slug: string, input: string | 
     await audit(tx, actor, "settings.person.update", "person", slug, "Подпись роли", titleForLog(before, isPrimary), titleForLog(title, isPrimary));
     return { slug, title, label, changed: true };
   });
+}
+
+/** [Codex] Смена ролей и активности сериализуется: два владельца не могут одновременно убрать друг друга. */
+async function lockOwners(tx: Tx): Promise<void> {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${PRIMARY_OWNER_KEY}))::text`;
 }
 
 /** Без владельца в ресурсе некому менять людей и роли: последнего владельца выключить или понизить нельзя */
@@ -367,6 +368,7 @@ export async function createPerson(actor: Actor, input: PersonInput) {
 export async function updatePerson(actor: Actor, slug: string, input: Partial<PersonInput>) {
   requirePeople(actor);
   return prisma.$transaction(async (tx) => {
+    if (input.role !== undefined) await lockOwners(tx);
     const p = await tx.person.findUnique({ where: { slug }, include: { defaultDirection: true } });
     if (!p) return fail("Такого человека уже нет");
     const primary = await primaryOwnerSlug(tx);
@@ -397,10 +399,9 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
       const role = checkRole(input.role);
       if (role !== p.role) {
         if (p.role === "OWNER") await keepOwner(tx, slug);
-        await guardPrimary(tx, actor.slug, slug, "меняет ему роль");
         data.role = role;
         changes.push(["Роль", ROLE_LABELS[p.role], ROLE_LABELS[role]]);
-        // Главный владелец сам перестал быть владельцем: настройка снимается с записью в журнал, а не остаётся висеть
+        // Главный перестал быть владельцем: настройка снимается с записью в журнал
         if (p.role === "OWNER" && primary === slug) {
           await tx.setting.deleteMany({ where: { key: PRIMARY_OWNER_KEY } });
           changes.push(["Главный владелец", p.fullName, "первый владелец списка"]);
@@ -425,7 +426,6 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
       // Логин сверяется, только если его поменяли: форма присылает его всегда
       const v = input.login.trim().toLowerCase();
       if (v !== (p.login ?? p.slug)) {
-        await guardPrimary(tx, actor.slug, slug, "меняет ему логин");
         data.login = await checkLogin(tx, v, p.id);
         changes.push(["Логин", p.login ?? p.slug, v]);
       }
@@ -433,7 +433,6 @@ export async function updatePerson(actor: Actor, slug: string, input: Partial<Pe
     if (input.email !== undefined) {
       const v = await checkEmail(tx, input.email, slug);
       if (v !== p.email) {
-        await guardPrimary(tx, actor.slug, slug, "меняет ему почту");
         data.email = v;
         // Почту задал владелец: неподтверждённый адрес человека и ссылка на него больше не действуют, иначе старое
         // письмо тихо вернуло бы прежний адрес
@@ -459,11 +458,11 @@ export async function setPersonActive(actor: Actor, slug: string, active: boolea
   requirePeople(actor);
   if (!active && slug === actor.slug) fail("Себя выключить нельзя");
   return prisma.$transaction(async (tx) => {
+    await lockOwners(tx);
     const p = await tx.person.findUnique({ where: { slug } });
     if (!p) return fail("Такого человека уже нет");
     if (p.active === active) return { slug, active };
     if (!active && p.role === "OWNER") await keepOwner(tx, slug);
-    if (!active) await guardPrimary(tx, actor.slug, slug, "выключает его");
     await tx.person.update({ where: { slug }, data: { active } });
     // Выключенный человек сразу теряет личные входы и неиспользованные ссылки
     if (!active) await revokeOnDeactivate(tx, p.id);

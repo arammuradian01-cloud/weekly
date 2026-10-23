@@ -8,7 +8,7 @@ import { getEpochs, getSetting } from "@/lib/settings";
 import { PASSWORD_SETTING_KEYS, verifyPassword } from "@/lib/passwords";
 import { LOCK_MS } from "@/lib/rate-limit";
 import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "@/lib/login/attempts";
-import { managementPasswordKind } from "@/lib/roles";
+import { checkManagementPassword, managementPasswordCurrent } from "@/lib/login/management-password";
 import { MANAGEMENT_TTL_MS } from "@/lib/session";
 import { formatTime } from "@/lib/week";
 import {
@@ -149,31 +149,30 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   }
 
   const now = new Date();
-  const kind = managementPasswordKind(ctx.managementRole);
-  const hash = await getSetting<string | null>(PASSWORD_SETTING_KEYS[kind], null);
-  if (!hash) {
-    return { error: `Пароль режима управления ещё не задан. Владелец задаёт его командой npm run password -- ${kind}` };
+  let credential: string;
+  try {
+    credential = await checkManagementPassword(actorOf(ctx, ip), ctx.deviceId, String(formData.get("password") ?? ""), now);
+  } catch (error) {
+    const message = ruleError(error);
+    if (!message) throw error;
+    await writeAudit({ action: message.startsWith("Слишком много") ? "management.blocked" : "management.fail", ...actor });
+    return { error: message };
   }
-
-  const reserved = await reserveOrBusy(ip, "MANAGEMENT", now);
-  if (!reserved) return { error: BUSY_ERROR };
-  if (!reserved.ok) {
-    await writeAudit({ action: "management.blocked", ...actor });
-    return { error: `Слишком много неверных попыток. Попробовать снова можно в ${formatTime(reserved.until)}` };
+  // Сверка пароля могла занять время: не выдаём управление после смены роли, режима или завершения устройства.
+  const fresh = await managementContext();
+  if (!fresh.ctx) return { error: fresh.error };
+  const nextCtx = fresh.ctx;
+  const proposed = { role: ctx.managementRole, until: now.getTime() + MANAGEMENT_TTL_MS, epoch: 0, credential };
+  if (nextCtx.person.id !== ctx.person.id || nextCtx.deviceId !== ctx.deviceId || nextCtx.managementRole !== ctx.managementRole ||
+      !(await managementPasswordCurrent(proposed, nextCtx.person, !!nextCtx.deviceId && nextCtx.via !== "TEAM"))) {
+    return { error: "Условия входа изменились. Обновите страницу и включите управление заново" };
   }
-
-  const ok = await verifyPassword(String(formData.get("password") ?? ""), hash);
-  if (!ok) {
-    await writeAudit({ action: "management.fail", ...actor });
-    return { error: failureMessage(reserved.remaining, now, "Неверный пароль") };
-  }
-  await markAttemptOk(prisma, reserved.attemptId);
 
   if (ctx.viewAsEnded) await closeViewAs("stop");
   const { managementEpoch } = await getEpochs();
   await writeSession({
     ...ctx.session,
-    management: { role: ctx.managementRole, until: now.getTime() + MANAGEMENT_TTL_MS, epoch: managementEpoch },
+    management: { ...proposed, epoch: managementEpoch },
   });
   await writeAudit({ action: "management.enter", ...actor, after: { role: ctx.managementRole } });
   redirect(safeNext(formData.get("next")));
@@ -331,6 +330,11 @@ export async function confirmStepUpAction(_prev: FormState, formData: FormData):
       return { error: "Не получилось подтвердить. Попробуйте ещё раз" };
     }
     return { error: message };
+  }
+  const fresh = await managementContext();
+  if (!fresh.ctx) return { error: fresh.error };
+  if (fresh.ctx.person.id !== ctx.person.id || fresh.ctx.deviceId !== ctx.deviceId || fresh.ctx.managementRole !== "ADMIN") {
+    return { error: "Условия входа изменились. Обновите страницу" };
   }
   const now = Date.now();
   if (ctx.viewAsEnded) await closeViewAs("stop");

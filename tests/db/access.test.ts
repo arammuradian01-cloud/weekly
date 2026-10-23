@@ -173,18 +173,14 @@ describe("главный владелец и совладельцы", () => {
     // Совладелец сохраняет права владельца: управляет людьми
     await admin.updatePerson(await owner(), "reva", { zone: "Продукт" });
     await expectRule(admin.setPrimaryOwner({ ...(await tasks.actorFor("golovkin", "ADMIN")), via: "INVITE" as const }, "muradyan"), /владелец/);
-    // Совладелец не меняет главного: не понижает, не выключает, не сбрасывает пароль, не выдаёт ссылку, не назначает себя
-    await expectRule(admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" }), /Главного владельца меняет только он сам/);
-    await expectRule(admin.setPersonActive(await owner(), "golovkin", false), /только он сам/);
-    await expectRule(pw.resetPassword(await owner(), "golovkin"), /только он сам/);
-    await expectRule(login.issueInvite(await owner(), "golovkin"), /только он сам/);
-    await expectRule(login.revokeAllDevices(await owner(), "golovkin"), /только он сам/);
-    await expectRule(admin.setPrimaryOwner(await owner(), "muradyan"), /только сам главный владелец/);
-    // Зону главного совладелец править может: это не доступ
+    // [Codex] Совладелец управляет главным на равных, включая доступ и назначение главного.
+    await admin.setPersonActive(await owner(), "golovkin", false);
+    await admin.setPersonActive(await owner(), "golovkin", true);
+    await admin.setPrimaryOwner(await owner(), "muradyan");
+    await admin.setPrimaryOwner(await owner(), "golovkin");
     await admin.updatePerson(await owner(), "golovkin", { zone: "Департамент" });
-    // Главный сам перестал быть владельцем: настройка снимается с записью в журнал, главным считается первый владелец
-    const golovkin = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "INVITE" as const };
-    await admin.updatePerson(golovkin, "golovkin", { role: "ADMIN" });
+    // После снятия роли настройка главного снимается с записью в журнал.
+    await admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" });
     expect(await prisma.setting.findUnique({ where: { key: admin.PRIMARY_OWNER_KEY } })).toBeNull();
     expect(await admin.primaryOwnerSlug()).toBe("muradyan");
     // Снова владелец: молча главным он не возвращается
@@ -192,6 +188,46 @@ describe("главный владелец и совладельцы", () => {
     expect(await admin.primaryOwnerSlug()).toBe("muradyan");
     await admin.updatePerson(await owner(), "golovkin", { role: "ADMIN" });
     expect(await prisma.auditLog.count({ where: { field: "Главный владелец" } })).toBeGreaterThan(1);
+  });
+  it("совладелец восстанавливает доступ главному без почты, старые пароль и устройства перестают работать", async () => {
+    await admin.updatePerson(await owner(), "golovkin", { role: "OWNER" });
+    const co = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "PASSWORD" as const };
+    const first = await login.issueInvite(co, "muradyan", t0);
+    const { session, person } = await pw.setPasswordByLink(first.token, GOOD, GOOD, device, t0);
+    const unused = await login.issueInvite(co, "muradyan", later(1000));
+    await pw.resetPassword(co, "muradyan", later(2000));
+    expect((await prisma.person.findUniqueOrThrow({ where: { id: person.id } })).passwordHash).toBeNull();
+    expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: session.id } })).revokedAt).not.toBeNull();
+    await expect(pw.setPasswordByLink(unused.token, GOOD, GOOD, device, later(3000))).rejects.toBeInstanceOf(tasks.TaskRuleError);
+    const replacement = await login.issueInvite(co, "muradyan", later(4000));
+    const next = await pw.setPasswordByLink(replacement.token, GOOD, GOOD, device, later(5000));
+    expect(next.person.slug).toBe("muradyan");
+    await login.revokeAllDevices(co, "muradyan", later(6000));
+    expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: next.session.id } })).revokedAt).not.toBeNull();
+    expect(await prisma.auditLog.count({ where: { action: "auth.password.reset", entityId: "muradyan", actorId: co.personId } })).toBeGreaterThan(0);
+    await expectRule(pw.resetPassword(co, "golovkin"), /Свой пароль/);
+    await expectRule(pw.resetPassword({ ...co, management: null }, "muradyan"), /только владелец/);
+    await expectRule(login.issueInvite({ ...co, management: "ADMIN" }, "muradyan"), /только владелец/);
+  });
+
+  it("одновременное выключение и понижение владельцев оставляет хотя бы одного включённого владельца", async () => {
+    await admin.updatePerson(await owner(), "golovkin", { role: "OWNER" });
+    const a = await owner();
+    const b = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "INVITE" as const };
+    try {
+      const outcomes = await Promise.allSettled([
+        admin.setPersonActive(a, "golovkin", false),
+        admin.updatePerson(b, "muradyan", { role: "LEADER" }),
+      ]);
+      expect(outcomes.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const rejected = outcomes.find((r) => r.status === "rejected") as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(tasks.TaskRuleError);
+      expect(rejected.reason.message).toMatch(/хотя бы один включённый владелец/);
+      expect(await prisma.person.count({ where: { role: "OWNER", active: true } })).toBe(1);
+    } finally {
+      await prisma.person.update({ where: { slug: "muradyan" }, data: { role: "OWNER", active: true } });
+      await prisma.person.update({ where: { slug: "golovkin" }, data: { role: "ADMIN", active: true } });
+    }
   });
 });
 
@@ -310,13 +346,13 @@ describe("после проверки кода этапа 52", () => {
     }
   });
 
-  it("загрузка структуры не меняет почту главного владельца, если грузит совладелец", async () => {
+  it("совладелец меняет почту главного владельца через загрузку структуры", async () => {
     await admin.updatePerson(await owner(), "golovkin", { role: "OWNER" });
     await admin.setPrimaryOwner(await owner(), "golovkin");
     await prisma.person.update({ where: { slug: "golovkin" }, data: { email: "golovkin@sravni.ru" } });
     try {
-      await org.applyStructure(await owner(), [["ФИО", "Должность", "Почта"], ["Головкин Владислав", "Директор", "evil@sravni.ru"]].map((r) => r.join(";")).join("\n"));
-      expect((await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } })).email).toBe("golovkin@sravni.ru");
+      await org.applyStructure(await owner(), [["ФИО", "Должность", "Почта"], ["Головкин Владислав", "Директор", "new.golovkin@sravni.ru"]].map((r) => r.join(";")).join("\n"));
+      expect((await prisma.person.findUniqueOrThrow({ where: { slug: "golovkin" } })).email).toBe("new.golovkin@sravni.ru");
     } finally {
       const golovkin = { ...(await tasks.actorFor("golovkin", "OWNER")), via: "INVITE" as const };
       await admin.updatePerson(golovkin, "golovkin", { role: "ADMIN" });

@@ -34,6 +34,12 @@ describe("режим управления", () => {
   const now = Date.now();
   const grant = { role: "OWNER" as const, until: now + MANAGEMENT_TTL_MS, epoch: 2 };
 
+  it("версия персонального пароля сохраняется после подписи cookie", async () => {
+    const management = { ...grant, credential: "personal/policy-revision/2026-10-23T09:00:00.000Z" };
+    const token = await signSession({ epoch: 1, personId: "owner", management }, secret, now);
+    expect((await verifySession(token, secret, now))?.management).toEqual(management);
+  });
+
   it("действует 12 часов", () => {
     expect(activeManagement({ epoch: 1, management: grant }, 2, now)).toEqual(grant);
     expect(activeManagement({ epoch: 1, management: grant }, 2, now + MANAGEMENT_TTL_MS + 1)).toBeNull();
