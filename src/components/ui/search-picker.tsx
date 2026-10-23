@@ -39,6 +39,8 @@ export function SearchPicker({
   emptyText = "Никого не нашли: проверьте написание",
   className,
   autoFocus,
+  inline = false,
+  clearable = true,
 }: {
   id: string;
   label: string;
@@ -53,6 +55,16 @@ export function SearchPicker({
   className?: string;
   /** Поле получает фокус сразу и показывает список: открыли выбор кнопкой «Выбрать цель» */
   autoFocus?: boolean;
+  /**
+   * Список вариантов в потоке под полем, а не поверх (этап 70): в окне с прокруткой (Modal) всплывающий список
+   * обрезается краем окна, а в потоке окно растёт и прокручивается вместе с ним
+   */
+  inline?: boolean;
+  /**
+   * Можно ли оставить поле пустым (этап 70). Нельзя: печать не снимает выбранное, уход из поля без выбора оставляет
+   * прежнее, Escape не очищает. Так «Команда выше»: её меняют, но не убирают
+   */
+  clearable?: boolean;
 }) {
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
@@ -78,12 +90,30 @@ export function SearchPicker({
     listRef.current?.querySelector(`[id="${listId}-${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active, open, listId]);
 
+  // Список в потоке (окно с прокруткой): открылся, и окно прокручивается, чтобы был виден низ списка, но поле ввода
+  // не уходило за верхний край. Прокручиваем только само окно, страницу под ним не трогаем
+  useEffect(() => {
+    if (!open || !inline) return;
+    const list = listRef.current;
+    const input = listInput.current;
+    const box = input?.closest<HTMLElement>('[role="dialog"]');
+    if (!list || !input || !box) return;
+    const edge = box.getBoundingClientRect();
+    const below = list.getBoundingClientRect().bottom - edge.bottom + 8;
+    if (below > 0) box.scrollTop += Math.min(below, input.getBoundingClientRect().top - edge.top - 8);
+  }, [open, inline]);
   const pick = (o: PickerOption) => {
     onChange(o.value);
     setQuery("");
     setTyped(false);
     setOpen(false);
   };
+
+  const hintBlock = hint ? (
+    <p id={`${id}-hint`} className="sv-field__hint">
+      {hint}
+    </p>
+  ) : null;
 
   return (
     <div className={cn("sv-field relative", className)}>
@@ -121,7 +151,13 @@ export function SearchPicker({
           setActive(0);
         }}
         // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
-        onMouseDown={() => {
+        onMouseDown={(e) => {
+          // В потоке окна закрытие списка предыдущего поля меняет его высоту. Передаём фокус до стандартной
+          // обработки щелчка: иначе поле уезжает из-под указателя, и Radix возвращает фокус самому окну.
+          if (inline && document.activeElement !== e.currentTarget) {
+            e.preventDefault();
+            e.currentTarget.focus({ preventScroll: true });
+          }
           if (!open && document.activeElement === listInput.current) {
             setTyped(false);
             setOpen(true);
@@ -131,15 +167,16 @@ export function SearchPicker({
         onBlur={() => {
           setOpen(false);
           setTyped(false);
-          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор
-          if (!value) setQuery("");
+          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор. Поле снова
+          // показывает выбранный вариант, если он есть, иначе пусто
+          setQuery("");
         }}
         onChange={(e) => {
           setQuery(e.target.value);
           setTyped(true);
           setOpen(true);
           setActive(0);
-          if (value) onChange("");
+          if (value && clearable) onChange("");
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {
@@ -153,23 +190,19 @@ export function SearchPicker({
             e.preventDefault();
             pick(shown[active]!);
           } else if (e.key === "Escape") {
-            // Первый Escape закрывает список, второй очищает поле
+            // Первый Escape закрывает список, второй очищает поле (если его можно оставить пустым)
             if (open) setOpen(false);
             else {
               setQuery("");
               setTyped(false);
-              if (value) onChange("");
+              if (value && clearable) onChange("");
             }
           }
         }}
       />
-      {hint ? (
-        <p id={`${id}-hint`} className="sv-field__hint">
-          {hint}
-        </p>
-      ) : null}
+      {inline ? null : hintBlock}
       {open ? (
-        <div ref={listRef} className="sv-menu m-0">
+        <div ref={listRef} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
           <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
             {shown.map((o, i) => (
               <li
@@ -197,6 +230,7 @@ export function SearchPicker({
           {more > 0 ? <p className="sv-menu__group m-0">Ещё {more}: уточните запрос</p> : null}
         </div>
       ) : null}
+      {inline ? hintBlock : null}
       {/* Сколько нашлось: экранный диктор читает это при вводе */}
       <span className="sr-only" aria-live="polite">
         {open ? (matched.length ? `Найдено: ${matched.length}` : emptyText) : ""}
