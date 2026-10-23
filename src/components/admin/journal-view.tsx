@@ -33,7 +33,7 @@ const SOURCES: { value: JournalEvent["source"] | ""; label: string }[] = [
 ];
 
 /** Как вошёл автор: при общем логине имя выбрано из списка, а не подтверждено */
-const VIA_WORD: Record<NonNullable<JournalEvent["via"]>, string> = { personal: "личный вход", team: "общий логин" };
+const VIA_WORD: Record<NonNullable<JournalEvent["via"]>, string> = { personal: "личный вход", team: "общий логин", owner: "вход владельца" };
 
 const SOURCE_WORD = { app: "ресурс", sheet: "таблица", system: "система" } as const;
 
@@ -152,7 +152,14 @@ export function JournalView({ page, people, query, today }: { page: JournalPage;
                   </td>
                   <td data-label="Кто" className="text-ink">
                     {e.by === "system" ? "Система" : nameOf(e.by)}
-                    {e.via ? <span className="block text-tiny text-muted">{VIA_WORD[e.via]}</span> : null}
+                    {/* Этап 71: правка во время входа владельца в профиль автора, кто из владельцев вошёл */}
+                    {e.via === "owner" && e.asOwner ? (
+                      <span className="block text-tiny text-muted" data-testid="journal-owner-as">
+                        вошёл владелец {e.asOwner}
+                      </span>
+                    ) : e.via ? (
+                      <span className="block text-tiny text-muted">{VIA_WORD[e.via]}</span>
+                    ) : null}
                   </td>
                   <td className="is-wide font-medium text-ink">
                     <ObjectLabel e={e} />

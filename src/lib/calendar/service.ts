@@ -16,6 +16,8 @@ import { weekSettings } from "@/lib/weekly/service";
 import { deadlineOf, meetingOf, reportingKey, shiftWeek } from "@/lib/weekly/weeks";
 import { buildIcs } from "./ics";
 import { feedEvents, ONE_ON_ONE_DAYS_BACK, TASKS_MAX, WEEKS_AHEAD, WEEKS_BACK, type FeedWeek } from "./rules";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -33,12 +35,14 @@ export function feedUrl(base: string, token: string): string {
 }
 
 function requirePersonal(actor: Actor) {
+  // Этап 71: ссылку на календарь сроков во время входа владельца в профиль человека не выпускают и не отключают
+  refuseOwnerAs(actor);
   if (!personalLogin(actor.via)) fail("Календарь сроков настраивается при личном входе: по общему логину можно выбрать чужой профиль");
   if (actor.role === "OBSERVER") fail("У наблюдателя нет своих сроков и встреч");
 }
 
 async function audit(actor: Actor, action: string, after: string) {
-  await prisma.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: actor.slug, after, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await prisma.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, entity: "person", entityId: actor.slug, after, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 export async function feedFor(personId: string): Promise<FeedView> {

@@ -274,8 +274,15 @@ describe("серверное действие", () => {
   it("главный владелец при личном входе в режиме управления задаёт подпись; по общему логину отказ текстом", async () => {
     await signIn("muradyan", { management: true });
     expect(await setOwnerTitleAction("muradyan", "ex-Владелец")).toEqual({ ok: true, value: { slug: "muradyan", title: "ex-Владелец", label: "ex-Владелец", changed: true } });
-    await signIn("muradyan", { management: true, team: true });
-    expect(await setOwnerTitleAction("muradyan", "Владелец")).toEqual({ ok: false, error: admin.OWNER_TITLE_RULES.personal });
+    // Этап 71: владелец по общему логину (без личного пароля) режима управления не получает, людей и подписи не меняет
+    const { passwordHash } = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash: null } });
+    try {
+      await signIn("muradyan", { management: true, team: true });
+      expect(await setOwnerTitleAction("muradyan", "Владелец")).toEqual({ ok: false, error: "Людей и роли меняет только владелец в режиме управления" });
+    } finally {
+      await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash } });
+    }
     expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец" });
   });
 

@@ -26,6 +26,8 @@ import { inboxCount } from "@/lib/inbox/service";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { eventPhrase, pathOf, plural, type EventLine } from "./phrases";
 import { EVENT_DELAY_MS, EVENT_MAX_AGE_MS, PREF_LABELS, digestDue, inWorkHours, outsideWorkHours, prefOfKind, prefsOf, reminderDue, type MailPrefs } from "./schedule";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 export { eventPhrase, plural, type EventLine } from "./phrases";
 
@@ -439,6 +441,8 @@ export async function mailPrefsFor(personId: string) {
  * и тогда кто угодно выключил бы письма другому человеку
  */
 export async function saveMailPrefs(actor: Actor, input: unknown): Promise<MailPrefs> {
+  // Этап 71: какие письма приходят человеку, решает он сам, не владелец, вошедший в его профиль
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") throw new TaskRuleError("Письма настраиваются при личном входе по ссылке");
   const prefs = prefsOf(input);
   const before = await mailPrefsFor(actor.personId);
@@ -458,7 +462,7 @@ export async function saveMailPrefs(actor: Actor, input: unknown): Promise<MailP
           before: changed.map((k) => `${PREF_LABELS[k].title}: ${before[k] ? "да" : "нет"}`).join(", "),
           after: changed.map((k) => `${PREF_LABELS[k].title}: ${prefs[k] ? "да" : "нет"}`).join(", "),
           ip: actor.ip ?? null,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     }

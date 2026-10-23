@@ -200,6 +200,22 @@ export function headlineDraft(person: string, week: string, now = Date.now(), kv
   return d;
 }
 
+/**
+ * Черновики одного человека стираются (этап 71): владелец возвращается в свой профиль, черновики человека, в чей профиль
+ * он входил, после отправки уходят с устройства. Иначе они ушли бы потом не от того имени. Черновики остальных людей
+ * этого устройства не трогаются
+ */
+export function clearOfflineDraftsFor(person: string, kv?: KeyValue): void {
+  const s = storage(kv);
+  if (!s) return;
+  try {
+    s.removeItem(PREFIX + person);
+  } catch {
+    // Хранилище запрещено: стирать нечего
+  }
+  if (!kv && typeof window !== "undefined") window.dispatchEvent(new Event(DRAFTS_CHANGED));
+}
+
 /** Выход: черновики всех людей с этого устройства стираются */
 export function clearOfflineDrafts(kv?: KeyValue): void {
   const s = storage(kv);

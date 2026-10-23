@@ -7,12 +7,18 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { closeViewAs, requestIp, requireContext, writeViewAs, type AppContext } from "@/lib/auth";
 import { TaskRuleError } from "@/lib/rule-error";
 import { VIEW_AS_TEXTS } from "@/lib/view-as";
+import { OWNER_AS_ENDED, OWNER_AS_TEXTS } from "@/lib/owner-as";
 import { beginViewAs, viewAsPeople, viewAsTarget, type ViewAsOwner, type ViewAsPerson } from "@/lib/view-as-service";
 
 export type ViewAsResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function ownerOf(ctx: AppContext, ip: string): ViewAsOwner {
   return { person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: !!ctx.viewAs, ip };
+}
+
+/** Этап 71: во входе владельца в чужой профиль «Смотреть как» не открывается, после его конца сначала возврат к себе */
+function ownerAsRefusal(ctx: AppContext): string | null {
+  return ctx.ownerAs ? OWNER_AS_TEXTS.viewAs : ctx.ownerAsEnded ? OWNER_AS_ENDED : null;
 }
 
 function failure(what: string, error: unknown): { ok: false; error: string } {
@@ -27,6 +33,8 @@ export async function viewAsPeopleAction(): Promise<ViewAsResult<ViewAsPerson[]>
   try {
     const ctx = await requireContext();
     if (ctx.viewAs) return { ok: false, error: VIEW_AS_TEXTS.viewing };
+    const refusal = ownerAsRefusal(ctx);
+    if (refusal) return { ok: false, error: refusal };
     return { ok: true, value: await viewAsPeople(ownerOf(ctx, await requestIp())) };
   } catch (error) {
     return failure("Список для «Смотреть как»", error);
@@ -41,6 +49,8 @@ export async function startViewAsAction(personId: string): Promise<ViewAsResult<
   try {
     const ctx = await requireContext();
     if (ctx.viewAs) return { ok: false, error: VIEW_AS_TEXTS.viewing };
+    const refusal = ownerAsRefusal(ctx);
+    if (refusal) return { ok: false, error: refusal };
     const owner = ownerOf(ctx, await requestIp());
     const target = await viewAsTarget(owner, String(personId ?? ""));
     await closeViewAs("start");

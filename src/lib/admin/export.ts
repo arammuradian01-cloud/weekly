@@ -356,12 +356,13 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
     ],
     audit.map((a) => [
       msk(a.at),
-      (a.actorId && nameById.get(a.actorId)) || a.actorName || "Система",
+      // Этап 71: правка во время входа владельца в профиль автора, с пометкой, кто из владельцев вошёл
+      `${(a.actorId && nameById.get(a.actorId)) || a.actorName || "Система"}${a.asOwnerName ? ` (вошёл владелец ${a.asOwnerName})` : ""}`,
       AUDIT_ACTION_LABELS[a.action] ?? a.action,
       objectLabel(a.entity, a.entityId),
       a.field ?? "",
       // Номер просмотра «Смотреть как» (этап 63) служебный: в выгрузке его нет, как и на экране журнала
-      a.action.startsWith("viewAs.") ? "" : text(a.before),
+      a.action.startsWith("viewAs.") || a.action.startsWith("ownerAs.") ? "" : text(a.before),
       text(a.after),
       SOURCE[a.source],
       a.ip ?? "",

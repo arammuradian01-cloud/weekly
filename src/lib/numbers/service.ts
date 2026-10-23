@@ -16,6 +16,7 @@ import type { WeekKey } from "@/domain/types";
 import { shiftWeek } from "@/lib/weekly/weeks";
 import { ReportFormatError, formatDelta, formatValue, guessUnit, parseReport, rowLabel, type Unit } from "./parse";
 import type { WeekFigure, WeekNumbers } from "./text";
+import { auditVia } from "@/lib/audit";
 
 export type { WeekFigure, WeekNumbers } from "./text";
 export { numbersText } from "./text";
@@ -163,7 +164,7 @@ export async function setNumbersSource(actor: Actor, input: string, tabInput?: s
           before: before ? `${before}, вкладка ${beforeTab}` : "чтение выключено",
           after: id ? `${id}, вкладка ${tab}` : "чтение выключено",
           ip: actor.ip,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     });
@@ -312,7 +313,7 @@ export async function setMetrics(actor: Actor, list: Metric[]): Promise<Metric[]
       before: before.map((m) => m.label).join(", ") || "пусто",
       after: clean.map((m) => m.label).join(", ") || "пусто",
       ip: actor.ip,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
   return clean;

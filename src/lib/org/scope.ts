@@ -126,6 +126,8 @@ export type ScopeSubject = {
   shared?: boolean;
   /** Владелец смотрит глазами этого человека («Смотреть как», этап 63): встречи один на один ему не видны */
   viewAs?: boolean;
+  /** Владелец вошёл в профиль этого человека (этап 71): доступ человека полностью, только выбор команды в своей cookie */
+  ownerAs?: boolean;
 };
 
 export function scopeOf(nodes: TeamNode[], person: ScopeSubject, functional: string[] = []): Scope {

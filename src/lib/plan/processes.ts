@@ -41,6 +41,7 @@ import {
   type PartnerValues,
 } from "./partners";
 import type { PartnerAdjustInput } from "./types";
+import { auditVia } from "@/lib/audit";
 
 export { planAsOfWeek, planMonthOfWeek, planBriefText, type PlanBrief } from "./brief";
 
@@ -101,7 +102,7 @@ export async function checkPlan(actor: Actor, monthInput: string, productCode: s
         before: "ждёт проверки после загрузки LBE",
         after: "прогноз проверен, корректировки не нужны",
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -177,7 +178,7 @@ export async function adjustPartner(actor: Actor, input: PartnerAdjustInput): Pr
         before: formatPlan(effective, unit),
         after: `${value === null ? `как в LBE, ${formatPlan(base, unit)}` : formatPlan(value, unit)}. ${planReasonLabel(reason)}: ${comment}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -257,7 +258,7 @@ export async function applyFacts(actor: Actor, text: string): Promise<{ saved: n
         before: existing ? `заменено значений: ${existing}` : "новые дни",
         after: `значений ${parsed.entries.length}, с ${days[0]!.split("-").reverse().join(".")} по ${days[days.length - 1]!.split("-").reverse().join(".")}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
     // До 5 000 строк по три показателя: дольше обычных пяти секунд транзакции

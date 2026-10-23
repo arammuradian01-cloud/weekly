@@ -50,6 +50,7 @@ import {
 import { hubImitation } from "./hub-imitation";
 import { numbersLevel, personalLogin, type NumbersLevel } from "./access";
 import { LRF_MIRROR_ID, LRF_SHEET_ID, type Grid } from "./lrf";
+import { auditVia } from "@/lib/audit";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -370,7 +371,7 @@ export async function applyHub(actor: Actor, now = new Date()): Promise<HubAppli
       const value = pulled as unknown as Prisma.InputJsonValue;
       await tx.setting.upsert({ where: { key: "plan.hubPulled" }, update: { value }, create: { key: "plan.hubPulled", value } });
       await tx.auditLog.create({
-        data: { action: "plan.hub", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: day, field: "Загрузка из хаба", before: Prisma.JsonNull, after: journal, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "plan.hub", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: day, field: "Загрузка из хаба", before: Prisma.JsonNull, after: journal, ip: actor.ip ?? null, ...auditVia(actor) },
       });
     },
     { timeout: 30_000 },
@@ -402,7 +403,7 @@ export async function setHubSource(actor: Actor, input: string): Promise<string>
   if (before === id) return id;
   await setSetting("plan.hubId", id);
   await prisma.auditLog.create({
-    data: { action: "plan.hubSource", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "hub", field: "Хаб данных для прогноза", before: before ?? "не задан", after: id, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action: "plan.hubSource", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "hub", field: "Хаб данных для прогноза", before: before ?? "не задан", after: id, ip: actor.ip ?? null, ...auditVia(actor) },
   });
   return id;
 }
@@ -422,7 +423,7 @@ export async function setSkAliases(actor: Actor, input: string): Promise<string>
     if (before === after) return;
     await tx.setting.upsert({ where: { key: "plan.skAliases" }, update: { value: aliases }, create: { key: "plan.skAliases", value: aliases } });
     await tx.auditLog.create({
-      data: { action: "plan.skAliases", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "skAliases", field: "Соответствие названий СК", before: (before || "пусто").slice(0, 4000), after: (after || "пусто").slice(0, 4000), ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "plan.skAliases", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "skAliases", field: "Соответствие названий СК", before: (before || "пусто").slice(0, 4000), after: (after || "пусто").slice(0, 4000), ip: actor.ip ?? null, ...auditVia(actor) },
     });
   });
   return after;

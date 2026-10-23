@@ -30,7 +30,11 @@ async function syncPush() {
   if (r.ok && !r.value.keep) await sub.unsubscribe().catch(() => undefined);
 }
 
-export function DeviceSync() {
+/**
+ * push: сверять подписку браузера на уведомления с текущим входом. Во входе владельца в чужой профиль (этап 71) нет:
+ * подписка принадлежит владельцу, сверка от имени человека сняла бы её
+ */
+export function DeviceSync({ push = true }: { push?: boolean }) {
   const { me, notify } = usePrototype();
   useEffect(() => {
     let alive = true;
@@ -41,12 +45,12 @@ export function DeviceSync() {
       for (const why of r.rejected) notify(`Черновик с этого устройства не отправлен. ${why}`, "error");
     };
     void flush();
-    void syncPush().catch(() => undefined);
+    if (push) void syncPush().catch(() => undefined);
     window.addEventListener("online", flush);
     return () => {
       alive = false;
       window.removeEventListener("online", flush);
     };
-  }, [me.slug, notify]);
+  }, [me.slug, notify, push]);
   return null;
 }
