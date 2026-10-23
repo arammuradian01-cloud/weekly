@@ -206,7 +206,7 @@ describe("режим управления по почте", () => {
     const token = tokenFrom(sent[0]!);
     // Ссылка подтверждения не открывает вход, не работает у другого человека и на другом устройстве
     await expect(login.consumeLoginLink(token, device, later(1000))).rejects.toThrow();
-    await expect(login.consumeStepUp(token, personalOwner, "d-owner", later(1000))).rejects.toThrow(/другому человеку/);
+    await expect(login.consumeStepUp(token, personalOwner, "d-owner", later(1000))).rejects.toThrow(/только администраторам/);
     await expect(login.consumeStepUp(token, golovkin, "другое-устройство", later(1000))).rejects.toThrow(/с которого её запросили/);
     await login.consumeStepUp(token, golovkin, session.id, later(2000));
     await expect(login.consumeStepUp(token, golovkin, session.id, later(3000))).rejects.toThrow(/уже использована/);

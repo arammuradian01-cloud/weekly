@@ -317,6 +317,9 @@ export async function requestStepUp(actor: Actor, deviceId: string | null, baseU
 
 /** Ссылка подтверждения работает только у того же человека, на том же устройстве и только при личном входе */
 export async function consumeStepUp(token: string, actor: Actor, deviceId: string | null, now = new Date()): Promise<void> {
+  if (actor.role !== "ADMIN") fail("Подтверждение по почте доступно только администраторам. Владелец вводит пароль управления");
+  const person = await prisma.person.findUnique({ where: { id: actor.personId } });
+  if (!person?.active || person.role !== "ADMIN") fail("Права изменились. Обновите страницу");
   if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе");
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (link && link.kind === "STEP_UP" && link.personId !== actor.personId) fail("Эта ссылка выдана другому человеку");
