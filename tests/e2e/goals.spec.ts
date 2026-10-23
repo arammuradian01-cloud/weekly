@@ -56,11 +56,14 @@ test("цель департамента, цель сектора ниже и з�
   await modal.getByLabel("Целевое значение").fill("150");
   await modal.getByRole("button", { name: "Завести цель" }).click();
   await expect(page.getByText("Цель заведена").first()).toBeVisible();
+  await page.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" }).click();
   await expect(page.getByRole("main").getByText("Маржа департамента 150 млн")).toBeVisible();
 
   // Руководитель сектора видит цель департамента и заводит цель ниже
   const antonov = await person(browser, page, "Антонов");
   await antonov.goto("/goals");
+  // Этап 68: по умолчанию карточки, сценарий работает с таблицей
+  await antonov.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" }).click();
   await expect(antonov.getByRole("main").getByText("Маржа департамента 150 млн")).toBeVisible();
   await antonov.getByRole("button", { name: "Развернуть: Маржа департамента 150 млн" }).click();
   await antonov.getByRole("button", { name: "Цель ниже" }).click();
@@ -111,6 +114,8 @@ test("цель департамента, цель сектора ниже и з�
 
   // Дерево целей: прогресс у цели сектора и у цели департамента
   await antonov.goto("/goals");
+  // Этап 68: по умолчанию карточки, сценарий работает с таблицей
+  await antonov.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" }).click();
   await expect(antonov.getByText("закрыто 0 из 1").first()).toBeVisible();
   await antonov.getByRole("button", { name: "Развернуть: Новая форма расчёта на всём трафике" }).click();
   await expect(antonov.getByRole("main").getByText("Выкатить форму на весь трафик")).toBeVisible();
@@ -145,12 +150,19 @@ test("факт и целевое значение в таблице целей: 
   await modal.getByLabel("Целевое значение").fill("150");
   await modal.getByRole("button", { name: "Завести цель" }).click();
   await expect(page.getByText("Цель заведена").first()).toBeVisible();
+  // Этап 68: отборы шкалы взаимоисключающие, «Без задач» и «В риске» старше «Без свежего факта»: у цели теста есть
+  // задача, и она в срок (просроченная задача сама ставит цель в риск)
+  await sql(
+    `UPDATE tasks SET "goalId" = (SELECT id FROM goals WHERE code = 'D1'), due = (now() AT TIME ZONE 'Europe/Moscow')::date + 10 WHERE number = (SELECT min(number) FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`,
+  );
+  await page.reload();
+  await page.getByRole("radiogroup", { name: "Вид" }).getByRole("radio", { name: "Таблица" }).click();
 
   // Числовая цель без факта: в счётчике «Без свежего факта» и в строке «не вписан»
   const row = page.getByTestId("goal-row-D1");
   await expect(row).toContainText("не вписан");
   // Этап 46: цифры строкой, ноль не показывается
-  await expect(page.getByTestId("goals-stat-stale").locator(".sv-figure__value")).toHaveText("1");
+  await expect(page.getByTestId("goals-quarter-bar").getByRole("button", { name: /Без свежего факта\s*1/ })).toBeVisible();
   await shot(page, "table-empty-fact");
 
   // Факт в строке: прогресс виден до сохранения
@@ -164,7 +176,7 @@ test("факт и целевое значение в таблице целей: 
   await expect(page.getByText("Факт вписан").first()).toBeVisible();
   await expect(row).toContainText("141");
   await expect(row).toContainText("70%");
-  await expect(page.getByTestId("goals-stat-stale")).toHaveCount(0);
+  await expect(page.getByTestId("goals-quarter-bar").getByRole("button", { name: /Без свежего факта/ })).toHaveCount(0);
   // Этап 46: под полосой прогресса подпись «факт из целевого»
   await expect(row).toContainText("141 из 150");
 

@@ -23,7 +23,14 @@ async function mark() {
   return (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? 0n;
 }
 
-type Edit = { name: string; run: () => Promise<unknown>; /** Правка значения: должны быть и «было», и «стало» */ both?: boolean };
+type Edit = {
+  name: string;
+  run: () => Promise<unknown>;
+  /** Правка значения: должны быть и «было», и «стало» */
+  both?: boolean;
+  /** Какие поля записала правка, по порядку */
+  fields?: string[];
+};
 
 beforeAll(async () => {
   await prisma.task.deleteMany();
@@ -54,6 +61,11 @@ describe("по любой правке видно, что было и что с�
       { name: "приоритет", run: () => tasks.changePriority(owner, t, "high"), both: true },
       { name: "где сейчас", run: () => tasks.updateWhere(reva, t, "Жду ответа партнёра") },
       { name: "срок", run: () => tasks.transferDue(reva, t, addDays(due, 7), "Партнёр в отпуске"), both: true },
+      // Этап 68: начало работы и сдвиг полосы целиком на карте сроков
+      { name: "начало задано", run: () => tasks.setTaskStart(reva, t, addDays(due, 2)), fields: ["Начало"] },
+      { name: "начало изменено", run: () => tasks.setTaskStart(reva, t, addDays(due, 3)), both: true, fields: ["Начало"] },
+      { name: "сдвиг полосы целиком", run: () => tasks.moveTaskSpan(reva, t, addDays(due, 5), addDays(due, 9), "Партнёр сдвинул запуск"), both: true, fields: ["Срок", "Начало"] },
+      { name: "начало убрано", run: () => tasks.setTaskStart(reva, t, null), both: true, fields: ["Начало"] },
       { name: "название и результат", run: () => tasks.editTask(owner, t, { title: "Проверка журнала, правка", outcome: "Видно было и стало, правка" }), both: true },
       { name: "направление и источник", run: () => tasks.editTask(owner, t, { direction: "kasko", source: "ceo" }), both: true },
       { name: "ответственный", run: () => tasks.assignOwner(owner, t, "fatyanov"), both: true },
@@ -135,6 +147,7 @@ describe("по любой правке видно, что было и что с�
       await e.run();
       const rows = await since(m);
       expect(rows.length, `${e.name}: правка не попала в журнал`).toBeGreaterThan(0);
+      if (e.fields) expect(rows.map((r) => r.field), `${e.name}: поля журнала`).toEqual(e.fields);
       for (const r of rows) {
         expect(r.actorId, `${e.name}: нет автора`).toBeTruthy();
         expect(r.field, `${e.name}: не названо поле`).toBeTruthy();

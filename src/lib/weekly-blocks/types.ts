@@ -497,6 +497,9 @@ export function restoreHiddenFigures(next: readonly ReportBlock[], before: reado
 // ---------- Живые цифры ----------
 
 /** Отпечаток строк автосборки: продукт и текст. Короткий, хранится в блоке */
+/** Отпечаток блока, который поставил пакет наполнения: строки не из автосборки, пересобирать их не предлагаем */
+export const IMPORTED_BASIS = "import";
+
 export function fingerprint(lines: readonly Pick<BlockLine, "product" | "text">[]): string {
   let h = 5381;
   for (const ch of lines.map((l) => `${l.product ?? ""}|${l.text}`).join("\n")) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
@@ -512,6 +515,8 @@ export function fingerprint(lines: readonly Pick<BlockLine, "product" | "text">[
 export function withLiveBlocks(blocks: readonly ReportBlock[], fresh: readonly ReportBlock[]): ReportBlock[] {
   return blocks.map((b) => {
     if (!LIVE_KEYS.includes(b.key)) return b;
+    // Отчёт прошедшей недели из пакета наполнения (этап 67г): исторический текст, свежей автосборкой не устаревает
+    if (b.basis === IMPORTED_BASIS) return { ...b, stale: false };
     const f = fresh.find((x) => x.key === b.key);
     if (!f) return b;
     if (!b.edited) {

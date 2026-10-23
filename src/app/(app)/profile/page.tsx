@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { colleaguesOf } from "@/lib/org/people";
 import { requireContext } from "@/lib/auth";
-import { personRoleLabel } from "@/lib/roles";
+import { roleLabelOf } from "@/lib/roles";
 import { loginOf } from "@/lib/login/password";
 import { allowedEmailDomains } from "@/lib/login/email";
 import { EmailBinding } from "@/components/profile/email-binding";
-import { primaryOwnerSlug } from "@/lib/admin/service";
+import { ownerLabels } from "@/lib/login/primary";
 import { listDevices } from "@/lib/login/service";
 import { LOGIN_METHOD_LABELS } from "@/lib/login/labels";
 import { PageHeader } from "@/components/page-header";
@@ -83,13 +83,14 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
   ];
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Профиль" description="Роль и зону меняет владелец ресурса, рабочую почту вы указываете сами на вкладке «Вход и пароль»" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
+      {/* Этап 68: подписи разделов в одну строку. Что случится при смене пароля, оставлено: его читают до нажатия */}
+      <PageHeader title="Профиль" description="Роль и зону меняет владелец, почту вы указываете сами" tabs={<PageTabs label="Разделы профиля" tabs={tabs} />} />
 
       {tab === "profile" ? (
         <>
           <dl className="flex flex-col gap-3">
             <Row label="Имя">{ctx.person.fullName}</Row>
-            <Row label="Роль">{personRoleLabel(ctx.person.role, (await primaryOwnerSlug()) === ctx.person.slug)}</Row>
+            <Row label="Роль">{roleLabelOf(ctx.person, await ownerLabels())}</Row>
             <Row label="Зона">{ctx.person.zone || "не указана"}</Row>
             <Row label="Логин">{login}</Row>
             <Row label="Почта">{ctx.person.email ?? (ctx.person.pendingEmail ? `${ctx.person.pendingEmail}, ждёт подтверждения` : "не указана")}</Row>
@@ -100,10 +101,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <h2 id="calendar-feed" className="text-title font-semibold text-ink">
               Календарь сроков
             </h2>
-            <p className="mt-1 text-small text-muted">
-              Сроки ваших задач, срок weekly, встречи команды и один на один в вашем календаре: Google, Яндекс, Outlook или на телефоне. Календарь только показывает,
-              менять сроки по-прежнему в ресурсе.
-            </p>
+            <p className="mt-1 text-small text-muted">Сроки ваших задач, срок weekly и встречи в Google, Яндекс, Outlook или на телефоне. Только просмотр</p>
             <CalendarFeedSettings feed={feed} locked={calendarLocked} />
           </section>
         </>
@@ -112,9 +110,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
       {tab === "absences" && !observer ? (
         <section aria-labelledby="absences-head">
           <h2 id="absences-head" className="text-title font-semibold text-ink">Нет на неделе</h2>
-          <p className="mt-1 text-small text-muted">
-            Отпуск, больничный, командировка. Weekly за эту неделю не ждём, в счёт «сдали N из M» вы не входите, на встрече видно, кто замещает.
-          </p>
+          <p className="mt-1 text-small text-muted">Weekly за эту неделю не ждём, на встрече видно, кто замещает</p>
           <Absences absences={absences} weeks={weeks} people={colleagues.map((p) => ({ value: p.slug, label: p.fullName }))} />
         </section>
       ) : null}
@@ -124,15 +120,13 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <section aria-labelledby="password-head">
             <h2 id="password-head" className="text-title font-semibold text-ink">Пароль</h2>
             {ctx.via === "TEAM" ? (
-              <p className="mt-2 text-body text-muted">
-                Вы вошли по общему логину. Личный пароль задают по личной ссылке от владельца ресурса: по ней вы сами придумаете пароль, логин {login}.
-              </p>
+              <p className="mt-2 text-body text-muted">Вы вошли по общему логину. Личный пароль задаётся по ссылке от владельца, логин {login}.</p>
             ) : (
               <>
                 <p className="mt-1 text-small text-muted">
                   {ctx.person.passwordHash
-                    ? `Входите на экране входа с логином ${login} и этим паролем. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
-                    : `Пароль ещё не задан. Задайте его, чтобы входить с логином ${login} без ссылки.`}
+                    ? `Логин ${login}. После смены пароля другие устройства выйдут, ссылка на календарь сроков отключится.`
+                    : `Пароль ещё не задан: с ним вы входите по логину ${login} без ссылки.`}
                 </p>
                 <PasswordForm login={login} hasPassword={!!ctx.person.passwordHash} />
               </>
@@ -141,7 +135,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
 
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="work-email-head">
             <h2 id="work-email-head" className="text-title font-semibold text-ink">Почта для входа</h2>
-            <p className="mt-1 text-small text-muted">Для входа по почте вместо логина и для «Забыли пароль» на экране входа.</p>
+            <p className="mt-1 text-small text-muted">Вход по почте и «Забыли пароль»</p>
             <EmailBinding
               email={ctx.person.email}
               pending={ctx.person.pendingEmail}
@@ -156,10 +150,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
           <section className="mt-10 border-t border-line pt-8" aria-labelledby="devices-head">
             <h2 id="devices-head" className="text-title font-semibold text-ink">Где открыт ваш вход</h2>
             {ctx.via === "TEAM" ? (
-              <p className="mt-2 text-body text-muted">
-                Вы вошли по общему логину и выбрали себя из списка. Личный вход по ссылке выдаёт владелец ресурса: с ним журнал записывает именно вас, а здесь появится список
-                ваших устройств.
-              </p>
+              <p className="mt-2 text-body text-muted">Список устройств появится при личном входе: сейчас вы вошли по общему логину.</p>
             ) : (
               <DeviceList devices={devices} current={ctx.deviceId} />
             )}
@@ -174,8 +165,8 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <h2 id="mail-head" className="text-title font-semibold text-ink">Письма</h2>
             <p className="mt-1 text-small text-muted">
               {mailOn
-                ? `Приходят на ${ctx.person.email ?? "почту из карточки"}: о том, что ждёт вас и что вы не увидели в ресурсе за 15 минут. Вне рабочего времени, с 20:00 до 9:00 и в выходные, письма копятся до утра. В письме только кто и что, подробности после входа.`
-                : "Почта ресурса ещё не настроена: письма начнут приходить, когда владелец подключит почтовый сервер. Настройки ниже уже сохраняются."}
+                ? `На ${ctx.person.email ?? "почту из карточки"}: то, что вы не увидели за 15 минут. С 20:00 до 9:00 и в выходные копятся до утра.`
+                : "Почта ресурса ещё не настроена. Настройки ниже уже сохраняются."}
             </p>
             {!ctx.person.email ? <p className="mt-2 text-small text-warning-ink">В вашей карточке нет почты: попросите владельца её добавить.</p> : null}
             {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Письма настраиваются при личном входе по ссылке: по общему логину можно выбрать чужой профиль.</p> : null}
@@ -186,7 +177,7 @@ export default async function ProfilePage({ searchParams }: { searchParams: Prom
             <h2 id="news-head" className="text-title font-semibold text-ink">
               Дайджест новостей
             </h2>
-            <p className="mt-1 text-small text-muted">Публичные новости рынка по вашим продуктам: регулятор, союзы страховщиков, СМИ. У каждой новости ссылка на источник.</p>
+            <p className="mt-1 text-small text-muted">Новости рынка по вашим продуктам со ссылкой на источник</p>
             {ctx.via === "TEAM" ? <p className="mt-2 text-small text-muted">Дайджест настраивается при личном входе: по общему логину можно выбрать чужой профиль.</p> : null}
             <NewsPrefsForm
               initial={await newsPrefsFor(ctx.person.id)}

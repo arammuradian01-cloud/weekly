@@ -25,7 +25,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
           {rating ? <RatingResultsPanel data={rating} /> : null}
         </>
       ) : (
-        <EmptyState title="Аналитика открыта руководителям команд">Здесь руководитель видит, как идут weekly и задачи в его команде и командах ниже.</EmptyState>
+        <EmptyState title="Аналитика открыта руководителям команд">Weekly и задачи команды и команд ниже.</EmptyState>
       )}
     </>
   );

@@ -3,10 +3,12 @@ import Link from "next/link";
 import { requireContext } from "@/lib/auth";
 import { getRhythm } from "@/lib/admin/service";
 import { getTeamLogin } from "@/lib/login/service";
+import { canSeeMarket } from "@/lib/market/access";
 import { topTeamName } from "@/lib/org/top-name";
 import { mailConfigured } from "@/lib/mail";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { PageHeader } from "@/components/page-header";
+import { Toc, type TocItem } from "@/components/ui/toc";
 
 export const metadata: Metadata = { title: "Как работать" };
 
@@ -14,10 +16,13 @@ export const metadata: Metadata = { title: "Как работать" };
 const UNTIL = ["понедельника", "вторника", "среды", "четверга", "пятницы", "субботы", "воскресенья"];
 const ON = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"];
 
-function Block({ title, children }: { title: string; children: React.ReactNode }) {
+/** Раздел справки и пункт оглавления (этап 68): якорь id, заголовок подписывает раздел */
+function Block({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-title-sm font-semibold text-ink">{title}</h2>
+    <section id={id} aria-labelledby={`${id}-title`} className="sv-toc-section flex flex-col gap-2">
+      <h2 id={`${id}-title`} className="text-title-sm font-semibold text-ink">
+        {title}
+      </h2>
       <div className="flex flex-col gap-2 text-body leading-relaxed text-ink">{children}</div>
     </section>
   );
@@ -31,19 +36,49 @@ export default async function HelpPage() {
   const ctx = await requireContext();
   // Абзац про «Смотреть как» (этап 63) только владельцу: остальным эта возможность недоступна
   const owner = ctx.person.role === "OWNER";
-  const [rhythm, teamLogin, topName] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName()]);
+  // Ссылка на раздел «Рынок» (этап 72) только тем, кому он открыт: остальным она привела бы к закрытой странице
+  const [rhythm, teamLogin, topName, market] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName(), canSeeMarket({ personId: ctx.person.id, via: ctx.via, management: ctx.management?.role ?? null })]);
   const mail = mailConfigured();
   const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
   const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
+
+  // Оглавление (этап 68): на ноутбуке липкий список слева, на планшете и телефоне лента строкой под шапкой. Блоки
+  // одним столбцом: в два столбца рядом с оглавлением строки выходили по 40 знаков
+  const toc: TocItem[] = [
+    { id: "vhod", label: "Вход" },
+    { id: "ritm", label: "Ритм недели" },
+    { id: "sdat-weekly", label: "Сдать weekly" },
+    { id: "zadachi", label: "Задачи" },
+    { id: "prognoz", label: "Прогноз месяца" },
+    { id: "cifry", label: "Цифры недели" },
+    { id: "poisk", label: "Поиск и виды" },
+    { id: "mne", label: "Мне" },
+    { id: "prosby", label: "Просьбы" },
+    { id: "vstrecha", label: "Встреча" },
+    { id: "notion", label: "Разбор из Notion" },
+    { id: "bloki", label: "Weekly по блокам" },
+    { id: "celi", label: "Цели" },
+    { id: "roadmap", label: "Roadmap" },
+    { id: "komandy", label: "Weekly-команды" },
+    { id: "iniciativy", label: "Инициативы" },
+    { id: "ocenka", label: "Оценка встреч" },
+    { id: "novosti", label: "Новости" },
+    { id: "rynok", label: "Рынок" },
+    { id: "prava", label: "Кто что видит" },
+    ...(owner ? [{ id: "smotret-kak", label: "Смотреть как" }] : []),
+  ];
 
   return (
     <>
       <PageHeader
         title="Как работать в Weekly"
-        description="Weekly и задачи команды собраны здесь. Главное теперь приложение: задачи ставятся здесь и из разбора встреч, Excel-борд больше не ведём."
+        description="Weekly, задачи и встреча команды в одном месте"
       />
-      <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
-        <Block title="Вход">
+      <div className="sv-page--toc">
+        <Toc items={toc} label="Разделы справки" />
+        {/* Блоки внутри обёртки оставлены с прежним отступом: так правки справки из параллельных этапов сливаются без конфликтов */}
+        <div className="flex max-w-3xl min-w-0 flex-col gap-8">
+        <Block id="vhod" title="Вход">
           <p>
             Со своим логином и паролем. Пароль вы задаёте сами по личной ссылке от владельца ресурса, там же видно ваш логин. Забыли пароль: попросите новую ссылку
             {mail ? " или запросите её на рабочую почту на экране входа" : ""}. Вход запомнится на устройстве на 30 дней, всё, что вы делаете, записывается на вас.
@@ -54,7 +89,7 @@ export default async function HelpPage() {
           <p className="text-muted">Сменить пароль, увидеть, где открыт ваш вход, и выйти на всех устройствах: «Профиль» в меню профиля, вкладка «Вход и пароль».</p>
         </Block>
 
-        <Block title="Ритм недели">
+        <Block id="ritm" title="Ритм недели">
           <p>
             Weekly за прошедшую неделю сдаётся до {until} по Москве, встреча команды {meeting}. После встречи неделю закрывают, и записи правят только владелец и
             администраторы.
@@ -63,7 +98,7 @@ export default async function HelpPage() {
           <p className="text-muted">В отпуске или на больничном отметьте неделю в профиле, «Нет на неделе»: weekly за неё не ждём, на встрече видно, кто замещает.</p>
         </Block>
 
-        <Block title="Сдать weekly">
+        <Block id="sdat-weekly" title="Сдать weekly">
           <p>
             На «Моей неделе» кнопка{" "}
             <Link href="/weekly/submit" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -101,7 +136,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Задачи">
+        <Block id="zadachi" title="Задачи">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>У задачи есть ответственный, срок и «где сейчас». Обновляйте «где сейчас» хотя бы раз в {rhythm.staleDays} дней, иначе задача получит метку «давно не обновлялась».</li>
             <li>Срок переносится только с причиной, число переносов видно всем.</li>
@@ -119,7 +154,7 @@ export default async function HelpPage() {
           <p className="text-muted">Новая задача: клавиша N. Поиск и действия: клавиша / или Cmd+K (Ctrl+K).</p>
         </Block>
 
-        <Block title="Прогноз месяца по драйверам">
+        <Block id="prognoz" title="Прогноз месяца по драйверам">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>
               На вкладке{" "}
@@ -135,7 +170,7 @@ export default async function HelpPage() {
           </ul>
         </Block>
 
-        <Block title="Цифры недели и прогноз лидеров">
+        <Block id="cifry" title="Цифры недели и прогноз лидеров">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>
               «Цифры недели» приходят из недельного отчёта аналитика: владелец подключает его только на чтение и отмечает нужные строки на странице «Синхронизация». Они видны на вкладке{" "}
@@ -149,7 +184,7 @@ export default async function HelpPage() {
           </ul>
         </Block>
 
-        <Block title="Поиск, виды, массовые действия">
+        <Block id="poisk" title="Поиск, виды, массовые действия">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>
               Командная строка (Cmd+K, Ctrl+K или «/») ищет по задачам, записям weekly, решениям, комментариям и людям с учётом словоформ: «доступ» найдёт и «доступа».
@@ -167,7 +202,7 @@ export default async function HelpPage() {
           </ul>
         </Block>
 
-        <Block title="Мне">
+        <Block id="mne" title="Мне">
           <p>
             В разделе{" "}
             <Link href="/me" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -179,7 +214,7 @@ export default async function HelpPage() {
           <p className="text-muted">«Разобрано» убирает строку, новое событие по той же задаче вернёт её. «Напомнить» прячет строку до утра.</p>
         </Block>
 
-        <Block title="Просьбы коллегам">
+        <Block id="prosby" title="Просьбы коллегам">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>«Попросить коллегу» есть в «Мне», на «Моей неделе» и в карточке задачи: кого просите, что нужно и к какому сроку.</li>
             <li>Адресат видит просьбу в «Мне» и отвечает: принимает со своим сроком, отклоняет с причиной, отмечает «Выполнено» или делает просьбу своей задачей. Когда задачу выполнят, просьба закроется сама.</li>
@@ -188,7 +223,7 @@ export default async function HelpPage() {
           </ul>
         </Block>
 
-        <Block title="Встреча">
+        <Block id="vstrecha" title="Встреча">
           <p>
             Ведущий открывает{" "}
             <Link href="/weekly/meeting" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -221,7 +256,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Разбор встречи из Notion">
+        <Block id="notion" title="Разбор встречи из Notion">
           <p>
             Главное теперь приложение, Excel-борд больше не ведём. После встречи ведущий нажимает на странице встречи «Разобрать встречу из Notion» и вставляет
             ссылку на страницу встречи. Ресурс читает страницу и показывает вкладки: итоги встречи, черновик weekly для CEO с предпросмотром того, что
@@ -236,7 +271,7 @@ export default async function HelpPage() {
           </ul>
         </Block>
 
-        <Block title="Weekly по смысловым блокам">
+        <Block id="bloki" title="Weekly по смысловым блокам">
           <p>
             Weekly для CEO собирается по смысловым блокам: новости рынка и команды, неделя к неделе, месяц (к прошлому году, к прошлому месяцу и план
             продаж), конкуренты, продукты по подразделам, партнёрский канал, риски и план на неделю. Каждая строка подписана продуктом, у цифр ссылка на
@@ -247,7 +282,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Цели квартала">
+        <Block id="celi" title="Цели квартала">
           <p>
             На странице{" "}
             <Link href="/goals" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -263,6 +298,12 @@ export default async function HelpPage() {
             метка «Цель РТ-1», в списке её можно сгруппировать «По цели».
           </p>
           <p>
+            Сверху шкала квартала: каждая цель в одном отборе по старшинству (достигнута, закрыта не полностью, то есть частично, не достигнута или
+            снята; дальше у целей в работе: в риске, без задач, без свежего факта), остальные в работе. Кнопки в сумме дают все цели, нажатие оставляет
+            только эти цели. Цели показаны карточками по командам: путь к целевому значению, риск, владелец и задачи, «Подробнее»
+            раскрывает описание и задачи, «Факт» открывает строку цели в виде «Таблица», там же история факта; дерево показывает цели ниже.
+          </p>
+          <p>
             На вкладке{" "}
             <Link href="/goals?mode=link" className="font-medium text-blue-700 underline-offset-2 hover:underline">
               «Связать задачи с целями»
@@ -276,7 +317,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Roadmap">
+        <Block id="roadmap" title="Roadmap">
           <p>
             На странице{" "}
             <Link href="/roadmap" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -286,9 +327,20 @@ export default async function HelpPage() {
             задачи, одна у важной. Важность меняют звёздочкой на карточке тот, кто поставил задачу, ответственный, руководитель команды задачи и режим управления. Над доской можно выбрать человека
             и оставить только важные задачи: ссылкой на такую доску можно поделиться.
           </p>
+          <p>
+            На широком экране сначала карта сроков: задача полосой от начала работы до срока, красная линия отмечает сегодня. Полосу тянут мышью: за
+            середину сдвигается вся, за левый край меняется начало, за правый срок, и для срока ресурс спросит причину переноса, как в карточке задачи.
+            Если задача началась до окна карты, край обрезан, но тоже тянется: начало встаёт на дату под указателем. У короткой полосы ручки краёв
+            снаружи, её можно сдвинуть за середину. С
+            клавиатуры: стрелки двигают полосу на день, Alt со стрелкой меняет начало, Shift со стрелкой срок, Enter сохраняет, Escape отменяет. Двигает тот,
+            кто может менять срок задачи; сдвиг целиком сохраняется одной правкой и одной отменой. Просроченную полосу двигают только вправо, от
+            сегодняшнего дня. У задачи без начала полоса идёт от даты постановки, задача за окном карты видна у края с датой. На сенсорном экране
+            полосы не тянутся: начало задают в карточке задачи, поле «Начало». Если новый срок раньше начала, начало сдвигается на срок. Доска по
+            месяцам осталась вторым видом.
+          </p>
         </Block>
 
-        <Block title="Weekly-команды">
+        <Block id="komandy" title="Weekly-команды">
           <p>
             На странице{" "}
             <Link href="/people/teams" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -301,7 +353,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Крупные инициативы">
+        <Block id="iniciativy" title="Крупные инициативы">
           <p>
             На странице{" "}
             <Link href="/initiatives" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -313,7 +365,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Оценка встреч и календарь сроков">
+        <Block id="ocenka" title="Оценка встреч и календарь сроков">
           <p>
             Раз в месяц встречи команды можно{" "}
             <Link href="/meeting-rating" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -333,7 +385,7 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Новости и дайджест">
+        <Block id="novosti" title="Новости и дайджест">
           <p>
             В разделе{" "}
             <Link href="/news" className="font-medium text-blue-700 underline-offset-2 hover:underline">
@@ -350,17 +402,43 @@ export default async function HelpPage() {
           </p>
         </Block>
 
-        <Block title="Кто что видит и правит">
+        <Block id="rynok" title="Рынок КАСКО и ОСАГО">
+          <p>
+            {market ? (
+              <>
+                В разделе{" "}
+                <Link href="/market" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+                  «Рынок»
+                </Link>{" "}
+                дашборд
+              </>
+            ) : (
+              "В разделе «Рынок» дашборд"
+            )}{" "}
+            рынка КАСКО и ОСАГО: вкладки КАСКО и ОСАГО, фильтры живут в адресе, ссылкой можно поделиться. Данные обновляет владелец
+            загрузкой пакета рынка. На первой встрече месяца у выбранных команд первым пунктом идёт разбор рынка.
+          </p>
+          <p className="text-muted">
+            {teamLogin === "on" ? "Раздел всегда видят владельцы, все в режиме управления и все, кто входит по общему логину." : "Раздел всегда видят владельцы и все в режиме управления."}{" "}
+            При личном входе без режима управления остальные видят его по списку, который ведёт владелец в настройках.
+          </p>
+        </Block>
+
+        <Block id="prava" title="Кто что видит и правит">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>Weekly и задачи всей команды видят все.</li>
             <li>Свой weekly и свои задачи правит каждый, чужие только владелец и администраторы в режиме управления.</li>
             <li>Журнал всех изменений, отчёт CEO и настройки видят владелец и администраторы.</li>
+            <li>
+              Раздел «Рынок» видят владельцы, все в режиме управления{teamLogin === "on" ? " и все, кто входит по общему логину" : ""}, при личном входе без режима управления остальные по
+              списку владельца.
+            </li>
           </ul>
           <p className="text-muted">Таблица для просмотра «Weekly: все задачи ресурса» обновляется сама. Ручные правки в ней ночная сверка возвращает обратно.</p>
         </Block>
 
         {owner ? (
-          <Block title="Смотреть как (для владельца)">
+          <Block id="smotret-kak" title="Смотреть как (для владельца)">
             <p>
               Проверить, что видит коллега, можно без его пароля: при личном входе включите режим управления и выберите «Смотреть как…» в меню профиля или в
               командной строке (Ctrl+K). Найдите человека по ФИО, должности или подразделению. Приложение покажет его неделю, «Мне», задачи, команды и цифры
@@ -373,6 +451,7 @@ export default async function HelpPage() {
             </p>
           </Block>
         ) : null}
+        </div>
       </div>
     </>
   );

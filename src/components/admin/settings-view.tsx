@@ -10,7 +10,7 @@ import { NewsSettings, type NewsSettingsProps } from "@/components/news/news-set
 import type { ApprovalSetting } from "@/lib/tasks/approval-modes";
 import { csvCell } from "@/lib/csv";
 import { useId, useState } from "react";
-import { CalendarOff, Copy, Crown, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, Search, UserMinus, UserPlus } from "lucide-react";
+import { CalendarOff, Copy, Crown, Download, EyeOff, KeyRound, Link2, LogOut, Pencil, Plus, RotateCcw, Search, Tag, UserMinus, UserPlus } from "lucide-react";
 import { PRIORITIES, STATES, STATUSES, dictOptions, type EditableDictKind } from "@/domain/dictionaries";
 import type { Role } from "@/domain/types";
 import type { DictItemView, PersonView, Rhythm, StandBanner } from "@/lib/admin/service";
@@ -32,10 +32,12 @@ import {
   saveStandBannerAction,
   saveTeamLoginAction,
   setDictItemActiveAction,
+  setOwnerTitleAction,
   setPersonActiveAction,
   setPrimaryOwnerAction,
   updatePersonAction,
 } from "@/app/(app)/settings/actions";
+import { OWNER_TITLE_MAX, OWNER_TITLE_MIN } from "@/lib/owner-title";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -68,6 +70,8 @@ const plural = (n: number, one: string, few: string, many: string) => {
   return d === 1 && t !== 11 ? one : d >= 2 && d <= 4 && (t < 12 || t > 14) ? few : many;
 };
 
+// Этап 68: описания разделов в одну строку. Предупреждения о необратимых действиях (сброс пароля, очистка стенда)
+// оставлены полными: их читают перед нажатием
 /** Раздел настроек: заголовок с якорем для оглавления (этап 48), пояснение, содержимое во всю ширину колонки */
 function Section({ id, title, description, children }: { id?: string; title: string; description?: string; children: React.ReactNode }) {
   const headingId = useId();
@@ -165,7 +169,7 @@ export function SettingsView({
       {withToc ? <Toc items={toc} label="Разделы настроек" /> : null}
       <div className="min-w-0 [&>:first-child]:border-t-0 [&>:first-child]:pt-0">
         <RhythmSection initial={rhythm} />
-        <Section id="dicts" title="Справочники" description="Значения списков в weekly и задачах. Скрытое значение пропадает из выбора, но остаётся в старых записях">
+        <Section id="dicts" title="Справочники" description="Списки в weekly и задачах. Скрытое значение остаётся в старых записях">
         <div className="grid gap-6 xl:grid-cols-2">
           {KINDS.map((kind) => (
             <DictList key={kind} kind={kind} items={dicts[kind]} />
@@ -191,12 +195,12 @@ export function SettingsView({
 
       {owner ? (
         <>
-          <PeopleSection people={people} me={me} absences={absences} weeks={weeks} />
+          <PeopleSection people={people} me={me} absences={absences} weeks={weeks} personal={login.personal} />
 
           {approval ? <ApprovalSection setting={approval.setting} departments={approval.departments} /> : null}
 
           {numbersAccess ? <NumbersAccessSection initial={numbersAccess} /> : null}
-          {market ? <MarketSettingsSection initial={market} /> : null}
+          {market ? <MarketSettingsSection initial={market} teamLogin={login.team === "on"} /> : null}
           {news ? <NewsSettings {...news} /> : null}
           {contentImport ? <ContentImportSection /> : null}
 
@@ -270,7 +274,7 @@ function RhythmSection({ initial }: { initial: Rhythm }) {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const times = timeOptions.some((t) => t.value === form.deadlineTime) ? timeOptions : [...timeOptions, { value: form.deadlineTime, label: form.deadlineTime }];
   return (
-    <Section id="rhythm" title="Ритм недели" description="Срок сдачи, встреча и порог «давно не обновлялась». Новый срок действует для недель, срок которых ещё не прошёл">
+    <Section id="rhythm" title="Ритм недели" description="Срок сдачи, встреча и «давно не обновлялась». Новый срок не трогает недели, чей срок прошёл">
       <form
         className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
         onSubmit={async (e) => {
@@ -457,11 +461,14 @@ function PeopleSection({
   me,
   absences,
   weeks,
+  personal,
 }: {
   people: PersonView[];
   me: string;
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
+  /** Личный вход: подпись роли владельцев задаёт главный владелец только при нём (этап 69) */
+  personal: boolean;
 }) {
   const run = useRunAction();
   const [editing, setEditing] = useState<string | null>(null);
@@ -473,7 +480,10 @@ function PeopleSection({
   const [revoke, setRevoke] = useState<PersonView | null>(null);
   const [resetFor, setResetFor] = useState<PersonView | null>(null);
   const [away, setAway] = useState<PersonView | null>(null);
+  const [titleFor, setTitleFor] = useState<PersonView | null>(null);
   const team = people.filter((p) => p.active && p.role !== "OBSERVER");
+  // Подпись роли владельцев (этап 69) задаёт только главный владелец при личном входе
+  const canTitle = personal && people.some((x) => x.primaryOwner && x.slug === me);
   // Поиск по ФИО, логину и почте (этап 52): людей в ресурсе станет несколько сотен
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -486,7 +496,7 @@ function PeopleSection({
   };
 
   return (
-    <Section id="people" title="Люди и роли" description="Владелец добавляет и выключает людей сам, без разработчика. Выключенный человек пропадает из списков, его история остаётся">
+    <Section id="people" title="Люди и роли" description="Выключенный человек пропадает из списков, его история остаётся">
       {people.length > 12 ? (
         <div className="mb-3 flex items-center gap-2">
           <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
@@ -533,7 +543,7 @@ function PeopleSection({
                     {p.slug === me ? <span className="ml-2 text-caption font-normal text-muted">это вы</span> : null}
                   </p>
                   <p className="text-caption text-muted">
-                    {p.role === "OWNER" ? (p.primaryOwner ? "Главный владелец" : "Совладелец") : roleLabel(p.role)}. {p.zone}
+                    <span data-testid={`role-${p.slug}`}>{ownerRoleText(p) ?? roleLabel(p.role)}</span>. {p.zone}
                     {p.openTasks ? `. Открытых задач: ${p.openTasks}` : ""}
                   </p>
                   {absences[p.slug]?.length ? (
@@ -572,6 +582,13 @@ function PeopleSection({
                     >
                       <Crown className="h-4 w-4" aria-hidden="true" />
                       Сделать главным
+                    </Button>
+                  ) : null}
+                  {/* У выключенного владельца подпись можно только снять: кнопка, только если подпись есть */}
+                  {canTitle && p.role === "OWNER" && (p.active || p.ownerTitle) ? (
+                    <Button size="sm" variant="ghost" aria-label={`Подпись роли: ${p.fullName}`} onClick={() => setTitleFor(p)}>
+                      <Tag className="h-4 w-4" aria-hidden="true" />
+                      Подпись роли
                     </Button>
                   ) : null}
                   {p.active && p.role !== "OBSERVER" ? (
@@ -658,6 +675,7 @@ function PeopleSection({
         </Button>
       )}
       <InviteModal invite={invite} onClose={() => setInvite(null)} />
+      <OwnerTitleModal person={titleFor} onClose={() => setTitleFor(null)} />
       <Modal open={away !== null} onOpenChange={(open) => !open && setAway(null)} title={`Нет на неделе: ${away?.fullName ?? ""}`}>
         <p className="text-small text-muted">Weekly за отмеченную неделю не ждём, на встрече видно, кто замещает.</p>
         {away ? (
@@ -711,6 +729,94 @@ function PeopleSection({
         </div>
       </Modal>
     </Section>
+  );
+}
+
+/**
+ * Подпись роли владельца в списке людей: своя подпись (этап 69) или «Главный владелец» и «Совладелец». У главного со
+ * своей подписью пометка «главный»: от неё зависят права на входы владельцев. null: не владелец
+ */
+function ownerRoleText(p: PersonView): string | null {
+  if (p.role !== "OWNER") return null;
+  if (p.ownerTitle) return p.primaryOwner ? `${p.ownerTitle} (главный)` : p.ownerTitle;
+  return p.primaryOwner ? "Главный владелец" : "Совладелец";
+}
+
+/** Подпись роли владельца (этап 69): что видят шапка, профиль, экран выбора и списки людей. Права она не меняет */
+function OwnerTitleModal({ person, onClose }: { person: PersonView | null; onClose: () => void }) {
+  return (
+    <Modal
+      open={person !== null}
+      onOpenChange={(open) => !open && onClose()}
+      title={`Подпись роли: ${person?.fullName ?? ""}`}
+      description="Как роль владельца подписана в шапке, профиле, на экране выбора и в списках людей. Права подпись не меняет"
+    >
+      {/* Форма заново для каждого открытия: поле начинается с текущей подписи человека */}
+      {person ? <OwnerTitleForm key={person.slug} person={person} onClose={onClose} /> : null}
+    </Modal>
+  );
+}
+
+function OwnerTitleForm({ person, onClose }: { person: PersonView; onClose: () => void }) {
+  const run = useRunAction();
+  const { notify } = usePrototype();
+  const [value, setValue] = useState(person.ownerTitle ?? "");
+  const [busy, setBusy] = useState(false);
+  const fallback = person.primaryOwner ? "Владелец" : "Совладелец";
+  const save = async (title: string) => {
+    setBusy(true);
+    const r = await run(() => setOwnerTitleAction(person.slug, title));
+    setBusy(false);
+    if (r) {
+      notify(r.changed ? `${person.fullName}: подпись роли «${r.label}»` : "Ничего не изменилось");
+      onClose();
+    }
+  };
+  if (!person.active) {
+    // Выключенный владелец: подпись видна в списке, её можно только снять
+    return (
+      <div className="flex flex-col gap-4">
+        <p className="text-body text-ink">
+          Человек выключен. Подпись «{person.ownerTitle}» можно только снять: вернётся подпись по умолчанию «{fallback}».
+        </p>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button type="button" disabled={busy} onClick={() => void save("")}>
+            {busy ? "Снимаю…" : "Снять подпись"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="flex flex-col gap-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        await save(value);
+      }}
+    >
+      <TextInput
+        label="Подпись роли"
+        id="owner-title"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        maxLength={OWNER_TITLE_MAX + 10}
+        autoComplete="off"
+        placeholder={fallback}
+        hint={`От ${OWNER_TITLE_MIN} до ${OWNER_TITLE_MAX} знаков. Пустое поле вернёт подпись по умолчанию: «${fallback}»`}
+      />
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        <Button type="button" variant="secondary" onClick={onClose}>
+          Отмена
+        </Button>
+        <Button type="submit" disabled={busy}>
+          {busy ? "Сохраняю…" : "Сохранить подпись"}
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -772,7 +878,7 @@ function BannerSection({ initial }: { initial: StandBanner }) {
   const { notify } = usePrototype();
   const [value, setValue] = useState<StandBanner>(initial);
   return (
-    <Section title="Плашка над страницами" description="Видна всем. На пилоте ведёт к инструкции «Как работать» и подсказывает, кому писать замечания">
+    <Section title="Плашка над страницами" description="Видна всем, ведёт к «Как работать»">
       <Segmented
         label="Плашка над страницами"
         options={BANNER_OPTIONS}
@@ -1001,7 +1107,7 @@ function LoginSection({ login }: { login: { team: "on" | "off"; mail: boolean; p
   const [bulk, setBulk] = useState<BulkLink[] | null>(null);
   const [days, setDays] = useState(7);
   return (
-    <Section title="Вход" description="Личный вход записывает в журнал настоящего автора. Общий логин team работает переходную неделю, потом владелец его выключает">
+    <Section title="Вход" description="Личный вход пишет в журнал настоящего автора. Общий логин team только на переходную неделю">
       <Segmented
         label="Способ входа"
         options={TEAM_LOGIN_OPTIONS}

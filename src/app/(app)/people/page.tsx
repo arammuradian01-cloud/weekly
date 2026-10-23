@@ -1,4 +1,4 @@
-import { primaryOwnerSlug } from "@/lib/login/primary";
+import { ownerLabels } from "@/lib/login/primary";
 import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { currentReportingKey, weeklyStates } from "@/lib/weekly/service";
@@ -18,13 +18,13 @@ export default async function TeamPage() {
   const reports = await weeklyStates(key, audienceOf(team));
   // Ритм weekly выбранной команды (этап 15)
   const node = team.nodes.find((n) => n.id === team.id);
+  // Этап 68: подсказка короче. Свой срок сдачи пишется, только если он отличается от департамента; «сдают все» (weekly
+  // сдают и участники, а не только руководители) пишется у любой команды ниже, и со сроком департамента тоже
   const rhythm =
-    node && node.id !== TOP_TEAM
-      ? `. Сдача weekly${node.rhythm.deadline ? `: ${slotText(node.rhythm.deadline)}` : " как у департамента"}, сдают ${node.rhythm.specialists ? "все участники" : "руководители команд"}`
-      : "";
+    node && node.id !== TOP_TEAM ? `${node.rhythm.deadline ? `, сдача ${slotText(node.rhythm.deadline)}` : ""}${node.rhythm.specialists ? ", сдают все" : ""}` : "";
   return (
-    <Section title={team.id ? team.name : "Команда"} hint={`Задачи и weekly каждого за отчётную неделю${rhythm}`}>
-      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} primaryOwner={await primaryOwnerSlug()} />
+    <Section title={team.id ? team.name : "Команда"} hint={`Задачи и weekly за отчётную неделю${rhythm}`}>
+      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} owners={await ownerLabels()} />
     </Section>
   );
 }

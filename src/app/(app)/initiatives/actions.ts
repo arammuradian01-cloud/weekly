@@ -14,7 +14,7 @@ import {
   type InitiativeInput,
 } from "@/lib/initiatives/service";
 
-type Form = { title: string; why: string; owner: string; team: string; goal: string; note?: string };
+type Form = { title: string; why: string; owner: string; team: string; goal: string; note?: string; direction?: string };
 
 const input = (f: Form): InitiativeInput => ({
   title: String(f?.title ?? ""),
@@ -23,6 +23,8 @@ const input = (f: Form): InitiativeInput => ({
   team: String(f?.team ?? ""),
   goal: String(f?.goal ?? ""),
   note: String(f?.note ?? ""),
+  // Старая форма без поля продукта: при правке продукт не меняется
+  direction: f?.direction === undefined ? undefined : String(f.direction ?? ""),
 });
 
 function done<T>(result: T) {

@@ -171,7 +171,8 @@ export function MonthPlan({ initial, section = "products" }: { initial: MonthPla
           <Module
             id="plan-products"
             title="По продуктам"
-            description="Прогноз после корректировок команды против LBE и бюджета по показателю, выбранному сверху. Нажмите на продукт: его драйверы раскроются под строкой."
+            // Этап 68: описание в одну строку, как на других страницах
+            description="Нажмите на продукт: под строкой раскроются его драйверы"
             flush
           >
             <ProductsTable
@@ -367,7 +368,7 @@ function History({ view }: { view: MonthPlanView }) {
     <Module
       id="plan-history"
       title="Журнал корректировок"
-      description="Все корректировки драйверов за месяц: кто, когда и почему. Действует последняя корректировка показателя, прежние остаются в журнале."
+      description="Кто, когда и почему. Действует последняя корректировка показателя"
       flush
     >
       {view.history.length ? (

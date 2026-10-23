@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sameSiteOrigin } from "@/lib/app-url";
 import { unstable_rethrow } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { writingActor } from "@/lib/action-runner";
@@ -20,7 +21,7 @@ const answer = (status: number, error: string, problems?: string[]) => NextRespo
 /**
  * Импорт наполнения (этап 67). Тело: файл пакета JSON целиком. ?mode=preview только считает, что добавится,
  * обновится и пропустится; ?mode=apply загружает одной транзакцией. &duplicates=1: загружать все вероятные дубли,
- * &dup=task/ключ,decision/ключ: только выбранные. &due=ГГГГ-ММ-ДД: срок для открытых задач, у которых срок в пакете уже
+ * &dup=task/ключ,decision/ключ,initiative/ключ: только выбранные. &due=ГГГГ-ММ-ДД: срок для открытых задач, у которых срок в пакете уже
  * прошёл (по умолчанию через две недели). Владелец при личном входе в режиме управления.
  *
  * Путь идёт мимо proxy (src/proxy.ts), как загрузка пакета рынка: иначе Next прочитал бы всё тело в память до вызова
@@ -31,7 +32,7 @@ const answer = (status: number, error: string, problems?: string[]) => NextRespo
 export async function POST(request: Request) {
   try {
     const origin = request.headers.get("origin");
-    if (origin && !sameSite(origin, request.url)) return answer(403, "Запрос с чужого сайта");
+    if (origin && !sameSiteOrigin(origin, request)) return answer(403, "Запрос с чужого сайта");
     if (!(await readSession())) return answer(401, CONTENT_SIGNED_OUT);
     const actor = await actorOrNull();
     if (!actor) return answer(401, CONTENT_SIGNED_OUT);
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
     if (due && !isIsoDate(due)) return answer(400, "Срок для задач без актуального срока: дата в виде ГГГГ-ММ-ДД");
     const duplicateKeys = (params.get("dup") ?? "")
       .split(",")
-      .filter((id) => /^(task|decision)\/[A-Za-z0-9._:-]{3,120}$/.test(id))
+      .filter((id) => /^(task|decision|initiative)\/[A-Za-z0-9._:-]{3,120}$/.test(id))
       .slice(0, 2000);
     const opts = { duplicates: params.get("duplicates") === "1", duplicateKeys, ...(due ? { staleDue: due } : {}) };
     const value = mode === "preview" ? await previewContentImport(actor, pkg, opts) : await applyContentImport(actor, pkg, opts);
@@ -97,13 +98,4 @@ async function readBody(request: Request, limit: number): Promise<{ text: string
     at += c.byteLength;
   }
   return { text: new TextDecoder("utf-8").decode(all), bytes };
-}
-
-function sameSite(origin: string, url: string): boolean {
-  if (origin === process.env.APP_URL?.replace(/\/+$/, "")) return true;
-  try {
-    return new URL(origin).host === new URL(url).host;
-  } catch {
-    return false;
-  }
 }

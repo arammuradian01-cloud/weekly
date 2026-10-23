@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { sameSiteOrigin } from "@/lib/app-url";
 import { unstable_rethrow } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { writingActor } from "@/lib/action-runner";
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
   try {
     // Запрос только со страницы ресурса: чужой сайт не отправит файл от имени вошедшего человека
     const origin = request.headers.get("origin");
-    if (origin && !sameSite(origin, request.url)) return answer(403, "Запрос с чужого сайта");
+    if (origin && !sameSiteOrigin(origin, request)) return answer(403, "Запрос с чужого сайта");
     // Вход: без действующей cookie сразу ответ, а не перенаправление на вход (браузер повторил бы POST с файлом)
     if (!(await readSession())) return answer(401, MARKET_SIGNED_OUT);
     const actor = await actorOrNull();
@@ -91,13 +92,4 @@ async function readBody(request: Request, limit: number): Promise<{ text: string
     at += c.byteLength;
   }
   return { text: new TextDecoder("utf-8").decode(all), bytes };
-}
-
-function sameSite(origin: string, url: string): boolean {
-  if (origin === process.env.APP_URL?.replace(/\/+$/, "")) return true;
-  try {
-    return new URL(origin).host === new URL(url).host;
-  } catch {
-    return false;
-  }
 }

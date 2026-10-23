@@ -49,6 +49,7 @@ import { searchAction } from "@/app/(app)/search/actions";
 import { weekViewAction } from "@/app/(app)/weekly/actions";
 import { POST as leaderBoardPost } from "@/app/api/goals/leader-board/route";
 import { POST as marketUploadPost } from "@/app/api/market/upload/route";
+import { GET as marketDataGet } from "@/app/api/market/data/route";
 import { GET as forecastExportGet } from "@/app/(app)/forecast/export/route";
 import { GET as exportExcelGet } from "@/app/(app)/settings/export/route";
 
@@ -516,6 +517,10 @@ describe("только просмотр", () => {
     const market = await marketUploadPost(new Request("http://localhost:3000/api/market/upload", { method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" }, body: "{}" }));
     expect(market.status).toBe(403);
     expect((await market.json()).error).toBe(VIEW_AS_DENIED);
+
+    // Этап 72 открыл рынок режиму управления: в просмотре от лица человека без доступа данные рынка закрыты
+    const marketData = await marketDataGet();
+    expect(marketData.status).toBe(403);
 
     const exported = await forecastExportGet(new Request("http://localhost:3000/forecast/export"));
     expect(exported.status).toBe(403);
