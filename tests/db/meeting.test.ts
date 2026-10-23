@@ -63,6 +63,40 @@ const mk = async (title: string, patch: Partial<Parameters<typeof tasks.createTa
   (await tasks.createTask(await actor.owner(), { title, outcome: "Результат", owner: "reva", direction: "kasko", due: addDays(moscowToday(), 10), team: TOP_TEAM, ...patch })).task;
 
 describe("повестка", () => {
+  it("историческая задача, загруженная во время прошлой встречи, не становится её новым поручением", async () => {
+    const previous = await weekly.ensureWeek(prisma, shiftWeek(key, -1));
+    const date = addDays(shiftWeek(key, -1), 8);
+    const startedAt = new Date(`${date}T09:00:00Z`);
+    const createdAt = new Date(startedAt.getTime() + 10 * 60_000);
+    await prisma.meeting.create({ data: { weekId: previous.id, teamId: TOP_TEAM, date: new Date(`${date}T00:00:00Z`), startedAt, closedAt: new Date(startedAt.getTime() + 60 * 60_000), status: "DONE" } });
+    const historical = await mk("Старое выполненное поручение", { source: "meeting" });
+    const unknown = await mk("История без даты", { source: "meeting" });
+    const real = await mk("Новое поручение живой встречи");
+    const recentDone = await mk("Итог поручения прошлой встречи", { source: "meeting" });
+    await prisma.task.update({ where: { number: historical.number }, data: { status: "DONE", resolution: "Выполнено в тесте", sourceDate: new Date(`${addDays(date, -28)}T00:00:00Z`), createdAt } });
+    const imported = await prisma.task.update({ where: { number: unknown.number }, data: { status: "DONE", resolution: "Выполнено в тесте", sourceDate: null, createdAt } });
+    await prisma.contentImportKey.create({ data: { kind: "task", key: "test-meeting-history", entityId: imported.id, hash: "test", payload: {} } });
+    await prisma.task.update({ where: { number: real.number }, data: { createdAt } });
+    await prisma.task.update({ where: { number: recentDone.number }, data: { status: "DONE", resolution: "Выполнено в тесте", sourceDate: new Date(`${date}T00:00:00Z`) } });
+    try {
+      const view = await m.buildAgenda(await actor.owner(), TOP_TEAM, key);
+      const numbers = view.items.filter((i) => i.kind === "follow-up").map((i) => i.task?.number);
+      expect(numbers).not.toContain(historical.number);
+      expect(numbers).not.toContain(unknown.number);
+      expect(numbers).toContain(real.number);
+      expect(numbers).toContain(recentDone.number);
+    } finally {
+      await prisma.contentImportKey.deleteMany({ where: { key: "test-meeting-history" } });
+    }
+  });
+
+  it("одно поручение с риском, критичным приоритетом и просрочкой даёт один автоматический пункт", async () => {
+    const task = await mk("Одно обсуждение вместо трёх", { source: "meeting", priority: "critical" });
+    await prisma.task.update({ where: { number: task.number }, data: { sourceDate: new Date(`${addDays(shiftWeek(key, -1), 8)}T00:00:00Z`), state: "AT_RISK", riskNote: "Не хватает ресурса", due: new Date(`${addDays(moscowToday(), -10)}T00:00:00Z`) } });
+    const view = await m.buildAgenda(await actor.owner(), TOP_TEAM, key);
+    expect(view.items.filter((i) => i.task?.number === task.number)).toHaveLength(1);
+  });
+
   it("собирается из поручений прошлой встречи, блокеров и риска, критичных и просроченных, зависших просьб, вопросов и лидеров; владелец последним", async () => {
     const owner = await actor.owner();
     const reva = await actor.reva();
