@@ -15,7 +15,7 @@ import { formatShort, plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/badge";
 import { OverdueNote } from "@/components/ui/task-badges";
-import { Meter, goalStatus } from "./goals-table";
+import { Meter, goalStatus, type GoalGroupBy } from "./goals-table";
 
 export type QuarterSlice = { key: string; label: string; count: number; color: string; active: boolean; onClick: () => void };
 
@@ -51,19 +51,22 @@ export function QuarterBar({ total, slices, onAll, allActive }: { total: number;
 
 type Actions = { onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; onFact: (g: GoalNode) => void; creatable: boolean };
 
-export function GoalsCards({ goals, ...actions }: { goals: GoalNode[] } & Actions) {
-  // Группы по командам в порядке первой встречи: сервис уже отдаёт департамент первым
-  const groups: { team: string; name: string; goals: GoalNode[] }[] = [];
+export function GoalsCards({ goals, groupBy, ...actions }: { goals: GoalNode[]; groupBy: GoalGroupBy } & Actions) {
+  // [Codex] По умолчанию отдельная секция на сотрудника; командный вид остаётся доступен.
+  const groups: { key: string; name: string; goals: GoalNode[] }[] = [];
   for (const g of goals) {
-    const group = groups.find((x) => x.team === g.team.id);
+    const key = groupBy === "person" ? (g.owner?.slug ?? "none") : g.team.id;
+    const name = groupBy === "person" ? (g.owner?.fullName ?? "Без владельца") : g.team.name;
+    const group = groups.find((x) => x.key === key);
     if (group) group.goals.push(g);
-    else groups.push({ team: g.team.id, name: g.team.name, goals: [g] });
+    else groups.push({ key, name, goals: [g] });
   }
+  if (groupBy === "person") groups.sort((a, b) => a.key === "none" ? 1 : b.key === "none" ? -1 : a.name.localeCompare(b.name, "ru"));
   return (
     <div className="flex flex-col gap-8 p-4 sm:p-5" data-testid="goals-cards">
       {groups.map((gr) => (
-        <section key={gr.team} aria-labelledby={`gc-${gr.team}`} className="flex flex-col gap-3">
-          <h3 id={`gc-${gr.team}`} className="m-0 flex items-baseline gap-2 text-title-sm font-semibold text-ink">
+        <section key={gr.key} aria-labelledby={`gc-${groupBy}-${gr.key}`} className="flex flex-col gap-3 rounded-control-lg border border-line p-3 sm:p-4">
+          <h3 id={`gc-${groupBy}-${gr.key}`} className="m-0 flex flex-wrap items-baseline gap-2 border-b border-line pb-3 text-title-sm font-semibold text-ink">
             {gr.name}
             <span className="text-small font-normal text-muted">
               {gr.goals.length} {plural(gr.goals.length, "цель", "цели", "целей")}
@@ -124,6 +127,7 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-3 text-caption text-muted">
         {g.owner ? <span className="font-semibold text-ink">{g.owner.fullName}</span> : null}
+        <span>{g.team.name}</span>
         {g.numeric && g.progress.total ? <span>задач {goalTasksText(g.progress.done, g.progress.total)}</span> : null}
         {g.progress.overdue ? <span className="font-semibold text-danger-ink">просрочено {g.progress.overdue}</span> : null}
         {g.below.total ? <span>целей ниже {g.below.achieved} из {g.below.total}</span> : null}
