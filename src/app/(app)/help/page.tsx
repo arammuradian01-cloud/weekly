@@ -65,7 +65,7 @@ export default async function HelpPage() {
     { id: "novosti", label: "Новости" },
     { id: "rynok", label: "Рынок" },
     { id: "prava", label: "Кто что видит" },
-    ...(owner ? [{ id: "smotret-kak", label: "Смотреть как" }] : []),
+    ...(owner ? [{ id: "smenit-profil", label: "Сменить профиль" }, { id: "smotret-kak", label: "Смотреть как" }] : []),
   ];
 
   return (
