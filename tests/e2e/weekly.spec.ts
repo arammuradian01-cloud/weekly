@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase } from "./helpers";
+import { enter, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Weekly на настоящей базе (этап 4): лента, черновик и сдача, отчёт CEO, закрытие недели.
 // Каждый сценарий идёт и на ноутбуке 1440, и на телефоне 360: это и есть приёмка «сдать неделю с телефона и ноутбука»
@@ -224,10 +224,27 @@ test("администратор закрывает неделю, лидер б�
   await expect(page.getByText(/Неделя \d+ снова открыта/).first()).toBeVisible();
 });
 
-test("режим встречи показывает записи недели крупно и риски отдельно", async ({ page }) => {
+test("режим встречи по умолчанию открывает отчётную неделю; прошлые записи доступны при явном выборе", async ({ page }) => {
   await enter(page, "Мурадян Арам");
+  const [{ key }] = await sql(`WITH n AS (SELECT now() AT TIME ZONE 'Europe/Moscow' AS m), c AS (SELECT m, date_trunc('week', m)::date AS mon FROM n) SELECT to_char(CASE WHEN m < mon + interval '42 hours' THEN mon - 7 ELSE mon END, 'YYYY-MM-DD') AS key FROM c`);
+  const [{ old }] = await sql(`SELECT to_char(w.start, 'YYYY-MM-DD') AS old FROM weeks w WHERE EXISTS (SELECT 1 FROM weekly_entries e WHERE e."weekId" = w.id) ORDER BY w.start DESC LIMIT 1`);
+  expect(old).not.toBe(key);
+  // Лента может показывать последнюю заполненную неделю, кнопка встречи должна вести на отчётную.
+  await page.goto("/weekly");
+  await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${key}`);
   await page.goto("/weekly/meeting");
+  await expect(page.getByTestId("meeting-week")).toContainText("отчётная");
+  await expect(page.locator("h3")).toHaveCount(0);
+  await shot(page, "meeting-current-empty");
+  // Явно выбранная прошлая неделя сохраняется и в ленте, и во встрече.
+  await page.goto(`/weekly?week=${old}`);
+  await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${old}`);
+  await page.goto(`/weekly/meeting?week=${old}`);
+  await expect(page.getByTestId("meeting-week")).toContainText("Прошлая неделя");
   await expect(page.getByText(/Риски и запросы помощи/).first()).toBeVisible();
   await expect(page.locator("h3").first()).toBeVisible();
   await shot(page, "meeting");
+  await page.getByRole("button", { name: "Текущая", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`week=${key}$`));
+  await expect(page.locator("h3")).toHaveCount(0);
 });

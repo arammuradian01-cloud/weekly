@@ -225,7 +225,7 @@ export function WeeklyFeed({
             <TrendingUp className="h-4 w-4" aria-hidden="true" />
             Прогноз
           </Link>
-          <Link href={`/weekly/meeting?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
+          <Link href={`/weekly/meeting?week=${data.fallback ? data.reportingKey : week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <MonitorPlay className="h-4 w-4" aria-hidden="true" />
             <span className="sm:hidden">Встреча</span>
             <span className="hidden sm:inline">Режим встречи</span>

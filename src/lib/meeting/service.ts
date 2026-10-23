@@ -285,13 +285,18 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   if (market) drafts.push({ kind: "MARKET", ...market });
   // Поручения: задачи с источником «встреча», поставленные с прошлой встречи до этой (и на следующий день после разбора
   // в Notion), и задачи, созданные за время прошлой встречи в живом режиме
+  // Исторический импорт создаёт строку сейчас, но не новое поручение. Дата источника имеет приоритет перед createdAt;
+  // у импорта без даты источник узнаём по ключам пакета, у Bord — по importBatch.
+  const imported = prev?.startedAt && prev.closedAt
+    ? await prisma.contentImportKey.findMany({ where: { kind: "task" }, select: { entityId: true } })
+    : [];
   const followUps = await prisma.task.findMany({
     where: {
       teamId: team.id,
       archivedAt: null,
       OR: [
         { sourceCode: "meeting", sourceDate: { gte: dbDate(prevDate), lt: dbDate(thisDate) } },
-        ...(prev?.startedAt && prev.closedAt ? [{ createdAt: { gte: prev.startedAt, lte: prev.closedAt } }] : []),
+        ...(prev?.startedAt && prev.closedAt ? [{ sourceDate: null, importBatch: null, id: { notIn: imported.map((i) => i.entityId) }, createdAt: { gte: prev.startedAt, lte: prev.closedAt } }] : []),
       ],
     },
     select: { id: true, number: true, title: true, status: true },
@@ -357,7 +362,15 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   const expected = await prisma.person.findMany({ where: { id: { in: expectedOf(team, leadersOf(a.nodes)) }, active: true }, select: { id: true, fullName: true }, orderBy: { sortOrder: "asc" } });
   const ordered = [...expected].sort((x, y) => Number(x.id === team.leaderId) - Number(y.id === team.leaderId));
   for (const p of ordered) drafts.push({ kind: "PERSON", autoKey: `person:${p.id}`, personId: p.id, title: `${p.fullName}: что главное за неделю и что дальше?` });
-  return drafts;
+  // Одна задача — один автоматический пункт: поручение, затем риск, затем прочее внимание.
+  // Явно заданные вопросы обсуждения остаются самостоятельными пунктами.
+  const automaticTasks = new Set<string>();
+  return drafts.filter((d) => {
+    if (!d.taskId || !["FOLLOW_UP", "TASK_STATE", "TASK_ATTENTION"].includes(d.kind)) return true;
+    if (automaticTasks.has(d.taskId)) return false;
+    automaticTasks.add(d.taskId);
+    return true;
+  });
 }
 
 /**

@@ -40,7 +40,9 @@ test("владелец собирает повестку, ведёт встре�
   test.setTimeout(60_000);
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await page.goto("/weekly/meeting");
+  // Этот сценарий разбирает исторические поручения фикстуры: открываем её неделю явно.
+  const [{ key }] = await sql(`SELECT to_char(w.start, 'YYYY-MM-DD') AS key FROM weeks w WHERE EXISTS (SELECT 1 FROM weekly_entries e WHERE e."weekId" = w.id) ORDER BY w.start DESC LIMIT 1`);
+  await page.goto(`/weekly/meeting?week=${key}`);
   await page.getByRole("button", { name: "Собрать повестку" }).click();
   await expect(page.getByText("Повестка собрана").first()).toBeVisible();
   await expect(page.getByText(/^Повестка: \d+ пунктов/).filter({ visible: true }).first()).toBeVisible();
@@ -79,7 +81,7 @@ test("владелец собирает повестку, ведёт встре�
 
   // Участник видит тот же пункт и идёт за ведущим
   const reva = await second(browser, page, "Рева Тарас");
-  await reva.goto("/weekly/meeting");
+  await reva.goto(`/weekly/meeting?week=${key}`);
   await expect(reva.getByRole("heading", { name: /Задача 28 заблокирована/ })).toBeVisible();
   await expect(reva.getByText(/Экран идёт за ведущим: Арам/)).toBeVisible();
   await expect(reva.getByRole("button", { name: "Начать встречу" })).toHaveCount(0);

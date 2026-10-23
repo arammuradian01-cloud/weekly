@@ -20,7 +20,7 @@ import { MeetingQuestions, type StuckItems } from "./meeting-questions";
  * Сначала риски и запросы помощи, потом лидеры по очереди (раздел 3 ТЗ).
  */
 export function MeetingMode({ view, questions = [], stuck = { requests: [], proposals: [] } }: { view: WeekView; questions?: MeetingQuestion[]; stuck?: StuckItems }) {
-  // Пока за отчётную неделю записей нет, встреча открывается на последней разобранной неделе (сервер выбирает её сам)
+  // Сервер выбирает отчётную неделю либо неделю, которую явно открыли в архиве.
   const week = view.week.number;
   const entries = view.entries;
   // Лидеры по очереди, владелец последним. Общие записи без автора отдельным шагом после рисков
