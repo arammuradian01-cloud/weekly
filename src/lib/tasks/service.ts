@@ -52,8 +52,11 @@ export { TaskRuleError };
 /** Цель у задачи уже та, что выбрали (этап 65): для нескольких задач разом это успех, а не отказ */
 export class SameGoalError extends TaskRuleError {}
 
-/** warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20) */
-export type TaskResult = { task: Task; undo?: string; warning?: string };
+/**
+ * warning: правка прошла, но человеку есть что сказать, например упоминание не дошло (этап 20). notice: правка прошла и
+ * задела ещё одно поле, это дописывается к тексту уведомления (этап 68: срок раньше начала сдвинул начало)
+ */
+export type TaskResult = { task: Task; undo?: string; warning?: string; notice?: string };
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -167,6 +170,7 @@ function snapshot(row: TaskRow): TaskSnapshot {
     due: isoFromDbDate(row.due),
     archivedAt: row.archivedAt?.toISOString() ?? null,
     goalId: row.goalId,
+    startOn: row.startOn ? isoFromDbDate(row.startOn) : null,
   };
 }
 
@@ -191,7 +195,7 @@ async function audit(db: Db, actor: Actor, number: number, changes: Change[]): P
   });
 }
 
-type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: Omit<Extract<UndoSpec, { kind: "restore" }>, "kind" | "number" | "snapshot" | "expectUpdatedAt"> | false };
+type Plan = { data: Prisma.TaskUncheckedUpdateInput; changes: Change[]; undo?: Omit<Extract<UndoSpec, { kind: "restore" }>, "kind" | "number" | "snapshot" | "expectUpdatedAt"> | false; notice?: string };
 
 /**
  * Общий ход правки: блокируем строку, проверяем правило, меняем, пишем журнал, отдаём новую задачу и токен отмены.
@@ -231,7 +235,7 @@ async function mutateIn(tx: Tx, actor: Actor, number: number, plan: PlanFn): Pro
     p.undo === false
       ? undefined
       : issueUndoToken({ kind: "restore", number, snapshot: before, expectUpdatedAt: updated.updatedAt.toISOString(), ...(p.undo ?? {}) }, actor.personId);
-  return { task: toTaskDto(updated), undo };
+  return { task: toTaskDto(updated), undo, ...(p.notice ? { notice: p.notice } : {}) };
 }
 
 // ---------- Чтение ----------
@@ -851,28 +855,96 @@ export async function updateWhere(actor: Actor, number: number, text: string, db
 export async function transferDue(actor: Actor, number: number, to: IsoDate, reason: string, db?: Tx): Promise<TaskResult> {
   const transferId = `tr_${crypto.randomUUID()}`;
   return mutate(actor, number, async (row, can, tx) => {
-    if (!can.due) fail("Срок переносит ответственный, владелец или администратор");
-    if (CLOSED_DB.includes(row.status)) fail("Закрытой задаче срок не переносят");
-    if (!isIsoDate(to)) fail("Выберите новый срок");
-    const from = isoFromDbDate(row.due);
-    if (to === from) fail("Выберите новый срок");
-    if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
-    const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
-    await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
-    // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
-    await syncRequestDue(tx, { id: row.id, number }, dbDate(to), actor);
-    // Задачи, которые ждут эту: срок ушёл позже их срока, их ответственные узнают (этап 21)
-    const newDue = dbDate(to);
-    await notifyDependents(tx, { id: row.id }, actor, (dep) => (dep.due < newDue ? `Срок задачи ${number}, которую ждёт ваша задача ${dep.number}, перенесён на ${formatLong(to)}: позже вашего срока` : null));
-    // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
-    await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
-    await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
+    const t = await planTransfer(tx, actor, row, can, number, to, reason, transferId);
+    // Этап 68: новый срок раньше начала на карте сроков: начало сдвигается на срок в той же правке, в журнале своей строкой
+    const start = row.startOn ? isoFromDbDate(row.startOn) : null;
+    const shift = start !== null && to < start;
     return {
-      data: { due: dbDate(to) },
-      changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
+      data: { ...t.data, ...(shift ? { startOn: dbDate(to) } : {}) },
+      changes: [...t.changes, ...(shift ? [{ field: "Начало", before: formatLong(start!), after: `${formatLong(to)}: срок раньше прежнего начала` }] : [])],
       undo: { removeTransferId: transferId },
+      ...(shift ? { notice: `Начало сдвинуто на ${formatLong(to)}` } : {}),
     };
   }, db);
+}
+
+/**
+ * Перенос срока внутри правки (transferDue и сдвиг полосы целиком): права, проверки даты и причины, запись переноса,
+ * срок просьбы за задачей, события ждущим задачам, ответственному и подписчикам. Возвращает изменения задачи
+ */
+async function planTransfer(tx: Tx, actor: Actor, row: TaskRow, can: TaskPermissions, number: number, to: IsoDate, reason: string, transferId: string): Promise<Pick<Plan, "data" | "changes">> {
+  if (!can.due) fail("Срок переносит ответственный, владелец или администратор");
+  if (CLOSED_DB.includes(row.status)) fail("Закрытой задаче срок не переносят");
+  if (!isIsoDate(to)) fail("Выберите новый срок");
+  const from = isoFromDbDate(row.due);
+  if (to === from) fail("Выберите новый срок");
+  if (to < moscowToday()) fail("Новый срок не может быть в прошлом");
+  const why = required(reason, LIMITS.reason, "Без причины перенести нельзя", "Причина переноса");
+  await tx.taskTransfer.create({ data: { id: transferId, taskId: row.id, fromDue: row.due, toDue: dbDate(to), reason: why, byId: actor.personId, at: new Date() } });
+  // Задача из просьбы: у просьбы тот же срок, что у задачи (этап 21)
+  await syncRequestDue(tx, { id: row.id, number }, dbDate(to), actor);
+  // Задачи, которые ждут эту: срок ушёл позже их срока, их ответственные узнают (этап 21)
+  const newDue = dbDate(to);
+  await notifyDependents(tx, { id: row.id }, actor, (dep) => (dep.due < newDue ? `Срок задачи ${number}, которую ждёт ваша задача ${dep.number}, перенесён на ${formatLong(to)}: позже вашего срока` : null));
+  // Срок моей задачи перенёс кто-то другой: ответственный должен об этом знать
+  await notify(tx, { kind: "TASK_DUE", recipients: [row.ownerId], actor, subject: taskSubject(number), taskId: row.id, text: `Срок перенесён на ${formatLong(to)}: ${quote(why)}` });
+  await notifyWatchers(tx, row.id, `Срок перенесён на ${formatLong(to)}: ${quote(why)}`, actor, [row.ownerId]);
+  return {
+    data: { due: dbDate(to) },
+    changes: [{ field: "Срок", before: formatLong(from), after: `${formatLong(to)}. Причина: ${why}` }],
+  };
+}
+
+/** Проверки начала (этап 68): права как у срока, задача открыта, дата настоящая, не позже срока */
+function checkStart(row: TaskRow, can: TaskPermissions, start: IsoDate | null, due: IsoDate) {
+  if (!can.due) fail("Начало задачи меняет тот, кто может менять её срок");
+  if (CLOSED_DB.includes(row.status)) fail("У закрытой задачи начало не меняют");
+  if (start !== null && !isIsoDate(start)) fail("Выберите дату начала");
+  if (start && start > due) fail("Начало не может быть позже срока");
+}
+
+const startChange = (before: IsoDate | null, after: IsoDate | null): Change => ({ field: "Начало", before: before ? formatLong(before) : null, after: after ? formatLong(after) : "не задано" });
+
+/**
+ * Начало работы над задачей (этап 68): левый край полосы на карте сроков и поле «Начало» в карточке. Права те же, что
+ * у срока. Без причины: это не перенос, обещанный срок не меняется. null убирает начало, полоса снова идёт от даты
+ * постановки. Отменяется, как другие правки: снимок задачи хранит и начало
+ */
+export async function setTaskStart(actor: Actor, number: number, start: IsoDate | null): Promise<TaskResult> {
+  return mutate(actor, number, async (row, can) => {
+    checkStart(row, can, start, isoFromDbDate(row.due));
+    const before = row.startOn ? isoFromDbDate(row.startOn) : null;
+    if (before === start) fail("Начало уже такое");
+    return { data: { startOn: start ? dbDate(start) : null }, changes: [startChange(before, start)] };
+  });
+}
+
+/**
+ * Сдвиг полосы целиком на карте сроков (этап 68): начало и срок одной правкой, в одной транзакции. Срок переносится с
+ * причиной по правилам transferDue, начало без причины; в журнале обе строки, отмена возвращает оба поля. Поле, которое
+ * не менялось, не трогается: так же сохраняется и одно начало, и один срок
+ */
+export async function moveTaskSpan(actor: Actor, number: number, start: IsoDate, due: IsoDate, reason: string): Promise<TaskResult> {
+  const transferId = `tr_${crypto.randomUUID()}`;
+  return mutate(actor, number, async (row, can, tx) => {
+    if (!isIsoDate(due)) fail("Выберите новый срок");
+    if (!isIsoDate(start)) fail("Выберите дату начала");
+    // Срок раньше начала: начало встаёт на срок, как при обычном переносе срока
+    const clamped = start > due;
+    const next = clamped ? due : start;
+    checkStart(row, can, next, due);
+    const dueChanged = due !== isoFromDbDate(row.due);
+    const before = row.startOn ? isoFromDbDate(row.startOn) : null;
+    const startChanged = next !== before;
+    if (!dueChanged && !startChanged) fail("Ничего не изменилось");
+    const t = dueChanged ? await planTransfer(tx, actor, row, can, number, due, reason, transferId) : { data: {}, changes: [] };
+    return {
+      data: { ...t.data, ...(startChanged ? { startOn: dbDate(next) } : {}) },
+      changes: [...t.changes, ...(startChanged ? [startChange(before, next)] : [])],
+      undo: dueChanged ? { removeTransferId: transferId } : {},
+      ...(clamped ? { notice: `Начало сдвинуто на ${formatLong(due)}` } : {}),
+    };
+  });
 }
 
 export type EditInput = { title?: string; outcome?: string; direction?: string; source?: string; sourceNote?: string | null };
@@ -1335,6 +1407,8 @@ async function restoreChanges(tx: Tx, row: TaskRow, b: TaskSnapshot): Promise<Ch
     const items = await tx.dictionaryItem.findMany({ where: { kind: "TASK_SOURCE", code: { in: [row.sourceCode, b.sourceCode] } } });
     add("Источник", items.find((i) => i.code === row.sourceCode)?.label ?? row.sourceCode, items.find((i) => i.code === b.sourceCode)?.label ?? b.sourceCode);
   }
+  // Начало (этап 68): в старых токенах его нет, тогда начало не трогаем
+  if (b.startOn !== undefined) add("Начало", row.startOn ? formatLong(isoFromDbDate(row.startOn)) : null, b.startOn ? formatLong(b.startOn) : null);
   // Цель (этап 65): в старых токенах её нет, тогда цель не трогаем. Прежнюю цель могли удалить: тогда отменить нельзя
   if (b.goalId !== undefined && (row.goalId ?? null) !== (b.goalId ?? null)) {
     const goal = b.goalId ? await tx.goal.findUnique({ where: { id: b.goalId }, select: { title: true } }) : null;
@@ -1407,6 +1481,7 @@ export async function undoChange(actor: Actor, token: string): Promise<{ task: T
         due: dbDate(b.due),
         archivedAt: b.archivedAt ? new Date(b.archivedAt) : null,
         ...(b.goalId !== undefined ? { goalId: b.goalId } : {}),
+        ...(b.startOn !== undefined ? { startOn: b.startOn ? dbDate(b.startOn) : null } : {}),
       },
       include: taskInclude,
     });

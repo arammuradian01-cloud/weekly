@@ -52,7 +52,6 @@ export default async function SettingsPage() {
     ? { sources: await listSources(), keywords: await loadKeywords(), directions: await newsDirections(), lastFetchAt: (await lastFetchAt())?.toISOString() ?? null, claude: await claudeStatus(), manual: await manualFetchState() }
     : undefined;
   const active = people.filter((p) => p.active).length;
-  const off = people.length - active;
   const away = Object.entries(absences as Record<string, unknown[]>).filter(([slug, list]) => list.length && people.some((p) => p.slug === slug && p.active)).length;
   const passwords = (Object.keys(PASSWORD_SETTING_KEYS) as PasswordKind[]).map((kind) => ({
     title: PASSWORD_TITLES[kind],
@@ -67,15 +66,15 @@ export default async function SettingsPage() {
         figures={
           owner && people.length ? (
             // Этап 37: люди и входы в цифрах, только владельцу (люди и пароли видит только он). Этап 48: строкой, не
-            // больше трёх, нули спрятаны, цифра ведёт к разделу
+            // больше трёх, нули спрятаны, цифра ведёт к разделу. Этап 68: цифр ровно три, по одной на действие.
+            // «Выключено» и «с личным паролем» убраны: первое видно в разделе людей, второе дополняет «без личного
+            // пароля» до «включено». При пяти цифрах и max 3 «с отсутствием впереди» без оттенка не попадала в строку
             <Figures
               label="Люди и входы в цифрах"
               inline
               max={3}
               items={[
                 { label: plural(active, "человек включён", "человека включено", "человек включено"), value: active, href: "#people", testId: "set-fig-active", keepZero: true },
-                { label: plural(off, "выключен", "выключено", "выключено"), value: off, href: "#people", testId: "set-fig-off" },
-                ...(personal ? [{ label: `из ${personal.total} с личным паролем`, value: personal.withPassword, href: "#login", testId: "set-fig-passwords" }] : []),
                 ...(personal ? [{ label: "без личного пароля", value: personal.total - personal.withPassword, tone: "warning" as const, href: "#login", testId: "set-fig-invitable" }] : []),
                 { label: "с отсутствием впереди", value: away, href: "#people", testId: "set-fig-absences" },
               ]}

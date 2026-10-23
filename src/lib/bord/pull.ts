@@ -355,6 +355,13 @@ export async function pullBord(reader: BordReader, opts: { now?: Date; db?: Pris
               data.due = dbDate(row.due!);
               extra.transfer = { fromDue: task.due, toDue: dbDate(row.due!), reason: TRANSFER_REASON, byId: null, at: now };
             });
+            // Этап 68: срок из Bord раньше начала на карте сроков: начало обнуляется (полоса снова от даты постановки),
+            // в журнал своей строкой. Сдвигать начало на срок из таблицы нельзя: его в Bord никто не ставил
+            const start = task.startOn ? isoFromDbDate(task.startOn) : null;
+            if (data.due !== undefined && start && row.due < start) {
+              data.startOn = null;
+              changes.push(["Начало", ruDate(start), "не задано: срок в Bord раньше начала"]);
+            }
           }
         }
         if (inBord((s) => s.status)) {

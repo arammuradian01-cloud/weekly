@@ -262,6 +262,7 @@ model DictionaryItem {
   entriesByBlock     WeeklyEntry[] @relation("EntryBlock")
   entriesByType      WeeklyEntry[] @relation("EntryType")
   forecasts          Forecast[]    @relation("ForecastDirection")
+  initiatives        Initiative[]  @relation("InitiativeDirection")
 
   @@unique([kind, code])
   @@map("dictionary_items")
@@ -350,6 +351,8 @@ model Task {
   whereNow           String         @default("")
   whereUpdatedAt     DateTime       @db.Date
   due                DateTime       @db.Date
+  /// Этап 68: начало работы, левый край полосы на карте сроков roadmap. Нет: полоса от даты постановки
+  startOn            DateTime?      @db.Date
   /// Исходный срок не меняется. null: срок переносили в таблице до запуска ресурса, прежний не записан
   originalDue        DateTime?      @db.Date
   /// Код из справочника TASK_SOURCE: meeting, weekly, ceo, other
@@ -2033,6 +2036,9 @@ model Initiative {
   /// Команда, которая ведёт инициативу
   teamId      String            @default("top")
   team        Team              @relation(fields: [teamId], references: [id])
+  /// Продукт из справочника направлений (этап 67г): по нему инициативы делятся на странице. null: общая для департамента
+  directionId String?
+  direction   DictionaryItem?   @relation("InitiativeDirection", fields: [directionId], references: [id], onDelete: SetNull)
   /// Цель квартала, на которую работает (не обязательно)
   goalId      String?
   goal        Goal?             @relation(fields: [goalId], references: [id], onDelete: SetNull)
@@ -2057,6 +2063,7 @@ model Initiative {
 
   @@index([closedAt])
   @@index([ownerId])
+  @@index([directionId])
   @@map("initiatives")
 }
 

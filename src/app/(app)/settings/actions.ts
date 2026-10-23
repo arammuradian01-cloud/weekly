@@ -128,7 +128,12 @@ export async function saveNumbersAccessAction(input: { full: { units: string[]; 
   return done(await runAction("Доступ к цифрам", (a) => saveNumbersAccess(a, input)));
 }
 
-/** Рынок КАСКО и ОСАГО (этап 62): кто видит раздел и у каких команд разбор на первой встрече месяца */
-export async function saveMarketSettingsAction(input: { people: string[]; teamIds: string[] }): Promise<Result<MarketSettingsView>> {
-  return done(await runAction("Настройка рынка", (a) => saveMarketSettings(a, { people: Array.isArray(input?.people) ? input.people : [], teamIds: Array.isArray(input?.teamIds) ? input.teamIds : [] })));
+/**
+ * Рынок КАСКО и ОСАГО (этап 62): кто видит раздел и у каких команд разбор на первой встрече месяца. Этап 72: список,
+ * которого нет в запросе, не меняется (кнопка «Сохранить доступ» сохраняет только людей)
+ */
+export async function saveMarketSettingsAction(input: { people?: string[]; teamIds?: string[] }): Promise<Result<MarketSettingsView>> {
+  const people = Array.isArray(input?.people) ? input.people : undefined;
+  const teamIds = Array.isArray(input?.teamIds) ? input.teamIds : undefined;
+  return done(await runAction("Настройка рынка", (a) => saveMarketSettings(a, { people, teamIds })));
 }

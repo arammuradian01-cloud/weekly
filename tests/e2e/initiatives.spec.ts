@@ -118,3 +118,41 @@ test("без режима управления инициативу не зав�
   await expect(page.getByRole("heading", { name: "Крупные инициативы", level: 1 })).toBeVisible();
   await expect(page.getByRole("button", { name: "Новая инициатива" })).toHaveCount(0);
 });
+
+test("этап 67г: продукт в форме подставляет руководителя направления, страница делит инициативы по продуктам", async ({ page }) => {
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  await page.goto("/initiatives");
+  await page.getByRole("button", { name: "Новая инициатива" }).click();
+  let create = page.getByRole("dialog", { name: "Новая инициатива" });
+  await create.getByLabel("Инициатива").fill("Подписка с другими страховыми");
+  await create.getByLabel("Продукт").selectOption({ label: "ОСАГО" });
+  await expect(create.getByLabel("Ответственный")).toHaveValue("golovkin");
+  await create.getByRole("button", { name: "Завести инициативу" }).click();
+  await expect(page.getByText("Инициатива заведена")).toBeVisible();
+
+  await page.getByRole("button", { name: "Новая инициатива" }).click();
+  create = page.getByRole("dialog", { name: "Новая инициатива" });
+  await create.getByLabel("Инициатива").fill("Кошелёк и кэшбэк");
+  await create.getByLabel("Ответственный").selectOption({ label: "Рева Тарас" });
+  await create.getByRole("button", { name: "Завести инициативу" }).click();
+  await expect(page.getByText("Инициатива заведена")).toBeVisible();
+
+  const osago = page.getByTestId("ini-product-osago");
+  await expect(osago.getByRole("heading", { name: /ОСАГО 1/ })).toBeVisible();
+  await expect(osago.getByRole("article", { name: "Подписка с другими страховыми" })).toBeVisible();
+  const general = page.getByTestId("ini-product-general");
+  await expect(general.getByRole("heading", { name: /Общие для департамента 1/ })).toBeVisible();
+  await expect(general.getByRole("article", { name: "Кошелёк и кэшбэк" })).toBeVisible();
+  await shot(page, "products");
+
+  // Правка: продукт меняется, ответственный, выбранный руками, остаётся
+  await general.getByRole("button", { name: "Править: Кошелёк и кэшбэк" }).click();
+  const edit = page.getByRole("dialog", { name: "Править инициативу" });
+  await edit.getByLabel("Продукт").selectOption({ label: "КАСКО" });
+  await expect(edit.getByLabel("Ответственный")).toHaveValue("reva");
+  await edit.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("Инициатива сохранена")).toBeVisible();
+  await expect(page.getByTestId("ini-product-kasko").getByRole("article", { name: "Кошелёк и кэшбэк" })).toBeVisible();
+  await expect(page.getByTestId("ini-product-general")).toHaveCount(0);
+});

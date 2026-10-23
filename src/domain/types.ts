@@ -89,6 +89,8 @@ export type Task = {
   where: string;
   whereUpdatedAt: IsoDate;
   due: IsoDate;
+  /** Начало работы (этап 68): левый край полосы на карте сроков. Нет: полоса от даты постановки */
+  start?: IsoDate;
   originalDue: IsoDate;
   transfers: Transfer[];
   source: { kind: SourceCode; note: string };

@@ -13,7 +13,10 @@ export const dynamic = "force-dynamic";
 
 /**
  * Первый вход (этап 52): логин крупно и предложение указать рабочую почту. Можно пропустить, почта есть в профиле.
- * Приветствие только сразу после пароля по ссылке (?new=1): при повторном заходе страница просто про логин и почту
+ * Приветствие только сразу после пароля по ссылке (?new=1): при повторном заходе страница просто про логин и почту.
+ * Этап 68: «Начать работу» сразу под логином, почта ниже с пометкой «по желанию». На телефоне кнопка была под формой
+ * почты, за прокруткой, и новый сотрудник считал почту обязательной. Порядок в разметке тот же, что на экране,
+ * поэтому и с клавиатуры, и для диктора главное действие идёт первым
  */
 export default async function WelcomePage({ searchParams }: { searchParams: Promise<{ new?: string }> }) {
   const ctx = await requireContext();
@@ -34,11 +37,16 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
         </p>
         <p className="text-small text-muted">С ним и паролем входите на экране входа. Логин виден и в профиле.</p>
       </div>
-      <section className="mt-8" aria-labelledby="welcome-email">
-        <h2 id="welcome-email" className="text-title font-semibold text-ink">Почта для входа</h2>
-        <p className="mt-1 text-body text-muted">
-          Укажите корпоративную почту: по ней можно входить вместо логина и восстанавливать пароль, если забудете его.
-        </p>
+      <div className="mt-6">
+        <Link href="/" className={buttonClass("primary", "md", "max-sm:w-full")} data-testid="welcome-start">
+          Начать работу
+        </Link>
+      </div>
+      <section className="mt-8 border-t border-line pt-6" aria-labelledby="welcome-email">
+        <h2 id="welcome-email" className="text-title font-semibold text-ink">
+          Почта для входа <span className="text-body font-normal text-muted">по желанию</span>
+        </h2>
+        <p className="mt-1 text-body text-muted">По ней можно входить вместо логина и восстанавливать пароль. Указать можно и позже, в профиле.</p>
         <WelcomeEmail
           email={ctx.person.email}
           pending={ctx.person.pendingEmail}
@@ -49,12 +57,6 @@ export default async function WelcomePage({ searchParams }: { searchParams: Prom
           needsManagement={!!ctx.managementRole && !ctx.management}
         />
       </section>
-      <div className="mt-8 border-t border-line pt-6">
-        <Link href="/" className={buttonClass("primary")} data-testid="welcome-start">
-          Начать работу
-        </Link>
-        <p className="mt-2 text-small text-muted">Почту можно указать и позже: профиль, вкладка «Вход и пароль».</p>
-      </div>
     </div>
   );
 }

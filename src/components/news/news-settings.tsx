@@ -207,7 +207,7 @@ function SourceModal({ source, onClose }: { source: SourceView | null; onClose: 
   const [strict, setStrict] = useState(source?.strict ?? false);
   const [busy, setBusy] = useState(false);
   return (
-    <Modal open onOpenChange={(o) => (o ? undefined : onClose())} title={source ? "Источник новостей" : "Новый источник"} description="Публичная лента RSS или Atom. Адрес обычно оканчивается на rss, feed или xml. Только http и https, стандартные порты, без внутренних адресов">
+    <Modal open onOpenChange={(o) => (o ? undefined : onClose())} title={source ? "Источник новостей" : "Новый источник"} description="Публичная лента RSS или Atom: адрес обычно оканчивается на rss, feed или xml">
       <form
         className="flex flex-col gap-4"
         onSubmit={async (e) => {

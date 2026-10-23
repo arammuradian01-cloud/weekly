@@ -86,6 +86,8 @@ export function toTaskDto(row: TaskRow): Task {
     whereUpdatedAt: isoFromDbDate(row.whereUpdatedAt),
     due,
     originalDue: row.originalDue ? isoFromDbDate(row.originalDue) : due,
+    // Начало на карте сроков (этап 68): нет, значит полоса от даты постановки
+    ...(row.startOn ? { start: isoFromDbDate(row.startOn) } : {}),
     transfers,
     source: { kind: row.sourceCode as SourceCode, note: row.sourceNote ?? "" },
     links: row.links.map((l) => ({ id: l.id, title: l.title, url: l.url })),

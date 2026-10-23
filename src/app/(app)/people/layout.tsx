@@ -22,7 +22,7 @@ export default async function PeopleLayout({ children }: { children: React.React
     <PersonCardProvider tree={tree} me={ctx.person.slug}>
       <PageHeader
         title="Люди"
-        description={panel ? "Кто с кем работает и что у людей в работе: команда за неделю, панель руководителя, структура, weekly-команды и аналитика" : "Кто с кем работает: команда за неделю, структура компании и weekly-команды"}
+        description={panel ? "Команда за неделю, структура, weekly-команды и аналитика" : "Команда за неделю, структура компании и weekly-команды"}
         tabs={<PeopleTabs panel={panel} analytics={analytics} />}
       />
       {children}

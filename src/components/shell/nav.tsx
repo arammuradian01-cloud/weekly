@@ -37,7 +37,7 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
-  /** Раздел открыт отдельным людям (этап 62): пункт видят только они */
+  /** Раздел открыт не всем (этап 62): пункт видят только те, кому он открыт */
   restricted?: "market";
   /** Подпись в нижнем меню телефона, если полная не влезает */
   shortLabel?: string;
@@ -74,10 +74,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Бизнес",
     items: [
       { href: "/forecast", label: "Прогноз", icon: TrendingUp },
+      // Рынок КАСКО и ОСАГО (этап 62), сразу под прогнозом (решение Арама 22.10). Этап 72: владельцам, в режиме
+      // управления и по общему логину всем, при личном входе остальным по списку
+      { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },
       // Новости по продуктам (этап 60)
       { href: "/news", label: "Новости", icon: Rss },
-      // Рынок КАСКО и ОСАГО (этап 62): только тем, кому владелец открыл раздел, и только при личном входе
-      { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },
     ],
   },
 ];

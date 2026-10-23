@@ -124,3 +124,33 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 .sv-agenda-group__head:hover { background: var(--color-row-hover); }
 .sv-agenda-group__head:focus-visible { outline: var(--focus-outline); outline-offset: -2px; }
 .sv-agenda-group__head > span:last-child { margin-left: auto; }
+
+/* Этап 68 (из разбора этапа 59, С6). Цели нажатия на сенсорных экранах: токен --touch-min равен 44, но вкладки были
+   40, сегменты 30, малые кнопки и пилюли 36, «Перенести срок» 28. Пальцу этого мало; мышь и клавиатуру правило не трогает */
+@media (pointer: coarse) {
+  .sv-tabs__item { height: var(--touch-min); }
+  .sv-segment__item { min-height: 38px; }
+  .sv-btn--sm, .sv-pill, .sv-icon-btn--sm { height: 40px; }
+  .sv-icon-btn--sm { width: 40px; }
+  .sv-inline-edit { min-height: 36px; }
+  .sv-touch-target { min-height: 40px; }
+  /* Крестик тега 16 px пальцем не попасть: кнопка 24, тег не растёт (поля внутрь) */
+  .sv-tag__remove { width: 24px; height: 24px; margin: -1px -4px -1px 0; }
+}
+
+/* Этап 68 (из разбора этапа 59). Шаги сдачи weekly на планшете и телефоне: лента под заголовком во всю ширину экрана,
+   а не скрытый список */
+.sv-steps--strip { margin: 0 calc(-1 * var(--content-pad-phone)); padding: 0 var(--content-pad-phone); scrollbar-width: none; }
+.sv-steps--strip::-webkit-scrollbar { display: none; }
+.sv-steps--strip .sv-step { flex: none; }
+@media (min-width: 768px) { .sv-steps--strip { margin-inline: 0; padding-inline: 0; } }
+
+/* Этап 68. Сегменты: подпись не вылезает за кнопку. В строке сегмент не шире родителя и прокручивается сам;
+   в растянутом (block) кнопки делят ширину поровну и подпись переносится. Плитки (tiles): иконка над подписью,
+   для коротких меню вроде темы в профиле */
+.sv-segment { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.sv-segment::-webkit-scrollbar { display: none; }
+.sv-segment__item { flex: none; white-space: nowrap; }
+.sv-segment--block .sv-segment__item { flex: 1 1 0; min-width: 0; white-space: normal; text-align: center; line-height: 1.2; padding-block: 4px; }
+.sv-segment--tiles .sv-segment__item { flex-direction: column; gap: 4px; min-height: 56px; padding: 6px 4px; font-size: var(--text-caption); line-height: 1.2; }
+.sv-segment--tiles .sv-segment__item > span { overflow-wrap: anywhere; }

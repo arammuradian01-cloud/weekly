@@ -46,10 +46,19 @@ test("приложение на экран «Домой»: описание, з�
   // Страницы с данными в кэш не попадают
   await page.goto("/login");
   expect(await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async (k) => (await (await caches.open(k)).keys()).map((r) => new URL(r.url).pathname)))).flat().filter((p) => !p.startsWith("/_next/static/") && !p.startsWith("/icons/") && !p.startsWith("/logo/")))).toEqual(["/offline.html"]);
+  // Этап 75: при живой сети на странице «Ошибка 503» (сервер не ответил), без сети «Нет сети»
   await page.goto("/offline.html");
-  await expect(page.getByRole("heading", { name: "Нет сети" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ошибка 503" })).toBeVisible();
   await expect(page.getByText("Черновик weekly, который вы писали, сохранён на этом устройстве")).toBeVisible();
+  await expect(page.getByText("Страница откроется, когда телефон снова будет в сети")).toBeHidden();
+  await shot(page, "offline-server");
+  await page.context().setOffline(true);
+  await expect(page.getByRole("heading", { name: "Нет сети" })).toBeVisible();
+  await expect(page.getByText("Страница откроется, когда телефон снова будет в сети")).toBeVisible();
   await shot(page, "offline");
+  // Связь вернулась: страница перезагружается сама, дожидаемся загрузки, чтобы тест не обрывался посреди перезагрузки
+  await Promise.all([page.waitForEvent("load"), page.context().setOffline(false)]);
+  await expect(page.getByRole("heading", { name: "Ошибка 503" })).toBeVisible();
 });
 
 test("черновик weekly без сети: запись не теряется, уходит сама, когда связь вернулась, и не задваивается", async ({ page }) => {
@@ -134,7 +143,8 @@ test("просьбу можно принять с телефона в два н�
 
 test("задачу можно обновить с главной в два нажатия; лента и повестка в одном нажатии", async ({ page }) => {
   const [{ number }] = await sql(
-    `UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date - 2 WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
+    // Этап 68: на главной пять самых просроченных задач, остальные ссылкой в «Мне»: задача теста просрочена раньше всех
+    `UPDATE tasks SET due = DATE '2026-01-12' WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
   );
   await enter(page, "Рева Тарас");
   const urgent = page.locator('section[aria-labelledby="my-tasks"]');

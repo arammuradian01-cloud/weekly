@@ -84,7 +84,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
     const compare = await compareVersions(month, one(params.a), one(params.b));
     return (
       <>
-        <PageHeader title="Прогноз" description="Две любые версии месяца рядом: бюджет, LBE, прогноз сейчас, прежние загрузки LBE и прогноз на конец дня" tabs={tabs} />
+        <PageHeader title="Прогноз" description="Две версии месяца рядом: бюджет, LBE или прогноз" tabs={tabs} />
         {compare ? <PlanCompare view={compare} /> : <Module title="Сравнивать пока нечего" description="Версии месяца появятся после загрузки бюджета и LBE из LRF." />}
       </>
     );
@@ -117,7 +117,7 @@ export default async function ForecastPage({ searchParams }: { searchParams: Pro
   const [numbers, mine, summary, history] = await Promise.all([weekNumbers(key), canForecast ? myForecast(actor, key) : Promise.resolve(null), forecastSummary(key, audience), forecastHistory(audience, key)]);
   return (
     <>
-      <PageHeader title="Прогноз" description="Факт недели из недельного отчёта и прогноз лидеров до конца месяца с причиной отклонения от бюджета" tabs={tabs}>
+      <PageHeader title="Прогноз" description="Факт недели и прогноз лидеров до конца месяца" tabs={tabs}>
         <WeekSwitcher view={view} basePath="/forecast" />
       </PageHeader>
       <div className="flex flex-col gap-6">
