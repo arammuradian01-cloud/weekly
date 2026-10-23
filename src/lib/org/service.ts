@@ -7,7 +7,7 @@
 
 import { fillMissingLogins, lockPeopleNames, reservedLogins, takenNames } from "@/lib/login/logins";
 import { refreshApprovals } from "@/lib/tasks/approval";
-import { primaryOwner, primaryOwnerSlug } from "@/lib/login/primary";
+import { primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
 import type { Prisma, UnitKind } from "@/generated/prisma/client";
 import { TaskRuleError, canSeeRow, type Actor } from "@/lib/tasks/service";
@@ -290,7 +290,6 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       const all = await tx.person.findMany({ select: { id: true, slug: true, login: true, sortOrder: true, email: true, fullName: true } });
       // Чужие логины тоже заняты (этап 52): короткое имя нового человека не совпадёт с логином другого
       const taken = new Set([...takenNames(all), ...(await reservedLogins(tx))]);
-      const primary = await primaryOwnerSlug(tx);
       let sortOrder = Math.max(0, ...all.map((p) => p.sortOrder));
       /** «file:строка» новых людей в их id после создания */
       const idOfKey = new Map<string, string>();
@@ -298,7 +297,7 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
       let added = 0;
       for (const p of plan.planned) {
         const unitId = await unitOf(p.path);
-        let email = p.email && !all.some((x) => x.email === p.email && x.id !== p.id) ? p.email : null;
+        const email = p.email && !all.some((x) => x.email === p.email && x.id !== p.id) ? p.email : null;
         let id = p.id;
         if (!id) {
           const slug = uniqueSlug(slugify(p.fullName.split(" ")[0] ?? p.fullName, 24), taken);
@@ -313,9 +312,6 @@ export async function applyStructure(actor: Actor, fileText: string): Promise<St
           await audit(tx, actor, "structure.person.create", "person", slug, "Сотрудник добавлен из структуры", null, [p.fullName, p.position, p.path.join(" / ")].filter(Boolean).join(", "));
         } else if (p.changes.length) {
           const before = all.find((x) => x.id === id);
-          // Почту главного владельца файл не меняет, если грузит не он сам: по почте восстанавливают вход (этап 52)
-          const keepPrimary = !!email && before?.slug === primary && actor.slug !== primary;
-          if (keepPrimary) email = null;
           // Новая почта из файла: неподтверждённый адрес человека и ссылки на прежний адрес гаснут (этап 52)
           const newEmail = !!email && email !== before?.email;
           await tx.person.update({ where: { id }, data: { position: p.position || null, unitId, active: true, ...(email ? { email } : {}), ...(newEmail ? { pendingEmail: null } : {}) } });

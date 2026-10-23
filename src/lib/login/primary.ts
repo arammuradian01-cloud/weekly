@@ -1,11 +1,8 @@
-// Главный владелец (этап 52). Владельцев может быть несколько: главный (Крайник) и совладельцы с теми же правами
-// администрирования. Главного владельца меняет только он сам: совладелец не понижает и не выключает его, не сбрасывает
-// ему пароль, не завершает его входы и не назначает главным себя. Отдельный модуль без зависимостей от сервисов людей
-// и входа: его вызывают и те, и другие.
+// [Codex] Главный владелец нужен для подписей и корня структуры. У всех владельцев равные права управления;
+// owner.primary не является дополнительной границей доступа.
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
-import { TaskRuleError } from "@/lib/tasks/service";
 import { OWNER_TITLES_KEY, ownerTitlesFrom } from "@/lib/owner-title";
 import type { OwnerLabels } from "@/lib/roles";
 
@@ -31,7 +28,7 @@ export async function primaryOwner(db: Db = prisma) {
   return slug ? db.person.findUnique({ where: { slug } }) : null;
 }
 
-/** Подписи ролей владельцев (этап 69): { слаг: подпись }. Подпись задаёт главный владелец в «Настройках» */
+/** Подписи ролей владельцев: { слаг: подпись }. Их задаёт любой владелец в «Настройках» */
 export async function ownerTitles(db: Db = prisma): Promise<Record<string, string>> {
   const row = await db.setting.findUnique({ where: { key: OWNER_TITLES_KEY } });
   return ownerTitlesFrom(row?.value);
@@ -42,10 +39,4 @@ export async function ownerLabels(db: Db = prisma): Promise<OwnerLabels> {
   // По очереди: в транзакции запросы идут по одному соединению
   const primary = await primaryOwnerSlug(db);
   return { primary, titles: await ownerTitles(db) };
-}
-
-/** Действие над главным владельцем делает только он сам. what: «понижает роль», «сбрасывает пароль» */
-export async function guardPrimary(db: Db, actorSlug: string, targetSlug: string, what: string): Promise<void> {
-  if (actorSlug === targetSlug) return;
-  if ((await primaryOwnerSlug(db)) === targetSlug) throw new TaskRuleError(`Главного владельца меняет только он сам: совладелец не ${what}`);
 }
