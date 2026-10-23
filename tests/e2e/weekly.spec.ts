@@ -230,11 +230,14 @@ test("режим встречи по умолчанию открывает от�
   const [{ old }] = await sql(`SELECT to_char(w.start, 'YYYY-MM-DD') AS old FROM weeks w WHERE EXISTS (SELECT 1 FROM weekly_entries e WHERE e."weekId" = w.id) ORDER BY w.start DESC LIMIT 1`);
   expect(old).not.toBe(key);
   // Лента может показывать последнюю заполненную неделю, кнопка встречи должна вести на отчётную.
+  // Проверяем записи слайда: рядом могут быть заголовки сводки плана, не относящиеся к weekly.
   await page.goto("/weekly");
   await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${key}`);
   await page.goto("/weekly/meeting");
   await expect(page.getByTestId("meeting-week")).toContainText("отчётная");
-  await expect(page.locator("h3")).toHaveCount(0);
+  await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
+  await expect(page.getByText("Рисков и запросов помощи на этой неделе нет.", { exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry')).toHaveCount(0);
   await shot(page, "meeting-current-empty");
   // Явно выбранная прошлая неделя сохраняется и в ленте, и во встрече.
   await page.goto(`/weekly?week=${old}`);
@@ -242,9 +245,13 @@ test("режим встречи по умолчанию открывает от�
   await page.goto(`/weekly/meeting?week=${old}`);
   await expect(page.getByTestId("meeting-week")).toContainText("Прошлая неделя");
   await expect(page.getByText(/Риски и запросы помощи/).first()).toBeVisible();
-  await expect(page.locator("h3").first()).toBeVisible();
+  const [risk] = await sql(`SELECT e.what FROM weekly_entries e JOIN weeks w ON w.id = e."weekId" JOIN dictionary_items t ON t.id = e."typeId" WHERE w.start = $1::date AND (t.code = 'risk' OR COALESCE(e.help, '') <> '') ORDER BY e."sortOrder", e."createdAt" LIMIT 1`, [old]);
+  expect(risk).toBeTruthy();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry').getByRole("heading", { name: risk.what, exact: true })).toBeVisible();
   await shot(page, "meeting");
   await page.getByRole("button", { name: "Текущая", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`week=${key}$`));
-  await expect(page.locator("h3")).toHaveCount(0);
+  await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
+  await expect(page.getByText("Рисков и запросов помощи на этой неделе нет.", { exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry')).toHaveCount(0);
 });
