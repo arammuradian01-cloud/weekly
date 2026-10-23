@@ -13,19 +13,21 @@ import type { PersonSlug } from "@/domain/types";
 import { WeeklySubmit } from "@/components/weekly/weekly-submit";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { PageHeader } from "@/components/page-header";
+import { weeklyReaders } from "@/lib/weekly/team-inbox";
 
 export const metadata: Metadata = { title: "Сдать weekly" };
 
 export default async function SubmitWeeklyPage() {
   const ctx = await requireContext();
   const key = await currentReportingKey();
-  const [mine, promises, facts, skipped, template] = await Promise.all([
+  const [mine, promises, facts, skipped, template, readers] = await Promise.all([
     getMyWeekly(ctx.person.id, key),
     entryPromises(ctx.person.id, key),
     weekFacts(ctx.person.id, key, { limited: subjectOf(ctx).limited }),
     skippedFactKeys(ctx.person.id, key),
     // Смысловые блоки weekly команды (этап 66): записи сдаются по ним
     templateForAuthor(ctx.person.id),
+    weeklyReaders(ctx.person.id),
   ]);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
@@ -51,6 +53,7 @@ export default async function SubmitWeeklyPage() {
           facts={facts}
           skippedFacts={skipped}
           template={template}
+          readers={readers}
         />
         <TaskDrawer />
       </Suspense>

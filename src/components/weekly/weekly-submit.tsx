@@ -33,6 +33,7 @@ import { taskFacts, type WeekFact } from "@/lib/weekly/facts";
 import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
 import type { TemplateBlock } from "@/lib/weekly-blocks/types";
+import { WeeklyDelivery, type WeeklyReader } from "./weekly-delivery";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
 
@@ -60,6 +61,7 @@ export function WeeklySubmit({
   facts: initialFacts = [],
   skippedFacts = [],
   template = null,
+  readers,
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -80,6 +82,7 @@ export function WeeklySubmit({
   skippedFacts?: string[];
   /** Смысловые блоки weekly команды (этап 66): записи сдаются по ним. null: шаблона нет, weekly как раньше */
   template?: { teamId: string; teamName: string; blocks: TemplateBlock[] } | null;
+  readers?: WeeklyReader[];
 }) {
   const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
@@ -395,6 +398,7 @@ export function WeeklySubmit({
             </p>
           </div>
           {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
+          {readers ? <div className="mt-3"><WeeklyDelivery readers={readers} submitted={submitted} /></div> : null}
           <p className="mt-2 inline-flex items-center gap-1.5 text-caption text-muted" aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
             {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
