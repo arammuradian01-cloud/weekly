@@ -36,6 +36,7 @@ import {
 import { GoalsTable, type GoalGroupBy } from "./goals-table";
 import { GoalsTree } from "./goals-tree";
 import { GoalsCards, QuarterBar } from "./goals-cards";
+import { GoalsPeopleFilter } from "./goals-people-filter";
 
 const RESULTS: { value: GoalResult; label: string }[] = [
   { value: "IN_PROGRESS", label: "Идёт" },
@@ -87,14 +88,15 @@ export function GoalsScreen({
   initialQuery?: string;
 }) {
   const router = useRouter();
-  const { notify } = usePrototype();
+  const { notify, me } = usePrototype();
   const [, start] = useTransition();
   const [creating, setCreating] = useState<{ parent?: GoalNode } | null>(null);
   const [editing, setEditing] = useState<GoalNode | null>(null);
   const [marking, setMarking] = useState<GoalNode | null>(null);
   const [importing, setImporting] = useState(false);
   const [mode, setMode] = useState<ViewMode>("cards");
-  const [groupBy, setGroupBy] = useState<GoalGroupBy>("team");
+  const [groupBy, setGroupBy] = useState<GoalGroupBy>("person");
+  const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState(initialQuery);
   const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
@@ -120,7 +122,9 @@ export function GoalsScreen({
       }
     });
 
-  const count = (f: Filter) => view.goals.filter((g) => inFilter(g, f)).length;
+  const people = useMemo(() => Array.from(new Map(view.goals.flatMap((g) => g.owner ? [[g.owner.slug, g.owner] as const] : [])).values()).sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")), [view.goals]);
+  const scoped = mode === "tree" || !selectedPeople.length ? view.goals : view.goals.filter((g) => g.owner && selectedPeople.includes(g.owner.slug));
+  const count = (f: Filter) => scoped.filter((g) => inFilter(g, f)).length;
   // Подпись на шкале квартала включает отбор в карточках или в таблице и ведёт к списку целей
   const show = (f: Filter) => {
     setFilter(f);
@@ -129,7 +133,7 @@ export function GoalsScreen({
     requestAnimationFrame(() => document.getElementById("goals-list")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
   const q = query.trim().toLowerCase();
-  const shown = view.goals.filter(
+  const shown = scoped.filter(
     (g) => inFilter(g, filter) && (!q || [g.code, g.title, g.owner?.fullName, g.team.name, g.metric].some((v) => v && v.toLowerCase().includes(q))),
   );
 
@@ -166,7 +170,7 @@ export function GoalsScreen({
           {/* Этап 68: шкала квартала вместо строки цифр. Отрезки и подписи-кнопки по взаимоисключающим отборам (goalBucket),
               ширина отрезка по доле целей, сумма по кнопкам равна числу целей */}
           <QuarterBar
-            total={view.goals.length}
+            total={scoped.length}
             allActive={filter === "all"}
             onAll={() => show("all")}
             slices={FILTERS.filter((f) => f.value !== "all").map((f) => {
@@ -184,12 +188,13 @@ export function GoalsScreen({
           >
             {mode !== "tree" ? (
             <div className="flex flex-col gap-3 border-t border-border px-5 py-3 max-sm:px-4">
+              <GoalsPeopleFilter people={people} selected={selectedPeople} me={me.slug} onChange={setSelectedPeople} />
               <div className="flex flex-wrap items-end gap-3">
                 <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
                   <TextInput id="goals-search" label="Поиск цели" hideLabel placeholder="Поиск: код, цель, владелец" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
                   <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" aria-hidden="true" />
                 </div>
-                {mode === "table" ? <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "team", label: "По командам" }, { value: "person", label: "По людям" }]} /> : null}
+                <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "person", label: "По людям" }, { value: "team", label: "По командам" }]} />
               </div>
               {/* В карточках отбор включает шкала квартала сверху, второй ряд тех же кнопок не нужен */}
               {mode === "table" ? <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} /> : null}
@@ -199,6 +204,7 @@ export function GoalsScreen({
               shown.length ? (
                 <GoalsCards
                   goals={shown}
+                  groupBy={groupBy}
                   onEdit={setEditing}
                   onMark={setMarking}
                   onAdd={(parent) => setCreating({ parent })}
@@ -223,6 +229,7 @@ export function GoalsScreen({
                   onReveal={() => {
                     setFilter("all");
                     setQuery("");
+                    setSelectedPeople([]);
                   }}
                   hashHandled={hashHandled}
                   groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
