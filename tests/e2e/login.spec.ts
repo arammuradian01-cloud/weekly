@@ -97,7 +97,10 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva).toHaveURL(/\/login/);
   await reva.goto("/");
   await expect(reva).toHaveURL(/\/login/);
-  expect((await sql("SELECT count(*)::int AS n FROM device_sessions WHERE \"revokedAt\" IS NULL"))[0].n).toBe(0);
+  expect((await sql(`SELECT count(*)::int AS n FROM device_sessions WHERE "revokedAt" IS NULL AND "personId" = (SELECT id FROM people WHERE slug = 'reva')`))[0].n).toBe(0);
+  // Личный вход владельца остаётся: человек завершает только собственные устройства.
+  await page.goto("/settings");
+  await expect(page).toHaveURL(/\/settings$/);
   await reva.context().close();
 });
 

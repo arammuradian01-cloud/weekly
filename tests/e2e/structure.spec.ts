@@ -204,7 +204,8 @@ test("дерево подчинённых: схема с путём наверх
   await enter(shared, "Рева Тарас");
   await shared.goto("/people/structure");
   const sharedTree = shared.getByTestId("people-tree");
-  await sharedTree.getByTestId(`person-${reva}`).click();
+  // Дерево открывается на собственном профиле Ревы: повторно выбирать его не нужно.
+  await expect(sharedTree.getByTestId("person-focus")).toContainText("Рева Тарас");
   await sharedTree.getByTestId(`person-${antonov}`).click();
   await expect(sharedTree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
   await expect(sharedTree.getByTestId("person-focus")).not.toContainText("Открытые вакансии");

@@ -13,7 +13,7 @@ import type { ViewAsPerson } from "@/lib/view-as-service";
 import { Button, buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { flushOfflineDrafts } from "@/lib/offline/outbox";
-import { clearOfflineDraftsFor } from "@/lib/offline/drafts";
+import { allEntryDrafts, allHeadlineDrafts } from "@/lib/offline/drafts";
 import { PeopleSearchField, PeopleSearchList, filterPeople, personMatches } from "./people-search";
 import { STICKY, useReloadWhenDue, useStickyHeight } from "./view-as";
 
@@ -33,17 +33,18 @@ function reloadHome() {
 }
 
 /**
- * Вернуться в свой профиль. Сначала черновики человека с этого устройства уходят на сервер (не дольше 5 секунд) от его
- * имени с пометкой владельца и стираются: после возврата они не уйдут ни от владельца, ни от самого человека. Нет сети
- * или сервер отказал из-за смены профиля в другой вкладке: черновики остаются до следующего входа в этот профиль.
+ * Вернуться в свой профиль. Сначала фоновые черновики уходят на сервер (не дольше 5 секунд). Отправка сама удаляет
+ * только подтверждённые версии. Активная форма или новая правка во время отправки удерживает возврат до сохранения.
+ * Нет сети или сервер отказал из-за смены профиля: черновики остаются до следующего входа в этот профиль.
  * Возвращает текст ошибки или null. Возврата нет (владельца выключили, сняли роль): сервер уводит на экран входа
  */
 export async function returnToOwnProfile(targetSlug: string | null): Promise<string | null> {
   if (targetSlug) {
     const flushed = await Promise.race([flushOfflineDrafts(targetSlug).catch(() => null), new Promise<null>((r) => setTimeout(() => r(null), 5000))]);
-    // Всё ушло или отклонено правилом: стираем. Нет сети, не успели или отказ входа: черновики остаются до следующего
-    // входа в этот профиль, написанное не пропадает
-    if (flushed && !flushed.blocked && !flushed.offline) clearOfflineDraftsFor(targetSlug);
+    // flush пропускает ACTIVE_DRAFTS и сохраняет более свежие версии. Удалять всё после него нельзя.
+    if (flushed && !flushed.blocked && !flushed.offline && (allEntryDrafts(targetSlug).length || allHeadlineDrafts(targetSlug).length)) {
+      return "В weekly остались несохранённые изменения. Сохраните их и повторите возврат";
+    }
   }
   const r = await returnToOwnProfileAction();
   if (!r.ok) return r.error;

@@ -49,6 +49,46 @@ async function openProfileMenu(page: Page) {
   await page.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
 }
 
+test("возврат из чужого профиля сохраняет активный черновик weekly до окончания отправки", async ({ page }) => {
+  await enterPersonal(page, "muradyan");
+  await openProfileMenu(page);
+  await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
+  const dialog = page.getByRole("dialog", { name: "Сменить профиль" });
+  await dialog.getByLabel("Поиск по ФИО, должности или подразделению").fill("Рева Тарас");
+  await dialog.getByRole("button", { name: /Рева Тарас/ }).click();
+  await page.getByRole("dialog", { name: /Войти в профиль Рева/ }).getByRole("button", { name: "Войти" }).click();
+  await expect(page.getByTestId("owner-as-banner")).toBeVisible();
+  await page.goto("/weekly/submit");
+  const text = "Черновик до возврата владельца";
+  const updated = `${text}, дополнено во время отправки`;
+  // Ответ на сохранение задержался. Открытая форма остаётся активной, фоновая отправка её пропускает.
+  let release!: () => void;
+  let sending = false;
+  const hold = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/weekly/submit*", async (route) => {
+    if (route.request().method() === "POST" && route.request().postData()?.includes(text)) {
+      sending = true;
+      await hold;
+    }
+    await route.continue();
+  });
+  await page.getByLabel("Главное одной фразой").fill(text);
+  const back = page.getByTestId("owner-as-banner").getByRole("button", { name: "Вернуться в свой профиль" });
+  try {
+    await expect.poll(() => sending).toBe(true);
+    await page.getByLabel("Главное одной фразой").fill(updated);
+    await back.click();
+    await expect(page.getByTestId("owner-as-banner").getByRole("alert")).toContainText("несохранённые изменения");
+    expect(await page.evaluate(() => localStorage.getItem("weekly-offline:v1:reva"))).toContain(updated);
+  } finally {
+    release();
+  }
+  await expect.poll(async () => (await sql(`SELECT headline FROM weekly_reports WHERE "authorId" = (SELECT id FROM people WHERE slug = 'reva') AND headline = $1`, [updated])).length).toBe(1);
+  await back.click();
+  await expect(page.getByTestId("owner-as-banner")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Арам");
+});
+
 test("владелец входит в профиль руководителя не из топ-команды, ставит задачу от его имени, журнал с пометкой, возврат на главную", async ({ page }) => {
   test.setTimeout(120_000);
   const [{ mark }] = await sql(`SELECT coalesce(max(id), 0)::text AS mark FROM audit_log`);
