@@ -151,7 +151,13 @@ export function SearchPicker({
           setActive(0);
         }}
         // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
-        onMouseDown={() => {
+        onMouseDown={(e) => {
+          // В потоке окна закрытие списка предыдущего поля меняет его высоту. Передаём фокус до стандартной
+          // обработки щелчка: иначе поле уезжает из-под указателя, и Radix возвращает фокус самому окну.
+          if (inline && document.activeElement !== e.currentTarget) {
+            e.preventDefault();
+            e.currentTarget.focus({ preventScroll: true });
+          }
           if (!open && document.activeElement === listInput.current) {
             setTyped(false);
             setOpen(true);

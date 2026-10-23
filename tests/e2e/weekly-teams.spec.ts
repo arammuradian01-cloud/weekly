@@ -232,9 +232,14 @@ test("владелец собирает команду поиском из ра�
   const up = page.getByRole("dialog", { name: "Руководитель: Кросс-продажи и кредиты" });
   const parentField = up.getByRole("combobox", { name: "Команда выше" });
   const parentList = up.getByRole("listbox", { name: "Команда выше" });
-  // Список в потоке окна, не обрезан его прокруткой: видно не меньше шести вариантов целиком
+  // Переходим из открытого списка руководителя: его закрытие меняет высоту окна, но фокус остаётся в нажатом поле
+  await expect(up.getByRole("combobox", { name: "Руководитель" })).toBeFocused();
+  await expect(up.getByRole("listbox", { name: "Руководитель" })).toBeVisible();
   await parentField.click();
-  expect(await parentList.getByRole("option").count()).toBeGreaterThanOrEqual(6);
+  await expect(parentField).toBeFocused();
+  await expect(parentField).toHaveAttribute("aria-expanded", "true");
+  // Список в потоке окна, не обрезан его прокруткой: видно не меньше шести вариантов целиком
+  await expect.poll(() => parentList.getByRole("option").count()).toBeGreaterThanOrEqual(6);
   await expect(parentList.getByRole("option").nth(5)).toBeInViewport({ ratio: 1 });
   await shot(page, "parent-picker");
   await parentField.fill("департамент");
