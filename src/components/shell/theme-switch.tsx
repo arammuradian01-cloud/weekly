@@ -1,7 +1,9 @@
 "use client";
 
 // Тема оформления (этап 18): светлая, тёмная или как в системе. Выбор хранится в cookie на этом устройстве
-// и применяется сразу, без перезагрузки; при «как в системе» следим за настройкой устройства
+// и применяется сразу, без перезагрузки; при «как в системе» следим за настройкой устройства.
+// Этап 68: в меню профиля (288 px) три кнопки в строку по 70 px, и «Как в системе» вылезала за край кнопки.
+// Теперь плитки: иконка сверху, подпись под ней в две строки при нужде, подпись видна и на телефоне
 
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
@@ -44,7 +46,7 @@ export function ThemeSwitch({ className }: { className?: string }) {
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <p className="px-2.5 text-caption font-semibold text-text-secondary">Тема</p>
-      <div role="radiogroup" aria-label="Тема оформления" className="sv-segment sv-segment--block mx-2">
+      <div role="radiogroup" aria-label="Тема оформления" className="sv-segment sv-segment--block sv-segment--tiles mx-2">
         {OPTIONS.map((o) => (
           <button
             key={o.value}
@@ -52,11 +54,10 @@ export function ThemeSwitch({ className }: { className?: string }) {
             role="radio"
             aria-checked={choice === o.value}
             onClick={() => pick(o.value)}
-            className={cn("sv-segment__item px-2 text-caption", choice === o.value && "is-active")}
+            className={cn("sv-segment__item", choice === o.value && "is-active")}
           >
-            <o.icon className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-            <span className="hidden sm:inline">{o.label}</span>
-            <span className="sr-only sm:hidden">{o.label}</span>
+            <o.icon className="h-4.5 w-4.5 shrink-0" strokeWidth={1.5} aria-hidden="true" />
+            <span>{o.label}</span>
           </button>
         ))}
       </div>

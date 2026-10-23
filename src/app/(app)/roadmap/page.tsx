@@ -6,11 +6,11 @@ import { TaskDrawer } from "@/components/tasks/task-drawer";
 
 export const metadata: Metadata = { title: "Roadmap" };
 
-/** Roadmap (этап 56): задачи команды или человека по направлениям и срокам, важные со звёздочками */
+/** Roadmap (этап 56): задачи команды или человека по направлениям и срокам. Этап 68: карта сроков полосами, доска вторым видом */
 export default function RoadmapPage() {
   return (
     <>
-      <PageHeader title="Roadmap" description="Что предстоит команде или человеку: открытые задачи по направлениям и месяцам. Звёздочки отмечают важные задачи" />
+      <PageHeader title="Roadmap" description="Открытые задачи команды или человека по срокам" />
       <Suspense>
         <RoadmapBoard />
         <TaskDrawer />

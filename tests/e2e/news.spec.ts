@@ -113,7 +113,8 @@ test("владелец ведёт источники и забирает лен�
   await page.goto("/news");
   await expect(page.getByRole("heading", { name: "Новости", level: 1 })).toBeVisible();
   await expect(page.getByTestId("news-item")).toHaveCount(4);
-  await expect(page.getByText("Банк России обсудил со страховщиками изменения в тарифах ОСАГО")).toBeVisible();
+  // Этап 68: новости регулятора и союзов повторяются в колонке «Официально» (от 1280 px), поэтому ищем в ленте
+  await expect(page.getByTestId("news-list").getByText("Банк России обсудил со страховщиками изменения в тарифах ОСАГО")).toBeVisible();
   const link = page.getByRole("link", { name: /Страховщики подвели итоги продаж КАСКО/ });
   await expect(link).toHaveAttribute("href", "https://www.asn-news.ru/news/1?utm_campaign=rss");
   await expect(link).toHaveAttribute("target", "_blank");
@@ -161,7 +162,7 @@ test("владелец ведёт источники и забирает лен�
   await page.getByTestId("news-filter-deposits").click();
   await expect(page).toHaveURL(/\/news\?d=deposits$/);
   await expect(page.getByTestId("news-item")).toHaveCount(1);
-  await expect(page.getByText("Ключевая ставка сохранена")).toBeVisible();
+  await expect(page.getByTestId("news-list").getByText("Ключевая ставка сохранена")).toBeVisible();
   await page.getByTestId("news-filter-all").click();
   await expect(page.getByTestId("news-item")).toHaveCount(4);
 

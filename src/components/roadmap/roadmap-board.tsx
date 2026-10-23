@@ -5,6 +5,7 @@
 // направлению список сроков сверху вниз, пустые сроки не показываются. Рисуется одно дерево, не два сразу.
 // Фильтры «Чьи задачи» и «Только важные» живут в адресе страницы (без запроса к серверу): ссылкой на доску
 // человека можно поделиться, «Назад» возвращает прежний фильтр.
+// Этап 68: на широком экране по умолчанию карта сроков (roadmap-timeline.tsx), доска вторым видом в адресе ?view=board.
 
 import { useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -17,23 +18,27 @@ import { buildRoadmap, proposedLate, type RoadmapRow } from "@/lib/tasks/roadmap
 import type { Task } from "@/domain/types";
 import { changePriorityAction } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
-import { SelectField } from "@/components/ui/primitives";
+import { Segmented, SelectField } from "@/components/ui/primitives";
 import { EmptyState } from "@/components/empty-state";
 import { GoalTag, OverdueNote, StateDot } from "@/components/ui/task-badges";
 import { ImportanceMark, ImportanceMenu, importanceWord } from "@/components/ui/importance";
 import { useViewer } from "@/components/tasks/task-fields";
 import { useOpenTask } from "@/components/tasks/task-drawer";
+import { buildTimeline, canMoveBar } from "@/lib/tasks/timeline";
+import { RoadmapTimeline } from "./roadmap-timeline";
 
 /** Широкий экран: сетка сроков. Уже: список. На сервере и до гидратации список */
 const WIDE = "(min-width: 1280px)";
-function useWide(): boolean {
+/** Сенсорный экран (этап 68): полосы карты сроков пальцем не тянут, начало задаётся в карточке задачи */
+const COARSE = "(pointer: coarse)";
+function useMedia(query: string): boolean {
   return useSyncExternalStore(
     (cb) => {
-      const mq = window.matchMedia(WIDE);
+      const mq = window.matchMedia(query);
       mq.addEventListener("change", cb);
       return () => mq.removeEventListener("change", cb);
     },
-    () => window.matchMedia(WIDE).matches,
+    () => window.matchMedia(query).matches,
     () => false,
   );
 }
@@ -116,14 +121,17 @@ function RowHeading({ row, id }: { row: RoadmapRow & { hidden?: boolean }; id: s
 }
 
 export function RoadmapBoard() {
-  const { data, teamPeople, me, team, runTask } = usePrototype();
+  const { data, teamPeople, me, team, runTask, viewing } = usePrototype();
   const viewer = useViewer();
   const { open } = useOpenTask();
   const params = useSearchParams();
   const pathname = usePathname();
-  const wide = useWide();
+  const wide = useMedia(WIDE);
+  const coarse = useMedia(COARSE);
   const person = params.get("person");
   const onlyImportant = params.get("important") === "1";
+  // Этап 68: карта сроков на широком экране по умолчанию, доска по ?view=board. На узком экране только доска списком
+  const view = params.get("view") === "board" ? "board" : "timeline";
 
   // Адрес меняется без перехода страницы: Next видит его через useSearchParams, сервер не дёргается
   const setParam = (key: string, value: string | null) => {
@@ -151,11 +159,25 @@ export function RoadmapBoard() {
   const changeImportance = (t: Task, next: PriorityCode) => void runTask(() => changePriorityAction(t.number, next), `Важность задачи ${t.number}: ${importanceWord(next)}`);
   const card = (t: Task) => <RoadmapCard key={t.number} task={t} today={data.today} onOpen={() => open(t.number)} canPriority={permissions(t, viewer).priority} onPriority={(next) => changeImportance(t, next)} />;
   const rows = board.rows.map((r) => ({ ...r, hidden: directions.hidden.has(r.direction) }));
+  const showTimeline = wide && view === "timeline";
+  const timeline = showTimeline ? buildTimeline(data.teamTasks, data.today, { person: chosen, personLeads: leads, onlyImportant }, directions.list) : null;
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          {wide ? (
+            <Segmented
+              label="Вид roadmap"
+              value={view}
+              onChange={(v) => setParam("view", v === "board" ? "board" : null)}
+              options={[
+                { value: "timeline", label: "Карта сроков" },
+                { value: "board", label: "Доска по месяцам" },
+              ]}
+              className="self-end"
+            />
+          ) : null}
           <SelectField
             label="Чьи задачи"
             id="roadmap-person"
@@ -178,7 +200,8 @@ export function RoadmapBoard() {
             <ImportanceMark priority="high" decorative />
             важная
           </span>
-          {canAny ? <span>Важность меняется звёздочкой на карточке</span> : null}
+          {/* На карте сроков меню важности нет: важность меняют на доске или в карточке задачи */}
+          {canAny && !showTimeline ? <span>Важность меняется звёздочкой на карточке</span> : null}
         </div>
       </div>
 
@@ -193,7 +216,7 @@ export function RoadmapBoard() {
 
       <p className="text-small text-muted" data-testid="roadmap-summary" aria-live="polite">
         {board.total
-          ? `На доске ${board.total} ${plural(board.total, "задача", "задачи", "задач")}, важных ${board.important}${board.overdue ? `, просрочено ${board.overdue}` : ""}`
+          ? `${showTimeline ? "На карте" : "На доске"} ${board.total} ${plural(board.total, "задача", "задачи", "задач")}, важных ${board.important}${board.overdue ? `, просрочено ${board.overdue}` : ""}`
           : null}
       </p>
 
@@ -207,6 +230,18 @@ export function RoadmapBoard() {
               ? "У человека нет открытых задач в выбранной команде."
               : "Здесь появятся открытые задачи команды по направлениям и срокам. Поставьте задачу кнопкой «Новая задача»."}
         </EmptyState>
+      ) : timeline ? (
+        <RoadmapTimeline
+          key={`${team.id}-${chosen}-${onlyImportant}`}
+          range={timeline.range}
+          rows={timeline.rows}
+          today={data.today}
+          // Права как у срока. В «Смотреть как» и на сенсорном экране полосы не двигаются: сервер в просмотре всё равно откажет,
+          // а пальцем полосу легко сдвинуть случайно. Начало и срок тогда меняют в карточке задачи
+          canMove={(t) => canMoveBar(t, viewer, { viewing, coarse })}
+          onOpen={open}
+          runTask={runTask}
+        />
       ) : wide ? (
         // Широкий экран: столбцы сроков общие для всех направлений, строка столбцов липнет под верхней панелью
         <div data-testid="roadmap-grid" key={`${team.id}-${chosen}-${onlyImportant}`}>

@@ -236,6 +236,35 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
           </Button>
         ) : null}
       </Header>
+      {/* Этап 68: полоса повестки под шапкой. Отрезок на пункт: обсуждённые зелёные, текущий цветом текста (в тёмной
+          теме светлый), остальные серые. Видно, где встреча и сколько осталось, на проекторе тоже. Отрезок нажимается,
+          как пункт повестки */}
+      {meeting.status !== "done" ? (
+        <ol className="m-0 flex list-none gap-1 p-0" aria-label={`Пункт ${index + 1} из ${steps.length}, обсуждено ${discussedCount}`} data-testid="meeting-strip">
+          {steps.map((id) => {
+            const it = meeting.items.find((x) => x.id === id);
+            const isCurrent = id === current;
+            return (
+              <li key={id} className="min-w-0 flex-1">
+                {/* Нажимается вся полоса высотой 24 px, видимый отрезок внутри неё тонкий */}
+                <button
+                  type="button"
+                  onClick={() => go(id)}
+                  title={it ? agendaLabel(it) : "Решения"}
+                  aria-label={it ? agendaLabel(it) : "Решения"}
+                  aria-current={isCurrent ? "step" : undefined}
+                  className="flex h-6 w-full items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+                >
+                  <span
+                    className={cn("block w-full rounded-full", projector ? "h-2.5" : "h-2", isCurrent ? "bg-ink" : it?.discussed ? "bg-green" : "bg-border-strong")}
+                    aria-hidden="true"
+                  />
+                </button>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
       {/* Цифры недели после заголовка встречи (этап 47): на телефоне они стояли над названием встречи */}
       {numbers}
       {notion}
@@ -297,7 +326,16 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
             {leading ? ". Вы ведёте" : ""}
           </span>
           <Button onClick={() => step(1)} disabled={index === steps.length - 1}>
+            {/* Этап 68: что следующее, видно на кнопке. Подпись обрезается, на телефоне только «Дальше» */}
             Дальше
+            {index < steps.length - 1 ? (
+              <span className="hidden max-w-60 truncate font-normal lg:inline" aria-hidden="true">
+                : {(() => {
+                  const next = meeting.items.find((x) => x.id === steps[index + 1]);
+                  return next ? agendaLabel(next) : "решения";
+                })()}
+              </span>
+            ) : null}
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>

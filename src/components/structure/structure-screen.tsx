@@ -118,7 +118,7 @@ export function StructureScreen({
           <h2 id="unplaced" className="text-title-sm font-semibold text-ink">
             Не в структуре: {view.unplaced.length}
           </h2>
-          <p className="mt-1 text-small text-muted">Эти люди есть в ресурсе, но не стоят ни в одном подразделении. Их можно оставить так или поставить в подразделение.</p>
+          <p className="mt-1 text-small text-muted">Есть в ресурсе, но не стоят в подразделении. Можно оставить так.</p>
           <ul className="mt-3 flex flex-wrap gap-2">
             {view.unplaced.map((p) => (
               <li key={p.slug} className="rounded-md bg-field px-2.5 py-1 text-small text-ink">

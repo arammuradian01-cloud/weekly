@@ -96,3 +96,15 @@ export function agendaTitle(title: string, flags: Flags): string | null {
   if (flags.stale) return `Инициатива «${title}» без новостей ${flags.staleDays} дн. Где она сейчас?`;
   return null;
 }
+
+export type UnitRow = { id: string; name: string; kind: string; parentId: string | null };
+
+/** Департамент подразделения: оно само или первое выше него с видом «департамент» */
+export function departmentOf(unitId: string | null, units: Map<string, UnitRow>): { id: string; name: string } | null {
+  const seen = new Set<string>();
+  for (let u = unitId ? units.get(unitId) : undefined; u && !seen.has(u.id); u = u.parentId ? units.get(u.parentId) : undefined) {
+    seen.add(u.id);
+    if (u.kind === "DEPARTMENT") return { id: u.id, name: u.name };
+  }
+  return null;
+}

@@ -4,7 +4,10 @@
 // - заводит, правит, закрывает и возвращает владелец или администратор в режиме управления;
 // - деление шкалы и заметку меняет ответственный при личном входе (и режим управления). По общему логину можно выбрать
 //   чужой профиль, поэтому за ответственного там не отметить. При смене деления заметка обязательна;
-// - ответственный получает событие «Мне», когда его назначили; тот, кто завёл инициативу, когда сменилось деление.
+// - ответственный получает событие «Мне», когда его назначили; тот, кто завёл инициативу, когда сменилось деление;
+// - этап 67г: у инициативы продукт из справочника направлений (пусто: общая для департамента). Страница делит инициативы
+//   по департаментам (подразделение команды, иначе ответственного), внутри по продуктам. Ответственного по умолчанию
+//   форма подставляет по продукту: руководитель направления, у кого этот продукт основной.
 
 import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
@@ -15,6 +18,7 @@ import {
   cleanNote,
   cleanTitle,
   cleanWhy,
+  departmentOf,
   flagsOf,
   isResultCode,
   isStateCode,
@@ -28,6 +32,7 @@ import {
   type Flags,
   type ResultCode,
   type StateCode,
+  type UnitRow,
 } from "./rules";
 
 type Tx = Prisma.TransactionClient;
@@ -61,6 +66,10 @@ export type InitiativeView = {
   id: string;
   title: string;
   why: string;
+  /** Продукт: код и подпись из справочника направлений. null: общая для департамента */
+  direction: { code: string; label: string } | null;
+  /** Департамент: подразделение команды инициативы, иначе ответственного. null: не нашли в структуре */
+  department: { id: string; name: string } | null;
   owner: { slug: string; fullName: string; active: boolean };
   team: { id: string; name: string; active: boolean };
   goal: { id: string; code: string | null; title: string; quarter: string } | null;
@@ -82,6 +91,8 @@ export type InitiativesPage = {
   closed: InitiativeView[];
   canManage: boolean;
   softMax: number;
+  /** Продукты по порядку справочника: подпись и кого форма подставит ответственным (руководитель направления) */
+  directions: { code: string; label: string; head: string | null }[];
   /** Для формы режима управления: кого можно назначить, какие команды и цели */
   people: { slug: string; fullName: string }[];
   teams: { id: string; name: string }[];
@@ -89,22 +100,25 @@ export type InitiativesPage = {
 };
 
 const include = {
-  owner: { select: { id: true, slug: true, fullName: true, active: true } },
-  team: { select: { id: true, name: true, active: true } },
+  owner: { select: { id: true, slug: true, fullName: true, active: true, unitId: true } },
+  team: { select: { id: true, name: true, active: true, unitId: true } },
+  direction: { select: { code: true, label: true } },
   goal: { select: { id: true, code: true, title: true, quarter: true } },
   changes: { orderBy: [{ at: "desc" as const }, { id: "desc" as const }], take: 6, include: { by: { select: { fullName: true } } } },
 } satisfies Prisma.InitiativeInclude;
 
 type Row = Prisma.InitiativeGetPayload<{ include: typeof include }>;
 
-function toView(r: Row, actor: Actor, now: Date): InitiativeView {
+function toView(r: Row, actor: Actor, now: Date, units: Map<string, UnitRow>): InitiativeView {
   const state = STATE_CODE[r.state];
   return {
     id: r.id,
     title: r.title,
     why: r.why,
+    direction: r.direction,
+    department: departmentOf(r.team.unitId, units) ?? departmentOf(r.owner.unitId, units),
     owner: { slug: r.owner.slug, fullName: r.owner.fullName, active: r.owner.active },
-    team: r.team,
+    team: { id: r.team.id, name: r.team.name, active: r.team.active },
     goal: r.goal,
     state,
     stateSince: r.stateSince.toISOString(),
@@ -134,7 +148,7 @@ function quarterOf(now: Date): string {
 
 export async function listInitiatives(actor: Actor, now = new Date()): Promise<InitiativesPage> {
   const manage = canManage(actor);
-  const [active, closed, people, teams, goals] = await Promise.all([
+  const [active, closed, people, teams, goals, units, directions, heads] = await Promise.all([
     prisma.initiative.findMany({ where: { closedAt: null }, include, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.initiative.findMany({ where: { closedAt: { not: null } }, include, orderBy: { closedAt: "desc" }, take: 20 }),
     manage ? prisma.person.findMany({ where: { active: true, role: { not: "OBSERVER" } }, select: { slug: true, fullName: true }, orderBy: { sortOrder: "asc" } }) : Promise.resolve([]),
@@ -142,12 +156,18 @@ export async function listInitiatives(actor: Actor, now = new Date()): Promise<I
     manage
       ? prisma.goal.findMany({ where: { quarter: quarterOf(now), result: "IN_PROGRESS" }, select: { id: true, code: true, title: true, team: { select: { name: true } } }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] })
       : Promise.resolve([]),
+    prisma.orgUnit.findMany({ select: { id: true, name: true, kind: true, parentId: true } }),
+    prisma.dictionaryItem.findMany({ where: { kind: "DIRECTION", active: true }, select: { id: true, code: true, label: true }, orderBy: [{ sortOrder: "asc" }, { label: "asc" }] }),
+    // Руководитель направления: включённый лидер (не наблюдатель), у кого продукт основной; первый по порядку людей
+    prisma.person.findMany({ where: { active: true, role: { in: ["OWNER", "ADMIN", "LEADER"] }, defaultDirectionId: { not: null } }, select: { slug: true, defaultDirectionId: true }, orderBy: { sortOrder: "asc" } }),
   ]);
+  const unitMap = new Map(units.map((u) => [u.id, u as UnitRow]));
   return {
-    active: active.map((r) => toView(r, actor, now)),
-    closed: closed.map((r) => toView(r, actor, now)),
+    active: active.map((r) => toView(r, actor, now, unitMap)),
+    closed: closed.map((r) => toView(r, actor, now, unitMap)),
     canManage: manage,
     softMax: SOFT_MAX,
+    directions: directions.map((d) => ({ code: d.code, label: d.label, head: heads.find((h) => h.defaultDirectionId === d.id)?.slug ?? null })),
     people,
     teams,
     goals: goals.map((g) => ({ id: g.id, label: `${g.code ? `${g.code}. ` : ""}${g.title} (${g.team.name})` })),
@@ -162,9 +182,10 @@ async function audit(tx: Tx, actor: Actor, action: string, id: string, title: st
   await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, via: actor.via ?? null } });
 }
 
-export type InitiativeInput = { title: unknown; why?: unknown; owner: unknown; team?: unknown; goal?: unknown; note?: unknown };
+/** direction: код продукта, пусто: общая для департамента, не передан: при правке продукт не меняется */
+export type InitiativeInput = { title: unknown; why?: unknown; owner: unknown; team?: unknown; goal?: unknown; note?: unknown; direction?: unknown };
 
-async function resolveRefs(tx: Tx, input: InitiativeInput) {
+async function resolveRefs(tx: Tx, input: InitiativeInput, keep: string | null = null) {
   const title = cleanTitle(input.title) || fail("Назовите инициативу одной мыслью");
   const why = cleanWhy(input.why);
   const owner = (await tx.person.findUnique({ where: { slug: String(input.owner ?? "") } })) ?? fail("Выберите ответственного");
@@ -175,7 +196,14 @@ async function resolveRefs(tx: Tx, input: InitiativeInput) {
   if (!team.active) fail("Команда выключена");
   const goalId = String(input.goal ?? "") || null;
   if (goalId && !(await tx.goal.findUnique({ where: { id: goalId } }))) fail("Такой цели нет");
-  return { title, why, owner, teamId: team.id, goalId };
+  let directionId: string | null | undefined;
+  if (input.direction !== undefined && input.direction !== null) {
+    const code = String(input.direction);
+    // Скрытый в справочнике продукт можно оставить у инициативы, у которой он уже стоит (keep: его id), но не выбрать заново
+    const item = code ? await tx.dictionaryItem.findFirst({ where: { kind: "DIRECTION", code }, select: { id: true, active: true } }) : null;
+    directionId = !code ? null : item && (item.active || item.id === keep) ? item.id : fail("Такого продукта нет в справочнике");
+  }
+  return { title, why, owner, teamId: team.id, goalId, directionId };
 }
 
 /** Новая инициатива: по умолчанию «Ещё ищем, как сделать» */
@@ -192,6 +220,7 @@ export async function createInitiative(actor: Actor, input: InitiativeInput, now
         ownerId: ref.owner.id,
         teamId: ref.teamId,
         goalId: ref.goalId,
+        directionId: ref.directionId ?? null,
         note,
         stateSince: now,
         noteAt: now,
@@ -215,8 +244,8 @@ export async function editInitiative(actor: Actor, id: string, input: Initiative
     await lockRow(tx, String(id));
     const cur = (await tx.initiative.findUnique({ where: { id: String(id) }, include: { owner: true } })) ?? fail("Инициативы уже нет");
     if (cur.closedAt) fail("Инициатива закрыта: верните её, чтобы править");
-    const ref = await resolveRefs(tx, input);
-    await tx.initiative.update({ where: { id: cur.id }, data: { title: ref.title, why: ref.why, ownerId: ref.owner.id, teamId: ref.teamId, goalId: ref.goalId } });
+    const ref = await resolveRefs(tx, input, cur.directionId);
+    await tx.initiative.update({ where: { id: cur.id }, data: { title: ref.title, why: ref.why, ownerId: ref.owner.id, teamId: ref.teamId, goalId: ref.goalId, ...(ref.directionId !== undefined ? { directionId: ref.directionId } : {}) } });
     const ownerChanged = cur.ownerId !== ref.owner.id;
     await tx.initiativeChange.create({
       data: { initiativeId: cur.id, kind: ownerChanged ? "owner" : "edit", note: ownerChanged ? `Ответственный: ${ref.owner.fullName}` : null, byId: actor.personId, at: now },

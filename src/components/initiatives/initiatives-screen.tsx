@@ -3,6 +3,11 @@
 // Шкала готовности крупных инициатив (этап 30). Две колонки: «Ещё ищем, как сделать» и «Уже делаем». На карточке
 // ответственный, одна фраза о том, что сейчас происходит, и сколько инициатива в этом делении. Долго ищем или давно без
 // новостей: метка словами, такие инициативы сами встают в повестку встречи команды ответственного.
+// Этап 67г: инициативы видят все и делятся по департаментам (заголовок раздела), внутри по продуктам; у каждого
+// продукта свои две колонки. Общие для департамента (без продукта) идут первыми, дальше продукты по порядку справочника.
+// Этап 68: колонки подложкой своего цвета (ищем тёплая, делаем зелёная), пояснение над колонками в одну строку, на
+// карточке заметка главной строкой, ответственный, команда и цель одной строкой, у долгого поиска и тишины метка
+// «в повестке встречи». Текст на цветной подложке цветом её тона: серый на ней в тёмной теме не держит 4,5:1.
 
 import { TOP_TEAM, teamName } from "@/domain/teams";
 import { useEffect, useId, useState } from "react";
@@ -35,6 +40,33 @@ type Dialog =
   | { kind: "close"; item: InitiativeView }
   | { kind: "edit"; item: InitiativeView | null }
   | null;
+
+/** Без продукта: инициатива общая для департамента */
+const GENERAL = "Общие для департамента";
+const NO_DEPARTMENT = "Департамент не указан";
+
+type Group = { id: string; name: string; products: { code: string; label: string; items: InitiativeView[] }[] };
+
+/** Открытые инициативы по департаментам, внутри по продуктам: общие первыми, дальше по порядку справочника */
+function groupsOf(items: InitiativeView[], data: InitiativesPage): Group[] {
+  const order = new Map(data.directions.map((d, i) => [d.code, i + 1]));
+  const deps = new Map<string, Group>();
+  for (const i of items) {
+    const depId = i.department?.id ?? "";
+    const dep = deps.get(depId) ?? { id: depId || "none", name: i.department?.name ?? NO_DEPARTMENT, products: [] };
+    deps.set(depId, dep);
+    const code = i.direction?.code ?? "";
+    let product = dep.products.find((p) => p.code === code);
+    if (!product) {
+      product = { code, label: i.direction?.label ?? GENERAL, items: [] };
+      dep.products.push(product);
+    }
+    product.items.push(i);
+  }
+  const list = [...deps.values()].sort((a, b) => (a.id === "none" ? 1 : b.id === "none" ? -1 : a.name.localeCompare(b.name, "ru")));
+  for (const d of list) d.products.sort((a, b) => (order.get(a.code) ?? 0) - (order.get(b.code) ?? 0));
+  return list;
+}
 
 const CHANGE_WORDS: Record<string, string> = {
   create: "Заведена",
@@ -103,7 +135,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <p className="text-body text-text-secondary" aria-live="polite">
           {data.active.length
-            ? "Две колонки: «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи команды."
+            ? "По департаментам и продуктам, у каждого продукта «Ещё ищем, как сделать» и «Уже делаем». Долго ищущие и без новостей сами встают в повестку встречи"
             : "Крупных инициатив пока нет."}
         </p>
         {data.canManage ? (
@@ -119,29 +151,24 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
         </p>
       ) : null}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {(["searching", "doing"] as const).map((state) => {
-          const list = state === "searching" ? searching : doing;
-          return (
-            <section key={state} aria-labelledby={`col-${state}`} className="flex min-w-0 flex-col gap-3">
-              <h2 id={`col-${state}`} className="text-title font-semibold text-ink">
-                {STATE_LABELS[state]} <span className="text-muted">{list.length}</span>
-              </h2>
-              {list.length ? (
-                <ul className="flex flex-col gap-3">
-                  {list.map((i) => (
-                    <li key={i.id}>
-                      <Card item={i} highlighted={target === `i-${i.id}`} canManage={data.canManage} busy={busy} onDialog={setDialog} />
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-small text-muted">{state === "searching" ? "Все инициативы уже в работе." : "Пока ни одна инициатива не перешла в работу."}</p>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      {groupsOf(data.active, data).map((dep) => (
+        <section key={dep.id} aria-labelledby={`dep-${dep.id}`} className="flex flex-col gap-4">
+          <h2 id={`dep-${dep.id}`} className="text-title font-semibold text-ink">
+            {dep.name}
+          </h2>
+          {dep.products.map((product) => {
+            const group = `${dep.id}-${product.code || "general"}`;
+            return (
+              <section key={group} aria-labelledby={`prod-${group}`} className="flex flex-col gap-3" data-testid={`ini-product-${product.code || "general"}`}>
+                <h3 id={`prod-${group}`} className="text-body font-semibold text-ink">
+                  {product.label} <span className="font-normal text-muted">{product.items.length}</span>
+                </h3>
+                <StateColumns group={group} items={product.items} target={target} canManage={data.canManage} busy={busy} onDialog={setDialog} />
+              </section>
+            );
+          })}
+        </section>
+      ))}
 
       {data.closed.length ? (
         <details className="sv-card sv-card--soft px-5 py-4" open={closedOpen} onToggle={(e) => setClosedOpen(e.currentTarget.open)}>
@@ -208,6 +235,39 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
   );
 }
 
+/** Две колонки шкалы для одного продукта: «Ещё ищем, как сделать» и «Уже делаем» */
+function StateColumns({ group, items, target, canManage, busy, onDialog }: { group: string; items: InitiativeView[]; target: string | null; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {(["searching", "doing"] as const).map((state) => {
+        const list = items.filter((i) => i.state === state);
+        return (
+          <section
+            key={state}
+            aria-labelledby={`col-${state}-${group}`}
+            className={cn("flex min-w-0 flex-col gap-3 rounded-card p-3", state === "searching" ? "bg-warning-soft" : "bg-green-soft")}
+          >
+            <h4 id={`col-${state}-${group}`} className={cn("px-1 text-small font-semibold", state === "searching" ? "text-warning-ink" : "text-green-ink")}>
+              {STATE_LABELS[state]} <span className="font-normal">{list.length}</span>
+            </h4>
+            {list.length ? (
+              <ul className="flex flex-col gap-3">
+                {list.map((i) => (
+                  <li key={i.id}>
+                    <Card item={i} highlighted={target === `i-${i.id}`} canManage={canManage} busy={busy} onDialog={onDialog} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className={cn("px-1 text-small", state === "searching" ? "text-warning-ink" : "text-green-ink")}>{state === "searching" ? "Все инициативы продукта уже в работе." : "Пока ни одна инициатива продукта не перешла в работу."}</p>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 function Card({ item, highlighted, canManage, busy, onDialog }: { item: InitiativeView; highlighted: boolean; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
   const id = useId();
   const other: StateCode = item.state === "searching" ? "doing" : "searching";
@@ -221,18 +281,25 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
         <h3 id={`${id}-t`} className="text-body font-semibold text-ink">
           {item.title}
         </h3>
-        <p className="text-small text-muted">
-          Отвечает {item.owner.fullName}
+        <p className="text-caption text-muted">
+          {item.owner.fullName}
           {item.owner.active ? "" : " (выключен)"}
-          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, инициатива разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
-          {item.goal ? `. Цель: ${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` : ""}
+          {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
+          {item.goal ? `, цель ${item.goal.code ?? item.goal.title}` : ""}
         </p>
       </div>
-      {item.why ? <p className="text-small text-ink">{item.why}</p> : null}
-      <div className="flex flex-col gap-1">
-        <p className="text-small text-muted">{NOTE_PROMPTS[item.state]}</p>
-        <p className="text-body text-ink">{item.note || <span className="text-muted">Заметки пока нет</span>}</p>
-      </div>
+      {/* Заметка главной строкой: что сейчас происходит. «Зачем» и вопрос к заметке в подсказке и в истории */}
+      <p className="text-body text-ink" title={NOTE_PROMPTS[item.state]}>
+        {/* Заметка отдельным элементом внутри кавычек: её текст ищется поиском по странице и в тестах целиком */}
+        {item.note ? (
+          <>
+            «<span>{item.note}</span>»
+          </>
+        ) : (
+          <span className="text-muted">Заметки пока нет</span>
+        )}
+      </p>
+      {item.why ? <p className="line-clamp-2 text-small text-text-secondary">{item.why}</p> : null}
       <div className="flex flex-wrap items-center gap-2">
         {item.state === "searching" ? (
           <Badge tone={item.flags.longSearch ? "yellow" : "gray"}>Ищем {weeksText(item.flags.searchDays)}</Badge>
@@ -240,6 +307,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
           <Badge tone="green">Делаем с {when(item.stateSince)}</Badge>
         )}
         {item.flags.stale ? <Badge tone="yellow">Без новостей {item.flags.staleDays} дн.</Badge> : <span className="text-caption text-muted">Обновлено {when(item.noteAt)}</span>}
+        {item.flags.longSearch || item.flags.stale ? <span className="text-caption font-semibold text-danger-ink">в повестке встречи</span> : null}
       </div>
       {item.canUpdate ? (
         <div className="flex flex-wrap gap-2">
@@ -370,7 +438,7 @@ function CloseDialog({ item, busy, onClose, onSubmit }: { item: InitiativeView; 
   );
 }
 
-type Form = { title: string; why: string; owner: string; team: string; goal: string; note: string };
+type Form = { title: string; why: string; owner: string; team: string; goal: string; note: string; direction: string };
 
 function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeView | null; data: InitiativesPage; busy: boolean; onClose: () => void; onSubmit: (form: Form) => void }) {
   const [form, setForm] = useState<Form>({
@@ -380,9 +448,21 @@ function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeV
     team: item?.team.id ?? "top",
     goal: item?.goal?.id ?? "",
     note: "",
+    direction: item?.direction?.code ?? "",
   });
   const id = useId();
   const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
+  // Продукт выбран: ответственным встаёт руководитель направления, если ответственного ещё не выбирали руками
+  // У правки ответственный уже выбран: продукт его не меняет. У новой, пока ответственного не выбирали руками
+  const [ownerTouched, setOwnerTouched] = useState(!!item);
+  const headOf = (code: string) => data.directions.find((d) => d.code === code)?.head ?? "";
+  const setDirection = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const code = e.target.value;
+    const head = headOf(code);
+    setForm({ ...form, direction: code, owner: !ownerTouched && head && data.people.some((p) => p.slug === head) ? head : form.owner });
+  };
+  // Продукт, скрытый в справочнике, у правленой инициативы остаётся в списке
+  const directions = item?.direction && !data.directions.some((d) => d.code === item.direction!.code) ? [...data.directions, { ...item.direction, head: null }] : data.directions;
   // Цель из прошлого квартала в списке не показывается, но у инициативы остаётся
   const goals = item?.goal && !data.goals.some((g) => g.id === item.goal!.id) ? [{ id: item.goal.id, label: `${item.goal.code ? `${item.goal.code}. ` : ""}${item.goal.title}` }, ...data.goals] : data.goals;
   return (
@@ -406,12 +486,35 @@ function EditDialog({ item, data, busy, onClose, onSubmit }: { item: InitiativeV
           </label>
           <textarea id={`${id}-w`} className="sv-control" rows={2} maxLength={WHY_MAX} value={form.why} onChange={set("why")} />
         </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor={`${id}-p`} className="sv-label">
+            Продукт
+          </label>
+          <select id={`${id}-p`} className="sv-control" value={form.direction} onChange={setDirection}>
+            <option value="">{GENERAL}</option>
+            {directions.map((d) => (
+              <option key={d.code} value={d.code}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-caption text-muted">По продукту инициативы делятся на странице. Ответственным встанет руководитель направления, его можно поменять</p>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="flex flex-col gap-1">
             <label htmlFor={`${id}-o`} className="sv-label">
               Ответственный
             </label>
-            <select id={`${id}-o`} className="sv-control" value={form.owner} onChange={set("owner")} required>
+            <select
+              id={`${id}-o`}
+              className="sv-control"
+              value={form.owner}
+              onChange={(e) => {
+                setOwnerTouched(true);
+                set("owner")(e);
+              }}
+              required
+            >
               <option value="">Выберите</option>
               {data.people.map((p) => (
                 <option key={p.slug} value={p.slug}>

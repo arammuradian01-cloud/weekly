@@ -66,7 +66,7 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
   return (
     <section aria-labelledby="me-read" className="sv-section !mt-0 scroll-mt-24" data-testid="me-read">
       <div className="sv-section__head">
-        <h2 id="me-read" className="sv-section__title">
+        <h2 id="me-read" className="sv-section__title scroll-mt-[calc(6rem+var(--view-as-h,0px))]">
           Прочитать <span className="sv-section__count">{items.length}</span>
         </h2>
         {items.length > 1 ? (

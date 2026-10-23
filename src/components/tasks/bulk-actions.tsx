@@ -145,6 +145,7 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
             <>
               <DueField id="bulk-due" label="Новый срок" value={due} onChange={setDue} today={data.today} />
               <TextArea label="Причина переноса, одна на все" id="bulk-reason" value={reason} onChange={(e) => setReason(e.target.value)} rows={2} hint={`Запишется в историю переносов каждой задачи. Новый срок ${formatLong(due)}`} />
+              <p className="m-0 text-small text-text-secondary" data-testid="bulk-due-start">Если начало задачи позже нового срока, оно встанет на срок.</p>
             </>
           ) : null}
           {kind === "priority" ? <SelectField label="Новый приоритет" id="bulk-priority" value={priority} onChange={(e) => setPriority(e.target.value as PriorityCode)} options={PRIORITIES.map((p) => ({ value: p.code, label: p.label }))} /> : null}

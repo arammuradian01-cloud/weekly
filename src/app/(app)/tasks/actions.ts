@@ -16,7 +16,7 @@ import { moveTask } from "@/lib/org/service";
 import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
 import { blockOnPerson } from "@/lib/requests/service";
 
-export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string } | { ok: false; error: string };
+export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string; notice?: string } | { ok: false; error: string };
 
 async function actorOf(ctx: AppContext): Promise<svc.Actor> {
   return {
@@ -53,7 +53,7 @@ function checkNumber(number: unknown): number {
 async function run(fn: (a: svc.Actor) => Promise<svc.TaskResult>): Promise<TaskActionResult> {
   try {
     const r = await fn(await actor());
-    return { ok: true, task: r.task, number: r.task.number, undo: r.undo, ...(r.warning ? { warning: r.warning } : {}) };
+    return { ok: true, task: r.task, number: r.task.number, undo: r.undo, ...(r.warning ? { warning: r.warning } : {}), ...(r.notice ? { notice: r.notice } : {}) };
   } catch (error) {
     unstable_rethrow(error);
     if (error instanceof svc.TaskRuleError) return { ok: false, error: error.message };
@@ -116,6 +116,16 @@ export async function updateWhereAction(number: number, text: string) {
 
 export async function transferDueAction(number: number, to: IsoDate, reason: string) {
   return run((a) => svc.transferDue(a, checkNumber(number), to, reason));
+}
+
+/** Начало задачи на карте сроков и в карточке (этап 68), права как у срока. null убирает начало. В режиме «Смотреть как» отказ, как у всех run */
+export async function setTaskStartAction(number: number, start: IsoDate | null) {
+  return run((a) => svc.setTaskStart(a, checkNumber(number), start === null ? null : String(start)));
+}
+
+/** Сдвиг полосы целиком (этап 68): начало и срок одной правкой и одной отменой, срок с причиной */
+export async function moveTaskSpanAction(number: number, start: IsoDate, due: IsoDate, reason: string) {
+  return run((a) => svc.moveTaskSpan(a, checkNumber(number), String(start ?? ""), String(due ?? ""), String(reason ?? "")));
 }
 
 export async function editTaskAction(number: number, input: EditInput) {

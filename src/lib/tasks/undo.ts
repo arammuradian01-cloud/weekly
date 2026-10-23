@@ -27,6 +27,8 @@ export type TaskSnapshot = {
   archivedAt: string | null;
   /** Цель задачи (этап 65): отмена привязки к цели возвращает прежнюю цель. Нет в старых токенах */
   goalId?: string | null;
+  /** Начало на карте сроков (этап 68): отмена переноса срока или сдвига полосы возвращает и его. Нет в старых токенах */
+  startOn?: string | null;
 };
 
 export type UndoSpec =
