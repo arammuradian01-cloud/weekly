@@ -56,17 +56,21 @@ export async function teamInboxView(actor: Actor, wantedWeek?: string, wantedTea
   ]);
   const senders = await prisma.person.findMany({ where: { id: { in: received.flatMap((r) => r.sentById ? [r.sentById] : []) } }, select: { id: true, fullName: true } });
   const memberIds = team ? [...new Set(team.id === TOP_TEAM ? [...team.members, ...(team.leaderId ? [team.leaderId] : [])] : team.members.filter((id) => id !== team.leaderId))] : [];
-  const feed = team ? await getWeekView(key, new Date(), { personIds: expectedOf(team, leadersOf(nodes)), authorIds: memberIds, teamIds: [team.id], shared: false }) : null;
-  const names = await prisma.person.findMany({ where: { id: { in: memberIds }, active: true }, select: { slug: true, fullName: true } });
+  const feed = team ? await getWeekView(key, new Date(), { personIds: expectedOf(team, leadersOf(nodes)), authorIds: memberIds, teamIds: [team.id], shared: false, includeInactiveSubmitted: true }) : null;
+  const names = await prisma.person.findMany({ where: { id: { in: memberIds } }, select: { slug: true, fullName: true, active: true } });
   const reports = feed?.reports.map((r) => {
     const submitted = r.state === "submitted" || r.state === "late";
     return {
       ...r,
       name: names.find((p) => p.slug === r.author)?.fullName ?? r.author,
+      inactive: names.find((p) => p.slug === r.author)?.active === false,
       // Здесь читают сданный weekly. В статусе черновика не передаём его содержимое браузеру.
       headline: submitted ? r.headline : "",
       thanks: submitted ? r.thanks : undefined,
-      entries: submitted ? feed.entries.filter((e) => e.author === r.author || e.promoted?.some((p) => p.by === r.author)) : [],
+      entries: submitted ? feed.entries
+        .filter((e) => e.author === r.author || e.promoted?.some((p) => p.by === r.author))
+        // В одном отчёте видна только фраза его автора: чужое несданное пояснение не передаём даже в RSC.
+        .map((e) => ({ ...e, ...(e.promoted ? { promoted: e.promoted.map((p) => p.by === r.author ? p : { by: p.by }) } : {}) })) : [],
     };
   }) ?? [];
   return {

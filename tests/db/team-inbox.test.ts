@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { actorFor, type Actor } from "@/lib/tasks/service";
-import { currentReportingKey, ensureWeek } from "@/lib/weekly/service";
+import { currentReportingKey, ensureWeek, getWeekView } from "@/lib/weekly/service";
 import { teamInboxScope, teamInboxView, weeklyReaders } from "@/lib/weekly/team-inbox";
 import { teamReportView } from "@/lib/weekly-blocks/team";
 import { shiftWeek } from "@/lib/weekly/weeks";
@@ -13,6 +13,7 @@ const person = (slug: string) => prisma.person.findUniqueOrThrow({ where: { slug
 const clean = async () => {
   await prisma.ceoReport.deleteMany({ where: { updatedBy: { slug: { startsWith: prefix } } } });
   await prisma.team.deleteMany({ where: { id: { startsWith: prefix } } });
+  await prisma.weeklyEntry.deleteMany({ where: { author: { slug: { startsWith: prefix } } } });
   await prisma.weeklyReport.deleteMany({ where: { author: { slug: { startsWith: prefix } } } });
   await prisma.person.deleteMany({ where: { slug: { startsWith: prefix } } });
 };
@@ -54,6 +55,51 @@ describe("Отчёт по моей команде", () => {
     expect(previous.reports.find((r) => r.author === member.slug)).toMatchObject({ headline: "Сданный итог", state: "submitted" });
     expect(previous.reports.find((r) => r.author === draft.slug)).toMatchObject({ headline: "", state: "draft", entries: [] });
     expect(JSON.stringify(previous)).not.toContain("Черновая благодарность");
+  });
+
+  it.each(["SUBMITTED", "LATE"] as const)("архив сохраняет %s отключённого участника; черновики и ожидания новых недель его не включают", async (state) => {
+    const key = await currentReportingKey();
+    const old = shiftWeek(key, -1);
+    const week = await ensureWeek(prisma, old);
+    const member = await person("member");
+    const draft = await person("draft");
+    await prisma.weeklyReport.createMany({ data: [
+      { weekId: week.id, authorId: member.id, headline: "Сданный итог отключённого", state, submittedAt: new Date() },
+      { weekId: week.id, authorId: draft.id, headline: "Несданный итог отключённого", state: "DRAFT" },
+    ] });
+    await prisma.person.updateMany({ where: { id: { in: [member.id, draft.id] } }, data: { active: false } });
+    const previous = await teamInboxView(await personal("leader"), old);
+    expect(previous.reports).toHaveLength(1);
+    expect(previous.reports[0]).toMatchObject({ author: member.slug, name: member.fullName, inactive: true, headline: "Сданный итог отключённого", state: state.toLowerCase() });
+    expect(JSON.stringify(previous)).not.toContain("Несданный итог отключённого");
+    expect((await teamInboxView(await personal("leader"), key)).reports).toEqual([]);
+    expect((await getWeekView(old)).reports.some((r) => r.author === member.slug)).toBe(false);
+    await expect(teamInboxView(await personal("other"), old, `${prefix}-team`)).rejects.toThrow(/недоступны/);
+  });
+
+  it("поднятая запись содержит пояснение автора сданного weekly, но не пояснение другого участника с несданным отчётом", async () => {
+    const key = await currentReportingKey();
+    const week = await ensureWeek(prisma, key);
+    const member = await person("member");
+    const draft = await person("draft");
+    await prisma.weeklyReport.createMany({ data: [
+      { weekId: week.id, authorId: member.id, headline: "Сданный итог", state: "SUBMITTED", submittedAt: new Date() },
+      { weekId: week.id, authorId: draft.id, headline: "Несданный итог", state: "DRAFT" },
+    ] });
+    const dict = await prisma.dictionaryItem.findMany({ where: { active: true } });
+    const by = (kind: string) => dict.find((d) => d.kind === kind)!.id;
+    const entry = await prisma.weeklyEntry.create({ data: {
+      weekId: week.id, authorId: (await person("sender")).id,
+      directionId: by("DIRECTION"), blockId: by("WEEKLY_BLOCK"), typeId: by("ENTRY_TYPE"), what: "Запись команды ниже",
+      promotions: { create: [{ byId: member.id, note: "Пояснение сданного отчёта" }, { byId: draft.id, note: "Секретное несданное пояснение" }] },
+    } });
+    const view = await teamInboxView(await personal("leader"), key);
+    const received = view.reports.find((r) => r.author === member.slug)!;
+    expect(received.entries).toHaveLength(1);
+    expect(received.entries[0]).toMatchObject({ id: entry.id, what: "Запись команды ниже" });
+    expect(received.entries[0].promoted).toContainEqual({ by: member.slug, note: "Пояснение сданного отчёта" });
+    expect(received.entries[0].promoted).toContainEqual({ by: draft.slug });
+    expect(JSON.stringify(view)).not.toContain("Секретное несданное пояснение");
   });
 
   it("входящие сводные отчёты отбираются по сохранённому получателю; ему открывается отправленный снимок, а не свежий черновик", async () => {

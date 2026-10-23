@@ -24,7 +24,7 @@ export default async function ReceivedWeeklyPage({ searchParams }: { searchParam
     return <><PageHeader title="Отчёт по моей команде" /><EmptyState title="Отчёты недоступны">{error.message}</EmptyState></>;
   }
   const href = (week: string, team = view.team?.id) => `/weekly/received?week=${week}${team ? `&team=${encodeURIComponent(team)}` : ""}`;
-  const required = view.reports.filter((r) => !r.optional && !r.absent);
+  const required = view.reports.filter((r) => !r.inactive && !r.optional && !r.absent);
   const done = (state: string) => state === "submitted" || state === "late";
   const submitted = required.filter((r) => done(r.state)).length;
   const next = shiftWeek(view.key, 1);
@@ -56,16 +56,22 @@ export default async function ReceivedWeeklyPage({ searchParams }: { searchParam
         <nav aria-label="Команда для чтения weekly" className="flex flex-wrap gap-2">
           {view.teams.map((t) => <Link key={t.id} href={href(view.key, t.id)} aria-current={view.team?.id === t.id ? "page" : undefined} className={buttonClass(view.team?.id === t.id ? "primary" : "secondary", "sm", "h-auto min-h-11 max-w-full whitespace-normal text-left")}>{t.name}</Link>)}
         </nav>
-        <p className="text-body" data-testid="team-submission-summary">Сдали {submitted} из {required.length}. Ждём: {required.length - submitted}. Отсутствуют: {view.reports.filter((r) => r.absent).length}.</p>
+        <p className="text-body" data-testid="team-submission-summary">Сдали {submitted} из {required.length}. Ждём: {required.length - submitted}. Отсутствуют: {view.reports.filter((r) => !r.inactive && r.absent).length}.</p>
         <p className="text-small text-muted">Отчёты сотрудников доступны здесь после сдачи. Правки до закрытия недели обновляют личный weekly.</p>
         {view.reports.map((r) => <details key={r.author} className="sv-card min-w-0 p-4" data-testid={`received-person-${r.author}`}>
           <summary className="cursor-pointer break-words text-body">
-            <span className="font-semibold">{r.name}</span>{" — "}{done(r.state) ? (r.state === "late" ? "Сдан с опозданием" : "Сдан") : r.absent ? "Отсутствует" : r.state === "draft" ? "Черновик, ещё не сдан" : "Не сдан"}{r.optional ? " · По желанию" : ""}
+            <span className="font-semibold">{r.name}</span>{" — "}{done(r.state) ? (r.state === "late" ? "Сдан с опозданием" : "Сдан") : r.absent ? "Отсутствует" : r.state === "draft" ? "Черновик, ещё не сдан" : "Не сдан"}{r.inactive ? " · Доступ отключён" : r.optional ? " · По желанию" : ""}
           </summary>
           {done(r.state) ? <div className="mt-4 flex min-w-0 flex-col gap-4">
             {r.submittedAt ? <p className="text-small text-muted">Сдан {formatMoment(new Date(r.submittedAt))}</p> : null}
             <p className="break-words text-title font-semibold">{r.headline}</p>
-            {r.entries.map((e) => <EntryItem key={e.id} entry={e} compact showAuthor={e.author !== r.author} />)}
+            {r.entries.map((e) => {
+              const note = e.promoted?.find((p) => p.by === r.author)?.note;
+              return <div key={e.id} className="flex min-w-0 flex-col gap-2">
+                <EntryItem entry={e} compact showAuthor={e.author !== r.author} />
+                {note ? <p className="whitespace-pre-wrap break-words text-body"><span className="text-muted">От себя: </span>{note}</p> : null}
+              </div>;
+            })}
             {r.thanks ? <p className="whitespace-pre-wrap break-words text-body">Благодарности: {r.thanks}</p> : null}
           </div> : <p className="mt-3 text-body text-muted">{r.absent ? "На этой неделе weekly не ожидается." : r.optional ? "Этот сотрудник сдаёт weekly по желанию." : "После сдачи здесь появятся главное за неделю и записи сотрудника."}</p>}
         </details>)}

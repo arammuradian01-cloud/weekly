@@ -131,9 +131,10 @@ export const STATE_CODE: Record<WeeklyState, WeeklyStateCode> = { DRAFT: "draft"
  * - shared: общие записи без автора («Все лидеры» из таблицы), бывают только у топ-команды;
  * - ceo: и записи любой команды с отметкой «В отчёт CEO»;
  * - teamIds: какие команды показаны: по ним срок и закрытие недели в шапке ленты.
+ * - includeInactiveSubmitted: только для входящих — сохранить сданные weekly отключённых участников.
  * Без аудитории: все включённые люди, как до команд
  */
-export type WeekAudience = { personIds: string[]; authorIds?: string[]; shared: boolean; ceo?: boolean; teamIds?: string[] };
+export type WeekAudience = { personIds: string[]; authorIds?: string[]; shared: boolean; ceo?: boolean; teamIds?: string[]; includeInactiveSubmitted?: boolean };
 
 function entryScope(audience: WeekAudience | undefined): Prisma.WeeklyEntryWhereInput {
   if (!audience) return {};
@@ -186,7 +187,13 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
     prisma.weeklyEntry.findMany({ where: { AND: [{ weekId: row.id }, scope] }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     // Люди ленты: от кого ждём weekly и остальные участники, которые могут сдать по желанию (этап 15)
     prisma.person.findMany({
-      where: { active: true, role: { not: "OBSERVER" }, ...(audience ? { id: { in: [...new Set([...audience.personIds, ...(audience.authorIds ?? [])])] } } : {}) },
+      where: {
+        ...(audience?.includeInactiveSubmitted
+          ? { OR: [{ active: true }, { active: false, weeklyReports: { some: { weekId: row.id, state: { in: ["SUBMITTED", "LATE"] } } } }] }
+          : { active: true }),
+        role: { not: "OBSERVER" },
+        ...(audience ? { id: { in: [...new Set([...audience.personIds, ...(audience.authorIds ?? [])])] } } : {}),
+      },
       orderBy: { sortOrder: "asc" },
     }),
     absenceMap(row.id),
