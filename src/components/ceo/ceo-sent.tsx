@@ -12,11 +12,11 @@ import { cn } from "@/lib/cn";
 const moment = (iso: string) =>
   new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(" в ", ", ");
 
-export function CeoSentReport({ view }: { view: CeoInboxView }) {
+export function CeoSentReport({ view, showWeeks = true }: { view: CeoInboxView; showWeeks?: boolean }) {
   const c = view.current;
   if (!c) return <EmptyState title="Отчётов пока не отправляли">Когда руководитель отправит weekly по итогам встречи, он появится здесь, а в «Мне» придёт событие.</EmptyState>;
   return (
-    <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_260px] lg:gap-8">
+    <div className={cn("flex min-w-0 flex-col gap-6", showWeeks && "lg:grid lg:grid-cols-[minmax(0,1fr)_260px] lg:gap-8")}>
       <article className="flex min-w-0 flex-col gap-5" data-testid="ceo-sent-report">
         <div>
           <h2 className="text-title font-semibold text-ink">Отчёт за неделю {c.number}</h2>
@@ -28,7 +28,7 @@ export function CeoSentReport({ view }: { view: CeoInboxView }) {
         </div>
         <CeoAssembled ctx={c.ctx} sections={c.sections} blocks={c.blocks} labels={c.labels} order={c.order} meetings={c.meetings} idPrefix="ceo-sent" />
       </article>
-      <nav aria-label="Отправленные недели" className="flex flex-col gap-1">
+      {showWeeks ? <nav aria-label="Отправленные недели" className="flex flex-col gap-1">
         <p className="mb-1 text-caption font-semibold text-muted">Отправленные недели</p>
         {view.weeks.map((w) => (
           <Link
@@ -41,7 +41,7 @@ export function CeoSentReport({ view }: { view: CeoInboxView }) {
             <span className="block text-caption font-normal text-muted">{moment(w.sentAt)}</span>
           </Link>
         ))}
-      </nav>
+      </nav> : null}
     </div>
   );
 }

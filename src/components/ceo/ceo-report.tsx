@@ -653,7 +653,7 @@ export function CeoReport({
         open={sendOpen}
         onOpenChange={setSendOpen}
         title="Отправить weekly CEO?"
-        description={`Получит: ${send.recipients.join(", ") || "CEO"}. Отчёт сохранится и уйдёт в новой структуре: видимые блоки, решения, благодарности и встречи. Отправка только в приложении, без письма.`}
+        description={`Получит: ${send.recipients.join(", ") || "CEO"}. В Weekly → «Отчёт по моей команде» получатель увидит отправленную версию: видимые блоки, решения, благодарности и встречи. Отправка только в приложении, без письма.`}
       >
         <FormError message={sendError ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
