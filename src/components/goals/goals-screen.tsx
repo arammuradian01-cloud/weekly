@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Upload } from "lucide-react";
 import type { GoalNode, GoalsPlan, GoalsView } from "@/lib/goals/service";
 import { goalBucket, type GoalBucket } from "@/lib/goals/quarter";
+import { goalPeople, goalsHref, hasOwnGoals, hasUnowned, pruneSelection, selectGoals, type GoalGroupBy } from "@/lib/goals/by-person";
 import type { LeaderPlan } from "@/lib/goals/leader-board-service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { quarterLabel } from "@/lib/goals/parse";
@@ -33,7 +34,7 @@ import {
   previewGoalsAction,
   updateGoalAction,
 } from "@/app/(app)/goals/actions";
-import { GoalsTable, type GoalGroupBy } from "./goals-table";
+import { GoalsTable } from "./goals-table";
 import { GoalsTree } from "./goals-tree";
 import { GoalsCards, QuarterBar } from "./goals-cards";
 import { GoalsPeopleFilter } from "./goals-people-filter";
@@ -47,7 +48,7 @@ const RESULTS: { value: GoalResult; label: string }[] = [
 ];
 
 type Run = (fn: () => Promise<{ ok: boolean; error?: string }>, ok: string) => void;
-// Этап 68: карточки по командам видом по умолчанию, таблица и дерево рядом
+// Этап 68: карточки видом по умолчанию, таблица и дерево рядом
 type ViewMode = "cards" | "table" | "tree";
 type Filter = "all" | GoalBucket;
 
@@ -79,6 +80,8 @@ export function GoalsScreen({
   bordTabs,
   leaderBoard = false,
   initialQuery = "",
+  initialPeople = [],
+  initialGroup = "person",
 }: {
   view: GoalsView;
   defaultTeam: string | null;
@@ -86,22 +89,36 @@ export function GoalsScreen({
   leaderBoard?: boolean;
   /** Поиск с первого открытия: ссылка «Цели» из дерева подчинённых */
   initialQuery?: string;
+  /** Чьи цели показаны и как сгруппированы: из адреса (?people=slug,slug&group=team), см. goalsHref */
+  initialPeople?: string[];
+  initialGroup?: GoalGroupBy;
 }) {
   const router = useRouter();
   const { notify, me } = usePrototype();
   const [, start] = useTransition();
+  const [, startNav] = useTransition();
   const [creating, setCreating] = useState<{ parent?: GoalNode } | null>(null);
   const [editing, setEditing] = useState<GoalNode | null>(null);
   const [marking, setMarking] = useState<GoalNode | null>(null);
   const [importing, setImporting] = useState(false);
   const [mode, setMode] = useState<ViewMode>("cards");
-  const [groupBy, setGroupBy] = useState<GoalGroupBy>("person");
-  const [selectedPeople, setSelectedPeople] = useState<string[]>([]);
+  // Отбор людей и группировка живут в адресе. Экран меняется сразу, адрес догоняет: пока router.replace в пути,
+  // действует местная копия. Адрес изменился (ссылка, «Назад», обновление страницы): местная копия сбрасывается
+  const urlKey = `${initialPeople.join(",")}|${initialGroup}`;
+  const [local, setLocal] = useState<{ people: string[]; group: GoalGroupBy } | null>(null);
+  const [seenKey, setSeenKey] = useState(urlKey);
+  if (seenKey !== urlKey) {
+    setSeenKey(urlKey);
+    setLocal(null);
+  }
+  const groupBy = local?.group ?? initialGroup;
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState(initialQuery);
   const byId = useMemo(() => new Map(view.goals.map((g) => [g.id, g])), [view.goals]);
   // Ссылка на цель обрабатывается один раз за открытие страницы
   const hashHandled = useRef(false);
+  // Цель из карточки («Факт»): таблица раскроет её при появлении
+  const focusGoal = useRef<string | null>(null);
   // Ссылка на цель (#goal-..., метка цели у задачи) открывает таблицу: строка там раскрывается с фактом и историей.
   // На сервере адреса с решёткой не видно, поэтому вид меняется после открытия страницы
   useEffect(() => {
@@ -122,13 +139,37 @@ export function GoalsScreen({
       }
     });
 
-  const people = useMemo(() => Array.from(new Map(view.goals.flatMap((g) => g.owner ? [[g.owner.slug, g.owner] as const] : [])).values()).sort((a, b) => a.fullName.localeCompare(b.fullName, "ru")), [view.goals]);
-  const scoped = mode === "tree" || !selectedPeople.length ? view.goals : view.goals.filter((g) => g.owner && selectedPeople.includes(g.owner.slug));
+  // Выбранные люди только из владельцев целей этого квартала и этой области: после смены квартала или команды
+  // тех, кого в новых целях нет, отбрасываем (иначе их нельзя ни увидеть, ни снять)
+  const people = useMemo(() => goalPeople(view.goals), [view.goals]);
+  const unowned = useMemo(() => hasUnowned(view.goals), [view.goals]);
+  const rawPeople = local?.people ?? initialPeople;
+  const selected = useMemo(() => pruneSelection(rawPeople, people, unowned), [rawPeople, people, unowned]);
+  // В дереве отбор не действует: оно показывает все цели с родителями и детьми
+  const scoped = useMemo(() => (mode === "tree" ? view.goals : selectGoals(view.goals, selected)), [mode, view.goals, selected]);
   const count = (f: Filter) => scoped.filter((g) => inFilter(g, f)).length;
+  // Адрес догоняет экран: replace без новой записи в истории и без прокрутки, как в списке задач
+  const navigate = (next: { people: string[]; group: GoalGroupBy }) => {
+    setLocal(next);
+    startNav(() => router.replace(goalsHref({ quarter: view.quarter, ...next }), { scroll: false }));
+  };
+  // Тот же выбор или та же группировка адрес не меняют: каждая смена адреса запрашивает страницу заново
+  const setPeople = (next: string[]) => {
+    if (next.join(",") !== rawPeople.join(",")) navigate({ people: next, group: groupBy });
+  };
+  const setGroupBy = (next: GoalGroupBy) => {
+    if (next !== groupBy) navigate({ people: selected, group: next });
+  };
+  // В дереве фильтров нет: уходя в него, отбор сбрасываем, иначе он остался бы невидимым и кнопка шкалы вела бы в урезанные карточки
+  const changeMode = (next: ViewMode) => {
+    if (next === "tree" && selected.length) setPeople([]);
+    setMode(next);
+  };
   // Подпись на шкале квартала включает отбор в карточках или в таблице и ведёт к списку целей
   const show = (f: Filter) => {
     setFilter(f);
-    // Отбор работает в карточках и в таблице; из дерева переходим в карточки
+    // Отбор работает в карточках и в таблице; из дерева переходим в карточки без отбора людей
+    if (mode === "tree" && selected.length) setPeople([]);
     setMode((m) => (m === "tree" ? "cards" : m));
     requestAnimationFrame(() => document.getElementById("goals-list")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   };
@@ -144,7 +185,7 @@ export function GoalsScreen({
           label="Квартал"
           id="goals-quarter"
           value={view.quarter}
-          onChange={(e) => router.push(`/goals?q=${e.target.value}`)}
+          onChange={(e) => router.push(goalsHref({ quarter: e.target.value, people: selected, group: groupBy }))}
           options={view.quarters.map((x) => ({ value: x, label: quarterLabel(x) }))}
           className="sm:w-44"
         />
@@ -183,12 +224,12 @@ export function GoalsScreen({
             id="goals-list"
             title={`Цели на ${quarterLabel(view.quarter)}`}
             description={`Факт вписывают владелец и руководитель команды. Свежий факт: не старше ${FACT_STALE_DAYS} дней`}
-            actions={<Segmented label="Вид" value={mode} onChange={setMode} options={[{ value: "cards", label: "Карточки" }, { value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
+            actions={<Segmented label="Вид" value={mode} onChange={changeMode} options={[{ value: "cards", label: "Карточки" }, { value: "table", label: "Таблица" }, { value: "tree", label: "Дерево" }]} />}
             flush
           >
             {mode !== "tree" ? (
             <div className="flex flex-col gap-3 border-t border-border px-5 py-3 max-sm:px-4">
-              <GoalsPeopleFilter people={people} selected={selectedPeople} me={me.slug} onChange={setSelectedPeople} />
+              <GoalsPeopleFilter people={people} unowned={unowned} selected={selected} me={me.slug} mineAvailable={hasOwnGoals(view.goals, me.slug)} onChange={setPeople} />
               <div className="flex flex-wrap items-end gap-3">
                 <div className="relative min-w-[200px] flex-1 sm:max-w-xs">
                   <TextInput id="goals-search" label="Поиск цели" hideLabel placeholder="Поиск: код, цель, владелец" value={query} onChange={(e) => setQuery(e.target.value)} autoComplete="off" />
@@ -196,6 +237,10 @@ export function GoalsScreen({
                 </div>
                 <Segmented label="Группы" value={groupBy} onChange={setGroupBy} options={[{ value: "person", label: "По людям" }, { value: "team", label: "По командам" }]} />
               </div>
+              {/* Живая область: число целей после отбора, поиска и шкалы озвучивается при каждом изменении */}
+              <p className="m-0 text-small text-muted" aria-live="polite" data-testid="goals-shown">
+                Показано целей: {shown.length} из {view.goals.length}
+              </p>
               {/* В карточках отбор включает шкала квартала сверху, второй ряд тех же кнопок не нужен */}
               {mode === "table" ? <Segmented label="Показать" value={filter} onChange={setFilter} options={FILTERS.map((f) => ({ value: f.value, label: f.label, count: f.value === "all" ? undefined : count(f.value) }))} /> : null}
             </div>
@@ -210,12 +255,13 @@ export function GoalsScreen({
                   onAdd={(parent) => setCreating({ parent })}
                   creatable={view.creatable.length > 0}
                   onFact={(g) => {
-                    // Таблица на этой цели: строка раскрывается по ссылке #goal-id (как с метки цели у задачи), поиск не трогаем.
-                    // Адрес без события hashchange, таблица прочтёт его при появлении
-                    hashHandled.current = false;
-                    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#goal-${g.id}`);
+                    // Таблица на этой цели: строка раскрывается при появлении, поиск не трогаем. Адрес получает якорь #goal-id,
+                    // как у ссылки с метки цели у задачи, но через роутер: нативный history.replaceState перезагружает страницу.
+                    // Роутер меняет адрес позже, чем появляется таблица, поэтому цель ей передаётся отдельно
+                    focusGoal.current = g.id;
                     setFilter("all");
                     setMode("table");
+                    router.replace(`${window.location.pathname}${window.location.search}#goal-${g.id}`, { scroll: false });
                   }}
                 />
               ) : (
@@ -229,9 +275,10 @@ export function GoalsScreen({
                   onReveal={() => {
                     setFilter("all");
                     setQuery("");
-                    setSelectedPeople([]);
+                    setPeople([]);
                   }}
                   hashHandled={hashHandled}
+                  focusGoal={focusGoal}
                   groupBy={groupBy} onEdit={setEditing} onMark={setMarking} onAdd={(parent) => setCreating({ parent })} creatable={view.creatable.length > 0} onChanged={() => router.refresh()} />
               ) : (
                 <p className="px-5 py-6 text-body text-text-secondary">Под условия ничего не подходит: смените фильтр или поиск.</p>

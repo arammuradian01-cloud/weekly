@@ -130,12 +130,23 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent);
 @media (pointer: coarse) {
   .sv-tabs__item { height: var(--touch-min); }
   .sv-segment__item { min-height: 38px; }
-  .sv-btn--sm, .sv-pill, .sv-icon-btn--sm { height: 40px; }
+  .sv-btn--sm, .sv-icon-btn--sm { height: 40px; }
   .sv-icon-btn--sm { width: 40px; }
+  /* Пилюли-фильтры и пункты меню не ниже 44 px (экран «Цели»: шкала квартала, меню сотрудников); сегменты со своим
+     классом touch поднимают сами кнопки, а не только плашку вокруг них */
+  .sv-pill { min-height: var(--touch-min); }
+  .sv-menu__item { min-height: var(--touch-min); }
+  .sv-segment--touch .sv-segment__item { min-height: var(--touch-min); }
   .sv-inline-edit { min-height: 36px; }
   .sv-touch-target { min-height: 40px; }
   /* Крестик тега 16 px пальцем не попасть: кнопка 24, тег не растёт (поля внутрь) */
   .sv-tag__remove { width: 24px; height: 24px; margin: -1px -4px -1px 0; }
+}
+
+/* Переключатель «Чьи цели» на телефоне: три кнопки делят ширину поровну, подпись переносится, а не уводит плашку вбок */
+@media (max-width: 639px) {
+  .sv-segment--touch { display: flex; width: 100%; }
+  .sv-segment--touch .sv-segment__item { flex: 1 1 0; min-width: 0; white-space: normal; line-height: 1.2; padding-inline: var(--space-2); }
 }
 
 /* Этап 68 (из разбора этапа 59). Шаги сдачи weekly на планшете и телефоне: лента под заголовком во всю ширину экрана,
