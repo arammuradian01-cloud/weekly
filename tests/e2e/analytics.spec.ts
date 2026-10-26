@@ -58,10 +58,10 @@ test.describe("аналитика руководителя", () => {
 
   test("руководитель открывает аналитику своей команды: задачи сейчас, графики, таблица, карточки лидеров и спуск вниз", async ({ page, browser }) => {
     const reva = await person(browser, page, "Рева");
-    // Этап 41: аналитика вкладкой страницы «Люди». На телефоне «Люди» за «Ещё»
+    // Этап 41: аналитика вкладкой страницы «Люди»
     if (phone()) {
-      await reva.getByRole("button", { name: "Ещё", exact: true }).click();
-      await reva.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Люди", exact: true }).click();
+      // Этап 76: «Люди» в нижнем меню телефона на месте «Мне», без «Ещё»
+      await reva.locator("nav.fixed").getByRole("link", { name: "Люди", exact: true }).click();
     } else {
       await reva.getByRole("link", { name: "Люди", exact: true }).locator("visible=true").first().click();
     }
