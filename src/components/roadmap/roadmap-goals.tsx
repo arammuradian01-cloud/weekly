@@ -28,7 +28,8 @@ export const groupCount = (g: { tasks: unknown[]; important: number; overdue: nu
 
 /** Чья цель, если не своей команды: «цель команды «Топ»», «цель Q3 2026» */
 export function goalOrigin(g: RoadmapGoal, quarter: string): string | null {
-  if (g.own) return null;
+  // У цели из метки задачи квартал уже на метке статуса
+  if (g.own || !g.known) return null;
   const parts: string[] = [];
   if (g.team) parts.push(`команды «${g.team.name}»`);
   if (g.quarter && g.quarter !== quarter) parts.push(quarterLabel(g.quarter));

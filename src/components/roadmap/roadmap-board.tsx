@@ -11,7 +11,7 @@
 // сроков, и на доске. Адрес меняется через router.replace: нативный history.replaceState в Next 16.3 перезагружает
 // страницу целиком (этап 70), а цели для группировок приходят с сервера по адресу.
 
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { usePrototype } from "@/domain/store";
@@ -175,11 +175,19 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   const pathname = usePathname();
   const wide = useMedia(WIDE);
   const coarse = useMedia(COARSE);
-  const person = params.get("person");
-  const onlyImportant = params.get("important") === "1";
+  // Адрес меняется через router.replace (этап 77): пока сервер отвечает, переключатели уже стоят в новом положении
+  // (useOptimistic), а не ждут ответа, как ждали бы с адресом из useSearchParams
+  const [query, setQuery] = useOptimistic(params.toString(), (_current: string, next: string) => next);
+  const [navigating, startNavigation] = useTransition();
+  const q = new URLSearchParams(query);
+  const person = q.get("person");
+  const onlyImportant = q.get("important") === "1";
   // Этап 68: карта сроков на широком экране по умолчанию, доска по ?view=board. На узком экране только доска списком
-  const view = params.get("view") === "board" ? "board" : "timeline";
-  const group = groupByOf(params.get("group"));
+  const view = q.get("view") === "board" ? "board" : "timeline";
+  // Выбранная группировка. Цели для группировок по целям приходят с сервера по новому адресу: пока их нет, на экране
+  // прежняя группировка «По задачам», а не пустое «Целей квартала нет»
+  const picked = groupByOf(q.get("group"));
+  const group: RoadmapGroupBy = picked !== "tasks" && !goals ? "tasks" : picked;
   // Свёрнутые группы «Цели и задачи»: по умолчанию все раскрыты
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
   const toggle = (key: string) =>
@@ -193,11 +201,14 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   // Этап 77: адрес меняется через router.replace без прокрутки, а не нативным history.replaceState: тот в Next 16.3
   // перезагружал страницу целиком (разобрано на этапе 70). Цели для группировок сервер отдаёт по новому адресу
   const setParam = (key: string, value: string | null) => {
-    const next = new URLSearchParams(window.location.search);
+    const next = new URLSearchParams(query);
     if (value) next.set(key, value);
     else next.delete(key);
     const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    startNavigation(() => {
+      setQuery(qs);
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    });
   };
 
   // Направления в порядке справочника; скрытое направление, у которого остались задачи, в конце с пометкой
@@ -383,7 +394,7 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   };
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5" aria-busy={navigating || undefined}>
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
           {wide ? (
@@ -405,7 +416,7 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
             </span>
             <Segmented
               label="Группировка"
-              value={group}
+              value={picked}
               onChange={(v) => setParam("group", v === "tasks" ? null : v)}
               options={GROUPS}
               className="max-sm:flex max-sm:w-full max-sm:[&>*]:min-h-11 max-sm:[&>*]:min-w-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:whitespace-normal max-sm:[&>*]:text-center max-sm:[&>*]:leading-tight"

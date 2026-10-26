@@ -262,3 +262,19 @@ test("«Цели и задачи» на карте сроков: свою зад
   await page.reload();
   await expect(page.getByTestId("timeline-goalbar-e77-g1")).not.toHaveText(goalText ?? "");
 });
+
+test("тёмная тема: контраст текста в группировках по целям, без прокрутки вбок", async ({ page }) => {
+  test.setTimeout(90_000);
+  await seed();
+  await page.context().addCookies([{ name: "theme", value: "dark", url: "http://localhost:3100" }]);
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  const screens = phone() ? ["/roadmap?group=goals", "/roadmap?group=both"] : ["/roadmap?group=goals", "/roadmap?group=both", "/roadmap?group=goals&view=board", "/roadmap?group=both&view=board"];
+  for (const [i, path] of screens.entries()) {
+    await page.goto(path);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByTestId(phone() ? "roadmap-list" : path.includes("view=board") ? "roadmap-grid" : "roadmap-timeline")).toBeVisible();
+    await expect(page.getByText("Подписка ОСАГО запущена").first()).toBeVisible();
+    await shot(page, `dark-${i + 1}`, { contrast: true });
+  }
+});
