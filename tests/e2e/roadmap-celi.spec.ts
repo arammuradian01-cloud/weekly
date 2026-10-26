@@ -232,6 +232,9 @@ test("«Цели и задачи» на карте сроков: свою зад
   await dragBy(page, box.x + box.width / 2, box.y + box.height / 2, 80);
   await expect(page.getByRole("dialog", { name: /Перенести срок задачи/ })).toHaveCount(0);
   expect(await state(other)).toEqual(beforeOther);
+  // Широкая полоса: указатель отпустили над ней же, и браузер засчитал нажатие, открылась карточка задачи. Закрываем
+  await page.keyboard.press("Escape");
+  await expect(page).not.toHaveURL(/task=/);
   await foreign.click();
   await expect(page).toHaveURL(new RegExp(`task=${other}`));
   await page.keyboard.press("Escape");
