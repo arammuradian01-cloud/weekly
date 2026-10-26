@@ -216,7 +216,7 @@ export async function reopenWeekly(actor: Actor, key: WeekKey): Promise<void> {
     canEdit(info, reporting, actor, actor.slug);
     const report = await tx.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId: actor.personId } } });
     if (!report || report.state === "DRAFT") return fail("Weekly ещё не сдан");
-    const changed = await tx.weeklyReport.updateMany({ where: { id: report.id, state: { not: "DRAFT" } }, data: { state: "DRAFT", submittedAt: null } });
+    const changed = await tx.weeklyReport.updateMany({ where: { id: report.id, state: { not: "DRAFT" } }, data: { state: "DRAFT", submittedAt: null, retro: false } });
     if (!changed.count) fail("Weekly уже в черновике");
     await audit(tx, actor, "weekly.reopen", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}`, report.state === "LATE" ? "Сдан с опозданием" : "Сдан", "Черновик");
   });

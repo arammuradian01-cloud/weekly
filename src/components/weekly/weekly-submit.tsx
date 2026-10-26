@@ -16,8 +16,7 @@ import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPro
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/empty-state";
-import { OverdueNote, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
+import { OverdueNote, RetroBadge, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
 import { TextArea } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/overlays";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
@@ -62,6 +61,9 @@ export function WeeklySubmit({
   skippedFacts = [],
   template = null,
   readers,
+  past = false,
+  closedText = null,
+  sentWarning = null,
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -83,6 +85,12 @@ export function WeeklySubmit({
   /** Смысловые блоки weekly команды (этап 66): записи сдаются по ним. null: шаблона нет, weekly как раньше */
   template?: { teamId: string; teamName: string; blocks: TemplateBlock[] } | null;
   readers?: WeeklyReader[];
+  /** Неделя раньше отчётной (этап 73): сдача будет задним числом */
+  past?: boolean;
+  /** Закрытая неделя, свой weekly уже сдан: кто может открыть неделю */
+  closedText?: string | null;
+  /** Отчёт руководителю за эту неделю уже отправлен: записи в него сами не войдут */
+  sentWarning?: string | null;
 }) {
   const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
@@ -310,7 +318,7 @@ export function WeeklySubmit({
       const result = await submitWeeklyAction(week.key);
       if (!result.ok) return notify(result.error, "error");
       setWeekly(result.value);
-      notify(result.value.state === "late" ? "Weekly сдан с опозданием" : "Weekly сдан");
+      notify(result.value.retro ? "Weekly сдан задним числом" : result.value.state === "late" ? "Weekly сдан с опозданием" : "Weekly сдан");
       router.refresh();
     } catch {
       notify("Нет связи с сервером: weekly не сдан", "error");
@@ -392,9 +400,18 @@ export function WeeklySubmit({
       <aside className="mb-4 lg:mb-0">
         <div className="lg:sticky lg:top-24">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 lg:block">
-            <WeeklyBadge state={weekly.state} />
+            {weekly.retro ? <RetroBadge /> : <WeeklyBadge state={weekly.state} />}
             <p className="text-small text-muted lg:mt-3">
-              Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
+              {past ? (
+                // Этап 73: прошлая неделя. Сдача сейчас будет задним числом, это видно в ленте и у руководителя
+                <>
+                  Срок был: <span className="whitespace-nowrap">{deadlineText}</span>. {submitted ? null : <span className="font-medium text-warning-ink">Сдача сейчас будет отмечена «сдан задним числом».</span>}
+                </>
+              ) : (
+                <>
+                  Срок: <span className="whitespace-nowrap">{deadlineText}</span>. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
+                </>
+              )}
             </p>
           </div>
           {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
@@ -439,7 +456,13 @@ export function WeeklySubmit({
         {!canEdit ? (
           <p className="inline-flex items-start gap-2 sv-card sv-card--soft px-5 py-4 text-body text-ink">
             <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
+            {closedText ?? (week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра.")}
+          </p>
+        ) : null}
+        {canEdit && week.closed && week.retroOpen ? (
+          // Этап 73: свой несданный weekly закрытой недели можно дописать и сдать задним числом
+          <p className="sv-alert sv-alert--info text-body" data-testid="weekly-retro-open">
+            Неделя {week.number} закрыта, но ваш weekly за неё ещё не сдан: его можно дописать и сдать задним числом. Итоги закрытой недели и уже отправленный отчёт руководителю от этого не пересчитываются.
           </p>
         ) : null}
         {expectedIn && expectedIn.length === 0 && !submitted ? (
@@ -460,13 +483,14 @@ export function WeeklySubmit({
           id="step-tasks"
           n={2}
           title="Обновить задачи"
-          description="Просроченные, со сроком на этой и следующей неделе, давно без обновлений"
+          description="Только срочное: просрочено, срок на этой и следующей неделе, давно без обновлений"
         >
           {tasks.length === 0 ? (
-            // Этап 68: пустое состояние компонентом, как во всех остальных блоках (было простым текстом)
-            <EmptyState title="Срочных задач нет" tone="success" icon={CheckCircle2}>
-              Можно сразу писать главное за неделю
-            </EmptyState>
+            // Этап 73 (пакет дизайнера): пустое состояние одной плашкой, а не большим блоком
+            <p className="sv-card sv-card--soft flex items-center gap-2 px-4 py-3 text-body text-ink" data-testid="weekly-no-urgent">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-green-ink" aria-hidden="true" />
+              Срочных задач нет, переходите к главному за неделю
+            </p>
           ) : (
             <ul className="divide-y divide-line sv-card sv-card--soft">
               {tasks.map((t) => (
@@ -579,7 +603,7 @@ export function WeeklySubmit({
               <p className="inline-flex items-start gap-2 text-lead text-green-ink">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                 <span>
-                  <span className="font-semibold">{weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}</span>
+                  <span className="font-semibold">{weekly.retro ? "Сдан задним числом" : weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}</span>
                   {weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}. Правки до закрытия недели разрешены.
                 </span>
               </p>
@@ -635,6 +659,11 @@ export function WeeklySubmit({
                   ) : (
                     <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
                   )}
+                  {sentWarning ? (
+                    <p className="text-small text-warning-ink" data-testid="weekly-sent-warning">
+                      {sentWarning}
+                    </p>
+                  ) : null}
                   {promiseSummary.pending ? (
                     <p className="text-small text-ink">
                       Без итога обещаний: {promiseSummary.pending}. В доле выполненных обещаний они считаются невыполненными, сдать weekly можно и так.
@@ -673,64 +702,88 @@ function Step({ id, n, title, description, children }: { id: string; n: number; 
   );
 }
 
-/** Строка задачи во втором шаге: статус, состояние и «где сейчас» меняются без открытия карточки */
+/**
+ * Строка задачи во втором шаге: статус, состояние и «где сейчас» меняются без открытия карточки. Этап 73 (аудит): одна
+ * метка по приоритету (просрочена, давно не обновлялась) без заливки строки, срок не переносится, у «Где сейчас» видимая
+ * подпись и подсказка, «где сейчас» сохраняется само, когда уходишь из поля
+ */
 function TaskUpdateRow({ task }: { task: Task }) {
   const { data } = usePrototype();
   const actions = useTaskActions();
   const { open } = useOpenTask();
   const [where, setWhere] = useState(task.where);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const saving = useRef(false);
   const overdue = isOverdue(task, data.today);
+  const stale = !overdue && isStale(task, data.today);
   const green = greenOutside(task, data.today);
   const changed = where.trim() !== task.where && where.trim().length > 0;
+  const save = async () => {
+    if (!changed || saving.current) return;
+    saving.current = true;
+    const ok = await actions.updateWhere(task, where.trim());
+    saving.current = false;
+    if (ok) setSavedAt(nowTime());
+  };
+  const fieldId = `w-${task.number}`;
   return (
-    <li className={cn("flex flex-col gap-2 px-4 py-3", overdue && "bg-danger-soft")}>
+    <li className="flex flex-col gap-2 px-4 py-3">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-        <button type="button" onClick={() => open(task.number)} className="text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline">
+        <button type="button" onClick={() => open(task.number)} className="min-h-11 text-left text-body font-medium leading-snug text-ink hover:text-blue-700 hover:underline sm:min-h-0">
           <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
           {task.title}
         </button>
         <span className="flex shrink-0 items-center gap-2 text-caption">
-          <span className={cn("tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
-          {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
-          {isStale(task, data.today) ? <StaleNote /> : null}
+          <span className={cn("whitespace-nowrap tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
+          {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : stale ? <StaleNote /> : null}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-x-4">
         <StatusSelect task={task} />
         <StateSelect task={task} set />
       </div>
-      {green ? (
+      {green && !overdue ? (
         <p className="text-small text-orange-ink">
           {greenOutsideText(green)}. {green.unconfirmed ? "«В графике» не считается, пока не обновите или не подтвердите «где сейчас»" : "Проверьте состояние и обновите «где сейчас»"}
         </p>
       ) : null}
       <form
-        className="flex flex-col gap-2 sm:flex-row sm:items-center"
+        className="flex flex-col gap-1"
         onSubmit={(e) => {
           e.preventDefault();
-          if (changed) actions.updateWhere(task, where.trim());
+          void save();
         }}
       >
-        <label htmlFor={`w-${task.number}`} className="sr-only">
-          Где сейчас по задаче {task.number}
+        <label htmlFor={fieldId} className="text-small font-medium text-ink">
+          Где сейчас
+          <span className="sr-only"> по задаче {task.number}</span>
         </label>
-        <input
-          id={`w-${task.number}`}
-          value={where}
-          onChange={(e) => setWhere(e.target.value)}
-          className="sv-control h-11 w-full min-w-0 px-3 text-small sm:h-10 sm:flex-1"
-        />
-        {changed ? (
-          <Button size="sm" type="submit" className="h-11 sm:h-10">
-            Сохранить
-          </Button>
-        ) : task.whereUpdatedAt === data.today ? (
-          <span className="text-caption text-green-ink">Обновлено сегодня</span>
-        ) : green && task.where ? (
-          <Button size="sm" type="button" variant="secondary" className="h-11 sm:h-10" onClick={() => void actions.updateWhere(task, task.where)}>
-            Подтвердить: всё так же
-          </Button>
-        ) : null}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            id={fieldId}
+            value={where}
+            onChange={(e) => {
+              setWhere(e.target.value);
+              setSavedAt(null);
+            }}
+            onBlur={() => void save()}
+            placeholder="Что сделано и что дальше"
+            aria-describedby={`${fieldId}-hint`}
+            className="sv-control h-11 w-full min-w-0 px-3 text-small sm:h-10 sm:flex-1"
+          />
+          {changed ? (
+            <Button size="sm" type="submit" className="h-11 sm:h-10">
+              Сохранить
+            </Button>
+          ) : green && task.where && !savedAt && task.whereUpdatedAt !== data.today ? (
+            <Button size="sm" type="button" variant="secondary" className="h-11 sm:h-10" onClick={() => void actions.updateWhere(task, task.where).then((ok) => ok && setSavedAt(nowTime()))}>
+              Подтвердить: всё так же
+            </Button>
+          ) : null}
+        </div>
+        <p id={`${fieldId}-hint`} className="text-caption text-text-secondary" aria-live="polite">
+          {savedAt ? `Сохранено в ${savedAt}` : task.whereUpdatedAt === data.today ? "Обновлено сегодня" : "Что сделано и что дальше. Сохраняется само, когда уходите из поля"}
+        </p>
       </form>
     </li>
   );

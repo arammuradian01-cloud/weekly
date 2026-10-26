@@ -80,6 +80,15 @@ export function WeeklyBadge({ state, className }: { state: WeeklyStateCode; clas
   );
 }
 
+/** «Сдан задним числом» (этап 73): weekly за неделю раньше отчётной на момент сдачи */
+export function RetroBadge({ className }: { className?: string }) {
+  return (
+    <Badge tone="yellow" dot className={className}>
+      Сдан задним числом
+    </Badge>
+  );
+}
+
 /** «просрочена на 3 дн.» рядом со сроком */
 export function OverdueNote({ days, className }: { days: number; className?: string }) {
   return (

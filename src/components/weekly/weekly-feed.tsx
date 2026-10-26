@@ -1,19 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, LayoutList, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
+import * as Menu from "@radix-ui/react-dropdown-menu";
+import { ChevronLeft, ChevronRight, LayoutList, Lock, LockOpen, MonitorPlay, MoreHorizontal, PenLine, SlidersHorizontal, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, plural } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
-import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
+import { assignEntryAuthorAction, remindNotSubmittedAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Counter, Segmented, SelectField } from "@/components/ui/primitives";
+import { SearchPicker } from "@/components/ui/search-picker";
+import { Modal } from "@/components/ui/overlays";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -65,38 +68,86 @@ export function WeekSwitcher({ view, basePath = "/weekly", query = "" }: { view:
   );
 }
 
-/** Закрыть неделю после встречи: дальше записи правят только владелец и администраторы */
-function WeekLock({ week }: { week: WeekInfo }) {
-  const run = useRunWeekly();
-  const [busy, setBusy] = useState(false);
-  const toggle = async () => {
-    setBusy(true);
-    await run(() => setWeekClosedAction(week.key, !week.closed), week.closed ? `Неделя ${week.number} снова открыта` : `Неделя ${week.number} закрыта`);
-    setBusy(false);
-  };
-  return (
-    <Button variant="secondary" onClick={toggle} disabled={busy} className="col-span-2 px-3 sm:col-span-1 sm:px-5">
-      {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
-      {week.closed ? "Открыть неделю" : "Закрыть неделю"}
-    </Button>
-  );
-}
+type LockKind = "week" | "team";
 
-/** Неделя команды (этап 15): руководитель закрывает её после встречи команды, дальше люди команды свой weekly не правят */
-function TeamWeekLock({ week, team }: { week: WeekInfo; team: { id: string; name: string } }) {
+/**
+ * «Ещё» в шапке ленты (этап 73, аудит удобства): отчёт руководителю, закрыть неделю команды, закрыть неделю или
+ * разрешить её правки. Главные действия шапки остаются кнопками: «Сдать weekly» и «Встреча». Снятие блокировки и
+ * закрытие спрашивают подтверждение
+ */
+function WeekActions({ week, team, departmentClosed, manage, reportHref }: { week: WeekInfo; team: TeamWeek; departmentClosed: boolean; manage: boolean; reportHref: string | null }) {
   const run = useRunWeekly();
+  const [confirm, setConfirm] = useState<LockKind | null>(null);
   const [busy, setBusy] = useState(false);
-  const toggle = async () => {
+  const teamClosed = week.closed && !departmentClosed;
+  const lockTeam = team && !departmentClosed;
+  if (!reportHref && !lockTeam && !manage) return null;
+  const act = async () => {
+    if (!confirm) return;
     setBusy(true);
-    await run(() => setTeamWeekClosedAction(team.id, week.key, !week.closed), week.closed ? `Неделя ${week.number} команды снова открыта` : `Неделя ${week.number} команды закрыта`);
+    if (confirm === "team" && team) {
+      await run(() => setTeamWeekClosedAction(team.id, week.key, !teamClosed), teamClosed ? `Правки недели ${week.number} команды снова разрешены` : `Неделя ${week.number} команды закрыта`);
+    } else {
+      await run(() => setWeekClosedAction(week.key, !departmentClosed), departmentClosed ? `Правки недели ${week.number} снова разрешены` : `Неделя ${week.number} закрыта`);
+    }
     setBusy(false);
+    setConfirm(null);
   };
+  const closing = confirm === "team" ? !teamClosed : !departmentClosed;
   return (
-    <Button variant="secondary" onClick={toggle} disabled={busy} className="col-span-2 px-3 sm:col-span-1 sm:px-5" aria-label={week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}>
-      {week.closed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
-      <span className="sm:hidden">{week.closed ? "Открыть неделю" : "Закрыть неделю"}</span>
-      <span className="hidden sm:inline">{week.closed ? "Открыть неделю команды" : "Закрыть неделю команды"}</span>
-    </Button>
+    <>
+      <Menu.Root>
+        <Menu.Trigger className={buttonClass("secondary", "md", "px-3 sm:px-4")} aria-label="Ещё действия с неделей">
+          <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          Ещё
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Content align="end" sideOffset={4} className="z-50 min-w-64 rounded-control-lg border border-line bg-surface p-1.5 shadow-medium">
+            {reportHref ? (
+              <Menu.Item asChild className="sv-menu__item min-h-11 cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                <Link href={reportHref}>
+                  <LayoutList className="h-4 w-4" aria-hidden="true" />
+                  Отчёт руководителю
+                </Link>
+              </Menu.Item>
+            ) : null}
+            {lockTeam ? (
+              <Menu.Item onSelect={() => setConfirm("team")} className="sv-menu__item min-h-11 cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                {teamClosed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+                {teamClosed ? "Разрешить правки недели команды" : "Закрыть неделю команды"}
+              </Menu.Item>
+            ) : null}
+            {manage ? (
+              <Menu.Item onSelect={() => setConfirm("week")} className="sv-menu__item min-h-11 cursor-pointer select-none outline-none data-[highlighted]:bg-field">
+                {departmentClosed ? <LockOpen className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+                {departmentClosed ? "Разрешить правки недели" : "Закрыть неделю"}
+              </Menu.Item>
+            ) : null}
+          </Menu.Content>
+        </Menu.Portal>
+      </Menu.Root>
+      <Modal
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={closing ? (confirm === "team" ? `Закрыть неделю ${week.number} команды?` : `Закрыть неделю ${week.number}?`) : confirm === "team" ? `Разрешить правки недели ${week.number} команды?` : `Разрешить правки недели ${week.number}?`}
+        description={
+          closing
+            ? confirm === "team"
+              ? "Люди команды больше не правят свой weekly за эту неделю. Несданный weekly можно будет сдать задним числом."
+              : "Дальше записи правят только владелец и администраторы. Несданный weekly можно будет сдать задним числом."
+            : "Неделю уже разобрали на встрече. Если разрешить правки, люди снова смогут менять свои weekly за неё."
+        }
+      >
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setConfirm(null)}>
+            Отмена
+          </Button>
+          <Button onClick={() => void act()} loading={busy} disabled={busy}>
+            {closing ? (confirm === "team" ? "Закрыть неделю команды" : "Закрыть неделю") : "Разрешить правки"}
+          </Button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -109,6 +160,7 @@ export function WeeklyFeed({
   teamWeek = null,
   promoteClosed = false,
   focus = null,
+  remind = null,
 }: {
   view: WeekView;
   myReport: PersonWeekly;
@@ -118,6 +170,8 @@ export function WeeklyFeed({
   promoteClosed?: boolean;
   /** Weekly человека по ссылке из дерева подчинённых (этап 39) */
   focus?: AuthorFocus | null;
+  /** «Напомнить не сдавшим» (этап 73): какую команду. null: кнопки нет. teamId null: все команды (режим управления) */
+  remind?: { teamId: string | null } | null;
 }) {
   const { manage, teamPeople } = usePrototype();
   const week = data.week;
@@ -149,16 +203,15 @@ export function WeeklyFeed({
   }
   // Отбор по автору живёт и в адресе: ссылкой можно поделиться, а смена недели его сохраняет. Состояние истории
   // null: Next перенесёт свои поля и запомнит новый адрес, иначе живое обновление вернёт старый
+  // Этап 73: адрес меняется через router.replace, не нативным history.replaceState (в Next 16.3 тот перезагружает страницу)
+  const router = useRouter();
   const setAuthor = (slug: PersonSlug | "") => {
     setAuthorState(slug);
-    try {
-      const url = new URL(window.location.href);
-      if (slug) url.searchParams.set("author", slug);
-      else url.searchParams.delete("author");
-      window.history.replaceState(null, "", url);
-    } catch {
-      // Адрес не обновился: отбор на экране всё равно работает
-    }
+    const query = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+    if (slug) query.set("author", slug);
+    else query.delete("author");
+    const qs = query.toString();
+    router.replace(`/weekly${qs ? `?${qs}` : ""}`, { scroll: false });
   };
   // Человека из ссылки или выбранного автора может не быть среди людей выбранной команды (руководитель команды ниже,
   // смена команды в шапке): список «Автор» всё равно показывает, по кому отбор, и «Все» его снимает
@@ -197,7 +250,7 @@ export function WeeklyFeed({
   return (
     <div>
       {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели строкой (этап 43). Этап 68: в шапке только
-          записи за неделю и «в отчёт CEO»; помощь, риски и результаты колонками «Что решить» над лидерами */}
+          записи за неделю и «в отчёт руководителю»; помощь, риски и результаты колонками «Что решить» над лидерами */}
       <PageHeader
         title="Weekly"
         description="Итоги недели команды по людям и по блокам"
@@ -210,40 +263,33 @@ export function WeeklyFeed({
               items={[
                 { label: `${plural(all.length, "запись", "записи", "записей")} за неделю`, value: all.length, testId: "weekly-fig-entries", keepZero: true },
                 // Этап 68: помощь, риски и результаты теперь колонками «Что решить» под шапкой, здесь не повторяются
-                { label: "в отчёт CEO", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
+                { label: "в отчёт руководителю", value: all.filter((e) => e.ceo).length, testId: "weekly-fig-ceo" },
               ]}
             />
           ) : null
         }
       >
-        {/* В строке действий шапки: на телефоне сетка во всю ширину, длинные подписи на всю строку, дальше кнопки переносятся */}
+        {/* Этап 73 (аудит удобства): главное в шапке «Сдать weekly» (за прошлую неделю «Сдать weekly за неделю N»), второе
+            «Встреча», остальное в «Ещё». «Прогноз» есть в меню разделов, в шапке ленты его больше нет */}
         <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center [&>*]:min-w-0">
           <div className="col-span-2 sm:col-span-1">
             <WeekSwitcher view={data} query={keepQuery} />
           </div>
-          <Link href={`/forecast?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
-            <TrendingUp className="h-4 w-4" aria-hidden="true" />
-            Прогноз
+          <Link href={week.reporting ? "/weekly/submit" : `/weekly/submit?week=${week.key}`} className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")} data-testid="weekly-submit-link">
+            <PenLine className="h-4 w-4" aria-hidden="true" />
+            {submitLabel(myState, week)}
           </Link>
           <Link href={`/weekly/meeting?week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
             <MonitorPlay className="h-4 w-4" aria-hidden="true" />
-            <span className="sm:hidden">Встреча</span>
-            <span className="hidden sm:inline">Режим встречи</span>
+            Встреча
           </Link>
-          <Link href="/weekly/submit" className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
-            <PenLine className="h-4 w-4" aria-hidden="true" />
-            {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
-          </Link>
-          {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
-          {/* Этап 66: отчёт команды по смысловым блокам и шаблон блоков у руководителя команды */}
-          {teamWeek ? (
-            <Link href={`/weekly/team-report?team=${encodeURIComponent(teamWeek.id)}&week=${week.key}`} className={buttonClass("secondary", "md", "px-3 sm:px-5")}>
-              <LayoutList className="h-4 w-4" aria-hidden="true" />
-              <span className="sm:hidden">По блокам</span>
-              <span className="hidden sm:inline">Отчёт по блокам</span>
-            </Link>
-          ) : null}
-          {manage ? <WeekLock week={{ ...week, closed: data.departmentClosed ?? week.closed }} /> : null}
+          <WeekActions
+            week={week}
+            team={teamWeek}
+            departmentClosed={data.departmentClosed ?? week.closed}
+            manage={manage}
+            reportHref={teamWeek || manage ? `/leader-report?tab=current${teamWeek ? `&team=${encodeURIComponent(teamWeek.id)}` : ""}&week=${week.key}` : null}
+          />
         </div>
       </PageHeader>
 
@@ -251,7 +297,7 @@ export function WeeklyFeed({
         <p className="mb-4 sv-card sv-card--soft px-5 py-3 text-body text-ink">
           За неделю {data.reportingNumber} записей пока нет. Показана неделя {week.number}, её разбирали на встрече {formatLong(week.meetingDate)}.{" "}
           <Link href={`/weekly?week=${data.reportingKey}${keepQuery}`} className="font-medium text-blue-700 hover:underline">
-            Открыть неделю {data.reportingNumber}
+            Перейти к неделе {data.reportingNumber}
           </Link>
         </p>
       ) : null}
@@ -259,13 +305,13 @@ export function WeeklyFeed({
       {week.closed ? (
         <p className="mb-4 inline-flex items-center gap-2 text-small text-muted">
           <Lock className="h-4 w-4" aria-hidden="true" />
-          {teamWeek && !data.departmentClosed ? "Неделя команды закрыта: люди команды свой weekly больше не правят" : "Неделя закрыта: записи правят только владелец и администраторы"}
+          {teamWeek && !data.departmentClosed ? "Неделя команды закрыта: люди команды правят weekly только задним числом, если ещё не сдали" : "Неделя закрыта: правят владелец и администраторы, несданный weekly можно сдать задним числом"}
         </p>
       ) : null}
 
       {showElsewhere ? <FocusElsewhere focus={focus!} /> : null}
 
-      <SubmissionStrip reports={data.reports} />
+      <SubmissionStrip reports={data.reports} week={week.key} remind={remind && !week.closed ? { teamId: remind.teamId, week: week.key } : null} />
 
       {/* Этап 43: вид ленты, «Нужна помощь» и кнопка «Фильтры» в одной строке; четыре списка фильтров раскрываются
           по кнопке и на ноутбуке тоже, включённые фильтры видны чипами, чип снимает фильтр */}
@@ -322,7 +368,8 @@ export function WeeklyFeed({
         <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
         <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
         <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
-        <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...authorOptions]} />
+        {/* Этап 73: люди команды списком с поиском, а не длинным выпадающим списком. Пустое поле: все авторы */}
+        <SearchPicker label="Автор" id="f-author" value={author} onChange={(v) => setAuthor(v as PersonSlug | "")} className="col-span-2 sm:w-64" options={authorOptions} placeholder="Все" emptyText="Такого человека нет в ленте" />
       </div>
 
       {all.length === 0 ? (
@@ -522,12 +569,17 @@ function PeopleView({
   // Этап 68: лидеры строками, записи под раскрытием. Свёрнуто, когда лидеров больше двух и никакой отбор не включён.
   // Своя карточка раскрыта сразу: свои записи человек ищет первыми. «Развернуть всех» раскрывает каждую карточку, а не
   // включает общий режим: так любую карточку потом можно свернуть отдельно
-  const [opened, setOpened] = useState<Set<PersonSlug>>(() => new Set([me.slug]));
+  // Этап 73 (аудит удобства): руководитель читает всех, поэтому по умолчанию карточки раскрыты. «Свернуть всех» и
+  // «Развернуть всех» запоминаются на устройстве; отдельную карточку можно свернуть на время
+  const [mode, setMode] = useFeedOpenMode();
+  const [toggled, setToggled] = useState<Set<PersonSlug>>(() => new Set());
   const collapsible = !only && !filtered && authors.length > 2;
-  const isOpen = (slug: PersonSlug) => !collapsible || opened.has(slug);
-  const allOpen = authors.every((p) => opened.has(p.slug));
+  // Свёрнутый вид оставляет раскрытой свою карточку: свои записи человек ищет первыми
+  const baseOpen = (slug: PersonSlug) => mode === "open" || slug === me.slug;
+  const isOpen = (slug: PersonSlug) => !collapsible || baseOpen(slug) !== toggled.has(slug);
+  const allOpen = authors.every((p) => isOpen(p.slug));
   const toggle = (slug: PersonSlug) =>
-    setOpened((prev) => {
+    setToggled((prev) => {
       const next = new Set(prev);
       if (next.has(slug)) next.delete(slug);
       else next.add(slug);
@@ -540,7 +592,14 @@ function PeopleView({
           <h2 className="m-0 text-title-sm font-semibold text-ink">
             Лидеры <span className="font-normal text-muted">{authors.length}</span>
           </h2>
-          <button type="button" onClick={() => setOpened(allOpen ? new Set() : new Set(authors.map((p) => p.slug)))} className="inline-flex min-h-8 items-center text-small font-semibold text-link hover:underline">
+          <button
+            type="button"
+            onClick={() => {
+              setMode(allOpen ? "collapsed" : "open");
+              setToggled(new Set());
+            }}
+            className="inline-flex min-h-11 items-center text-small font-semibold text-link hover:underline sm:min-h-8"
+          >
             {allOpen ? "Свернуть всех" : "Развернуть всех"}
           </button>
         </div>
@@ -560,13 +619,14 @@ function PeopleView({
               <li key={e.id} className="flex flex-col gap-3 px-5 py-4">
                 <EntryItem entry={e} compact />
                 {manage ? (
-                  <SelectField
+                  <SearchPicker
                     label="Автор"
                     id={`assign-${e.id}`}
                     value=""
-                    onChange={(ev) => ev.target.value && assignAuthor(e.id, ev.target.value as PersonSlug)}
+                    onChange={(v) => v && assignAuthor(e.id, v as PersonSlug)}
                     className="sm:w-72"
-                    options={[{ value: "", label: "Выберите, кто берёт" }, ...teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))]}
+                    options={teamPeople.map((p) => ({ value: p.slug, label: p.fullName }))}
+                    placeholder="Выберите, кто берёт"
                   />
                 ) : null}
               </li>
@@ -674,6 +734,31 @@ function PeopleView({
   );
 }
 
+/** Как показывать карточки лидеров: раскрыты (по умолчанию) или свёрнуты. Запоминается на устройстве */
+const OPEN_MODE_KEY = "weekly-feed-cards";
+type OpenMode = "open" | "collapsed";
+
+export function useFeedOpenMode(): [OpenMode, (m: OpenMode) => void] {
+  const [mode, setModeState] = useState<OpenMode>("open");
+  useEffect(() => {
+    try {
+      // Выбор на этом устройстве читается после отрисовки: на сервере его нет
+      if (window.localStorage.getItem(OPEN_MODE_KEY) === "collapsed") setModeState("collapsed");
+    } catch {
+      // Хранилище запрещено: карточки раскрыты, как по умолчанию
+    }
+  }, []);
+  const setMode = (m: OpenMode) => {
+    setModeState(m);
+    try {
+      window.localStorage.setItem(OPEN_MODE_KEY, m);
+    } catch {
+      // Не запомнилось: выбор действует до перезагрузки
+    }
+  };
+  return [mode, setMode];
+}
+
 function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; promoteFrom: PersonSlug[]; closed: boolean }) {
   // Риски первыми: с них начинается разбор. Дальше порядок справочника, в конце блоки, которые уже скрыли
   const known = BLOCKS.map((b) => b.code);
@@ -704,6 +789,13 @@ function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; 
   );
 }
 
+
+/** Подпись главной кнопки шапки: за прошлую неделю с номером недели */
+export function submitLabel(state: PersonWeekly["state"], week: Pick<WeekInfo, "reporting" | "number">): string {
+  const sent = state === "submitted" || state === "late";
+  if (!week.reporting) return sent ? `Мой weekly за неделю ${week.number}` : `Сдать weekly за неделю ${week.number}`;
+  return sent ? "Мой weekly" : state === "draft" ? "Продолжить weekly" : "Сдать weekly";
+}
 
 /** «срок пт, 16:00»: свой срок человека, если команда сдаёт раньше департамента */
 export function deadlineText(iso: string): string {

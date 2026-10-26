@@ -34,6 +34,10 @@ export default async function WeeklyPage({ searchParams }: { searchParams: Promi
   // Этап 39: ссылка «Weekly» из дерева подчинённых открывает ленту с отбором по автору. Если человека нет в ленте
   // выбранной команды, лента подсказывает, в какой из видимых команд он есть
   const focus = await authorFocus(typeof author === "string" ? author : undefined, team);
+  // Этап 73: «Напомнить не сдавшим» у руководителя показанной команды (и топ-команды) при личном входе и в режиме управления
+  const shownTeam = team.id && team.id !== ALL_TEAMS ? team.id : null;
+  const leadsShown = !!shownTeam && (team.scope.leads.includes(shownTeam) || team.nodes.some((n) => n.id === shownTeam && n.leaderId === person.id));
+  const remind = ctx.management ? { teamId: shownTeam } : leadsShown && ctx.via !== "TEAM" && person.role !== "OBSERVER" ? { teamId: shownTeam } : null;
   return (
     <WeeklyFeed
       // Ключ только по неделе: живое обновление экрана перечитывает адрес с отбором, и фильтры не должны сбрасываться
@@ -44,6 +48,7 @@ export default async function WeeklyPage({ searchParams }: { searchParams: Promi
       teamWeek={teamWeek}
       promoteClosed={promoteClosed}
       focus={focus}
+      remind={remind}
     />
   );
 }

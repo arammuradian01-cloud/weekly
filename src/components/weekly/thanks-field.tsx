@@ -68,7 +68,7 @@ export function ThanksField({ week, initial, canEdit }: { week: WeekKey; initial
         rows={1}
         disabled={!canEdit}
         counter={{ value: value.length, max: THANKS_MAX }}
-        hint="Например: «Спасибо @Логинова Светлана за выгрузку по убыткам». Коллега увидит это в «Мне», строка попадёт в отчёт CEO"
+        hint="Например: «Спасибо @Логинова Светлана за выгрузку по убыткам». Коллега увидит это в «Мне», строка попадёт в отчёт руководителю"
       />
       <span className="text-caption text-muted" aria-live="polite">
         {state === "saving" ? "Сохраняю" : state === "saved" ? "Благодарность сохранена" : ""}

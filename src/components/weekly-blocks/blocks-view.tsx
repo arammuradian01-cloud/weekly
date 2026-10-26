@@ -11,7 +11,7 @@ import { labelOf, lineText, productGroups, visibleBlocks, type BlockLine, type L
 
 const external = (href: string) => /^https?:\/\//.test(href);
 
-export function BlockLineView({ line, labels, product = true }: { line: BlockLine; labels: Labels; product?: boolean }) {
+export function BlockLineView({ line, labels, product = true, aside }: { line: BlockLine; labels: Labels; product?: boolean; aside?: React.ReactNode }) {
   const label = product ? labelOf(line.product, labels) : null;
   // Текст уже начинается с названия продукта («ОСАГО: ...»): метку второй раз не ставим
   const tag = label && lineText(line, labels) !== line.text ? label : null;
@@ -37,6 +37,7 @@ export function BlockLineView({ line, labels, product = true }: { line: BlockLin
           </a>
         </>
       ) : null}
+      {aside}
     </li>
   );
 }
@@ -48,6 +49,7 @@ export function BlocksView({
   idPrefix,
   headingLevel = 3,
   className,
+  lineAside,
 }: {
   blocks: readonly ReportBlock[];
   labels: Labels;
@@ -55,6 +57,8 @@ export function BlocksView({
   idPrefix: string;
   headingLevel?: 2 | 3;
   className?: string;
+  /** Под строкой (этап 73): комментарии руководителя к строке отправленного отчёта. index: место строки в блоке */
+  lineAside?: (blockKey: string, line: BlockLine, index: number) => React.ReactNode;
 }) {
   const H = headingLevel === 2 ? "h2" : "h3";
   const Sub = headingLevel === 2 ? "h3" : "h4";
@@ -77,7 +81,7 @@ export function BlocksView({
                     <Sub className="text-body font-semibold text-ink">{labelOf(g.product, labels) ?? "Без продукта"}</Sub>
                     <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 text-body text-ink">
                       {g.items.map((i) => (
-                        <BlockLineView key={i.index} line={i.line} labels={labels} product={false} />
+                        <BlockLineView key={i.index} line={i.line} labels={labels} product={false} aside={lineAside?.(b.key, i.line, i.index)} />
                       ))}
                     </ul>
                   </div>
@@ -86,7 +90,7 @@ export function BlocksView({
             ) : (
               <ul className="mt-2 flex flex-col gap-1.5 text-body text-ink">
                 {b.lines.map((l, i) => (
-                  <BlockLineView key={i} line={l} labels={labels} />
+                  <BlockLineView key={i} line={l} labels={labels} aside={lineAside?.(b.key, l, i)} />
                 ))}
               </ul>
             )}

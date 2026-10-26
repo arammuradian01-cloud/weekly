@@ -30,7 +30,7 @@ export function CeoTag({ className }: { className?: string }) {
   return (
     <span className={cn("sv-tag sv-tag--ceo", className)}>
       <Star className="h-3 w-3 fill-current" strokeWidth={1.5} aria-hidden="true" />
-      В отчёте CEO
+      В отчёте руководителю
     </span>
   );
 }
@@ -90,7 +90,7 @@ export function EntryItem({
   const toggleCeo = async () => {
     if (demo) return notify("Это образец: у настоящих записей отметка сохраняется");
     setCeo(!ceo);
-    const saved = await run(() => setCeoFlagAction(entry.id, !ceo), !ceo ? "Запись попадёт в отчёт CEO" : "Запись убрана из отчёта CEO");
+    const saved = await run(() => setCeoFlagAction(entry.id, !ceo), !ceo ? "Запись попадёт в отчёт руководителю" : "Запись убрана из отчёта руководителю");
     if (!saved) setCeo(ceo);
   };
   const textSize = large ? "!text-title" : "";
@@ -157,7 +157,7 @@ export function EntryItem({
           {manage ? (
             <button type="button" onClick={toggleCeo} aria-pressed={ceo} className={cn("sv-tag min-h-7 cursor-pointer", ceo ? "sv-tag--ceo" : "border border-line bg-surface hover:text-ink")}>
               <Star className={cn("h-3.5 w-3.5", ceo && "fill-current")} strokeWidth={1.5} aria-hidden="true" />
-              {ceo ? "В отчёте CEO" : "В отчёт CEO"}
+              {ceo ? "В отчёте руководителю" : "В отчёт руководителю"}
             </button>
           ) : null}
         </div>

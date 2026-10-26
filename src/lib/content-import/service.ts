@@ -1356,7 +1356,7 @@ async function planCeoReports(ctx: Ctx, pkg: ContentPackage): Promise<CeoPlan[]>
     }
     const blocks = ceoBlocksOf(c, codes);
     const unknown = c.blocks.filter((b) => !blocks.some((x) => x.key === b.key)).map((b) => b.key);
-    const notes = unknown.length ? [`блоков ${unknown.join(", ")} в отчёте CEO нет, они не загрузятся`] : [];
+    const notes = unknown.length ? [`блоков ${unknown.join(", ")} в отчёте руководителю нет, они не загрузятся`] : [];
     const lost = c.blocks.flatMap((b) => b.lines).filter((l) => l.product && !codes.has(l.product)).map((l) => l.product);
     if (lost.length) notes.push(`продуктов ${[...new Set(lost)].join(", ")} нет в справочнике: строки загрузятся без продукта`);
     const meetings = cleanMeetings(c.meetings);
@@ -1368,7 +1368,7 @@ async function planCeoReports(ctx: Ctx, pkg: ContentPackage): Promise<CeoPlan[]>
       continue;
     }
     if (cur?.sentAt) {
-      out.push({ c, action: "skip", reason: "отчёт за эту неделю уже отправлен CEO, загрузка его не трогает" });
+      out.push({ c, action: "skip", reason: "отчёт за эту неделю уже отправлен руководителю, загрузка его не трогает" });
       continue;
     }
     if (known) {
@@ -1447,7 +1447,7 @@ async function summarize(ctx: Ctx, pkg: ContentPackage, plan: Plan): Promise<Imp
   for (const p of plan.decisions) put(`Решение «${short(p.d.text)}»`, p);
   for (const p of plan.links) put(`Связь ${p.l.key}`, p);
   for (const p of plan.initiatives) put(`Инициатива «${short(p.x.title)}»`, p);
-  for (const p of plan.ceo) put(`Weekly для CEO за неделю с ${formatLong(p.c.week)}`, p);
+  for (const p of plan.ceo) put(`Отчёт руководителю за неделю с ${formatLong(p.c.week)}`, p);
   for (const p of plan.removals) if (p.action === "skip") put(p.text ? `Стереть решение «${short(p.text)}»` : `Стереть решение ${p.r.key}`, p);
   const unchanged = [...plan.goals, ...plan.tasks, ...plan.decisions, ...plan.links, ...plan.initiatives, ...plan.ceo].filter((p) => p.reason === UNCHANGED).length;
   if (unchanged) lists.notes.unshift({ what: "Без изменений", text: `${unchanged} ${unchanged === 1 ? "запись уже загружена" : "записей уже загружено"} в том же виде` });
@@ -1809,7 +1809,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
           source: "APP",
           entity: "ceo-report",
           entityId: p.c.week,
-          field: "Отчёт CEO из пакета наполнения",
+          field: "Отчёт руководителю из пакета наполнения",
           before: now ? `${now.main}\n${now.risks}\n${now.next}`.trim().slice(0, 4000) : undefined,
           after: `${legacy.main}\n${legacy.risks}\n${legacy.next}`.trim().slice(0, 4000),
           ip: actor.ip ?? null,
@@ -1848,7 +1848,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       entity: "content",
       entityId: pkg.title ?? "пакет наполнения",
       field: "Загружено наполнение",
-      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.ceoReports ?? []).length ? `. Weekly для CEO: новых ${result.ceoReports.add}, обновлено ${result.ceoReports.update}, пропущено ${result.ceoReports.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
+      after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.ceoReports ?? []).length ? `. Отчёт руководителю: новых ${result.ceoReports.add}, обновлено ${result.ceoReports.update}, пропущено ${result.ceoReports.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
       ip: actor.ip ?? null,
       via: actor.via ?? null,
     },

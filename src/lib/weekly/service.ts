@@ -223,6 +223,7 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
         ...(r?.thanks ? { thanks: r.thanks } : {}),
         state: r ? STATE_CODE[r.state] : "not-started",
         submittedAt: r?.submittedAt?.toISOString(),
+        ...(r?.retro ? { retro: true as const } : {}),
         ...(absences.has(p.id) ? { absent: { substitute: absences.get(p.id)! } } : {}),
         ...deadlineField(p.id, target, row, teams),
         ...(expected && !expected.has(p.id) ? { optional: true } : {}),
@@ -274,6 +275,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
   const info = weekInfo(row, reporting);
   info.deadline = personDeadline(personId, key, teams.nodes, row.deadline, teams.leaders).toISOString();
   info.closed = closedFor(personId, teams.nodes, row.closedAt !== null, teams.closedTeams, teams.leaders);
+  if (info.closed) info.retroOpen = !report || report.state === "DRAFT";
   const expecting = expectingTeams(personId, teams.nodes, teams.leaders);
   return {
     week: info,
@@ -288,6 +290,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
       ...(report?.thanks ? { thanks: report.thanks } : {}),
       state: report ? STATE_CODE[report.state] : "not-started",
       submittedAt: report?.submittedAt?.toISOString(),
+      ...(report?.retro ? { retro: true as const } : {}),
       ...(absence ? { absent: { substitute: (absence.substitute?.slug as PersonSlug | undefined) ?? null } } : {}),
     } satisfies PersonWeekly,
     entries: entries.map((e) => keepNotes(toEntryDto(e), () => false)),
@@ -351,6 +354,11 @@ export async function weekContext(tx: Tx, key: WeekKey, authorId?: string | null
   if (authorId && !info.closed) {
     const teams = await weekTeams(tx, row.id);
     info.closed = closedFor(authorId, teams.nodes, false, teams.closedTeams, teams.leaders);
+  }
+  // Этап 73: несданный weekly закрытой недели автор может дописать и сдать задним числом
+  if (authorId && info.closed) {
+    const own = await tx.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId } }, select: { state: true } });
+    info.retroOpen = !own || own.state === "DRAFT";
   }
   return { row, info, reporting };
 }
@@ -796,9 +804,12 @@ export async function submitWeekly(actor: Actor, key: WeekKey, now = new Date())
     const deadline = personDeadline(actor.personId, key, teams.nodes, row.deadline, teams.leaders);
     const excused = absent !== null && (absent.createdById !== actor.personId || absent.createdAt <= deadline);
     const state = excused || submitState(now, deadline) === "submitted" ? "SUBMITTED" : "LATE";
-    const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now } });
-    await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", state === "LATE" ? "Сдан с опозданием" : "Сдан");
-    return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString() };
+    // Этап 73: неделя раньше отчётной на момент сдачи: сдан задним числом. Закрытые итоги и отправленный отчёт руководителю
+    // от этого не пересчитываются: запись попадает в ленту и в отчёт команды той недели
+    const retro = key < reporting;
+    const saved = await tx.weeklyReport.update({ where: { id: report!.id }, data: { state, submittedAt: now, retro } });
+    await audit(tx, actor, "weekly.submit", "weekly", `${key}/${actor.slug}`, `Weekly за неделю ${info.number}, записей ${entries}`, "Черновик", retro ? "Сдан задним числом" : state === "LATE" ? "Сдан с опозданием" : "Сдан");
+    return { week: key, author: actor.slug, headline: saved.headline, state: STATE_CODE[saved.state], submittedAt: saved.submittedAt?.toISOString(), ...(saved.retro ? { retro: true as const } : {}) };
   });
 }
 
@@ -807,14 +818,14 @@ function requireManagement(actor: Actor, what: string) {
 }
 
 export async function setCeoFlag(actor: Actor, id: string, ceo: boolean): Promise<WeeklyEntry> {
-  requireManagement(actor, "Отметка «В отчёт CEO»");
+  requireManagement(actor, "Отметка «В отчёт руководителю»");
   return prisma.$transaction(async (tx) => {
     const entry = await tx.weeklyEntry.findUnique({ where: { id }, include: entryInclude });
     if (!entry) return fail("Запись уже удалена");
     // Отметка уже стоит как надо: ничего не меняем и не пишем в журнал выдуманную правку
     if (entry.ceo === ceo) return toEntryDto(entry);
     const saved = await tx.weeklyEntry.update({ where: { id }, data: { ceo }, include: entryInclude });
-    await audit(tx, actor, "weekly.entry.ceo", "weekly-entry", id, "В отчёт CEO", entry.ceo ? "да" : "нет", ceo ? "да" : "нет");
+    await audit(tx, actor, "weekly.entry.ceo", "weekly-entry", id, "В отчёт руководителю", entry.ceo ? "да" : "нет", ceo ? "да" : "нет");
     return toEntryDto(saved);
   });
 }
@@ -981,13 +992,13 @@ const meetingsText = (list: CeoMeeting[]) => list.map((m) => `${m.title || "Вс
  * expected: момент прошлого сохранения, который видел экран. Кто-то сохранил позже: ошибка, а не тихая перезапись
  */
 export async function saveCeoReport(actor: Actor, key: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<CeoReportView> {
-  requireManagement(actor, "Отчёт CEO правят");
+  requireManagement(actor, "Отчёт руководителю правят");
   return prisma.$transaction((tx) => saveCeoReportIn(tx, actor, key, sections, meetings, expected));
 }
 
 /** Сохранение отчёта CEO внутри чужой транзакции: так его сохраняет «Отправить CEO» из разбора встречи (этап 61) */
 export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sections: CeoSections, meetings?: unknown, expected?: string | null): Promise<CeoReportView> {
-  requireManagement(actor, "Отчёт CEO правят");
+  requireManagement(actor, "Отчёт руководителю правят");
   const clean3 = (t: unknown) => cleanDash(String(t ?? "")).slice(0, 10000);
   const { row } = await weekContext(tx, key);
   // Два сохранения одного отчёта подряд: второе ждёт первое, сверка идёт по уже записанному
@@ -1009,8 +1020,8 @@ export async function saveCeoReportIn(tx: Tx, actor: Actor, key: WeekKey, sectio
     ["мои встречи недели", before ? meetingsText(cleanMeetings(before.meetings)) : null, meetingsText(list)],
   ];
   const changed = parts.filter(([, b, a]) => (b ?? "") !== a);
-  for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
-  if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
+  for (const [part, b, a] of changed) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт руководителю, ${part}`, b || null, a || null);
+  if (!changed.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт руководителю сохранён без изменений", null, null);
   return { sections: { main: saved.main, risks: saved.risks, next: saved.next }, blocks: null, meetings: cleanMeetings(saved.meetings), updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
 }
 

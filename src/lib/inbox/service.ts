@@ -54,7 +54,7 @@ export type InboxView = { items: InboxItem[]; snoozed: number };
  */
 const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput =>
   viewer?.shared || viewer?.limited
-    ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM", "APPROVAL"] } }
+    ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM", "APPROVAL", "REPORT_COMMENT"] } }
     : // «Смотреть как» (этап 63): встречи один на один видят только двое участников, владельцу в просмотре их нет
       viewer?.viewAs
       ? { kind: { notIn: ["ONE_ON_ONE"] } }

@@ -145,7 +145,7 @@ function Pending({ view }: { view: ParseView }) {
         <p role="status" className="text-title-sm font-semibold text-ink">
           Разбираем встречу…
         </p>
-        <p className="mt-1 text-body text-muted">Читаем страницу Notion и разбираем текст: итоги, решения, черновик weekly для CEO и задачи. Обычно это занимает до минуты.</p>
+        <p className="mt-1 text-body text-muted">Читаем страницу Notion и разбираем текст: итоги, решения, черновик отчёта руководителю и задачи. Обычно это занимает до минуты.</p>
         <p className="mt-1 text-small text-muted" aria-hidden="true">
           Идёт {elapsed}
         </p>
@@ -186,7 +186,7 @@ function Ready({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) 
   const { notify } = usePrototype();
   const tabs: { code: ParseTab; label: string }[] = [
     { code: "summary", label: "Итоги" },
-    ...(view.canSeeCeo ? [{ code: "ceo" as const, label: "Weekly для CEO" }] : []),
+    ...(view.canSeeCeo ? [{ code: "ceo" as const, label: "Отчёт руководителю" }] : []),
     { code: "tasks", label: "Задачи" },
   ];
   // Вкладка из адреса на клиенте: после отправки или сохранения разбор обновляется и экран собирается заново, но
@@ -423,7 +423,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
       const r = await sendParseToCeoAction(view.id, { ceo: draft, mode: filled ? mode : null, expected: existing?.updatedAt ?? null });
       if (!r.ok) return setError(r.error);
       setConfirm(false);
-      notify(`Weekly отправлен CEO: ${view.ceo?.recipients.join(", ") ?? ""}`);
+      notify(`Отчёт отправлен руководителю: ${view.ceo?.recipients.join(", ") ?? ""}`);
       router.refresh();
     } catch {
       setError("Нет связи с сервером: weekly не отправлен");
@@ -438,25 +438,25 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
         <p className="flex items-start gap-2 sv-card sv-card--soft bg-green-soft px-4 py-3 text-body text-ink" data-testid="ceo-sent">
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-ink" aria-hidden="true" />
           <span>
-            Отправлено CEO {moment(view.ceoSentAt)}
-            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт CEO» и событие в «Мне». Можно поправить и отправить ещё раз.
+            Отправлено руководителю {moment(view.ceoSentAt)}
+            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт руководителю» и событие в «Мне». Можно поправить и отправить ещё раз.
           </span>
         </p>
       ) : null}
       <p className="max-w-[760px] text-body text-muted">
-        Черновик weekly для CEO по смысловым блокам отчёта CEO за неделю {view.weekNumber}: каждая строка подписана продуктом. Цифры недели и месяца, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
+        Черновик отчёта руководителю по смысловым блокам отчёта руководителю за неделю {view.weekNumber}: каждая строка подписана продуктом. Цифры недели и месяца, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
       </p>
       <BlocksEditor blocks={ceo} onChange={edit} products={meta.products} labels={meta.labels} order={meta.order} idPrefix="parse-ceo" readOnly={!view.canEdit} fixedLayout headingLevel={3} />
 
       {view.ceo ? (
         <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
           <p className="text-body text-ink">
-            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие в «Мне» и отчёт на странице «Отчёт CEO».
+            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие в «Мне» и отчёт на странице «Отчёт руководителю».
           </p>
           {filled ? (
             <>
               <p className="text-body text-ink">
-                За неделю {view.weekNumber} уже есть отчёт CEO
+                За неделю {view.weekNumber} уже есть отчёт руководителю
                 {existing?.updatedBy ? `: сохранил ${existing.updatedBy}` : ""}
                 {existing?.updatedAt ? `, ${moment(existing.updatedAt)}` : ""}. Молча он не заменится: выберите, что сделать.
               </p>
@@ -513,17 +513,17 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
         <SaveButton view={view} dirty={dirty} busy={busy} save={save} />
         {view.canSendCeo ? (
-          <Button onClick={() => (hasBlocksText(draft) ? setConfirm(true) : setError("Weekly для CEO пустой: напишите хотя бы одну строку"))} disabled={busy !== null}>
+          <Button onClick={() => (hasBlocksText(draft) ? setConfirm(true) : setError("Отчёт руководителю пустой: напишите хотя бы одну строку"))} disabled={busy !== null}>
             <Send className="h-4 w-4" aria-hidden="true" />
-            {view.ceoSentAt ? "Отправить CEO ещё раз" : "Отправить CEO"}
+            {view.ceoSentAt ? "Отправить ещё раз" : "Отправить руководителю"}
           </Button>
         ) : null}
       </div>
       <Modal
         open={confirm}
         onOpenChange={setConfirm}
-        title="Отправить weekly CEO?"
-        description={`Получит: ${view.ceo?.recipients.join(", ") || "CEO"}. ${filled ? (mode === "merge" ? "Черновик допишется к отчёту недели по блокам." : "Черновик заменит свои блоки отчёта недели.") : "Отчёт CEO за неделю соберётся из цифр недели и месяца и дополнится черновиком."} Отправка только в приложении, без письма.`}
+        title="Отправить отчёт руководителю?"
+        description={`Получит: ${view.ceo?.recipients.join(", ") || "CEO"}. ${filled ? (mode === "merge" ? "Черновик допишется к отчёту недели по блокам." : "Черновик заменит свои блоки отчёта недели.") : "Отчёт руководителю за неделю соберётся из цифр недели и месяца и дополнится черновиком."} Отправка только в приложении, без письма.`}
       >
         <FormError message={error ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

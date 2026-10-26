@@ -1,5 +1,8 @@
 "use client";
 
+import Link from "next/link";
+import { useState } from "react";
+import { BellRing } from "lucide-react";
 import { PEOPLE } from "@/domain/people";
 import type { PersonWeekly } from "@/domain/types";
 import type { WeeklyStateCode } from "@/domain/dictionaries";
@@ -7,6 +10,9 @@ import { cn } from "@/lib/cn";
 import { substituteText } from "./absence";
 import { avatarTone } from "@/components/ui/primitives";
 import { initialsOf } from "@/components/people/person-card";
+import { Button } from "@/components/ui/button";
+import { usePrototype } from "@/domain/store";
+import { remindNotSubmittedAction } from "@/app/(app)/weekly/actions";
 
 // Точка состояния на аватаре, как в дизайн-системе (weekly/SubmissionBar.jsx)
 const DOT: Record<WeeklyStateCode, string> = {
@@ -23,8 +29,13 @@ const WORD: Record<WeeklyStateCode, string> = {
   "not-started": "weekly не начат",
 };
 
-/** Полоса сдачи: кто сдал, кто в черновике, у кого weekly не начат. Кого нет на неделе, виден серым с замещающим и в счёт не входит */
-export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[]; className?: string }) {
+/**
+ * Полоса сдачи: кто сдал, кто в черновике, у кого weekly не начат. Кого нет на неделе, виден серым с замещающим и в счёт
+ * не входит. Этап 73 (аудит удобства): имя ведёт в weekly человека, у руководителя кнопка «Напомнить не сдавшим»
+ */
+export function SubmissionStrip({ reports, className, remind = null, week }: { reports: PersonWeekly[]; className?: string; remind?: { teamId: string | null; week: string } | null; week?: string }) {
+  const { notify, viewing } = usePrototype();
+  const [busy, setBusy] = useState(false);
   // Люди в порядке команды, но только те, кого сервер считает участниками weekly (без выключенных и наблюдателей)
   // Кто сдаёт по желанию (специалисты, от кого weekly не ждут, этап 15), виден, только если уже сдал, и в счёт не входит
   const sent = (r: PersonWeekly) => r.state === "submitted" || r.state === "late";
@@ -35,6 +46,21 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
   const expected = states.filter((s) => !s.optional && (!s.absent || s.state === "submitted" || s.state === "late"));
   const done = expected.filter((s) => s.state === "submitted" || s.state === "late").length;
   const percent = expected.length ? Math.round((done / expected.length) * 100) : 0;
+  const waiting = expected.filter((s) => s.state === "draft" || s.state === "not-started").length;
+  const sendRemind = async () => {
+    if (!remind) return;
+    setBusy(true);
+    try {
+      const r = await remindNotSubmittedAction(remind.teamId, remind.week);
+      if (!r.ok) notify(r.error, "error");
+      else if (!r.value.sent) notify("Напоминание уже отправляли за последние шесть часов");
+      else notify(`Напоминание отправлено: ${r.value.sent}`);
+    } catch {
+      notify("Нет связи с сервером: напоминание не отправлено", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <section aria-label="Кто сдал weekly" className={cn("sv-card sv-card--soft px-4 py-3", className)}>
       <div className="sv-submit-bar">
@@ -42,6 +68,12 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
         <div className="sv-submit-bar__track max-w-60" aria-hidden="true">
           <div className="sv-submit-bar__fill" style={{ width: `${percent}%` }} />
         </div>
+        {remind && waiting > 0 && !viewing ? (
+          <Button size="sm" variant="secondary" className="ml-auto min-h-11 sm:min-h-0" onClick={() => void sendRemind()} loading={busy} disabled={busy} data-testid="weekly-remind">
+            <BellRing className="h-4 w-4" aria-hidden="true" />
+            Напомнить не сдавшим
+          </Button>
+        ) : null}
       </div>
       {/* Этап 43: у сдавших вовремя только аватар с зелёной точкой и имя, слово подсказкой и для экранного диктора;
           слово видно у опоздавших, у тех, кто не сдал, и у кого нет на неделе: это и есть, на кого смотреть */}
@@ -59,7 +91,9 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
                 {initialsOf(person.fullName)}
                 <span className={cn("sv-avatar__status", away ? "sv-avatar__status--neutral" : DOT[state])} />
               </span>
-              <span className={cn("font-semibold", away || state === "not-started" ? "text-text-secondary" : "text-ink")}>{person.shortName}</span>
+              <Link href={`/weekly?${week ? `week=${week}&` : ""}author=${encodeURIComponent(person.slug)}`} scroll={false} className={cn("inline-flex min-h-11 items-center font-semibold hover:text-link hover:underline sm:min-h-0", away || state === "not-started" ? "text-text-secondary" : "text-ink")}>
+                {person.shortName}
+              </Link>
               <span className={cn("text-text-secondary", sentNow && "sr-only")}>{word}</span>
             </li>
           );

@@ -34,6 +34,7 @@ import { canViewAs } from "@/lib/view-as-service";
 import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
 import { VIEW_AS_END_TEXTS, viewAsTabState, viewAsTitleMark } from "@/lib/view-as";
 import Link from "next/link";
+import { leaderReportVisible } from "@/lib/leader-report/service";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел. Этап 72: по общему логину и в режиме
   // управления всем
-  const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess) };
+  const nav = {
+    market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess),
+    // Отчёт руководителю (этап 73): дешёвый признак, команды уже прочитаны для выбора в шапке
+    leaderReport: await leaderReportVisible({ personId: ctx.person.id, role: ctx.person.role, management: ctx.management?.role ?? null, via: ctx.via }),
+  };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
   // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
   const viewAs = ctx.viewAs
@@ -174,7 +179,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} />
+    <CommandPalette management={profile.management} market={nav.market} leaderReport={nav.leaderReport} canViewAs={viewAsOpen} viewing={!!viewAs} />
     <RequestDialogHost />
     {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются */}
     {viewAs || ctx.viewAsEnded ? null : <DeviceSync />}

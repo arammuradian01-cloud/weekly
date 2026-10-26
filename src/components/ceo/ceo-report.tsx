@@ -66,6 +66,8 @@ const withKey = (m: CeoMeeting): Draft => ({ ...m, key: ++draftKey });
 export type CeoBlocksMeta = { labels: Labels; order: string[]; products: ProductRef[] };
 
 /**
+ * Этап 73: отчёт руководителю команды страхования и инвестиций (бывший отчёт CEO). Блоки свёрнуты в строки, открыт один
+ * за раз (пакет дизайнера), липкая панель действий, на широком экране справа «Как увидит получатель».
  * Черновик отчёта CEO (раздел 3 ТЗ, этап 27) по смысловым блокам (этап 66): видят только владелец и администраторы, в
  * таблицу он не выгружается. Блоки собираются сами из цифр недели, прогноза месяца, хаба, новостей, weekly команды,
  * разбора встречи и задач; каждый блок можно поправить, скрыть, поднять или опустить и собрать заново. «Отправить CEO»
@@ -244,7 +246,7 @@ export function CeoReport({
       if (!r.ok) return setSendError(r.error);
       afterSave(r.value, startRev);
       setSendOpen(false);
-      notify(`Weekly отправлен CEO: ${send.recipients.join(", ")}`);
+      notify(`Отчёт отправлен руководителю: ${send.recipients.join(", ")}`);
       router.refresh();
     } catch {
       setSendError("Нет связи с сервером: weekly не отправлен");
@@ -286,9 +288,9 @@ export function CeoReport({
   const rebuildTitle = blocks.find((b) => b.key === rebuildKey)?.title ?? "";
 
   return (
-    <div className="sv-page--read-rail sv-page--split">
+    <div className="sv-page--read-rail sv-page--split max-lg:pb-16">
       <div className="sv-page__top flex min-w-0 flex-col gap-5">
-        <WeekSwitcher view={view} basePath="/ceo-report" />
+        <WeekSwitcher view={view} basePath="/leader-report" query="&tab=current&team=top" />
 
         {newer ? (
           <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status">
@@ -306,9 +308,9 @@ export function CeoReport({
           </p>
         ) : null}
         {compare && previous && !prevBlocks ? <p className="text-small text-muted">Отчёт за неделю {previous.number} не сохраняли: сравнивать не с чем.</p> : null}
+        {/* Этап 73 (пакет дизайнера): пояснение в одну строку; что можно делать с блоком, видно по его кнопкам */}
         <p className="max-w-[760px] text-small text-muted">
-          Каждая строка подписана продуктом, у цифр ссылка на источник. Блок можно поправить, скрыть, поднять или опустить. Скрытые блоки CEO не увидит.
-          {auto.hint ? ` ${auto.hint}.` : ""}
+          Скрытые блоки получатель не увидит.{auto.hint ? ` ${auto.hint}.` : ""}
         </p>
         <BlocksEditor
           blocks={blocks}
@@ -319,6 +321,7 @@ export function CeoReport({
           idPrefix="ceo"
           onRebuild={(key) => setRebuildKey(key)}
           compare={compare && previous && prevBlocks ? { number: previous.number, blocks: prevBlocks } : null}
+          collapsible
         />
       </div>
 
@@ -327,35 +330,36 @@ export function CeoReport({
           <p className="text-small text-muted" aria-live="polite">
             {status}
           </p>
-          {/* Этап 61: weekly отправили CEO в приложении: когда, кто и кому */}
+          {/* Этап 61: отчёт отправили в приложении: когда, кто и кому */}
           {saved.sent ? (
             <p className="text-small text-ink" data-testid="ceo-report-sent">
-              Отправлен CEO {moment(saved.sent.at)}
+              Отправлен руководителю {moment(saved.sent.at)}
               {saved.sent.by ? `, отправил ${saved.sent.by}` : ""}
               {saved.sent.to.length ? `. Получил: ${saved.sent.to.join(", ")}` : ""}
             </p>
           ) : null}
           {/* Этап 68: ожидание показывает сама кнопка (loading), подпись не меняется */}
-          <Button onClick={save} loading={busy} disabled={busy || !dirty} className="w-full">
+          {/* На телефоне «Сохранить» и «Отправить» в липкой панели внизу экрана, здесь они скрыты */}
+          <Button onClick={save} loading={busy} disabled={busy || !dirty} className="w-full max-lg:hidden">
             <Save className="h-4 w-4" aria-hidden="true" />
             Сохранить
           </Button>
           {send.can ? (
             <Button
               variant="dark"
-              className="w-full"
+              className="w-full max-lg:hidden"
               disabled={busy}
               onClick={() => {
                 setSendError(null);
                 if (!hasBlocksText(withoutEmptyLines(blocks))) {
-                  notify("Weekly для CEO пустой: в видимых блоках нет ни одной строки", "error");
+                  notify("Отчёт пустой: в видимых блоках нет ни одной строки", "error");
                   return;
                 }
                 setSendOpen(true);
               }}
             >
               <Send className="h-4 w-4" aria-hidden="true" />
-              {saved.sent ? "Отправить CEO ещё раз" : "Отправить CEO"}
+              {saved.sent ? "Отправить ещё раз" : send.recipients.length ? `Отправить руководителю: ${send.recipients.join(", ")}` : "Отправить руководителю"}
             </Button>
           ) : send.hint ? (
             <p className="text-caption text-muted">{send.hint}</p>
@@ -393,7 +397,7 @@ export function CeoReport({
             </a>
           </div>
           <p className="text-caption text-muted">
-            Отметки «В отчёт CEO» ставятся в{" "}
+            Отметки «В отчёт руководителю» ставятся в{" "}
             <Link href={`/weekly?week=${week.key}`} className="font-medium text-blue-700 hover:underline">
               ленте weekly
             </Link>
@@ -407,7 +411,7 @@ export function CeoReport({
           inline
           max={3}
           items={[
-            { label: plural(flaggedCount, "отметка «В отчёт CEO»", "отметки «В отчёт CEO»", "отметок «В отчёт CEO»"), value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags", keepZero: true },
+            { label: plural(flaggedCount, "отметка «В отчёт руководителю»", "отметки «В отчёт руководителю»", "отметок «В отчёт руководителю»"), value: flaggedCount, href: `/weekly?week=${week.key}`, testId: "ceo-fig-flags", keepZero: true },
             { label: plural(decisions.length, "решение недели", "решения недели", "решений недели"), value: decisions.length, href: "/decisions", testId: "ceo-fig-decisions" },
             { label: "обещаний выполнено", value: promiseShareText, onClick: () => revealCollapsible("ceo-promises"), testId: "ceo-fig-promises" },
             { label: plural(thanks.length, "благодарность", "благодарности", "благодарностей"), value: thanks.length, href: "#ceo-thanks", testId: "ceo-fig-thanks" },
@@ -415,8 +419,15 @@ export function CeoReport({
             { label: plural(hiddenCount, "блок скрыт", "блока скрыто", "блоков скрыто"), value: hiddenCount, testId: "ceo-fig-hidden" },
           ]}
         />
+        {/* Этап 73: на широком экране справа сразу видно, как отчёт увидит получатель */}
+        <section aria-labelledby="ceo-rail-preview" className="hidden sv-card sv-card--soft px-4 py-4 2xl:block" data-testid="ceo-rail-preview">
+          <h2 id="ceo-rail-preview" className="text-body font-semibold text-ink">
+            Как увидит получатель
+          </h2>
+          <CeoAssembled ctx={{ decisions, thanks: thanksList }} blocks={withoutEmptyLines(blocks)} labels={meta.labels} order={meta.order} meetings={cleanMeetings(meetings)} idPrefix="ceo-rail" className="mt-3 text-small" />
+        </section>
         <p className="text-caption text-muted">
-          Отчёт видят только владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.
+          Черновик видят руководитель команды, владелец и администраторы. В Google-таблицу он не выгружается. Встреча недели {week.number}: {formatLong(week.meetingDate)}.
         </p>
       </aside>
 
@@ -465,7 +476,7 @@ export function CeoReport({
             <h2 id="ceo-meetings" className="text-title-sm font-semibold text-ink scroll-mt-24">
               Мои встречи недели
             </h2>
-            <p className="mt-1 text-small text-muted">По 4-5 предложений на встречу от первого лица: с кем, о чём договорились, что важно знать CEO.</p>
+            <p className="mt-1 text-small text-muted">По 4-5 предложений на встречу от первого лица: с кем, о чём договорились, что важно знать руководителю.</p>
           </div>
           {meetings.map((m, i) => (
             <div key={m.key} className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
@@ -536,8 +547,8 @@ export function CeoReport({
           ) : null}
         </section>
 
-        {/* Что получит CEO: блоки без скрытых и пустых, решения, благодарности и встречи */}
-        <Collapsible id="ceo-preview-block" title="Что получит CEO" hint={`Отчёт за неделю ${week.number}: видимые блоки, решения, благодарности и встречи`} testId="ceo-blocks-preview">
+        {/* Как увидит получатель: блоки без скрытых и пустых, решения, благодарности и встречи */}
+        <Collapsible id="ceo-preview-block" title="Как увидит получатель" hint={`Отчёт за неделю ${week.number}: видимые блоки, решения, благодарности и встречи`} testId="ceo-blocks-preview">
           <CeoAssembled
             ctx={{ decisions, thanks: thanksList }}
             blocks={withoutEmptyLines(blocks)}
@@ -616,7 +627,7 @@ export function CeoReport({
             <ul className="divide-y divide-line">
               {history.map((h) => (
                 <li key={h.key}>
-                  <Link href={`/ceo-report?week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-5 py-2.5 hover:bg-field aria-[current=page]:bg-field">
+                  <Link href={`/leader-report?tab=current&team=top&week=${h.key}`} aria-current={h.key === week.key ? "page" : undefined} className="block px-5 py-2.5 hover:bg-field aria-[current=page]:bg-field">
                     <p className="text-body font-medium text-ink">Неделя {h.number}</p>
                     <p className="text-caption text-muted">
                       {h.savedAt ? `Сохранён ${moment(h.savedAt)}${h.savedBy ? `, ${h.savedBy}` : ""}` : "Не сохранялся"}. Отметок: {h.flagged}, встреча {h.meeting}
@@ -629,6 +640,32 @@ export function CeoReport({
         </Collapsible>
       </div>
 
+      {/* Этап 73: на телефоне сохранение и отправка всегда под рукой, над нижним меню */}
+      <div className="fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 border-t border-line bg-surface px-4 py-2 lg:hidden" data-testid="ceo-sticky-actions">
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-caption text-text-secondary">{status || "Черновик"}</p>
+          <Button size="sm" variant="secondary" onClick={save} loading={busy} disabled={busy || !dirty} className="min-h-11">
+            <Save className="h-4 w-4" aria-hidden="true" />
+            Сохранить
+          </Button>
+          {send.can ? (
+            <Button
+              size="sm"
+              className="min-h-11"
+              disabled={busy}
+              aria-label={send.recipients.length ? `Отправить руководителю: ${send.recipients.join(", ")}` : "Отправить руководителю"}
+              onClick={() => {
+                setSendError(null);
+                if (!hasBlocksText(withoutEmptyLines(blocks))) return notify("Отчёт пустой: в видимых блоках нет ни одной строки", "error");
+                setSendOpen(true);
+              }}
+            >
+              <Send className="h-4 w-4" aria-hidden="true" />
+              Отправить
+            </Button>
+          ) : null}
+        </div>
+      </div>
       <Modal open={confirm} onOpenChange={setConfirm} title="Собрать отчёт заново?" description="Все блоки соберутся заново из цифр недели, прогноза месяца, новостей, weekly команды, разбора встречи и задач. Ваши правки в блоках пропадут. Встречи недели останутся как есть.">
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="secondary" onClick={() => setConfirm(false)}>
@@ -652,8 +689,8 @@ export function CeoReport({
       <Modal
         open={sendOpen}
         onOpenChange={setSendOpen}
-        title="Отправить weekly CEO?"
-        description={`Получит: ${send.recipients.join(", ") || "CEO"}. В Weekly → «Отчёт по моей команде» получатель увидит отправленную версию: видимые блоки, решения, благодарности и встречи. Отправка только в приложении, без письма.`}
+        title="Отправить отчёт руководителю?"
+        description={`Получит: ${send.recipients.join(", ") || "руководитель"}. Получатель увидит отправленную версию в разделе «Отчёт руководителю», вкладка «Полученные»: видимые блоки, решения, благодарности и встречи. Отправка только в приложении, без письма.`}
       >
         <FormError message={sendError ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

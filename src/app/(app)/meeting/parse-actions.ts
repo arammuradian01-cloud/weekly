@@ -31,7 +31,7 @@ export async function saveParseDraftAction(id: string, patch: svc.DraftPatch, ex
 }
 
 export async function sendParseToCeoAction(id: string, input: svc.SendCeoInput): Promise<Result<svc.ParseView>> {
-  return runAction("Отправка weekly CEO", (a) => svc.sendParseToCeo(a, String(id), input));
+  return runAction("Отправка отчёта руководителю", (a) => svc.sendParseToCeo(a, String(id), input));
 }
 
 export async function createParseTasksAction(id: string, input: { tasks?: svc.ParseView["result"]["tasks"]; decisions?: ParseDecision[] }): Promise<Result<svc.CreateTasksResult>> {

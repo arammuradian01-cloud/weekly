@@ -29,9 +29,9 @@ const moment = (iso: string) =>
 const RECIPIENT_FIGURES = "Здесь цифры: их увидит получатель, если у него есть доступ к цифрам";
 const forPreview = (blocks: ReportBlock[]) => blocks.map((b) => ({ ...b, lines: b.lines.map((l) => (!l.href && l.text === NUMBERS_HIDDEN_TEXT ? { ...l, text: RECIPIENT_FIGURES } : l)) }));
 
-const linkTo = (view: TeamReportView, current: boolean) => `/weekly/team-report?team=${encodeURIComponent(view.team.id)}&week=${view.week}${current ? "&view=current" : ""}`;
+const linkTo = (view: TeamReportView, current: boolean) => `/leader-report?team=${encodeURIComponent(view.team.id)}&week=${view.week}&tab=${current ? "current" : "received"}`;
 
-export function TeamReportScreen({ view, template }: { view: TeamReportView; template: TeamTemplateView | null }) {
+export function TeamReportScreen({ view, template, collapsible = false }: { view: TeamReportView; template: TeamTemplateView | null; collapsible?: boolean }) {
   const router = useRouter();
   const { notify } = usePrototype();
   const [blocks, setBlocks] = useState<ReportBlock[]>(() => view.blocks);
@@ -56,7 +56,7 @@ export function TeamReportScreen({ view, template }: { view: TeamReportView; tem
       setExpected(r.value.updatedAt);
       setDirty(false);
       setConfirm(null);
-      notify(kind === "save" ? `Weekly команды за неделю ${view.weekNumber} сохранён` : `Weekly команды отправлен: ${view.recipients.join(", ")}`);
+      notify(kind === "save" ? `Отчёт за неделю ${view.weekNumber} сохранён` : `Отчёт отправлен руководителю: ${view.recipients.join(", ")}`);
       router.refresh();
     } catch {
       setError("Нет связи с сервером: отчёт не сохранился");
@@ -135,7 +135,7 @@ export function TeamReportScreen({ view, template }: { view: TeamReportView; tem
       <p className="max-w-[760px] text-small text-muted">
         Собрано из weekly людей команды, задач и целей команды, цифр и новостей по её продуктам. Каждая строка подписана продуктом. Блок можно поправить, скрыть, поднять или опустить.
       </p>
-      <BlocksEditor blocks={blocks} onChange={edit} products={meta.products} labels={meta.labels} order={meta.order} idPrefix="team" onRebuild={(key) => setConfirm(key)} placeholder="Что важно знать руководителю, с цифрой" />
+      <BlocksEditor blocks={blocks} onChange={edit} products={meta.products} labels={meta.labels} order={meta.order} idPrefix="team" onRebuild={(key) => setConfirm(key)} placeholder="Что важно знать руководителю, с цифрой" collapsible={collapsible} />
       <Collapsible id="team-preview" title="Что получит руководитель" hint={`Weekly команды «${view.team.name}» за неделю ${view.weekNumber}: видимые блоки`} testId="team-preview">
         <BlocksView blocks={view.allFigures ? withoutEmptyLines(blocks) : forPreview(withoutEmptyLines(blocks))} labels={meta.labels} order={meta.order} idPrefix="team-preview" />
       </Collapsible>
@@ -161,7 +161,7 @@ export function TeamReportScreen({ view, template }: { view: TeamReportView; tem
             onClick={() => (hasBlocksText(withoutEmptyLines(blocks)) ? setConfirm("send") : setError("Weekly команды пустой: в видимых блоках нет ни одной строки"))}
           >
             <Send className="h-4 w-4" aria-hidden="true" />
-            {view.sent ? "Отправить ещё раз" : "Отправить руководителю"}
+            {view.sent ? "Отправить ещё раз" : view.recipients.length ? `Отправить руководителю: ${view.recipients.join(", ")}` : "Отправить руководителю"}
           </Button>
         ) : null}
       </div>
@@ -204,7 +204,7 @@ export function TeamReportScreen({ view, template }: { view: TeamReportView; tem
           </Button>
         </div>
       </Modal>
-      <Modal open={confirm === "send"} onOpenChange={(o) => !o && setConfirm(null)} title="Отправить weekly команды?" description={`Получит: ${view.recipients.join(", ")}. Отчёт появится у получателя в Weekly → «Отчёт по моей команде», а в «Мне» придёт уведомление. Отправка в приложении, без письма.`}>
+      <Modal open={confirm === "send"} onOpenChange={(o) => !o && setConfirm(null)} title="Отправить отчёт руководителю?" description={`Получит: ${view.recipients.join(", ")}. Отчёт появится у получателя в разделе «Отчёт руководителю», вкладка «Полученные», а в «Мне» придёт уведомление. Отправка в приложении, без письма.`}>
         <FormError message={error ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirm(null)}>

@@ -6,7 +6,8 @@
 // родитель: редактор только показывает блоки и сообщает правки. Цифры недели и месяца живые, пока их не поправили руками:
 // поправленный блок помечен, а если цифры с тех пор обновились, редактор предлагает собрать блок заново.
 
-import { ArrowDown, ArrowUp, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, ExternalLink, Eye, EyeOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import { addLine, defaultProduct, moveBlock, patchLine, removeLine, setHidden } from "@/lib/weekly-blocks/edit";
@@ -32,7 +33,21 @@ type Props = {
   headingLevel?: 2 | 3;
   /** Подсказка в пустой строке: кому пишем */
   placeholder?: string;
+  /**
+   * Блоки свёрнуты в строки «название, состояние, первая строка», открыт один за раз, сверху «Заполнено N из M» (этап 73,
+   * идея пакета дизайнера для отчёта руководителю). Разбор встречи работает без этого, все блоки раскрыты
+   */
+  collapsible?: boolean;
 };
+
+/** Состояние блока одним словом для свёрнутой строки */
+export function blockState(b: Pick<ReportBlock, "hidden" | "lines" | "stale" | "edited">): { label: string; cls: string } {
+  if (b.hidden) return { label: "скрыт", cls: "bg-field text-text-secondary" };
+  if (!b.lines.length) return { label: "пусто", cls: "bg-warning-soft text-warning-ink" };
+  if (b.stale) return { label: "цифры обновились", cls: "bg-warning-soft text-warning-ink" };
+  if (b.edited) return { label: "поправлен", cls: "bg-green-soft text-green-ink" };
+  return { label: "собран сам", cls: "bg-accent-soft text-link" };
+}
 
 /** Пометки живого блока: цифры недели и месяца или новости конкурентов */
 const liveText = (key: string) =>
@@ -40,12 +55,29 @@ const liveText = (key: string) =>
     ? { edited: "Цифры поправлены руками и сами не обновляются", stale: "Цифры обновились, а этот блок поправлен руками. Пересобрать его по свежим цифрам?" }
     : { edited: "Строки поправлены руками и сами не обновляются", stale: "Появились новые новости конкурентов, а этот блок поправлен руками. Пересобрать его?" };
 
-export function BlocksEditor({ blocks, onChange, products, labels, order, idPrefix, readOnly = false, fixedLayout = false, onRebuild, compare, headingLevel = 2, placeholder = "Что важно знать CEO, с цифрой" }: Props) {
+export function BlocksEditor({ blocks, onChange, products, labels, order, idPrefix, readOnly = false, fixedLayout = false, onRebuild, compare, headingLevel = 2, placeholder = "Что важно знать руководителю, с цифрой", collapsible = false }: Props) {
   const H = headingLevel === 2 ? "h2" : "h3";
   const Sub = headingLevel === 2 ? "h3" : "h4";
+  // Открытый блок: первый непустой. Сравнение с прошлой неделей раскрывает все
+  const [openKey, setOpenKey] = useState<string | null>(() => (blocks.find((b) => !b.hidden && b.lines.length) ?? blocks[0])?.key ?? null);
+  const filled = blocks.filter((b) => !b.hidden && b.lines.length).length;
+  const shown = blocks.filter((b) => !b.hidden).length;
   return (
     <div className="flex min-w-0 flex-col gap-4" data-testid={`${idPrefix}-editor`}>
+      {collapsible ? (
+        <div className="flex items-center gap-3 text-small text-text-secondary" data-testid={`${idPrefix}-ready`}>
+          <span className="shrink-0">
+            Заполнено {filled} из {shown}
+          </span>
+          <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-field" aria-hidden="true">
+            <span className="block h-full rounded-full bg-green" style={{ width: `${shown ? (filled / shown) * 100 : 0}%` }} />
+          </span>
+        </div>
+      ) : null}
       {blocks.map((b, bi) => {
+        const open = !collapsible || !!compare || openKey === b.key;
+        const state = blockState(b);
+        const preview = b.lines.length ? lineText(b.lines[0]!, labels) : "Строк нет";
         const id = `${idPrefix}-${b.key.replace(":", "-")}`;
         const prev = compare?.blocks.find((x) => x.key === b.key);
         // Блок цифр, который зритель видит не целиком: только для чтения, без «Пересобрать» и «Добавить строку»
@@ -73,12 +105,39 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
             />
           );
         return (
-          <section key={b.key} aria-labelledby={id} className={cn("flex min-w-0 flex-col gap-3 sv-card sv-card--soft px-4 py-4 sm:px-5", b.hidden && "border border-dashed border-line")} data-testid={`${idPrefix}-block-${b.key}`}>
+          <section
+            key={b.key}
+            aria-labelledby={id}
+            className={cn("flex min-w-0 flex-col gap-3 sv-card sv-card--soft px-4 py-4 sm:px-5", b.hidden && "border border-dashed border-line", collapsible && !open && "py-3")}
+            data-testid={`${idPrefix}-block-${b.key}`}
+            data-open={open ? "true" : "false"}
+          >
             <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="flex min-w-0 flex-1 items-start gap-2">
+                {collapsible && !compare ? (
+                  <button
+                    type="button"
+                    aria-expanded={open}
+                    aria-controls={`${id}-body`}
+                    aria-label={`${open ? "Свернуть" : "Раскрыть"} блок «${b.title}»`}
+                    onClick={() => setOpenKey(open ? null : b.key)}
+                    className="-ml-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-field sm:h-8 sm:w-8"
+                  >
+                    {open ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                  </button>
+                ) : null}
               <div className="min-w-0 flex-1">
-                <H id={id} className="text-title-sm font-semibold text-ink">
-                  {b.title}
-                </H>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <H id={id} className="text-title-sm font-semibold text-ink">
+                    {b.title}
+                  </H>
+                  {collapsible ? (
+                    <span className={cn("inline-flex h-6 items-center rounded-full px-2 text-caption font-semibold", state.cls)} data-testid="block-state">
+                      {state.label}
+                    </span>
+                  ) : null}
+                </div>
+                {collapsible && !open ? <p className="mt-0.5 truncate text-small text-text-secondary">{preview}</p> : null}
                 {b.hidden ? (
                   <p className="mt-0.5 text-caption text-muted" data-testid="block-hidden">
                     Скрыт: в отчёт не попадёт{b.note ? `. ${b.note}` : ""}
@@ -95,6 +154,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                     {live.edited}
                   </p>
                 ) : null}
+              </div>
               </div>
               {!readOnly && !fixedLayout ? (
                 <div className="flex flex-wrap items-center gap-1">
@@ -116,7 +176,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 </div>
               ) : null}
             </div>
-            {b.stale && !fixed && onRebuild && live ? (
+            {open && b.stale && !fixed && onRebuild && live ? (
               <div className="flex flex-col gap-2 rounded-lg bg-warning-soft px-3.5 py-2.5 text-small text-warning-ink sm:flex-row sm:items-center sm:justify-between" role="status" data-testid="block-stale">
                 <p>{live.stale}</p>
                 <Button type="button" size="sm" variant="secondary" className="shrink-0" onClick={() => onRebuild(b.key)}>
@@ -125,8 +185,8 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                 </Button>
               </div>
             ) : null}
-            {b.hidden ? null : (
-              <>
+            {b.hidden || !open ? null : (
+              <div id={`${id}-body`} className="flex flex-col gap-3">
                 {b.lines.length ? (
                   b.key === "products" ? (
                     <div className="flex flex-col gap-3">
@@ -151,7 +211,7 @@ export function BlocksEditor({ blocks, onChange, products, labels, order, idPref
                     </Button>
                   </div>
                 ) : null}
-              </>
+              </div>
             )}
             {compare ? (
               <div className="rounded-lg bg-field px-3.5 py-2.5" data-testid="block-previous">

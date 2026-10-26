@@ -114,8 +114,8 @@ export async function saveCeoBlocksIn(tx: Tx, actor: Actor, key: WeekKey, input:
   if (old && old.map((b) => b.key).join(",") !== blocks.map((b) => b.key).join(",")) changes.push(["порядок блоков", old.map((b) => b.title).join(", "), blocks.map((b) => b.title).join(", ")]);
   const meetingsBefore = before ? meetingsText(cleanMeetings(before.meetings)) : null;
   if ((meetingsBefore ?? "") !== meetingsText(list)) changes.push(["мои встречи недели", meetingsBefore, meetingsText(list)]);
-  for (const [part, b, a] of changes) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт CEO, ${part}`, b || null, a || null);
-  if (!changes.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт CEO сохранён без изменений", null, null);
+  for (const [part, b, a] of changes) await audit(tx, actor, "ceo.save", "ceo-report", key, `Отчёт руководителю, ${part}`, b || null, a || null);
+  if (!changes.length) await audit(tx, actor, "ceo.save", "ceo-report", key, "Отчёт руководителю сохранён без изменений", null, null);
   return { sections: legacy, blocks, meetings: list, updatedBy: actor.fullName, updatedAt: saved.updatedAt.toISOString() };
 }
 
@@ -162,7 +162,7 @@ export async function sendCeoReport(actor: Actor, key: WeekKey, input: SendCeoRe
   if (!personalLogin(actor)) fail("Отправить руководителю можно при личном входе: так получатель видит, кто отправил");
   const meta = await blocksMeta();
   const clean = cleanBlocks(input?.blocks, new Set(meta.order));
-  if (!hasBlocksText(clean)) fail("Weekly для CEO пустой: в видимых блоках нет ни одной строки");
+  if (!hasBlocksText(clean)) fail("Отчёт руководителю пустой: в видимых блоках нет ни одной строки");
   const recipients = await ceoRecipients();
   if (!recipients.length) fail("Не найден CEO: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»");
   // Свежая автосборка до транзакции: она читает много таблиц
@@ -171,8 +171,8 @@ export async function sendCeoReport(actor: Actor, key: WeekKey, input: SendCeoRe
     async (tx) => {
       const saved = await saveCeoBlocksIn(tx, actor, key, blocks, input.meetings, input.expected ?? null, meta);
       const week = await weekContext(tx, key);
-      const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил weekly для CEO за неделю ${week.info.number}`, now);
-      await audit(tx, actor, "ceo.send", "ceo-report", key, `Weekly для CEO, неделя ${week.info.number}`, null, `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}`);
+      const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил отчёт руководителю за неделю ${week.info.number}`, now);
+      await audit(tx, actor, "ceo.send", "ceo-report", key, `Отчёт руководителю, неделя ${week.info.number}`, null, `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}`);
     },
     { timeout: 30_000 },
   );

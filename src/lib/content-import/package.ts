@@ -446,7 +446,7 @@ function stringsOf(value: unknown, path = ""): [string, string][] {
   }
   return [];
 }
-const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь", initiative: "Инициатива", ceo: "Weekly для CEO" };
+const KIND_LABELS: Record<ExcludedRecord["kind"], string> = { task: "Задача", goal: "Цель", decision: "Решение", link: "Связь", initiative: "Инициатива", ceo: "Отчёт руководителю" };
 
 /**
  * Записи пакета с кадровыми сведениями в любой строке (кроме ФИО и названий команд). Запись подписывается без её текста:
@@ -771,11 +771,11 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
   const ceoKeys = new Set<string>();
   const ceoWeeks = new Set<string>();
   const ceoReports: PackageCeoReport[] = list(r0, "ceoReports", problems).map((raw, i) => {
-    const r = new Reader(`weekly для CEO ${i + 1}${typeof raw.key === "string" ? ` (${raw.key})` : ""}`);
-    const key = keyOf(raw, r, `weekly для CEO ${i + 1}`, ceoKeys, problems);
+    const r = new Reader(`отчёт руководителю ${i + 1}${typeof raw.key === "string" ? ` (${raw.key})` : ""}`);
+    const key = keyOf(raw, r, `отчёт руководителю ${i + 1}`, ceoKeys, problems);
     const week = r.date(raw, "week", "Неделя", true) ?? "";
-    if (week && new Date(`${week}T00:00:00Z`).getUTCDay() !== 1) r.problems.push(`weekly для CEO ${key}: неделя задаётся понедельником`);
-    if (week && ceoWeeks.has(week)) r.problems.push(`weekly для CEO ${key}: неделя ${week} уже есть в пакете`);
+    if (week && new Date(`${week}T00:00:00Z`).getUTCDay() !== 1) r.problems.push(`отчёт руководителю ${key}: неделя задаётся понедельником`);
+    if (week && ceoWeeks.has(week)) r.problems.push(`отчёт руководителю ${key}: неделя ${week} уже есть в пакете`);
     ceoWeeks.add(week);
     const blocksRaw = Array.isArray(raw.blocks) ? (raw.blocks as unknown[]).slice(0, 24) : [];
     const blocks = blocksRaw.flatMap((b) => {
@@ -788,12 +788,12 @@ export function parsePackage(text: string, bytes = Buffer.byteLength(text, "utf8
       });
       return [{ key: String((b as Raw).key).trim(), lines }];
     });
-    if (!blocks.some((b) => b.lines.length)) r.problems.push(`weekly для CEO ${key}: в отчёте нет ни одной строки`);
+    if (!blocks.some((b) => b.lines.length)) r.problems.push(`отчёт руководителю ${key}: в отчёте нет ни одной строки`);
     const blockKeys = blocks.map((b) => b.key);
     const twice = blockKeys.filter((k, j) => blockKeys.indexOf(k) !== j);
-    if (twice.length) r.problems.push(`weekly для CEO ${key}: блок ${[...new Set(twice)].join(", ")} повторяется`);
+    if (twice.length) r.problems.push(`отчёт руководителю ${key}: блок ${[...new Set(twice)].join(", ")} повторяется`);
     // Встреч в отчёте CEO не больше 12, как в форме
-    if (Array.isArray(raw.meetings) && raw.meetings.length > 12) r.problems.push(`weekly для CEO ${key}: встреч больше 12`);
+    if (Array.isArray(raw.meetings) && raw.meetings.length > 12) r.problems.push(`отчёт руководителю ${key}: встреч больше 12`);
     const meetingsRaw = Array.isArray(raw.meetings) ? (raw.meetings as unknown[]).slice(0, 12) : [];
     const meetings = meetingsRaw.flatMap((m) => {
       if (!m || typeof m !== "object" || Array.isArray(m)) return [];

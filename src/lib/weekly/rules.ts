@@ -7,13 +7,16 @@ import type { Viewer } from "@/lib/tasks/rules";
 export const WEEKLY_LIMITS = { headline: 150, what: 150, details: 1000, impact: 500, fact: 300, next: 500, help: 300, linkTitle: 120, url: 500 };
 
 /**
- * Кто правит weekly недели: свой weekly пишет каждый, кроме наблюдателя, пока неделя открыта
- * и не позже отчётной. Чужой weekly и закрытую неделю правят только владелец и администраторы
+ * Кто правит weekly недели: свой weekly пишет каждый, кроме наблюдателя, пока неделя открыта и не позже отчётной.
+ * В закрытой неделе свой weekly пишут, пока он не сдан (этап 73, сдача задним числом). Чужой weekly и сданный weekly
+ * закрытой недели правят только владелец и администраторы
  */
-export function canEditWeekly(week: Pick<WeekInfo, "key" | "closed">, reportingKey: WeekKey, viewer: Viewer, author: PersonSlug | null): boolean {
+export function canEditWeekly(week: Pick<WeekInfo, "key" | "closed" | "retroOpen">, reportingKey: WeekKey, viewer: Viewer, author: PersonSlug | null): boolean {
   if (viewer.observer) return false;
   if (viewer.management) return true;
-  if (week.closed || week.key > reportingKey) return false;
+  if (week.key > reportingKey) return false;
+  // Этап 73: свой несданный weekly закрытой недели можно дописать и сдать задним числом
+  if (week.closed && !week.retroOpen) return false;
   return author === viewer.slug;
 }
 

@@ -268,7 +268,7 @@ async function scopeEntries(key: WeekKey, scope: Scope): Promise<{ entries: Entr
   // Отчёт CEO: записи с отметкой «В отчёт CEO», как раньше. Отметок за неделю нет: все записи weekly команды
   const flagged = rows.filter((r) => r.ceo);
   if (flagged.length) return { entries: flagged.map(toEntryInput), hint: null };
-  return { entries: rows.map(toEntryInput), hint: rows.length ? "Отметок «В отчёт CEO» за неделю нет: в блоки взяты все записи weekly команды" : null };
+  return { entries: rows.map(toEntryInput), hint: rows.length ? "Отметок «В отчёт руководителю» за неделю нет: в блоки взяты все записи weekly команды" : null };
 }
 
 const taskSelect = {

@@ -286,7 +286,8 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       {meeting.status === "done" ? (
         <Protocol meeting={meeting} />
       ) : (
-        <div className={cn("flex flex-col gap-6", projector ? "" : "lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8")}>
+        // Этап 73: снизу отступ на высоту панели «Назад, Дальше», чтобы она не закрывала конец текста пункта
+        <div className={cn("flex flex-col gap-6 lg:pb-20", projector ? "" : "lg:grid lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-8")}>
           {!projector ? (
             <>
               {/* На телефоне повестка свёрнута, сначала текущий пункт */}
@@ -412,7 +413,14 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
   };
   const ownerName = (owner: string) => (owner === "" ? "Без ответственного" : owner === "all" ? "Все лидеры" : compactName(owner as PersonSlug));
   return (
-    <nav aria-label="Повестка" className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
+    // Этап 73: липкая повестка не выше окна под шапкой, плашкой «Смотреть как» (--view-as-h) и панелью «Назад, Дальше»,
+    // длинная повестка прокручивается внутри колонки, колесо у края прокручивает страницу дальше. Поля p-1 при -m-1
+    // оставляют место рамке фокуса у краёв прокрутки
+    <nav
+      aria-label="Повестка"
+      className="flex flex-col gap-4 lg:sticky lg:top-[calc(6rem+var(--view-as-h,0px))] lg:-m-1 lg:max-h-[calc(100dvh-6rem-5rem-var(--view-as-h,0px))] lg:self-start lg:overflow-y-auto lg:overflow-x-hidden lg:scroll-py-2 lg:p-1"
+      data-testid="meeting-agenda"
+    >
       {/* На телефоне та же строка уже в заголовке свёрнутой повестки */}
       {summary ? (
         <p className="text-caption text-muted">

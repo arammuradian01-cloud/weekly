@@ -152,7 +152,7 @@ describe("какие экраны обновлять", () => {
     expect(relevant("weekly", "/weekly/entry/abc")).toBe(true);
     expect(relevant("weekly", "/weekly/submit")).toBe(false);
     // Отчёт команды по блокам (этап 66) не пересобирается на каждую правку weekly
-    expect(relevant("weekly", "/weekly/team-report?team=x")).toBe(false);
+    expect(relevant("weekly", "/leader-report?team=x")).toBe(false);
     expect(relevant("weekly", "/weekly")).toBe(true);
     expect(relevant("inbox", "/me")).toBe(true);
     expect(relevant("inbox", "/tasks")).toBe(false);

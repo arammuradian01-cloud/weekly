@@ -37,8 +37,8 @@ export type NavItem = {
   label: string;
   icon: LucideIcon;
   ownerOnly?: boolean;
-  /** Раздел открыт не всем (этап 62): пункт видят только те, кому он открыт */
-  restricted?: "market";
+  /** Раздел открыт не всем (этап 62): пункт видят только те, кому он открыт. Отчёт руководителю (этап 73): руководители, владельцы, получатели */
+  restricted?: "market" | "leaderReport";
   /** Подпись в нижнем меню телефона, если полная не влезает */
   shortLabel?: string;
 };
@@ -60,6 +60,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Команда",
     items: [
       { href: "/weekly", label: "Weekly", icon: Newspaper },
+      // Отчёт руководителю (этап 73, вместо отчёта CEO): руководители команд, владельцы и те, кому отчёты отправляют
+      { href: "/leader-report", label: "Отчёт руководителю", icon: Mail, restricted: "leaderReport" },
       { href: "/tasks", label: "Задачи", icon: SquareCheck },
       // Roadmap (этап 56): задачи по направлениям и месяцам, важные со звёздочками
       { href: "/roadmap", label: "Roadmap", icon: MapIcon },
@@ -86,15 +88,14 @@ export const NAV_GROUPS: NavGroup[] = [
 export const MAIN_NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /** Что открыто человеку из закрытых разделов */
-export type NavAccess = { market: boolean };
+export type NavAccess = { market: boolean; leaderReport?: boolean };
 
 /** Группы меню без закрытых разделов, которые человеку не открыты */
 export function visibleGroups(access: NavAccess): NavGroup[] {
-  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.restricted || access[i.restricted]) })).filter((g) => g.items.length);
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.restricted || !!access[i.restricted]) })).filter((g) => g.items.length);
 }
 
 export const MANAGEMENT_NAV: NavItem[] = [
-  { href: "/ceo-report", label: "Отчёт CEO", icon: Mail },
   { href: "/journal", label: "Журнал", icon: ScrollText },
   { href: "/sync", label: "Синхронизация", icon: RefreshCw, ownerOnly: true },
   { href: "/settings", label: "Настройки", icon: Settings },

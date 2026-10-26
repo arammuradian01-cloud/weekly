@@ -52,7 +52,7 @@ export function Highlight({ text, className }: { text: string; className?: strin
 const DEBOUNCE_MS = 180;
 
 /** canViewAs: владелец может открыть «Смотреть как…», viewing: идёт просмотр, есть «Выйти из просмотра» (этап 63) */
-export function CommandPalette({ management, market = false, canViewAs = false, viewing = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean }) {
+export function CommandPalette({ management, market = false, canViewAs = false, viewing = false, leaderReport = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean; leaderReport?: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const { observer } = usePrototype();
@@ -162,12 +162,13 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
     if (market) list.push({ id: "go:/market", label: "Открыть: Рынок КАСКО и ОСАГО", icon: TrendingUp, keywords: "рынок каско осаго нсис доля страховые регионы", run: () => go("/market") });
     if (canViewAs) list.push({ id: "view-as", label: "Смотреть как…", icon: Eye, keywords: "смотреть как просмотр глазами человека профиль чужой права проверить", run: () => { setOpen(false); openViewAs(); } });
     if (viewing) list.push({ id: "view-as-stop", label: "Выйти из просмотра", icon: EyeOff, keywords: "смотреть как просмотр выйти вернуться к себе", run: () => { setOpen(false); startTransition(() => stopViewAsAction()); } });
+    // Отчёт руководителю (этап 73, бывший отчёт CEO): руководителям команд, владельцам и получателям отчётов
+    if (leaderReport) list.push({ id: "go:/leader-report", label: "Открыть: Отчёт руководителю", icon: FileText, keywords: "отчёт руководителю ceo сео weekly для руководителя отправленные полученные комментарии", run: () => go("/leader-report") });
     if (management) {
-      list.push({ id: "go:/ceo-report", label: "Открыть: Отчёт CEO", icon: FileText, keywords: "отчёт ceo", run: () => go("/ceo-report") });
       list.push({ id: "go:/journal", label: "Открыть: Журнал", icon: FileText, keywords: "журнал аудит история", run: () => go("/journal") });
     }
     return list;
-  }, [observer, management, market, canViewAs, viewing, go]);
+  }, [observer, management, market, canViewAs, viewing, leaderReport, go]);
 
   const query = q.trim().toLowerCase();
   const shownCommands = useMemo(() => {

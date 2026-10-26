@@ -849,6 +849,9 @@ model WeeklyReport {
   hiddenFacts    String[]    @default([])
   state          WeeklyState @default(DRAFT)
   submittedAt    DateTime?   @db.Timestamptz(3)
+  /// Сдан задним числом (этап 73): за неделю раньше отчётной на момент сдачи. Закрытые итоги недели и отправленный
+  /// отчёт руководителю от такой сдачи не пересчитываются
+  retro          Boolean     @default(false)
   createdAt      DateTime    @default(now()) @db.Timestamptz(3)
   updatedAt      DateTime    @updatedAt @db.Timestamptz(3)
 

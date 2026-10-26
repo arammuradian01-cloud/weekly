@@ -61,7 +61,7 @@ export async function canLeadTeamReport(actor: Actor, teamId: string): Promise<b
   }
 }
 
-const TOP_TEXT = "Weekly команды страхования и инвестиций это отчёт CEO: он уже по смысловым блокам, его собирают на странице «Отчёт CEO»";
+const TOP_TEXT = "Weekly команды страхования и инвестиций это отчёт руководителю: он уже по смысловым блокам, его собирают на странице «Отчёт руководителю»";
 
 function requireLead(a: Access, what: string) {
   if (a.node.id === TOP_TEAM) fail(TOP_TEXT);

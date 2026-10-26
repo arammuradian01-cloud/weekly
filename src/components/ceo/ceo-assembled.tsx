@@ -8,7 +8,7 @@
 import type { CeoContext } from "@/lib/ceo/assembled";
 import type { CeoSections } from "@/lib/weekly/rules";
 import type { CeoMeeting } from "@/lib/ceo/text";
-import type { Labels, ReportBlock } from "@/lib/weekly-blocks/types";
+import type { BlockLine, Labels, ReportBlock } from "@/lib/weekly-blocks/types";
 import { WeekNumbersBlock } from "@/components/forecast/week-numbers";
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
 import { BlocksView } from "@/components/weekly-blocks/blocks-view";
@@ -39,6 +39,7 @@ export function CeoAssembled({
   meetings,
   idPrefix = "ceo",
   className,
+  lineAside,
 }: {
   ctx: CeoLive;
   sections?: CeoSections | null;
@@ -49,6 +50,8 @@ export function CeoAssembled({
   meetings: CeoMeeting[];
   idPrefix?: string;
   className?: string;
+  /** Комментарии руководителя под строками блоков (этап 73) */
+  lineAside?: (blockKey: string, line: BlockLine, index: number) => React.ReactNode;
 }) {
   const id = (s: string) => `${idPrefix}-${s}`;
   const live = (
@@ -97,7 +100,7 @@ export function CeoAssembled({
   if (blocks) {
     return (
       <div className={cn("flex min-w-0 flex-col gap-5", className)} data-testid={`${idPrefix}-assembled`}>
-        <BlocksView blocks={blocks} labels={labels} order={order} idPrefix={idPrefix} />
+        <BlocksView blocks={blocks} labels={labels} order={order} idPrefix={idPrefix} lineAside={lineAside} />
         {live}
         {tail}
       </div>

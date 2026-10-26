@@ -52,7 +52,7 @@ export function NotionParseBar({ team, week, canLead, notionUrl, parses }: { tea
   return (
     <section aria-label="Разбор встречи из Notion" className="mb-4 flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-center sm:justify-between" data-testid="notion-parse-bar">
       <div className="min-w-0">
-        <p className="text-body text-ink">Итоги встречи из Notion: ресурс прочитает страницу встречи, покажет итоги, черновик weekly для CEO и задачи на проверку.</p>
+        <p className="text-body text-ink">Итоги встречи из Notion: ресурс прочитает страницу встречи, покажет итоги, черновик отчёта руководителю и задачи на проверку.</p>
         {parses.length ? (
           <ul className="mt-1 flex flex-col gap-0.5 text-small">
             {parses.map((p) => (
@@ -77,7 +77,7 @@ export function NotionParseBar({ team, week, canLead, notionUrl, parses }: { tea
         open={open}
         onOpenChange={setOpen}
         title="Разобрать встречу из Notion"
-        description={`Встреча ${team.name}. Ресурс прочитает страницу, покажет итоги встречи, черновик weekly для CEO и черновики задач. Ничего не отправится и не создастся без вашей проверки.`}
+        description={`Встреча ${team.name}. Ресурс прочитает страницу, покажет итоги встречи, черновик отчёта руководителю и черновики задач. Ничего не отправится и не создастся без вашей проверки.`}
       >
         <form onSubmit={start} className="flex flex-col gap-4">
           <TextInput

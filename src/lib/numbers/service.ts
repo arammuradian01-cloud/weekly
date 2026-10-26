@@ -283,7 +283,7 @@ const UNITS: Unit[] = ["count", "mln", "pct"];
 export async function setMetrics(actor: Actor, list: Metric[]): Promise<Metric[]> {
   requireOwner(actor);
   if (!Array.isArray(list)) fail("Список метрик не разобран");
-  if (list.length > METRICS_MAX) fail(`Не больше ${METRICS_MAX} цифр недели: отчёт CEO должен читаться`);
+  if (list.length > METRICS_MAX) fail(`Не больше ${METRICS_MAX} цифр недели: отчёт руководителю должен читаться`);
   const keys = new Set<string>();
   const clean: Metric[] = [];
   for (const m of list) {

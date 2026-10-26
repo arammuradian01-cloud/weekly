@@ -22,7 +22,7 @@ export function parseLive(payload: string | undefined): LiveMessage | null {
  * источники» и после своего сохранения
  */
 export function relevant(kind: "inbox" | "tasks" | "weekly" | "meeting", path: string): boolean {
-  if (path.startsWith("/weekly/submit") || path.startsWith("/weekly/team-report")) return false;
+  if (path.startsWith("/weekly/submit") || path.startsWith("/leader-report")) return false;
   const home = path === "/";
   if (kind === "inbox") return home || path.startsWith("/me");
   // Встреча 2.0 (этап 23): экраны участников идут за ведущим, журнал решений обновляется

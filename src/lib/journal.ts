@@ -150,7 +150,13 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       const what = (id && whatOf.get(id)) ?? (typeof before === "string" ? before : null);
       return what ? `Запись weekly «${short(what)}»` : "Запись weekly";
     }
-    if (entity === "ceo-report" && id) return `Отчёт CEO, неделя ${weekNumberOf(id)}`;
+    if (entity === "ceo-report" && id) return `Отчёт руководителю, неделя ${weekNumberOf(id)}`;
+    // Этап 73: комментарий к отчёту руководителю (команда/неделя) и напоминание сдать weekly (неделя/команда)
+    if (entity === "leader-report" && id) {
+      const [team, week] = id.split("/");
+      return `Отчёт руководителю, ${team === "top" ? "команда страхования и инвестиций" : `команда ${team}`}, неделя ${week ? weekNumberOf(week) : ""}`;
+    }
+    if (entity === "weekly-remind" && id) return `Напоминание сдать weekly, неделя ${weekNumberOf(id.split("/")[0] ?? id)}`;
     if (entity === "meeting") return "Встреча";
     if (entity === "dict" && id) {
       const [kind, code] = id.split("/");

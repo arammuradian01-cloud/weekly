@@ -107,7 +107,7 @@ function checkKind(kind: string): EditableDictKind {
 export async function addDictItem(actor: Actor, kindInput: string, labelInput: string) {
   requireDictionaries(actor);
   const kind = checkKind(kindInput);
-  if (kind === "ENTRY_TYPE") fail("Новые типы записей не добавляются: на них держатся разделы отчёта CEO. Тип можно переименовать или скрыть");
+  if (kind === "ENTRY_TYPE") fail("Новые типы записей не добавляются: на них держатся разделы отчёта руководителю. Тип можно переименовать или скрыть");
   const label = text(labelInput, LIMITS.label, "Напишите название", "Название");
   return prisma.$transaction(async (tx) => {
     const items = await tx.dictionaryItem.findMany({ where: { kind } });

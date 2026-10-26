@@ -147,6 +147,11 @@ export type WeekInfo = {
   deadline: string;
   meetingDate: IsoDate;
   closed: boolean;
+  /**
+   * Неделя закрыта, но свой weekly ещё не сдан (этап 73): его можно дописать и сдать задним числом. Закрытые итоги недели
+   * и отправленный отчёт руководителю от этого не пересчитываются
+   */
+  retroOpen?: boolean;
   /** Отчётная неделя: за неё сейчас пишут weekly */
   reporting: boolean;
 };
@@ -192,6 +197,8 @@ export type PersonWeekly = {
   state: WeeklyStateCode;
   /** Когда сдан, момент в ISO */
   submittedAt?: string;
+  /** Сдан задним числом (этап 73): за неделю раньше отчётной на момент сдачи */
+  retro?: true;
   /** Нет на этой неделе (этап 9): weekly не ждём, в счёт «сдали N из M» человек не входит */
   absent?: { substitute: PersonSlug | null };
   /** Свой срок, если он раньше срока недели: команда сдаёт раньше департамента (этап 15). Момент в ISO */

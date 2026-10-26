@@ -313,7 +313,7 @@ export async function runParse(id: string, deps: ParseDeps = {}): Promise<void> 
         recipients: [starter?.id, row.meeting.team.leaderId],
         actor: { personId: SYSTEM_ACTOR_ID, fullName: "Ресурс" },
         subject: `meeting-parse:${id}`,
-        text: ok ? `Встреча «${row.meeting.team.name}» разобрана: проверьте итоги, weekly для CEO и задачи` : `Встречу «${row.meeting.team.name}» не разобрали: ${after.slice(0, 160)}`,
+        text: ok ? `Встреча «${row.meeting.team.name}» разобрана: проверьте итоги, отчёт руководителю и задачи` : `Встречу «${row.meeting.team.name}» не разобрали: ${after.slice(0, 160)}`,
       });
     });
   };
@@ -517,9 +517,9 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
   const sendHint = !rights.canLead
     ? null
     : !personal(actor)
-      ? "Отправить CEO можно при личном входе: так CEO видит, кто отправил"
+      ? "Отправить руководителю можно при личном входе: так CEO видит, кто отправил"
       : !canSend(actor)
-        ? "Отправить CEO может владелец или администратор в режиме управления: отчёт CEO за неделю у департамента один"
+        ? "Отправить руководителю может владелец или администратор в режиме управления: отчёт руководителю за неделю у департамента один"
         : null;
   const tasksHint = !rights.canLead ? null : !personal(actor) ? "Создать задачи можно при личном входе: так ответственные видят, кто их поставил" : null;
   const key = keyOf(row);
@@ -701,7 +701,7 @@ export async function saveParseDraft(actor: Actor, id: string, patch: DraftPatch
     if (expected && fresh.updatedAt.toISOString() !== expected) fail("Разбор уже поправили с другого устройства или другой человек. Обновите страницу, чтобы не затереть чужие правки");
     await tx.meetingParse.update({ where: { id: row.id }, data: { result: { ...current, ceo, tasks, decisions } as unknown as Prisma.InputJsonValue } });
     const parts = [
-      ceoAllowed ? "weekly для CEO" : null,
+      ceoAllowed ? "отчёт руководителю" : null,
       patch.tasks !== undefined ? `задачи (${tasks.filter((t) => t.on).length} из ${tasks.length})` : null,
       patch.decisions !== undefined ? `решения (${decisions.filter((d) => d.on).length} из ${decisions.length})` : null,
     ]
@@ -739,13 +739,13 @@ const filledLegacy = (r: { main: string; risks: string; next: string } | null) =
 export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInput, now = new Date()): Promise<ParseView> {
   const row = await loadRow(String(id));
   const rights = await meetingRights(actor, row.meetingId);
-  if (!rights.canLead) fail("Отправить CEO может тот, кто ведёт встречу");
-  if (!personal(actor)) fail("Отправить CEO можно при личном входе: так CEO видит, кто отправил");
-  if (!canSend(actor)) fail("Отправить CEO может владелец или администратор в режиме управления");
+  if (!rights.canLead) fail("Отправить руководителю может тот, кто ведёт встречу");
+  if (!personal(actor)) fail("Отправить руководителю можно при личном входе: так CEO видит, кто отправил");
+  if (!canSend(actor)) fail("Отправить руководителю может владелец или администратор в режиме управления");
   if (row.status !== "READY") fail("Разбор ещё не готов");
   const meta = await blocksMeta();
   const draft = cleanCeo(input?.ceo, meta);
-  if (!hasBlocksText(draft)) fail("Weekly для CEO пустой: напишите хотя бы одну строку");
+  if (!hasBlocksText(draft)) fail("Отчёт руководителю пустой: напишите хотя бы одну строку");
   const recipients = await ceoRecipients();
   if (!recipients.length) fail("Не найден CEO: назначьте руководителя компании в «Структуре» или включите профиль CEO в «Людях»");
   const key = keyOf(row);
@@ -762,15 +762,15 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
       const before = week ? await tx.ceoReport.findUnique({ where: { weekId: week.id } }) : null;
       const savedBlocks = Array.isArray(before?.blocks) ? cleanBlocks(before!.blocks, null) : null;
       const filled = savedBlocks ? hasBlocksText(savedBlocks) : filledLegacy(before);
-      if (filled && (input.expected ?? null) !== before!.updatedAt.toISOString()) fail("Отчёт CEO за эту неделю поменялся, пока вы смотрели разбор. Обновите страницу и проверьте, что будет дописано или заменено");
-      if (filled && input.mode !== "merge" && input.mode !== "replace") fail("За неделю уже есть отчёт CEO: выберите, дописать черновик по блокам или заменить блоки черновика");
+      if (filled && (input.expected ?? null) !== before!.updatedAt.toISOString()) fail("Отчёт руководителю за эту неделю поменялся, пока вы смотрели разбор. Обновите страницу и проверьте, что будет дописано или заменено");
+      if (filled && input.mode !== "merge" && input.mode !== "replace") fail("За неделю уже есть отчёт руководителю: выберите, дописать черновик по блокам или заменить блоки черновика");
       const mode: MergeMode = filled ? input.mode! : "merge";
       const base = savedBlocks ?? (before && filledLegacy(before) ? fromLegacy({ main: before.main, risks: before.risks, next: before.next }, auto.blocks, meta.products) : auto.blocks);
       // Цифры недели и месяца, которые не правили руками, уходят свежими
       const final = withLiveBlocks(mergeBlocks(base, draft, mode), auto.blocks);
       // Проверку «отчёт не поменялся» сделали выше: сохранение без своей сверки, встречи недели остаются
       const saved = await saveCeoBlocksIn(tx, actor, key, final, undefined, undefined, meta);
-      const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил weekly для CEO за неделю ${row.meeting.week.isoNumber} по итогам встречи «${rights.teamName}»`, now);
+      const to = await markCeoSentIn(tx, actor, key, saved, recipients, `${actor.fullName} отправил отчёт руководителю за неделю ${row.meeting.week.isoNumber} по итогам встречи «${rights.teamName}»`, now);
       const result = resultOf(row.result);
       await tx.meetingParse.update({ where: { id: row.id }, data: { ceoSentAt: now, ceoSentById: actor.personId, result: { ...result, ceo: draft } as unknown as Prisma.InputJsonValue } });
       await audit(
@@ -778,7 +778,7 @@ export async function sendParseToCeo(actor: Actor, id: string, input: SendCeoInp
         actor,
         "meeting.parse.ceo",
         row.meetingId,
-        `Weekly для CEO, неделя ${row.meeting.week.isoNumber}`,
+        `Отчёт руководителю, неделя ${row.meeting.week.isoNumber}`,
         `Отправлен в приложении: ${to.map((t) => t.name).join(", ")}. ${!filled ? "Новый отчёт" : mode === "merge" ? "Дописан к отчёту недели" : "Заменил блоки отчёта недели"}`,
       );
     },

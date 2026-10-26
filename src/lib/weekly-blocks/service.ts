@@ -26,7 +26,7 @@ export async function saveCompetitors(actor: Actor, input: unknown): Promise<Com
     await tx.setting.upsert({ where: { key: COMPETITORS_KEY }, update: { value }, create: { key: COMPETITORS_KEY, value } });
     if (listText(before) !== listText(list)) {
       await tx.auditLog.create({
-        data: { action: "ceo.competitors", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: COMPETITORS_KEY, field: "Конкуренты в отчёте CEO", before: listText(before) || undefined, after: listText(list) || undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "ceo.competitors", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: COMPETITORS_KEY, field: "Конкуренты в отчёте руководителю", before: listText(before) || undefined, after: listText(list) || undefined, ip: actor.ip ?? null, via: actor.via ?? null },
       });
     }
   });

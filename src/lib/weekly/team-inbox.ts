@@ -1,4 +1,7 @@
 // Этап 73а: входящие weekly глазами получателя. Чтение использует прежнюю модель команд и отправленные снимки.
+// Этап 73 (решение Арама 26.10): это вкладка «Полученные» раздела «Отчёт руководителю», а не вкладка в Weekly.
+// Команды читаются один раз на запрос, строки недель на чтении не создаются.
+import { cache } from "react";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { loadTeamNodes, scopeOf, type TeamNode } from "@/lib/org/scope";
@@ -11,10 +14,13 @@ import { TOP_TEAM } from "@/domain/teams";
 
 const sentTo = (id: string) => ({ array_contains: [{ id }] });
 
+/** Команды один раз на запрос страницы */
+const nodesOnce = cache(() => loadTeamNodes(prisma));
+
 /** Общий вход не удостоверяет получателя: даже режим управления не открывает его личные входящие. */
 export async function teamInboxScope(actor: Actor) {
   if (actor.via === "TEAM") return { allowed: false, teams: [] as TeamNode[] };
-  const nodes = await loadTeamNodes(prisma);
+  const nodes = await nodesOnce();
   const scope = scopeOf(nodes, { id: actor.personId, role: actor.role });
   const teams = nodes.filter((n) => n.active && (n.leaderId === actor.personId || scope.leads.includes(n.id)));
   if (teams.length || await isCeo(actor.personId)) return { allowed: true, teams };
@@ -28,12 +34,15 @@ export async function teamInboxScope(actor: Actor) {
 
 /** Кто читает личный weekly: руководители команд, в чью ленту он попадает по действующим правилам. */
 export async function weeklyReaders(personId: string) {
-  const nodes = await loadTeamNodes(prisma);
+  const nodes = await nodesOnce();
   const expected = expectingTeams(personId, nodes);
   const teams = nodes.filter((n) => n.active && (expected.some((t) => t.id === n.id) || n.members.includes(personId)) && n.leaderId !== personId);
   const ids = [...new Set(teams.flatMap((t) => t.leaderId ? [t.leaderId] : []))];
-  const people = await prisma.person.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, fullName: true } });
-  return teams.map((t) => ({ team: t.name, leader: people.find((p) => p.id === t.leaderId)?.fullName ?? null }));
+  const people = await prisma.person.findMany({ where: { id: { in: ids } }, select: { id: true, fullName: true, active: true } });
+  return teams.map((t) => {
+    const p = people.find((x) => x.id === t.leaderId);
+    return { team: t.name, leader: p?.fullName ?? null, ...(p && !p.active ? { inactive: true } : {}) };
+  });
 }
 
 export async function teamInboxView(actor: Actor, wantedWeek?: string, wantedTeam?: string) {
@@ -52,11 +61,13 @@ export async function teamInboxView(actor: Actor, wantedWeek?: string, wantedTea
       orderBy: { sentAt: "desc" },
     }),
     ceoSentReports(actor, key, { exact: true }),
-    loadTeamNodes(prisma),
+    nodesOnce(),
   ]);
   const senders = await prisma.person.findMany({ where: { id: { in: received.flatMap((r) => r.sentById ? [r.sentById] : []) } }, select: { id: true, fullName: true } });
   const memberIds = team ? [...new Set(team.id === TOP_TEAM ? [...team.members, ...(team.leaderId ? [team.leaderId] : [])] : team.members.filter((id) => id !== team.leaderId))] : [];
-  const feed = team ? await getWeekView(key, new Date(), { personIds: expectedOf(team, leadersOf(nodes)), authorIds: memberIds, teamIds: [team.id], shared: false, includeInactiveSubmitted: true }) : null;
+  // Строку недели на чтении не создаём: недели нет, значит, и сданных weekly за неё нет
+  const weekRow = team ? await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true } }) : null;
+  const feed = team && weekRow ? await getWeekView(key, new Date(), { personIds: expectedOf(team, leadersOf(nodes)), authorIds: memberIds, teamIds: [team.id], shared: false, includeInactiveSubmitted: true }) : null;
   const names = await prisma.person.findMany({ where: { id: { in: memberIds } }, select: { slug: true, fullName: true, active: true } });
   const reports = feed?.reports.map((r) => {
     const submitted = r.state === "submitted" || r.state === "late";

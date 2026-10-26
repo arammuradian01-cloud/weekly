@@ -27,7 +27,7 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
             <dt className="text-muted">Профиль</dt>
             <dd className="m-0 text-ink">{ctx.person.fullName}</dd>
             <dt className="text-muted">Открывает</dt>
-            <dd className="m-0 text-ink">Отчёт CEO, журнал, настройки</dd>
+            <dd className="m-0 text-ink">Журнал, настройки, отчёты руководителю всех команд</dd>
             <dt className="text-muted">Действует</dt>
             <dd className="m-0 text-ink">12 часов</dd>
           </dl>

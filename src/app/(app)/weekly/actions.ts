@@ -8,6 +8,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import * as svc from "@/lib/weekly/service";
 import { carryPromise, dropWeekSnapshot, reopenWeekly, reviewPromise, takeWeekSnapshot } from "@/lib/weekly/promise-service";
 import { addFact, hideFact } from "@/lib/weekly/facts-service";
+import { remindNotSubmitted } from "@/lib/weekly/remind";
 import type { EntryPromise } from "@/lib/weekly/promises";
 import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
@@ -160,4 +161,9 @@ export async function unpromoteEntryAction(id: string, by?: PersonSlug): Promise
 
 export async function setTeamWeekClosedAction(team: string, week: WeekKey, closed: boolean): Promise<Result<{ closed: boolean }>> {
   return run((a) => svc.setTeamWeekClosed(a, String(team), week, closed));
+}
+
+/** «Напомнить не сдавшим» (этап 73): команда из ленты; null: все команды (режим управления) */
+export async function remindNotSubmittedAction(teamId: string | null, week: WeekKey): Promise<Result<{ sent: number; skipped: number }>> {
+  return run((a) => remindNotSubmitted(a, teamId ? String(teamId) : null, week));
 }

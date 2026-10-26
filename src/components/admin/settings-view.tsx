@@ -249,7 +249,7 @@ export function SettingsView({
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Выгрузить всё в Excel
               </a>
-              <p className="mt-3 text-small text-muted">Один файл: задачи с переносами и комментариями, weekly, недели, отчёты CEO, люди, справочники и журнал. Выгрузка попадает в журнал.</p>
+              <p className="mt-3 text-small text-muted">Один файл: задачи с переносами и комментариями, weekly, недели, отчёты руководителю, люди, справочники и журнал. Выгрузка попадает в журнал.</p>
             </Section>
           </Group>
         </>
@@ -381,7 +381,7 @@ function DictList({ kind, items }: { kind: EditableDictKind; items: DictItemView
         ))}
       </ul>
       {kind === "ENTRY_TYPE" ? (
-        <p className="mt-2 text-caption text-muted">Новые типы не добавляются: на них держатся разделы отчёта CEO. Тип можно переименовать или скрыть.</p>
+        <p className="mt-2 text-caption text-muted">Новые типы не добавляются: на них держатся разделы отчёта руководителю. Тип можно переименовать или скрыть.</p>
       ) : (
         <form
           className="mt-2 flex gap-2"
@@ -979,7 +979,7 @@ function ReloadSection() {
           <div className="flex flex-col gap-3 rounded-lg border border-line px-4 py-3 text-small text-ink">
             <p>
               <span className="font-semibold">Проверка прошла.</span> Будет удалено: задач {plan.now.tasks}, комментариев к ним {plan.now.comments}, записей weekly{" "}
-              {plan.now.entries}, сданных и начатых weekly {plan.now.reports}, черновиков отчёта CEO {plan.now.ceo}. Будет загружено: задач {plan.rows.tasks}, строк weekly{" "}
+              {plan.now.entries}, сданных и начатых weekly {plan.now.reports}, черновиков отчёта руководителю {plan.now.ceo}. Будет загружено: задач {plan.rows.tasks}, строк weekly{" "}
               {plan.rows.weekly}.
             </p>
             <p className="text-muted">Люди, справочники, настройки и журнал останутся. Вернуть удалённое можно только из ночной копии базы.</p>

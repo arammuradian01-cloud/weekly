@@ -186,7 +186,7 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
       { header: "Что делаем дальше", width: 40 },
       { header: "Нужна помощь", width: 30 },
       { header: "Ссылки", width: 40 },
-      { header: "В отчёт CEO", width: 10 },
+      { header: "В отчёт руководителю", width: 10 },
       { header: "Задача", width: 8 },
       { header: "Итог обещания", width: 40 },
       { header: "Перенесено из прошлой недели", width: 12 },
@@ -242,7 +242,7 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
 
   sheet(
     wb,
-    "Отчёты CEO",
+    "Отчёты руководителю",
     [
       { header: "Неделя", width: 8 },
       { header: "Главное за неделю", width: 80 },

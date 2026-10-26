@@ -24,21 +24,21 @@ function requireExpected(expected: unknown): asserts expected is string | null {
 }
 
 export async function saveCeoBlocksAction(week: WeekKey, blocks: unknown, meetings: unknown, expected: string | null): Promise<Result<CeoReportView>> {
-  return runAction("Отчёт CEO по блокам", (a) => {
+  return runAction("Отчёт руководителю по блокам", (a) => {
     requireExpected(expected);
     return ceo.saveCeoBlocks(a, week, blocks, meetings, expected);
   });
 }
 
 export async function sendCeoReportAction(week: WeekKey, blocks: unknown, meetings: unknown, expected: string | null): Promise<Result<CeoReportView>> {
-  return runAction("Отправка weekly CEO", (a) => {
+  return runAction("Отправка отчёта руководителю", (a) => {
     requireExpected(expected);
     return ceo.sendCeoReport(a, week, { blocks, meetings, expected });
   });
 }
 
 export async function saveCompetitorsAction(list: unknown): Promise<Result<Competitor[]>> {
-  return runAction("Конкуренты в отчёте CEO", (a) => saveCompetitors(a, list));
+  return runAction("Конкуренты в отчёте руководителю", (a) => saveCompetitors(a, list));
 }
 
 // ---------- Weekly команды по блокам ----------
