@@ -1,5 +1,5 @@
 // [Codex] Независимые пароли управления владельцев, без секретов в политике и журнале.
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/db";
 import { setSetting } from "@/lib/settings";
@@ -116,6 +116,30 @@ describe("персональный пароль управления", () => {
     expect(log).toMatchObject({ before: "shared", after: "personal", source: "SYSTEM" });
     expect(JSON.stringify({ ...log, id: String(log.id) })).not.toContain(personalHash);
     expect(JSON.stringify(policy)).not.toContain(personalHash);
+  });
+
+  it("повреждённая настройка: ошибки 500 нет, управления нет, ошибка в журнале сервера; команда восстанавливает", async () => {
+    const key = `auth.management.person.${prefix}b`;
+    await setSetting(key, { mode: "что-то другое" });
+    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      expect(await managementPasswordPolicy(await who())).toMatchObject({ mode: "personal", broken: true });
+      // Ни прежняя cookie, ни выданная по общему паролю управление не дают, но и не падают
+      expect(await managementPasswordCurrent(grant(), await who(), true)).toBe(false);
+      expect(await managementPasswordCurrent(grant("shared/default/"), await who(), true)).toBe(false);
+      await expect(checkManagementPassword(actor("b"), prefix + "device-b", shared, now)).rejects.toThrow(/повреждена/);
+      await expect(checkManagementPassword(actor("b"), prefix + "device-b", personal, now)).rejects.toThrow(/повреждена/);
+      expect(logged).toHaveBeenCalled();
+      // Другой владелец не задет
+      await expect(checkManagementPassword(actor("a"), prefix + "device-a", shared, now)).resolves.toBe("shared/default/");
+      // Команда оператора перезаписывает повреждённую настройку, даже если режим тот же
+      expect((await setManagementPasswordMode(prefix + "b", "personal")).changed).toBe(true);
+      const fixed = await managementPasswordPolicy(await who());
+      expect(fixed.broken).toBeUndefined();
+      expect(fixed.mode).toBe("personal");
+    } finally {
+      logged.mockRestore();
+    }
   });
 
   it("старая ссылка администратора после назначения владельцем не открывает управление", async () => {
