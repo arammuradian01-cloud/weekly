@@ -204,7 +204,7 @@ export function TeamReportScreen({ view, template }: { view: TeamReportView; tem
           </Button>
         </div>
       </Modal>
-      <Modal open={confirm === "send"} onOpenChange={(o) => !o && setConfirm(null)} title="Отправить weekly команды?" description={`Получит: ${view.recipients.join(", ")}. Отчёт сохранится и уйдёт в приложении: событие в «Мне» и отчёт по ссылке из него.`}>
+      <Modal open={confirm === "send"} onOpenChange={(o) => !o && setConfirm(null)} title="Отправить weekly команды?" description={`Получит: ${view.recipients.join(", ")}. Отчёт сохранится и уйдёт в приложении: событие на «Моей неделе» и отчёт по ссылке из него.`}>
         <FormError message={error ?? undefined} />
         <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => setConfirm(null)}>

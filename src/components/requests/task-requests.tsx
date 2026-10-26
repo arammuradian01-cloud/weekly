@@ -44,7 +44,7 @@ export function TaskRequests({ task, headingLevel = "h3" }: { task: Task; headin
           ))}
         </ul>
       ) : (
-        <p className="text-small text-muted">Если задача ждёт кого-то, попросите его здесь: просьба придёт ему в «Мне», ответ и срок будут видны в карточке.</p>
+        <p className="text-small text-muted">Если задача ждёт кого-то, попросите его здесь: он увидит просьбу на «Моей неделе», ответ и срок будут видны в карточке.</p>
       )}
     </section>
   );

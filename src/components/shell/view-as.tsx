@@ -112,7 +112,7 @@ export function ViewAsDialog() {
             <div className="min-w-0 flex-1">
               <Dialog.Title className="sv-modal__title block">Смотреть как</Dialog.Title>
               <Dialog.Description className="mt-1 text-small text-text-secondary">
-                Приложение покажет всё так, как видит выбранный человек: его неделю, задачи, «Мне» и доступ по его правам. Изменения в просмотре недоступны, просмотр длится 2 часа, но не дольше режима управления.
+                Приложение покажет всё так, как видит выбранный человек: его неделю с блоком «Ждёт вас», задачи и доступ по его правам. Изменения в просмотре недоступны, просмотр длится 2 часа, но не дольше режима управления.
               </Dialog.Description>
             </div>
             <Dialog.Close className="sv-icon-btn sv-icon-btn--sm shrink-0" aria-label="Закрыть">

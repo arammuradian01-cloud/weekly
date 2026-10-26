@@ -34,7 +34,9 @@ test("приложение на экран «Домой»: описание, з�
   expect(await manifest.json()).toMatchObject({ short_name: "Weekly", display: "standalone", start_url: "/" });
   for (const path of ["/sw.js", "/offline.html", "/icons/icon-192.png", "/icons/apple-touch-icon.png"]) expect((await request.get(path, { maxRedirects: 0 })).status(), path).toBe(200);
   // Рабочая страница без входа по-прежнему уводит на вход
-  expect((await request.get("/me", { maxRedirects: 0 })).status()).toBe(307);
+  const work = await request.get("/tasks/mine", { maxRedirects: 0 });
+  expect(work.status()).toBe(307);
+  expect(work.headers().location).toMatch(/\/login/);
 
   await page.goto("/login");
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("href", "/manifest.webmanifest");
@@ -103,7 +105,7 @@ test("черновик weekly без сети: запись не теряетс�
   expect(await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("weekly-offline:")).length)).toBe(0);
 });
 
-test("просьбу можно принять с телефона в два нажатия: «Мне» и «Принять к сроку»", async ({ page }) => {
+test("просьбу можно принять с телефона одним нажатием на «Моей неделе»: «Принять к сроку» в «Ждёт вас»", async ({ page }) => {
   const [author] = await sql(`SELECT id FROM people WHERE slug = 'reva'`);
   const [to] = await sql(`SELECT id FROM people WHERE slug = 'loginova'`);
   const [{ number, id }] = await sql(
@@ -115,24 +117,25 @@ test("просьбу можно принять с телефона в два н�
     [to.id, author.id, `request:${number}`, id],
   );
   await enter(page, "Логинова Светлана");
-  // Нажатие 1: «Мне» в нижнем меню телефона или в боковом меню
+  // Этап 76: после входа сразу «Моя неделя», очередь «Ждёт вас» на ней. Пункт меню с счётчиком тоже ведёт сюда
   const nav = test.info().project.name === "phone" ? page.locator("nav.fixed") : page.getByRole("navigation", { name: "Разделы" }).first();
-  await nav.getByRole("link", { name: /^Мне/ }).click();
-  await expect(page).toHaveURL(/\/me$/);
-  // Очередь «Мне» (этап 44): просьба одной строкой в группе «Ответить», событие о ней второй раз не показывается
-  const answer = page.locator("section", { has: page.getByRole("heading", { name: /^Ответить/ }) });
+  await expect(nav.getByRole("link", { name: /^Мне/ })).toHaveCount(0);
+  await nav.getByRole("link", { name: /Моя неделя/ }).click();
+  await expect(page).toHaveURL(/\/$/);
+  // Очередь (этап 44): просьба одной строкой в группе «Ответить», событие о ней второй раз не показывается
+  const answer = page.getByTestId("me-answer");
   const row = answer.locator("li").filter({ hasText: "Цифры по трафику ДВС за сентябрь" });
   await expect(row).toHaveCount(1);
   await expect(page.locator("li.sv-event").filter({ hasText: "Цифры по трафику ДВС за сентябрь" })).toHaveCount(0);
   await shot(page, "me-request");
-  // Нажатие 2: «Принять к …»
+  // Одно нажатие: «Принять к …»
   await row.getByRole("button", { name: /^Принять к \d{1,2} \S+$/ }).click();
   await expect(page.getByText(/^Просьба принята, срок \d{1,2} \S+$/)).toBeVisible();
   const [r] = await sql(`SELECT status, "acceptedDue" = due AS same FROM help_requests WHERE id = 'rq-e2e-1'`);
   expect(r).toEqual({ status: "ACCEPTED", same: true });
   // Просьба переехала из «Ответить» в принятые, событие разобрано
   await expect(row).toHaveCount(0);
-  await expect(page.locator("section", { has: page.getByRole("heading", { name: /Принятые, срок позже/ }) }).getByText("Цифры по трафику ДВС за сентябрь")).toBeVisible();
+  await expect(page.getByTestId("me-later").getByText("Цифры по трафику ДВС за сентябрь")).toBeVisible();
 
   // На странице просьбы то же одним нажатием, свой срок отдельной кнопкой
   await sql(`UPDATE help_requests SET status = 'OPEN', "acceptedDue" = NULL WHERE id = 'rq-e2e-1'`);
@@ -143,11 +146,11 @@ test("просьбу можно принять с телефона в два н�
 
 test("задачу можно обновить с главной в два нажатия; лента и повестка в одном нажатии", async ({ page }) => {
   const [{ number }] = await sql(
-    // Этап 68: на главной пять самых просроченных задач, остальные ссылкой в «Мне»: задача теста просрочена раньше всех
+    // На главной в группе «Срок прошёл» пять самых просроченных задач, остальные по «Показать все»: задача теста просрочена раньше всех
     `UPDATE tasks SET due = DATE '2026-01-12' WHERE number = (SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1) RETURNING number`,
   );
   await enter(page, "Рева Тарас");
-  const urgent = page.locator('section[aria-labelledby="my-tasks"]');
+  const urgent = page.getByTestId("me-late");
   const row = urgent.locator("li").filter({ hasText: new RegExp(`^${number}`) });
   // Нажатие 1: статус, нажатие 2: новый статус
   await row.getByRole("button", { name: new RegExp(`^Статус задачи ${number}: В работе`) }).click();

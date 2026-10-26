@@ -160,7 +160,7 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
       ) : null}
       {!links.waitsFor.length && !links.blocks.length ? <p className="text-small text-muted">Если задача не может двигаться без другой, свяжите их: при переносе срока той задачи вы узнаете об этом.</p> : null}
 
-      <Modal open={adding} onOpenChange={setAdding} title={`Задача ${task.number} ждёт задачу`} description="Ответственный за ту задачу узнает, что её ждут. Перенос её срока позже вашего придёт вам в «Мне».">
+      <Modal open={adding} onOpenChange={setAdding} title={`Задача ${task.number} ждёт задачу`} description="Ответственный за ту задачу узнает, что её ждут. О переносе её срока позже вашего вы узнаете на «Моей неделе».">
         <form onSubmit={add} className="flex flex-col gap-4">
           <TextInput label="Номер задачи" id={`dep-${task.number}`} inputMode="numeric" value={number} onChange={(e) => setNumber(e.target.value)} autoFocus />
           <FormError message={error ?? undefined} />
@@ -221,7 +221,7 @@ export function HandOverButton({ task }: { task: Task }) {
         <ArrowRightLeft className="h-4 w-4" aria-hidden="true" />
         Передать
       </Button>
-      <Modal open={open} onOpenChange={setOpen} title={`Передать задачу ${task.number}`} description="Новый ответственный получит задачу в «Мне» с вашим комментарием. Прежний ответственный останется соисполнителем.">
+      <Modal open={open} onOpenChange={setOpen} title={`Передать задачу ${task.number}`} description="Новый ответственный увидит задачу с вашим комментарием на «Моей неделе». Прежний ответственный останется соисполнителем.">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <PersonSelect
             id={`ho-${task.number}`}

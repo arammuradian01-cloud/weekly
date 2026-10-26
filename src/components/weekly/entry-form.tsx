@@ -302,7 +302,7 @@ export function EntryForm({
         onChange={(v) => set("details", v)}
         rows={3}
         counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }}
-        hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись в «Мне»"
+        hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись на «Моей неделе»"
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} hint="Словами: что это меняет для выручки, маржи или клиентов" />

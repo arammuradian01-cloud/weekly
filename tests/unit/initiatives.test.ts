@@ -45,7 +45,7 @@ describe("шкала готовности", () => {
     expect(isResultCode("lost")).toBe(false);
   });
 
-  it("событие «Мне»: фраза и ссылка на карточку инициативы", () => {
+  it("событие очереди «Ждёт вас»: фраза и ссылка на карточку инициативы", () => {
     expect(eventPhrase({ kind: "INITIATIVE", count: 1, actorName: "Арам", taskNumber: null } as never)).toContain("крупная инициатива");
     expect(pathOf({ taskNumber: null, entryId: null, subject: "initiative:abc123" })).toBe("/initiatives#i-abc123");
   });

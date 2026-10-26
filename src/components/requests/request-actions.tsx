@@ -151,7 +151,7 @@ export function RequestActions({ request, size = "sm", onChanged }: { request: R
         </form>
       </Modal>
 
-      <Modal open={dialog === "done"} onOpenChange={(o) => !o && setDialog(null)} title={`Просьба ${n} выполнена`} description="Автор получит событие в «Мне». Итог можно не писать.">
+      <Modal open={dialog === "done"} onOpenChange={(o) => !o && setDialog(null)} title={`Просьба ${n} выполнена`} description="Автор получит событие на «Моей неделе». Итог можно не писать.">
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {

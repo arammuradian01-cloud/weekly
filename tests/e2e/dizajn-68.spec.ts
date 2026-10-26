@@ -107,8 +107,8 @@ const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void
   { name: "weekly-lenta", path: "/weekly?week=2026-09-21", contrast: true, ready: async (page) => void (await expect(page.getByTestId("weekly-digest")).toBeVisible()) },
   { name: "novosti", path: "/news", contrast: true, ready: async (page) => void (await expect(page.locator('[data-lead="true"]')).toBeVisible()) },
   { name: "spravka", path: "/help", contrast: true, ready: async (page) => void (await expect(page.getByRole("navigation", { name: "Разделы справки" })).toBeVisible()) },
-  { name: "moya-nedelya", path: "/", contrast: true, ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
-  { name: "mne", path: "/me", contrast: true, ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
+  // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе», контраст очереди проверяется здесь же
+  { name: "moya-nedelya", path: "/", contrast: true, ready: async (page) => void (await expect(page.getByRole("heading", { name: /^Ждёт вас/, level: 2 })).toBeVisible()) },
   { name: "zadachi", path: "/tasks", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
   { name: "weekly-sdacha", path: "/weekly/submit", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
   { name: "nastroyki", path: "/settings", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
@@ -352,7 +352,7 @@ test("«Новая задача»: на телефоне одна кнопка �
   expect(button && search && Math.abs(button.height - search.height)).toBeLessThanOrEqual(4);
 });
 
-test("«Моя неделя»: счётчики «Требует внимания» ведут к группам «Мне», срок сдачи прошёл и написан красным", async ({ page }) => {
+test("«Моя неделя»: счётчики «Ждёт вас» ведут к группам на той же странице, срок сдачи прошёл и написан красным", async ({ page }) => {
   await sql(`UPDATE tasks SET due = (now() AT TIME ZONE 'Europe/Moscow')::date - 3 WHERE number = (SELECT min(number) FROM tasks WHERE "ownerId" = ${person("reva")} AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL)`);
   await enter(page, "Рева Тарас");
   const figures = page.getByTestId("my-attention-figures");
@@ -383,8 +383,10 @@ test("«Моя неделя»: счётчики «Требует внимани�
   }
   await page.reload();
   await figures.getByRole("link", { name: /срок прошёл/ }).click();
-  await expect(page).toHaveURL(/\/me#me-late$/);
+  // Этап 76: группа на этой же странице, переход якорем без ухода с «Моей недели»
+  await expect(page).toHaveURL(/\/#me-late$/);
   await expect(page.getByTestId("me-late")).toBeVisible();
+  await expect(page.locator("#me-late")).toBeInViewport();
   // Заголовок группы не уходит под липкую шапку: верх заголовка ниже нижней границы шапки
   const top = await page.locator("#me-late").evaluate((el) => el.getBoundingClientRect().top);
   const header = await headerBottom(page);
@@ -392,7 +394,7 @@ test("«Моя неделя»: счётчики «Требует внимани�
   expect(top).toBeGreaterThanOrEqual(header);
 });
 
-test("«Моя неделя»: «Ещё N в «Мне»» ведёт в группу, где остались непоказанные задачи", async ({ page }) => {
+test("«Моя неделя»: в группе пять строк, «Показать все N» раскрывает остальные на месте и сворачивает обратно", async ({ page }) => {
   const MSK = "(now() AT TIME ZONE 'Europe/Moscow')::date";
   const reva = person("reva");
   // Задачи Ревы и «Все лидеры» (они тоже его) на время проверки: срок далеко, потом шесть своих задач по сценарию
@@ -404,15 +406,32 @@ test("«Моя неделя»: «Ещё N в «Мне»» ведёт в груп
     const six = (await sql(`SELECT number FROM tasks WHERE "teamId" = 'top' AND status = 'IN_PROGRESS' AND "archivedAt" IS NULL AND "ownerId" IS NOT NULL ORDER BY number LIMIT 6`)).map((r) => r.number as number);
     await sql(`UPDATE tasks SET "ownerId" = ${reva}, due = ${MSK} - 3 WHERE number = ANY($1)`, [six]);
     await enter(page, "Рева Тарас");
-    // Шесть просроченных: пять в списке, шестая просроченная, ссылка на «Срок прошёл»
-    const more = page.getByTestId("my-urgent-more");
-    await expect(more).toHaveText("Ещё 1 в «Мне»");
-    await expect(more).toHaveAttribute("href", "/me#me-late");
-    // Две просроченные и четыре на сегодня: в списке обе просроченные и три срочные, осталась срочная
+    // Шесть просроченных: счётчик 6, в группе пять строк и кнопка «Показать все 6»
+    const late = page.getByTestId("me-late");
+    await expect(page.getByTestId("my-attention-figures").getByRole("link", { name: /срок прошёл/ })).toContainText("6");
+    await expect(late.getByRole("heading", { name: /^Срок прошёл/ })).toContainText("6");
+    await expect(late.locator("ul > li")).toHaveCount(5);
+    const all = late.getByRole("button", { name: /^Показать все 6/ });
+    await expect(all).toHaveAttribute("aria-expanded", "false");
+    await all.click();
+    await expect(late.locator("ul > li")).toHaveCount(6);
+    // Раскрытая строка рабочая: статус меняется прямо в ней
+    const last = late.locator("ul > li").nth(5);
+    await expect(last.getByRole("button", { name: /^Статус задачи \d+/ })).toBeVisible();
+    const fold = late.getByRole("button", { name: /^Свернуть/ });
+    await expect(fold).toHaveAttribute("aria-expanded", "true");
+    await fold.click();
+    await expect(late.locator("ul > li")).toHaveCount(5);
+    // Две просроченные и четыре на сегодня: «Срок прошёл» без кнопки, «Сегодня и завтра» четыре строки
     await sql(`UPDATE tasks SET due = ${MSK} WHERE number = ANY($1)`, [six.slice(2)]);
     await page.reload();
-    await expect(more).toHaveText("Ещё 1 в «Мне»");
-    await expect(more).toHaveAttribute("href", "/me#me-soon");
+    await expect(late.locator("ul > li")).toHaveCount(2);
+    await expect(late.getByRole("button", { name: /^Показать все/ })).toHaveCount(0);
+    await expect(page.getByTestId("me-soon").locator("ul > li")).toHaveCount(4);
+    // Название задачи открывает карточку сбоку, «Моя неделя» остаётся под ней
+    await page.getByTestId("me-soon").locator("ul > li").first().getByRole("button").first().click();
+    await expect(page).toHaveURL(/\/\?task=\d+$/);
+    await expect(page.getByRole("dialog")).toBeVisible();
   } finally {
     for (const r of saved) await sql(`UPDATE tasks SET "ownerId" = $2, due = $3::date WHERE number = $1`, [r.number, r.ownerId, r.due]);
   }
@@ -469,7 +488,7 @@ test("карточка задачи: поле «Начало» задаётся 
 });
 
 // Экраны с таблицами и лентами, которые на 360 должны прокручиваться внутри себя
-const WIDE = ["/", "/tasks", "/tasks/people", "/goals", "/roadmap", "/initiatives", "/decisions", "/forecast", "/forecast?tab=week", "/one-on-one", "/people", "/people/leader", "/people/analytics", "/people/structure", "/people/teams", "/weekly", "/weekly/meeting", "/ceo-report", "/settings", "/help", "/news"];
+const WIDE = ["/", "/tasks", "/tasks/people", "/goals", "/roadmap", "/initiatives", "/decisions", "/forecast", "/forecast?tab=week", "/people", "/people/leader", "/people/analytics", "/people/structure", "/people/teams", "/weekly", "/weekly/meeting", "/ceo-report", "/settings", "/help", "/news"];
 
 test("360: страница не прокручивается вбок, широкие обёртки прокручиваются внутри себя и доступны с клавиатуры", async ({ page }) => {
   test.skip(!phone(), "Проверка телефона 360");

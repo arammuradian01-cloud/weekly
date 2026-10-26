@@ -49,7 +49,7 @@ test("владелец видит предпросмотр, загружает �
   await expect(preview.getByTestId("content-import-missing-people")).toContainText("Иванов Пётр, Сидоров Никто");
   await expect(preview.getByTestId("content-import-errors")).toHaveCount(0);
   await expect(preview.getByTestId("content-import-duplicates")).toHaveCount(0);
-  await expect(preview.getByText(/узнают о новых открытых задачах в «Мне»: ответственные, соисполнители/)).toBeVisible();
+  await expect(preview.getByText(/узнают о новых открытых задачах на «Моей неделе»: ответственные, соисполнители/)).toBeVisible();
   await preview.getByText(/Подробнее: что пропустится и почему/).click();
   await expect(preview.getByTestId("content-import-notes")).toContainText("ответственный «Иванов Пётр» не найден в ресурсе");
   await shot(page, "preview");

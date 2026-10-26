@@ -136,7 +136,7 @@ self.addEventListener("push", (event) => {
     icon: "/icons/icon-192.png",
     badge: "/icons/badge-96.png",
     lang: "ru",
-    // Этап 76: раздела «Мне» нет, очередь «Ждёт вас» на «Моей неделе»
+    // Этап 76: отдельного раздела событий нет, очередь «Ждёт вас» на «Моей неделе»
     data: { url: data.url || "/#me-queue" },
   };
   event.waitUntil(self.registration.showNotification(title, options));

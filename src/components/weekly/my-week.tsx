@@ -24,14 +24,10 @@ import { submittedText } from "./weekly-feed";
 import type { PersonWeekly, WeekKey } from "@/domain/types";
 import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { PromiseStats } from "./promise-stats";
+import { submitWeekHref } from "@/lib/weekly/weeks";
 
 /** Прошлая неделя без сданного weekly (этап 76): номер, понедельник для ссылки и даты словами */
 export type MissedWeekLine = { key: WeekKey; number: number; range: string };
-
-/** Ссылка на сдачу weekly за прошлую неделю. Пока экран сдачи не знает параметр week (этап 73), откроется отчётная */
-export function missedHref(key: WeekKey): string {
-  return `/weekly/submit?week=${key}`;
-}
 
 /**
  * Стартовый экран (раздел 7 ТЗ). Этап 76: раздел «Мне» влит сюда блоком «Ждёт вас», порядок от действия к обзору.
@@ -118,7 +114,7 @@ export function MyWeek({
               {missed.map((w) => (
                 <li key={w.key} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-1">
                   <TriangleAlert className="h-4 w-4 shrink-0 text-danger-ink" strokeWidth={1.5} aria-hidden="true" />
-                  <Link href={missedHref(w.key)} className="inline-flex min-h-11 items-center text-body font-semibold text-danger-ink hover:underline sm:min-h-8">
+                  <Link href={submitWeekHref(w.key)} className="inline-flex min-h-11 items-center text-body font-semibold text-danger-ink hover:underline sm:min-h-8">
                     Не сдан weekly за неделю {w.number}
                   </Link>
                   <span className="text-caption text-text-secondary">{w.range}</span>
