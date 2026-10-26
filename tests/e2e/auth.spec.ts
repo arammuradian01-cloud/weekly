@@ -71,7 +71,8 @@ test("5 неверных паролей закрывают вход на 15 ми
 test("лидер входит, выбирает себя и видит свою неделю без режима управления", async ({ page }) => {
   // Этап 71: в списке общего логина только люди без личного пароля: владелец без пароля там есть с подписью роли,
   // Логинова с паролем нет. Пароли могли остаться от других файлов: задаём явно
-  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug = 'muradyan'`);
+  // Рева выбирает себя из списка общего логина: личный пароль ему мог задать другой файл (login.spec, помощник входа)
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug IN ('muradyan', 'reva')`);
   await sql(`UPDATE people SET "passwordHash" = 'x' WHERE slug = 'loginova'`);
   await signIn(page);
   await expect(page).toHaveURL(/\/choose$/);
