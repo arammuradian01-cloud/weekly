@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex" />
-    <title>Нет сети | Weekly</title>
+    <title>Ошибка 503 | Weekly</title>
     <style>
       :root {
         --bg: #f6f5f4;
@@ -64,15 +64,81 @@
     </style>
   </head>
   <body>
-    <main>
+    <!-- Код ошибки подставляет служебный обработчик (sw.js): 503, когда сервер не ответил, или код прокси хостинга 502-504 -->
+    <main data-code="503">
       <img src="/logo/sravni_sign.svg" alt="" />
-      <h1>Нет сети</h1>
-      <p>Страница откроется, когда телефон снова будет в сети.</p>
+      <h1 id="title">Ошибка 503</h1>
+      <p id="why" hidden>Страница откроется, когда телефон снова будет в сети.</p>
       <p>Черновик weekly, который вы писали, сохранён на этом устройстве и уйдёт на сервер сам, как только связь вернётся.</p>
       <button type="button" onclick="location.reload()">Попробовать снова</button>
     </main>
     <script>
-      window.addEventListener("online", function () { location.reload(); });
+      (function () {
+        // Решение Арама 23.10: при живой сети, когда не отвечает сервер (перезапуск, выкладка), заголовок «Ошибка <код>».
+        // «Нет сети» только когда сети действительно нет
+        var main = document.querySelector("main");
+        var code = /^\d{3}$/.test(main.getAttribute("data-code") || "") ? main.getAttribute("data-code") : "503";
+        var title = document.getElementById("title");
+        var why = document.getElementById("why");
+        function show() {
+          var offline = navigator.onLine === false;
+          title.textContent = offline ? "Нет сети" : "Ошибка " + code;
+          why.hidden = !offline;
+          document.title = (offline ? "Нет сети" : "Ошибка " + code) + " | Weekly";
+        }
+        show();
+        window.addEventListener("offline", show);
+        window.addEventListener("online", function () { location.reload(); });
+        // Сеть есть, а сервер не отвечал: спрашиваем проверку здоровья (с базой) и, когда сервер вернулся, открываем
+        // страницу заново. Интервал растёт 15, 30, 60, 120 секунд с разбросом, чтобы после выкладки вкладки не приходили
+        // все разом. После четырёх автоматических перезагрузок одной страницы за 10 минут сами больше не перезагружаем:
+        // страница могла сама ронять сервер, остаётся кнопка «Попробовать снова». На /offline.html опроса нет
+        if (location.pathname !== "/offline.html") {
+          var KEY = "weekly-error-reloads:" + location.pathname;
+          var STEPS = [15, 30, 60, 120];
+          var polls = 0;
+          var busy = false;
+          var timer = null;
+          var recent = function () {
+            try {
+              var now = Date.now();
+              return JSON.parse(sessionStorage.getItem(KEY) || "[]").filter(function (t) { return now - t < 600000; });
+            } catch (e) { return []; }
+          };
+          var reloadNow = function () {
+            var list = recent();
+            list.push(Date.now());
+            try { sessionStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
+            location.reload();
+          };
+          var schedule = function () {
+            if (timer || recent().length >= 4) return;
+            var base = STEPS[Math.min(polls + recent().length, STEPS.length - 1)];
+            timer = setTimeout(check, Math.max(5, base + Math.random() * 10 - 5) * 1000);
+          };
+          var check = function () {
+            timer = null;
+            if (busy || recent().length >= 4) return;
+            if (document.hidden || navigator.onLine === false) return;
+            busy = true;
+            polls += 1;
+            var ctrl = typeof AbortController === "function" ? new AbortController() : null;
+            var stop = ctrl ? setTimeout(function () { ctrl.abort(); }, 8000) : null;
+            fetch("/api/health", { cache: "no-store", signal: ctrl ? ctrl.signal : undefined })
+              .then(function (r) { return r.ok; }, function () { return false; })
+              .then(function (ok) {
+                busy = false;
+                if (stop) clearTimeout(stop);
+                if (ok) reloadNow(); else schedule();
+              });
+          };
+          // Скрытая вкладка не опрашивает, при возвращении на неё проверяем сразу
+          document.addEventListener("visibilitychange", function () {
+            if (!document.hidden && !timer && !busy) check();
+          });
+          schedule();
+        }
+      })();
     </script>
   </body>
 </html>
