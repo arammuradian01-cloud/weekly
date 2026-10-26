@@ -52,7 +52,8 @@ function initials(fullName: string) {
 }
 
 // Пункт меню по дизайн-системе (sv-menu__item): высота 36+, радиус поля, подсветка заливкой
-const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field";
+// На телефоне пункты не ниже 44 px: пальцем по узкой строке легко промахнуться
+const itemClass = "sv-menu__item cursor-pointer select-none outline-none data-[highlighted]:bg-field max-sm:min-h-11";
 
 export function ProfileMenu({ fullName, shortName, roleLabel, canManage, management, managementUntil, switchProfile, ownerAs = null, ownerAsEnded = false, canViewAs = false, viewing = false, ownerSlug = null, tone = "dark" }: Props) {
   const [pending, startTransition] = useTransition();
@@ -244,10 +245,11 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
     {switchProfile === "logout" ? (
       <Modal open={confirmSwitch} onOpenChange={(open) => !pending && setConfirmSwitch(open)} title="Точно хотите выйти из системы и сменить профиль?" description="Черновики с этого устройства уйдут на сервер, потом откроется экран входа. Войдите под другим логином и паролем, после входа откроется главная страница.">
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="secondary" disabled={pending} onClick={() => setConfirmSwitch(false)}>
+          {/* Фокус на безопасной кнопке: Enter по привычке не выходит из системы */}
+          <Button variant="secondary" disabled={pending} onClick={() => setConfirmSwitch(false)} autoFocus>
             Отмена
           </Button>
-          <Button variant="dark" loading={pending} disabled={pending} onClick={signOut} autoFocus>
+          <Button variant="dark" loading={pending} disabled={pending} onClick={signOut}>
             Выйти и сменить
           </Button>
         </div>

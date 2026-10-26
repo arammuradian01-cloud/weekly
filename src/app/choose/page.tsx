@@ -64,7 +64,7 @@ export default async function ChoosePage({ searchParams }: { searchParams: Promi
         {/* Общий логин без выхода не пустит на экран входа: кнопка выходит и открывает его */}
         <form action={logout} className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2 text-small text-muted">
           <span>Есть свой логин и пароль?</span>
-          <button type="submit" className={buttonClass("secondary", "sm")}>
+          <button type="submit" className={buttonClass("secondary", "sm", "max-sm:min-h-11")}>
             Войти своим логином
           </button>
         </form>

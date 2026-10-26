@@ -100,13 +100,16 @@ export async function sql(text: string, values: unknown[] = []) {
 }
 
 /**
- * Вход под человеком. Этап 71: люди с личным паролем по общему логину не выбираются, а режим управления, который нужен
- * сценариям владельца и администратора, по общему логину не включается: они входят своим логином и паролем
- * (enterPersonal). Остальные: общий логин team и выбор себя поиском на экране «Выберите себя»
+ * Вход под человеком. Этап 71: режим управления, который нужен сценариям владельца и администратора, по общему логину
+ * не включается: они входят своим логином и паролем (enterPersonal). Остальные: общий логин team и выбор себя поиском на
+ * экране «Выберите себя». Людей с личным паролем в этом списке нет, а пароль мог остаться от другого файла (файлы идут
+ * по очереди на одной базе): перед выбором личный пароль выбираемого человека снимается, иначе вход тихо стал бы личным
+ * и права в сценарии были бы другими
  */
 export async function enter(page: Page, fullName: string) {
-  const [row] = await sql(`SELECT slug, role, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" = $1 AND active`, [fullName]);
-  if (row && (row.role === "OWNER" || row.role === "ADMIN" || row.personal)) return enterPersonal(page, row.slug as string);
+  const [row] = await sql(`SELECT slug, role FROM people WHERE "fullName" = $1 AND active`, [fullName]);
+  if (row && (row.role === "OWNER" || row.role === "ADMIN")) return enterPersonal(page, row.slug as string);
+  await sql(`UPDATE people SET "passwordHash" = NULL, "passwordSetAt" = NULL WHERE "fullName" = $1`, [fullName]);
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");
   await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);

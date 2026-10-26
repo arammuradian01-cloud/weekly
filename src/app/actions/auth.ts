@@ -121,8 +121,9 @@ async function personalLogin(loginValue: string, password: string): Promise<Form
 export async function chooseProfile(formData: FormData): Promise<void> {
   const session = await requireSignedIn();
   const personId = String(formData.get("personId") ?? "");
-  // Этап 71: все включённые люди структуры, кроме тех, у кого уже есть личный пароль, и владельцев. Тем же условием
-  // строится список на экране, но решает сервер: подставить в форму чужой номер не выйдет
+  // Этап 71 (поправка 23.10): все включённые люди структуры без личного пароля, владелец и администратор без пароля тоже.
+  // Режима управления и прав владельца или администратора такой вход не даёт. Тем же условием строится список на экране,
+  // но решает сервер: подставить в форму номер человека с личным паролем или выключенного не выйдет
   const person = personId ? await prisma.person.findFirst({ where: { id: personId, ...teamChoosableWhere } }) : null;
   if (!person) redirect("/choose?denied=1");
   await writeSession({ epoch: session.epoch, personId: person.id, via: "TEAM" });

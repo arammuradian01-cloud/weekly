@@ -177,10 +177,11 @@ export function OwnerAsDialog({ ownerName }: { ownerName: string }) {
               </p>
             ) : null}
             <div className="mt-4 flex flex-wrap justify-end gap-2">
-              <Button variant="secondary" disabled={pending} onClick={() => setConfirm(null)}>
+              {/* Фокус на безопасной кнопке: Enter по привычке не входит в чужой профиль */}
+              <Button variant="secondary" disabled={pending} onClick={() => setConfirm(null)} autoFocus>
                 Отмена
               </Button>
-              <Button variant="dark" loading={pending} disabled={pending} onClick={() => enter(confirm)} autoFocus>
+              <Button variant="dark" loading={pending} disabled={pending} onClick={() => enter(confirm)}>
                 Войти
               </Button>
             </div>
@@ -201,7 +202,7 @@ export function OwnerAsDialog({ ownerName }: { ownerName: string }) {
                   Вы войдёте в профиль выбранного человека: его неделя, задачи и права. Правки пойдут от его имени, в журнале с пометкой, что вошли вы. Владельцев в списке нет.
                 </Dialog.Description>
               </div>
-              <Dialog.Close className="sv-icon-btn sv-icon-btn--sm shrink-0" aria-label="Закрыть">
+              <Dialog.Close className="sv-icon-btn sv-icon-btn--sm shrink-0 max-sm:min-h-11 max-sm:min-w-11" aria-label="Закрыть">
                 <X className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
               </Dialog.Close>
             </div>
@@ -256,7 +257,7 @@ export function OwnerAsBanner({ name, ownerName, until, remainingMs, targetSlug 
           <span className="text-small text-white/75">Правки от имени {name}, вход до {until}</span>
         </p>
       </div>
-      <ReturnButton targetSlug={targetSlug} className={buttonClass("secondary", "sm", "shrink-0 border-transparent bg-white text-navy hover:bg-white/90")} />
+      <ReturnButton targetSlug={targetSlug} className={buttonClass("secondary", "sm", "shrink-0 border-transparent bg-white text-navy hover:bg-white/90 max-sm:min-h-11")} />
     </div>
   );
 }
@@ -275,7 +276,7 @@ export function OwnerAsEndedBanner({ name, reason }: { name: string | null; reas
         </strong>{" "}
         Изменения откроются, когда вы вернётесь в свой профиль.
       </p>
-      <ReturnButton targetSlug={null} className={buttonClass("secondary", "sm", "shrink-0")} />
+      <ReturnButton targetSlug={null} className={buttonClass("secondary", "sm", "shrink-0 max-sm:min-h-11")} />
     </div>
   );
 }

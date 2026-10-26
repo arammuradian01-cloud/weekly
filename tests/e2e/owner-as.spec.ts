@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,6 +42,14 @@ async function shot(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-owner-as-${name}.png`, fullPage: true });
+}
+
+/** На телефоне цель нажатия не меньше 44 px по высоте (и по ширине, если надо); на ноутбуке не проверяется */
+async function tapTarget(page: Page, target: Locator, { width = false } = {}) {
+  if (page.viewportSize()!.width >= 640) return;
+  const box = (await target.boundingBox())!;
+  expect(box.height, "высота цели нажатия на телефоне").toBeGreaterThanOrEqual(44);
+  if (width) expect(box.width, "ширина цели нажатия на телефоне").toBeGreaterThanOrEqual(44);
 }
 
 /** Меню профиля: на ноутбуке в боковой панели, на телефоне в шапке, видно ровно одно */
@@ -102,6 +110,7 @@ test("владелец входит в профиль руководителя �
   const dialog = page.getByRole("dialog", { name: "Сменить профиль" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText(/Можно войти: \d+/)).toBeVisible();
+  await tapTarget(page, dialog.getByRole("button", { name: "Закрыть" }), { width: true });
   // Себя и других владельцев в списке нет
   await expect(dialog.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
   await dialog.getByLabel("Поиск по ФИО, должности или подразделению").fill("PO OSAGO");
@@ -111,6 +120,8 @@ test("владелец входит в профиль руководителя �
 
   const confirm = page.getByRole("dialog", { name: "Войти в профиль Антонов Дмитрий?" });
   await expect(confirm).toContainText("Правки будут от его имени, в журнале с пометкой «вошёл владелец Мурадян Арам»");
+  // Фокус на безопасной кнопке: Enter по привычке не входит в чужой профиль
+  await expect(confirm.getByRole("button", { name: "Отмена" })).toBeFocused();
   await shot(page, "confirm");
   // «Отмена» возвращает к списку, вход не начинается
   await confirm.getByRole("button", { name: "Отмена" }).click();
@@ -123,6 +134,7 @@ test("владелец входит в профиль руководителя �
   const banner = page.getByTestId("owner-as-banner");
   await expect(banner).toContainText("Вы в профиле Антонов Дмитрий как владелец Мурадян Арам.");
   await expect(banner.getByRole("button", { name: "Вернуться в свой профиль" })).toBeVisible();
+  await tapTarget(page, banner.getByRole("button", { name: "Вернуться в свой профиль" }));
   await expect(page.getByRole("heading", { level: 1 })).toContainText(String(antonov!.shortName));
   await expect(page).toHaveTitle(/Профиль Антонов Дмитрий/);
   await shot(page, "home");
@@ -152,6 +164,8 @@ test("владелец входит в профиль руководителя �
   await expect(page.getByRole("menuitem", { name: "Сменить профиль" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "Включить режим управления" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "Вернуться в свой профиль" })).toBeVisible();
+  await tapTarget(page, page.getByRole("menuitem", { name: "Вернуться в свой профиль" }));
+  await tapTarget(page, page.getByRole("menuitem", { name: "Выйти" }));
   await page.keyboard.press("Escape");
 
   // Возврат с плашки: главная страница владельца, плашки нет
@@ -187,6 +201,7 @@ test("общий логин находит поиском человека вн�
   await expect(page).toHaveURL(/\/choose$/);
   await expect(page.getByText(/Можно выбрать: \d+/)).toBeVisible();
   await expect(page.getByText(/Ещё \d+: уточните поиск/)).toBeVisible();
+  await tapTarget(page, page.getByRole("button", { name: "Войти своим логином" }));
   await shot(page, "choose");
   const search = page.getByLabel("Поиск по ФИО, должности или подразделению");
   // Человека с личным паролем поиск не находит. Владелец без личного пароля в списке есть, с подписью роли (поправка 23.10)
@@ -250,6 +265,8 @@ test("обычный человек: «Сменить профиль» спра�
   await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
   const confirm = page.getByRole("dialog", { name: "Точно хотите выйти из системы и сменить профиль?" });
   await expect(confirm).toBeVisible();
+  // Фокус на «Отмена»: Enter по привычке не выходит из системы
+  await expect(confirm.getByRole("button", { name: "Отмена" })).toBeFocused();
   await shot(page, "logout-confirm");
   await confirm.getByRole("button", { name: "Отмена" }).click();
   await expect(confirm).toHaveCount(0);

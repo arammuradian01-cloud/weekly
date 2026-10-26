@@ -134,9 +134,9 @@ test("владелец собирает команду поиском из ра�
   await expect(create).toContainText("Из других веток: 1 человек");
   await shot(aram, "create");
   await create.getByRole("button", { name: "Создать команду" }).click();
-  await expect(aram.getByText("Команда «Кросс-продажи»: добавлено 1, ждут согласия руководителя 1").first()).toBeVisible();
-
+  // Сообщение живёт 5 секунд, а следом переход на карточку: проверяем устойчивое состояние, а не сообщение.
   // Карточка новой команды открылась сама: Токов в команде, Котов ждёт согласия Лисиной
+  await expect(aram.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
   const id = await teamId("Кросс-продажи");
   const [row] = await sql('SELECT t.kind, t.project, l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.id = $1', [id]);
   expect(row).toMatchObject({ kind: "CUSTOM", project: true, leader: "muradyan" });
@@ -165,7 +165,10 @@ test("владелец собирает команду поиском из ра�
   await expect(add.getByTestId("team-add-external")).toContainText("Из других веток: 2 человека");
   await shot(aram, "add-people");
   await add.getByRole("button", { name: "Добавить", exact: true }).click();
-  await expect(aram.getByText("Команда «Кросс-продажи»: добавлено 0, ждут согласия руководителя 2").first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд), а состав: оба ждут согласия
+  await expect(add).toHaveCount(0);
+  await expect(waiting).toContainText("Седов Максим");
+  await expect(waiting).toContainText("Ершов Пётр");
   await expect(waiting).toContainText("согласует Белова Ольга");
   await expect(waiting).toContainText("согласует Крайник Александр");
   const approvers = await sql(
@@ -240,10 +243,11 @@ test("владелец собирает команду поиском из ра�
   await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
   await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
   await pilot.getByRole("button", { name: "Создать команду" }).click();
-  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд, следом переход), а карточка новой команды с руководителем и составом
   const pilotCard = page.getByTestId("team-card");
   await expect(pilotCard.getByRole("heading", { name: "Партнёрский пилот", level: 2 })).toBeVisible();
   await expect(pilotCard).toContainText("Белова Ольга");
+  await expect(pilotCard.getByTestId("team-members")).toContainText("Седов Максим");
   // В режиме управления действия руководителя и ритма кнопками в шапке карточки
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Назначить руководителя" })).toBeVisible();
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Кто сдаёт и срок" })).toBeVisible();
