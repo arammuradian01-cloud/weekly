@@ -111,6 +111,12 @@
 .sv-week__now:hover { background: var(--color-accent-soft); }
 .sv-week .sv-icon-btn { width: 30px; height: 30px; border-radius: 6px; }
 .sv-week .sv-badge { margin-right: 4px; }
+/* Этап 73б. Пальцем стрелки и «Текущая» в 30 px не нажать: на сенсорных экранах цель не меньше 44, рамка растёт вместе с ними */
+@media (pointer: coarse) {
+  .sv-week { height: auto; min-height: var(--control-sm); }
+  .sv-week .sv-icon-btn { width: var(--touch-min); height: var(--touch-min); }
+  .sv-week__now { min-height: var(--touch-min); }
+}
 
 /* Хлебные крошки в карточке и путь по структуре */
 .sv-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); margin: 0; padding: 0; list-style: none; }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/auth";
-import { currentReportingKey, getWeekView } from "@/lib/weekly/service";
+import { getWeekView } from "@/lib/weekly/service";
 import { isWeekKey } from "@/lib/weekly/weeks";
 import { MeetingMode } from "@/components/weekly/meeting-mode";
 import { MeetingLive } from "@/components/meeting/meeting-live";
@@ -9,7 +10,7 @@ import { ALL_TEAMS, audienceOf, currentTeam, subjectOf } from "@/lib/org/current
 import { currentActor } from "@/lib/action-runner";
 import { meetingQuestions } from "@/lib/discuss/service";
 import { stuckForMeeting } from "@/lib/requests/service";
-import { canLeadTeam, getMeeting } from "@/lib/meeting/service";
+import { canLeadTeam, getMeeting, meetingWeekFor } from "@/lib/meeting/service";
 import { weekNumbers } from "@/lib/numbers/service";
 import { briefFor, numbersLevel } from "@/lib/plan/access";
 import { WeekNumbersBlock } from "@/components/forecast/week-numbers";
@@ -17,27 +18,50 @@ import { planAsOfWeek, planForTeam, planMonthOfWeek } from "@/lib/plan/processes
 import { PlanBriefBlock } from "@/components/plan/plan-brief";
 import { listParses } from "@/lib/meeting/parse-service";
 import { NotionParseBar } from "@/components/meeting/notion-parse-bar";
-import { WeekSwitcher } from "@/components/weekly/weekly-feed";
-import { formatLong } from "@/domain/dates";
-import { weekEndOf } from "@/lib/weekly/weeks";
+import { WeekSwitcher } from "@/components/weekly/week-switcher";
+import { weekOf } from "@/domain/dates";
+import { formatWeekRange } from "@/lib/week";
+import type { WeekKey } from "@/domain/types";
 
 export const metadata: Metadata = { title: "Встреча" };
 
-export default async function MeetingPage({ searchParams }: { searchParams: Promise<{ week?: string; screen?: string }> }) {
+type Params = Record<string, string | string[] | undefined>;
+
+/** Параметры адреса, кроме недели: экран проектора и прочие сохраняются при выборе недели */
+function restOf(params: Params): [string, string][] {
+  return Object.entries(params).flatMap(([k, v]) => (k === "week" || v === undefined ? [] : (Array.isArray(v) ? v : [v]).map((one): [string, string] => [k, one])));
+}
+
+function meetingUrl(params: Params, week: WeekKey): string {
+  return `/weekly/meeting?${new URLSearchParams([["week", week], ...restOf(params)]).toString()}`;
+}
+
+export default async function MeetingPage({ searchParams }: { searchParams: Promise<Params> }) {
   const ctx = await requireContext();
-  const { week } = await searchParams;
+  const params = await searchParams;
+  const week = typeof params.week === "string" ? params.week : undefined;
+  const projector = params.screen === "projector";
   const team = await currentTeam(subjectOf(ctx));
   const audience = audienceOf(team);
-  // Встреча без выбранной недели относится к отчётной. Пустой weekly не повод открывать старую встречу.
-  const view = await getWeekView(isWeekKey(week) ? week : await currentReportingKey(), new Date(), audience);
-  const weekNav = <div className="mb-4 flex flex-wrap items-center gap-3" data-testid="meeting-week">
-    <WeekSwitcher view={view} basePath="/weekly/meeting" />
-    <span className="text-small text-muted">{formatLong(view.week.key)} — {formatLong(weekEndOf(view.week.key))}{view.week.reporting ? "" : " · Прошлая неделя"}</span>
-  </div>;
-  const actor = await currentActor();
   // Встреча 2.0 (этап 23): у одной команды свой объект встречи с повесткой и решениями. «Все команды» показывают
   // ленту недели по-старому: встреча идёт в каждой команде отдельно
   const single = team.id && team.id !== ALL_TEAMS ? { id: team.id, name: team.name } : null;
+  const now = new Date();
+  // Этап 73б. Неделю без явного выбора считаем один раз (идущая встреча команды, иначе отчётная) и уходим на адрес с
+  // ней. Живые обновления перечитывают страницу: без ?week= после вторника 18:00 все уехали бы на пустую новую неделю
+  if (!isWeekKey(week)) redirect(meetingUrl(params, await meetingWeekFor(single?.id ?? null, week, now)));
+  const view = await getWeekView(week, now, audience, { fallback: false });
+  // Будущую неделю сервер не открывает: адрес показывает ту, что открыта
+  if (view.week.key !== week) redirect(meetingUrl(params, await meetingWeekFor(single?.id ?? null, week, now)));
+  const rest = restOf(params).filter(([k]) => k !== "screen");
+  const weekNav = (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="meeting-week">
+      <WeekSwitcher view={view} basePath="/weekly/meeting" query={rest.length ? `&${new URLSearchParams(rest).toString()}` : ""} />
+      <span className="text-small text-muted">{formatWeekRange(weekOf(view.week.key))}</span>
+      {view.week.reporting ? null : <span className="text-small text-muted">Не отчётная неделя</span>}
+    </div>
+  );
+  const actor = await currentActor();
   // Этап 57: цифры недели и итог прогноза в шапке встречи это основные цифры: их видят те, кому открыт хотя бы этот уровень
   const level = await numbersLevel(actor);
   const numbersOpen = level !== "none";
@@ -64,7 +88,8 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
         {plan ? <PlanBriefBlock brief={plan} compact headingLevel={2} /> : null}
       </div>
     ) : null;
-  if (single && meeting) return <>{weekNav}<MeetingLive key={`${view.week.key}-${single.id}`} view={view} meeting={meeting} canLead={canLead} team={single} numbers={numbersBlock} notion={notionBar} /></>;
+  // Переключатель недели живая встреча показывает сама: не на проекторе и не пока встреча идёт
+  if (single && meeting) return <MeetingLive key={`${view.week.key}-${single.id}`} view={view} meeting={meeting} canLead={canLead} team={single} numbers={numbersBlock} notion={notionBar} weekNav={weekNav} />;
   // Повестки ещё нет: встреча идёт по ленте недели, как раньше. Руководитель может собрать повестку
   const [questions, stuck] = await Promise.all([
     meetingQuestions(actor, view.week.key, { current: view.entries.map((e) => e.id) }, audience.teamIds ?? []),
@@ -72,7 +97,7 @@ export default async function MeetingPage({ searchParams }: { searchParams: Prom
   ]);
   return (
     <>
-      {weekNav}
+      {projector ? null : <div className="mb-4">{weekNav}</div>}
       {numbersBlock}
       {notionBar}
       {single ? <BuildAgendaBanner team={single} week={view.week.key} canLead={canLead} /> : null}

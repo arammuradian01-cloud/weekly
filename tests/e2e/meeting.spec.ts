@@ -52,11 +52,23 @@ test("владелец собирает повестку, ведёт встре�
   if (test.info().project.name !== "phone") await expect(nav.getByText(/Повестка: \d+ пунктов/)).toBeVisible();
   const [{ title }] = await sql(`SELECT title FROM tasks WHERE number = 28`);
   await expect(nav.getByRole("button", { name: new RegExp(`^Задача 28 заблокирована: ${title.slice(0, 20)}`) })).toBeVisible();
+  // Этап 73б: переключатель недели над заголовком, номер недели в подписи не повторяется. На проекторе переключателя
+  // нет: стрелка увела бы с экрана проектора, номер недели снова в подписи
+  await expect(page.getByTestId("meeting-week")).toBeVisible();
+  await expect(page.getByText(/^Неделя \d+, /)).toHaveCount(0);
+  await page.goto(`/weekly/meeting?week=${key}&screen=projector`);
+  await expect(page.getByRole("link", { name: "Для ноутбука" })).toBeVisible();
+  await expect(page.getByTestId("meeting-week")).toHaveCount(0);
+  await expect(page.getByText(/^Неделя \d+, /)).toBeVisible();
+  await page.goto(`/weekly/meeting?week=${key}`);
 
   // Ведущий начинает и переходит к пункту про задачу 28
   await page.getByRole("button", { name: "Начать встречу" }).click();
   await expect(page.getByText("Встреча началась").first()).toBeVisible();
   await expect(page.getByText(/Вы ведёте/)).toBeVisible();
+  // Пока встреча идёт, недели не листаются: переключателя нет, номер недели в подписи
+  await expect(page.getByTestId("meeting-week")).toHaveCount(0);
+  await expect(page.getByText(/^Неделя \d+, /)).toBeVisible();
   await openAgenda(page);
 
   // Этап 47: поручения прошлой встречи в повестке группами по человеку, в группе счёт поручений; поручение на экране
@@ -85,6 +97,7 @@ test("владелец собирает повестку, ведёт встре�
   await expect(reva.getByRole("heading", { name: /Задача 28 заблокирована/ })).toBeVisible();
   await expect(reva.getByText(/Экран идёт за ведущим: Арам/)).toBeVisible();
   await expect(reva.getByRole("button", { name: "Начать встречу" })).toHaveCount(0);
+  await expect(reva.getByTestId("meeting-week")).toHaveCount(0);
 
   // Решение по пункту, пункт обсуждён
   await page.getByRole("button", { name: "Записать решение" }).click();

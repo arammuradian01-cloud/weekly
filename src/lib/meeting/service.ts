@@ -16,7 +16,7 @@ import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
 import { loadScope, loadTeamNodes, TOP_TEAM, type Scope, type TeamNode } from "@/lib/org/scope";
 import { expectedOf, leadersOf, teamMeeting } from "@/lib/org/rhythm";
 import { ensureWeek, weekSettings } from "@/lib/weekly/service";
-import { meetingOf, shiftWeek, weekNumberOf } from "@/lib/weekly/weeks";
+import { meetingOf, meetingWeekKey, shiftWeek, weekNumberOf } from "@/lib/weekly/weeks";
 import { stuckForMeeting } from "@/lib/requests/service";
 import { meetingQuestions } from "@/lib/discuss/service";
 import { notify, taskSubject } from "@/lib/inbox/notify";
@@ -26,6 +26,7 @@ import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
 import { marketAgendaDraft, marketAgendaNoteNow } from "@/lib/market/meeting";
 import { canSeeMarket } from "@/lib/market/access";
+import { oneItemPerTask, type TaskDraft } from "./task-items";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
@@ -214,6 +215,20 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
   };
 }
 
+/**
+ * Неделя встречи без явного выбора (этап 73б): неделя идущей встречи команды, иначе отчётная. Страница считает её один
+ * раз и уходит на адрес с явной неделей: живые обновления перечитывают страницу и не перескакивают на новую неделю
+ */
+export async function meetingWeekFor(teamId: string | null, requested: unknown, now = new Date()): Promise<WeekKey> {
+  const [{ deadline }, live] = await Promise.all([
+    weekSettings(),
+    teamId
+      ? prisma.meeting.findMany({ where: { teamId, status: "LIVE" }, select: { week: { select: { start: true } } }, orderBy: { week: { start: "desc" } }, take: 5 })
+      : Promise.resolve([]),
+  ]);
+  return meetingWeekKey({ now, deadline, requested, live: live.map((m) => isoFromDbDate(m.week.start)) });
+}
+
 /** Встреча команды за неделю. null: ещё не собрана */
 export async function getMeeting(actor: Actor, teamId: string, key: WeekKey): Promise<MeetingView | null> {
   const a = await accessTo(prisma, actor, teamId);
@@ -252,12 +267,9 @@ export async function canLeadTeam(actor: Actor, teamId: string): Promise<boolean
 
 // ---------- Повестка ----------
 
-type Draft = {
-  kind: AgendaKind;
-  autoKey: string;
+/** Пункт-кандидат: вид, ключ, задача, заметка и пометка для слияния (TaskDraft), вопрос и ссылки на данные */
+type Draft = TaskDraft & {
   title: string;
-  note?: string | null;
-  taskId?: string;
   entryId?: string;
   requestId?: string;
   personId?: string;
@@ -284,27 +296,32 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   const market = await marketAgendaDraft(team.id, current ? isoFromDbDate(current.date) : thisDate, current?.id ?? null);
   if (market) drafts.push({ kind: "MARKET", ...market });
   // Поручения: задачи с источником «встреча», поставленные с прошлой встречи до этой (и на следующий день после разбора
-  // в Notion), и задачи, созданные за время прошлой встречи в живом режиме
-  // Исторический импорт создаёт строку сейчас, но не новое поручение. Дата источника имеет приоритет перед createdAt;
-  // у импорта без даты источник узнаём по ключам пакета, у Bord — по importBatch.
-  const imported = prev?.startedAt && prev.closedAt
-    ? await prisma.contentImportKey.findMany({ where: { kind: "task" }, select: { entityId: true } })
-    : [];
-  const followUps = await prisma.task.findMany({
+  // в Notion), и задачи, созданные за время прошлой встречи в живом режиме. Встречу могли провести не в свой день:
+  // задача, поставленная на ней, получает дату источника «сегодня» вне окна, её находит время живого режима.
+  // Историю, загруженную во время встречи, отсекаем по пакету Bord (importBatch) и ключам пакета наполнения (этап 67)
+  const liveWindow = prev?.startedAt && prev.closedAt ? { gte: prev.startedAt, lte: prev.closedAt } : null;
+  const candidates = await prisma.task.findMany({
     where: {
       teamId: team.id,
       archivedAt: null,
-      OR: [
-        { sourceCode: "meeting", sourceDate: { gte: dbDate(prevDate), lt: dbDate(thisDate) } },
-        ...(prev?.startedAt && prev.closedAt ? [{ sourceDate: null, importBatch: null, id: { notIn: imported.map((i) => i.entityId) }, createdAt: { gte: prev.startedAt, lte: prev.closedAt } }] : []),
-      ],
+      OR: [{ sourceCode: "meeting", sourceDate: { gte: dbDate(prevDate), lt: dbDate(thisDate) } }, ...(liveWindow ? [{ importBatch: null, createdAt: liveWindow }] : [])],
     },
-    select: { id: true, number: true, title: true, status: true },
+    select: { id: true, number: true, title: true, status: true, sourceCode: true, sourceDate: true },
     orderBy: { number: "asc" },
   });
-  for (const t of followUps) {
+  const bySource = (t: (typeof candidates)[number]) => t.sourceCode === "meeting" && t.sourceDate !== null && isoFromDbDate(t.sourceDate) >= prevDate && isoFromDbDate(t.sourceDate) < thisDate;
+  // Ключи читаем только для задач из окна живой встречи: их немного, а всех ключей пакетов могут быть десятки тысяч
+  const imported = await importedTaskIds(candidates.filter((t) => !bySource(t)).map((t) => t.id));
+  for (const t of candidates) {
+    if (imported.has(t.id)) continue;
     const closed = CLOSED_DB.includes(t.status);
-    drafts.push({ kind: "FOLLOW_UP", autoKey: `follow:${t.id}`, taskId: t.id, title: closed ? `Поручение ${t.number} закрыто: ${t.title}. Принимаем итог?` : `Поручение ${t.number}: ${t.title}. Где оно сейчас?` });
+    drafts.push({
+      kind: "FOLLOW_UP",
+      autoKey: `follow:${t.id}`,
+      taskId: t.id,
+      title: closed ? `Поручение ${t.number} закрыто: ${t.title}. Принимаем итог?` : `Поручение ${t.number}: ${t.title}. Где оно сейчас?`,
+      mark: closed ? "Поручение прошлой встречи, закрыто" : "Поручение прошлой встречи",
+    });
   }
 
   // Зависшие просьбы и предложения (этап 21)
@@ -320,7 +337,7 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   for (const p of stuck.proposals) {
     const row = await prisma.task.findUnique({ where: { number: p.number }, select: { id: true, teamId: true } });
     if (!row || (row.teamId !== team.id && !(p.owner && slugs.has(p.owner)))) continue;
-    drafts.push({ kind: "PROPOSAL", autoKey: `proposal:${row.id}`, taskId: row.id, title: `Предложение ${p.number} без ответа ${p.days} дн.: ${p.title}. Берём или отклоняем?` });
+    drafts.push({ kind: "PROPOSAL", autoKey: `proposal:${row.id}`, taskId: row.id, title: `Предложение ${p.number} без ответа ${p.days} дн.: ${p.title}. Берём или отклоняем?`, mark: `Предложение без ответа ${p.days} дн.` });
   }
 
   // Задачи команды: заблокированы или в риске; критичные; просрочены больше недели
@@ -330,12 +347,14 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
     orderBy: { number: "asc" },
   });
   for (const t of open) {
-    if (t.state === "BLOCKED") drafts.push({ kind: "TASK_STATE", autoKey: `state:${t.id}`, taskId: t.id, title: `Задача ${t.number} заблокирована: ${t.title}. Что разблокирует?`, note: t.blockedBy });
-    else if (t.state === "AT_RISK") drafts.push({ kind: "TASK_STATE", autoKey: `state:${t.id}`, taskId: t.id, title: `Задача ${t.number} в риске: ${t.title}. Хватит ли того, что вернёт её в график?`, note: t.riskNote });
+    // Причина блокера или риска живёт только в заметке пункта: при слиянии с поручением она переходит в его заметку
+    if (t.state === "BLOCKED") drafts.push({ kind: "TASK_STATE", autoKey: `state:${t.id}`, taskId: t.id, title: `Задача ${t.number} заблокирована: ${t.title}. Что разблокирует?`, note: t.blockedBy, mark: t.blockedBy ? `Заблокирована: ${t.blockedBy}` : "Заблокирована" });
+    else if (t.state === "AT_RISK") drafts.push({ kind: "TASK_STATE", autoKey: `state:${t.id}`, taskId: t.id, title: `Задача ${t.number} в риске: ${t.title}. Хватит ли того, что вернёт её в график?`, note: t.riskNote, mark: t.riskNote ? `В риске: ${t.riskNote}` : "В риске" });
     const due = isoFromDbDate(t.due);
     const overdue = due < today ? Math.round((Date.parse(today) - Date.parse(due)) / 86_400_000) : 0;
-    if (t.priority === "CRITICAL") drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Критичная задача ${t.number}: ${t.title}. Что по ней на этой неделе?` });
-    else if (overdue > OVERDUE_DAYS) drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Задача ${t.number} просрочена на ${overdue} дн.: ${t.title}. Новый срок или снимаем?` });
+    const late = overdue > OVERDUE_DAYS ? `просрочена на ${overdue} дн.` : null;
+    if (t.priority === "CRITICAL") drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Критичная задача ${t.number}: ${t.title}. Что по ней на этой неделе?`, note: late ? `Задача ${late}` : null, mark: late ? `Критичная, ${late}` : "Критичная" });
+    else if (late) drafts.push({ kind: "TASK_ATTENTION", autoKey: `attention:${t.id}`, taskId: t.id, title: `Задача ${t.number} просрочена на ${overdue} дн.: ${t.title}. Новый срок или снимаем?`, mark: `Просрочена на ${overdue} дн.` });
   }
 
   // Крупные инициативы, которые ведёт команда: долго ищут, как сделать, или давно без новостей (этап 30)
@@ -362,15 +381,18 @@ async function collectAgenda(a: Access, key: WeekKey, today: IsoDate, now = new 
   const expected = await prisma.person.findMany({ where: { id: { in: expectedOf(team, leadersOf(a.nodes)) }, active: true }, select: { id: true, fullName: true }, orderBy: { sortOrder: "asc" } });
   const ordered = [...expected].sort((x, y) => Number(x.id === team.leaderId) - Number(y.id === team.leaderId));
   for (const p of ordered) drafts.push({ kind: "PERSON", autoKey: `person:${p.id}`, personId: p.id, title: `${p.fullName}: что главное за неделю и что дальше?` });
-  // Одна задача — один автоматический пункт: поручение, затем риск, затем прочее внимание.
-  // Явно заданные вопросы обсуждения остаются самостоятельными пунктами.
-  const automaticTasks = new Set<string>();
-  return drafts.filter((d) => {
-    if (!d.taskId || !["FOLLOW_UP", "TASK_STATE", "TASK_ATTENTION"].includes(d.kind)) return true;
-    if (automaticTasks.has(d.taskId)) return false;
-    automaticTasks.add(d.taskId);
-    return true;
-  });
+  // Один пункт на задачу выбирает пересборка (oneItemPerTask): только она знает, какие пункты ведущий убрал
+  return drafts;
+}
+
+/** Какие задачи из списка загружены пакетом наполнения (этап 67). Список режем на части: предел параметров запроса */
+async function importedTaskIds(ids: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (let i = 0; i < ids.length; i += 5000) {
+    const keys = await prisma.contentImportKey.findMany({ where: { kind: "task", entityId: { in: ids.slice(i, i + 5000) } }, select: { entityId: true } });
+    for (const k of keys) found.add(k.entityId);
+  }
+  return found;
 }
 
 /**
@@ -383,7 +405,7 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
   const week = await ensureWeek(prisma, key);
   const { meeting } = await weekSettings();
   const date = teamMeeting(key, a.node, meetingOf(key, meeting)).date;
-  const drafts = await collectAgenda(a, key, moscowToday(now), now);
+  const collected = await collectAgenda(a, key, moscowToday(now), now);
   const row = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`meeting:${week.id}:${teamId}`}))::text`;
     const m = await tx.meeting.upsert({
@@ -394,6 +416,12 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
     });
     if (m.status === "DONE") fail("Встреча закрыта: повестку больше не собирают");
     const byKey = new Map(m.items.filter((i) => i.autoKey).map((i) => [i.autoKey!, i]));
+    // Один автоматический пункт на задачу, считая только то, что реально будет в повестке (убранное ведущим не в счёт)
+    const drafts = oneItemPerTask(collected, new Map([...byKey].map(([k, i]) => [k, { removed: i.removedAt !== null }]))).map((d) => ({
+      ...d,
+      title: d.title.slice(0, MEETING_LIMITS.title),
+      note: d.note ? d.note.slice(0, MEETING_LIMITS.note) : null,
+    }));
     const seen = new Set<string>();
     let order = Math.max(0, ...m.items.map((i) => i.sortOrder)) + 1;
     for (const d of drafts) {
@@ -408,8 +436,8 @@ export async function buildAgenda(actor: Actor, teamId: string, key: WeekKey, no
         data: {
           meetingId: m.id,
           kind: d.kind,
-          title: d.title.slice(0, MEETING_LIMITS.title),
-          note: d.note?.slice(0, MEETING_LIMITS.note) ?? null,
+          title: d.title,
+          note: d.note,
           autoKey: d.autoKey,
           // Разбор рынка встаёт первым и при пересборке уже собранной повестки
           sortOrder: d.kind === "MARKET" ? Math.min(0, ...m.items.map((i) => i.sortOrder)) - 1000 : KIND_ORDER[d.kind] * 1000 + order++,
