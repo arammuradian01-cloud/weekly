@@ -69,6 +69,7 @@ export function SearchPicker({
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const listInput = useRef<HTMLInputElement>(null);
+  const pointerKind = useRef<string>("mouse");
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
   // Человек начал печатать: до этого список показывает все варианты, даже если в поле стоит выбранный (этап 55)
@@ -151,10 +152,14 @@ export function SearchPicker({
           setActive(0);
         }}
         // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
+        onPointerDown={(e) => {
+          pointerKind.current = e.pointerType;
+        }}
         onMouseDown={(e) => {
           // В потоке окна закрытие списка предыдущего поля меняет его высоту. Передаём фокус до стандартной
           // обработки щелчка: иначе поле уезжает из-под указателя, и Radix возвращает фокус самому окну.
-          if (inline && document.activeElement !== e.currentTarget) {
+          // Только мышь: на телефоне фокус из синтетического щелчка может не открыть клавиатуру
+          if (inline && pointerKind.current === "mouse" && document.activeElement !== e.currentTarget) {
             e.preventDefault();
             e.currentTarget.focus({ preventScroll: true });
           }
