@@ -73,7 +73,9 @@ test("доска по направлениям и срокам, звёздочк
 
   // Доска человека: ссылкой можно поделиться
   const [owner] = await sql(`SELECT p.slug, p."fullName" FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE t.number = $1`, [a]);
-  await page.getByLabel("Чьи задачи").selectOption(owner!.slug as string);
+  // Этап 77: выбор человека с поиском
+  await page.getByRole("combobox", { name: "Чьи задачи" }).fill(String(owner!.fullName).split(" ")[0]!);
+  await page.getByRole("option", { name: new RegExp(`^${owner!.fullName}`) }).click();
   await expect(page).toHaveURL(new RegExp(`person=${owner!.slug}`));
   await expect(board.getByTestId(`roadmap-task-${a}`)).toBeVisible();
 
