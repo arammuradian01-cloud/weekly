@@ -363,11 +363,19 @@ export async function clearViewAs(): Promise<void> {
   store.delete(TEAM_VIEW_COOKIE);
 }
 
+/**
+ * Владелец или администратор выбран по общему логину (этап 71): режима управления у такого входа нет, и страницы
+ * управления не уходят молча на главную, а ведут на /manage с объяснением (MANAGEMENT_TEAM_REFUSAL)
+ */
+export function teamManagementRefused(ctx: Pick<AppContext, "via" | "person">): boolean {
+  return ctx.via === "TEAM" && managementRoleFor(ctx.person.role) !== null;
+}
+
 /** Страницы режима управления. roles сужает доступ, например только владельцу */
 export async function requireManagement(roles: ManagementRole[] = ["OWNER", "ADMIN"], next = "/"): Promise<AppContext> {
   const ctx = await requireContext();
   if (!ctx.management) {
-    if (!ctx.managementRole) redirect("/");
+    if (!ctx.managementRole && !teamManagementRefused(ctx)) redirect("/");
     redirect(`/manage?next=${encodeURIComponent(next)}`);
   }
   if (!roles.includes(ctx.management.role)) redirect("/");

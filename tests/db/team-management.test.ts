@@ -3,7 +3,8 @@
 // входа, сброс паролей, выгрузку всего. Здесь: по общему логину режим не включается ни паролем, ни ссылкой на почту ни
 // владельцу, ни администратору; режим, оставшийся в cookie общего логина, не действует; перебор всех серверных действий
 // ресурса под общим логином с таким режимом в cookie: каждое отвечает так же, как без него, база (люди, настройки,
-// ссылки, календари, уведомления) и письма не меняются; выгрузки и закрытые разделы отказывают.
+// ссылки, календари, уведомления) и письма не меняются; выгрузки и закрытые разделы отказывают. Плюс точечные вызовы
+// действий управления с настоящими аргументами: отказ по правам, а не на проверке ввода.
 // cookie и заголовки запроса подменены: вход читает подписанные cookie так же, как на сервере.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -39,6 +40,9 @@ import { setMailTransport, type Mail } from "@/lib/mail";
 import { confirmStepUpAction, enterManagement, requestStepUpAction } from "@/app/actions/auth";
 import { GET as exportExcelGet } from "@/app/(app)/settings/export/route";
 import { GET as forecastExportGet } from "@/app/(app)/forecast/export/route";
+import ManagePage from "@/app/(app)/manage/page";
+import { TeamRefusal } from "@/app/(app)/manage/team-refusal";
+import { issueInviteAction, issueInvitesForAllAction, resetPasswordAction, revokePersonDevicesAction, setPersonActiveAction, updatePersonAction } from "@/app/(app)/settings/actions";
 
 const SECRET = process.env.SESSION_SECRET!;
 const OWNER_PASSWORD = "Пароль владельца для проверки 2026";
@@ -184,10 +188,53 @@ describe("режим управления по общему логину", () =>
       await teamSession(slug, grant);
       const ctx = await requireContext();
       expect([ctx.managementRole, ctx.management]).toEqual([null, null]);
-      expect(await settle(() => requireManagement())).toEqual({ redirect: "/" });
-      expect(await settle(() => exportExcelGet())).toEqual({ redirect: "/" });
+      // Не молчаливый уход на главную, а экран режима управления с объяснением
+      expect(await settle(() => requireManagement())).toEqual({ redirect: "/manage?next=%2F" });
+      expect(await settle(() => exportExcelGet())).toEqual({ redirect: "/manage?next=%2Fsettings" });
+      const manage = (await ManagePage({ searchParams: Promise.resolve({ next: "/settings" }) })) as { type: unknown };
+      expect(manage.type).toBe(TeamRefusal);
+      expect(JSON.stringify(TeamRefusal())).toContain(MANAGEMENT_TEAM_REFUSAL);
       const forecast = await forecastExportGet(new Request("http://localhost:3000/forecast/export"));
       expect(forecast.status).toBeGreaterThanOrEqual(400);
+    }
+  });
+
+  it("действия управления с настоящими аргументами под общим логином с режимом в cookie: отказ, база и письма не меняются", async () => {
+    // Было бы что менять: у Ревы личный пароль и вход на устройстве
+    const reva = await prisma.person.findUniqueOrThrow({ where: { slug: "reva" } });
+    const revaHash = await hashPassword("Пароль Ревы для проверки 2026");
+    await prisma.person.update({ where: { id: reva.id }, data: { passwordHash: revaHash } });
+    const device = await prisma.deviceSession.create({ data: { personId: reva.id, method: "PASSWORD", expiresAt: new Date(Date.now() + 86_400_000) } });
+    try {
+      const before = await fingerprint();
+      // Отказ по правам, а не по проверке ввода: аргументы настоящие
+      const refused = (r: unknown) => expect(r).toMatchObject({ ok: false, error: expect.stringMatching(/только владелец/) });
+      for (const [slug, grant] of [
+        ["muradyan", "OWNER"],
+        ["golovkin", "ADMIN"],
+      ] as const) {
+        await teamSession(slug, grant);
+        refused(await issueInviteAction("muradyan"));
+        refused(await issueInviteAction("reva"));
+        refused(await issueInvitesForAllAction(3));
+        refused(await resetPasswordAction("reva"));
+        refused(await revokePersonDevicesAction("reva"));
+        refused(await updatePersonAction("reva", { role: "ADMIN" }));
+        refused(await updatePersonAction("muradyan", { role: "LEADER" }));
+        refused(await setPersonActiveAction("reva", false));
+        expect(await settle(() => exportExcelGet())).toEqual({ redirect: "/manage?next=%2Fsettings" });
+        expect((await forecastExportGet(new Request("http://localhost:3000/forecast/export"))).status).toBeGreaterThanOrEqual(400);
+      }
+      expect(await fingerprint()).toEqual(before);
+      const after = await prisma.person.findUniqueOrThrow({ where: { id: reva.id } });
+      expect([after.role, after.active, after.passwordHash]).toEqual([reva.role, reva.active, revaHash]);
+      expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: device.id } })).revokedAt).toBeNull();
+      expect((await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } })).role).toBe("OWNER");
+      expect(await prisma.loginLink.count({ where: { createdAt: { gt: new Date(Date.now() - 60_000) } } })).toBe(0);
+      expect(mails).toEqual([]);
+    } finally {
+      await prisma.deviceSession.delete({ where: { id: device.id } });
+      await prisma.person.update({ where: { id: reva.id }, data: { passwordHash: reva.passwordHash } });
     }
   });
 
