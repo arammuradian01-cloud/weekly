@@ -213,7 +213,7 @@ test("смена квартала: выбранных, которых в нов�
   // Влада нет среди владельцев целей Q3: выбор пустеет, список полный, на кнопке нет «(1)»
   await page.goto(`/goals?q=${Q4}&people=golovkin`);
   await expect(goalCards(page)).toHaveCount(1);
-  await page.getByLabel("Квартал").selectOption(Q3);
+  await page.locator("#goals-quarter").selectOption(Q3);
   await expect(page).toHaveURL(new RegExp(`q=${Q3}`));
   await expect(radio(page, "Все сотрудники")).toHaveAttribute("aria-checked", "true");
   await expect(picked(page)).toHaveAttribute("aria-checked", "false");
@@ -229,7 +229,7 @@ test("смена квартала: выбранных, которых в нов�
   // Арам есть в обоих кварталах: остаётся только он, и это уже «Мои цели»
   await page.goto(`/goals?q=${Q4}&people=golovkin,muradyan`);
   await expect(goalCards(page)).toHaveCount(3);
-  await page.getByLabel("Квартал").selectOption(Q3);
+  await page.locator("#goals-quarter").selectOption(Q3);
   await expect(page).toHaveURL(new RegExp(`q=${Q3}`));
   await expect(radio(page, "Мои цели")).toHaveAttribute("aria-checked", "true");
   await expect(page.getByTestId("goals-people-selected")).toHaveText("Выбраны: Мурадян Арам");
