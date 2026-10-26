@@ -743,7 +743,7 @@ export async function applyPlan(actor: Actor, plan: Pick<GoalsPlan, "rows">, sou
         await tx.goal.update({ where: { id }, data: { parentId } });
       }
       await tx.auditLog.create({
-        data: { action: "goal.import", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: opts.source ?? "import", field: "Цели загружены", after: `новых ${added}, изменено ${changed}` },
+        data: { action: "goal.import", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "goal", entityId: opts.source ?? "import", field: "Цели загружены", after: `новых ${added}, изменено ${changed}`, ip: actor.ip ?? null, ...auditVia(actor) },
       });
       return { added, changed };
     },

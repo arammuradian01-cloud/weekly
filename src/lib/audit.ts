@@ -24,7 +24,7 @@ export type AsOwner = { id: string; fullName: string };
 /**
  * Как вошёл автор, для записи журнала: способ входа и, во время входа владельца в чужой профиль (этап 71), кто из
  * владельцев вошёл. Все записи журнала от имени человека берут эти поля отсюда, а не только via: так пометка
- * «вошёл владелец» не теряется ни в одной записи (проверяет tests/unit/owner-as.test.ts)
+ * «вошёл владелец» не теряется ни в одной записи (проверяют настоящие действия в tests/db/owner-as.test.ts)
  */
 export function auditVia(actor: { via?: LoginMethod | null; asOwner?: AsOwner | null }): { via: LoginMethod | null; asOwnerId: string | null; asOwnerName: string | null } {
   return { via: actor.via ?? null, asOwnerId: actor.asOwner?.id ?? null, asOwnerName: actor.asOwner?.fullName ?? null };

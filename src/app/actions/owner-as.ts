@@ -85,7 +85,12 @@ export async function returnToOwnProfileAction(): Promise<OwnerAsResult<null>> {
     await clearSession();
     redirect("/login?ended=1");
   }
-  await endOwnerAs(owner, grant, "return", { ip, via: device.method });
+  try {
+    await endOwnerAs(owner, grant, "return", { ip, via: device.method });
+  } catch (error) {
+    // Конец входа не записался в журнал: сессия с входом остаётся как была, возврат можно повторить
+    return failure("Возврат в свой профиль", error);
+  }
   const { ownerAs: _ownerAs, management: _management, ...rest } = session;
   await writeSession(rest);
   (await cookies()).delete(TEAM_VIEW_COOKIE);

@@ -4,7 +4,6 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "./db";
-import { writeAudit } from "./audit";
 import { TaskRuleError } from "./rule-error";
 import { formatTime } from "./week";
 import type { OwnerAsGrant } from "./session";
@@ -23,7 +22,7 @@ export type OwnerAsOwner = {
 };
 
 function startCheck(owner: OwnerAsOwner) {
-  return { personId: owner.person.id, role: owner.person.role, personal: !!owner.sid && owner.via !== "TEAM" && owner.via !== "OWNER_AS", viewing: owner.viewing, inside: owner.inside };
+  return { personId: owner.person.id, role: owner.person.role, personal: !!owner.sid && owner.via !== "TEAM" && owner.via !== "OWNER_AS", byEmail: owner.via === "EMAIL", viewing: owner.viewing, inside: owner.inside };
 }
 
 /** Можно ли владельцу открыть выбор: те же правила, что у входа, без выбранного человека */
@@ -56,23 +55,27 @@ export async function ownerAsTarget(owner: OwnerAsOwner, targetId: string): Prom
 
 /**
  * Начать вход (после ownerAsTarget): срок 12 часов и запись «ownerAs.start» в журнал от имени владельца, в чей профиль
- * он вошёл. Возвращает данные для подписанной cookie сессии
+ * он вошёл. Возвращает данные для подписанной cookie сессии. Запись идёт напрямую, без writeAudit, который глотает
+ * ошибки: не записалось начало, и входа нет (ошибка уходит вызвавшему, сессию с ownerAs он не выдаёт)
  */
 export async function beginOwnerAs(owner: OwnerAsOwner, target: { id: string; slug: string; fullName: string }, now = new Date()): Promise<OwnerAsGrant> {
   const until = ownerAsUntil(now.getTime());
   const id = randomUUID();
-  await writeAudit({
-    action: "ownerAs.start",
-    actorId: owner.person.id,
-    actorName: owner.person.fullName,
-    entity: "person",
-    entityId: target.slug,
-    field: "Вход владельца в профиль",
-    // Номер входа: по нему конец входа пишется один раз. Экран журнала его не показывает
-    before: id,
-    after: `${target.fullName}, до ${formatTime(new Date(until))}`,
-    ip: owner.ip ?? null,
-    via: owner.via,
+  await prisma.auditLog.create({
+    data: {
+      action: "ownerAs.start",
+      actorId: owner.person.id,
+      actorName: owner.person.fullName,
+      source: "APP",
+      entity: "person",
+      entityId: target.slug,
+      field: "Вход владельца в профиль",
+      // Номер входа: по нему конец входа пишется один раз. Экран журнала его не показывает
+      before: id,
+      after: `${target.fullName}, до ${formatTime(new Date(until))}`,
+      ip: owner.ip ?? null,
+      via: owner.via,
+    },
   });
   return { id, targetId: target.id, until };
 }
@@ -99,17 +102,21 @@ export async function endOwnerAs(owner: { id: string; fullName: string }, grant:
 async function recordEnd(owner: { id: string; fullName: string }, grant: Pick<OwnerAsGrant, "id" | "targetId">, reason: OwnerAsEnd, meta: { ip?: string | null; via?: LoginMethod | null }): Promise<void> {
   if (await ownerAsEndRecorded(owner.id, grant)) return;
   const target = await prisma.person.findUnique({ where: { id: grant.targetId }, select: { slug: true, fullName: true } });
-  await writeAudit({
-    action: "ownerAs.stop",
-    actorId: owner.id,
-    actorName: owner.fullName,
-    entity: "person",
-    entityId: target?.slug ?? grant.targetId,
-    field: OWNER_AS_END_TEXTS[reason],
-    before: grant.id,
-    after: target?.fullName ?? "человек удалён",
-    ip: meta.ip ?? null,
-    via: meta.via ?? null,
+  // Напрямую, без writeAudit: не записался конец, и ошибка уходит вызвавшему, сессия с ownerAs остаётся до повторной попытки
+  await prisma.auditLog.create({
+    data: {
+      action: "ownerAs.stop",
+      actorId: owner.id,
+      actorName: owner.fullName,
+      source: "APP",
+      entity: "person",
+      entityId: target?.slug ?? grant.targetId,
+      field: OWNER_AS_END_TEXTS[reason],
+      before: grant.id,
+      after: target?.fullName ?? "человек удалён",
+      ip: meta.ip ?? null,
+      via: meta.via ?? null,
+    },
   });
   ENDED.set(grant.id, reason);
 }

@@ -20,6 +20,7 @@ export const OWNER_AS_TTL_MS = 12 * 60 * 60 * 1000;
 export const OWNER_AS_TEXTS = {
   ownerOnly: "Входить в профиль другого человека может только владелец",
   personal: "В профиль другого человека входят только при личном входе, не по общему логину",
+  email: "В профиль другого человека владелец входит только после входа своим логином и паролем: вход по ссылке на почту для этого не подходит",
   viewing: "Сначала выйдите из просмотра «Смотреть как»",
   inside: "Вы уже в профиле другого человека: сначала вернитесь в свой профиль",
   missing: "Такого человека нет",
@@ -33,13 +34,17 @@ export const OWNER_AS_TEXTS = {
   notInside: "Вы и так в своём профиле",
 } as const;
 
-/** Кто входит: профиль, его роль, личный ли вход, идёт ли просмотр «Смотреть как», идёт ли уже вход в чужой профиль */
-export type OwnerAsStarter = { personId: string; role: Role; personal: boolean; viewing: boolean; inside: boolean };
+/**
+ * Кто входит: профиль, его роль, личный ли вход, вошёл ли он по ссылке на почту, идёт ли просмотр «Смотреть как», идёт
+ * ли уже вход в чужой профиль
+ */
+export type OwnerAsStarter = { personId: string; role: Role; personal: boolean; byEmail: boolean; viewing: boolean; inside: boolean };
 
 /**
- * Можно ли войти в профиль. null: можно. Только владелец, только при личном входе, не во время просмотра и не во время
- * другого такого входа (из него только возврат). Входить можно только к включённому человеку, не к себе и не к другому
- * владельцу: иначе совладелец вошёл бы от имени главного владельца и получил бы его права
+ * Можно ли войти в профиль. null: можно. Только владелец, только при личном входе и не по ссылке на почту, не во время
+ * просмотра и не во время другого такого входа (из него только возврат). Входить можно только к включённому человеку,
+ * не к себе и не к другому владельцу: владельцы равны, а вход в чужой профиль открыл бы роль OWNER в профиле другого
+ * владельца, с его учётной записью и правками от его имени
  */
 export function ownerAsStartError(who: OwnerAsStarter, target: { id: string; active: boolean; role: Role } | null): string | null {
   if (who.inside) return OWNER_AS_TEXTS.inside;
@@ -47,6 +52,9 @@ export function ownerAsStartError(who: OwnerAsStarter, target: { id: string; act
   if (who.viewing) return OWNER_AS_TEXTS.viewing;
   if (who.role !== "OWNER") return OWNER_AS_TEXTS.ownerOnly;
   if (!who.personal) return OWNER_AS_TEXTS.personal;
+  // Доступ к одной почте не даёт права владельца (как с режимом управления, src/lib/login/service.ts): из входа по ссылке
+  // на почту в чужой профиль не входят
+  if (who.byEmail) return OWNER_AS_TEXTS.email;
   if (!target) return OWNER_AS_TEXTS.missing;
   if (target.id === who.personId) return OWNER_AS_TEXTS.self;
   if (!target.active) return OWNER_AS_TEXTS.inactive;

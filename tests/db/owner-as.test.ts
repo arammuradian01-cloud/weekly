@@ -46,6 +46,7 @@ import * as ownerAs from "@/app/actions/owner-as";
 import * as viewAs from "@/app/actions/view-as";
 import { chooseProfile, confirmStepUpAction, enterManagement, exitManagement, logout, requestStepUpAction } from "@/app/actions/auth";
 import { addCommentAction, createTaskAction } from "@/app/(app)/tasks/actions";
+import { applyGoalsAction } from "@/app/(app)/goals/actions";
 import { setTeamAction } from "@/app/actions/team";
 import {
   calendarTitlesAction,
@@ -81,15 +82,16 @@ const EXTRA = [
 ];
 
 /** Личный вход человека: запись устройства и подписанная cookie сессии, по желанию с режимом управления его роли */
-async function signIn(slug: string, opts: { management?: boolean } = {}) {
+async function signIn(slug: string, opts: { management?: boolean; method?: "PASSWORD" | "EMAIL" | "INVITE" } = {}) {
   http.cookies.clear();
   http.headers.delete("x-weekly-view");
   const p = await person(slug);
   const { epoch, managementEpoch } = await getEpochs();
   const role = p.role === "OWNER" ? "OWNER" : p.role === "ADMIN" ? "ADMIN" : null;
   const management: ManagementGrant | undefined = opts.management && role ? { role, until: Date.now() + MANAGEMENT_TTL_MS, epoch: managementEpoch } : undefined;
-  const device = await prisma.deviceSession.create({ data: { personId: p.id, method: "PASSWORD", expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
-  http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: p.id, sid: device.id, via: "PASSWORD", ...(management ? { management } : {}) }, SECRET));
+  const method = opts.method ?? "PASSWORD";
+  const device = await prisma.deviceSession.create({ data: { personId: p.id, method, expiresAt: new Date(Date.now() + 30 * 86_400_000) } });
+  http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: p.id, sid: device.id, via: method, ...(management ? { management } : {}) }, SECRET));
   return { person: p, sid: device.id };
 }
 
@@ -189,6 +191,18 @@ describe("кого можно выбрать", () => {
     expect(await ownerAs.startOwnerAsAction("нет-такого")).toEqual({ ok: false, error: OWNER_AS_TEXTS.missing });
     expect((await session())?.ownerAs).toBeUndefined();
     expect(await ownerAsAudit()).toEqual([]);
+  });
+
+  it("владелец, вошедший по ссылке на почту, в чужой профиль не входит: доступ к почте не даёт прав владельца", async () => {
+    await signIn("muradyan", { method: "EMAIL" });
+    expect((await requireContext()).via).toBe("EMAIL");
+    expect(await ownerAs.ownerAsPeopleAction()).toEqual({ ok: false, error: OWNER_AS_TEXTS.email });
+    expect(await ownerAs.startOwnerAsAction((await person("reva")).id)).toEqual({ ok: false, error: OWNER_AS_TEXTS.email });
+    expect((await session())?.ownerAs).toBeUndefined();
+    expect(await ownerAsAudit()).toEqual([]);
+    // По ссылке от владельца (приглашение) и по паролю вход есть
+    await signIn("muradyan", { method: "INVITE" });
+    expect((await ownerAs.ownerAsPeopleAction()).ok).toBe(true);
   });
 
   it("общий логин: все включённые люди структуры без личного пароля, владелец без пароля тоже (поправка 23.10)", async () => {
@@ -413,6 +427,66 @@ describe("вход владельца в профиль и возврат", () =
     const stop = (await ownerAsAudit()).find((r) => r.action === "ownerAs.stop");
     expect(stop).toMatchObject({ actorId: owner.id, field: "Выход из ресурса" });
     expect((await prisma.deviceSession.findUniqueOrThrow({ where: { id: sid } })).revokedAt).not.toBeNull();
+  });
+
+  it("начало входа не записалось в журнал: входа нет, сессия прежняя", async () => {
+    const { person: owner } = await signIn("muradyan", { management: true });
+    const before = (await session())!;
+    const spy = vi.spyOn(prisma.auditLog, "create").mockRejectedValueOnce(new Error("журнал недоступен"));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const r = await ownerAs.startOwnerAsAction((await person("reva")).id);
+      expect(r.ok).toBe(false);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+      quiet.mockRestore();
+    }
+    const s = (await session())!;
+    expect(s.ownerAs).toBeUndefined();
+    expect(s.management).toEqual(before.management);
+    const ctx = await requireContext();
+    expect(ctx.person.id).toBe(owner.id);
+    expect(ctx.ownerAs).toBeNull();
+    expect(await ownerAsAudit()).toEqual([]);
+  });
+
+  it("конец входа не записался в журнал: возврат отказывает, вход остаётся; повтор записывает конец один раз", async () => {
+    await signIn("muradyan");
+    const grant = await enterAs("reva");
+    const spy = vi.spyOn(prisma.auditLog, "create").mockRejectedValueOnce(new Error("журнал недоступен"));
+    const quiet = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const r = await ownerAs.returnToOwnProfileAction();
+      expect(r.ok).toBe(false);
+    } finally {
+      spy.mockRestore();
+      quiet.mockRestore();
+    }
+    expect((await session())?.ownerAs?.id).toBe(grant.id);
+    expect((await requireContext()).person.slug).toBe("reva");
+    expect((await ownerAsAudit()).map((r) => r.action)).toEqual(["ownerAs.start"]);
+    expect(await ownerAs.returnToOwnProfileAction()).toEqual({ ok: true, value: null });
+    expect((await ownerAsAudit()).map((r) => r.action)).toEqual(["ownerAs.start", "ownerAs.stop"]);
+  });
+
+  it("загрузка целей во входе владельца: запись журнала с пометкой, кто из владельцев вошёл", async () => {
+    const { person: owner } = await signIn("muradyan");
+    // Руководитель команды (не владелец): цели своей команды он загружает сам
+    const leader = await person("s71-lead");
+    const team = await prisma.team.create({ data: { name: "Команда входа владельца s71", leaderId: leader.id, parentId: "top", sortOrder: 9000 } });
+    await enterAs(leader.slug);
+    const title = "Цель из входа владельца s71";
+    try {
+      const text = ["ID\tКоманда\tВладелец\tЦель", `S71G\t${team.name}\t${leader.fullName}\t${title}`].join("\n");
+      const r = await applyGoalsAction(text, team.id, null);
+      expect(r).toMatchObject({ ok: true, value: { added: 1, changed: 0 } });
+      const [row] = await audit({ action: "goal.import" });
+      expect(row).toMatchObject({ actorId: leader.id, via: "OWNER_AS", asOwnerId: owner.id, asOwnerName: owner.fullName });
+    } finally {
+      await prisma.goal.deleteMany({ where: { teamId: team.id } });
+      await prisma.team.delete({ where: { id: team.id } });
+    }
   });
 
   it("во время «Смотреть как» в чужой профиль не войти", async () => {

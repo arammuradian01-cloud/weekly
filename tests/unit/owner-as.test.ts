@@ -1,9 +1,7 @@
 // Этап 71: «Сменить профиль» без базы. Кто может войти в профиль и в чей, когда вход кончается и есть ли возврат,
 // какие вкладки могут записывать во время входа и после него, вход в подписанной cookie сессии (и её продление),
-// пометка журнала, выбор по общему логину, поиск людей и черновики на устройстве. Плюс проверка по тексту кода: ни одна
-// запись журнала от имени человека не пишет способ входа в обход auditVia, иначе пометка «вошёл владелец» потеряется.
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+// пометка журнала, выбор по общему логину, поиск людей и черновики на устройстве. Пометку в записях журнала и отказ
+// режима управления во время входа проверяют настоящие действия в tests/db/owner-as.test.ts.
 import { describe, expect, it } from "vitest";
 import { SESSION_REFRESH_SEC, refreshSessionToken, signSession, verifySession } from "@/lib/session";
 import { TaskRuleError } from "@/lib/rule-error";
@@ -32,7 +30,7 @@ import { clearOfflineDraftsFor, putHeadlineDraft, type KeyValue } from "@/lib/of
 const secret = "test-secret-0123456789-0123456789-abcdef";
 const now = Date.UTC(2026, 9, 22, 9, 0);
 
-const owner: OwnerAsStarter = { personId: "owner", role: "OWNER", personal: true, viewing: false, inside: false };
+const owner: OwnerAsStarter = { personId: "owner", role: "OWNER", personal: true, byEmail: false, viewing: false, inside: false };
 const reva = { id: "reva", active: true, role: "LEADER" as const };
 
 describe("кто входит в чужой профиль и в чей", () => {
@@ -47,10 +45,12 @@ describe("кто входит в чужой профиль и в чей", () => 
     expect(ownerAsStartError(owner, null)).toBe(OWNER_AS_TEXTS.missing);
   });
 
-  it("не владелец, общий логин, просмотр и уже идущий вход: отказ", () => {
+  it("не владелец, общий логин, вход по ссылке на почту, просмотр и уже идущий вход: отказ", () => {
     expect(ownerAsStartError({ ...owner, role: "ADMIN" }, reva)).toBe(OWNER_AS_TEXTS.ownerOnly);
     expect(ownerAsStartError({ ...owner, role: "LEADER" }, reva)).toBe(OWNER_AS_TEXTS.ownerOnly);
     expect(ownerAsStartError({ ...owner, personal: false }, reva)).toBe(OWNER_AS_TEXTS.personal);
+    // Вход по ссылке на почту: доступ к одной почте прав владельца не даёт
+    expect(ownerAsStartError({ ...owner, byEmail: true }, reva)).toBe(OWNER_AS_TEXTS.email);
     expect(ownerAsStartError({ ...owner, viewing: true }, reva)).toBe(OWNER_AS_TEXTS.viewing);
     // Во входе профиль человека, а не владельца: отказ про повторную смену раньше отказа про роль
     expect(ownerAsStartError({ ...owner, role: "LEADER", inside: true }, reva)).toBe(OWNER_AS_TEXTS.inside);
@@ -208,37 +208,5 @@ describe("поиск людей и черновики на устройстве"
     putHeadlineDraft("muradyan", "2026-10-19", "Свой черновик владельца", "", now, kv);
     clearOfflineDraftsFor("reva", kv);
     expect([...data.keys()]).toEqual(["weekly-offline:v1:muradyan"]);
-  });
-});
-
-function files(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    if (statSync(path).isDirectory()) return name === "generated" ? [] : files(path);
-    return /\.(ts|tsx)$/.test(name) ? [path] : [];
-  });
-}
-
-describe("по коду: пометка входа владельца в каждой записи журнала", () => {
-  it("записи журнала от имени человека берут способ входа из auditVia, а не из via напрямую", () => {
-    const problems: string[] = [];
-    let helpers = 0;
-    for (const file of files("src")) {
-      if (file === join("src", "lib", "audit.ts")) continue;
-      const code = readFileSync(file, "utf8");
-      helpers += (code.match(/\.\.\.auditVia\(/g) ?? []).length;
-      // via: actor.via, a.via, who.via, ctx.via в записи журнала без asOwner
-      for (const m of code.matchAll(/\bvia:\s*(actor|a|who)\.via\b/g)) problems.push(`${file}: ${m[0]}`);
-    }
-    expect(problems).toEqual([]);
-    expect(helpers).toBeGreaterThan(55);
-  });
-
-  it("вход владельца в чужой профиль не включает режим управления и не открывает «Смотреть как»", () => {
-    const auth = readFileSync("src/app/actions/auth.ts", "utf8");
-    const helper = auth.slice(auth.indexOf("async function managementContext"), auth.indexOf("export async function enterManagement"));
-    expect(helper).toMatch(/if \(ctx\.ownerAs\) return \{ error: OWNER_AS_TEXTS\.management \}/);
-    const viewAs = readFileSync("src/app/actions/view-as.ts", "utf8");
-    expect((viewAs.match(/ownerAsRefusal\(ctx\)/g) ?? []).length).toBe(2);
   });
 });
