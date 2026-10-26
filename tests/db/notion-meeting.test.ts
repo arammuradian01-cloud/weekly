@@ -447,7 +447,7 @@ describe("weekly для CEO", () => {
     await expectRule(parse.sendParseToCeo(await owner(), id, { ceo: [blk("products", [])] }), /пустой/);
 
     const view = await parse.sendParseToCeo(await owner(), id, { ceo: DRAFT });
-    expect(view.statusLabel).toBe("Отправлено CEO");
+    expect(view.statusLabel).toBe("Отправлено руководителю");
     expect(view.ceoPreview?.week).toBe(key);
     const krainik = await actorOf("Крайник");
     const report = await weekly.getCeoReport(key);
@@ -459,7 +459,7 @@ describe("weekly для CEO", () => {
     expect(report.sections!.next).toContain("- Департамент. Тест формы в ноябре");
     expect(report.sent).toMatchObject({ by: "Мурадян Арам", to: ["Крайник Александр"] });
     const inbox = await listInbox(krainik.personId);
-    expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/отправил weekly для CEO/) });
+    expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/отправил отчёт руководителю/) });
     // CEO видит собранный отчёт только для чтения и только при личном входе; цифры по его уровню (у генерального все)
     const seen = await parse.ceoSentReports(krainik, key);
     // Скрытые блоки (конкуренты без новостей) CEO не уходят

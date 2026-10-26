@@ -18,6 +18,17 @@ const actor = {
   loginova: () => tasks.actorFor("loginova"),
   team: async (): Promise<tasks.Actor> => ({ ...(await tasks.actorFor("reva")), via: "TEAM" }),
 };
+/** Этап 73: несданный weekly закрытой недели можно сдать задним числом. Правила закрытой недели проверяем на сданном */
+async function markSubmitted(slug: string, key: string) {
+  const week = await weekly.ensureWeek(prisma, key);
+  const person = await prisma.person.findUniqueOrThrow({ where: { slug } });
+  await prisma.weeklyReport.upsert({
+    where: { weekId_authorId: { weekId: week.id, authorId: person.id } },
+    update: { state: "SUBMITTED", submittedAt: new Date() },
+    create: { weekId: week.id, authorId: person.id, headline: "Сдан до закрытия", state: "SUBMITTED", submittedAt: new Date() },
+  });
+}
+
 const id = async (slug: string) => (await prisma.person.findUniqueOrThrow({ where: { slug } })).id;
 const expectRule = async (p: Promise<unknown>, message: RegExp) => {
   await expect(p).rejects.toBeInstanceOf(tasks.TaskRuleError);
@@ -193,6 +204,7 @@ describe("прогноз до конца месяца", () => {
     await expectRule(fc.saveForecast(reva, shiftWeek(key, 1), [line()]), /будущую/);
     // Закрытая неделя
     await weekly.setWeekClosed(await actor.owner(), shiftWeek(key, -2), true);
+    await markSubmitted("reva", shiftWeek(key, -2));
     await expectRule(fc.saveForecast(reva, shiftWeek(key, -2), [line()]), /закрыта/);
     const byOwner = await fc.saveForecast(await actor.owner(), shiftWeek(key, -2), [line()]);
     expect(byOwner.lines).toHaveLength(1);

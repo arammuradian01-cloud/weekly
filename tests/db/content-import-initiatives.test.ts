@@ -261,7 +261,7 @@ describe("weekly для CEO за прошедшие недели", () => {
       expect(preview.ceoReports).toEqual({ add: 1, update: 0, skip: 2 });
       expect(texts(preview.warnings)).toMatch(/отчёт за эту неделю уже есть в ресурсе/);
       expect(texts(preview.errors)).toMatch(/неделя ещё не закончилась/);
-      expect(texts(preview.notes)).toMatch(/блоков nope в отчёте CEO нет/);
+      expect(texts(preview.notes)).toMatch(/блоков nope в отчёте руководителю нет/);
 
       const res = await applyContentImport(await owner(), pkg);
       expect(res.applied.ceoReports).toBe(1);
@@ -289,7 +289,7 @@ describe("weekly для CEO за прошедшие недели", () => {
       expect(texts(p3.warnings)).toMatch(/отчёт правили в ресурсе после загрузки/);
       // Отправленный CEO отчёт не трогается
       await prisma.ceoReport.update({ where: { id: r1.id }, data: { sentAt: new Date() } });
-      expect(texts((await previewContentImport(await owner(), v3)).notes)).toMatch(/уже отправлен CEO/);
+      expect(texts((await previewContentImport(await owner(), v3)).notes)).toMatch(/уже отправлен руководителю/);
     } finally {
       await cleanCeo();
     }

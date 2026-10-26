@@ -71,7 +71,7 @@ for (const theme of ["light", "dark"] as Theme[]) {
       await enter(page, "Мурадян Арам");
       await enterManagement(page, "owner");
       await page.goto("/ceo-report");
-      await expect(page.getByRole("heading", { name: "Отчёт CEO", level: 1 })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Отчёт руководителю", level: 1 })).toBeVisible();
       await shot(page, theme, "ceo");
       await page.goto("/weekly/meeting");
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

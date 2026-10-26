@@ -93,7 +93,10 @@ test("руководитель сектора включает weekly специ
 
   // Неделю сектора руководитель закрывает после встречи команды
   await antonov.goto("/weekly");
-  await antonov.getByRole("button", { name: "Закрыть неделю команды" }).click();
+  // Этап 73: закрытие недели команды в меню «Ещё», с подтверждением
+  await antonov.getByRole("button", { name: "Ещё действия с неделей" }).click();
+  await antonov.getByRole("menuitem", { name: "Закрыть неделю команды" }).click();
+  await antonov.getByRole("dialog", { name: /^Закрыть неделю \d+ команды\?$/ }).getByRole("button", { name: "Закрыть неделю команды" }).click();
   await expect(antonov.getByText(/команды закрыта/).first()).toBeVisible();
   await antonov.close();
 
@@ -140,7 +143,7 @@ test("weekly человека из дерева подчинённых: подс
   await expect(reva.locator(phone ? "#team-switcher-m" : "#team-switcher")).toHaveValue(revaTeam);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
   await expect(reva.locator("#f-author")).toBeVisible();
-  await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
+  await expect(reva.locator("#f-author")).toHaveValue("Антонов Дмитрий");
   await expect(reva).toHaveURL(new RegExp(`author=${antonov}`));
   await shot(reva, "focus-switched");
 
@@ -155,6 +158,6 @@ test("weekly человека из дерева подчинённых: подс
   await expect(reva.locator("#f-author")).toHaveValue("");
   await switcher.selectOption(revaTeam);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
-  await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
+  await expect(reva.locator("#f-author")).toHaveValue("Антонов Дмитрий");
   await reva.close();
 });

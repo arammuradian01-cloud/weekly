@@ -85,10 +85,14 @@ test("администратор правит справочник, лидер �
   await expect(direction.locator("option", { hasText: "Страхование жизни" })).toHaveCount(1);
   await expect(direction.locator("option", { hasText: "КАСКО" })).toHaveCount(0);
   // Лидеру настройки и журнал закрыты
-  for (const path of ["/settings", "/journal", "/ceo-report", "/sync"]) {
+  for (const path of ["/settings", "/journal", "/sync"]) {
     await leader.goto(path);
     await expect(leader).toHaveURL(/\/$/);
   }
+  // Этап 73: старый адрес отчёта CEO ведёт в «Отчёт руководителю», по общему логину раздел просит личный вход
+  await leader.goto("/ceo-report");
+  await expect(leader).toHaveURL(/\/leader-report\?team=top$/);
+  await expect(leader.getByText(/при личном входе/)).toBeVisible();
   await leader.close();
 });
 

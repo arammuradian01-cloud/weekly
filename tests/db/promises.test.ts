@@ -17,6 +17,17 @@ const actor = {
   loginova: () => tasks.actorFor("loginova"),
   owner: () => tasks.actorFor("muradyan", "OWNER"),
 };
+/** Этап 73: несданный weekly закрытой недели можно сдать задним числом. Правила закрытой недели проверяем на сданном */
+async function markSubmitted(slug: string, key: string) {
+  const week = await svc.ensureWeek(prisma, key);
+  const person = await prisma.person.findUniqueOrThrow({ where: { slug } });
+  await prisma.weeklyReport.upsert({
+    where: { weekId_authorId: { weekId: week.id, authorId: person.id } },
+    update: { state: "SUBMITTED", submittedAt: new Date() },
+    create: { weekId: week.id, authorId: person.id, headline: "Сдан до закрытия", state: "SUBMITTED", submittedAt: new Date() },
+  });
+}
+
 const id = async (slug: string) => (await prisma.person.findUniqueOrThrow({ where: { slug } })).id;
 const expectRule = async (p: Promise<unknown>, message: RegExp) => {
   await expect(p).rejects.toBeInstanceOf(tasks.TaskRuleError);
@@ -140,6 +151,7 @@ describe("шаг «Что обещал на прошлой неделе»", () =
     await svc.setWeekClosed(await actor.owner(), prev, true);
     await promises.reviewPromise(await actor.reva(), e.id, "done");
     await svc.setWeekClosed(await actor.owner(), key, true);
+    await markSubmitted("reva", key);
     await expectRule(promises.reviewPromise(await actor.reva(), e.id, "dropped", "Не нужно"), /закрыта/);
   });
 

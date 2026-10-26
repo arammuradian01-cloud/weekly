@@ -114,7 +114,7 @@ const SCREENS: { name: string; path: string; ready: (page: Page) => Promise<void
   { name: "nastroyki", path: "/settings", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
   { name: "privetstvie", path: "/welcome", ready: async (page) => void (await expect(page.getByTestId("welcome-start")).toBeVisible()) },
   { name: "vstrecha", path: "/weekly/meeting", ready: async (page) => void (await expect(page.getByRole("heading", { level: 1 })).toBeVisible()) },
-  { name: "otchet-ceo", path: "/ceo-report", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Отчёт CEO", level: 1 })).toBeVisible()) },
+  { name: "otchet-ceo", path: "/leader-report?team=top", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Отчёт руководителю", level: 1 })).toBeVisible()) },
   { name: "weekly-komandy", path: "/people/teams", ready: async (page) => void (await expect(page.getByRole("heading", { name: "Люди", level: 1 })).toBeVisible()) },
 ];
 
@@ -469,7 +469,7 @@ test("карточка задачи: поле «Начало» задаётся 
 });
 
 // Экраны с таблицами и лентами, которые на 360 должны прокручиваться внутри себя
-const WIDE = ["/", "/tasks", "/tasks/people", "/goals", "/roadmap", "/initiatives", "/decisions", "/forecast", "/forecast?tab=week", "/one-on-one", "/people", "/people/leader", "/people/analytics", "/people/structure", "/people/teams", "/weekly", "/weekly/meeting", "/ceo-report", "/settings", "/help", "/news"];
+const WIDE = ["/", "/tasks", "/tasks/people", "/goals", "/roadmap", "/initiatives", "/decisions", "/forecast", "/forecast?tab=week", "/one-on-one", "/people", "/people/leader", "/people/analytics", "/people/structure", "/people/teams", "/weekly", "/weekly/meeting", "/leader-report?team=top", "/settings", "/help", "/news"];
 
 test("360: страница не прокручивается вбок, широкие обёртки прокручиваются внутри себя и доступны с клавиатуры", async ({ page }) => {
   test.skip(!phone(), "Проверка телефона 360");

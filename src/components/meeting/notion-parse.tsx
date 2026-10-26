@@ -439,19 +439,19 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-ink" aria-hidden="true" />
           <span>
             Отправлено руководителю {moment(view.ceoSentAt)}
-            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт руководителю» и событие в «Мне». Можно поправить и отправить ещё раз.
+            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. Получатель видит собранный отчёт в разделе «Отчёт руководителю» и событие в «Мне». Можно поправить и отправить ещё раз.
           </span>
         </p>
       ) : null}
       <p className="max-w-[760px] text-body text-muted">
-        Черновик отчёта руководителю по смысловым блокам отчёта руководителю за неделю {view.weekNumber}: каждая строка подписана продуктом. Цифры недели и месяца, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
+        Черновик отчёта руководителю по смысловым блокам за неделю {view.weekNumber}: каждая строка подписана продуктом. Цифры недели и месяца, решения и благодарности отчёт соберёт сам{view.ceoPreview ? ": ниже видно, что получит CEO" : ""}.
       </p>
       <BlocksEditor blocks={ceo} onChange={edit} products={meta.products} labels={meta.labels} order={meta.order} idPrefix="parse-ceo" readOnly={!view.canEdit} fixedLayout headingLevel={3} />
 
       {view.ceo ? (
         <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
           <p className="text-body text-ink">
-            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие в «Мне» и отчёт на странице «Отчёт руководителю».
+            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие в «Мне» и отчёт в разделе «Отчёт руководителю», вкладка «Полученные».
           </p>
           {filled ? (
             <>

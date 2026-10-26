@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { ChevronLeft, ChevronRight, LayoutList, Lock, LockOpen, MonitorPlay, MoreHorizontal, PenLine, SlidersHorizontal, X } from "lucide-react";
@@ -10,14 +10,14 @@ import { formatLong, plural } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
 import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
-import { assignEntryAuthorAction, remindNotSubmittedAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
+import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Chip, Counter, Segmented, SelectField } from "@/components/ui/primitives";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { Modal } from "@/components/ui/overlays";
-import { WeeklyBadge } from "@/components/ui/task-badges";
+import { RetroBadge, WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Figures } from "@/components/ui/data";
@@ -655,7 +655,7 @@ function PeopleView({
                 <div className="flex items-center gap-2">
                   {weekly?.deadline && state !== "submitted" && state !== "late" ? <span className="text-caption text-muted">{deadlineText(weekly.deadline)}</span> : null}
                   {weekly?.submittedAt ? <span className="text-caption text-muted">{submittedText(weekly.submittedAt)}</span> : null}
-                  {weekly?.absent && state !== "submitted" && state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={state} />}
+                  {weekly?.absent && state !== "submitted" && state !== "late" ? <AbsentBadge /> : weekly?.retro ? <RetroBadge /> : <WeeklyBadge state={state} />}
                 </div>
               </div>
               {weekly?.headline ? (
@@ -738,23 +738,39 @@ function PeopleView({
 const OPEN_MODE_KEY = "weekly-feed-cards";
 type OpenMode = "open" | "collapsed";
 
+/** Выбор живёт в localStorage; хранилище запрещено: в памяти вкладки до перезагрузки */
+let memoryMode: OpenMode = "open";
+const modeListeners = new Set<() => void>();
+
+function readMode(): OpenMode {
+  try {
+    const v = window.localStorage.getItem(OPEN_MODE_KEY);
+    return v === "collapsed" || v === "open" ? v : memoryMode;
+  } catch {
+    return memoryMode;
+  }
+}
+
+function subscribeMode(cb: () => void) {
+  modeListeners.add(cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    modeListeners.delete(cb);
+    window.removeEventListener("storage", cb);
+  };
+}
+
 export function useFeedOpenMode(): [OpenMode, (m: OpenMode) => void] {
-  const [mode, setModeState] = useState<OpenMode>("open");
-  useEffect(() => {
-    try {
-      // Выбор на этом устройстве читается после отрисовки: на сервере его нет
-      if (window.localStorage.getItem(OPEN_MODE_KEY) === "collapsed") setModeState("collapsed");
-    } catch {
-      // Хранилище запрещено: карточки раскрыты, как по умолчанию
-    }
-  }, []);
+  // На сервере выбора устройства нет: карточки раскрыты, после загрузки берётся выбор этого устройства
+  const mode = useSyncExternalStore(subscribeMode, readMode, () => "open" as OpenMode);
   const setMode = (m: OpenMode) => {
-    setModeState(m);
+    memoryMode = m;
     try {
       window.localStorage.setItem(OPEN_MODE_KEY, m);
     } catch {
-      // Не запомнилось: выбор действует до перезагрузки
+      // Не запомнилось на устройстве: выбор действует до перезагрузки
     }
+    modeListeners.forEach((l) => l());
   };
   return [mode, setMode];
 }

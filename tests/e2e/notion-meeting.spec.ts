@@ -70,7 +70,7 @@ test("этап 61: разбор встречи правилами, weekly для
 
   // Weekly для CEO (этап 66): черновик по смысловым блокам отчёта CEO, каждая строка с продуктом; правка и отправка
   // только в приложении
-  await page.getByRole("tab", { name: "Weekly для CEO" }).click();
+  await page.getByRole("tab", { name: "Отчёт руководителю" }).click();
   const products = page.getByTestId("parse-ceo-block-products");
   await expect(products.getByRole("textbox").first()).toHaveValue("Конверсия ОСАГО выросла до 12%");
   await expect(products.getByRole("combobox").first()).toHaveValue("osago");
@@ -85,12 +85,12 @@ test("этап 61: разбор встречи правилами, weekly для
   await expect(preview.getByRole("region", { name: "План на неделю" })).toContainText("Пилот КАСКО для такси в ноябре");
   await expect(preview.getByRole("region", { name: "Продукты" })).toContainText("Конверсия ОСАГО выросла до 12%");
   await shot(page, "ceo");
-  await page.getByRole("button", { name: "Отправить CEO", exact: true }).click();
-  const confirm = page.getByRole("dialog", { name: "Отправить weekly CEO?" });
+  await page.getByRole("button", { name: "Отправить руководителю", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: "Отправить отчёт руководителю?" });
   await expect(confirm).toContainText("без письма");
   await confirm.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(page.getByText(/Weekly отправлен CEO/).first()).toBeVisible();
-  await page.getByRole("tab", { name: "Weekly для CEO" }).click();
+  await expect(page.getByText(/Отчёт отправлен руководителю/).first()).toBeVisible();
+  await page.getByRole("tab", { name: "Отчёт руководителю" }).click();
   await expect(page.getByTestId("ceo-sent")).toBeVisible();
   const [report] = await sql(`SELECT "sentAt" IS NOT NULL AS sent, next, blocks IS NOT NULL AS blocks, "sentTo" FROM ceo_reports`);
   expect(report).toMatchObject({ sent: true, blocks: true, sentTo: [expect.objectContaining({ name: "CEO" })] });
@@ -132,14 +132,15 @@ test("этап 61: разбор встречи правилами, weekly для
 
   // Страница встречи помнит разбор
   await page.goto("/weekly/meeting");
-  await expect(page.getByTestId("notion-parse-bar")).toContainText("Отправлено CEO, задачи созданы");
+  await expect(page.getByTestId("notion-parse-bar")).toContainText("Отправлено руководителю, задачи созданы");
 
   // CEO видит weekly в «Мне» и на странице отчёта CEO, только для чтения
   const ceo = await personal(browser, page, "ceo");
   await ceo.goto("/me");
-  await ceo.getByRole("link", { name: "Weekly для CEO" }).click();
-  await expect(ceo).toHaveURL(/\/ceo-report\?week=/);
-  const sent = ceo.getByTestId("ceo-sent-report");
+  // Этап 73: событие ведёт в «Отчёт руководителю», вкладка «Полученные», отчёт команды страхования и инвестиций
+  await ceo.getByRole("link", { name: "Отчёт руководителю" }).click();
+  await expect(ceo).toHaveURL(/\/leader-report\?tab=received&team=top&week=/);
+  const sent = ceo.getByTestId("sent-report");
   await expect(sent).toContainText("Отчёт за неделю");
   // Собранный отчёт по блокам: строки с продуктом, решения недели (решение записано на встрече команды), без кнопок правки
   await expect(sent.getByRole("region", { name: "План на неделю" })).toContainText("Пилот КАСКО для такси в ноябре");
@@ -158,11 +159,11 @@ test("этап 61: разбор через Claude (имитация ответа
   await expect(page.getByRole("tabpanel", { name: "Итоги" }).getByRole("listitem").filter({ hasText: "Тарифы ВЗР пересматриваем после пилота" })).toBeVisible();
   await shot(page, "claude-summary");
 
-  await page.getByRole("tab", { name: "Weekly для CEO" }).click();
+  await page.getByRole("tab", { name: "Отчёт руководителю" }).click();
   await expect(page.getByTestId("parse-ceo-block-products").getByRole("textbox").first()).toHaveValue("ВЗР: тариф не поднимаем до конца года");
   await expect(page.getByTestId("parse-ceo-block-products").getByRole("combobox").first()).toHaveValue("red");
-  await expect(page.getByText(/Отправить CEO может владелец или администратор в режиме управления/)).toBeVisible();
-  await expect(page.getByRole("button", { name: /Отправить CEO/ })).toHaveCount(0);
+  await expect(page.getByText(/Отправить руководителю может владелец или администратор в режиме управления/)).toBeVisible();
+  await expect(page.getByRole("button", { name: /Отправить руководителю/ })).toHaveCount(0);
   // Собранный отчёт с решениями и благодарностями топ-команды только тем, кто отправляет CEO
   await expect(page.getByTestId("ceo-preview")).toHaveCount(0);
   await expect(page.getByTestId("ceo-preview-hidden")).toBeVisible();

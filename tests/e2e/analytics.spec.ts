@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, openReportBlock, resetDatabase, sql } from "./helpers";
 
 // Этап 27 (модуль М12): аналитика руководителя и отчёт CEO 2.0. Ноутбук 1440 и телефон 360
 
@@ -152,7 +152,7 @@ test.describe("аналитика руководителя", () => {
   });
 });
 
-test.describe("отчёт CEO 2.0", () => {
+test.describe("отчёт руководителю (бывший отчёт CEO 2.0)", () => {
   test.beforeEach(async () => {
     await resetDatabase();
   });
@@ -167,7 +167,10 @@ test.describe("отчёт CEO 2.0", () => {
     const decisions = page.locator("section", { has: page.getByRole("heading", { name: "Решения недели" }) });
     await expect(decisions.getByText("Запускаем пилот ОСАГО с партнёром в ноябре")).toBeVisible();
 
-    // Этап 66: отчёт по смысловым блокам. «Собрать заново» спрашивает подтверждение: «Отмена» оставляет правки
+    // Этап 66: отчёт по смысловым блокам. «Собрать заново» спрашивает подтверждение: «Отмена» оставляет правки.
+    // Этап 73: старый адрес ведёт в «Отчёт руководителю», блоки свёрнуты, нужный раскрываем
+    await expect(page).toHaveURL(/\/leader-report\?team=top&week=2026-09-21$/);
+    await openReportBlock(page, "ceo-block-products");
     const mainField = page.getByTestId("ceo-block-products").getByRole("textbox").first();
     const built = await mainField.inputValue();
     await mainField.fill(`${built} Моя правка руками`);
@@ -233,6 +236,7 @@ test.describe("отчёт CEO 2.0", () => {
   test("сохранение поверх чужого отчёта: понятная ошибка, а не тихая перезапись", async ({ page, browser }) => {
     // Этап 66: первая строка блока «Риски»
     const riskLine = (p: Page) => p.getByTestId("ceo-block-risks").getByRole("textbox").first();
+    const openRisks = (p: Page) => openReportBlock(p, "ceo-block-risks");
     await enter(page, "Мурадян Арам");
     await enterManagement(page, "owner");
     await page.goto("/ceo-report?week=2026-09-21");
@@ -241,11 +245,13 @@ test.describe("отчёт CEO 2.0", () => {
     await enter(other, "Мурадян Арам");
     await enterManagement(other, "owner");
     await other.goto("/ceo-report?week=2026-09-21");
+    await openRisks(other);
     await riskLine(other).fill("Риск со второго устройства");
     await other.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(other.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
     await other.close();
 
+    await openRisks(page);
     await riskLine(page).fill("Риск с первого устройства");
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(page.getByText(/уже сохранён с другого устройства или другим человеком/).first()).toBeVisible();
@@ -258,9 +264,11 @@ test.describe("отчёт CEO 2.0", () => {
     await expect(riskLine(page)).toHaveValue("Риск со второго устройства");
 
     // Своё сохранение после этого проходит, и обновление страницы не стирает то, что набрано после него
+    await openReportBlock(page, "ceo-block-plan");
     await page.getByTestId("ceo-block-plan").getByRole("textbox").first().fill("Дальше с первого устройства");
     await page.getByRole("button", { name: "Сохранить", exact: true }).click();
     await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
+    await openRisks(page);
     await riskLine(page).fill("Набрано после сохранения");
     await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
     await page.waitForTimeout(1500);

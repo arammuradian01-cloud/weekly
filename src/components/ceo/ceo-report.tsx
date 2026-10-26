@@ -642,8 +642,7 @@ export function CeoReport({
 
       {/* Этап 73: на телефоне сохранение и отправка всегда под рукой, над нижним меню */}
       <div className="fixed inset-x-0 bottom-[calc(64px+env(safe-area-inset-bottom))] z-20 border-t border-line bg-surface px-4 py-2 lg:hidden" data-testid="ceo-sticky-actions">
-        <div className="flex items-center gap-2">
-          <p className="min-w-0 flex-1 truncate text-caption text-text-secondary">{status || "Черновик"}</p>
+        <div className="flex items-center justify-end gap-2">
           <Button size="sm" variant="secondary" onClick={save} loading={busy} disabled={busy || !dirty} className="min-h-11">
             <Save className="h-4 w-4" aria-hidden="true" />
             Сохранить

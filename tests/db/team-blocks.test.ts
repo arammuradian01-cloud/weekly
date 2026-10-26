@@ -80,7 +80,7 @@ describe("шаблон блоков команды", () => {
   it("задаёт руководитель команды при личном входе или режим управления; участник и общий логин нет; у топ-команды шаблона нет; журнал", async () => {
     await expectRule(team.saveTeamTemplate(await personal("cheychenets"), teamId, TEMPLATE), /руководитель команды/);
     await expectRule(team.saveTeamTemplate(await shared("reva"), teamId, TEMPLATE), /не видите|руководитель команды/);
-    await expectRule(team.saveTeamTemplate(await personal("muradyan", "OWNER"), "top", TEMPLATE), /это отчёт CEO/);
+    await expectRule(team.saveTeamTemplate(await personal("muradyan", "OWNER"), "top", TEMPLATE), /это отчёт руководителю/);
     const view = await team.saveTeamTemplate(await personal("reva"), teamId, [...TEMPLATE, { key: "products" }, { key: "hack", title: "x" }]);
     expect(view.blocks).toEqual(TEMPLATE);
     expect(view.canEdit).toBe(true);
@@ -142,7 +142,7 @@ describe("отчёт команды по блокам", () => {
     // Без шаблона отчёта нет: weekly команды как раньше
     await team.saveTeamTemplate(await personal("reva"), teamId, []);
     expect(await team.teamReportView(await personal("reva"), teamId, key)).toMatchObject({ template: null, blocks: [], canEdit: false, sendHint: "Сначала задайте блоки weekly команды" });
-    await expectRule(team.teamReportView(await personal("muradyan", "OWNER"), "top", key), /это отчёт CEO/);
+    await expectRule(team.teamReportView(await personal("muradyan", "OWNER"), "top", key), /это отчёт руководителю/);
   });
 
   it("сохранение: конфликт двух устройств, журнал; отправка своему руководителю: событие в «Мне», получатель видит отправленную версию", async () => {

@@ -31,6 +31,17 @@ const actor = {
   observer: async (): Promise<tasks.Actor> => ({ ...(await tasks.actorFor("ceo")), role: "OBSERVER" }),
 };
 
+/** Этап 73: несданный weekly закрытой недели можно сдать задним числом. Правила закрытой недели проверяем на сданном */
+async function markSubmitted(slug: string, key: string) {
+  const week = await svc.ensureWeek(prisma, key);
+  const person = await prisma.person.findUniqueOrThrow({ where: { slug } });
+  await prisma.weeklyReport.upsert({
+    where: { weekId_authorId: { weekId: week.id, authorId: person.id } },
+    update: { state: "SUBMITTED", submittedAt: new Date() },
+    create: { weekId: week.id, authorId: person.id, headline: "Сдан до закрытия", state: "SUBMITTED", submittedAt: new Date() },
+  });
+}
+
 const entry = (week = W40, patch: Partial<svc.EntryInput> = {}): svc.EntryInput => ({ week, direction: "osago", block: "product", type: "event", what: "Запустили AB-тест рекомендаций", ...patch });
 
 const expectRule = async (p: Promise<unknown>, message: RegExp) => {
@@ -167,6 +178,9 @@ describe("права weekly (матрица раздела 2)", () => {
     await expectRule(svc.setWeekClosed(await actor.adminPlain(), W40, true), /режиме управления/);
     const closed = await svc.setWeekClosed(await actor.admin(), W40, true);
     expect(closed.closed).toBe(true);
+    // Несданный weekly закрытой недели автор дописывает задним числом, сданный нет
+    expect((await svc.saveEntry(reva, entry(W40, { id: e.id, what: "Задним числом" }))).what).toBe("Задним числом");
+    await markSubmitted("reva", W40);
     await expectRule(svc.saveEntry(reva, entry(W40, { id: e.id, what: "После закрытия" })), /закрыта/);
     await svc.setWeekClosed(await actor.owner(), W40, false);
     expect((await svc.saveEntry(reva, entry(W40, { id: e.id, what: "Снова открыта" }))).what).toBe("Снова открыта");
@@ -239,6 +253,7 @@ describe("удаление записи с отменой (этап 7)", () => {
     const snapshot = await svc.deleteEntry(reva, e.id);
     await expectRule(svc.restoreEntry(await actor.loginova(), snapshot), /Чужой weekly/);
     await svc.setWeekClosed(await actor.admin(), W40, true);
+    await markSubmitted("reva", W40);
     await expectRule(svc.restoreEntry(reva, snapshot), /закрыта/);
     expect((await svc.restoreEntry(await actor.admin(), snapshot)).author).toBe("reva");
   });

@@ -114,8 +114,10 @@ const expectedRecipients = cache(async (): Promise<Map<string, string | null>> =
  * или получатель отчётов (CEO и те, кому отчёт отправляли)
  */
 export async function leaderReportVisible(actor: Pick<Actor, "personId" | "role" | "management" | "via">): Promise<boolean> {
-  if (manageMode(actor) || actor.role === "OWNER") return true;
+  if (manageMode(actor)) return true;
+  // По общему логину профиль выбирают сами: раздел только при личном входе, даже владельцу
   if (!personal(actor) || actor.role === "OBSERVER") return false;
+  if (actor.role === "OWNER") return true;
   const nodes = await nodesOnce();
   if (nodes.some((n) => n.active && n.leaderId === actor.personId)) return true;
   return receivesAny(actor.personId);

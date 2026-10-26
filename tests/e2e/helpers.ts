@@ -157,3 +157,16 @@ export async function enterByLink(page: Page, slug: string) {
   const link = out.split("\n").find((l) => l.startsWith("http"))!;
   await setPasswordByLink(page, link);
 }
+
+/**
+ * Этап 73: в отчёте руководителю блоки свёрнуты в строки, открыт один за раз. Перед правкой блок раскрывают; уже
+ * открытый блок не трогаем
+ */
+export async function openReportBlock(page: Page, testId: string) {
+  const block = page.getByTestId(testId);
+  if ((await block.getAttribute("data-open")) !== "true") {
+    await block.getByRole("button", { name: /^Раскрыть блок/ }).click();
+    await expect(block).toHaveAttribute("data-open", "true");
+  }
+  return block;
+}

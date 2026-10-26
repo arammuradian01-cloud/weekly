@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enterByLink, enterManagement, openReportBlock, resetDatabase, sql } from "./helpers";
 
 // Этап 66: weekly по смысловым блокам. Владелец собирает отчёт CEO по блокам (новости рынка и команды, неделя к неделе,
 // месяц, конкуренты, продукты, партнёрский канал, риски, план на неделю), правит блок, скрывает, меняет порядок,
@@ -42,7 +42,9 @@ const LONG_SOURCE = "Агентство страховых новостей: л�
  * тестовой базе записи из Bord лежат в старых неделях: новости этой недели туда не попали бы. Понедельник этой недели
  * сервер сам сдвигает на отчётную неделю, если она раньше
  */
-const reportingUrl = () => `/ceo-report?week=${monday(0).toISOString().slice(0, 10)}`;
+const reportingUrl = () => `/leader-report?team=top&week=${monday(0).toISOString().slice(0, 10)}`;
+
+const openBlock = openReportBlock;
 
 const STANDARD = ["Новости рынка и команды", "Неделя к неделе", "Месяц: к прошлому году, к прошлому месяцу, план продаж", "Конкуренты", "Продукты", "Партнёрский канал", "Риски", "План на неделю"];
 
@@ -81,7 +83,10 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   // Стандартный набор блоков в порядке отчёта CEO
   await expect(editor.getByRole("heading", { level: 2 })).toHaveText(STANDARD);
   // Конкуренты из новостей недели: строка с продуктом и ссылкой на новость
-  const competitors = page.getByTestId("ceo-block-competitors");
+  // Сверху «Заполнено N из M», у каждого блока состояние
+  await expect(page.getByTestId("ceo-ready")).toContainText(/Заполнено \d+ из \d+/);
+  await expect(page.getByTestId("ceo-block-competitors").getByTestId("block-state")).toHaveText("собран сам");
+  const competitors = await openBlock(page, "ceo-block-competitors");
   await expect(competitors.getByRole("textbox").first()).toHaveValue(/^Пампаду: Пампаду запустил КАСКО по подписке/);
   await expect(competitors.getByRole("combobox").first()).toHaveValue("kasko");
   await expect(competitors.getByRole("link", { name: LONG_SOURCE }).first()).toHaveAttribute("href", /https:\/\/e2e66\.example\//);
@@ -89,7 +94,8 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   await shot(page, "ceo-editor");
 
   // Правка блока: строка в «Продуктах» с продуктом КАСКО
-  const products = page.getByTestId("ceo-block-products");
+  const products = await openBlock(page, "ceo-block-products");
+  await expect(page.getByTestId("ceo-block-competitors")).toHaveAttribute("data-open", "false");
   await products.getByRole("button", { name: "Добавить строку" }).click();
   // Новая строка пустая; строки в «Продуктах» идут подразделами продуктов, поэтому ищем её по пустому тексту
   const values = () => products.getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value));
@@ -114,28 +120,30 @@ test("этап 66: владелец собирает отчёт CEO по смы�
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByText(/Отчёт за неделю \d+ сохранён/).first()).toBeVisible();
   await page.reload();
+  await openBlock(page, "ceo-block-products");
   expect(await values()).toContain("Пилот КАСКО для такси запускаем в ноябре");
+  await expect(page.getByTestId("ceo-block-products").getByTestId("block-state")).toHaveText("поправлен");
   await expect(page.getByTestId("ceo-block-news").getByTestId("block-hidden")).toBeVisible();
 
-  // Отправить CEO: только в приложении, в новой структуре
-  await page.getByRole("button", { name: "Отправить CEO", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Отправить weekly CEO?" });
+  // Отправить руководителю (этап 73, бывший «Отправить CEO»): кнопка называет получателя, только в приложении
+  await page.getByRole("button", { name: "Отправить руководителю: CEO" }).click();
+  const dialog = page.getByRole("dialog", { name: "Отправить отчёт руководителю?" });
   await expect(dialog).toContainText("без письма");
   await dialog.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(page.getByText(/Weekly отправлен CEO/).first()).toBeVisible();
-  await expect(page.getByTestId("ceo-report-sent")).toContainText("Отправлен CEO");
+  await expect(page.getByText(/Отчёт отправлен руководителю/).first()).toBeVisible();
+  await expect(page.getByTestId("ceo-report-sent")).toContainText("Отправлен руководителю");
   const [report] = await sql(`SELECT "sentAt" IS NOT NULL AS sent, jsonb_array_length("sentSnapshot"->'blocks') AS blocks, main FROM ceo_reports`);
   // Скрытый блок «Новости рынка и команды» в снимок отправки не уходит
   expect(report).toMatchObject({ sent: true, blocks: 7 });
   expect(report!.main).toContain("- КАСКО. Пилот КАСКО для такси запускаем в ноябре");
   await shot(page, "ceo-sent-owner");
 
-  // CEO: событие в «Мне», отчёт по блокам только для чтения, скрытого блока нет
+  // CEO: событие в «Мне» ведёт в «Отчёт руководителю», «Полученные»: отчёт по блокам только для чтения, скрытого блока нет
   const ceo = await personal(browser, page, "ceo");
   await ceo.goto("/me");
-  await ceo.getByRole("link", { name: "Weekly для CEO" }).click();
-  await expect(ceo).toHaveURL(/\/ceo-report\?week=/);
-  const sent = ceo.getByTestId("ceo-sent-report");
+  await ceo.getByRole("link", { name: "Отчёт руководителю" }).click();
+  await expect(ceo).toHaveURL(/\/leader-report\?tab=received&team=top&week=/);
+  const sent = ceo.getByTestId("sent-report");
   await expect(sent.getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");
   await expect(sent.getByRole("region", { name: "Продукты" }).getByRole("heading", { name: "КАСКО" })).toBeVisible();
   await expect(sent.getByRole("region", { name: "Конкуренты" })).toContainText("Пампаду");
@@ -152,7 +160,7 @@ test("этап 66: цифры недели живые, поправленный 
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
   await page.goto(reportingUrl());
-  const wow = page.getByTestId("ceo-block-wow");
+  const wow = await openBlock(page, "ceo-block-wow");
   await expect(wow).toBeVisible();
   // Строка руками в блоке цифр: блок помечен поправленным, сам больше не пересобирается
   await wow.getByRole("button", { name: "Добавить строку" }).click();
@@ -165,6 +173,8 @@ test("этап 66: цифры недели живые, поправленный 
     `UPDATE ceo_reports SET blocks = (SELECT jsonb_agg(CASE WHEN b->>'key' = 'wow' THEN b || '{"basis":"e2estale"}'::jsonb ELSE b END ORDER BY n) FROM jsonb_array_elements(blocks) WITH ORDINALITY AS t(b, n)), "updatedAt" = "updatedAt"`,
   );
   await page.reload();
+  await expect(wow.getByTestId("block-state")).toHaveText("цифры обновились");
+  await openBlock(page, "ceo-block-wow");
   await expect(wow.getByTestId("block-stale")).toContainText("Цифры обновились");
   await expect(wow.getByRole("textbox").last()).toHaveValue("Трафик ОСАГО держится на уровне прошлой недели");
   await shot(page, "ceo-stale");
@@ -183,7 +193,9 @@ test("этап 66: руководитель задаёт блоки weekly ко�
   await sql(`UPDATE people SET "managerId" = (SELECT id FROM people WHERE slug = 'fatyanov') WHERE slug = 'reva'`);
 
   await enterByLink(page, "reva");
+  // Этап 73: старый адрес отчёта команды ведёт в «Отчёт руководителю»
   await page.goto("/weekly/team-report?team=e2e-team66");
+  await expect(page).toHaveURL(/\/leader-report\?team=e2e-team66/);
   await expect(page.getByText("Блоки weekly команды «Тест 66: команда вкладов» не заданы")).toBeVisible();
   const template = page.getByTestId("team-template");
   await template.getByRole("button", { name: "Взять стандартный набор" }).click();
@@ -217,23 +229,25 @@ test("этап 66: руководитель задаёт блоки weekly ко�
 
   // Руководитель видит отчёт команды по блокам: запись в своём блоке, строка с продуктом
   await page.reload();
+  const hireOpen = page.getByRole("button", { name: "Раскрыть блок «Найм и команда»" });
+  if (await hireOpen.count()) await hireOpen.click();
   const hire = page.getByTestId("team-editor").getByRole("region", { name: "Найм и команда" });
   await expect(hire.getByRole("textbox").first()).toHaveValue("Закрыли вакансию аналитика вкладов");
   await expect(hire.getByRole("combobox").first()).toHaveValue("deposits");
   await shot(page, "team-report");
-  await page.getByRole("button", { name: "Отправить руководителю" }).click();
-  const dialog = page.getByRole("dialog", { name: "Отправить weekly команды?" });
+  await page.getByRole("button", { name: "Отправить руководителю: Фатьянов Евгений" }).click();
+  const dialog = page.getByRole("dialog", { name: "Отправить отчёт руководителю?" });
   await expect(dialog).toContainText("Фатьянов Евгений");
   await dialog.getByRole("button", { name: "Отправить", exact: true }).click();
-  await expect(page.getByText(/Weekly команды отправлен/).first()).toBeVisible();
+  await expect(page.getByText(/Отчёт отправлен руководителю/).first()).toBeVisible();
   await expect(page.getByTestId("team-report-sent")).toContainText("Получил: Фатьянов Евгений");
 
   // Руководитель руководителя: событие в «Мне» и отчёт только для чтения
   const boss = await personal(browser, page, "fatyanov");
   await boss.goto("/me");
-  await boss.getByRole("link", { name: "Weekly команды по блокам" }).click();
-  await expect(boss).toHaveURL(/\/weekly\/team-report\?team=e2e-team66/);
-  await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Найм и команда" })).toContainText("Закрыли вакансию аналитика вкладов");
+  await boss.getByRole("link", { name: "Отчёт руководителю от команды" }).click();
+  await expect(boss).toHaveURL(/\/leader-report\?tab=received&team=e2e-team66/);
+  await expect(boss.getByTestId("sent-report-body").getByRole("region", { name: "Найм и команда" })).toContainText("Закрыли вакансию аналитика вкладов");
   await expect(boss.getByRole("button", { name: "Отправить руководителю" })).toHaveCount(0);
   await shot(boss, "team-report-boss");
   await boss.close();
@@ -248,14 +262,14 @@ test("этап 66: получатель отчёта команды, руков�
 
   // Рева пишет строку и отправляет: получатель руководитель команды выше
   await enterByLink(page, "reva");
-  await page.goto("/weekly/team-report?team=e2e-team66b");
-  const products = page.getByTestId("team-block-products");
+  await page.goto("/leader-report?team=e2e-team66b");
+  const products = await openBlock(page, "team-block-products");
   await products.getByRole("button", { name: "Добавить строку" }).click();
   // Строки в «Продуктах» идут подразделами продуктов: новую ищем по пустому тексту
   const empty = (await products.getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value))).indexOf("");
   await products.getByRole("textbox").nth(empty).fill("Пилот КАСКО для такси запускаем в ноябре");
-  await page.getByRole("button", { name: "Отправить руководителю" }).click();
-  const dialog = page.getByRole("dialog", { name: "Отправить weekly команды?" });
+  await page.getByRole("button", { name: "Отправить руководителю: Головкин Владислав" }).click();
+  const dialog = page.getByRole("dialog", { name: "Отправить отчёт руководителю?" });
   await expect(dialog).toContainText("Головкин Владислав");
   await dialog.getByRole("button", { name: "Отправить", exact: true }).click();
   await expect(page.getByTestId("team-report-sent")).toContainText("Получил: Головкин Владислав");
@@ -263,9 +277,9 @@ test("этап 66: получатель отчёта команды, руков�
   // Головкин по событию в «Мне» видит отправленную версию, а не редактор
   const boss = await personal(browser, page, "golovkin");
   await boss.goto("/me");
-  await boss.getByRole("link", { name: "Weekly команды по блокам" }).click();
-  await expect(boss).toHaveURL(/\/weekly\/team-report\?team=e2e-team66b/);
-  await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");
+  await boss.getByRole("link", { name: "Отчёт руководителю от команды" }).click();
+  await expect(boss).toHaveURL(/\/leader-report\?tab=received&team=e2e-team66b/);
+  await expect(boss.getByTestId("sent-report-body").getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");
   await expect(boss.getByTestId("team-editor")).toHaveCount(0);
   await shot(boss, "team-report-parent-sent");
   // По ссылке текущая версия команды: править может, отправить самому себе нет

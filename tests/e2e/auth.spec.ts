@@ -128,8 +128,10 @@ test("администратор не видит разделы владельц
   await page.getByLabel("Пароль администраторов").fill(E2E_PASSWORDS.admin);
   await page.getByRole("button", { name: "Включить на 12 часов" }).click();
   await expect(page).toHaveURL(/\/$/);
+  // Этап 73: отчёт CEO стал «Отчётом руководителю», администратор в режиме управления его видит
   await page.goto("/ceo-report");
-  await expect(page).toHaveURL(/\/ceo-report$/);
+  await expect(page).toHaveURL(/\/leader-report\?team=top$/);
+  await expect(page.getByRole("heading", { name: "Отчёт руководителю", level: 1 })).toBeVisible();
   await page.goto("/sync");
   await expect(page).toHaveURL(/\/$/);
 });

@@ -12,6 +12,19 @@ test.beforeEach(async () => {
   await resetDatabase();
 });
 
+/** Этап 73: автор в фильтре ленты выбирается полем с поиском (SearchPicker). Пустое имя: снять отбор */
+async function pickAuthor(page: Page, name: string) {
+  const field = page.locator("#f-author");
+  await field.fill("");
+  if (name) {
+    await field.fill(name.split(" ")[0]!);
+    await page.getByRole("option", { name: new RegExp(name) }).click();
+  } else {
+    await field.press("Escape");
+    await field.blur();
+  }
+}
+
 async function shot(page: Page, name: string) {
   // Ширина из настроек проекта, а не window.innerWidth: на телефоне широкая страница растягивает окно и прокрутку не видно
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
@@ -41,7 +54,7 @@ test("weekly человека по ссылке: отбор по автору в
   await page.goto("/weekly?author=reva");
   // Отбор включён и виден сразу, на телефоне тоже: фильтры раскрыты
   await expect(page.locator("#f-author")).toBeVisible();
-  await expect(page.locator("#f-author")).toHaveValue("reva");
+  await expect(page.locator("#f-author")).toHaveValue("Рева Тарас");
   await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
   // Только карточка Ревы: ни общих записей, ни пустых карточек остальных
   await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toHaveCount(0);
@@ -52,10 +65,10 @@ test("weekly человека по ссылке: отбор по автору в
   // Смена недели сохраняет отбор
   await page.getByRole("button", { name: "Предыдущая неделя" }).click();
   await expect(page).toHaveURL(/week=2026-09-14&author=reva/);
-  await expect(page.locator("#f-author")).toHaveValue("reva");
+  await expect(page.locator("#f-author")).toHaveValue("Рева Тарас");
 
   // Сняли отбор: адрес без автора, лента целиком. Живое обновление экрана старый адрес не возвращает
-  await page.locator("#f-author").selectOption("");
+  await pickAuthor(page, "");
   await expect(page).not.toHaveURL(/author=/);
   await expect(page.getByRole("heading", { name: /Общее, без автора|Головкин Владислав/ }).first()).toBeVisible();
   const refreshed = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
@@ -64,19 +77,19 @@ test("weekly человека по ссылке: отбор по автору в
   await expect(page).not.toHaveURL(/author=/);
   await expect(page.locator("#f-author")).toHaveValue("");
   // Выбрали автора руками: адрес с ним переживает и обновление, и перезагрузку
-  await page.locator("#f-author").selectOption("reva");
+  await pickAuthor(page, "Рева Тарас");
   await expect(page).toHaveURL(/author=reva/);
   const again = page.waitForResponse((r) => new URL(r.url()).pathname === "/weekly" && r.request().headers()["rsc"] === "1" && !r.request().headers()["next-router-prefetch"]);
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await again;
   await expect(page).toHaveURL(/author=reva/);
   await page.reload();
-  await expect(page.locator("#f-author")).toHaveValue("reva");
-  await page.locator("#f-author").selectOption("");
+  await expect(page.locator("#f-author")).toHaveValue("Рева Тарас");
+  await pickAuthor(page, "");
 
   // Автор из адреса без записей за неделю: понятная пустая лента с выходом
   await page.goto("/weekly?week=2026-09-14&author=afanasyev");
-  await expect(page.locator("#f-author")).toHaveValue("afanasyev");
+  await expect(page.locator("#f-author")).toHaveValue("Афанасьев Павел");
   await expect(page.getByText("Афанасьев Павел: за неделю 38 записей нет")).toBeVisible();
   await page.getByRole("button", { name: "Показать все записи" }).click();
   await expect(page).not.toHaveURL(/author=/);
@@ -179,49 +192,74 @@ test("владелец отмечает записи в отчёт CEO, отчё
 
   // Отметка в ленте недели 39
   await page.goto("/weekly?week=2026-09-21");
-  // Этап 68: при трёх лидерах и больше записи свёрнуты, кнопка «В отчёт CEO» внутри раскрытой карточки
-  await page.getByRole("button", { name: "Развернуть всех" }).click();
-  const unflagged = page.locator("article").filter({ has: page.getByRole("button", { name: "В отчёт CEO", exact: true }) }).first();
+  // Этап 73: карточки лидеров раскрыты по умолчанию, кнопка «В отчёт руководителю» видна сразу
+  await expect(page.getByRole("button", { name: "Свернуть всех" })).toBeVisible();
+  const unflagged = page.locator("article").filter({ has: page.getByRole("button", { name: "В отчёт руководителю", exact: true }) }).first();
   const what = (await unflagged.locator("h3").textContent())!.trim();
-  await unflagged.getByRole("button", { name: "В отчёт CEO", exact: true }).click();
-  await expect(page.getByText("Запись попадёт в отчёт CEO").first()).toBeVisible();
+  await unflagged.getByRole("button", { name: "В отчёт руководителю", exact: true }).click();
+  await expect(page.getByText("Запись попадёт в отчёт руководителю").first()).toBeVisible();
 
+  // Этап 73: старый адрес отчёта CEO ведёт в «Отчёт руководителю» той же недели
   await page.goto("/ceo-report?week=2026-09-21");
+  await expect(page).toHaveURL(/\/leader-report\?team=top&week=2026-09-21$/);
   // Этап 47: число отметок только в цифрах панели, в подписи его больше нет
-  await expect(page.getByTestId("ceo-fig-flags")).toContainText(/13\s*отметок «В отчёт CEO»/);
-  // Этап 66: отчёт по смысловым блокам. Отмеченная запись в своём блоке строкой с продуктом
-  const texts = await page.getByTestId("ceo-editor").getByRole("textbox").evaluateAll((els) => els.map((e) => (e as HTMLTextAreaElement).value));
-  expect(texts.join("\n")).toContain(what.replace(/\.$/, ""));
+  await expect(page.getByTestId("ceo-fig-flags")).toContainText(/13\s*отметок «В отчёт руководителю»/);
+  // Этап 66: отчёт по смысловым блокам. Отмеченная запись в своём блоке строкой с продуктом (блоки свёрнуты: смотрим в предпросмотре)
+  await page.getByTestId("ceo-blocks-preview").locator("summary").click();
+  await expect(page.getByTestId("ceo-blocks-preview")).toContainText(what.replace(/\.$/, ""));
 
   const risks = page.getByTestId("ceo-block-risks");
+  if ((await risks.getAttribute("data-open")) !== "true") await risks.getByRole("button", { name: /^Раскрыть блок/ }).click();
   await risks.getByRole("button", { name: "Добавить строку" }).click();
   await risks.getByRole("textbox").last().fill("Проверка сохранения отчёта");
   await page.getByRole("button", { name: "Сохранить", exact: true }).click();
   await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
   await page.reload();
+  if ((await risks.getAttribute("data-open")) !== "true") await risks.getByRole("button", { name: /^Раскрыть блок/ }).click();
   await expect(page.getByTestId("ceo-block-risks").getByRole("textbox").last()).toHaveValue("Проверка сохранения отчёта");
   await expect(page.getByText(/^Сохранён \d+ октября/).first()).toBeVisible();
   await shot(page, "ceo-report");
 });
 
-test("администратор закрывает неделю, лидер больше не правит", async ({ page, browser }) => {
+test("администратор закрывает неделю: сданный weekly больше не правят, несданный сдают задним числом, правки разрешает снова", async ({ page, browser }) => {
+  // Павел сдал weekly до закрытия, Алсу ещё нет
+  const pavel = await (await browser.newContext()).newPage();
+  await enter(pavel, "Афанасьев Павел");
+  await pavel.goto("/weekly/submit");
+  await pavel.getByLabel("Главное одной фразой").fill("Сдал до закрытия");
+  await pavel.getByRole("button", { name: "Добавить запись" }).click();
+  await pavel.getByLabel("Что произошло").fill("Запись до закрытия");
+  await pavel.getByRole("button", { name: "Сохранить запись" }).click();
+  await pavel.getByRole("button", { name: "Сдать weekly" }).click();
+  await expect(pavel.getByText(/Weekly сдан|Сдан с опозданием/).first()).toBeVisible();
+
   await enter(page, "Головкин Владислав");
   await enterManagement(page, "admin");
   await page.goto("/weekly");
-  await page.getByRole("link", { name: /^Открыть неделю \d+$/ }).click();
-  await page.getByRole("button", { name: "Закрыть неделю" }).click();
+  // Этап 73: переход к отчётной неделе называется «Перейти к неделе N», закрытие недели в меню «Ещё» с подтверждением
+  const toWeek = page.getByRole("link", { name: /^Перейти к неделе \d+$/ });
+  if (await toWeek.count()) await toWeek.click();
+  await page.getByRole("button", { name: "Ещё действия с неделей" }).click();
+  await page.getByRole("menuitem", { name: "Закрыть неделю" }).click();
+  await page.getByRole("dialog", { name: /^Закрыть неделю \d+\?$/ }).getByRole("button", { name: "Закрыть неделю" }).click();
   await expect(page.getByText(/Неделя \d+ закрыта/).first()).toBeVisible();
+
+  await pavel.reload();
+  await expect(pavel.getByText(/Неделя \d+ закрыта после встречи: записи правят только владелец и администраторы/)).toBeVisible();
+  await expect(pavel.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
+  await pavel.close();
 
   const leader = await (await browser.newContext()).newPage();
   await enter(leader, "Сахибуллина Алсу");
   await leader.goto("/weekly/submit");
-  await expect(leader.getByText(/Неделя \d+ закрыта: записи правят только владелец и администраторы/)).toBeVisible();
-  await expect(leader.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
-  await expect(leader.getByRole("button", { name: "Сдать weekly" })).toBeDisabled();
+  await expect(leader.getByTestId("weekly-retro-open")).toBeVisible();
+  await expect(leader.getByRole("button", { name: "Добавить запись" })).toBeVisible();
   await leader.close();
 
-  await page.getByRole("button", { name: "Открыть неделю" }).click();
-  await expect(page.getByText(/Неделя \d+ снова открыта/).first()).toBeVisible();
+  await page.getByRole("button", { name: "Ещё действия с неделей" }).click();
+  await page.getByRole("menuitem", { name: "Разрешить правки недели" }).click();
+  await page.getByRole("dialog", { name: /^Разрешить правки недели \d+\?$/ }).getByRole("button", { name: "Разрешить правки" }).click();
+  await expect(page.getByText(/Правки недели \d+ снова разрешены/).first()).toBeVisible();
 });
 
 test("режим встречи показывает записи недели крупно и риски отдельно", async ({ page }) => {

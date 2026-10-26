@@ -282,7 +282,7 @@ describe("отчёт CEO 2.0", () => {
     expect((await weekly.saveCeoReport(me, key, { main: "Главное 3", risks: "", next: "" }, null)).meetings).toHaveLength(1);
     expect((await weekly.getCeoReport(key)).meetings[0].title).toBe("С партнёрами - ноябрь");
     const log = await prisma.auditLog.findMany({ where: { entity: "ceo-report", entityId: key }, orderBy: { at: "asc" } });
-    expect(log.map((l) => l.field)).toContain("Отчёт CEO, мои встречи недели");
+    expect(log.map((l) => l.field)).toContain("Отчёт руководителю, мои встречи недели");
   });
 
   it("сохранение поверх чужого: ошибка, а не тихая перезапись", async () => {

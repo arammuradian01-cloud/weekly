@@ -203,6 +203,8 @@ async function ReceivedTab({ actor, week, team, people }: { actor: Awaited<Retur
       error = e.message;
     }
   }
+  // Получатель, который сам может вести отчёт этой команды (руководитель команды выше): переход к текущей версии
+  const leadSelected = selected ? await canLeadReport(actor, selected.team.id) : false;
   let inbox: Awaited<ReturnType<typeof teamInboxView>> | null = null;
   try {
     inbox = await teamInboxView(actor, data.week, people ?? undefined);
@@ -266,6 +268,13 @@ async function ReceivedTab({ actor, week, team, people }: { actor: Awaited<Retur
         )}
         {error ? <p className="text-body text-danger-ink" role="alert">{error}</p> : null}
         {team && !selected && !error ? <p className="text-body text-muted">Отчёт этой команды за неделю {data.number} ещё не отправлен.</p> : null}
+        {selected && leadSelected ? (
+          <p className="text-body">
+            <Link href={`/leader-report?tab=current&team=${encodeURIComponent(selected.team.id)}&week=${selected.week}`} className="inline-flex min-h-11 items-center font-medium text-link hover:underline sm:min-h-0" data-testid="team-report-current">
+              Открыть текущую версию отчёта команды
+            </Link>
+          </p>
+        ) : null}
         {selected ? <SentReportScreen key={`${selected.team.id}:${selected.week}`} initial={selected} mode="received" /> : null}
       </section>
 

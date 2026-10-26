@@ -176,7 +176,7 @@ describe("автосборка weekly для CEO из базы", () => {
     await prisma.planLine.deleteMany();
     await prisma.setting.deleteMany({ where: { key: { in: ["numbers.metrics", "numbers.sourceId"] } } });
     const { blocks, hint } = await assembleCeoBlocks(await actor.owner(), key);
-    expect(hint).toMatch(/Отметок «В отчёт CEO» за неделю нет/);
+    expect(hint).toMatch(/Отметок «В отчёт руководителю» за неделю нет/);
     expect(byKey(blocks, "products").lines.map((l) => l.text)).toContain("Неотмеченная запись");
     expect(byKey(blocks, "wow")).toMatchObject({ lines: [], note: "Нет данных: недельный отчёт не подключён" });
     expect(byKey(blocks, "month")).toMatchObject({ lines: [], note: "Нет данных: прогноз месяца ещё не загружен из LRF" });
@@ -225,8 +225,8 @@ describe("редактор отчёта CEO по блокам", () => {
     expect(again.meetings).toHaveLength(1);
     expect(again.sections!.risks).toBe("");
     const log = await prisma.auditLog.findMany({ where: { action: "ceo.save", entityId: key, id: { gt: startId } }, orderBy: { id: "asc" } });
-    expect(log.map((l) => l.field)).toEqual(expect.arrayContaining(["Отчёт CEO, блок «Продукты»", "Отчёт CEO, мои встречи недели", "Отчёт CEO, блок «Риски»", "Отчёт CEO, порядок блоков"]));
-    expect(log.find((l) => l.field === "Отчёт CEO, блок «Риски»" && l.actorName === "Головкин Владислав")?.after).toMatch(/^Скрыт\. /);
+    expect(log.map((l) => l.field)).toEqual(expect.arrayContaining(["Отчёт руководителю, блок «Продукты»", "Отчёт руководителю, мои встречи недели", "Отчёт руководителю, блок «Риски»", "Отчёт руководителю, порядок блоков"]));
+    expect(log.find((l) => l.field === "Отчёт руководителю, блок «Риски»" && l.actorName === "Головкин Владислав")?.after).toMatch(/^Скрыт\. /);
     // Блок с неизвестным ключом и пустые строки не сохраняются; без блоков сохранить нельзя
     await expectRule(report.saveCeoBlocks(await actor.owner(), key, [{ key: "hack", lines: [] }], undefined, again.updatedAt!), /нет ни одного блока/);
   });
@@ -236,7 +236,7 @@ describe("редактор отчёта CEO по блокам", () => {
     expect(legacy.blocks).toBeNull();
     expect((await weekly.getCeoReport(key)).blocks).toBeNull();
     const converted = await report.saveCeoBlocks(await actor.owner(), key, BLOCKS, undefined, legacy.updatedAt!);
-    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.save", field: "Отчёт CEO, переведён в блоки" }, orderBy: { id: "desc" } })).toMatchObject({ before: "- Старое главное" });
+    expect(await prisma.auditLog.findFirst({ where: { action: "ceo.save", field: "Отчёт руководителю, переведён в блоки" }, orderBy: { id: "desc" } })).toMatchObject({ before: "- Старое главное" });
     await weekly.saveCeoReport(await actor.owner(), key, { main: "- Снова по-старому", risks: "", next: "" }, undefined, converted.updatedAt!);
     expect((await weekly.getCeoReport(key)).blocks).toBeNull();
   });
@@ -258,7 +258,7 @@ describe("отправка CEO из отчёта по блокам", () => {
     expect(snap.next).toBe("- КАСКО. Итоги пилота");
     const ceo = await actor.ceo();
     const inbox = await listInbox(ceo.personId);
-    expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/Мурадян Арам отправил weekly для CEO за неделю \d+/) });
+    expect(inbox.items.find((i) => i.subject === `ceo-report:${key}`)).toMatchObject({ kind: "MEETING", text: expect.stringMatching(/Мурадян Арам отправил отчёт руководителю за неделю \d+/) });
     expect(await prisma.auditLog.findFirst({ where: { action: "ceo.send" }, orderBy: { id: "desc" } })).toMatchObject({ after: "Отправлен в приложении: CEO" });
 
     const seen = await report.ceoSentReports(ceo, key);

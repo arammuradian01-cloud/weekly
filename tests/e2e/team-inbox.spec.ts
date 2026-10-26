@@ -3,6 +3,8 @@ import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Искусственные отправленные снимки: проверяем именно экран получателя, включая CEO в режиме управления.
+// Этап 73 (решение Арама 26.10): экран получателя это вкладка «Полученные» раздела «Отчёт руководителю», старый адрес
+// /weekly/received ведёт туда.
 let key: string;
 let weekId: string;
 let ceoRole: string;
@@ -29,24 +31,24 @@ async function shot(page: Page, suffix: string) {
   await page.screenshot({ path: `tests/e2e/screenshots/${test.info().project.name}-received-${suffix}.png`, fullPage: true });
 }
 
-test("CEO читает отправленную версию во вкладке Weekly даже в режиме управления; пустая неделя не показывает чужую неделю", async ({ page }) => {
+test("CEO читает отправленную версию в «Полученных» даже в режиме управления; пустая неделя не показывает чужую неделю", async ({ page }) => {
   await sql("UPDATE people SET active = true, role = 'OWNER' WHERE slug = 'ceo'");
   const recipient = await id("ceo");
   await sql(`INSERT INTO ceo_reports (id, "weekId", main, risks, next, "updatedAt", "sentAt", "sentById", "sentTo", "sentSnapshot") VALUES ('test-73a-ceo', $1, 'Новая неотправленная правка CEO', '', '', now(), now() - interval '1 minute', $2, $3::jsonb, $4::jsonb)`, [weekId, await id("muradyan"), JSON.stringify([{ id: recipient, name: "CEO" }]), JSON.stringify({ main: "Отправленный итог для CEO", risks: "Отправленные риски CEO", next: "План следующей недели", meetings: [] })]);
   await enterByLink(page, "ceo");
   await enterManagement(page, "owner");
-  await page.goto(`/weekly?week=${key}`);
-  await page.getByRole("navigation", { name: "Разделы weekly" }).getByRole("link", { name: "Отчёт по моей команде" }).click();
-  await expect(page).toHaveURL(new RegExp(`/weekly/received\\?week=${key}$`));
-  const sent = page.getByTestId("ceo-sent-report");
+  await page.goto(`/weekly/received?week=${key}`);
+  await expect(page).toHaveURL(new RegExp(`/leader-report\\?tab=received&week=${key}$`));
+  await page.getByTestId("lr-received-top").getByRole("link", { name: "Открыть отчёт" }).click();
+  const sent = page.getByTestId("sent-report");
   await expect(sent).toContainText("Отправленный итог для CEO");
-  await expect(sent).toContainText("здесь отправленная версия");
+  await expect(sent).toContainText("здесь отправленная вам версия");
   await expect(page.getByText("Новая неотправленная правка CEO", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /Отправить CEO/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Отправить руководителю/ })).toHaveCount(0);
   await shot(page, "ceo");
   await page.getByRole("link", { name: "Предыдущая неделя", exact: true }).click();
-  await expect(page.getByText("За эту неделю отчёты ещё не получены", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("ceo-sent-report")).toHaveCount(0);
+  await expect(page.getByTestId("lr-received-top")).toContainText("Ещё не отправлен");
+  await expect(page.getByTestId("sent-report")).toHaveCount(0);
 });
 
 test("руководитель читает сотрудников и полученные отчёты команд; сотрудник видит получателя при сдаче, общий вход не открывает входящие", async ({ page, browser }) => {
@@ -65,7 +67,7 @@ test("руководитель читает сотрудников и получ
       (SELECT id FROM dictionary_items WHERE kind = 'ENTRY_TYPE' AND active LIMIT 1), 'Итог команды ниже', now()`, [weekId, await id("golovkin")]);
   await sql(`INSERT INTO weekly_promotions (id, "entryId", "byId", note) VALUES ('test-73a-promote-1','test-73a-promoted',$1,'Пояснение для моего руководителя'), ('test-73a-promote-2','test-73a-promoted',$2,'Секретное несданное пояснение')`, [member, draft]);
   await enterByLink(page, "reva");
-  const response = await page.goto(`/weekly/received?week=${key}`);
+  const response = await page.goto(`/leader-report?tab=received&week=${key}`);
   const html = await response!.text();
   expect(html).not.toContain("Секретный черновик теста");
   expect(html).not.toContain("Секретное несданное пояснение");
@@ -74,10 +76,10 @@ test("руководитель читает сотрудников и получ
   await person.locator("summary").click();
   await expect(person).toContainText("Запустили витрину вкладов");
   await expect(person).toContainText("От себя: Пояснение для моего руководителя");
-  await expect(page.getByTestId("received-person-afanasyev")).toContainText("Черновик, ещё не сдан");
-  await expect(page.getByTestId("received-team-report")).toContainText("Команда продаж");
+  await expect(page.getByTestId("received-person-afanasyev")).toContainText("черновик, ещё не сдан");
+  await expect(page.getByTestId("lr-received-test-73a-source")).toContainText("Команда продаж");
   await shot(page, "leader");
-  await page.getByRole("link", { name: "Читать отчёт команды" }).click();
+  await page.getByTestId("lr-received-test-73a-source").getByRole("link", { name: "Открыть отчёт" }).click();
   await expect(page.getByText("Отправленный риск команды продаж", { exact: true })).toBeVisible();
 
   const context = await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone", hasTouch: test.info().project.name === "phone" });
@@ -85,14 +87,14 @@ test("руководитель читает сотрудников и получ
   await enterByLink(employee, "cheychenets");
   await employee.goto("/weekly/submit");
   await expect(employee.getByTestId("weekly-delivery")).toContainText("Рева Тарас");
-  await expect(employee.getByRole("navigation", { name: "Разделы weekly" }).getByRole("link", { name: "Отчёт по моей команде" })).toHaveCount(0);
+  await expect(employee.getByRole("link", { name: "Отчёт руководителю" })).toHaveCount(0);
   await employee.goto(`/weekly/received?week=${key}`);
-  await expect(employee.getByText("Отчёты недоступны", { exact: true })).toBeVisible();
+  await expect(employee.getByText("Раздел для руководителей команд", { exact: true })).toBeVisible();
   await context.close();
   // Отключение доступа не удаляет уже сданный weekly из архива и не увеличивает число ожидаемых отчётов.
   await sql("UPDATE people SET active = false WHERE id = $1", [member]);
   await page.goto(`/weekly/received?week=${key}&team=test-73a-team`);
-  await expect(person).toContainText("Доступ отключён");
+  await expect(person).toContainText("доступ отключён");
   await person.locator("summary").click();
   await expect(person).toContainText("Запустили витрину вкладов");
   await expect(person).toContainText("От себя: Пояснение для моего руководителя");
@@ -106,6 +108,6 @@ test("руководитель читает сотрудников и получ
   const sharedPage = await shared.newPage();
   await enter(sharedPage, "Мурадян Арам");
   await sharedPage.goto(`/weekly/received?week=${key}`);
-  await expect(sharedPage.getByText("Отчёты недоступны", { exact: true })).toBeVisible();
+  await expect(sharedPage.getByText(/при личном входе/)).toBeVisible();
   await shared.close();
 });
