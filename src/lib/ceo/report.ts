@@ -19,6 +19,7 @@ import { blocksForLevel, blocksToLegacy, cleanBlocks, hasBlocksText, lineText, o
 import { cleanMeetings, type CeoMeeting } from "./text";
 import { ceoContext, type CeoContext } from "./assembled";
 import { TOP_TEAM } from "@/lib/org/scope";
+import { isWeekKey } from "@/lib/weekly/weeks";
 
 type Tx = Prisma.TransactionClient;
 
@@ -207,11 +208,11 @@ export type CeoInboxView = {
  * блоков с цифрами тоже по уровню: запасной профиль CEO или другой получатель без доступа к цифрам видит вместо них
  * «Цифры видны только с доступом к цифрам», и прежние разделы для него собираются из уже урезанных блоков
  */
-export async function ceoSentReports(actor: Actor, key?: string | null): Promise<CeoInboxView | null> {
+export async function ceoSentReports(actor: Actor, key?: string | null, opts: { exact?: boolean } = {}): Promise<CeoInboxView | null> {
   if (!personalLogin(actor)) return null;
   const ceo = await isCeo(actor.personId);
   const rows = await prisma.ceoReport.findMany({
-    where: { sentAt: { not: null } },
+    where: { sentAt: { not: null }, ...(opts.exact && isWeekKey(key) ? { week: { start: dbDate(key) } } : {}) },
     include: { week: { select: { start: true, isoNumber: true } }, sentBy: { select: { fullName: true } } },
     orderBy: { week: { start: "desc" } },
     take: 30,

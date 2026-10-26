@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
 import { managementPasswordKind, managementRoleFor } from "@/lib/roles";
 import { hashPassword, validateNewPassword, verifyPassword } from "@/lib/passwords";
 import { backupFileName, filesToDelete, needsMonthly } from "@/lib/backup-rotation";
@@ -73,7 +74,7 @@ describe("адрес клиента для блокировки", () => {
 });
 
 describe("подключение к базе", () => {
-  const CA = new URL("../../certs/timeweb-managed-ca.crt", import.meta.url).pathname;
+  const CA = fileURLToPath(new URL("../../certs/timeweb-managed-ca.crt", import.meta.url));
 
   it("без sslmode шифрование не включаем", () => {
     expect(pgConnectionConfig("postgresql://u:p@h:5432/db", {})).toEqual({ connectionString: "postgresql://u:p@h:5432/db" });

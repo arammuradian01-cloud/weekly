@@ -16,6 +16,7 @@ import { WeeklySubmit } from "@/components/weekly/weekly-submit";
 import { SubmitWeekSwitcher } from "@/components/weekly/submit-weeks";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { PageHeader } from "@/components/page-header";
+import { weeklyReaders } from "@/lib/weekly/team-inbox";
 
 export const metadata: Metadata = { title: "Сдать weekly" };
 
@@ -30,7 +31,7 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
   const wanted = Array.isArray(params.week) ? params.week[0] : params.week;
   const reporting = await currentReportingKey();
   const { key, future } = submitWeekOf(wanted, reporting, isWeekKey);
-  const [mine, promises, facts, skipped, template, weeks, sent] = await Promise.all([
+  const [mine, promises, facts, skipped, template, weeks, sent, readers] = await Promise.all([
     getMyWeekly(ctx.person.id, key),
     entryPromises(ctx.person.id, key),
     weekFacts(ctx.person.id, key, { limited: subjectOf(ctx).limited }),
@@ -39,6 +40,7 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
     templateForAuthor(ctx.person.id),
     submitWeeks(ctx.person.id, key),
     sentReportsFor(ctx.person.id, key),
+    weeklyReaders(ctx.person.id),
   ]);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
@@ -80,6 +82,7 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
           facts={facts}
           skippedFacts={skipped}
           template={template}
+          readers={readers}
         />
         <TaskDrawer />
       </Suspense>
