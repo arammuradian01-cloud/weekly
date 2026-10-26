@@ -411,7 +411,7 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
           ) : null}
           {/* На телефоне три кнопки делят ширину поровну и не уже 44 px по высоте: переключатель помещается в 360 */}
           <div className="flex flex-col gap-1">
-            <span className="text-small font-medium text-ink" aria-hidden="true">
+            <span className="sv-label" aria-hidden="true">
               Группировка
             </span>
             <Segmented

@@ -88,7 +88,7 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
       <div
         className={cn(
           "sv-card-task !cursor-pointer has-[a[data-rm-title]:focus-visible]:ring-2 has-[a[data-rm-title]:focus-visible]:ring-blue",
-          group.empty && "border-dashed",
+          group.empty && "border-dashed border-steel",
           g.known && g.risk && g.result === "IN_PROGRESS" && "border-danger-ink",
         )}
         data-testid={`roadmap-goal-${g.id}`}
@@ -121,7 +121,7 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
           )
         ) : null}
         <p className="m-0 flex flex-wrap gap-x-2 gap-y-0.5 text-caption text-muted">
-          <span className="tabular-nums">{group.empty ? "задач нет, до конца квартала" : `до ${formatShort(group.span.end)}`}</span>
+          <span className="tabular-nums">{group.empty ? "до конца квартала" : `до ${formatShort(group.span.end)}`}</span>
           {group.tasks.length ? <span>{`${group.tasks.length} ${plural(group.tasks.length, "открытая задача", "открытые задачи", "открытых задач")}`}</span> : null}
           {group.overdue ? <span className="font-semibold text-danger-ink">просрочено {group.overdue}</span> : null}
         </p>
@@ -134,7 +134,9 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
 export function GoalGroupHeading({ group, quarter, id, open, onToggle, controls }: { group: GoalGroup; quarter: string; id: string; open: boolean; onToggle: () => void; controls: string }) {
   const g = group.goal;
   const name = goalName(g);
-  const meta = [goalOrigin(g, quarter), goalProgressText(g), groupCount(group), group.empty ? "задач нет, до конца квартала" : `до ${formatShort(group.span.end)}`].filter(Boolean);
+  // У цели без открытых задач без «0 задач»: хватает «задач нет, до конца квартала»
+  const progress = g.progress.total || g.numeric ? goalProgressText(g) : null;
+  const meta = [goalOrigin(g, quarter), progress, group.empty ? "задач нет, до конца квартала" : `${groupCount(group)}, до ${formatShort(group.span.end)}`].filter(Boolean);
   return (
     <div className="flex flex-col gap-1">
       <h2 id={id} className="m-0 flex min-w-0 items-center gap-2 text-body font-semibold text-ink">

@@ -102,7 +102,7 @@ test("три группировки на карте сроков и на дос�
     await expect(list.getByTestId("roadmap-goal-e77-g1")).toBeVisible();
     await expect(list.getByTestId("roadmap-goal-e77-g2")).toContainText("В риске");
     await expect(list.getByTestId("roadmap-goal-e77-g3")).toHaveAttribute("data-empty", "true");
-    await expect(list.getByTestId("roadmap-goal-e77-g3")).toContainText("задач нет, до конца квартала");
+    await expect(list.getByTestId("roadmap-goal-e77-g3")).toContainText("до конца квартала");
     await shot(page, "goals-list", { contrast: true });
   } else {
     const tl = page.getByTestId("roadmap-timeline");

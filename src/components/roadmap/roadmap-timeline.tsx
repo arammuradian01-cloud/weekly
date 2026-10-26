@@ -371,8 +371,9 @@ export function RoadmapTimeline({
     const g = group.goal;
     const name = goalName(g);
     const Heading = headingId ? "h2" : "p";
-    const meta = [goalOrigin(g, quarter), goalProgressText(g), toggle ? groupCount(group) : group.tasks.length ? tasksText(group.tasks.length) : null].filter(Boolean).join(", ");
+    const meta = [goalOrigin(g, quarter), goalProgressText(g), group.tasks.length ? (toggle ? groupCount(group) : tasksText(group.tasks.length)) : null].filter(Boolean).join(", ");
     const colors = goalColors(row);
+    const narrow = !line.outside && ((line.to - line.from + 1) / range.days) * trackPx < 110;
     const place: React.CSSProperties =
       line.outside === "before" ? { left: 0 } : line.outside === "after" ? { right: 0 } : { left: `min(${pct(line.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(line.to - line.from + 1, range)})` };
     return (
@@ -400,7 +401,7 @@ export function RoadmapTimeline({
             aria-label={`Цель ${name}: ${goalSpanText(group)}`}
             title={`${name}: ${goalSpanText(group)}`}
             className={cn(
-              "absolute top-4 flex h-8 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-control px-3 text-caption font-semibold",
+              cn("absolute top-4 flex h-8 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-control text-caption font-semibold", narrow ? "px-1.5" : "px-3"),
               line.empty ? colors.empty : colors.filled,
               (line.cutStart || line.outside === "before") && "rounded-l-none",
               (line.cutEnd || line.outside === "after") && "rounded-r-none",
@@ -410,8 +411,9 @@ export function RoadmapTimeline({
             data-empty={line.empty ? "true" : undefined}
             data-outside={line.outside ?? undefined}
           >
-            <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <span className="min-w-0 truncate">{goalBarText(line)}</span>
+            {/* У короткой полосы без значка и только дата: иначе подпись обрезается до «по…» */}
+            {narrow ? null : <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+            <span className="min-w-0 truncate">{narrow && !line.outside && !line.empty ? formatShort(line.end) : goalBarText(line)}</span>
           </Link>
         </div>
       </div>
