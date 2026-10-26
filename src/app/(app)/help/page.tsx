@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireContext } from "@/lib/auth";
 import { getRhythm } from "@/lib/admin/service";
 import { getTeamLogin } from "@/lib/login/service";
+import { canSeeMarket } from "@/lib/market/access";
 import { topTeamName } from "@/lib/org/top-name";
 import { mailConfigured } from "@/lib/mail";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
@@ -35,7 +36,8 @@ export default async function HelpPage() {
   const ctx = await requireContext();
   // Абзац про «Смотреть как» (этап 63) только владельцу: остальным эта возможность недоступна
   const owner = ctx.person.role === "OWNER";
-  const [rhythm, teamLogin, topName] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName()]);
+  // Ссылка на раздел «Рынок» (этап 72) только тем, кому он открыт: остальным она привела бы к закрытой странице
+  const [rhythm, teamLogin, topName, market] = await Promise.all([getRhythm(), getTeamLogin(), topTeamName(), canSeeMarket({ personId: ctx.person.id, via: ctx.via, management: ctx.management?.role ?? null })]);
   const mail = mailConfigured();
   const until = `${UNTIL[rhythm.deadlineWeekday - 1] ?? "понедельника"} ${rhythm.deadlineTime}`;
   const meeting = ON[rhythm.meetingWeekday - 1] ?? "во вторник";
@@ -61,6 +63,7 @@ export default async function HelpPage() {
     { id: "iniciativy", label: "Инициативы" },
     { id: "ocenka", label: "Оценка встреч" },
     { id: "novosti", label: "Новости" },
+    { id: "rynok", label: "Рынок" },
     { id: "prava", label: "Кто что видит" },
     ...(owner ? [{ id: "smotret-kak", label: "Смотреть как" }] : []),
   ];
@@ -399,11 +402,37 @@ export default async function HelpPage() {
           </p>
         </Block>
 
+        <Block id="rynok" title="Рынок КАСКО и ОСАГО">
+          <p>
+            {market ? (
+              <>
+                В разделе{" "}
+                <Link href="/market" className="font-medium text-blue-700 underline-offset-2 hover:underline">
+                  «Рынок»
+                </Link>{" "}
+                дашборд
+              </>
+            ) : (
+              "В разделе «Рынок» дашборд"
+            )}{" "}
+            рынка КАСКО и ОСАГО: вкладки КАСКО и ОСАГО, фильтры живут в адресе, ссылкой можно поделиться. Данные обновляет владелец
+            загрузкой пакета рынка. На первой встрече месяца у выбранных команд первым пунктом идёт разбор рынка.
+          </p>
+          <p className="text-muted">
+            {teamLogin === "on" ? "Раздел всегда видят владельцы, все в режиме управления и все, кто входит по общему логину." : "Раздел всегда видят владельцы и все в режиме управления."}{" "}
+            При личном входе без режима управления остальные видят его по списку, который ведёт владелец в настройках.
+          </p>
+        </Block>
+
         <Block id="prava" title="Кто что видит и правит">
           <ul className="flex list-disc flex-col gap-1 pl-5">
             <li>Weekly и задачи всей команды видят все.</li>
             <li>Свой weekly и свои задачи правит каждый, чужие только владелец и администраторы в режиме управления.</li>
             <li>Журнал всех изменений, отчёт CEO и настройки видят владелец и администраторы.</li>
+            <li>
+              Раздел «Рынок» видят владельцы, все в режиме управления{teamLogin === "on" ? " и все, кто входит по общему логину" : ""}, при личном входе без режима управления остальные по
+              списку владельца.
+            </li>
           </ul>
           <p className="text-muted">Таблица для просмотра «Weekly: все задачи ресурса» обновляется сама. Ручные правки в ней ночная сверка возвращает обратно.</p>
         </Block>
