@@ -194,9 +194,11 @@ describe("отчёт руководителю", () => {
     expect(await leaderReportVisible(await shared("leader"))).toBe(false);
     expect(await leaderReportVisible({ ...(await personal("outsider")), management: "ADMIN" })).toBe(true);
     expect(await leaderReportVisible(await actorFor("muradyan"))).toBe(true);
-    // Получатель отчёта видит раздел, даже если своей команды у него нет
-    await prisma.team.update({ where: { id: slug("up") }, data: { leaderId: null } });
-    await prisma.person.update({ where: { slug: slug("leader") }, data: { managerId: (await person("outsider")).id } });
+    // Получатель отчёта видит раздел, даже если своей команды у него нет: пункт меню появляется с первым отчётом
+    expect(await leaderReportVisible(await personal("outsider"))).toBe(false);
+    const row = await ensureWeek(prisma, past);
+    const outsider = await person("outsider");
+    await prisma.teamWeeklyReport.create({ data: { teamId: slug("team"), weekId: row.id, blocks: [], sentSnapshot: [], sentAt: new Date(), sentTo: [{ id: outsider.id, name: outsider.fullName }] } });
     expect(await leaderReportVisible(await personal("outsider"))).toBe(true);
   });
 

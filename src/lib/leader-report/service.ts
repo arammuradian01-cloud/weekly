@@ -120,10 +120,21 @@ export async function leaderReportVisible(actor: Pick<Actor, "personId" | "role"
   if (actor.role === "OWNER") return true;
   const nodes = await nodesOnce();
   if (nodes.some((n) => n.active && n.leaderId === actor.personId)) return true;
-  return receivesAny(actor.personId);
+  return receivesSent(actor.personId);
 }
 
-/** Получает ли человек отчёты: один раз на запрос */
+/** Для меню: отчёт уже отправляли этому человеку или он CEO. Без расчёта получателей по структуре: это дешевле */
+const receivesSent = cache(async (personId: string): Promise<boolean> => {
+  const to = { array_contains: [{ id: personId }] };
+  const [team, top, ceo] = await Promise.all([
+    prisma.teamWeeklyReport.count({ where: { sentAt: { not: null }, sentTo: to } }),
+    prisma.ceoReport.count({ where: { sentAt: { not: null }, sentTo: to } }),
+    isCeo(personId),
+  ]);
+  return team + top > 0 || ceo;
+});
+
+/** Получает ли человек отчёты, в том числе по структуре (для вкладки по умолчанию): один раз на запрос */
 const receivesAny = cache(async (personId: string): Promise<boolean> => {
   const to = { array_contains: [{ id: personId }] };
   const [team, top, ceo] = await Promise.all([
