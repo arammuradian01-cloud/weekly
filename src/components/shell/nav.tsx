@@ -15,6 +15,7 @@ import {
   Target,
   Gavel,
   TrendingUp,
+  Gauge,
   Mail,
   MessagesSquare,
   Rocket,
@@ -74,6 +75,8 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Бизнес",
     items: [
       { href: "/forecast", label: "Прогноз", icon: TrendingUp },
+      // Неделя к плану (этап 81): факт недели против бюджета и LRF, видят все (решение Арама 26.10)
+      { href: "/plan-fact", label: "Неделя к плану", icon: Gauge },
       // Рынок КАСКО и ОСАГО (этап 62), сразу под прогнозом (решение Арама 22.10). Этап 72: владельцам, в режиме
       // управления и по общему логину всем, при личном входе остальным по списку
       { href: "/market", label: "Рынок", icon: ChartLine, restricted: "market" },

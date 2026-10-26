@@ -2208,3 +2208,79 @@ model ContentImportKey {
   @@id([kind, key])
   @@map("content_import_keys")
 }
+
+/// Этап 81: факт к плану по неделям. Строка плана из «Справочник строк» таблицы недель (единая воронка, этап 4):
+/// line_id и разрезы. Загрузка плана заменяет справочник целиком
+model WeekPlanLine {
+  /// line_id: OS.TOT.S, OS.SK.ALFA.R
+  id           String  @id
+  ord          Int
+  product      String
+  /// итог, канал, тип продажи, страховая, регион, партнёр, только месяц
+  cut          String
+  channel      String
+  counterparty String
+  region       String
+  saleType     String
+  metric       String
+  /// шт или млн ₽ (выручка без НДС)
+  unit         String
+  monthOnly    Boolean
+  label        String
+
+  @@map("week_plan_lines")
+}
+
+/// План по неделям из «План для DWH»: зерно line_id × версия × часть недели. Неделя на стыке месяцев двумя частями,
+/// строки только по месяцам без недели (week пустой, part 0)
+model WeekPlanValue {
+  id      String @id @default(cuid())
+  lineId  String
+  /// BUD или LRF
+  version String
+  /// Понедельник ГГГГ-ММ-ДД, пусто у строк только по месяцам
+  week    String
+  /// Первое число месяца ГГГГ-ММ-ДД
+  month   String
+  part    Int
+  value   Float
+
+  @@unique([lineId, version, week, month, part])
+  @@index([version, week])
+  @@map("week_plan_values")
+}
+
+/// Факт по неделям, как его отдаёт источник (Weekly Sravni через таблицу недель, потом BI): чтение раз в час заменяет
+/// факт целиком. Зафиксированные недели хранятся отдельно в WeekFactFix
+model WeekFact {
+  lineId    String
+  week      String
+  value     Float
+  /// Время обновления из источника, текстом как есть
+  updatedAt String?
+  source    String?
+  pulledAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([lineId, week])
+  @@index([week])
+  @@map("week_facts")
+}
+
+/// Фиксация недели (понедельник 18:00 по Москве): версия 1 «предварительно», дальше «уточнено», если источник
+/// дозаполнил неделю. Зафиксированное не перезаписывается, каждая правка источника новой версией с разницей
+model WeekFactFix {
+  id      String   @id @default(cuid())
+  week    String
+  lineId  String
+  version Int
+  /// предварительно или уточнено
+  status  String
+  value   Float
+  /// Разница с прошлой версией; у первой пусто
+  delta   Float?
+  fixedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([week, lineId, version])
+  @@index([week])
+  @@map("week_fact_fixes")
+}

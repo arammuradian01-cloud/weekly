@@ -390,6 +390,12 @@ export async function mailTick(now = new Date()): Promise<{ events: PassResult; 
       await pullNumbersIfDue(now);
       return { sent: 0, skipped: 0, failed: 0 };
     });
+    // Неделя к плану (этап 81): факт по неделям раз в час, фиксация недели в понедельник в 18:00 по Москве
+    await safe("Факт по неделям", async () => {
+      const { pullFactIfDue } = await import("@/lib/weekplan/service");
+      await pullFactIfDue(now);
+      return { sent: 0, skipped: 0, failed: 0 };
+    });
     // Повторяющиеся задачи по расписанию (этап 25): следующая в день срока
     await safe("Повторы задач", async () => {
       const { repeatPass } = await import("@/lib/tasks/service");
