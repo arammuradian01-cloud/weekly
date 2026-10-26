@@ -13,22 +13,30 @@ import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "./attempts";
 import { LOCK_MS } from "@/lib/rate-limit";
 
 export type ManagementPasswordMode = "shared" | "personal";
-export type ManagementPasswordPolicy = { mode: ManagementPasswordMode; version: string };
+/** broken: настройка в базе повреждена. Управления у такого владельца нет, пока оператор не задаст режим заново */
+export type ManagementPasswordPolicy = { mode: ManagementPasswordMode; version: string; broken?: true };
 const DEFAULT: ManagementPasswordPolicy = { mode: "shared", version: "default" };
+export const POLICY_BROKEN = "Настройка пароля управления повреждена. Обратитесь к владельцу сервера";
 const policyKey = (id: string) => `auth.management.person.${id}`;
 const fail = (message: string): never => { throw new TaskRuleError(message); };
 
-function readPolicy(value: unknown): ManagementPasswordPolicy {
+/**
+ * Политика из настройки. Повреждённая настройка не роняет каждую страницу ошибкой 500 (политику читает каждый запрос
+ * владельца в режиме управления): безопасный режим по умолчанию, личный пароль без общего и без действующих grant,
+ * то есть управления нет, пока режим не задан заново командой npm run management-password. Ошибка в журнал сервера
+ */
+function readPolicy(value: unknown, key = ""): ManagementPasswordPolicy {
   if (value == null) return DEFAULT;
   const p = value as Partial<ManagementPasswordPolicy>;
   if ((p.mode !== "shared" && p.mode !== "personal") || typeof p.version !== "string" || !p.version) {
-    return fail("Настройка пароля управления повреждена. Обратитесь к владельцу сервера");
+    console.error("Настройка пароля управления повреждена, управление владельца закрыто до новой настройки", key);
+    return { mode: "personal", version: "broken", broken: true };
   }
   return { mode: p.mode, version: p.version };
 }
 
 export async function managementPasswordPolicy(person: Pick<Person, "id" | "role">): Promise<ManagementPasswordPolicy> {
-  return person.role === "OWNER" ? readPolicy(await getSetting<unknown>(policyKey(person.id), null)) : DEFAULT;
+  return person.role === "OWNER" ? readPolicy(await getSetting<unknown>(policyKey(person.id), null), policyKey(person.id)) : DEFAULT;
 }
 
 // В cookie только несекретные версии: ни пароль, ни хэш в неё не попадают.
@@ -40,6 +48,7 @@ export function managementCredential(person: Pick<Person, "passwordSetAt">, poli
 export async function managementPasswordCurrent(grant: ManagementGrant, person: Person, personal: boolean): Promise<boolean> {
   if (!person.active || managementRoleFor(person.role) !== grant.role) return false;
   const policy = await managementPasswordPolicy(person);
+  if (policy.broken) return false;
   if (policy.mode === "personal" && (!personal || !person.passwordHash || !person.passwordSetAt)) return false;
   // Cookie, выданные прежней версией приложения, работают только при неизменённом общем режиме.
   if (grant.credential === undefined) return policy.mode === "shared" && policy.version === "default";
@@ -51,6 +60,7 @@ export async function checkManagementPassword(actor: Actor, deviceId: string | n
   const person = await prisma.person.findUnique({ where: { id: actor.personId } });
   if (!person?.active || !managementRoleFor(person.role) || person.role !== actor.role) return fail("Права изменились. Обновите страницу");
   const policy = await managementPasswordPolicy(person);
+  if (policy.broken) return fail(POLICY_BROKEN);
   if (policy.mode === "personal") {
     if (!deviceId || !actor.via || actor.via === "TEAM") return fail("Войдите со своим личным логином и паролем, затем включите управление");
     const device = await prisma.deviceSession.findUnique({ where: { id: deviceId } });
@@ -83,11 +93,12 @@ export async function setManagementPasswordMode(slug: string, mode: ManagementPa
     if (!person?.active || person.role !== "OWNER") return fail("Нужен включённый владелец");
     if (mode === "personal" && (!person.passwordHash || !person.passwordSetAt)) return fail("У владельца ещё нет личного пароля");
     const key = policyKey(person.id);
-    const before = readPolicy((await tx.setting.findUnique({ where: { key } }))?.value);
-    if (before.mode === mode) return { fullName: person.fullName, mode, changed: false };
+    const before = readPolicy((await tx.setting.findUnique({ where: { key } }))?.value, key);
+    // Повреждённую настройку команда перезаписывает: так оператор возвращает владельцу управление
+    if (before.mode === mode && !before.broken) return { fullName: person.fullName, mode, changed: false };
     const after: ManagementPasswordPolicy = { mode, version: randomUUID() };
     await tx.setting.upsert({ where: { key }, create: { key, value: after }, update: { value: after } });
-    await tx.auditLog.create({ data: { source: "SYSTEM", action: "management.password-mode", entity: "person", entityId: person.slug, field: person.fullName, before: before.mode, after: mode } });
+    await tx.auditLog.create({ data: { source: "SYSTEM", action: "management.password-mode", entity: "person", entityId: person.slug, field: person.fullName, before: before.broken ? "повреждена" : before.mode, after: mode } });
     return { fullName: person.fullName, mode, changed: true };
   });
 }

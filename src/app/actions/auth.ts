@@ -139,6 +139,11 @@ async function managementContext(): Promise<{ ctx: AppContext; error?: undefined
   return { ctx };
 }
 
+/** Отказ сверки пароля управления, который не означает неверный пароль: права изменились, пароль не задан, очередь занята */
+function notPasswordFailure(message: string): boolean {
+  return message === BUSY_ERROR || message.startsWith("Права изменились") || message.includes("ещё не задан");
+}
+
 export async function enterManagement(_prev: FormState, formData: FormData): Promise<FormState> {
   const { ctx, error } = await managementContext();
   if (!ctx) return { error };
@@ -155,7 +160,10 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   } catch (error) {
     const message = ruleError(error);
     if (!message) throw error;
-    await writeAudit({ action: message.startsWith("Слишком много") ? "management.blocked" : "management.fail", ...actor });
+    // В журнал неверный пароль и блокировку. «Права изменились», «пароль ещё не задан» и занятая очередь попыток не
+    // попытка подбора: записи «Неверный пароль режима управления» для них нет
+    if (message.startsWith("Слишком много")) await writeAudit({ action: "management.blocked", ...actor });
+    else if (!notPasswordFailure(message)) await writeAudit({ action: "management.fail", ...actor });
     return { error: message };
   }
   // Сверка пароля могла занять время: не выдаём управление после смены роли, режима или завершения устройства.

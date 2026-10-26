@@ -13,7 +13,7 @@ async function main() {
   if (!person?.active || person.role !== "OWNER") throw new Error("Нужен включённый владелец");
   if (mode === "personal" && (!person.passwordHash || !person.passwordSetAt)) throw new Error("У владельца ещё нет личного пароля");
   const before = await managementPasswordPolicy(person);
-  console.log(`${person.fullName}: ${before.mode} → ${mode}.`);
+  console.log(`${person.fullName}: ${before.broken ? "настройка повреждена" : before.mode} на ${mode}.`);
   if (flag !== "--apply") {
     console.log("Только проверка. Для применения повторите с --apply. Пароли других владельцев не меняются.");
     return;
