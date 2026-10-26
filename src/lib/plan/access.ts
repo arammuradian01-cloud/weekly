@@ -23,7 +23,8 @@ import type { PlanBrief } from "@/lib/plan/brief";
 import { auditVia } from "@/lib/audit";
 
 type Db = Prisma.TransactionClient | typeof prisma;
-type Who = { personId: string; role: string; management?: string | null; slug?: string };
+/** via: как вошёл. По общему логину (TEAM) роль владельца или администратора цифр сама не открывает (этап 71) */
+type Who = { personId: string; role: string; management?: string | null; slug?: string; via?: string | null };
 
 /**
  * Человек, которого видно: личный вход. По общему логину можно выбрать чужой профиль, а с этапа 71 и режима управления
@@ -129,8 +130,14 @@ function isTopManager(units: Map<string, UnitRow>, personId: string): boolean {
   return false;
 }
 
-function levelIn(ctx: Ctx, p: { id: string; slug: string; role: string; unitId: string | null }, management?: string | null): NumbersLevel {
-  if (management || p.role === "OWNER" || p.role === "ADMIN") return "full";
+/**
+ * Роль владельца или администратора открывает все цифры сама, но не по общему логину: там профиль выбирают из списка,
+ * и выбрать можно владельца или администратора без личного пароля (этап 71). Такой вход видит цифры по общим правилам
+ */
+const roleOpensAll = (role: string, via: string | null | undefined) => via !== "TEAM" && (role === "OWNER" || role === "ADMIN");
+
+function levelIn(ctx: Ctx, p: { id: string; slug: string; role: string; unitId: string | null }, management?: string | null, via?: string | null): NumbersLevel {
+  if (management || roleOpensAll(p.role, via)) return "full";
   if (ctx.topIds.has(p.id) || ctx.ceoId === p.id || ctx.owners.has(p.slug) || ctx.access.full.people.includes(p.slug)) return "full";
   if (within(ctx.units, p.unitId, ctx.fullUnits)) return "full";
   if (ctx.access.summary.topManagement && isTopManager(ctx.units, p.id)) return "summary";
@@ -139,10 +146,10 @@ function levelIn(ctx: Ctx, p: { id: string; slug: string; role: string; unitId: 
 }
 
 export async function numbersLevel(who: Who, db: Db = prisma): Promise<NumbersLevel> {
-  if (who.management || who.role === "OWNER" || who.role === "ADMIN") return "full";
+  if (who.management || roleOpensAll(who.role, who.via)) return "full";
   const [ctx, person] = await Promise.all([loadCtx(db), db.person.findUnique({ where: { id: who.personId }, select: { id: true, slug: true, role: true, unitId: true, active: true } })]);
   if (!person?.active) return "none";
-  return levelIn(ctx, person, who.management);
+  return levelIn(ctx, person, who.management, who.via);
 }
 
 /** Все цифры: действия прогноза, выгрузка, вкладки с драйверами и партнёрами */

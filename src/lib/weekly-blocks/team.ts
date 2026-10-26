@@ -172,7 +172,7 @@ export type TeamReportView = {
 const names = (value: unknown) => (Array.isArray(value) ? value.map((v) => (v && typeof v === "object" ? String((v as { name?: unknown }).name ?? "") : "")).filter(Boolean) : []);
 
 /** Уровень цифр зрителя (этап 57) */
-const levelOf = (actor: Actor): Promise<ViewerLevel> => numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management });
+const levelOf = (actor: Actor): Promise<ViewerLevel> => numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management, via: actor.via });
 
 /**
  * Текущая версия отчёта со всеми цифрами: сохранённый отчёт по текущему шаблону с живыми блоками или свежая автосборка.
