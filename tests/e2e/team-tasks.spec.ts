@@ -95,7 +95,7 @@ test("руководитель видит просрочку сектора на
 
   // Ответственный видит просьбу в «Мне»
   const alisa = await person(browser, page, "Чемоданова");
-  await alisa.goto("/me");
+  await alisa.goto("/");
   await expect(alisa.getByText("Просят обновить задачу: где сейчас, состояние и срок")).toBeVisible();
   await alisa.close();
 });

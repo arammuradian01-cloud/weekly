@@ -102,7 +102,7 @@ test("владелец собирает повестку, ведёт встре�
   const nextTitle = (await page.locator("section h2").first().textContent())!.trim();
   await expect(reva.getByRole("heading", { name: /Задача 28 заблокирована/ })).toHaveCount(0, { timeout: 15000 });
   await expect(reva.locator("section h2").first()).toHaveText(nextTitle);
-  await reva.goto("/me");
+  await reva.goto("/");
   await expect(reva.getByText(/Вы владелец решения встречи/).first()).toBeVisible();
   await reva.context().close();
 

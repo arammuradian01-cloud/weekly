@@ -66,7 +66,7 @@ test("после загрузки LBE: событие в «Мне», «Прог�
   // Лидер ОСАГО по личному входу: событие в «Мне» ведёт в прогноз месяца
   await page.context().clearCookies();
   await enterByLink(page, "golovkin");
-  await page.goto("/me");
+  await page.goto("/");
   const event = page.getByRole("link", { name: "Прогноз месяца" });
   await expect(event).toBeVisible();
   await expect(page.getByText(/Загружен LBE на .*Проверьте прогноз: ОСАГО/)).toBeVisible();
@@ -221,6 +221,6 @@ test("общий логин и человек не из команд проду�
   expect(denied.status()).toBe(403);
   await page.context().clearCookies();
   await enter(page, "Головкин Владислав");
-  await page.goto("/me");
+  await page.goto("/");
   await expect(page.getByRole("link", { name: "Прогноз месяца" })).toHaveCount(0);
 });

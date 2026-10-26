@@ -40,14 +40,13 @@ for (const theme of ["light", "dark"] as Theme[]) {
       await page.context().addCookies([{ name: "theme", value: theme, url: "http://localhost:3100" }]);
     });
 
-    test("главная, «Мне», weekly, задачи, карточка задачи, люди, цели", async ({ page }) => {
+    test("главная с «Ждёт вас», weekly, задачи, карточка задачи, люди, цели", async ({ page }) => {
       test.setTimeout(60_000);
       await enter(page, "Рева Тарас");
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      // Этап 76: очередь «Мне» на главной блоком «Ждёт вас», отдельного снимка нет
+      await expect(page.getByRole("heading", { name: /^Ждёт вас/, level: 2 })).toBeVisible();
       await shot(page, theme, "home");
-      await page.goto("/me");
-      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-      await shot(page, theme, "me");
       await page.goto("/weekly");
       await expect(page.getByRole("heading", { name: "Weekly", level: 1 })).toBeVisible();
       await shot(page, theme, "weekly");

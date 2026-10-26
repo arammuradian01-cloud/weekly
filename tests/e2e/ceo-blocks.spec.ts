@@ -132,7 +132,7 @@ test("этап 66: владелец собирает отчёт CEO по смы�
 
   // CEO: событие в «Мне», отчёт по блокам только для чтения, скрытого блока нет
   const ceo = await personal(browser, page, "ceo");
-  await ceo.goto("/me");
+  await ceo.goto("/");
   await ceo.getByRole("link", { name: "Weekly для CEO" }).click();
   await expect(ceo).toHaveURL(/\/ceo-report\?week=/);
   const sent = ceo.getByTestId("ceo-sent-report");
@@ -230,7 +230,7 @@ test("этап 66: руководитель задаёт блоки weekly ко�
 
   // Руководитель руководителя: событие в «Мне» и отчёт только для чтения
   const boss = await personal(browser, page, "fatyanov");
-  await boss.goto("/me");
+  await boss.goto("/");
   await boss.getByRole("link", { name: "Weekly команды по блокам" }).click();
   await expect(boss).toHaveURL(/\/weekly\/team-report\?team=e2e-team66/);
   await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Найм и команда" })).toContainText("Закрыли вакансию аналитика вкладов");
@@ -262,7 +262,7 @@ test("этап 66: получатель отчёта команды, руков�
 
   // Головкин по событию в «Мне» видит отправленную версию, а не редактор
   const boss = await personal(browser, page, "golovkin");
-  await boss.goto("/me");
+  await boss.goto("/");
   await boss.getByRole("link", { name: "Weekly команды по блокам" }).click();
   await expect(boss).toHaveURL(/\/weekly\/team-report\?team=e2e-team66b/);
   await expect(boss.getByTestId("team-report-view").getByRole("region", { name: "Продукты" })).toContainText("Пилот КАСКО для такси запускаем в ноябре");

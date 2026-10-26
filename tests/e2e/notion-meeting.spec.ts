@@ -136,7 +136,7 @@ test("этап 61: разбор встречи правилами, weekly для
 
   // CEO видит weekly в «Мне» и на странице отчёта CEO, только для чтения
   const ceo = await personal(browser, page, "ceo");
-  await ceo.goto("/me");
+  await ceo.goto("/");
   await ceo.getByRole("link", { name: "Weekly для CEO" }).click();
   await expect(ceo).toHaveURL(/\/ceo-report\?week=/);
   const sent = ceo.getByTestId("ceo-sent-report");

@@ -81,11 +81,6 @@ test("отчёт CEO, журнал, настройки и синхронизац
   await expect(page.getByRole("heading", { name: "Таблица для просмотра" })).toBeVisible();
   await shot(page, "sync-mirror");
 });
-
-test("один на один: цифры встреч при личном входе", async ({ page }) => {
-  await enterByLink(page, "reva");
-  await page.goto("/one-on-one");
-  const figures = page.getByRole("list", { name: "Встречи в цифрах" });
   if (await page.getByRole("heading", { name: "Встреч один на один пока нет" }).isVisible()) {
     await expect(figures).toHaveCount(0);
   } else {

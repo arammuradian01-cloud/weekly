@@ -271,7 +271,7 @@ test("этап 53: структура всей компании, генерал�
   const boss = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" })).newPage();
   const katsemba = (await sql(`SELECT slug FROM people WHERE "fullName" LIKE 'Кацемба%'`))[0]!.slug as string;
   await enterByLink(boss, katsemba);
-  await boss.goto("/me");
+  await boss.goto("/");
   await boss.getByRole("link", { name: "Запрос в команду" }).first().click();
   // Этап 64: запросы решают на экране «Weekly-команды»
   await expect(boss).toHaveURL(/\/people\/teams#join-requests$/);

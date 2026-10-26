@@ -299,7 +299,7 @@ test("руководитель видит свои команды, соглас�
 
   // Руководитель Котова видит запрос в «Мне» и соглашается на экране команд
   const lisina = await personal(browser, page, "Лисина");
-  await lisina.goto("/me");
+  await lisina.goto("/");
   await lisina.getByRole("link", { name: "Запрос в команду" }).first().click();
   await expect(lisina).toHaveURL(/\/people\/teams#join-requests$/);
   const requests = lisina.getByTestId("join-requests");
