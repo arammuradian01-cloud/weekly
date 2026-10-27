@@ -7,8 +7,8 @@
 // Перетаскивание подразделений и людей осталось помощником «Собрать из структуры», свёрнутым по умолчанию.
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { createContext, useContext, useEffect, useMemo, useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Plus, RefreshCw, Search, Users } from "lucide-react";
 import type { WeeklyTeam, WeeklyTeamsView } from "@/lib/org/teams";
 import { managementHint, matchTeam, sizeText, teamKindLabel, teamSize } from "@/lib/org/team-rights";
@@ -26,6 +26,7 @@ import { WeeklyLine } from "./weekly-line";
 import { AddPeopleModal, CloseModal, CreateTeamModal, LeaderModal, RenameModal, RhythmModal } from "./team-dialogs";
 import { StructureAssembler } from "./structure-assembler";
 import { ManageHint } from "./manage-hint";
+import { STICKY_COLUMN } from "./sticky-column";
 import { TOP_TEAM_NAME } from "@/domain/teams";
 
 /** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
@@ -74,7 +75,7 @@ function intro(view: WeeklyTeamsView): string {
   return "Команды, в которых вы участник. Состав меняет руководитель команды.";
 }
 
-function TeamRow({ team, selected, onOpen }: { team: WeeklyTeam; selected: boolean; onOpen: (id: string) => void }) {
+function TeamRow({ team, selected, opening, onOpen }: { team: WeeklyTeam; selected: boolean; /** Карточка этой команды открывается (телефон): ждём сервер */ opening: boolean; onOpen: (id: string) => void }) {
   const who = team.relation === "leader" ? "Руководитель: вы" : team.leader ? `Руководитель: ${team.leader.fullName}` : "Руководитель не назначен";
   const tail = team.relation === "member" ? ", вы участник" : team.relation === "below" ? ", команда ниже вашей" : "";
   return (
@@ -87,12 +88,21 @@ function TeamRow({ team, selected, onOpen }: { team: WeeklyTeam; selected: boole
           onOpen(team.id);
         }}
         aria-current={selected ? "true" : undefined}
+        aria-busy={opening || undefined}
         className={cn("flex flex-col gap-1 px-4 py-3 outline-none hover:bg-row-hover focus-visible:bg-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus", selected && "bg-row-selected hover:bg-row-selected")}
         data-testid={`team-row-${team.id}`}
       >
         <span className="flex items-start justify-between gap-3">
           <span className="min-w-0 break-words text-body font-semibold text-ink">{team.name}</span>
-          <Badge tone={team.kind === "CUSTOM" ? "blue" : "gray"}>{teamKindLabel(team)}</Badge>
+          <span className="flex shrink-0 items-center gap-2">
+            {opening ? (
+              <span className="flex items-center gap-1.5 text-small text-muted" data-testid="team-row-opening">
+                <span className="sv-spinner h-4 w-4 text-link" aria-hidden="true" />
+                Открываем
+              </span>
+            ) : null}
+            <Badge tone={team.kind === "CUSTOM" ? "blue" : "gray"}>{teamKindLabel(team)}</Badge>
+          </span>
         </span>
         <span className="text-small text-muted">
           {who}, {sizeText(teamSize(team))}
@@ -145,6 +155,19 @@ function JoinRequests({ list }: { list: JoinRequestView[] }) {
 
 type Focus = { to: "card" } | { to: "row"; id: string };
 
+/**
+ * Данные экрана без выбранной команды считает layout (этап 70) и отдаёт сюда: при смене ?team= он не пересчитывается,
+ * страница присылает только выбранную команду
+ */
+const TeamsViewContext = createContext<WeeklyTeamsView | null>(null);
+
+export function TeamsViewProvider({ view, children }: { view: WeeklyTeamsView; children: React.ReactNode }) {
+  return <TeamsViewContext.Provider value={view}>{children}</TeamsViewContext.Provider>;
+}
+
+/** Сколько ждём возврата к списку по «Назад», прежде чем открыть нажатую в это время команду как обычно */
+const LEAVE_WAIT_MS = 1000;
+
 /** Карточку открыли шагом из списка: помним и после обновления страницы, пока длина истории та же (только этот браузер) */
 const PUSHED_KEY = "weekly.teams.pushed";
 
@@ -167,10 +190,18 @@ function pushedBefore(id: string | null): string | null {
   }
 }
 
-export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
+/** focus: свежие данные команды из адреса, в том числе той, которой нет в списке (по ссылке, только просмотр) */
+export function WeeklyTeams({ focus }: { focus: WeeklyTeam | null }) {
+  const view = useContext(TeamsViewContext)!;
   const pathname = usePathname();
-  // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку
-  const picked = useSearchParams().get("team");
+  const router = useRouter();
+  // Выбор берётся из адреса: переход на вкладку «Weekly-команды» (без команды) возвращает к списку. Пока идёт замена
+  // адреса (перебор команд на ноутбуке), карточка уже показывает выбранную команду из данных списка
+  const fromUrl = useSearchParams().get("team");
+  const [picked, pick] = useOptimistic(fromUrl);
+  // Карточка, которую открываем шагом в истории (телефон): строка показывает ожидание, пока сервер не ответил
+  const [opening, markOpening] = useOptimistic<string | null>(null);
+  const [, startNav] = useTransition();
   const run = useRunWeekly();
   const { notify } = usePrototype();
   const [query, setQuery] = useState("");
@@ -182,25 +213,46 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const pushedRef = useRef<string | null>(null);
   // Куда поставить фокус после смены экрана: на заголовок карточки или обратно на строку списка (только узкий экран)
   const focusRef = useRef<Focus | null>(null);
+  // «К списку команд» идёт назад по истории, а браузер ещё не вернулся: команда, нажатая в это время, откроется после
+  // возврата. Время начала: если возврата так и не было, через секунду ожидание снимается
+  const leavingRef = useRef(0);
+  const queuedRef = useRef<string | null>(null);
+  const openRef = useRef<(id: string, fromList?: boolean) => void>(() => {});
 
   useEffect(() => {
+    const teamInUrl = () => new URL(window.location.href).searchParams.get("team");
     // Страницу обновили на карточке, открытой из списка: «К списку команд» по-прежнему шаг назад
-    pushedRef.current = pushedBefore(new URL(window.location.href).searchParams.get("team"));
+    pushedRef.current = pushedBefore(teamInUrl());
     const onPop = () => {
       // Системная «Назад» с карточки: к списку, фокус на строку команды
       if (pushedRef.current) focusRef.current = { to: "row", id: pushedRef.current };
-      pushedRef.current = null;
-      rememberPush(null);
+      // «Вперёд» снова на карточку, открытую из списка (длина истории та же): «К списку команд» опять шаг назад, а не
+      // замена адреса, после которой в истории два списка подряд
+      pushedRef.current = pushedBefore(teamInUrl());
+      if (!leavingRef.current) return;
+      leavingRef.current = 0;
+      const next = queuedRef.current;
+      queuedRef.current = null;
+      // Роутер обрабатывает возврат в своём обработчике после нашего: открываем следующую команду уже после него
+      if (next) window.setTimeout(() => openRef.current(next, true), 0);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
+  useEffect(() => {
+    // Шаг в истории роутер кладёт, когда переход закончился: тогда и запоминаем длину истории
+    if (fromUrl && pushedRef.current === fromUrl) rememberPush(fromUrl);
+  }, [fromUrl]);
+
   const wide = useWide();
   const assembleIsOpen = useSyncExternalStore(subscribeAssemble, assembleOpen, () => false);
   // Карточка: выбранная в адресе команда. Без выбора на ноутбуке показана и подсвечена первая команда (адрес не
   // трогаем: выбор строки человеком всегда сильнее и ничем не перебивается), на телефоне только список без подсветки
-  const selected = picked ? (view.teams.find((t) => t.id === picked) ?? (view.extra?.id === picked ? view.extra : null)) : null;
+  const known = (id: string | null) => (id ? ((focus?.id === id ? focus : null) ?? view.teams.find((t) => t.id === id) ?? null) : null);
+  // Переход к команде, которой ещё нет в данных (только что создана): до конца перехода держим прежний выбор, а не
+  // показываем на миг первую команду
+  const selected = known(picked) ?? (picked && picked !== fromUrl ? known(fromUrl) : null);
   const first = view.teams[0] ?? null;
   const shown = selected ?? first;
   const current = selected ?? (wide ? first : null);
@@ -213,6 +265,8 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
     // Элемент ещё не на экране (данные новой команды не пришли): попробуем после следующего обновления
     if (!el || !el.getClientRects().length) return;
     focusRef.current = null;
+    // Карточка заменила список (узкий экран): показываем её с начала страницы
+    if (f.to === "card") window.scrollTo({ top: 0 });
     el.focus({ preventScroll: f.to === "row" ? false : true });
   }, [selected, view]);
 
@@ -227,32 +281,59 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
   const hint = managementHint(view.managementOff);
 
   /**
-   * Открыть карточку. Из списка шаг в истории (на телефоне «Назад» вернёт к списку), из открытой карточки замена:
-   * перебор команд на ноутбуке не копит историю. Адрес меняется через history: роутер Next подхватывает его сразу,
-   * а обновление данных после действия, начатое раньше, отменяется переходом и повторяется уже по новому адресу.
-   * Фокус на заголовок карточки только на узком экране, где карточка заменяет список; на ноутбуке он остаётся в списке
+   * Сменить адрес переходом роутера Next, а не window.history: после pushState/replaceState Next 16 оставляет у себя
+   * дерево и параметры прежнего адреса. Следующее обновление данных (после действия их два: router.refresh и
+   * revalidatePath) не сходится с ответом сервера, а второе такое расхождение подряд Next чинит полной перезагрузкой
+   * страницы: пропадали тост, раскрытый помощник и введённое (этап 70). Переход отменяет начатое обновление, а
+   * обновление после действия идёт уже по новому адресу.
+   * Замена адреса показывает выбор сразу, не дожидаясь ответа сервера. Шаг вперёд роутер кладёт в историю, когда
+   * переход закончился: карточку показываем вместе с ним, иначе «Назад», нажатая сразу, ушла бы мимо списка
    */
-  const open = (id: string) => {
-    if (picked === id) return;
-    const url = `${pathname}?team=${encodeURIComponent(id)}`;
-    const narrow = window.matchMedia(NARROW).matches;
-    // На ноутбуке список виден рядом с карточкой: перебор команд не копит историю
-    if (picked || !narrow) window.history.replaceState(null, "", url);
-    else {
-      window.history.pushState(null, "", url);
-      pushedRef.current = id;
-      rememberPush(id);
+  const go = (id: string | null, url: string, push: boolean) =>
+    startNav(() => {
+      if (push) {
+        markOpening(id);
+        router.push(url, { scroll: false });
+      } else {
+        pick(id);
+        router.replace(url, { scroll: false });
+      }
+    });
+  /**
+   * Открыть карточку. Из списка шаг в истории (на телефоне «Назад» вернёт к списку), из открытой карточки замена:
+   * перебор команд на ноутбуке не копит историю. Фокус на заголовок карточки только на узком экране, где карточка
+   * заменяет список; на ноутбуке он остаётся в списке
+   */
+  const open = (id: string, fromList = false) => {
+    if (leavingRef.current && Date.now() - leavingRef.current < LEAVE_WAIT_MS) {
+      queuedRef.current = id;
+      return;
     }
+    leavingRef.current = 0;
+    if (!fromList && picked === id) return;
+    const narrow = window.matchMedia(NARROW).matches;
+    // На ноутбуке список виден рядом с карточкой: перебор команд не копит историю. На телефоне шаг, если на экране
+    // список, а не карточка (в адресе может быть и устаревшая ссылка на команду, которой нет)
+    const push = narrow && (fromList || !selected);
+    if (push) pushedRef.current = id;
+    go(id, `${pathname}?team=${encodeURIComponent(id)}`, push);
     focusRef.current = narrow ? { to: "card" } : null;
-    if (narrow) window.scrollTo({ top: 0 });
   };
+  useEffect(() => {
+    openRef.current = open;
+  });
   /** Карточку убрать: если её открыли из списка, это шаг назад по истории, иначе адрес без команды */
   const leave = () => {
-    const wasPushed = !!pushedRef.current && pushedRef.current === picked;
+    const wasPushed = !!pushedRef.current && pushedRef.current === fromUrl;
     pushedRef.current = null;
-    rememberPush(null);
-    if (wasPushed) window.history.back();
-    else window.history.replaceState(null, "", `${pathname}${window.location.hash}`);
+    if (wasPushed) {
+      // Запись о шаге оставляем: «Вперёд» вернёт карточку, и «К списку команд» снова будет шагом назад
+      leavingRef.current = Date.now();
+      window.history.back();
+    } else {
+      rememberPush(null);
+      go(null, `${pathname}${window.location.hash}`, false);
+    }
   };
   /** К списку (телефон): фокус возвращается на строку команды */
   const back = () => {
@@ -348,7 +429,7 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
               {found.length ? (
                 <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
                   {found.map((t) => (
-                    <TeamRow key={t.id} team={t} selected={current?.id === t.id} onOpen={open} />
+                    <TeamRow key={t.id} team={t} selected={current?.id === t.id} opening={opening === t.id} onOpen={open} />
                   ))}
                 </ul>
               ) : (
@@ -374,7 +455,8 @@ export function WeeklyTeams({ view }: { view: WeeklyTeamsView }) {
           ) : null}
         </section>
         {shown ? (
-          <aside aria-label="Карточка команды" className={cn("min-w-0 self-start lg:sticky lg:top-20", cardMode ? "block" : "hidden lg:block")}>
+          // key: карточка другой команды открывается сверху, а не с прокруткой прежней (своя прокрутка колонки, этап 70)
+          <aside key={shown.id} aria-label="Карточка команды" className={cn("min-w-0", STICKY_COLUMN, cardMode ? "block" : "hidden lg:block")}>
             <TeamCard key={shown.id} team={shown} view={view} onAction={act} onBack={back} />
           </aside>
         ) : null}

@@ -167,6 +167,8 @@ test("помощник «Собрать из структуры»: руково�
   // Не сообщение (живёт 5 секунд, следом переход), а открывшаяся карточка новой команды и запись в базе
   await expect(reva.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
   await expect.poll(async () => (await sql("SELECT count(*)::int AS n FROM teams WHERE name = $1 AND active", ["Кросс-продажи"]))[0]!.n).toBe(1);
+  // Карточка новой команды открылась переходом без перезагрузки страницы (этап 70): раскрытое дерево помощника на месте
+  if (!isPhone()) await expect(ready.getByTestId(`unit-${ins}`).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "true");
 });
 
 test("сотрудник Money: цифры прогноза закрыты, команды только для просмотра, под логотипом нет департамента", async ({ page, browser }) => {

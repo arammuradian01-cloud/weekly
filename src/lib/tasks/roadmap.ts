@@ -74,10 +74,23 @@ export type Roadmap = { periods: Period[]; rows: RoadmapRow[]; total: number; im
  * Доска: строки направлений в порядке справочника (направление, которого нет в справочнике, в конце), в ячейке
  * сначала важные, потом по сроку и номеру
  */
+/** Задачи roadmap после фильтров: открытые, выбранного человека, только важные. Общие для всех группировок (этап 77) */
+export function roadmapTasks(tasks: Task[], filter: RoadmapFilter): Task[] {
+  const mine = (t: Task) => !filter.person || t.owner === filter.person || t.coExecutors.includes(filter.person) || (t.owner === "all" && !!filter.personLeads);
+  return tasks.filter((t) => onRoadmap(t) && mine(t) && (!filter.onlyImportant || importanceOf(t.priority) > 0));
+}
+
+/** Ячейки строки доски по срокам: в ячейке сначала важные, потом по сроку и номеру */
+export function roadmapCells(list: Task[], today: IsoDate, periods: Period[]): Record<string, Task[]> {
+  const cells: Record<string, Task[]> = Object.fromEntries(periods.map((p) => [p.key, [] as Task[]]));
+  for (const t of list) cells[periodOf(t, today, periods)]!.push(t);
+  for (const key of Object.keys(cells)) cells[key]!.sort((a, b) => importanceOf(b.priority) - importanceOf(a.priority) || a.due.localeCompare(b.due) || a.number - b.number);
+  return cells;
+}
+
 export function buildRoadmap(tasks: Task[], today: IsoDate, filter: RoadmapFilter, directions: { code: string; label: string }[]): Roadmap {
   const periods = roadmapPeriods(today);
-  const mine = (t: Task) => !filter.person || t.owner === filter.person || t.coExecutors.includes(filter.person) || (t.owner === "all" && !!filter.personLeads);
-  const picked = tasks.filter((t) => onRoadmap(t) && mine(t) && (!filter.onlyImportant || importanceOf(t.priority) > 0));
+  const picked = roadmapTasks(tasks, filter);
   const order = new Map(directions.map((d, i) => [d.code, i]));
   const byDirection = new Map<string, Task[]>();
   for (const t of picked) {
@@ -88,9 +101,7 @@ export function buildRoadmap(tasks: Task[], today: IsoDate, filter: RoadmapFilte
   const rows = [...byDirection.entries()]
     .sort(([a], [b]) => (order.get(a) ?? 999) - (order.get(b) ?? 999) || a.localeCompare(b))
     .map(([direction, list]) => {
-      const cells: Record<string, Task[]> = Object.fromEntries(periods.map((p) => [p.key, [] as Task[]]));
-      for (const t of list) cells[periodOf(t, today, periods)]!.push(t);
-      for (const key of Object.keys(cells)) cells[key]!.sort((a, b) => importanceOf(b.priority) - importanceOf(a.priority) || a.due.localeCompare(b.due) || a.number - b.number);
+      const cells = roadmapCells(list, today, periods);
       return {
         direction: direction as DirectionCode,
         label: directions.find((d) => d.code === direction)?.label ?? direction,
