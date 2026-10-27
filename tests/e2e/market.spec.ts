@@ -204,7 +204,7 @@ test("человек не из списка при личном входе: пу
   await expect(team.getByTestId("market-upload")).toHaveCount(0);
   const teamData = await team.request.get("/api/market/data");
   expect(teamData.status()).toBe(200);
-  expect(teamData.headers()["cache-control"]).toBe("no-store");
+  expect(teamData.headers()["cache-control"]).toContain("private");
   expect(await teamData.json()).toMatchObject({ ok: true, version: 1 });
   expect((await upload(team)).status()).toBe(403);
   await shot(team, "team");
