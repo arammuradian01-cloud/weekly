@@ -96,8 +96,11 @@ test("черновик weekly без сети: запись не теряетс�
   await page.goto("/weekly/submit").catch(() => undefined);
   await page.context().setOffline(false);
   await page.goto("/weekly/submit");
-  // Сначала ждём запись в базе: страница рисует список на сервере при открытии, а черновик уходит уже из браузера,
-  // поэтому в списке он появляется только после обновления. Проверка видимости ниже, после перезагрузки
+  // Список страницы строится на сервере при открытии, а черновик уходит уже из браузера, поэтому в списке он
+  // появляется только после обновления. Ждём, пока браузер отправит черновик и уберёт его с устройства
+  await expect
+    .poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("weekly-offline:")).length), { timeout: 15_000 })
+    .toBe(0);
   await expect
     .poll(async () => (await sql(`SELECT count(*)::int AS n FROM weekly_entries WHERE what = 'Договорились о пилоте с банком'`))[0].n, { timeout: 15_000 })
     .toBe(1);
