@@ -96,8 +96,11 @@ test("черновик weekly без сети: запись не теряетс�
   await page.goto("/weekly/submit").catch(() => undefined);
   await page.context().setOffline(false);
   await page.goto("/weekly/submit");
-  await expect(page.getByText("Договорились о пилоте с банком")).toBeVisible({ timeout: 15_000 });
-  await expect.poll(async () => (await sql(`SELECT count(*)::int AS n FROM weekly_entries WHERE what = 'Договорились о пилоте с банком'`))[0].n).toBe(1);
+  // Сначала ждём запись в базе: страница рисует список на сервере при открытии, а черновик уходит уже из браузера,
+  // поэтому в списке он появляется только после обновления. Проверка видимости ниже, после перезагрузки
+  await expect
+    .poll(async () => (await sql(`SELECT count(*)::int AS n FROM weekly_entries WHERE what = 'Договорились о пилоте с банком'`))[0].n, { timeout: 15_000 })
+    .toBe(1);
   // Черновик дошёл и убран с устройства: повторное открытие не создаёт копию
   await page.reload();
   await expect(page.getByText("Договорились о пилоте с банком")).toBeVisible();
