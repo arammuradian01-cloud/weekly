@@ -3,6 +3,7 @@ import { requireContext } from "@/lib/auth";
 import { goalsView } from "@/lib/goals/service";
 import { goalLinkBoard } from "@/lib/goals/link-board";
 import { BORD_GOAL_TABS } from "@/lib/goals/bord";
+import { parseGroup, parsePeople } from "@/lib/goals/by-person";
 import { ALL_TEAMS, currentTeam, subjectOf } from "@/lib/org/current";
 import { getSetting } from "@/lib/settings";
 import { PageHeader } from "@/components/page-header";
@@ -14,9 +15,14 @@ export const metadata: Metadata = { title: "Цели" };
 
 /**
  * Сквозные цели (этап 17): дерево целей квартала от департамента до команд и людей, прогресс и риски.
- * Вкладка «Связать задачи с целями» (этап 65, адрес ?mode=link): задачи к целям перетаскиванием
+ * Вкладка «Связать задачи с целями» (этап 65, адрес ?mode=link): задачи к целям перетаскиванием.
+ * Чьи цели показать и как сгруппировать лежит в адресе: ?people=slug,slug (метка _none: цели без владельца) и ?group=team
  */
-export default async function GoalsPage({ searchParams }: { searchParams: Promise<{ q?: string | string[]; find?: string | string[]; mode?: string | string[] }> }) {
+export default async function GoalsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string | string[]; find?: string | string[]; mode?: string | string[]; people?: string | string[]; group?: string | string[] }>;
+}) {
   const ctx = await requireContext();
   const params = await searchParams;
   // Повтор параметра в адресе даёт массив: берём первое значение
@@ -54,6 +60,8 @@ export default async function GoalsPage({ searchParams }: { searchParams: Promis
       <GoalsScreen view={view} defaultTeam={team.id && team.id !== ALL_TEAMS ? team.id : (view.creatable[0]?.id ?? null)} bordTabs={bordOn ? BORD_GOAL_TABS : null}
         leaderBoard={!!ctx.management && ctx.person.role !== "OBSERVER"}
         initialQuery={find?.slice(0, 80) ?? ""}
+        initialPeople={parsePeople(first(params.people))}
+        initialGroup={parseGroup(first(params.group))}
       />
     </>
   );

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase } from "./helpers";
+import { enter, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Weekly на настоящей базе (этап 4): лента, черновик и сдача, отчёт CEO, закрытие недели.
 // Каждый сценарий идёт и на ноутбуке 1440, и на телефоне 360: это и есть приёмка «сдать неделю с телефона и ноутбука»
@@ -224,10 +224,60 @@ test("администратор закрывает неделю, лидер б�
   await expect(page.getByText(/Неделя \d+ снова открыта/).first()).toBeVisible();
 });
 
-test("режим встречи показывает записи недели крупно и риски отдельно", async ({ page }) => {
+test("режим встречи по умолчанию открывает отчётную неделю; прошлые записи доступны при явном выборе", async ({ page }) => {
   await enter(page, "Мурадян Арам");
+  const [{ key }] = await sql(`WITH n AS (SELECT now() AT TIME ZONE 'Europe/Moscow' AS m), c AS (SELECT m, date_trunc('week', m)::date AS mon FROM n) SELECT to_char(CASE WHEN m < mon + interval '42 hours' THEN mon - 7 ELSE mon END, 'YYYY-MM-DD') AS key FROM c`);
+  const [{ old }] = await sql(`SELECT to_char(w.start, 'YYYY-MM-DD') AS old FROM weeks w WHERE EXISTS (SELECT 1 FROM weekly_entries e WHERE e."weekId" = w.id) ORDER BY w.start DESC LIMIT 1`);
+  expect(old).not.toBe(key);
+  // Лента может показывать последнюю заполненную неделю, кнопка встречи должна вести на отчётную.
+  // Проверяем записи слайда: рядом могут быть заголовки сводки плана, не относящиеся к weekly.
+  await page.goto("/weekly");
+  await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${key}`);
+  // Без недели в адресе сервер один раз выбирает отчётную и показывает её в адресе: обновления встречи не перескакивают
   await page.goto("/weekly/meeting");
+  await expect(page).toHaveURL(new RegExp(`/weekly/meeting\\?week=${key}$`));
+  const nav = page.getByTestId("meeting-week");
+  await expect(nav).toContainText("отчётная");
+  await expect(nav).not.toContainText("Не отчётная неделя");
+  await expect(nav).not.toContainText(/[—·]/);
+  // Цели нажатия переключателя на телефоне не меньше 44 px
+  if (test.info().project.name === "phone") {
+    for (const name of ["Предыдущая неделя", "Следующая неделя"]) expect((await nav.getByRole("button", { name }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+  await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
+  await expect(page.getByText("Рисков и запросов помощи на этой неделе нет.", { exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry')).toHaveCount(0);
+  await shot(page, "meeting-current-empty");
+  // Явно выбранная прошлая неделя сохраняется и в ленте, и во встрече.
+  await page.goto(`/weekly?week=${old}`);
+  await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${old}`);
+  await page.goto(`/weekly/meeting?week=${old}`);
+  const oldNav = page.getByTestId("meeting-week");
+  await expect(oldNav).toContainText("Не отчётная неделя");
+  // Цели нажатия на телефоне: и стрелки, и «Текущая» не меньше 44 px
+  if (test.info().project.name === "phone") {
+    for (const name of ["Предыдущая неделя", "Следующая неделя", "Текущая"]) {
+      expect((await oldNav.getByRole("button", { name, exact: true }).boundingBox())!.height, `цель «${name}» не меньше 44 px`).toBeGreaterThanOrEqual(44);
+    }
+  }
   await expect(page.getByText(/Риски и запросы помощи/).first()).toBeVisible();
-  await expect(page.locator("h3").first()).toBeVisible();
+  const [risk] = await sql(`SELECT e.what FROM weekly_entries e JOIN weeks w ON w.id = e."weekId" JOIN dictionary_items t ON t.id = e."typeId" WHERE w.start = $1::date AND (t.code = 'risk' OR COALESCE(e.help, '') <> '') ORDER BY e."sortOrder", e."createdAt" LIMIT 1`, [old]);
+  expect(risk).toBeTruthy();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry').getByRole("heading", { name: risk.what, exact: true })).toBeVisible();
   await shot(page, "meeting");
+  await oldNav.getByRole("button", { name: "Текущая", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`week=${key}$`));
+  await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
+  await expect(page.getByText("Рисков и запросов помощи на этой неделе нет.", { exact: true })).toBeVisible();
+  await expect(page.locator('section[aria-live="polite"] article.sv-entry')).toHaveCount(0);
+
+  // Будущую неделю не открываем: адрес возвращается на отчётную. Экран проектора сохраняется, переключателя на нём нет
+  const future = new Date(`${key}T00:00:00Z`);
+  future.setUTCDate(future.getUTCDate() + 14);
+  await page.goto(`/weekly/meeting?week=${future.toISOString().slice(0, 10)}`);
+  await expect(page).toHaveURL(new RegExp(`/weekly/meeting\\?week=${key}$`));
+  await page.goto("/weekly/meeting?screen=projector");
+  await expect(page).toHaveURL(new RegExp(`/weekly/meeting\\?week=${key}&screen=projector$`));
+  await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
+  await expect(page.getByTestId("meeting-week")).toHaveCount(0);
 });
