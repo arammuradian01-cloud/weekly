@@ -1,7 +1,7 @@
 // Этап 64: экран «Weekly-команды». Чистые правила экрана: какие кнопки показать по правам сервисов, поиск по
 // названию и людям, пометка «другая ветка», итог добавления, порядок списка и состояние сдачи weekly.
 import { describe, expect, it } from "vitest";
-import { NO_RIGHTS, addSummary, canCancelRequest, inBranch, managementHint, matchTeam, sizeText, sortTeams, teamKindLabel, teamNote, teamRights, teamSize, weeklyStatus, type RightsSubject } from "@/lib/org/team-rights";
+import { NO_RIGHTS, addSummary, canCancelRequest, inBranch, managementHint, matchTeam, parentChoices, parentHint, sizeText, sortTeams, teamKindLabel, teamNote, teamRights, teamSize, weeklyStatus, type RightsSubject } from "@/lib/org/team-rights";
 import { TOP_TEAM } from "@/domain/teams";
 
 const leader = (over: Partial<RightsSubject> = {}): RightsSubject => ({ me: "p-lead", owner: false, personal: true, leads: new Set(["t-unit", "t-project", "t-below"]), ...over });
@@ -149,5 +149,51 @@ describe("подсказки владельцу и пояснения в кар�
     expect(teamNote({ mode: "mine", off: null }, { id: "t", relation: "member", rights: NO_RIGHTS })?.text).toContain("Только просмотр");
     expect(teamNote({ mode: "shared", off: null }, { id: TOP_TEAM, relation: "member", rights: NO_RIGHTS })?.text).toContain("войдите со своим логином");
     expect(teamNote({ mode: "mine", off: "owner" }, { id: "t", relation: "other", rights: NO_RIGHTS })).toEqual({ text: "Чтобы менять эту команду, включите режим управления.", manage: true });
+  });
+});
+
+describe("поле «Команда выше» (этап 70)", () => {
+  const tree = [
+    { id: TOP_TEAM, name: "Топ-команда", parentId: null, leader: "Крайник Александр", active: true },
+    { id: "t-ins", name: "Департамент страхования", parentId: TOP_TEAM, leader: "Мурадян Арам", active: true },
+    { id: "t-osago", name: "ОСАГО", parentId: "t-ins", leader: null, active: true },
+    { id: "t-osago-pilot", name: "Пилот ОСАГО", parentId: "t-osago", leader: null, active: true },
+    { id: "t-money", name: "Департамент Money", parentId: TOP_TEAM, leader: "Ершов Пётр", active: true },
+  ];
+
+  it("нельзя выбрать саму команду и команды ниже неё на любую глубину: иначе кольцо", () => {
+    expect(parentChoices(tree, "t-ins").map((t) => t.id)).toEqual([TOP_TEAM, "t-money"]);
+    expect(parentChoices(tree, "t-osago").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-money"]);
+  });
+
+  it("у команды без команд ниже предлагаются все остальные в порядке дерева", () => {
+    expect(parentChoices(tree, "t-money").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-osago", "t-osago-pilot"]);
+  });
+
+  it("ветка идёт и через закрытую команду, как на сервере: действующая под закрытой не предлагается, закрытые тоже", () => {
+    const withClosed = [
+      ...tree,
+      { id: "t-closed", name: "Закрытый пилот", parentId: "t-money", leader: null, active: false },
+      { id: "t-under-closed", name: "Команда под закрытой", parentId: "t-closed", leader: null, active: true },
+    ];
+    expect(parentChoices(withClosed, "t-money").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-osago", "t-osago-pilot"]);
+    // Для другой команды закрытая не предлагается, а действующая под ней доступна
+    expect(parentChoices(withClosed, "t-osago").map((t) => t.id)).toEqual([TOP_TEAM, "t-ins", "t-money", "t-under-closed"]);
+  });
+
+  it("петля в данных не зацикливает подсчёт", () => {
+    const loop = [
+      { id: "a", name: "А", parentId: "b", leader: null, active: true },
+      { id: "b", name: "Б", parentId: "a", leader: null, active: true },
+      { id: "c", name: "В", parentId: null, leader: null, active: true },
+    ];
+    expect(parentChoices(loop, "a").map((t) => t.id)).toEqual(["c"]);
+  });
+
+  it("подсказка варианта: руководитель и команда выше, чтобы различать одноимённые команды", () => {
+    expect(parentHint(tree[2]!, tree)).toBe("команда выше «Департамент страхования»");
+    expect(parentHint(tree[1]!, tree)).toBe("Руководитель: Мурадян Арам, команда выше «Топ-команда»");
+    expect(parentHint(tree[0]!, tree)).toBe("Руководитель: Крайник Александр");
+    expect(parentHint({ id: "x", name: "Х", parentId: null, leader: null, active: true }, tree)).toBeNull();
   });
 });
