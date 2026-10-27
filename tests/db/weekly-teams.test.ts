@@ -97,13 +97,17 @@ describe("список команд по тому, кто смотрит", () =>
     expect(view.people.find((p) => p.fullName === "Котов Игорь")?.manager).toBe((await person("Лисина")).slug);
     expect(view.units.some((u) => u.kind === "COMPANY")).toBe(true);
     expect(view.owners).toContain("muradyan");
-    expect(view.parents.length).toBe(active);
+    expect(view.parents.filter((p) => p.active).length).toBe(active);
+    // «Команда выше» (этап 70): у каждой команды руководитель подсказкой и команда выше, чтобы не предложить команду ниже
+    expect(view.parents.find((p) => p.id === money.id)).toEqual({ id: money.id, name: MONEY, parentId: money.parent?.id ?? null, leader: "Ершов Пётр", active: true });
     expect(view.managementOff).toBeNull();
     // Тот же владелец без режима управления: только свои команды, экран говорит, что режим управления выключен
     const plain = await teams.teamsView({ ...(await ownerMode()), management: null });
     expect(plain.mode).toBe("mine");
     expect(plain.managementOff).toBe("owner");
     expect(plain.teams.find((t) => t.id === TOP_TEAM)?.rights).toEqual(NO_RIGHTS);
+    // Команды для «Команды выше» только владельцу в режиме управления (этап 70)
+    expect(plain.parents).toEqual([]);
   });
 
   it("администратор в режиме управления видит все команды, но меняет только свои: правила сервисов те же", async () => {
@@ -116,6 +120,7 @@ describe("список команд по тому, кто смотрит", () =>
     expect(own.relation).toBe("leader");
     expect(own.rights).toMatchObject({ members: true, rename: false, close: false, leader: false });
     expect(view.closed).toEqual([]);
+    expect(view.parents).toEqual([]);
     expect(view.managementOff).toBeNull();
     expect((await teams.teamsView(await personal("Головкин"))).managementOff).toBe("admin");
   });
@@ -139,10 +144,10 @@ describe("список команд по тому, кто смотрит", () =>
     await org.setTeamRhythm(ershov, credit.id, { deadline: null, meeting: null, specialists: true });
     expect((await teams.teamsView(ershov)).teams.find((t) => t.id === credit.id)?.rhythm.specialists).toBe(true);
     await org.setTeamRhythm(ershov, credit.id, { deadline: null, meeting: null, specialists: false });
-    // По ссылке на карточку права те же, что в списке
-    const focused = await teams.teamsView(ershov, { focus: credit.id });
-    expect(focused.extra).toBeNull();
-    expect(focused.teams.find((t) => t.id === credit.id)?.rights.rhythm).toBe(true);
+    // По ссылке на карточку (команда из адреса, этап 70: её считает страница отдельно) права и данные те же, что в списке
+    const focused = await teams.focusTeam(ershov, credit.id);
+    expect(focused).toEqual((await teams.teamsView(ershov)).teams.find((t) => t.id === credit.id));
+    expect(focused?.rights.rhythm).toBe(true);
     expect(view.teams[0]!.members.map((m) => [m.fullName, m.position, m.unit])).toEqual([["Лисина Анна", "Head of Credit", "Управление кредитных продуктов"]]);
     expect(view.people.length).toBeGreaterThan(0);
   });
@@ -157,11 +162,12 @@ describe("список команд по тому, кто смотрит", () =>
     expect(view.units).toEqual([]);
     // Команда из адреса, где его нет (ссылка из «Мне»): карточка только для просмотра, в списке её нет
     const money = await teamOf(MONEY);
-    const focused = await teams.teamsView(await personal("Котов"), { focus: money.id });
-    expect(focused.teams.map((t) => t.id)).not.toContain(money.id);
-    expect(focused.extra?.id).toBe(money.id);
-    expect(focused.extra?.rights).toEqual(NO_RIGHTS);
-    expect(focused.extra?.relation).toBe("other");
+    expect(view.teams.map((t) => t.id)).not.toContain(money.id);
+    const focused = await teams.focusTeam(await personal("Котов"), money.id);
+    expect(focused?.id).toBe(money.id);
+    expect(focused?.rights).toEqual(NO_RIGHTS);
+    expect(focused?.relation).toBe("other");
+    expect(await teams.focusTeam(await personal("Котов"), "нет-такой-команды")).toBeNull();
   });
 
   it("общий логин без режима управления: только топ-команда и только просмотр, без запросов и людей", async () => {
@@ -249,6 +255,10 @@ describe("обёртки над сервисами", () => {
     const view = await teams.teamsView(await ownerMode());
     expect(view.closed.map((t) => t.name)).toEqual(expect.arrayContaining(["Управление кредитных продуктов", "Кредиты - страхование"]));
     expect(view.teams.some((t) => t.id === credit.id)).toBe(false);
+    // Этап 70: закрытой команды нет по ссылке, в «Команде выше» она только для обхода ветки, ставить под неё нельзя
+    expect(await teams.focusTeam(await ownerMode(), credit.id)).toBeNull();
+    expect(view.parents.find((t) => t.id === credit.id)?.active).toBe(false);
+    await expectRule(org.updateTeam(await ownerMode(), (await teamOf(PARTNERS)).id, { parent: credit.id }), /Команда «Управление кредитных продуктов» закрыта/);
     await org.updateTeam(await ownerMode(), credit.id, { active: true });
     // Команду страхования и инвестиций (бывшая топ-команда) не закрыть
     await expectRule(teams.closeTeam(await ownerMode(), TOP_TEAM), /закрыть нельзя/);

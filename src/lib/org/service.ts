@@ -623,6 +623,8 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
         const nodes = await loadTeamNodes(tx);
         if (subtreeOf(nodes, id).includes(parentId)) fail("Команда не может стоять ниже своей же команды");
         const parent = await teamOrFail(tx, parentId);
+        // Этап 70: под закрытую команду не ставим, её weekly никто не собирает
+        if (!parent.active) fail(`Команда «${parent.name}» закрыта: выберите действующую команду выше`);
         data.parentId = parentId;
         // Поставлено руками: загрузка структуры эту связь больше не пересчитывает
         data.parentManual = true;
