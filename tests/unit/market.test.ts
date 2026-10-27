@@ -16,6 +16,7 @@ import { cleanParams, createInitGate, marketNonce, readFrameMessage, searchFromS
 import { MARKET_CSP, buildSrcdoc, inlineJson, inlinePage, scriptText } from "@/lib/market/srcdoc";
 import { MARKET_RUNTIME_JS } from "@/lib/market/runtime";
 import { MARKET_PALETTES, MARKET_THEME_CSS } from "@/lib/market/theme";
+import { acceptsGzip, etagMatches, MARKET_CACHE_CONTROL, MARKET_VARY, marketEtag } from "@/lib/market/http";
 import { canSeeMarketWith, canUploadMarket, marketAccessOf, marketMeetingOf } from "@/lib/market/access";
 import { marketAgendaNote, marketAgendaTitle } from "@/lib/market/meeting";
 import { visibleGroups } from "@/components/shell/nav";
@@ -41,6 +42,28 @@ describe("пакет рынка", () => {
     expect(b.datasetsCount).toBe(2);
     expect(b.rowsTotal).toBe(6);
     expect(b.datasets.k_demo!.title).toBe("Проверочные договоры КАСКО");
+  });
+
+  it("страница с несколькими подключёнными скриптами: все файлы в пакете, порядок сохраняется", () => {
+    const raw = {
+      kind: "weekly-market-bundle",
+      version: 1,
+      files: {
+        "index.html": '<div id="x">-</div><script src="calcs.js"></script><script src="ui.js"></script>',
+        "calcs.js": "window.calcs = 1;",
+        "ui.js": "window.ui = 2;",
+        "d3.min.js": "window.d3 = { stub: true };",
+      },
+      datasets: { k_term_demo: { title: "Срок договора, выдуманные цифры", description: "Проверочный набор", rows: [{ term: "год", tf: "y", cnt: 2 }] } },
+    };
+    const b = validateBundle(raw);
+    expect(Object.keys(b.files).sort()).toEqual(["calcs.js", "d3.min.js", "index.html", "ui.js"]);
+    expect(b.rowsTotal).toBe(1);
+    const page = inlinePage(raw.files["index.html"], raw.files);
+    expect(page).toBe('<div id="x">-</div><script>window.calcs = 1;</script><script>window.ui = 2;</script>');
+    // Забыли положить второй скрипт: пакет не принимается
+    const { "ui.js": _dropped, ...without } = raw.files;
+    rejects({ ...raw, files: without }, /подключает ui.js/);
   });
 
   it("не JSON, пустой файл и слишком большой файл", () => {
@@ -91,6 +114,41 @@ describe("пакет рынка", () => {
     const ok = validateBundle({ ...f, datasets: { k: { rows: [{ a: null, b: true, c: "x", d: 1.5 }] }, empty: { rows: [] } } });
     expect(ok.datasets.k).toEqual({ title: "k", description: "", rows: [{ a: null, b: true, c: "x", d: 1.5 }] });
     expect(ok.rowsTotal).toBe(1);
+  });
+});
+
+describe("заголовки ответа с данными рынка", () => {
+  it("отпечаток версии пакета: кавычки, безопасные знаки, разные версии не совпадают", () => {
+    expect(marketEtag("7-1761600000000")).toBe('"m7-1761600000000"');
+    expect(marketEtag('7-1"; drop')).toBe('"m7-1drop"');
+    expect(marketEtag("8-1761600000000")).not.toBe(marketEtag("7-1761600000000"));
+  });
+
+  it("сверка отпечатка с тем, что прислал браузер", () => {
+    const tag = marketEtag("3-100");
+    expect(etagMatches(null, tag)).toBe(false);
+    expect(etagMatches("", tag)).toBe(false);
+    expect(etagMatches(tag, tag)).toBe(true);
+    expect(etagMatches(`W/${tag}`, tag)).toBe(true);
+    expect(etagMatches(`"m1-1", ${tag}`, tag)).toBe(true);
+    expect(etagMatches("*", tag)).toBe(true);
+    expect(etagMatches(marketEtag("4-100"), tag)).toBe(false);
+  });
+
+  it("сжатие: берётся только когда браузер его принимает", () => {
+    expect(acceptsGzip("gzip, deflate, br")).toBe(true);
+    expect(acceptsGzip("br;q=1.0, gzip;q=0.8")).toBe(true);
+    expect(acceptsGzip("GZIP")).toBe(true);
+    expect(acceptsGzip("gzip;q=0")).toBe(false);
+    expect(acceptsGzip("identity")).toBe(false);
+    expect(acceptsGzip(null)).toBe(false);
+  });
+
+  it("ответ только тому, кто вошёл, и зависит от сжатия", () => {
+    expect(MARKET_CACHE_CONTROL).toContain("private");
+    expect(MARKET_CACHE_CONTROL).toContain("no-cache");
+    expect(MARKET_VARY).toContain("Accept-Encoding");
+    expect(MARKET_VARY).toContain("Cookie");
   });
 });
 

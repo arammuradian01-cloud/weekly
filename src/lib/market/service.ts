@@ -2,11 +2,13 @@
 // прежний одной транзакцией: код страницы и все наборы данных. Права проверяются здесь и в обработчиках, экран
 // только прячет кнопки. Цифры в журнал и лог не пишутся: только число наборов и строк.
 
+import { gzipSync } from "node:zlib";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canUploadMarket } from "./access";
 import type { MarketBundleInput, MarketRow } from "./bundle";
+import { marketEtag } from "./http";
 
 const BUNDLE_ID = "current";
 
@@ -58,7 +60,15 @@ export async function marketPayload(): Promise<MarketPayload | null> {
 // номер версии и время загрузки: совпали с памятью, отдаётся готовый текст. В бою процесс один, но проверка по базе
 // не даст отдать старые цифры, если пакет сменился мимо этого процесса. Загрузка пакета сбрасывает память сразу.
 
-type MarketBody = { stamp: string; version: number; body: string };
+export type MarketBody = {
+  stamp: string;
+  version: number;
+  body: string;
+  /** Отпечаток пакета для заголовка ETag */
+  etag: string;
+  /** Тот же ответ, сжатый gzip: считается один раз на пакет при первом запросе */
+  gzip: Buffer | null;
+};
 
 let bodyCache: { stamp: string; body: Promise<MarketBody | null> } | null = null;
 
@@ -70,7 +80,13 @@ export function resetMarketBodyCache(): void {
 async function buildBody(): Promise<MarketBody | null> {
   const payload = await marketPayload();
   if (!payload) return null;
-  return { stamp: payload.stamp, version: payload.version, body: JSON.stringify({ ok: true, version: payload.version, files: payload.files, datasets: payload.datasets }) };
+  return {
+    stamp: payload.stamp,
+    version: payload.version,
+    body: JSON.stringify({ ok: true, version: payload.version, files: payload.files, datasets: payload.datasets }),
+    etag: marketEtag(payload.stamp),
+    gzip: null,
+  };
 }
 
 /**
@@ -101,6 +117,15 @@ export async function marketDataBody(): Promise<MarketBody | null> {
     );
   }
   return entry.body;
+}
+
+/**
+ * Тот же ответ, сжатый gzip. Пакет весит мегабайты, а сжимается в разы: сжатие считается один раз на версию пакета
+ * и лежит рядом с готовым текстом, поэтому повторные запросы его не пересчитывают
+ */
+export function marketGzipBody(entry: MarketBody): Buffer {
+  if (!entry.gzip) entry.gzip = gzipSync(Buffer.from(entry.body, "utf8"), { level: 6 });
+  return entry.gzip;
 }
 
 /** Наборы для подписи «О данных»: имя, название, строки, без самих строк */
