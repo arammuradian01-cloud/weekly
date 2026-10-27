@@ -9,7 +9,7 @@ import { forecastHistory, forecastSummary, myForecast } from "@/lib/forecast/ser
 import { monthPlan } from "@/lib/plan/service";
 import { PageHeader } from "@/components/page-header";
 import { PageTabs } from "@/components/ui/data";
-import { WeekSwitcher } from "@/components/weekly/weekly-feed";
+import { WeekSwitcher } from "@/components/weekly/week-switcher";
 import { ForecastForm } from "@/components/forecast/forecast-form";
 import { ForecastHistoryTable } from "@/components/forecast/forecast-history";
 import { ForecastSummaryBlock, WeekNumbersBlock } from "@/components/forecast/week-numbers";
