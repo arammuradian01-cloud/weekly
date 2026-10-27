@@ -22,7 +22,7 @@ import { formatMoment, moscowDate } from "@/lib/week";
 import { fromCalendar, toCalendar, type IsoDate } from "@/domain/dates";
 import type { WeekKey } from "@/domain/types";
 import { readersOf, seesEntry } from "@/lib/discuss/access";
-import { inboxCount } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { QUEUE_PATH, eventPhrase, pathOf, plural, type EventLine } from "./phrases";
 import { EVENT_DELAY_MS, EVENT_MAX_AGE_MS, PREF_LABELS, digestDue, inWorkHours, outsideWorkHours, prefOfKind, prefsOf, reminderDue, type MailPrefs } from "./schedule";
@@ -327,7 +327,7 @@ async function digestForWeek(key: WeekKey, candidates: DigestPerson[], nodes: Te
   let failed = 0;
   for (const p of people) {
     const reader = readers.get(p.id);
-    const open = await inboxCount(p.id, now);
+    const open = await attentionCountFor(p.id, now);
     const asked = reader
       ? questions.filter((q) => {
           const e = q.entry ?? q.entryComment?.entry;

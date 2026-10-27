@@ -58,10 +58,12 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, QUEUE_GROUP_LIMIT);
-  // Человек открыл «Мою неделю» и видит события: письма о них уже не нужны (этап 20)
-  const seenKey = items.map((i) => `${i.subject}:${i.count}`).join("|");
+  // Человек видит события и письма о них уже не нужны (этап 20). Правка по ревью этапа 76: помечаем только показанные
+  // строки, а не всю очередь. Главная открыта весь день, а события за «Показать все» человек так и не увидел: пометить
+  // их просмотренными значило бы отменить письмо о том, чего он не читал. Раскрыл «Показать все»: пометятся и они
+  const seenKey = shown.map((i) => `${i.subject}:${i.count}`).join("|");
   useEffect(() => {
-    if (seenKey) markSeenAction().catch(() => undefined);
+    if (seenKey) markSeenAction(seenKey.split("|").map((k) => k.slice(0, k.lastIndexOf(":")))).catch(() => undefined);
   }, [seenKey]);
 
   const act = async (subject: string, fn: () => Promise<Result<unknown>>, ok: string) => {

@@ -1,4 +1,5 @@
 // «Мне» на настоящей базе (этап 11): кто получает события, склейка по задаче, «Разобрано», «Напомнить».
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
@@ -90,7 +91,7 @@ describe("разбор", () => {
     await tasks.addComment(await actor.owner(), task.number, "Второй");
     const reva = await actor.reva();
     expect(await items("reva")).toMatchObject([{ taskNumber: task.number, text: "Комментарий: «Второй»", count: 3 }]);
-    expect(await inbox.inboxCount(reva.personId)).toBe(1);
+    expect(await attentionCountFor(reva.personId)).toBe(1);
 
     expect(await inbox.markDone(reva, inbox.taskSubject(task.number))).toBe(3);
     expect(await items("reva")).toEqual([]);
@@ -117,7 +118,7 @@ describe("разбор", () => {
     await inbox.snooze(reva, subject, "tomorrow", t);
     expect((await inbox.listInbox(reva.personId, t)).items).toEqual([]);
     expect((await inbox.listInbox(reva.personId, t)).snoozed).toBe(1);
-    expect(await inbox.inboxCount(reva.personId, t)).toBe(0);
+    expect(await attentionCountFor(reva.personId, t)).toBe(0);
     const morning = inbox.snoozeMoment("tomorrow", t);
     expect(await items("reva", new Date(morning.getTime() + 1000))).toHaveLength(1);
 

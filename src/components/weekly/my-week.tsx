@@ -7,7 +7,7 @@ import { NoRequests, RequestList } from "@/components/requests/request-list";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { FileText, MessageSquare, PenLine, Presentation, TriangleAlert } from "lucide-react";
 import { IconCircle } from "@/components/ui/tile";
-import { hotTasks, queueCounts, queueFigures, splitRequests } from "@/components/inbox/me-tasks";
+import { attentionTotal, eventCount, hotTasks, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
 import { MeQueue } from "@/components/inbox/me-queue";
 import { diffDays, formatShort, plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
@@ -47,7 +47,6 @@ export function MyWeek({
   team,
   requests,
   items,
-  events,
   snoozed,
   missed,
   promiseStats,
@@ -65,10 +64,8 @@ export function MyWeek({
   team: PersonWeekly[] | null;
   /** Просьбы ко мне и «Жду от коллег» (этап 21) */
   requests: { incoming: RequestView[]; outgoing: RequestView[] };
-  /** События очереди без просьб, которые уже в ней своей строкой (этап 76, раньше на странице «Мне») */
+  /** События очереди как есть: что из них дублирует строку задачи или просьбы, решается здесь же (этап 76) */
   items: InboxItem[];
-  /** Сколько из них не тихие: для счётчиков «Ждёт вас» (этап 44) */
-  events: number;
   /** Сколько предметов отложено до напоминания */
   snoozed: number;
   /** Прошлые открытые недели без сданного weekly, свежие сверху, не больше четырёх (этап 76) */
@@ -85,14 +82,18 @@ export function MyWeek({
   const weekly = report;
   const state = report.state;
   const mine = data.tasks.filter((t) => isMine(t, me.slug, me.role) && !t.archived);
-  // Одни правила с очередью: числа счётчиков совпадают со строками групп ниже
-  const counts = queueCounts(hotTasks(data, me), splitRequests(requests.incoming, data.today), events);
+  // Одни правила с очередью и со счётчиком в меню (attention.ts): числа совпадают со строками групп ниже
+  const tasks = hotTasks(data, me);
+  // Событие по просьбе или задаче, которая уже стоит строкой выше, в очереди не повторяется и в счёт не идёт
+  const shownItems = withoutShownEvents(items, requests.incoming, tasks);
+  const counts = queueCounts(tasks, splitRequests(requests.incoming, data.today), eventCount(items, requests.incoming, tasks));
   const figures = queueFigures(counts);
   const comments = mine
     .flatMap((t) => t.comments.filter((c) => c.author !== me.slug && diffDays(c.at, data.today) <= 7).map((c) => ({ task: t, comment: c })))
     .sort((a, b) => (a.comment.at + a.comment.time < b.comment.at + b.comment.time ? 1 : -1));
   const submitted = state === "submitted" || state === "late";
-  const attention = counts.late + counts.soon + counts.answer + counts.events;
+  // Несданные weekly за прошлые недели тоже ждут человека: красная строка сверху попадает в это же число
+  const attention = attentionTotal(counts, missed.length);
   const weeklySub = weekly.absent && !submitted
     ? `На этой неделе вас нет, ${substituteText(weekly.absent.substitute)}`
     : submitted
@@ -185,7 +186,7 @@ export function MyWeek({
               ))}
             </ul>
           ) : null}
-          <MeQueue incoming={requests.incoming} items={items} snoozed={snoozed} />
+          <MeQueue incoming={requests.incoming} items={shownItems} snoozed={snoozed} missed={missed.length} />
         </section>
       </div>
 

@@ -8,6 +8,7 @@ import { isMine, isOverdue } from "@/domain/rules";
 import { currentDue, type RequestView } from "@/domain/requests";
 import type { Person, Task } from "@/domain/types";
 import type { AppData } from "@/domain/store";
+import type { InboxKind } from "@/generated/prisma/enums";
 
 export type HotTasks = { late: Task[]; soon: Task[] };
 
@@ -34,10 +35,33 @@ export function splitRequests(incoming: RequestView[], today: string) {
   return { late, soon, answer, later };
 }
 
-/** События без тех, что дублируют просьбу, уже показанную в очереди своей строкой */
-export function withoutRequestEvents<T extends { requestNumber: number | null }>(items: T[], incoming: Pick<RequestView, "number">[]): T[] {
-  const shown = new Set(incoming.map((r) => r.number));
-  return items.filter((i) => !i.requestNumber || !shown.has(i.requestNumber));
+/**
+ * Тихие события (этап 60): дайджест новостей виден в очереди строкой, но не ждёт ответа. Его нет ни в счётчике меню,
+ * ни в числе над очередью. Живёт здесь, а не в серверном модуле очереди: число считают и браузер, и сервер
+ */
+export const QUIET_KINDS: InboxKind[] = ["NEWS"];
+
+/**
+ * События без тех, что дублируют строку очереди выше: просьбу, уже показанную своей строкой, и задачу из групп
+ * «Срок прошёл» и «Сегодня и завтра» (правка по ревью этапа 76: иначе одна задача считалась дважды)
+ */
+export function withoutShownEvents<T extends { requestNumber: number | null; taskNumber: number | null }>(
+  items: T[],
+  incoming: Pick<RequestView, "number">[],
+  tasks: HotTasks,
+): T[] {
+  const requests = new Set(incoming.map((r) => r.number));
+  const shownTasks = new Set([...tasks.late, ...tasks.soon].map((t) => t.number));
+  return items.filter((i) => !(i.requestNumber !== null && requests.has(i.requestNumber)) && !(i.taskNumber !== null && shownTasks.has(i.taskNumber)));
+}
+
+/** Сколько событий ждут ответа: без тихих и без тех, что уже стоят строкой выше */
+export function eventCount<T extends { requestNumber: number | null; taskNumber: number | null; kind: InboxKind }>(
+  items: T[],
+  incoming: Pick<RequestView, "number">[],
+  tasks: HotTasks,
+): number {
+  return withoutShownEvents(items, incoming, tasks).filter((i) => !QUIET_KINDS.includes(i.kind)).length;
 }
 
 /** Строк в группе очереди до кнопки «Показать все»: очередь живёт на главной и не должна вытеснять остальное (этап 76) */
@@ -59,6 +83,14 @@ export type QueueFigure = { key: keyof QueueCounts; n: number; label: string; hr
  * Счётчики над очередью «Ждёт вас» на «Моей неделе» (этап 68, с этапа 76 на той же странице): каждый ведёт якорем
  * к своей группе ниже. Нули не показываются
  */
+/**
+ * Число в заголовке блока «Ждёт вас» и в счётчике меню (правка по ревью этапа 76: раньше это были разные величины).
+ * Несданные weekly за прошлые недели считаются здесь же: иначе красная строка сверху не попадала вообще ни в один счёт
+ */
+export function attentionTotal(n: QueueCounts, missed = 0): number {
+  return n.late + n.soon + n.answer + n.events + missed;
+}
+
 export function queueFigures(n: QueueCounts): QueueFigure[] {
   const all: QueueFigure[] = [
     { key: "late", n: n.late, label: "срок прошёл", href: `#${QUEUE_GROUPS.late}`, tone: "danger" },

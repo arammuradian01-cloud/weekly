@@ -12,7 +12,8 @@ import * as news from "@/lib/news/service";
 import { setNewsTransport, FeedError, MESSAGES } from "@/lib/news/transport";
 import { setClaudeCall } from "@/lib/news/claude";
 import { setMailTransport, type Mail } from "@/lib/mail";
-import { inboxCount, listInbox } from "@/lib/inbox/service";
+import { listInbox } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { pathOf } from "@/lib/letters/phrases";
 import { newsTick } from "@/lib/news/loop";
 
@@ -360,7 +361,7 @@ describe("дайджесты", () => {
     const inbox = (await listInbox(golovkin.id, WED)).items;
     expect(inbox).toHaveLength(1);
     // Тихое событие: в «Мне» строкой, но не в счётчике меню и не в «ждут вашего внимания»
-    expect(await inboxCount(golovkin.id, WED)).toBe(0);
+    expect(await attentionCountFor(golovkin.id, WED)).toBe(0);
     expect(inbox[0]).toMatchObject({ kind: "NEWS", text: "Новости за 21.10.2026: 1 новость (ОСАГО)" });
     const digest = await prisma.newsDigest.findFirstOrThrow();
     expect(inbox[0]!.subject).toBe(`news:${digest.id}`);

@@ -8,7 +8,8 @@ import * as org from "@/lib/org/service";
 import * as weekly from "@/lib/weekly/service";
 import * as discuss from "@/lib/discuss/service";
 import * as letters from "@/lib/letters/service";
-import { inboxCount, listInbox, markAllDone, markDone, markSeen } from "@/lib/inbox/service";
+import { listInbox, markAllDone, markDone, markSeen } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { TOP_TEAM } from "@/lib/org/scope";
 import { moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
@@ -207,7 +208,7 @@ describe("обсуждение записей weekly", () => {
     expect(personal.items.map((i) => i.entryId)).toContain(entryId);
     const limited = await listInbox(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true });
     expect(limited.items.map((i) => i.entryId)).not.toContain(entryId);
-    expect(await inboxCount(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true })).toBe(limited.items.length);
+    expect(await attentionCountFor(reva.personId, new Date(), { id: reva.personId, role: reva.role, limited: true })).toBe(limited.items.length);
     // «Разобрать всё» по общему логину не трогает скрытое, разобрать скрытый предмет по имени тоже нельзя
     const team = { ...reva, via: "TEAM" as const };
     await expectRule(markDone(team, `entry:${entryId}`), /уже разобрано/);

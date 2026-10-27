@@ -64,7 +64,7 @@ const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxE
 
 /**
  * Общий логин без режима управления видит только топ-команду (этап 14). Профиль можно выбрать чужой, поэтому
- * в «Мне» такой вход показывает только события о задачах и записях, которые видны и так. viewer не задан: личный вход
+ * такой вход показывает в очереди только события о задачах и записях, которые видны и так. viewer не задан: личный вход
  */
 async function limitedFilter(personId: string, viewer: ScopeSubject | undefined) {
   if (!viewer?.limited) return null;
@@ -134,18 +134,9 @@ export async function listInbox(personId: string, now = new Date(), viewer?: Sco
   return { items: [...bySubject.values()], snoozed: snoozed.filter((s) => !openSubjects.has(s.subject)).length };
 }
 
-/**
- * Тихие события (этап 60): дайджест новостей виден в «Мне» строкой, но не ждёт ответа. Его нет в счётчике меню
- * и в «ждут вашего внимания» дайджеста к встрече и главной
- */
-export const QUIET_KINDS: InboxKind[] = ["NEWS"];
-
-/** Счётчик в меню: сколько предметов ждут. Тихие события не считаются */
-export async function inboxCount(personId: string, now = new Date(), viewer?: ScopeSubject): Promise<number> {
-  if (viewer?.limited) return (await listInbox(personId, now, viewer)).items.filter((i) => !QUIET_KINDS.includes(i.kind)).length;
-  const subjects = await prisma.inboxEvent.groupBy({ by: ["subject"], where: { AND: [open(personId, now, viewer), { kind: { notIn: QUIET_KINDS } }] } });
-  return subjects.length;
-}
+// Счётчик в меню считается в attention.ts: он должен совпадать с числом в заголовке блока «Ждёт вас», а туда входят
+// ещё задачи, просьбы и несданные weekly. Тихие события (дайджест новостей) живут в QUIET_KINDS в me-tasks.ts
+export { QUIET_KINDS } from "@/components/inbox/me-tasks";
 
 /** «Разобрано»: все события предмета у этого человека уходят из списка */
 export async function markDone(actor: Actor, subject: string, now = new Date()): Promise<number> {
@@ -156,8 +147,8 @@ export async function markDone(actor: Actor, subject: string, now = new Date()):
 }
 
 /**
- * Человек видел события в ресурсе (этап 20): открыл «Мне» или сам предмет. Письмо по таким событиям не уходит.
- * subjects не задан: всё, что сейчас видно в «Мне»
+ * Человек видел события в ресурсе (этап 20): открыл очередь «Ждёт вас» или сам предмет. Письмо по таким событиям
+ * не уходит. subjects не задан: всё, что сейчас открыто у человека (осталось для карточек и действий)
  */
 export async function markSeen(personId: string, subjects?: string[], now = new Date()): Promise<number> {
   const where: Prisma.InboxEventWhereInput = subjects ? { recipientId: personId, subject: { in: subjects.map(String).slice(0, 50) }, seenAt: null } : { ...open(personId, now), seenAt: null };
@@ -181,7 +172,7 @@ function viewerOf(actor: Actor): ScopeSubject {
   return { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management, shared: actor.via === "TEAM" };
 }
 
-/** Общий логин трогает только предметы, которые ему показаны в «Мне» */
+/** Общий логин трогает только предметы, которые ему показаны в очереди */
 async function requireVisible(actor: Actor, subjects: string[], now: Date): Promise<void> {
   const viewer = viewerOf(actor);
   if (!viewer.limited) return;

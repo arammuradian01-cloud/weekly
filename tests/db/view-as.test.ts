@@ -33,7 +33,8 @@ import { MANAGEMENT_TTL_MS, SESSION_COOKIE, signSession, type ManagementGrant } 
 import { getEpochs } from "@/lib/settings";
 import { closeViewAs, requireContext, requireWriteContext } from "@/lib/auth";
 import { VIEW_AS_COOKIE, VIEW_AS_DENIED, VIEW_AS_ENDED, VIEW_AS_TEXTS, ViewAsReadOnlyError, signViewAs } from "@/lib/view-as";
-import { inboxCount, listInbox } from "@/lib/inbox/service";
+import { listInbox } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { subjectOf } from "@/lib/org/current";
 import { setMailTransport, type Mail } from "@/lib/mail";
 import * as tasks from "@/lib/tasks/service";
@@ -384,7 +385,7 @@ describe("очередь «Ждёт вас» в просмотре", () => {
       expect(subjectOf(ctx).viewAs).toBe(true);
       const seen = await listInbox(reva.id, new Date(), subjectOf(ctx));
       expect(mine(seen.items)).toEqual(["meeting:view-as-queue", "team:view-as-queue"]);
-      expect(await inboxCount(reva.id, new Date(), subjectOf(ctx))).toBe(await inboxCount(reva.id, new Date(), subjectOf(self)));
+      expect(await attentionCountFor(reva.id, new Date(), subjectOf(ctx))).toBe(await attentionCountFor(reva.id, new Date(), subjectOf(self)));
     } finally {
       await prisma.inboxEvent.deleteMany({ where: { id: { in: events.map((e) => e.id) } } });
     }

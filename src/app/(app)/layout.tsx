@@ -24,7 +24,7 @@ import { syncLagging } from "@/lib/sheet/runner";
 import { getStandBanner } from "@/lib/admin/service";
 import { ownerLabels, primaryOwner } from "@/lib/login/primary";
 import { prisma } from "@/lib/db";
-import { inboxCount } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { InboxCountProvider } from "@/components/inbox/inbox-count";
 import { TeamSwitcher } from "@/components/shell/team-switcher";
 import { currentTeam, subjectOf } from "@/lib/org/current";
@@ -66,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getStandBanner(),
     // Плашка стенда называет главного владельца (этап 52), а не первого в списке
     primaryOwner(prisma),
-    inboxCount(ctx.person.id, new Date(), subjectOf(ctx)),
+    attentionCountFor(ctx.person.id, new Date(), subjectOf(ctx)),
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
     loadMarketAccess(),
   ]);

@@ -25,7 +25,7 @@ import { InboxEvents } from "./inbox-list";
 import { QUEUE_GROUPS, QUEUE_GROUP_LIMIT, hotTasks, splitRequests } from "./me-tasks";
 import { GroupTitle, ShowAll, type GroupTone } from "./queue-parts";
 
-export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[]; items: InboxItem[]; snoozed: number }) {
+export function MeQueue({ incoming, items, snoozed, missed = 0 }: { incoming: RequestView[]; items: InboxItem[]; snoozed: number; /** Несданные weekly за прошлые недели: строка о них стоит выше блока, пустое состояние о них помнит */ missed?: number }) {
   const { data, me } = usePrototype();
   const tasks = hotTasks(data, me);
   const req = splitRequests(incoming, data.today);
@@ -38,9 +38,16 @@ export function MeQueue({ incoming, items, snoozed }: { incoming: RequestView[];
   if (empty) {
     return (
       <div>
-        <EmptyState title="Всё разобрано" tone="success">
-          Просроченных и срочных задач, просьб без ответа и новых событий нет. Новые появятся здесь.
-        </EmptyState>
+        {/* Несданный weekly ждёт человека строкой выше, поэтому «ничего срочного нет» здесь было бы неправдой */}
+        {missed ? (
+          <EmptyState title="Очередь пуста">
+            Просроченных и срочных задач, просьб без ответа и новых событий нет. Остался несданный weekly за прошлую неделю: строка о нём выше.
+          </EmptyState>
+        ) : (
+          <EmptyState title="Всё разобрано" tone="success">
+            Просроченных и срочных задач, просьб без ответа и новых событий нет. Новые появятся здесь.
+          </EmptyState>
+        )}
         {snoozed ? <p className="mt-3 text-caption text-muted">Отложено до напоминания: {snoozed}</p> : null}
       </div>
     );
@@ -104,7 +111,7 @@ function TaskRow({ task }: { task: Task }) {
             type="button"
             onClick={() => actions.transfer(task)}
             aria-label={`Перенести срок задачи ${task.number}`}
-            className="ml-auto inline-flex min-h-7 items-center gap-1 rounded-md text-caption font-semibold text-text-secondary hover:text-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            className="sv-row-action ml-auto text-caption font-semibold text-text-secondary hover:text-link focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
             <CalendarClock className="h-4 w-4" aria-hidden="true" />
             Перенести срок

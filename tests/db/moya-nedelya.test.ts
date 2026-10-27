@@ -6,7 +6,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
-import { inboxCount, listInbox, markDone } from "@/lib/inbox/service";
+import { listInbox, markDone } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { journalEvents } from "@/lib/journal";
 import { MISSED_WEEKS_BACK, currentReportingKey, ensureWeek, missedWeeks } from "@/lib/weekly/service";
 import { shiftWeek } from "@/lib/weekly/weeks";
@@ -110,12 +111,12 @@ describe("миграция удаления «Один на один»", () => {
 describe("старое событие встречи один на один в очереди", () => {
   it("если оно где-то осталось: видно строкой без ссылки, считается и разбирается без ошибок", async () => {
     const reva = await idOf("reva");
-    const before = await inboxCount(reva);
+    const before = await attentionCountFor(reva);
     const left = await prisma.inboxEvent.create({ data: { recipientId: reva, kind: "ONE_ON_ONE", subject: "1on1:left", text: "Встреча один на один перенесена" } });
     try {
       const item = (await listInbox(reva)).items.find((i) => i.subject === "1on1:left");
       expect(item).toMatchObject({ taskNumber: null, entryId: null, requestNumber: null, text: "Встреча один на один перенесена" });
-      expect(await inboxCount(reva)).toBe(before + 1);
+      expect(await attentionCountFor(reva)).toBe(before + 1);
       expect(await markDone(await tasks.actorFor("reva"), "1on1:left")).toBe(1);
       expect((await listInbox(reva)).items.some((i) => i.subject === "1on1:left")).toBe(false);
     } finally {

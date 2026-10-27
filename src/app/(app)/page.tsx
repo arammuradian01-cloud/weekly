@@ -26,8 +26,7 @@ import { shiftWeek } from "@/lib/weekly/weeks";
 import { addDays, formatLong, fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
-import { QUIET_KINDS, listInbox } from "@/lib/inbox/service";
-import { withoutRequestEvents } from "@/components/inbox/me-tasks";
+import { listInbox } from "@/lib/inbox/service";
 import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
 import { NewsBlock } from "@/components/news/news-block";
@@ -69,11 +68,6 @@ export default async function MyWeekPage() {
     // Прошлые недели без сданного weekly, пока они открыты (этап 76)
     missedWeeks(person.id, now),
   ]);
-  // Открытая просьба уже в очереди своей строкой с действиями: её событие «Просьба к вам» было бы той же просьбой
-  // второй раз с той же кнопкой. Событие остаётся в счётчике меню и у просьб, которых в очереди нет
-  const items = withoutRequestEvents(inbox.items, requests.incoming);
-  // Дайджест новостей (этап 60) тихий: строкой в «Прочитать» есть, в счётчиках «Ждёт вас» не считается
-  const events = items.filter((i) => !QUIET_KINDS.includes(i.kind)).length;
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
@@ -120,8 +114,7 @@ export default async function MyWeekPage() {
           entriesCount={mine.entries.length}
           team={team}
           requests={requests}
-          items={items}
-          events={events}
+          items={inbox.items}
           snoozed={inbox.snoozed}
           missed={missed.map((w) => ({ key: w.key, number: w.number, range: `${formatLong(w.start)} - ${formatLong(w.end)}` }))}
           promiseStats={stats[0]}

@@ -66,7 +66,7 @@ export function TaskCard({
   const can = useTaskPermissions(task);
   // Задача человеку из другого департамента ждёт согласования его руководителя (этап 54)
   const pendingApproval = task.status === "proposed" && task.approval?.state === "pending";
-  // Задачу открыли: события «Мне» по ней просмотрены, письмо о них не нужно (этап 20)
+  // Задачу открыли: события очереди по ней просмотрены, письмо о них не нужно (этап 20)
   useEffect(() => {
     if (brief) return;
     markSeenAction([`task:${listed.number}`]).catch(() => undefined);

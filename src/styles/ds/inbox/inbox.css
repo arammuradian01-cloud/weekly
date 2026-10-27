@@ -42,3 +42,16 @@
 .sv-waiting__text { font-size: var(--text-body); line-height: var(--leading-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-waiting__sub { font-size: var(--text-caption); line-height: var(--leading-caption); color: var(--color-text-secondary); }
 .sv-waiting__empty { padding: var(--space-5) var(--space-4); color: var(--color-text-secondary); font-size: var(--text-body); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+
+/* Этап 76, правка по ревью. Очередь «Ждёт вас» переехала на «Мою неделю», и её кнопки стали частью главного экрана
+   телефона: «Разобрано», «Напомнить», «Принять к» и «Перенести срок» в строке задачи. Пальцем цель в 28-36 px не
+   нажать, поэтому на сенсорных экранах и в узком окне она не меньше 44 px (токен --touch-min). Узкую ширину проверяем
+   вместе с сенсором: так правило работает и там, где браузер не сообщает о касании (правило этапа 73б) */
+@media (pointer: coarse), (max-width: 767px) {
+  .sv-event .sv-icon-btn, .sv-event .sv-icon-btn--sm { width: var(--touch-min); height: var(--touch-min); }
+  .sv-event .sv-btn--sm { min-height: var(--touch-min); }
+  .sv-queue .sv-row-action { min-height: var(--touch-min); }
+}
+
+/* Действие в строке задачи очереди: «Перенести срок» рядом со статусом и состоянием */
+.sv-row-action { display: inline-flex; align-items: center; gap: 4px; min-height: 28px; border-radius: var(--radius-control); }
