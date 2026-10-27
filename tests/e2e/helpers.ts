@@ -109,6 +109,14 @@ export async function sql(text: string, values: unknown[] = []) {
 export async function enter(page: Page, fullName: string) {
   const [row] = await sql(`SELECT slug, role FROM people WHERE "fullName" = $1 AND active`, [fullName]);
   if (row && (row.role === "OWNER" || row.role === "ADMIN")) return enterPersonal(page, row.slug as string);
+  return enterTeam(page, fullName);
+}
+
+/**
+ * Вход именно по общему логину team, даже если у человека роль владельца или администратора: сценарии, где проверяется
+ * сам общий логин. Личный пароль выбираемого человека снимается, иначе его в списке не будет
+ */
+export async function enterTeam(page: Page, fullName: string) {
   await sql(`UPDATE people SET "passwordHash" = NULL, "passwordSetAt" = NULL WHERE "fullName" = $1`, [fullName]);
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");

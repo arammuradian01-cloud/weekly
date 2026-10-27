@@ -248,7 +248,10 @@ test("владелец без личного пароля выбирается �
   await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
   await expect(page).toHaveURL(/\/choose$/);
   await page.goto("/manage");
-  await expect(page).toHaveURL(/\/$/);
+  // Этап 71: страница управления объясняет отказ и предлагает войти своим логином
+  await expect(page).toHaveURL(/\/manage$/);
+  await expect(page.getByTestId("management-team-refusal")).toContainText("только при личном входе");
+  await expect(page.getByRole("button", { name: "Войти своим логином" })).toBeVisible();
   await shot(page, "team-owner");
 
   // Владелец задал себе личный пароль: в списке общего логина его больше нет

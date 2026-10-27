@@ -136,7 +136,9 @@ test("администратор не видит разделы владельц
   await signIn(page);
   await chooseMe(page, "Головкин Владислав");
   await page.goto("/manage");
-  await expect(page).toHaveURL(/\/$/);
+  // Этап 71: не молчаливый уход на главную, а объяснение, почему режима управления нет
+  await expect(page).toHaveURL(/\/manage$/);
+  await expect(page.getByTestId("management-team-refusal")).toContainText("только при личном входе");
   await enterPersonal(page, "golovkin");
   await page.goto("/manage");
   await page.getByLabel("Пароль администраторов").fill(E2E_PASSWORDS.admin);

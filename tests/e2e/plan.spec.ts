@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterTeam, resetDatabase, sql } from "./helpers";
 
 // Этап 32: прогноз месяца по драйверам. Владелец в режиме управления загружает бюджет и LBE из LRF (имитация), лидер
 // ОСАГО по личному входу корректирует конверсию сайта с причиной и обоснованием и до сохранения видит, как поменяется
@@ -54,7 +54,7 @@ test("бюджет и LBE из LRF, корректировка драйвера 
 
   // Под общим логином без режима управления прогноз виден, корректировать нельзя
   await page.context().clearCookies();
-  await enter(page, "Головкин Владислав");
+  await enterTeam(page, "Головкин Владислав");
   await page.goto("/forecast");
   await expect(page.getByText(/общим логином/).first()).toBeVisible();
   await expect(page.getByTestId("plan-edit-crWeb")).toHaveCount(0);

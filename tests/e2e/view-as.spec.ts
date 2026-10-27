@@ -158,7 +158,10 @@ test("общий логин не видит «Смотреть как» ни в 
   await page.getByRole("button", { name: /Мурадян Арам/ }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.goto("/manage");
-  await expect(page).toHaveURL(/\/$/);
+  // Этап 71: вместо ухода на главную понятный отказ
+  await expect(page).toHaveURL(/\/manage$/);
+  await expect(page.getByTestId("management-team-refusal")).toContainText("только при личном входе");
+  await page.goto("/");
   await openProfileMenu(page);
   await expect(page.getByRole("menuitem", { name: "Включить режим управления" })).toHaveCount(0);
   await expect(page.getByRole("menuitem", { name: "Смотреть как…" })).toHaveCount(0);
