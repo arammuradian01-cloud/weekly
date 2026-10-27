@@ -65,7 +65,9 @@ test("цели Q4 из файла борда лидера, задача с ли�
   // В таблице целей: код, название, владелец и целевое значение из борда
   const row = page.getByTestId("goal-row-РТ-1");
   await expect(row.getByText(/^РТ-1\s*Подписка ОСАГО запущена и имеет P&L$/)).toBeVisible();
-  await expect(row).toContainText("Рева Тарас");
+  // Владелец указан в заголовке группы, одинаково для всех его целей, а в строке цели его нет
+  await expect(page.getByRole("row", { name: "Рева Тарас: целей 2" })).toBeVisible();
+  await expect(row).not.toContainText("Рева Тарас");
   await expect(row).toContainText("P&L к 15.12");
 
   // Задача Ревы в топ-команде: к ней можно привязать её личную цель

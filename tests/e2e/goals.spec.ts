@@ -208,8 +208,19 @@ test("факт и целевое значение в таблице целей: 
   await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: /Без свежего факта/ }).click();
   await expect(page.getByText("Под условия ничего не подходит")).toBeVisible();
   await page.getByRole("radiogroup", { name: "Показать" }).getByRole("radio", { name: "Все" }).click();
-  await page.getByRole("radiogroup", { name: "Группы" }).getByRole("radio", { name: "По людям" }).click();
-  await expect(page.getByTestId("goals-table")).toContainText(/целей 1/);
+  // Группы: по умолчанию по людям, «По командам» собирает цели под названием команды, выбор лежит в адресе
+  const groups = page.getByRole("radiogroup", { name: "Группы" });
+  const table = page.getByTestId("goals-table");
+  await expect(groups.getByRole("radio", { name: "По людям" })).toHaveAttribute("aria-checked", "true");
+  const [{ owner }] = await sql(`SELECT COALESCE(p."fullName", 'Без владельца') AS owner FROM goals g LEFT JOIN people p ON p.id = g."ownerId" WHERE g.code = 'D1'`);
+  await expect(table.getByRole("row", { name: `${owner}: целей 1` })).toBeVisible();
+  await groups.getByRole("radio", { name: "По командам" }).click();
+  await expect(groups.getByRole("radio", { name: "По командам" })).toHaveAttribute("aria-checked", "true");
+  await expect(table.getByRole("row", { name: "Команда страхования и инвестиций: целей 1" })).toBeVisible();
+  await expect(page).toHaveURL(/group=team/);
+  await groups.getByRole("radio", { name: "По людям" }).click();
+  await expect(table.getByRole("row", { name: `${owner}: целей 1` })).toBeVisible();
+  await expect(page).not.toHaveURL(/group=/);
   await page.getByLabel("Поиск цели").fill("нет такой");
   await expect(page.getByText("Под условия ничего не подходит")).toBeVisible();
   await page.getByLabel("Поиск цели").fill("D1");
