@@ -29,7 +29,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { TextArea, TextInput } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/overlays";
 import { FormError } from "@/components/ui/field";
-import { WeekSwitcher } from "@/components/weekly/weekly-feed";
+import { WeekSwitcher } from "@/components/weekly/week-switcher";
 import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { BlocksEditor } from "@/components/weekly-blocks/blocks-editor";
 import { CeoAssembled } from "./ceo-assembled";

@@ -36,7 +36,8 @@ export default async function CeoReportPage({ searchParams }: { searchParams: Pr
   const ctx = await requireManagement(["OWNER", "ADMIN"], "/ceo-report");
   // Отчёт CEO собирается из weekly топ-команды, какая бы команда ни была выбрана
   const audience = await topAudience();
-  const view = await getWeekView(isWeekKey(week) ? week : null, new Date(), audience);
+  // Отчёт по умолчанию на отчётной неделе, даже пока она пустая: прошлую открывают переключателем (этап 73б)
+  const view = await getWeekView(isWeekKey(week) ? week : null, new Date(), audience, { fallback: false });
   // Личную статистику «обещал и сделал» видит только директор (этап 22): это диагностика, а не рейтинг
   const owner = ctx.management?.role === "OWNER";
   const previousKey = shiftWeek(view.week.key, -1);
