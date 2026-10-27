@@ -53,9 +53,11 @@ type Props = {
   numbers?: React.ReactNode;
   /** Разбор встречи из Notion (этап 61): кнопка и прошлые разборы под шапкой */
   notion?: React.ReactNode;
+  /** Переключатель недели (этап 73б): не на проекторе и не пока встреча идёт, иначе стрелка уводит со встречи */
+  weekNav?: React.ReactNode;
 };
 
-export function MeetingLive({ view, meeting: initial, canLead, team, numbers, notion }: Props) {
+export function MeetingLive({ view, meeting: initial, canLead, team, numbers, notion, weekNav }: Props) {
   const router = useRouter();
   const params = useSearchParams();
   const projector = params.get("screen") === "projector";
@@ -89,14 +91,16 @@ export function MeetingLive({ view, meeting: initial, canLead, team, numbers, no
 
   if (!meeting) return null;
 
-  return <LiveBody view={view} meeting={meeting} canLead={meeting.canLead || canLead} projector={projector} busy={busy} run={run} me={me.slug} team={team} numbers={numbers} notion={projector ? null : notion} />;
+  const nav = weekNav && !projector && meeting.status !== "live" ? weekNav : null;
+  return <LiveBody view={view} meeting={meeting} canLead={meeting.canLead || canLead} projector={projector} busy={busy} run={run} me={me.slug} team={team} numbers={numbers} notion={projector ? null : notion} weekNav={nav} />;
 }
 
-function Header({ view, team, meeting, projector, children }: { view: WeekView; team: { id: string; name: string }; meeting: MeetingView | null; projector: boolean; children?: React.ReactNode }) {
+function Header({ view, team, meeting, projector, weekNav, children }: { view: WeekView; team: { id: string; name: string }; meeting: MeetingView | null; projector: boolean; weekNav?: React.ReactNode; children?: React.ReactNode }) {
   const status = meeting?.status;
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
+        {weekNav ? <div className="mb-3">{weekNav}</div> : null}
         <h1 className={cn("font-semibold leading-tight text-ink", projector ? "text-display" : "text-page")}>
           Встреча {team.name}
           {status ? (
@@ -106,7 +110,9 @@ function Header({ view, team, meeting, projector, children }: { view: WeekView; 
           ) : null}
         </h1>
         <p className="mt-1 text-body text-muted">
-          Неделя {view.week.number}, {formatLong(meeting?.date ?? view.week.meetingDate)}
+          {/* Номер недели уже в переключателе над заголовком: здесь он нужен, только когда переключателя нет */}
+          {weekNav ? null : `Неделя ${view.week.number}, `}
+          {formatLong(meeting?.date ?? view.week.meetingDate)}
           {meeting?.time ? `, ${meeting.time}` : ""}
           {meeting?.leader ? `. Ведёт ${compactName(meeting.leader)}` : ""}
         </p>
@@ -134,7 +140,7 @@ function Header({ view, team, meeting, projector, children }: { view: WeekView; 
 
 type Run = (fn: () => Promise<{ ok: true; value: MeetingView } | { ok: false; error: string }>, done?: string) => Promise<boolean>;
 
-function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers, notion }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode; notion?: React.ReactNode }) {
+function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers, notion, weekNav }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode; notion?: React.ReactNode; weekNav?: React.ReactNode }) {
   const steps = useMemo(() => [...meeting.items.map((i) => i.id), DECISIONS], [meeting.items]);
   const leading = canLead && meeting.status === "live" && meeting.leader === me;
   // Участник идёт за ведущим, пока сам не перелистнёт. Ведущий всегда на своём пункте
@@ -204,7 +210,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
 
   return (
     <div className={cn("flex min-h-[70vh] flex-col gap-6", projector && "meeting-projector")} data-scale={projector ? "projector" : undefined}>
-      <Header view={view} team={team} meeting={meeting} projector={projector}>
+      <Header view={view} team={team} meeting={meeting} projector={projector} weekNav={weekNav}>
         {canLead && meeting.status !== "done" ? (
           <>
             <Button size="sm" variant="secondary" onClick={() => void run(() => buildAgendaAction(team.id, view.week.key), "Повестка обновлена")} disabled={busy}>

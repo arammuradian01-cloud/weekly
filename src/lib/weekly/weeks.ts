@@ -56,6 +56,19 @@ export function shiftWeek(key: WeekKey, weeks: number): WeekKey {
   return addDays(key, weeks * 7);
 }
 
+/**
+ * Неделя встречи (этап 73б). Явно выбранная неделя остаётся, если она не позже отчётной. Без выбора, с неверной или
+ * будущей неделей встреча открывается на неделе идущей встречи команды, иначе на отчётной. Идущую встречу берём только
+ * за отчётную неделю или неделю до неё: забытая открытой старая встреча не уводит всех в прошлое
+ */
+export function meetingWeekKey(input: { now: Date; deadline: DeadlineSetting; requested?: unknown; live?: readonly WeekKey[] }): WeekKey {
+  const reporting = reportingKey(input.now, input.deadline);
+  if (isWeekKey(input.requested) && input.requested <= reporting) return input.requested;
+  const earliest = shiftWeek(reporting, -1);
+  const live = (input.live ?? []).filter((k) => isWeekKey(k) && k >= earliest && k <= reporting).sort();
+  return live.at(-1) ?? reporting;
+}
+
 export { moscowDateTime };
 
 /**

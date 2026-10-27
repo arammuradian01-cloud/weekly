@@ -5,12 +5,13 @@
 // прогресс. Описание, задачи, история факта и действия раскрываются под строкой
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
 import type { GoalResult } from "@/generated/prisma/enums";
 import { factProblem, goalProgress, parseGoalNumber, progressLabel, reached, type GoalProgress } from "@/lib/goals/progress";
 import { goalTasksText } from "@/lib/goals/links";
+import { groupGoals, type GoalGroupBy } from "@/lib/goals/by-person";
 import { formatShort } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
 import { setGoalFactAction, updateGoalAction } from "@/app/(app)/goals/actions";
@@ -20,8 +21,6 @@ import { FormError } from "@/components/ui/field";
 import { TextInput } from "@/components/ui/primitives";
 import { OverdueNote } from "@/components/ui/task-badges";
 import { cn } from "@/lib/cn";
-
-export type GoalGroupBy = "team" | "person";
 
 const STATUS: Record<GoalResult, { label: string; tone: BadgeTone }> = {
   IN_PROGRESS: { label: "Идёт", tone: "blue" },
@@ -71,6 +70,7 @@ export function GoalsTable({
   all,
   onReveal,
   hashHandled,
+  focusGoal,
   groupBy,
   onEdit,
   onMark,
@@ -85,6 +85,8 @@ export function GoalsTable({
   onReveal: () => void;
   /** Ссылка на цель при открытии страницы уже обработана: таблица показана снова (смена вида, поиск), прыгать не нужно */
   hashHandled: { current: boolean };
+  /** Цель, которую таблице раскрыть при появлении: переход из карточки кнопкой «Факт». Таблица берёт её один раз и обнуляет */
+  focusGoal: { current: string | null };
   groupBy: GoalGroupBy;
   onEdit: (g: GoalNode) => void;
   onMark: (g: GoalNode) => void;
@@ -103,8 +105,21 @@ export function GoalsTable({
   revealRef.current = onReveal;
   const pending = useRef<string | null>(null);
 
-  // Ссылка на цель (#goal-id, с метки цели у задачи или из списка целей ниже): раскрыть и показать строку. Один раз при
-  // открытии страницы и при каждой смене адреса, а не при каждой перерисовке
+  // Раскрыть цель и показать её строку; цель скрыта фильтром или поиском: сбросить их, строка появится в следующей отрисовке
+  const showGoal = useCallback((id: string) => {
+    if (!id || !allRef.current.has(id)) return;
+    setOpen(id);
+    if (!shownRef.current.has(id)) {
+      pending.current = id;
+      revealRef.current();
+      return;
+    }
+    requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
+  }, []);
+
+  // Цель из карточки («Факт») берётся из focusGoal: адрес меняется через роутер позже, чем таблица появляется, читать
+  // из него нельзя. Ссылка на цель (#goal-id, с метки цели у задачи или из списка целей ниже): раскрыть и показать строку.
+  // Один раз при открытии страницы и при каждой смене адреса, а не при каждой перерисовке
   useEffect(() => {
     const go = (initial: boolean) => {
       const hash = window.location.hash;
@@ -116,17 +131,14 @@ export function GoalsTable({
       } catch {
         return;
       }
-      if (!id || !allRef.current.has(id)) return;
-      setOpen(id);
-      if (!shownRef.current.has(id)) {
-        // Цель скрыта фильтром: сбросить его, строка появится и покажется в следующей отрисовке
-        pending.current = id;
-        revealRef.current();
-        return;
-      }
-      requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
+      showGoal(id);
     };
-    go(true);
+    const fromCard = focusGoal.current;
+    if (fromCard) {
+      focusGoal.current = null;
+      hashHandled.current = true;
+      showGoal(fromCard);
+    } else go(true);
     const onHash = () => go(false);
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -140,16 +152,8 @@ export function GoalsTable({
     requestAnimationFrame(() => document.getElementById(`goal-${id}`)?.scrollIntoView({ block: "center" }));
   }, [goals]);
 
-  const groups = useMemo(() => {
-    const out = new Map<string, { key: string; label: string; goals: GoalNode[] }>();
-    for (const g of goals) {
-      const key = groupBy === "team" ? g.team.id : (g.owner?.slug ?? "none");
-      const label = groupBy === "team" ? g.team.name : (g.owner?.fullName ?? "Без владельца");
-      if (!out.has(key)) out.set(key, { key, label, goals: [] });
-      out.get(key)!.goals.push(g);
-    }
-    return [...out.values()];
-  }, [goals, groupBy]);
+  // Порядок групп тот же, что в карточках (groupGoals)
+  const groups = useMemo(() => groupGoals(goals, groupBy), [goals, groupBy]);
 
   const COLS = 9;
   return (
@@ -179,7 +183,7 @@ export function GoalsTable({
         </thead>
         <tbody>
           {groups.flatMap((group) => [
-            <tr key={`group-${group.key}`} className="sv-datatable__section">
+            <tr key={`group-${group.key}`} className="sv-datatable__section" data-testid={`goal-group-${group.key}`}>
               <td colSpan={COLS}>
                 {group.label}: целей {group.goals.length}
               </td>
