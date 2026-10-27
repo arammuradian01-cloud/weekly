@@ -26,8 +26,7 @@ const themeNow = (): MarketTheme => (document.documentElement.getAttribute("data
 async function loadPayload(): Promise<Payload> {
   let res: Response;
   try {
-    // no-cache, а не no-store: браузер спрашивает сервер и на неизменившийся пакет получает короткий ответ 304
-    res = await fetch("/api/market/data", { credentials: "same-origin", cache: "no-cache" });
+    res = await fetch("/api/market/data", { credentials: "same-origin", cache: "no-store" });
   } catch {
     throw new Error("Нет связи с сервером: данные рынка не загрузились");
   }
@@ -58,7 +57,7 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState(640);
 
-  // Код и данные пакета. Браузер каждый раз спрашивает сервер: тот отдаёт 304, пока пакет тот же
+  // Код и данные пакета. Ответ браузер не кэширует (no-store): данные всегда с сервера
   useEffect(() => {
     let alive = true;
     loadPayload()

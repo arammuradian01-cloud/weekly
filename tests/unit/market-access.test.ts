@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   people: {} as Record<string, Person>,
   access: null as null | { people: string[] },
   ctx: null as null | { person: { id: string; role: string }; via: string; management?: { role: string } | null },
-  body: { stamp: "1-1", version: 1, body: '{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', etag: '"m1-1"', gzip: null } as null | { stamp: string; version: number; body: string; etag: string; gzip: Buffer | null },
+  body: { stamp: "1-1", version: 1, body: Buffer.from('{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', "utf8"), gzip: null } as null | { stamp: string; version: number; body: Buffer; gzip: Promise<Buffer> | null },
   reads: [] as string[],
 }));
 
@@ -39,7 +39,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/market/service", () => ({
   marketDataBody: async () => state.body,
-  marketGzipBody: (entry: { body: string }) => Buffer.from(entry.body, "utf8"),
+  marketGzipBody: async (entry: { body: Buffer }) => entry.body,
   marketMeta: async () => (state.body ? { stamp: state.body.stamp, version: state.body.version, uploadedAt: "2026-10-22T10:00:00.000Z", uploadedBy: "Мурадян Арам" } : null),
 }));
 vi.mock("@/components/market/market-frame", () => ({ MarketFrame: function MarketFrame() { return null; } }));
@@ -76,7 +76,7 @@ beforeEach(() => {
   state.access = { people: ["reva"] };
   state.ctx = null;
   state.reads = [];
-  state.body = { stamp: "1-1", version: 1, body: '{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', etag: '"m1-1"', gzip: null };
+  state.body = { stamp: "1-1", version: 1, body: Buffer.from('{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', "utf8"), gzip: null };
 });
 
 describe("правило по базе", () => {
@@ -120,7 +120,7 @@ describe("обработчик данных и страница сами про�
     state.ctx = { person: { id: "p3", role: "LEADER" }, via: "TEAM" };
     const open = await GET();
     expect(open.status).toBe(200);
-    expect(open.headers.get("cache-control")).toContain("private");
+    expect(open.headers.get("cache-control")).toBe("no-store");
     expect(await open.json()).toMatchObject({ ok: true, version: 1 });
 
     state.ctx = { person: { id: "p3", role: "LEADER" }, via: "PASSWORD" };

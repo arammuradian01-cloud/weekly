@@ -209,7 +209,7 @@ describe("пакет рынка", () => {
 });
 
 describe("готовый ответ с данными", () => {
-  const parse = (b: { body: string } | null) => JSON.parse(b!.body) as { ok: boolean; version: number; files: Record<string, string>; datasets: Record<string, unknown[]> };
+  const parse = (b: { body: Buffer } | null) => JSON.parse(b!.body.toString("utf8")) as { ok: boolean; version: number; files: Record<string, string>; datasets: Record<string, unknown[]> };
 
   it("держится в памяти по версии пакета; версия в базе другая или новый пакет: собирается заново", async () => {
     const owner = await personal("muradyan");

@@ -11,8 +11,8 @@ import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpe
 // пакета по-прежнему только у владельца при личном входе. В настройках
 // под людьми строка «Не сохранено» с «Сохранить доступ» и «Отменить», уход со страницы с правками переспрашивается.
 // На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» и подпись пункта (от какого дня
-// данные) только у тех, кому раздел открыт. Этап 82: ответ с данными сжат и помечен отпечатком версии пакета,
-// повторный запрос с этим отпечатком получает 304; вкладка и фильтр пишутся в адрес без перезагрузки страницы.
+// данные) только у тех, кому раздел открыт. Этап 82: ответ с данными сжат, но браузер его не хранит (no-store, без
+// отпечатков); вкладка и фильтр пишутся в адрес без перезагрузки страницы.
 // Этап 59: заголовок дашборда внутри окна меньше заголовка страницы, двух заголовков первого уровня подряд нет.
 // Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
@@ -81,16 +81,13 @@ test("владелец загружает пакет, вкладка и филь
   // Блок обновления данных внутри дашборда спрятан: обновление у нас загрузкой пакета
   await expect(frame.locator("#c-import")).toBeHidden();
 
-  // Ответ только для вошедшего, с отпечатком версии пакета; с этим отпечатком второй раз приходит 304 без цифр
-  const data = await page.request.get("/api/market/data");
+  // Данные рынка браузер не сохраняет: ответ всегда полный, без отпечатка, и с If-None-Match тоже 200
+  const data = await page.request.get("/api/market/data", { headers: { "If-None-Match": '"market-1"' } });
   expect(data.status()).toBe(200);
-  expect(data.headers()["cache-control"]).toContain("private");
-  const etag = data.headers()["etag"];
-  expect(etag).toMatch(/^"m\d+-\d+"$/);
+  expect(data.headers()["cache-control"]).toBe("no-store");
+  expect(data.headers()["etag"]).toBeUndefined();
+  expect(data.headers()["vary"]).toBe("Accept-Encoding");
   expect(await data.json()).toMatchObject({ ok: true, version: 1 });
-  const again = await page.request.get("/api/market/data", { headers: { "If-None-Match": etag! } });
-  expect(again.status()).toBe(304);
-  expect(await again.text()).toBe("");
 
   // Метка в окне страницы: если адрес меняется перезагрузкой, она пропадёт
   await page.evaluate(() => ((window as unknown as { kept?: boolean }).kept = true));
@@ -204,7 +201,7 @@ test("человек не из списка при личном входе: пу
   await expect(team.getByTestId("market-upload")).toHaveCount(0);
   const teamData = await team.request.get("/api/market/data");
   expect(teamData.status()).toBe(200);
-  expect(teamData.headers()["cache-control"]).toContain("private");
+  expect(teamData.headers()["cache-control"]).toBe("no-store");
   expect(await teamData.json()).toMatchObject({ ok: true, version: 1 });
   expect((await upload(team)).status()).toBe(403);
   await shot(team, "team");
