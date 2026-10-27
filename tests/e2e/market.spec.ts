@@ -86,7 +86,8 @@ test("владелец загружает пакет, вкладка и филь
   expect(data.status()).toBe(200);
   expect(data.headers()["cache-control"]).toBe("no-store");
   expect(data.headers()["etag"]).toBeUndefined();
-  expect(data.headers()["vary"]).toBe("Accept-Encoding");
+  // Vary сервер может дополнить своим, важно что сжатие там названо
+  expect(data.headers()["vary"]).toContain("Accept-Encoding");
   expect(await data.json()).toMatchObject({ ok: true, version: 1 });
 
   // Метка в окне страницы: если адрес меняется перезагрузкой, она пропадёт
