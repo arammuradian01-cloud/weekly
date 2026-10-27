@@ -111,11 +111,14 @@
 .sv-week__now:hover { background: var(--color-accent-soft); }
 .sv-week .sv-icon-btn { width: 30px; height: 30px; border-radius: 6px; }
 .sv-week .sv-badge { margin-right: 4px; }
-/* Этап 73б. Пальцем стрелки и «Текущая» в 30 px не нажать: на сенсорных экранах цель не меньше 44, рамка растёт вместе с ними */
-@media (pointer: coarse) {
+/* Этап 73б. Пальцем стрелки и «Текущая» в 30 px не нажать: на сенсорных экранах и на узких окнах цель не меньше 44,
+   рамка переключателя растёт вместе с ними. Узкую ширину проверяем вместе с сенсором: так правило работает и там, где
+   браузер не сообщает о касании */
+@media (pointer: coarse), (max-width: 767px) {
   .sv-week { height: auto; min-height: var(--control-sm); }
   .sv-week .sv-icon-btn { width: var(--touch-min); height: var(--touch-min); }
-  .sv-week__now { min-height: var(--touch-min); }
+  .sv-week .sv-week__now { height: var(--touch-min); min-height: var(--touch-min); }
+  .sv-week .sv-week__label { height: var(--touch-min); }
 }
 
 /* Хлебные крошки в карточке и путь по структуре */

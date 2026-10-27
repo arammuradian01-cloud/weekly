@@ -252,14 +252,20 @@ test("режим встречи по умолчанию открывает от�
   await page.goto(`/weekly?week=${old}`);
   await expect(page.locator('a[href*="/weekly/meeting"]')).toHaveAttribute("href", `/weekly/meeting?week=${old}`);
   await page.goto(`/weekly/meeting?week=${old}`);
-  await expect(page.getByTestId("meeting-week")).toContainText("Не отчётная неделя");
-  if (test.info().project.name === "phone") expect((await page.getByRole("button", { name: "Текущая", exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  const oldNav = page.getByTestId("meeting-week");
+  await expect(oldNav).toContainText("Не отчётная неделя");
+  // Цели нажатия на телефоне: и стрелки, и «Текущая» не меньше 44 px
+  if (test.info().project.name === "phone") {
+    for (const name of ["Предыдущая неделя", "Следующая неделя", "Текущая"]) {
+      expect((await oldNav.getByRole("button", { name, exact: true }).boundingBox())!.height, `цель «${name}» не меньше 44 px`).toBeGreaterThanOrEqual(44);
+    }
+  }
   await expect(page.getByText(/Риски и запросы помощи/).first()).toBeVisible();
   const [risk] = await sql(`SELECT e.what FROM weekly_entries e JOIN weeks w ON w.id = e."weekId" JOIN dictionary_items t ON t.id = e."typeId" WHERE w.start = $1::date AND (t.code = 'risk' OR COALESCE(e.help, '') <> '') ORDER BY e."sortOrder", e."createdAt" LIMIT 1`, [old]);
   expect(risk).toBeTruthy();
   await expect(page.locator('section[aria-live="polite"] article.sv-entry').getByRole("heading", { name: risk.what, exact: true })).toBeVisible();
   await shot(page, "meeting");
-  await page.getByRole("button", { name: "Текущая", exact: true }).click();
+  await oldNav.getByRole("button", { name: "Текущая", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`week=${key}$`));
   await expect(page.locator('section[aria-live="polite"]').getByRole("heading", { level: 1, name: "Риски и запросы помощи" })).toBeVisible();
   await expect(page.getByText("Рисков и запросов помощи на этой неделе нет.", { exact: true })).toBeVisible();
