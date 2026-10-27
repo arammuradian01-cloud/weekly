@@ -31,7 +31,12 @@ async function signIn(page: Page, password = E2E_PASSWORDS.team) {
 }
 
 async function chooseMe(page: Page, fullName: string) {
+  // Личный пароль мог остаться от прошлого прогона этого же файла (ноутбук идёт перед телефоном): с ним человека
+  // в списке общего логина нет
+  await sql(`UPDATE people SET "passwordHash" = NULL, "passwordSetAt" = NULL WHERE "fullName" = $1`, [fullName]);
   await expect(page).toHaveURL(/\/choose$/);
+  // Список строится на сервере при открытии страницы: после снятия пароля он нужен заново
+  await page.reload();
   // Этап 71: в списке все люди структуры, сразу видны первые 100: человека находят поиском
   await page.getByLabel("Поиск по ФИО, должности или подразделению").fill(fullName);
   await page.getByRole("button", { name: new RegExp(fullName) }).click();
