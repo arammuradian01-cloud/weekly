@@ -15,6 +15,8 @@ export type ManagementGrant = {
   until: number;
   /** Номер поколения паролей управления: после смены пароля старые режимы гаснут */
   epoch: number;
+  /** Несекретная версия источника пароля управления. */
+  credential?: string;
 };
 
 /**
@@ -76,9 +78,11 @@ export async function verifySession(
       m &&
       (m.role === "OWNER" || m.role === "ADMIN") &&
       typeof m.until === "number" &&
-      typeof m.epoch === "number"
+      typeof m.epoch === "number" &&
+      (m.credential === undefined || (typeof m.credential === "string" && m.credential.length > 0 && m.credential.length < 200))
     ) {
       data.management = { role: m.role, until: m.until, epoch: m.epoch };
+      if (m.credential !== undefined) data.management.credential = m.credential;
     }
     const o = payload.ownerAs as Partial<OwnerAsGrant> | undefined;
     if (o && typeof o.id === "string" && o.id && typeof o.targetId === "string" && o.targetId && typeof o.until === "number" && Number.isFinite(o.until)) {

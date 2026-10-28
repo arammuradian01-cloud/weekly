@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { getEpochs } from "./settings";
 import { managementRoleFor, managementRoleOf } from "./roles";
+import { managementPasswordCurrent } from "./login/management-password";
 import {
   SESSION_COOKIE,
   SESSION_TTL_SEC,
@@ -231,7 +232,7 @@ export async function requireContext(): Promise<AppContext> {
   const managementRole = managementRoleOf(person.role, via);
   const grant = activeManagement(session, managementEpoch);
   // Режим управления действует, только если он выдан этой же роли профиля
-  const management = grant && managementRole === grant.role ? grant : null;
+  const management = grant && managementRole === grant.role && await managementPasswordCurrent(grant, person, !!deviceId && via !== "TEAM") ? grant : null;
   // «Смотреть как» (этап 63): проверяется на каждом запросе. Владелец потерял роль или режим управления, выбранного
   // человека выключили, срок вышел: человек снова видит себя, но изменения закрыты, пока он не вернётся к себе
   const state = await viewAsState(session, person, via, management);
@@ -306,7 +307,7 @@ export async function closeViewAs(how: "stop" | "logout" | "login" | "start"): P
       const deviceOk = !!device && device.personId === owner.id && owner.active;
       const { managementEpoch } = await getEpochs();
       const grant = activeManagement(session, managementEpoch);
-      const management = grant && managementRoleFor(owner.role) === grant.role ? grant : null;
+      const management = grant && await managementPasswordCurrent(grant, owner, deviceOk && device?.method !== "TEAM") ? grant : null;
       const state = await viewAsState(session, owner, device?.method ?? session.via ?? "TEAM", management, deviceOk);
       const reason: ViewAsEnd = state.kind === "ended" ? state.ended.reason : how === "stop" ? "stop" : how === "login" ? "session" : "logout";
       if (state.kind !== "none") await endViewAs(owner, token, reason, { ip: await requestIp(), via: device?.method ?? null });

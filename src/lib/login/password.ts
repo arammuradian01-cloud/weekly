@@ -22,7 +22,6 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { Person, Prisma, Role } from "@/generated/prisma/client";
 import { DEVICE_TTL_MS, hashToken, newToken, type DeviceInfo } from "./service";
 import { ATTEMPT_TX, BUSY_ERROR, QueueBusy, advisoryLock, lockTimeout, markAttemptOk, serialAll } from "./attempts";
-import { guardPrimary } from "./primary";
 import { auditVia } from "@/lib/audit";
 import { refuseOwnerAs } from "@/lib/owner-as";
 
@@ -299,7 +298,6 @@ export async function resetPassword(actor: Actor, slug: string, now = new Date()
   const person = await prisma.person.findUnique({ where: { slug: String(slug) } });
   if (!person) return fail("Человек не найден");
   if (person.id === actor.personId) fail("Свой пароль меняйте в профиле: сброс завершил бы и ваш вход");
-  await guardPrimary(prisma, actor.slug, person.slug, "сбрасывает ему пароль");
   await prisma.$transaction(async (tx) => {
     await tx.person.update({ where: { id: person.id }, data: { passwordHash: null, passwordSetAt: null, pendingEmail: null } });
     await tx.deviceSession.updateMany({ where: { personId: person.id, revokedAt: null }, data: { revokedAt: now, revokedBy: "owner" } });

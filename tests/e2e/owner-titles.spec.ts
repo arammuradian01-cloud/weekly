@@ -1,12 +1,9 @@
-// Этап 69: подпись роли владельца. Главный владелец при личном входе в режиме управления задаёт себе «ex-Владелец»,
-// совладельцу «Владелец» в «Настройках», «Люди и роли». Подписи видны в меню профиля в шапке, в профиле, в настройках и
-// на экране выбора себя. Права главного не изменились: он по-прежнему выдаёт ссылку совладельцу и может сделать его
-// главным, а совладелец не управляет входом главного и подпись не задаёт. Ноутбук 1440 и телефон 360 без
-// горизонтальной прокрутки.
+// [Codex] Подписи владельцев не меняют их равные права. Совладелец восстанавливает доступ главному
+// через сброс и новую ссылку. Ноутбук 1440 и телефон 360 без горизонтальной прокрутки.
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
-import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enterByLink, enterManagement, resetDatabase, setPasswordByLink, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -51,12 +48,12 @@ async function restore() {
 test.beforeEach(async () => {
   await resetDatabase({ tasks: false, weekly: false });
   await restore();
-  // CEO-совладелец в тесте: роль владельца у Головкина. Роль владельцу меняет сам главный в «Настройках», это не новое
+  // CEO-совладелец в тесте: роль владельца у Головкина. Роль меняется владельцем в «Настройках»
   await sql("UPDATE people SET role = 'OWNER' WHERE slug = 'golovkin'");
 });
 test.afterAll(restore);
 
-test("главный владелец задаёт себе «ex-Владелец» и совладельцу «Владелец», подписи видны везде, права не изменились", async ({ page, browser }) => {
+test("подписи владельцев видны везде, оба владельца управляют доступом", async ({ page, browser }) => {
   test.setTimeout(150_000);
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
@@ -126,7 +123,7 @@ test("главный владелец задаёт себе «ex-Владеле�
   await shot(team, "choose");
   await team.context().close();
 
-  // Совладелец с подписью «Владелец»: в шапке своя подпись, входом главного не управляет, подписи не задаёт
+  // Совладелец с подписью «Владелец»: своя подпись и те же возможности управления.
   const co = await freshPage(browser, page);
   await enterByLink(co, "golovkin");
   const coMenu = await profileMenu(co);
@@ -141,11 +138,26 @@ test("главный владелец задаёт себе «ex-Владеле�
   await enterManagement(co, "owner");
   await co.goto("/settings#people");
   await expect(co.getByTestId("role-muradyan")).toHaveText("ex-Владелец (главный)");
-  await expect(co.getByRole("button", { name: /^Подпись роли:/ })).toHaveCount(0);
-  await expect(co.getByRole("button", { name: "Ссылка для входа: Мурадян Арам" })).toHaveCount(0);
-  await expect(co.getByRole("button", { name: "Завершить входы: Мурадян Арам" })).toHaveCount(0);
-  await expect(co.getByRole("button", { name: "Сделать главным владельцем: Головкин Владислав" })).toHaveCount(0);
+  await expect(co.getByRole("button", { name: "Подпись роли: Мурадян Арам" })).toBeVisible();
+  await expect(co.getByRole("button", { name: "Ссылка для входа: Мурадян Арам" })).toBeVisible();
+  await expect(co.getByRole("button", { name: "Завершить входы: Мурадян Арам" })).toBeVisible();
+  await expect(co.getByRole("button", { name: "Сделать главным владельцем: Головкин Владислав" })).toBeVisible();
   await shot(co, "co-owner-settings");
+  await co.getByRole("button", { name: "Сбросить пароль: Мурадян Арам" }).click();
+  const reset = co.getByRole("dialog", { name: "Сбросить пароль: Мурадян Арам?" });
+  await reset.getByRole("button", { name: "Сбросить пароль", exact: true }).click();
+  await expect(co.getByText("Пароль сброшен: Мурадян Арам")).toBeVisible();
+  await expect(co.getByRole("button", { name: "Сбросить пароль: Мурадян Арам" })).toHaveCount(0);
+  await co.getByRole("button", { name: "Ссылка для входа: Мурадян Арам" }).click();
+  const invite = co.getByRole("dialog", { name: "Ссылка для входа: Мурадян Арам" });
+  await expect(invite).toBeVisible();
+  const link = await invite.getByLabel("Ссылка", { exact: true }).inputValue();
+  await invite.getByRole("button", { name: "Готово", exact: true }).click();
+  const recovered = await freshPage(browser, page);
+  await setPasswordByLink(recovered, link);
+  // Тот же общий пароль управления подходит обоим владельцам после восстановления личного входа.
+  await enterManagement(recovered, "owner");
+  await recovered.context().close();
   await co.context().close();
 
   // В базе: подписи в настройке, главный по-прежнему Мурадян

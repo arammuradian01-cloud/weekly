@@ -36,6 +36,7 @@ import { getEpochs } from "@/lib/settings";
 import { requireContext, requireManagement } from "@/lib/auth";
 import { MANAGEMENT_TEAM_REFUSAL } from "@/lib/roles";
 import { PASSWORD_SETTING_KEYS, hashPassword } from "@/lib/passwords";
+import { managementCredential, managementPasswordCurrent, managementPasswordPolicy, setManagementPasswordMode } from "@/lib/login/management-password";
 import { setMailTransport, type Mail } from "@/lib/mail";
 import { confirmStepUpAction, enterManagement, requestStepUpAction } from "@/app/actions/auth";
 import { GET as exportExcelGet } from "@/app/(app)/settings/export/route";
@@ -235,6 +236,66 @@ describe("режим управления по общему логину", () =>
     } finally {
       await prisma.deviceSession.delete({ where: { id: device.id } });
       await prisma.person.update({ where: { id: reva.id }, data: { passwordHash: reva.passwordHash } });
+    }
+  });
+
+  // PR #87: у владельца может быть свой личный пароль управления вместо общего. Правило этапа 71 от этого не меняется:
+  // по общему логину режима управления нет ни от общего пароля, ни от личного, ни по ссылке на почту
+  it("личный пароль управления владельца не открывает режим по общему логину", async () => {
+    const owner = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    const key = `auth.management.person.${owner.id}`;
+    const personalPassword = "Личный пароль владельца для проверки 2026";
+    const passwordSetAt = new Date();
+    await prisma.person.update({ where: { id: owner.id }, data: { passwordHash: await hashPassword(personalPassword), passwordSetAt } });
+    try {
+      await setManagementPasswordMode("muradyan", "personal");
+      const policy = await managementPasswordPolicy(await prisma.person.findUniqueOrThrow({ where: { id: owner.id } }));
+      expect(policy.mode).toBe("personal");
+      // Отметка в cookie, какую выдал бы личный вход с личным паролем
+      const credential = managementCredential({ passwordSetAt }, policy);
+      const { epoch, managementEpoch } = await getEpochs();
+      const grant = { role: "OWNER" as const, until: Date.now() + MANAGEMENT_TTL_MS, epoch: managementEpoch, credential };
+
+      // Пока личный пароль есть, владельца нет в списке общего логина: прежний выбор профиля больше не открывается
+      await teamSession("muradyan");
+      expect(await settle(() => requireContext())).toEqual({ redirect: "/choose" });
+
+      // Личный пароль сняли: владелец снова в списке общего логина, но режима управления там нет ни от одного пароля
+      await prisma.person.update({ where: { id: owner.id }, data: { passwordHash: null, passwordSetAt: null } });
+      await teamSession("muradyan");
+      for (const password of [personalPassword, OWNER_PASSWORD]) {
+        const form = new FormData();
+        form.set("password", password);
+        expect(await enterManagement(null, form)).toEqual({ error: MANAGEMENT_TEAM_REFUSAL });
+      }
+      expect(await requestStepUpAction(null)).toEqual({ error: MANAGEMENT_TEAM_REFUSAL });
+      const link = new FormData();
+      link.set("token", "любая-ссылка");
+      expect(await confirmStepUpAction(null, link)).toEqual({ error: MANAGEMENT_TEAM_REFUSAL });
+      expect((await verifySession(http.cookies.get(SESSION_COOKIE), SECRET))?.management).toBeUndefined();
+
+      // Режим, выданный личным входом по личному паролю, в сессии общего логина не действует
+      http.cookies.clear();
+      http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: owner.id, via: "TEAM", management: grant }, SECRET));
+      const personalCtx = await requireContext();
+      expect([personalCtx.managementRole, personalCtx.management]).toEqual([null, null]);
+      expect(await settle(() => requireManagement())).toEqual({ redirect: "/manage?next=%2F" });
+      expect(await managementPasswordCurrent(grant, await prisma.person.findUniqueOrThrow({ where: { id: owner.id } }), false)).toBe(false);
+
+      // То же с общим паролем владельцев: правильная отметка в cookie режима по общему логину не возвращает
+      await prisma.setting.deleteMany({ where: { key } });
+      http.cookies.clear();
+      http.cookies.set(SESSION_COOKIE, await signSession({ epoch, personId: owner.id, via: "TEAM", management: { ...grant, credential: "shared/default/" } }, SECRET));
+      const sharedCtx = await requireContext();
+      expect([sharedCtx.managementRole, sharedCtx.management]).toEqual([null, null]);
+      expect(await settle(() => requireManagement())).toEqual({ redirect: "/manage?next=%2F" });
+
+      expect(await prisma.auditLog.count({ where: { id: { gt: auditMark }, action: "management.enter" } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { id: { gt: auditMark }, action: "management.fail" } })).toBe(0);
+      expect(mails).toEqual([]);
+    } finally {
+      await prisma.setting.deleteMany({ where: { key } });
+      await prisma.person.update({ where: { id: owner.id }, data: { passwordHash: null, passwordSetAt: owner.passwordSetAt } });
     }
   });
 

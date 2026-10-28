@@ -16,7 +16,6 @@ import { mailConfigured, sendMail, type Mail } from "@/lib/mail";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import type { LinkKind, LoginMethod } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
-import { guardPrimary } from "./primary";
 import { auditVia } from "@/lib/audit";
 import { refuseOwnerAs } from "@/lib/owner-as";
 
@@ -140,8 +139,6 @@ export async function issueInvite(actor: Actor, slug: string, now = new Date()):
   const person = await prisma.person.findUnique({ where: { slug } });
   if (!person) fail("Человек не найден");
   if (!person!.active) fail("Человек выключен: сначала включите его в списке");
-  // Ссылка задаёт новый пароль: выдать её главному владельцу значило бы забрать его вход
-  await guardPrimary(prisma, actor.slug, person!.slug, "выдаёт ему ссылку для входа");
   const link = await prisma.$transaction(async (tx) => {
     const created = await createLinkTx(tx, "INVITE", person!.id, INVITE_TTL_MS, now, actor.personId);
     await tx.auditLog.create({
@@ -327,6 +324,9 @@ export async function requestStepUp(actor: Actor, deviceId: string | null, baseU
 /** Ссылка подтверждения работает только у того же человека, на том же устройстве и только при личном входе */
 export async function consumeStepUp(token: string, actor: Actor, deviceId: string | null, now = new Date()): Promise<void> {
   refuseOwnerAs(actor);
+  if (actor.role !== "ADMIN") fail("Подтверждение по почте доступно только администраторам. Владелец вводит пароль управления");
+  const person = await prisma.person.findUnique({ where: { id: actor.personId } });
+  if (!person?.active || person.role !== "ADMIN") fail("Права изменились. Обновите страницу");
   if (!actor.via || actor.via === "TEAM" || !deviceId) fail("Подтверждение по почте работает при личном входе");
   const link = await prisma.loginLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (link && link.kind === "STEP_UP" && link.personId !== actor.personId) fail("Эта ссылка выдана другому человеку");
@@ -381,7 +381,6 @@ export async function revokeAllDevices(actor: Actor, slug: string, now = new Dat
   if (!person) fail("Человек не найден");
   const own = person!.id === actor.personId;
   if (!own && (actor.via === "TEAM" || actor.management !== "OWNER" || actor.role === "OBSERVER")) fail("Чужие входы завершает только владелец в режиме управления при личном входе");
-  if (!own) await guardPrimary(prisma, actor.slug, person!.slug, "завершает его входы");
   // По общему логину любой может выбрать чужое имя: завершать «свои» личные входы так нельзя
   if (own && actor.via === "TEAM") fail("Своими устройствами управляют при личном входе");
   const result = await prisma.deviceSession.updateMany({
