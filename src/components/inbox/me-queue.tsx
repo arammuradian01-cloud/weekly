@@ -23,14 +23,17 @@ import { useOpenTask } from "@/components/tasks/task-drawer";
 import { RequestRow } from "@/components/requests/request-list";
 import { InboxEvents } from "./inbox-list";
 import { QUEUE_GROUPS, QUEUE_GROUP_LIMIT, hotTasks, splitRequests } from "./me-tasks";
+
+/** Что сказали о задаче в событии, которое не повторяется отдельной строкой */
+export type TaskNotes = Map<number, { text: string; more: number }>;
 import { GroupTitle, ShowAll, type GroupTone } from "./queue-parts";
 
-export function MeQueue({ incoming, items, snoozed, missed = 0 }: { incoming: RequestView[]; items: InboxItem[]; snoozed: number; /** Несданные weekly за прошлые недели: строка о них стоит выше блока, пустое состояние о них помнит */ missed?: number }) {
+export function MeQueue({ incoming, items, snoozed, missed = 0, notes }: { incoming: RequestView[]; items: InboxItem[]; snoozed: number; /** Несданные weekly за прошлые недели: строка о них стоит выше блока, пустое состояние о них помнит */ missed?: number; /** Подписи к строкам задач из спрятанных событий */ notes?: TaskNotes }) {
   const { data, me } = usePrototype();
   const tasks = hotTasks(data, me);
   const req = splitRequests(incoming, data.today);
-  const late = [...tasks.late.map((t) => <TaskRow key={`t${t.number}`} task={t} />), ...req.late.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />)];
-  const soon = [...tasks.soon.map((t) => <TaskRow key={`t${t.number}`} task={t} />), ...req.soon.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />)];
+  const late = [...tasks.late.map((t) => <TaskRow key={`t${t.number}`} task={t} note={notes?.get(t.number)} />), ...req.late.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />)];
+  const soon = [...tasks.soon.map((t) => <TaskRow key={`t${t.number}`} task={t} note={notes?.get(t.number)} />), ...req.soon.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />)];
   const answer = req.answer.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />);
   const later = req.later.map((r) => <RequestRow key={`r${r.number}`} request={r} mode="incoming" />);
   const empty = !late.length && !soon.length && !answer.length && !items.length && !later.length;
@@ -85,7 +88,7 @@ function Group({ id, title, rows, tone, hint, testId }: { id: string; title: str
 }
 
 /** Строка моей задачи в очереди: статус и состояние меняются здесь же, срок переносится кнопкой, название открывает карточку сбоку */
-function TaskRow({ task }: { task: Task }) {
+function TaskRow({ task, note }: { task: Task; note?: { text: string; more: number } }) {
   const { data } = usePrototype();
   const actions = useTaskActions();
   const can = useTaskPermissions(task);
@@ -103,6 +106,13 @@ function TaskRow({ task }: { task: Task }) {
           {late ? <OverdueNote days={overdueDays(task, data.today)} /> : <span className="sv-due sv-due--soon">{task.due === data.today ? "сегодня" : "завтра"}</span>}
         </span>
       </div>
+      {/* Событие по этой задаче не повторяется строкой в «Прочитать», но сказанное в нём видно здесь */}
+      {note ? (
+        <p className="m-0 text-caption text-text-secondary">
+          {note.text}
+          {note.more ? `. Ещё событий по задаче: ${note.more}` : ""}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <StatusSelect task={task} subject={`задачи ${task.number}`} />
         <StateSelect task={task} subject={`задачи ${task.number}`} set />

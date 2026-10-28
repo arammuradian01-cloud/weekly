@@ -1,6 +1,6 @@
 // Этап 44: очередь «Мне» по срочности. Задачи делятся на «срок прошёл» и «сегодня или завтра», просьбы на четыре группы
 import { describe, expect, it } from "vitest";
-import { QUEUE_GROUPS, attentionTotal, eventCount, hotTasks, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
+import { QUEUE_GROUPS, attentionTotal, eventCount, hotTasks, notesByTask, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
 import type { RequestView } from "@/domain/requests";
 import type { Task } from "@/domain/types";
 
@@ -146,6 +146,21 @@ describe("счётчики очереди «Ждёт вас» и события"
       { requestNumber: null, taskNumber: null, kind: "NEWS" as const },
     ];
     expect(eventCount(items, [{ number: 7 }], hot)).toBe(1);
+  });
+  it("текст спрятанного события остаётся подписью к строке задачи", () => {
+    const hot = { late: [{ number: 11 }], soon: [{ number: 22 }] } as unknown as Parameters<typeof notesByTask>[1];
+    const items = [
+      { requestNumber: null, taskNumber: 11, text: "Просят обновить задачу: где сейчас, состояние и срок" },
+      { requestNumber: null, taskNumber: 11, text: "Комментарий: «Посмотрите»" },
+      { requestNumber: null, taskNumber: 99, text: "Событие по задаче не из очереди" },
+      { requestNumber: 7, taskNumber: 22, text: "Событие по просьбе" },
+    ];
+    const notes = notesByTask(items, hot);
+    expect(notes.get(11)).toEqual({ text: "Просят обновить задачу: где сейчас, состояние и срок", more: 1 });
+    // У задачи не из групп очереди подписи нет: её событие и так стоит строкой в «Прочитать»
+    expect(notes.has(99)).toBe(false);
+    // Событие просьбы подписью к задаче не становится: у просьбы своя строка
+    expect(notes.has(22)).toBe(false);
   });
   it("несданные weekly считаются в том же числе, что задачи, просьбы и события", () => {
     const counts = { late: 3, soon: 1, answer: 2, events: 1 };

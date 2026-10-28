@@ -55,6 +55,26 @@ export function withoutShownEvents<T extends { requestNumber: number | null; tas
   return items.filter((i) => !(i.requestNumber !== null && requests.has(i.requestNumber)) && !(i.taskNumber !== null && shownTasks.has(i.taskNumber)));
 }
 
+/**
+ * События, спрятанные из группы «Прочитать» как повтор строки задачи, по её номеру. Текст у них остаётся важным
+ * («Просят обновить задачу: где сейчас, состояние и срок»), поэтому строка задачи показывает его подписью:
+ * строка одна и считается один раз, а сказанное не пропадает
+ */
+export function notesByTask<T extends { requestNumber: number | null; taskNumber: number | null; text: string }>(
+  items: T[],
+  tasks: HotTasks,
+): Map<number, { text: string; more: number }> {
+  const shownTasks = new Set([...tasks.late, ...tasks.soon].map((t) => t.number));
+  const notes = new Map<number, { text: string; more: number }>();
+  for (const i of items) {
+    if (i.requestNumber !== null || i.taskNumber === null || !shownTasks.has(i.taskNumber)) continue;
+    const note = notes.get(i.taskNumber);
+    if (note) note.more += 1;
+    else notes.set(i.taskNumber, { text: i.text, more: 0 });
+  }
+  return notes;
+}
+
 /** Сколько событий ждут ответа: без тихих и без тех, что уже стоят строкой выше */
 export function eventCount<T extends { requestNumber: number | null; taskNumber: number | null; kind: InboxKind }>(
   items: T[],

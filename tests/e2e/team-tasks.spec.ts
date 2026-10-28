@@ -93,7 +93,7 @@ test("руководитель видит просрочку сектора на
   await expect(reva.getByText(/Вы следите за задачей/).first()).toBeVisible();
   await reva.close();
 
-  // Ответственный видит просьбу в «Мне»
+  // Ответственный видит просьбу на «Моей неделе»: задача стоит строкой в очереди, просьба подписью к ней
   const alisa = await person(browser, page, "Чемоданова");
   await alisa.goto("/");
   await expect(alisa.getByText("Просят обновить задачу: где сейчас, состояние и срок")).toBeVisible();

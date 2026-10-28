@@ -7,7 +7,7 @@ import { NoRequests, RequestList } from "@/components/requests/request-list";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { FileText, MessageSquare, PenLine, Presentation, TriangleAlert } from "lucide-react";
 import { IconCircle } from "@/components/ui/tile";
-import { attentionTotal, eventCount, hotTasks, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
+import { attentionTotal, eventCount, hotTasks, notesByTask, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
 import { MeQueue } from "@/components/inbox/me-queue";
 import { diffDays, formatShort, plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
@@ -86,6 +86,8 @@ export function MyWeek({
   const tasks = hotTasks(data, me);
   // Событие по просьбе или задаче, которая уже стоит строкой выше, в очереди не повторяется и в счёт не идёт
   const shownItems = withoutShownEvents(items, requests.incoming, tasks);
+  // Что сказали о задаче, которая уже стоит строкой: подпись к ней, иначе текст события пропал бы вместе со строкой
+  const taskNotes = notesByTask(items, tasks);
   const counts = queueCounts(tasks, splitRequests(requests.incoming, data.today), eventCount(items, requests.incoming, tasks));
   const figures = queueFigures(counts);
   const comments = mine
@@ -186,7 +188,7 @@ export function MyWeek({
               ))}
             </ul>
           ) : null}
-          <MeQueue incoming={requests.incoming} items={shownItems} snoozed={snoozed} missed={missed.length} />
+          <MeQueue incoming={requests.incoming} items={shownItems} snoozed={snoozed} missed={missed.length} notes={taskNotes} />
         </section>
       </div>
 
