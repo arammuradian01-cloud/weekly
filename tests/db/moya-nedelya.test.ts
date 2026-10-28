@@ -197,64 +197,65 @@ async function blockNumber(slug: string, now = new Date()) {
 }
 
 describe("счётчик в меню совпадает с числом в блоке «Ждёт вас»", () => {
-  const nums = [7620, 7621, 7622];
-  afterAll(async () => {
+  // Задачи и просьбы живут внутри своего теста и убираются сразу: файлы тестов базы идут параллельно по одной базе,
+  // и долго живущая просроченная задача попадала в счёт задач в тестах целей
+  const cleanup = async (taskNumber?: number) => {
     await prisma.helpRequest.deleteMany({ where: { text: { startsWith: "Сверка счётчика" } } });
-    await prisma.task.deleteMany({ where: { number: { in: nums } } });
-  });
+    if (taskNumber) await prisma.task.deleteMany({ where: { number: taskNumber } });
+  };
 
-  it("три просроченные задачи и просьба без ответа: событий нет, меню показывает 4, как и блок", async () => {
-    const [aram, reva] = [await idOf("muradyan"), await idOf("reva")];
-    const directionId = (await prisma.dictionaryItem.findFirstOrThrow({ where: { kind: "DIRECTION", code: "department" } })).id;
-    const today = moscowToday();
-    const past = addDays(today, -3);
+  it("просьба без ответа считается и в меню, и в блоке, а её событие второй раз не считается", async () => {
+    const reva = await idOf("reva");
     const before = await attentionCountFor(reva);
     expect(before).toBe(await blockNumber("reva"));
+    try {
+      // Просьба ждёт ответа и стоит в очереди своей строкой. Событие «Просит...» по ней пишется в той же
+      // транзакции, но строку не повторяет, поэтому число растёт на единицу, а не на две
+      await createRequest(await tasks.actorFor("muradyan"), { to: "reva", text: "Сверка счётчика: посмотрите, пожалуйста", due: addDays(moscowToday(), 5) });
+      const open = (await myRequests(await tasks.actorFor("reva"))).incoming.find((r) => r.text.startsWith("Сверка счётчика"));
+      expect(open).toBeTruthy();
+      expect(await attentionCountFor(reva)).toBe(before + 1);
+      expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
 
-    for (const number of nums) {
-      await prisma.task.create({
-        data: { number, title: `Просрочена ${number}`, outcome: "Сделать", directionId, due: dbDate(past), whereUpdatedAt: dbDate(past), teamId: TOP_TEAM, ownerId: reva, createdById: reva, status: "IN_PROGRESS", sourceCode: "other" },
+      // Ещё одно событие по той же просьбе: строка в очереди та же, число не растёт
+      const row = await prisma.helpRequest.findFirstOrThrow({ where: { number: open!.number } });
+      const extra = await prisma.inboxEvent.create({
+        data: { recipientId: reva, kind: "REQUEST", subject: `request:${open!.number}`, text: "Напоминание о просьбе", requestId: row.id },
       });
+      expect(await attentionCountFor(reva)).toBe(before + 1);
+      expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
+      await prisma.inboxEvent.deleteMany({ where: { id: extra.id } });
+    } finally {
+      await cleanup();
     }
-    // Просьба от Арама к Реве: она ждёт ответа и стоит в очереди своей строкой, её событие в счёт не идёт
-    await createRequest(await tasks.actorFor("muradyan"), { to: "reva", text: "Сверка счётчика: посмотрите, пожалуйста", due: addDays(today, 5) });
-    expect(aram).not.toBe(reva);
-
-    // Три задачи плюс просьба: событие о просьбе дублирует её строку и не считается
-    expect(await attentionCountFor(reva)).toBe(before + 4);
-    expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
+    expect(await attentionCountFor(reva)).toBe(before);
   });
 
-  it("событие по просьбе, которая уже стоит строкой, не добавляет лишнего ни в меню, ни в блок", async () => {
+  it("просроченная задача считается в обоих местах, а событие по ней вторым разом не идёт", async () => {
+    const number = 7620;
     const reva = await idOf("reva");
-    const open = (await myRequests(await tasks.actorFor("reva"))).incoming.find((r) => r.text.startsWith("Сверка счётчика"));
-    expect(open).toBeTruthy();
     const before = await attentionCountFor(reva);
-    // Ещё одно событие по той же просьбе: строка в очереди та же, число не растёт
-    const extra = await prisma.inboxEvent.create({
-      data: { recipientId: reva, kind: "REQUEST", subject: `request:${open!.number}`, text: "Напоминание о просьбе", requestId: (await prisma.helpRequest.findFirstOrThrow({ where: { number: open!.number } })).id },
-    });
+    expect(before).toBe(await blockNumber("reva"));
     try {
-      expect(await attentionCountFor(reva)).toBe(before);
+      const directionId = (await prisma.dictionaryItem.findFirstOrThrow({ where: { kind: "DIRECTION", code: "department" } })).id;
+      const past = addDays(moscowToday(), -3);
+      const task = await prisma.task.create({
+        data: { number, title: "Сверка счётчика: просрочена", outcome: "Сделать", directionId, due: dbDate(past), whereUpdatedAt: dbDate(past), teamId: TOP_TEAM, ownerId: reva, createdById: reva, status: "IN_PROGRESS", sourceCode: "other" },
+      });
+      // Задача стоит строкой в «Срок прошёл»: событий нет, но оба числа выросли
+      expect(await attentionCountFor(reva)).toBe(before + 1);
       expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
-    } finally {
-      await prisma.inboxEvent.deleteMany({ where: { id: extra.id } });
-    }
-  });
 
-  it("событие по задаче, которая уже стоит строкой в «Срок прошёл», тоже не считается дважды", async () => {
-    const reva = await idOf("reva");
-    const before = await attentionCountFor(reva);
-    const task = await prisma.task.findFirstOrThrow({ where: { number: nums[0] } });
-    const extra = await prisma.inboxEvent.create({
-      data: { recipientId: reva, kind: "TASK_COMMENT", subject: `task:${nums[0]}`, text: "Комментарий к просроченной задаче", taskId: task.id },
-    });
-    try {
-      expect(await attentionCountFor(reva)).toBe(before);
+      const extra = await prisma.inboxEvent.create({
+        data: { recipientId: reva, kind: "TASK_COMMENT", subject: `task:${number}`, text: "Комментарий к просроченной задаче", taskId: task.id },
+      });
+      expect(await attentionCountFor(reva)).toBe(before + 1);
       expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
-    } finally {
       await prisma.inboxEvent.deleteMany({ where: { id: extra.id } });
+    } finally {
+      await cleanup(number);
     }
+    expect(await attentionCountFor(reva)).toBe(before);
   });
 });
 
