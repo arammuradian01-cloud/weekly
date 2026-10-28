@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { requireContext } from "@/lib/auth";
 import { viewAsTitleMark } from "@/lib/view-as";
+import { ownerAsTitleMark } from "@/lib/owner-as";
 import { getSetting } from "@/lib/settings";
 import {
   greeting,
@@ -33,10 +34,11 @@ import { NewsBlock } from "@/components/news/news-block";
 
 /**
  * Шаблон названия из (app)/layout действует только на вложенные страницы, а «Моя неделя» лежит в том же сегменте:
- * пометку просмотра «Смотреть как» (этап 63) ставим здесь же
+ * пометку просмотра «Смотреть как» (этап 63) и входа владельца в чужой профиль (этап 71) ставим здесь же
  */
 export async function generateMetadata(): Promise<Metadata> {
   const ctx = await requireContext();
+  if (ctx.ownerAs) return { title: { absolute: `${ownerAsTitleMark(ctx.person.fullName)}: Моя неделя | Weekly` } };
   if (!ctx.viewAs) return { title: "Моя неделя" };
   return { title: { absolute: `${viewAsTitleMark(ctx.person.fullName)}: Моя неделя | Weekly` } };
 }

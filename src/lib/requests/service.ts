@@ -26,6 +26,7 @@ import { notify, quote } from "@/lib/inbox/notify";
 import { requestSubject } from "./hooks";
 import { PROPOSAL_STALE_DAYS, REMIND_GAP_MS, REQUEST_ANSWER_MAX, REQUEST_TEXT_MAX, isRequestOverdue, isStuck, taskTitleFrom } from "./rules";
 import { topTeamName } from "@/lib/org/top-name";
+import { auditVia } from "@/lib/audit";
 
 export { requestSubject };
 
@@ -144,7 +145,7 @@ function futureDate(value: unknown, now: Date, empty: string): IsoDate {
 
 async function audit(db: Db, actor: Actor, number: number, field: string, before: string | null, after: string, action: string): Promise<void> {
   await db.auditLog.create({
-    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "request", entityId: String(number), field, before: before ?? undefined, after, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "request", entityId: String(number), field, before: before ?? undefined, after, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 

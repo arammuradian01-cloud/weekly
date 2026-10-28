@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterPersonal, resetDatabase, sql } from "./helpers";
 import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 64: один экран «Люди», «Weekly-команды». Владелец создаёт команду и добавляет людей поиском из разных
@@ -54,8 +54,11 @@ async function loadCompany(page: Page, company = COMPANY) {
 
 async function personal(browser: Browser, page: Page, fullName: string) {
   const p = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();
-  const [row] = await sql('SELECT slug FROM people WHERE "fullName" LIKE $1', [`${fullName}%`]);
-  await enterByLink(p, row!.slug as string);
+  const [row] = await sql('SELECT slug, "passwordHash" IS NOT NULL AS personal FROM people WHERE "fullName" LIKE $1', [`${fullName}%`]);
+  // Этап 71: владелец уже вошёл лично в первой вкладке. Ссылка задала бы новый пароль и завершила тот вход, поэтому второй
+  // вход тем же логином и паролем
+  if (row!.personal) await enterPersonal(p, row!.slug as string);
+  else await enterByLink(p, row!.slug as string);
   return p;
 }
 
@@ -131,9 +134,9 @@ test("владелец собирает команду поиском из ра�
   await expect(create).toContainText("Из других веток: 1 человек");
   await shot(aram, "create");
   await create.getByRole("button", { name: "Создать команду" }).click();
-  await expect(aram.getByText("Команда «Кросс-продажи»: добавлено 1, ждут согласия руководителя 1").first()).toBeVisible();
-
+  // Сообщение живёт 5 секунд, а следом переход на карточку: проверяем устойчивое состояние, а не сообщение.
   // Карточка новой команды открылась сама: Токов в команде, Котов ждёт согласия Лисиной
+  await expect(aram.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
   const id = await teamId("Кросс-продажи");
   const [row] = await sql('SELECT t.kind, t.project, l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.id = $1', [id]);
   expect(row).toMatchObject({ kind: "CUSTOM", project: true, leader: "muradyan" });
@@ -162,7 +165,10 @@ test("владелец собирает команду поиском из ра�
   await expect(add.getByTestId("team-add-external")).toContainText("Из других веток: 2 человека");
   await shot(aram, "add-people");
   await add.getByRole("button", { name: "Добавить", exact: true }).click();
-  await expect(aram.getByText("Команда «Кросс-продажи»: добавлено 0, ждут согласия руководителя 2").first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд), а состав: оба ждут согласия
+  await expect(add).toHaveCount(0);
+  await expect(waiting).toContainText("Седов Максим");
+  await expect(waiting).toContainText("Ершов Пётр");
   await expect(waiting).toContainText("согласует Белова Ольга");
   await expect(waiting).toContainText("согласует Крайник Александр");
   const approvers = await sql(
@@ -272,10 +278,11 @@ test("владелец собирает команду поиском из ра�
   await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
   await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
   await pilot.getByRole("button", { name: "Создать команду" }).click();
-  await expect(page.getByText("Команда «Партнёрский пилот»: добавлено 1. Руководитель: Белова Ольга").first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд, следом переход), а карточка новой команды с руководителем и составом
   const pilotCard = page.getByTestId("team-card");
   await expect(pilotCard.getByRole("heading", { name: "Партнёрский пилот", level: 2 })).toBeVisible();
   await expect(pilotCard).toContainText("Белова Ольга");
+  await expect(pilotCard.getByTestId("team-members")).toContainText("Седов Максим");
   // В режиме управления действия руководителя и ритма кнопками в шапке карточки
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Назначить руководителя" })).toBeVisible();
   await expect(pilotCard.getByTestId("team-card-actions").getByRole("button", { name: "Кто сдаёт и срок" })).toBeVisible();
@@ -365,7 +372,9 @@ test("руководитель видит свои команды, соглас�
   await shot(ershov, "below");
   await ershov.close();
 
-  // Общий логин без режима управления: только топ-команда, без кнопок
+  // Общий логин без режима управления: только топ-команда, без кнопок. Этап 71: по общему логину выбирают только тех, у
+  // кого нет личного пароля, а Рева задал его выше: пароль снимаем, его личный вход при этом остаётся
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE "fullName" LIKE 'Рева Тарас%'`);
   const shared = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();
   await enter(shared, "Рева Тарас");
   await shared.goto("/people/teams");

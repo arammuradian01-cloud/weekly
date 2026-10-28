@@ -11,7 +11,7 @@ import { currentReportingKey, getWeekView, saveEntry, setAbsence, setCeoFlag } f
 import { currentCounts, reloadFromBord } from "@/lib/admin/reload";
 import { moscowToday } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
-import { colleaguesOf, topTeamOnly } from "@/lib/org/people";
+import { colleaguesOf, teamChoosableWhere } from "@/lib/org/people";
 
 const future = addDays(moscowToday(), 10);
 
@@ -298,10 +298,11 @@ describe("weekly выбранной команды", () => {
 });
 
 describe("люди по командам", () => {
-  it("общий логин выбирает только из топ-команды, коллеги: люди моих команд", async () => {
-    const top = await prisma.person.findMany({ where: { active: true, ...topTeamOnly } });
-    expect(top.some((p) => p.slug === "reva")).toBe(true);
-    expect(top.some((p) => p.fullName.startsWith("Антонов"))).toBe(false);
+  it("общий логин выбирает из всех включённых людей структуры без личного пароля (этап 71), коллеги: люди моих команд", async () => {
+    const choosable = await prisma.person.findMany({ where: teamChoosableWhere });
+    expect(choosable.some((p) => p.slug === "reva")).toBe(true);
+    expect(choosable.some((p) => p.fullName.startsWith("Антонов"))).toBe(true);
+    expect(choosable.some((p) => !p.active || p.passwordHash)).toBe(false);
     const alisa = await actor("Чемоданова");
     const colleagues = await prisma.person.findMany({ where: { id: { not: alisa.personId }, ...colleaguesOf(alisa.personId) } });
     expect(colleagues.map((p) => p.fullName)).toEqual(expect.arrayContaining(["Антонов Дмитрий Денисович"]));

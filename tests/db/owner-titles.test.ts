@@ -1,5 +1,5 @@
-// Этап 69: подпись роли владельца на настоящей базе. Задаёт только главный владелец при личном входе в режиме
-// управления, себе и совладельцам; совладелец, администратор, общий логин и вход без режима управления не могут.
+// Этап 69: подпись роли владельца на настоящей базе. Любой владелец задаёт подписи при личном входе в режиме
+// управления; администратор, общий логин и вход без режима управления не могут.
 // Журнал пишет, что было и что стало. Пустая подпись возвращает правило по умолчанию, со снятием роли владельца
 // подпись снимается. Права подпись не меняет. Серверное действие в режиме «Смотреть как» отказывает, база не меняется.
 // cookie и заголовки запроса подменены: вход читает подписанные cookie так же, как на сервере.
@@ -129,11 +129,16 @@ describe("кто задаёт подпись роли", () => {
     expect([log[1]?.before, log[1]?.after]).toEqual(["ex-Владелец", "Владелец, по умолчанию"]);
   });
 
-  it("совладелец, администратор, общий логин и вход без режима управления подпись не задают; база не меняется", async () => {
+  it("совладелец задаёт подпись себе и главному владельцу, автор записан в журнале", async () => {
     await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
-    // Совладелец с теми же правами владельца не задаёт подпись ни главному, ни себе
-    await expectRule(admin.setOwnerTitle(await coOwner(), "muradyan", "Совладелец"), admin.OWNER_TITLE_RULES.primaryOnly);
-    await expectRule(admin.setOwnerTitle(await coOwner(), "golovkin", "Владелец"), admin.OWNER_TITLE_RULES.primaryOnly);
+    const co = await coOwner();
+    await admin.setOwnerTitle(co, "muradyan", "ex-Владелец");
+    await admin.setOwnerTitle(co, "golovkin", "Владелец");
+    expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец", golovkin: "Владелец" });
+    expect((await titleAudit()).map((row) => row.actorId)).toEqual([co.personId, co.personId]);
+  });
+
+  it("администратор, общий логин и вход без режима управления подпись не задают; база не меняется", async () => {
     // Главный владелец по общему логину: профиль в нём выбирают сами
     await expectRule(admin.setOwnerTitle({ ...(await primary()), via: "TEAM" as const }, "muradyan", "ex-Владелец"), admin.OWNER_TITLE_RULES.personal);
     await expectRule(admin.setOwnerTitle({ ...(await primary()), via: null }, "muradyan", "ex-Владелец"), admin.OWNER_TITLE_RULES.personal);
@@ -243,20 +248,19 @@ describe("подпись в выгрузке в Excel", () => {
 });
 
 describe("подпись не меняет права", () => {
-  it("главный с подписью «ex-Владелец» остаётся главным, совладелец с подписью «Владелец» не управляет его входом и паролем", async () => {
+  it("подписи не влияют на равные права владельцев по управлению доступом", async () => {
     await admin.updatePerson(await primary(), "golovkin", { role: "OWNER" });
     await admin.setOwnerTitle(await primary(), "muradyan", "ex-Владелец");
     await admin.setOwnerTitle(await primary(), "golovkin", "Владелец");
     expect(await primaryOwnerSlug()).toBe("muradyan");
-    // Совладелец по-прежнему не трогает главного
-    await expectRule(login.issueInvite(await coOwner(), "muradyan"), /только он сам/);
-    await expectRule(pw.resetPassword(await coOwner(), "muradyan"), /только он сам/);
-    await expectRule(login.revokeAllDevices(await coOwner(), "muradyan"), /только он сам/);
-    await expectRule(admin.updatePerson(await coOwner(), "muradyan", { role: "ADMIN" }), /только он сам/);
-    await expectRule(admin.setPrimaryOwner(await coOwner(), "golovkin"), /только сам главный владелец/);
-    // Главный по-прежнему выдаёт ссылку совладельцу и управляет людьми
+    expect((await login.issueInvite(await coOwner(), "muradyan")).fullName).toBe("Мурадян Арам");
+    await pw.resetPassword(await coOwner(), "muradyan");
+    await login.revokeAllDevices(await coOwner(), "muradyan");
+    await admin.setPrimaryOwner(await coOwner(), "golovkin");
+    expect(await primaryOwnerSlug()).toBe("golovkin");
     expect((await login.issueInvite(await primary(), "golovkin")).fullName).toBe("Головкин Владислав");
     await admin.updatePerson(await primary(), "reva", { zone: "Продукт и CJM по всем линиям" });
+    expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец", golovkin: "Владелец" });
   });
 });
 
@@ -274,8 +278,15 @@ describe("серверное действие", () => {
   it("главный владелец при личном входе в режиме управления задаёт подпись; по общему логину отказ текстом", async () => {
     await signIn("muradyan", { management: true });
     expect(await setOwnerTitleAction("muradyan", "ex-Владелец")).toEqual({ ok: true, value: { slug: "muradyan", title: "ex-Владелец", label: "ex-Владелец", changed: true } });
-    await signIn("muradyan", { management: true, team: true });
-    expect(await setOwnerTitleAction("muradyan", "Владелец")).toEqual({ ok: false, error: admin.OWNER_TITLE_RULES.personal });
+    // Этап 71: владелец по общему логину (без личного пароля) режима управления не получает, людей и подписи не меняет
+    const { passwordHash } = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash: null } });
+    try {
+      await signIn("muradyan", { management: true, team: true });
+      expect(await setOwnerTitleAction("muradyan", "Владелец")).toEqual({ ok: false, error: "Людей и роли меняет только владелец в режиме управления" });
+    } finally {
+      await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash } });
+    }
     expect((await titlesRow())?.value).toEqual({ muradyan: "ex-Владелец" });
   });
 

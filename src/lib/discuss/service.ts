@@ -21,6 +21,7 @@ import { seesTask } from "@/lib/tasks/watch";
 import { getEntry } from "@/lib/weekly/service";
 import { applyReaction } from "./reactions";
 import { CLOSED_DB } from "@/lib/tasks/codes";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -274,7 +275,7 @@ export async function setDiscussed(actor: Actor, reactionId: string, discussed: 
           field: discussed ? "Вопрос обсуждён" : "Вопрос снова в повестке",
           after: r.question ?? undefined,
           ip: actor.ip ?? null,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     }
@@ -295,7 +296,7 @@ async function audit(tx: Tx, actor: Actor, action: string, entryId: string, fiel
       before: before ?? undefined,
       after: after ?? undefined,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
 }

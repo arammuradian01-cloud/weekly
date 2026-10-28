@@ -138,7 +138,7 @@ describe("корректировки драйверов", () => {
     expect(audit?.after).toMatch(/^12,0%\. Конверсия: Новая форма/);
   });
 
-  it("права: чужой продукт, общий логин и наблюдатель не корректируют; режим управления может всё", async () => {
+  it("права: чужой продукт, общий логин и наблюдатель не корректируют, даже владелец по общему логину; режим управления при личном входе может всё", async () => {
     await load();
     await expectRule(adjust(await actor.loginova(), { metric: "crWeb", value: 0.12 }), /корректирует его команда/);
     await expectRule(adjust(await actor.team(), { metric: "crWeb", value: 0.12 }), /личном входе/);
@@ -146,8 +146,8 @@ describe("корректировки драйверов", () => {
     // Свой продукт: RED у Логиновой
     await adjust(await actor.loginova(), { product: "red-travel", metric: "rpu", value: 1_000, reason: "check-kv", comment: "Страховая подняла комиссию" });
     await adjust(await actor.owner(), { product: "deposits", metric: "units", value: 60_000, reason: "traffic", comment: "Акция банка-партнёра" });
-    // Общий логин с режимом владельца: пароль владельца личный, автор виден. Пароль администраторов общий: нельзя
-    await adjust({ ...(await actor.owner()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 700, reason: "check-kv", comment: "Страховая подняла вознаграждение" });
+    // Этап 71: по общему логину не корректирует никто, даже владелец с режимом, оставшимся в cookie: профиль выбирают из списка
+    await expectRule(adjust({ ...(await actor.owner()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 700, reason: "check-kv", comment: "Страховая подняла вознаграждение" }), /личном входе/);
     await expectRule(adjust({ ...(await actor.admin()), via: "TEAM" }, { product: "kasko", metric: "rpu", value: 710, reason: "check-kv", comment: "Под общим логином" }), /личном входе/);
     const view = await plan.monthPlan(await actor.loginova(), month);
     expect(view.products.find((p) => p.code === "red-travel")!.canAdjust).toBe(true);

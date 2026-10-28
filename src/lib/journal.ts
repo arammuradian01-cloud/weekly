@@ -27,7 +27,7 @@ export type JournalFilter = {
   market?: boolean;
 };
 
-const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth.", "viewAs."];
+const LOGIN_PREFIXES = ["login", "management", "profile.choose", "logout", "auth.", "viewAs.", "ownerAs."];
 const SETTINGS_PREFIXES = ["password", "setup", "settings", "export"];
 const KNOWN_PREFIXES = ["task.", "request.", "weekly.", "ceo.", "meeting.", "sync", ...LOGIN_PREFIXES, ...SETTINGS_PREFIXES];
 
@@ -114,7 +114,11 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
   const people = await prisma.person.findMany({ select: { id: true, slug: true, fullName: true } });
   const and: Prisma.AuditLogWhereInput[] = [];
   if (filter.who === "system") and.push({ actorId: null });
-  else if (filter.who) and.push({ actorId: people.find((p) => p.slug === filter.who)?.id ?? "-" });
+  else if (filter.who) {
+    // Этап 71: у владельца в его событиях и правки, сделанные им во входе в профиль другого человека
+    const id = people.find((p) => p.slug === filter.who)?.id ?? "-";
+    and.push({ OR: [{ actorId: id }, { asOwnerId: id }] });
+  }
   if (filter.days) and.push({ at: { gte: new Date(now.getTime() - filter.days * 86_400_000) } });
   if (filter.kind) and.push(kindWhere(filter.kind));
   if (filter.source) and.push({ source: SOURCE_DB[filter.source] });
@@ -158,7 +162,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return `Справочник «${DICT_TITLES[kind as EditableDictKind] ?? kind}»${item ? `: ${item.label}` : ""}`;
     }
     // Входы и ссылки: что случилось и с кем, «Человек: ...» здесь ничего не говорит
-    if (entity === "person" && id && (action.startsWith("auth.") || action.startsWith("viewAs."))) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
+    if (entity === "person" && id && (action.startsWith("auth.") || action.startsWith("viewAs.") || action.startsWith("ownerAs."))) return `${AUDIT_ACTION_LABELS[action] ?? action}: ${nameOf(id)}`;
     if (entity === "person" && id) return `Человек: ${nameOf(id)}`;
     if (entity === "settings") {
       if (id === "stand.banner") return "Плашка над страницами";
@@ -201,11 +205,12 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     kind: kindOf(r.action),
     object: objectOf(r.entity, r.entityId, r.action, r.before),
     field: r.entity ? (r.field ?? undefined) : undefined,
-    // У просмотра «Смотреть как» в «было» лежит служебный номер просмотра: на экране он ничего не говорит
-    before: r.action.startsWith("viewAs.") ? undefined : text(r.before),
+    // У просмотра «Смотреть как» и входа владельца в чужой профиль (этап 71) в «было» лежит служебный номер: на экране он ничего не говорит
+    before: r.action.startsWith("viewAs.") || r.action.startsWith("ownerAs.") ? undefined : text(r.before),
     after: text(r.after),
     ip: r.ip ?? undefined,
-    via: r.via ? (r.via === "TEAM" ? "team" : "personal") : undefined,
+    via: r.via ? (r.via === "TEAM" ? "team" : r.via === "OWNER_AS" ? "owner" : "personal") : undefined,
+    asOwner: r.asOwnerName ?? undefined,
   })) satisfies JournalEvent[];
   return { events, total, limit };
 }
