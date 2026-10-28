@@ -156,9 +156,12 @@ async function managementContext(): Promise<{ ctx: AppContext; error?: undefined
   return { ctx };
 }
 
-/** Отказ сверки пароля управления, который не означает неверный пароль: права изменились, пароль не задан, очередь занята */
-function notPasswordFailure(message: string): boolean {
-  return message === BUSY_ERROR || message.startsWith("Права изменились") || message.includes("ещё не задан");
+/**
+ * Настоящая неудачная попытка пароля: только её пишем в журнал как management.fail. Остальные отказы сверки это не
+ * подбор пароля: права изменились, пароль ещё не задан, настройка повреждена, нужен личный вход, очередь попыток занята
+ */
+function passwordFailure(message: string): boolean {
+  return message.startsWith("Неверный пароль") || message.startsWith("Текущий пароль неверный");
 }
 
 export async function enterManagement(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -177,10 +180,10 @@ export async function enterManagement(_prev: FormState, formData: FormData): Pro
   } catch (error) {
     const message = ruleError(error);
     if (!message) throw error;
-    // В журнал неверный пароль и блокировку. «Права изменились», «пароль ещё не задан» и занятая очередь попыток не
-    // попытка подбора: записи «Неверный пароль режима управления» для них нет
+    // В журнал только неверный пароль и блокировку. Остальные отказы правила не попытка подбора, записи
+    // «Неверный пароль режима управления» для них нет
     if (message.startsWith("Слишком много")) await writeAudit({ action: "management.blocked", ...actor });
-    else if (!notPasswordFailure(message)) await writeAudit({ action: "management.fail", ...actor });
+    else if (passwordFailure(message)) await writeAudit({ action: "management.fail", ...actor });
     return { error: message };
   }
   // Сверка пароля могла занять время: не выдаём управление после смены роли, режима или завершения устройства.
