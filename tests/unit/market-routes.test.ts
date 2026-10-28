@@ -1,6 +1,8 @@
 // Этап 62: обработчики рынка без базы и без сервера. Загрузка пакета идёт мимо proxy, поэтому обработчик сам
 // проверяет адрес страницы, вход, права и размер до чтения тела и обрывает чтение на 25 МБ. Данные рынка уходят
-// сжатыми (этап 82), но браузер их не кэширует: no-store, без отпечатков. Вход, доступ и база подменены
+// сжатыми (этап 82), но браузер их не кэширует: no-store, без отпечатков. Вход, доступ и база подменены.
+// Этап 83: пакет принимается и сжатым (.json.gz или заголовок Content-Encoding: gzip), распаковка потоком с
+// пределом на распакованный размер
 import { readFileSync } from "node:fs";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -146,6 +148,38 @@ describe("загрузка пакета рынка", () => {
     expect(res.status).toBe(413);
     expect(seen.bytes).toBeGreaterThan(25 * MB);
     expect(seen.bytes).toBeLessThanOrEqual(27 * MB);
+    expect(state.uploads).toEqual([]);
+  });
+
+  it("сжатый пакет .json.gz принимается: распознаётся по сигнатуре и по заголовку", async () => {
+    const packed = gzipSync(FIXTURE);
+    expect(packed.byteLength).toBeLessThan(FIXTURE.byteLength);
+    const variants: Record<string, string>[] = [{}, { "content-encoding": "gzip" }];
+    for (const headers of variants) {
+      state.uploads = [];
+      const res = await upload(new Uint8Array(packed), { "content-length": String(packed.byteLength), ...headers });
+      expect(res.status, JSON.stringify(headers)).toBe(200);
+      expect(await res.json()).toMatchObject({ ok: true, value: { datasetsCount: 2, rowsTotal: 6 } });
+      // Размером пакета считается распакованный, а не то, что пришло по сети
+      expect(state.uploads).toEqual([{ bytes: FIXTURE.byteLength, datasets: 2 }]);
+    }
+  });
+
+  it("битый сжатый файл: 400 с понятным текстом, в базу ничего не идёт", async () => {
+    const packed = gzipSync(FIXTURE);
+    const cut = new Uint8Array(packed.subarray(0, Math.floor(packed.byteLength / 2)));
+    const res = await upload(cut, { "content-length": String(cut.byteLength) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/Сжатый файл не распаковывается/);
+    expect(state.uploads).toEqual([]);
+  });
+
+  it("сжатая бомба: 413 по распакованному размеру, пакет не разбирается", async () => {
+    const bomb = gzipSync(Buffer.alloc(40 * MB, 0x20));
+    expect(bomb.byteLength).toBeLessThan(MB);
+    const res = await upload(new Uint8Array(bomb), { "content-length": String(bomb.byteLength) });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error).toBe("Файл больше 25 МБ: пакет рынка может быть не больше 25 МБ");
     expect(state.uploads).toEqual([]);
   });
 
