@@ -1,7 +1,8 @@
 // Этап 62: обработчики рынка без базы и без сервера. Загрузка пакета идёт мимо proxy, поэтому обработчик сам
-// проверяет адрес страницы, вход, права и размер до чтения тела и обрывает чтение на 25 МБ. Данные рынка браузер не
-// кэширует: no-store, без ETag и 304. Вход, доступ и база подменены
+// проверяет адрес страницы, вход, права и размер до чтения тела и обрывает чтение на 25 МБ. Данные рынка уходят
+// сжатыми (этап 82), но браузер их не кэширует: no-store, без отпечатков. Вход, доступ и база подменены
 import { readFileSync } from "node:fs";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { redirect } from "next/navigation";
 import type { Actor } from "@/lib/tasks/service";
@@ -11,7 +12,7 @@ const state = vi.hoisted(() => ({
   actor: null as null | Record<string, unknown> | "redirect",
   seesMarket: true,
   uploads: [] as { bytes: number; datasets: number }[],
-  body: null as null | { stamp: string; version: number; body: string },
+  body: null as null | { stamp: string; version: number; body: Buffer; gzip: Promise<Buffer> | null },
   exports: [] as { market?: boolean }[],
 }));
 
@@ -49,6 +50,7 @@ vi.mock("@/lib/market/service", () => ({
     return { version: 1, uploadedAt: "2026-10-22T10:00:00.000Z", datasetsCount: bundle.datasetsCount, rowsTotal: 6, uploadedBy: "Мурадян Арам", stamp: "1-1" };
   },
   marketDataBody: async () => state.body,
+  marketGzipBody: async (entry: { body: Buffer; gzip: Promise<Buffer> | null }) => (entry.gzip ??= Promise.resolve(gzipSync(entry.body))),
 }));
 
 vi.mock("@/lib/admin/export", () => ({
@@ -155,29 +157,51 @@ describe("загрузка пакета рынка", () => {
 });
 
 describe("данные рынка для окна", () => {
-  it("полный ответ без кэша браузера: no-store, без ETag и 304 даже с If-None-Match", async () => {
-    state.body = { stamp: "3-1", version: 3, body: '{"ok":true,"version":3,"files":{},"datasets":{}}' };
-    const res = await GET();
+  const ready = (stamp: string, body: string) => ({ stamp, version: Number(stamp.split("-")[0]), body: Buffer.from(body, "utf8"), gzip: null });
+  const ask = (headers: Record<string, string> = {}) => GET(new Request("https://weekly.test/api/market/data", { headers }));
+
+  it("ответ сжат, но браузер его не хранит: no-store, без отпечатка и без 304", async () => {
+    state.body = ready("3-1", '{"ok":true,"version":3,"files":{},"datasets":{}}');
+    const res = await ask({ "accept-encoding": "gzip, deflate, br", "if-none-match": '"m3-1"' });
     expect(res.status).toBe(200);
+    expect(res.headers.get("content-encoding")).toBe("gzip");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("etag")).toBeNull();
-    expect(res.headers.get("vary")).toBeNull();
+    expect(res.headers.get("vary")).toBe("Accept-Encoding");
     expect(res.headers.get("content-type")).toContain("application/json");
+    const packed = Buffer.from(await res.arrayBuffer());
+    expect(JSON.parse(gunzipSync(packed).toString("utf8"))).toEqual({ ok: true, version: 3, files: {}, datasets: {} });
+  });
+
+  it("браузер без сжатия получает обычный текст", async () => {
+    state.body = ready("3-1", '{"ok":true,"version":3,"files":{},"datasets":{}}');
+    const res = await ask({ "accept-encoding": "identity" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-encoding")).toBeNull();
+    expect(res.headers.get("cache-control")).toBe("no-store");
     expect(await res.json()).toEqual({ ok: true, version: 3, files: {}, datasets: {} });
-    // Обработчик не принимает запрос вовсе: отпечаток браузера ему не нужен, ответ всегда полный
-    expect(GET.length).toBe(0);
+  });
+
+  it("сжатие считается один раз: второй запрос берёт готовое", async () => {
+    const entry = ready("3-1", '{"ok":true,"version":3,"files":{},"datasets":{}}');
+    state.body = entry;
+    await ask({ "accept-encoding": "gzip" });
+    const first = entry.gzip;
+    expect(first).not.toBeNull();
+    await ask({ "accept-encoding": "gzip" });
+    expect(entry.gzip).toBe(first);
   });
 
   it("без доступа 403 без цифр, без пакета 404, оба без кэша", async () => {
-    state.body = { stamp: "3-1", version: 3, body: '{"ok":true,"datasets":{"k_demo":[]}}' };
+    state.body = ready("3-1", '{"ok":true,"datasets":{"k_demo":[{"n":1}]}}');
     state.seesMarket = false;
-    const closed = await GET();
+    const closed = await ask();
     expect(closed.status).toBe(403);
     expect(closed.headers.get("cache-control")).toBe("no-store");
     expect(await closed.text()).not.toContain("k_demo");
     state.seesMarket = true;
     state.body = null;
-    const empty = await GET();
+    const empty = await ask();
     expect(empty.status).toBe(404);
     expect(empty.headers.get("cache-control")).toBe("no-store");
   });

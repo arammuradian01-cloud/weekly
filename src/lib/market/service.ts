@@ -2,6 +2,8 @@
 // прежний одной транзакцией: код страницы и все наборы данных. Права проверяются здесь и в обработчиках, экран
 // только прячет кнопки. Цифры в журнал и лог не пишутся: только число наборов и строк.
 
+import { gzip as gzipCb } from "node:zlib";
+import { promisify } from "node:util";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
@@ -59,7 +61,14 @@ export async function marketPayload(): Promise<MarketPayload | null> {
 // номер версии и время загрузки: совпали с памятью, отдаётся готовый текст. В бою процесс один, но проверка по базе
 // не даст отдать старые цифры, если пакет сменился мимо этого процесса. Загрузка пакета сбрасывает память сразу.
 
-type MarketBody = { stamp: string; version: number; body: string };
+export type MarketBody = {
+  stamp: string;
+  version: number;
+  /** Готовый ответ в UTF-8. Буфер, а не строка: в строке кириллица в V8 занимает примерно вдвое больше */
+  body: Buffer;
+  /** Тот же ответ, сжатый gzip: считается один раз на пакет при первом запросе, который его попросит */
+  gzip: Promise<Buffer> | null;
+};
 
 let bodyCache: { stamp: string; body: Promise<MarketBody | null> } | null = null;
 
@@ -71,11 +80,16 @@ export function resetMarketBodyCache(): void {
 async function buildBody(): Promise<MarketBody | null> {
   const payload = await marketPayload();
   if (!payload) return null;
-  return { stamp: payload.stamp, version: payload.version, body: JSON.stringify({ ok: true, version: payload.version, files: payload.files, datasets: payload.datasets }) };
+  return {
+    stamp: payload.stamp,
+    version: payload.version,
+    body: Buffer.from(JSON.stringify({ ok: true, version: payload.version, files: payload.files, datasets: payload.datasets }), "utf8"),
+    gzip: null,
+  };
 }
 
 /**
- * Текст ответа для окна дашборда: {ok, version, files, datasets}. null: пакета нет. Доступ проверяет вызывающий.
+ * Готовый ответ для окна дашборда: {ok, version, files, datasets}. null: пакета нет. Доступ проверяет вызывающий.
  * Одновременные запросы при пустой памяти ждут одну сборку
  */
 export async function marketDataBody(): Promise<MarketBody | null> {
@@ -102,6 +116,24 @@ export async function marketDataBody(): Promise<MarketBody | null> {
     );
   }
   return entry.body;
+}
+
+const gzipAsync = promisify(gzipCb);
+
+/**
+ * Тот же ответ, сжатый gzip. Пакет весит мегабайты, а сжимается примерно в десять раз. Сжатие считается один раз на
+ * версию пакета и не держит цикл событий: сжимает рабочий поток zlib, а рядом с готовым телом лежит обещание, так
+ * что одновременные запросы ждут одно сжатие, а не запускают по своему. Сжатие, которое не удалось, не запоминается
+ */
+export function marketGzipBody(entry: MarketBody): Promise<Buffer> {
+  if (!entry.gzip) {
+    const started = gzipAsync(entry.body, { level: 6 });
+    entry.gzip = started;
+    started.catch(() => {
+      if (entry.gzip === started) entry.gzip = null;
+    });
+  }
+  return entry.gzip;
 }
 
 /** Наборы для подписи «О данных»: имя, название, строки, без самих строк */

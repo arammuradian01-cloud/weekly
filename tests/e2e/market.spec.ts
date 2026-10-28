@@ -12,7 +12,8 @@ import { E2E_PASSWORDS } from "./global-setup";
 // пакета по-прежнему только у владельца при личном входе. В настройках
 // под людьми строка «Не сохранено» с «Сохранить доступ» и «Отменить», уход со страницы с правками переспрашивается.
 // На первой встрече месяца первым пунктом разбор рынка, кнопка «Открыть рынок» и подпись пункта (от какого дня
-// данные) только у тех, кому раздел открыт. Данные рынка браузер не кэширует: no-store, без ETag и 304.
+// данные) только у тех, кому раздел открыт. Этап 82: ответ с данными сжат, но браузер его не хранит (no-store, без
+// отпечатков); вкладка и фильтр пишутся в адрес без перезагрузки страницы.
 // Этап 59: заголовок дашборда внутри окна меньше заголовка страницы, двух заголовков первого уровня подряд нет.
 // Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
@@ -89,12 +90,16 @@ test("владелец загружает пакет, вкладка и филь
   await expect(frame.locator("#c-import")).toBeHidden();
 
   // Данные рынка браузер не сохраняет: ответ всегда полный, без отпечатка, и с If-None-Match тоже 200
-  const data = await page.request.get("/api/market/data", { headers: { "If-None-Match": '"market-1"', "Cache-Control": "max-age=0" } });
+  const data = await page.request.get("/api/market/data", { headers: { "If-None-Match": '"market-1"' } });
   expect(data.status()).toBe(200);
   expect(data.headers()["cache-control"]).toBe("no-store");
   expect(data.headers()["etag"]).toBeUndefined();
+  // Vary сервер может дополнить своим, важно что сжатие там названо
+  expect(data.headers()["vary"]).toContain("Accept-Encoding");
   expect(await data.json()).toMatchObject({ ok: true, version: 1 });
 
+  // Метка в окне страницы: если адрес меняется перезагрузкой, она пропадёт
+  await page.evaluate(() => ((window as unknown as { kept?: boolean }).kept = true));
   // Фильтр внутри окна пересчитывает и попадает в адрес
   await frame.locator("#metric").selectOption("prem");
   await expect(frame.locator("#k-total")).toHaveText("6");
@@ -103,6 +108,8 @@ test("владелец загружает пакет, вкладка и филь
   await frame.getByRole("tab", { name: "ОСАГО" }).click();
   await expect(frame.locator("#o-count")).toHaveText("2");
   await expect(page).toHaveURL(/[?&]tab=osago/);
+  // Страница не перезагружалась: адрес сменился через router.replace
+  expect(await page.evaluate(() => (window as unknown as { kept?: boolean }).kept === true)).toBe(true);
   // Заголовок дашборда ниже заголовка страницы: размер раздела (22 px, на телефоне 20 px), а не второй заголовок страницы
   const fontSize = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
   const pageTitle = await page.getByRole("heading", { name: "Рынок КАСКО и ОСАГО", level: 1 }).evaluate(fontSize);

@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   people: {} as Record<string, Person>,
   access: null as null | { people: string[] },
   ctx: null as null | { person: { id: string; role: string }; via: string; management?: { role: string } | null },
-  body: { stamp: "1-1", version: 1, body: '{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}' } as null | { stamp: string; version: number; body: string },
+  body: { stamp: "1-1", version: 1, body: Buffer.from('{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', "utf8"), gzip: null } as null | { stamp: string; version: number; body: Buffer; gzip: Promise<Buffer> | null },
   reads: [] as string[],
 }));
 
@@ -39,6 +39,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("@/lib/market/service", () => ({
   marketDataBody: async () => state.body,
+  marketGzipBody: async (entry: { body: Buffer }) => entry.body,
   marketMeta: async () => (state.body ? { stamp: state.body.stamp, version: state.body.version, uploadedAt: "2026-10-22T10:00:00.000Z", uploadedBy: "Мурадян Арам" } : null),
 }));
 vi.mock("@/components/market/market-frame", () => ({ MarketFrame: function MarketFrame() { return null; } }));
@@ -75,7 +76,7 @@ beforeEach(() => {
   state.access = { people: ["reva"] };
   state.ctx = null;
   state.reads = [];
-  state.body = { stamp: "1-1", version: 1, body: '{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}' };
+  state.body = { stamp: "1-1", version: 1, body: Buffer.from('{"ok":true,"version":1,"files":{},"datasets":{"k_demo":[]}}', "utf8"), gzip: null };
 });
 
 describe("правило по базе", () => {

@@ -7,10 +7,12 @@
 // __MARKET_BOOT__), не чаще раза на цикл load и каждому документу окна один раз: событие load само данных не
 // отправляет, иначе их получила бы страница, на которую окно ушло бы по ссылке. Вместе с данными уходят текущие
 // вкладка, фильтры и тема: после перезагрузки документа окна вернутся они. Сообщения от окна принимаются только от
-// него, только с меткой и только по схеме: высота, вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы,
-// чтобы ссылкой можно было поделиться.
+// него, только с меткой и только по схеме: высота, вкладка и фильтры. Вкладка и фильтры пишутся в адрес страницы
+// через router.replace (этап 82), чтобы ссылкой можно было поделиться: нативный history.replaceState в Next 16.3
+// перезагружал страницу целиком, и через несколько секунд после открытия дашборд собирался заново.
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { buildSrcdoc } from "@/lib/market/srcdoc";
 import { createInitGate, marketNonce, readFrameMessage, searchFromState, type MarketState } from "@/lib/market/params";
 import { readMarketAnswer } from "@/lib/market/answers";
@@ -41,8 +43,12 @@ function postInit(win: Window | null | undefined, p: Payload | null, state: Mark
 
 /** Окно пересоздаётся по отпечатку пакета (stamp): загрузили новый пакет, страница берёт свежие код и данные */
 export function MarketFrame({ stamp, initial }: { stamp: string; initial: MarketState }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const frame = useRef<HTMLIFrameElement>(null);
   const state = useRef<MarketState>(initial);
+  // Что сейчас стоит в адресе: лишний router.replace страницу не трогает
+  const search = useRef(searchFromState(initial));
   const payload = useRef<Payload | null>(null);
   // Одноразовая метка окна и учёт событий load: данные уходят только в ответ на ready с меткой, раз на цикл load
   const nonce = useRef("");
@@ -86,7 +92,10 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
         return;
       }
       state.current = msg.type === "params" ? { ...state.current, params: msg.params } : { ...state.current, link: msg.link };
-      window.history.replaceState(null, "", `${window.location.pathname}${searchFromState(state.current)}`);
+      const next = searchFromState(state.current);
+      if (next === search.current) return;
+      search.current = next;
+      router.replace(`${pathname}${next}`, { scroll: false });
     };
     window.addEventListener("message", onMessage);
     // Тема приложения сменилась: окно перекрашивается без перезагрузки
@@ -96,7 +105,7 @@ export function MarketFrame({ stamp, initial }: { stamp: string; initial: Market
       window.removeEventListener("message", onMessage);
       observer.disconnect();
     };
-  }, []);
+  }, [router, pathname]);
 
   if (error) {
     return (

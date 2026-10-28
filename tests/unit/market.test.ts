@@ -16,6 +16,7 @@ import { cleanParams, createInitGate, marketNonce, readFrameMessage, searchFromS
 import { MARKET_CSP, buildSrcdoc, inlineJson, inlinePage, scriptText } from "@/lib/market/srcdoc";
 import { MARKET_RUNTIME_JS } from "@/lib/market/runtime";
 import { MARKET_PALETTES, MARKET_THEME_CSS } from "@/lib/market/theme";
+import { acceptsGzip, MARKET_VARY } from "@/lib/market/http";
 import { canSeeMarketWith, canUploadMarket, marketAccessOf, marketMeetingOf } from "@/lib/market/access";
 import { marketAgendaNote, marketAgendaTitle } from "@/lib/market/meeting";
 import { visibleGroups } from "@/components/shell/nav";
@@ -91,6 +92,21 @@ describe("пакет рынка", () => {
     const ok = validateBundle({ ...f, datasets: { k: { rows: [{ a: null, b: true, c: "x", d: 1.5 }] }, empty: { rows: [] } } });
     expect(ok.datasets.k).toEqual({ title: "k", description: "", rows: [{ a: null, b: true, c: "x", d: 1.5 }] });
     expect(ok.rowsTotal).toBe(1);
+  });
+});
+
+describe("заголовки ответа с данными рынка", () => {
+  it("сжатие: берётся только когда браузер его принимает", () => {
+    expect(acceptsGzip("gzip, deflate, br")).toBe(true);
+    expect(acceptsGzip("br;q=1.0, gzip;q=0.8")).toBe(true);
+    expect(acceptsGzip("GZIP")).toBe(true);
+    expect(acceptsGzip("gzip;q=0")).toBe(false);
+    expect(acceptsGzip("identity")).toBe(false);
+    expect(acceptsGzip(null)).toBe(false);
+  });
+
+  it("ответ отличается только сжатием: в Vary ничего больше нет", () => {
+    expect(MARKET_VARY).toBe("Accept-Encoding");
   });
 });
 
