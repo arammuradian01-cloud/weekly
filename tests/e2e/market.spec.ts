@@ -390,26 +390,26 @@ test("этап 83: владелец загружает сжатый пакет .
 
   // Сжатый файл: браузер отправляет его как есть, сервер распаковывает
   const plain = readFileSync(BUNDLE);
-  const sent: { encoding: string | undefined; bytes: number }[] = [];
-  page.on("request", (r) => {
-    if (!r.url().endsWith("/api/market/upload")) return;
-    sent.push({ encoding: r.headers()["content-encoding"], bytes: (r.postDataBuffer() ?? Buffer.alloc(0)).byteLength });
-  });
+  const sent = () => page.waitForRequest((r) => r.url().endsWith("/api/market/upload"));
+  let wait = sent();
   await page.getByTestId("market-upload-input").setInputFiles({ name: "rynok-paket.json.gz", mimeType: "application/gzip", buffer: gzipSync(plain) });
+  const first = await wait;
   await expect(page.getByText("Пакет рынка загружен: 2 набора данных, 6 строк").first()).toBeVisible();
   const frame = page.frameLocator(FRAME);
   await expect(frame.locator("#k-total")).toHaveText("42");
-  expect(sent[0]!.encoding).toBe("gzip");
-  expect(sent[0]!.bytes).toBeLessThan(plain.byteLength);
+  expect(first.headers()["content-encoding"]).toBe("gzip");
+  expect((first.postDataBuffer() ?? Buffer.alloc(0)).byteLength).toBeLessThan(plain.byteLength);
   // Размером пакета считается распакованный, а не то, что пришло по сети
   const [bundle] = await sql(`SELECT bytes FROM market_bundles ORDER BY version DESC LIMIT 1`);
   expect(Number(bundle!.bytes)).toBe(plain.byteLength);
 
   // Обычный .json: браузер сжимает его сам и отправляет с Content-Encoding: gzip
+  wait = sent();
   await page.getByTestId("market-upload-input").setInputFiles(BUNDLE);
-  await expect(page.getByText("Пакет рынка загружен").first()).toBeVisible();
-  expect(sent[1]!.encoding).toBe("gzip");
-  expect(sent[1]!.bytes).toBeLessThan(plain.byteLength);
+  const second = await wait;
+  expect(second.headers()["content-encoding"]).toBe("gzip");
+  expect((second.postDataBuffer() ?? Buffer.alloc(0)).byteLength).toBeLessThan(plain.byteLength);
+  await expect.poll(async () => (await sql(`SELECT max(version)::int AS v FROM market_bundles`))[0]?.v).toBe(2);
   const [{ n }] = await sql(`SELECT count(*)::int AS n FROM market_bundles`);
   expect(n).toBe(1);
   await shot(page, "upload-gz");

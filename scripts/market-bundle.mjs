@@ -3,6 +3,9 @@
 //
 // node scripts/market-bundle.mjs <папка выгрузки> --out <файл пакета.json> [--d3 <путь к d3.min.js>]
 //
+// Рядом с пакетом скрипт кладёт его сжатую копию <файл пакета.json.gz> (этап 83): её и стоит загружать на ресурсе,
+// она весит примерно в десять раз меньше и проходит через предел на размер запроса у прокси хостинга.
+//
 // Папка выгрузки:
 //   datasets/<имя>.json   описание набора: title, description, source.url вида /_blob/<id>
 //   blobs/<id>.json       строки набора: список объектов
@@ -13,6 +16,7 @@
 // в репозиторий не кладём: путь --out внутри папки репозитория скрипт не принимает (и через ссылки на папки тоже),
 // имя market-bundle*.json вдобавок в .gitignore.
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -143,8 +147,13 @@ function main() {
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > MAX_BYTES) fail(`пакет ${(bytes / 1024 / 1024).toFixed(1)} МБ, на ресурс загружается не больше 25 МБ`);
   writeFileSync(out, text);
+  // Сжатая копия рядом: её и загружают на ресурсе, большой пакет иначе не проходит через прокси хостинга
+  const packedPath = `${out}.gz`;
+  const packed = gzipSync(Buffer.from(text, "utf8"), { level: 9 });
+  writeFileSync(packedPath, packed);
   console.log(`Пакет рынка собран: ${out}`);
   console.log(`Файлов кода ${Object.keys(files).length} (${Object.keys(files).join(", ")}), наборов ${Object.keys(datasets).length}, строк ${rowsTotal}, ${(bytes / 1024 / 1024).toFixed(1)} МБ`);
+  console.log(`Сжатая копия для загрузки: ${packedPath}, ${(packed.length / 1024 / 1024).toFixed(1)} МБ`);
 }
 
 main();
