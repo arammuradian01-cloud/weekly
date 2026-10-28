@@ -170,19 +170,24 @@ export function viewAsHolds(token: ViewAsToken, who: ViewAsHolder, now = Date.no
  */
 export const VIEW_AS_TAB_HEADER = VIEW_AS_TAB_HEADER_NAME;
 
-export type ViewAsTab = { kind: "view"; id: string } | { kind: "ended"; id: string } | { kind: "self" };
+export type ViewAsTab = { kind: "view"; id: string } | { kind: "ended"; id: string } | { kind: "as"; id: string } | { kind: "as-ended"; id: string } | { kind: "self" };
 
-/** Разбор метки вкладки из заголовка. null: заголовка нет или он не по форме (тогда прежнее правило без метки) */
+/**
+ * Разбор метки вкладки из заголовка. null: заголовка нет или он не по форме (тогда прежнее правило без метки).
+ * Этап 71: as:<номер> и as-ended:<номер> для входа владельца в чужой профиль (правило в src/lib/owner-as.ts)
+ */
 export function parseViewAsTab(value: string | null | undefined): ViewAsTab | null {
   if (!value) return null;
   if (value === "self") return { kind: "self" };
-  const m = /^(view|ended):([A-Za-z0-9-]{1,80})$/.exec(value);
+  const m = /^(view|ended|as|as-ended):([A-Za-z0-9-]{1,80})$/.exec(value);
   if (!m) return null;
-  return m[1] === "view" ? { kind: "view", id: m[2]! } : { kind: "ended", id: m[2]! };
+  return { kind: m[1] as "view" | "ended" | "as" | "as-ended", id: m[2]! };
 }
 
-/** Метка вкладки по состоянию, в котором её показал сервер */
-export function viewAsTabState(state: { viewing: string | null; ended: string | null }): string {
+/** Метка вкладки по состоянию, в котором её показал сервер. ownerAs и ownerAsEnded: вход владельца в чужой профиль (этап 71) */
+export function viewAsTabState(state: { viewing: string | null; ended: string | null; ownerAs?: string | null; ownerAsEnded?: string | null }): string {
+  if (state.ownerAs) return `as:${state.ownerAs}`;
+  if (state.ownerAsEnded) return `as-ended:${state.ownerAsEnded}`;
   return state.viewing ? `view:${state.viewing}` : state.ended ? `ended:${state.ended}` : "self";
 }
 

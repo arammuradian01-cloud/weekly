@@ -15,19 +15,13 @@ import { loadScope, TOP_TEAM } from "@/lib/org/scope";
 import { moveTask } from "@/lib/org/service";
 import { taskStatusSpans, type StatusSpan } from "@/lib/tasks/changes";
 import { blockOnPerson } from "@/lib/requests/service";
+import { actorOf as runnerActorOf } from "@/lib/action-runner";
 
 export type TaskActionResult = { ok: true; task: Task | null; number: number; undo?: string; warning?: string; notice?: string } | { ok: false; error: string };
 
+/** Кто действует по контексту входа: тот же разбор, что у всех действий, с пометкой входа владельца (этап 71) */
 async function actorOf(ctx: AppContext): Promise<svc.Actor> {
-  return {
-    personId: ctx.person.id,
-    slug: ctx.person.slug as PersonSlug,
-    fullName: ctx.person.fullName,
-    role: ctx.person.role,
-    management: ctx.management?.role ?? null,
-    ip: await requestIp(),
-    via: ctx.via,
-  };
+  return runnerActorOf(ctx, await requestIp());
 }
 
 /** Кто меняет задачу: в режиме «Смотреть как» отказ (этап 63) */

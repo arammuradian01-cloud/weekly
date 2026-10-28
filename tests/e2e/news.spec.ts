@@ -8,7 +8,7 @@
 // продукта и «+N». Ноутбук 1440 и телефон 360
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterTeam, resetDatabase, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 const isPhone = () => test.info().project.name === "phone";
@@ -177,7 +177,8 @@ test("владелец ведёт источники и забирает лен�
 });
 
 test("дайджест настраивается в профиле при личном входе, по общему логину только виден", async ({ page }) => {
-  await enter(page, "Головкин Владислав");
+  // Именно общий логин: у Головкина роль администратора, обычный помощник enter завёл бы его личным входом
+  await enterTeam(page, "Головкин Владислав");
   await page.goto("/profile?tab=mail");
   await expect(page.getByRole("heading", { name: "Дайджест новостей" })).toBeVisible();
   await expect(page.getByText("Дайджест настраивается при личном входе")).toBeVisible();

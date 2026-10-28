@@ -8,25 +8,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { unstable_rethrow } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Eye, Search, X } from "lucide-react";
+import { Eye, X } from "lucide-react";
 import { startViewAsAction, stopViewAsAction, viewAsPeopleAction } from "@/app/actions/view-as";
 import type { ViewAsPerson } from "@/lib/view-as-service";
-import { matchOption } from "@/components/ui/search-picker";
 import { buttonClass } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
-import { plural } from "@/domain/dates";
 import { labelRequest } from "@/lib/view-as-fetch";
+import { PeopleSearchField, PeopleSearchList, filterPeople, personMatches } from "./people-search";
 
 const OPEN_EVENT = "weekly:view-as";
-/** Сколько строк показывать сразу: остальных находит поиск */
-const SHOWN = 100;
 
 /** Открыть выбор человека: пункт меню профиля и команда в командной строке */
 export function openViewAs() {
   window.dispatchEvent(new Event(OPEN_EVENT));
 }
-
-const hintOf = (p: ViewAsPerson) => [p.position, p.unit].filter(Boolean).join(", ");
 
 export function ViewAsDialog() {
   const [open, setOpen] = useState(false);
@@ -72,9 +67,7 @@ export function ViewAsDialog() {
     return () => window.removeEventListener(OPEN_EVENT, onOpen);
   }, [load]);
 
-  const matched = useMemo(() => (people ?? []).filter((p) => matchOption({ value: p.id, label: p.fullName, hint: hintOf(p) }, query)), [people, query]);
-  const shown = matched.slice(0, SHOWN);
-  const more = matched.length - shown.length;
+  const { shown } = useMemo(() => filterPeople(people, query), [people, query]);
 
   const choose = (p: ViewAsPerson) => {
     if (pending) return;
@@ -119,35 +112,22 @@ export function ViewAsDialog() {
               <X className="h-5 w-5" strokeWidth={1.5} aria-hidden="true" />
             </Dialog.Close>
           </div>
-          <div className="relative border-b border-line px-4 py-3 sm:px-5">
-            <label htmlFor="view-as-search" className="sr-only">
-              Поиск по ФИО, должности или подразделению
-            </label>
-            <Search className="pointer-events-none absolute left-7 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted sm:left-8" aria-hidden="true" />
-            <input
-              id="view-as-search"
-              type="search"
-              className="sv-control w-full pl-10"
-              placeholder="ФИО, должность или подразделение"
-              autoComplete="off"
-              spellCheck={false}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                if (shown[0]) choose(shown[0]);
-                else if (!people && loading$.current) {
-                  // Список ещё не пришёл: выбор случится, как только он загрузится, по тому, что уже набрано
-                  const typed = e.currentTarget.value;
-                  void loading$.current.then((list) => {
-                    const first = list?.find((p) => matchOption({ value: p.id, label: p.fullName, hint: hintOf(p) }, typed));
-                    if (first) choose(first);
-                  });
-                }
-              }}
-            />
-          </div>
+          <PeopleSearchField
+            id="view-as-search"
+            className="border-b border-line px-4 py-3 sm:px-5"
+            value={query}
+            onChange={setQuery}
+            onEnter={(typed) => {
+              if (shown[0]) choose(shown[0]);
+              else if (!people && loading$.current) {
+                // Список ещё не пришёл: выбор случится, как только он загрузится, по тому, что уже набрано
+                void loading$.current.then((list) => {
+                  const first = list?.find((p) => personMatches(p, typed));
+                  if (first) choose(first);
+                });
+              }
+            }}
+          />
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-2 pb-[max(8px,env(safe-area-inset-bottom))] sm:px-3">
             {error ? (
               <p role="alert" className="mx-2 my-2 rounded-control bg-danger-soft px-3 py-2 text-small text-danger-ink">
@@ -156,33 +136,15 @@ export function ViewAsDialog() {
             ) : null}
             {loading && !people ? <p className="px-3 py-4 text-small text-muted">Загружаем людей…</p> : null}
             {people ? (
-              <>
-                <p className="sv-cmdk__group" aria-live="polite">
-                  {query.trim() ? `Нашлось ${matched.length} ${plural(matched.length, "человек", "человека", "человек")}` : `Все люди компании: ${people.length}`}
-                </p>
-                {shown.length ? (
-                  <ul aria-label="Люди компании" className="m-0 list-none p-0">
-                    {shown.map((p) => {
-                      const hint = hintOf(p);
-                      const busy = pending && picked === p.id;
-                      return (
-                        <li key={p.id}>
-                          <button type="button" className={cn("sv-cmdk__item !items-start", busy && "is-active")} disabled={pending} aria-busy={busy || undefined} onClick={() => choose(p)}>
-                            <span className="min-w-0 flex-1">
-                              <span className="block text-body font-medium text-ink">{p.fullName}</span>
-                              {hint ? <span className="block text-small text-muted">{hint}</span> : null}
-                            </span>
-                            {busy ? <span className="shrink-0 text-caption text-muted">Открываем…</span> : null}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="px-3 py-4 text-small text-muted">Никого не нашли: проверьте написание</p>
-                )}
-                {more > 0 ? <p className="px-3 py-2 text-caption text-muted">Ещё {more}: уточните поиск</p> : null}
-              </>
+              <PeopleSearchList
+                people={people}
+                query={query}
+                allText={(n) => `Все люди компании: ${n}`}
+                listLabel="Люди компании"
+                pending={pending}
+                busyId={picked}
+                onPick={choose}
+              />
             ) : null}
           </div>
         </Dialog.Content>
@@ -221,7 +183,7 @@ function reloadByTimer() {
  * Высота липкой плашки в переменной --view-as-h: липкие шапки страниц (столбцы Roadmap) встают под плашкой, а не
  * наезжают на неё
  */
-function useStickyHeight() {
+export function useStickyHeight() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -239,17 +201,14 @@ function useStickyHeight() {
   return ref;
 }
 
-const STICKY = "sticky top-14 z-[15] lg:top-16";
+export const STICKY = "sticky top-14 z-[15] lg:top-16";
 
 /**
- * Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе. Липкая под шапкой
- * и на телефоне, и на ноутбуке. На телефоне короткая строка, кнопка уходит вниз. В срок вкладка перезагружается сама
- * (и при возврате на вкладку, если срок вышел, пока она спала). Срок считается по остатку, который прислал сервер,
- * а не по часам устройства; если после перезагрузки просмотр всё ещё идёт, следующая попытка не раньше чем через 30 с
+ * В срок вкладка перезагружается сама (и при возврате на вкладку, если срок вышел, пока она спала). Срок по остатку,
+ * который прислал сервер, а не по часам устройства; если после перезагрузки срок всё ещё не вышел, следующая попытка
+ * не раньше чем через 30 с. Плашка просмотра (этап 63) и плашка входа владельца в чужой профиль (этап 71)
  */
-export function ViewAsBanner({ name, shortName, until, remainingMs }: { name: string; shortName: string; until: string; remainingMs: number }) {
-  const [pending, startTransition] = useTransition();
-  const ref = useStickyHeight();
+export function useReloadWhenDue(remainingMs: number) {
   useEffect(() => {
     const deadline = Date.now() + Math.max(0, remainingMs);
     const due = () => Math.max(deadline, lastReload() + RELOAD_GAP_MS);
@@ -268,6 +227,18 @@ export function ViewAsBanner({ name, shortName, until, remainingMs }: { name: st
       window.removeEventListener("focus", check);
     };
   }, [remainingMs]);
+}
+
+/**
+ * Плашка над всеми страницами, пока идёт просмотр: кого смотрим, до какого времени и выход к себе. Липкая под шапкой
+ * и на телефоне, и на ноутбуке. На телефоне короткая строка, кнопка уходит вниз. В срок вкладка перезагружается сама
+ * (и при возврате на вкладку, если срок вышел, пока она спала). Срок считается по остатку, который прислал сервер,
+ * а не по часам устройства; если после перезагрузки просмотр всё ещё идёт, следующая попытка не раньше чем через 30 с
+ */
+export function ViewAsBanner({ name, shortName, until, remainingMs }: { name: string; shortName: string; until: string; remainingMs: number }) {
+  const [pending, startTransition] = useTransition();
+  const ref = useStickyHeight();
+  useReloadWhenDue(remainingMs);
   return (
     <div ref={ref} role="status" data-testid="view-as-banner" className={cn("flex flex-wrap items-center gap-x-4 gap-y-2 border-b-2 border-accent bg-navy px-4 py-3 text-white sm:px-6 lg:px-[var(--content-pad)]", STICKY)}>
       <div className="flex min-w-0 basis-full items-center gap-2.5 sm:basis-0 sm:flex-1">
@@ -359,15 +330,17 @@ function labelFetch() {
  * вкладке начат просмотр» с кнопкой «Обновить», чтобы не потерять набранный текст
  */
 export function ViewAsSync({ state }: { state: string }) {
-  const [elsewhere, setElsewhere] = useState(false);
+  const [elsewhere, setElsewhere] = useState<"view" | "as" | null>(null);
   useEffect(() => {
     tabState = state;
     labelFetch();
     const other = (value: unknown) => {
       if (typeof value !== "string" || value === state) return;
       if (state !== "self") reloadPage();
-      // Обычная вкладка владельца: закрывается плашкой, только если в другой вкладке идёт просмотр
-      else if (value.startsWith("view:")) setElsewhere(true);
+      // Обычная вкладка владельца: закрывается плашкой, только если в другой вкладке идёт просмотр или владелец вошёл
+      // в профиль другого человека (этап 71): правка из этой вкладки ушла бы уже от его имени, сервер её не примет
+      else if (value.startsWith("view:")) setElsewhere("view");
+      else if (value.startsWith("as:")) setElsewhere("as");
     };
     let channel: BroadcastChannel | null = null;
     try {
@@ -412,9 +385,13 @@ export function ViewAsSync({ state }: { state: string }) {
     <div role="alertdialog" aria-modal="true" aria-labelledby="view-as-elsewhere" data-testid="view-as-elsewhere" className="fixed inset-0 z-50 flex items-center justify-center bg-overlay px-4">
       <div className="w-full max-w-[420px] rounded-panel bg-surface p-5 shadow-medium">
         <h2 id="view-as-elsewhere" className="sv-modal__title">
-          В другой вкладке начат просмотр
+          {elsewhere === "as" ? "В другой вкладке вы вошли в профиль другого человека" : "В другой вкладке начат просмотр"}
         </h2>
-        <p className="mt-2 text-body text-text-secondary">В этой вкладке страница показана до начала просмотра. Обновите её, чтобы увидеть то же, что в остальных вкладках.</p>
+        <p className="mt-2 text-body text-text-secondary">
+          {elsewhere === "as"
+            ? "В этой вкладке страница показана для вашего профиля. Обновите её, чтобы работать в том профиле, в который вы вошли."
+            : "В этой вкладке страница показана до начала просмотра. Обновите её, чтобы увидеть то же, что в остальных вкладках."}
+        </p>
         <div className="mt-4 flex justify-end">
           <button type="button" className={buttonClass("primary", "sm")} onClick={reloadPage} autoFocus>
             Обновить

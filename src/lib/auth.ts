@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./db";
 import { getEpochs } from "./settings";
-import { managementRoleFor } from "./roles";
+import { managementRoleFor, managementRoleOf } from "./roles";
 import {
   SESSION_COOKIE,
   SESSION_TTL_SEC,
@@ -34,6 +34,10 @@ import {
   type ViewAsToken,
 } from "./view-as";
 import { endViewAs, viewAsEndRecorded } from "./view-as-service";
+import { ownerAsEndReason, ownerAsReturnable, ownerAsWriteRefusal, type OwnerAsEnd } from "./owner-as";
+import { endOwnerAs, ownerAsEndRecorded } from "./owner-as-service";
+import { teamChoosable } from "./org/people";
+import type { OwnerAsGrant } from "./session";
 import type { LoginMethod, Person } from "@/generated/prisma/client";
 
 export function sessionSecret(): string {
@@ -84,6 +88,20 @@ export type ViewAsInfo = {
 /** Просмотр этой сессии закончился сам, а cookie ещё есть: кого смотрели и почему кончилось */
 export type ViewAsEndedInfo = { id: string; target: { id: string; fullName: string } | null; reason: ViewAsEnd };
 
+/** Владелец вошёл в профиль другого человека (этап 71): кто из владельцев и до какого момента */
+export type OwnerAsInfo = {
+  /** Номер входа: метка вкладки и связь начала и конца в журнале */
+  id: string;
+  owner: { id: string; slug: string; fullName: string; shortName: string };
+  /** До какого момента действует вход, мс с 1970 года */
+  until: number;
+  /** Сколько входу осталось по часам сервера: страница ставит таймер по остатку, а не по часам устройства */
+  remainingMs: number;
+};
+
+/** Вход владельца в чужой профиль закончился сам (срок, человека выключили или сделали владельцем), а владелец не вернулся */
+export type OwnerAsEndedInfo = { id: string; target: { id: string; fullName: string } | null; reason: OwnerAsEnd };
+
 export type AppContext = {
   session: SessionData;
   /** Чьими глазами показывается приложение: вошедший профиль, а в режиме «Смотреть как» выбранный человек */
@@ -104,6 +122,16 @@ export type AppContext = {
    * от просмотра, не запишет ничего от его имени. Иначе null
    */
   viewAsEnded: ViewAsEndedInfo | null;
+  /**
+   * Вход владельца в профиль другого человека (этап 71): person это тот человек, права и правки его, via OWNER_AS,
+   * режима управления нет, deviceId null (запись устройства принадлежит владельцу). Иначе null
+   */
+  ownerAs: OwnerAsInfo | null;
+  /**
+   * Вход владельца закончился сам (срок, человека выключили или сделали владельцем), а владелец ещё не вернулся в свой
+   * профиль: person это сам владелец, но изменения закрыты, пока он не нажмёт «Вернуться в свой профиль». Иначе null
+   */
+  ownerAsEnded: OwnerAsEndedInfo | null;
 };
 
 /** Адрес ресурса для ссылок в письмах и приглашениях: APP_URL или адрес текущего запроса */
@@ -144,7 +172,11 @@ export async function requireContext(): Promise<AppContext> {
   let deviceId: string | null = null;
   if (session.sid) {
     const device = await loadDevice(session.sid);
-    if (!device || device.personId !== session.personId || !device.person.active) redirect("/login?ended=1");
+    if (!device || device.personId !== session.personId || !device.person.active) {
+      // Этап 71: вход владельца в чужой профиль кончается вместе с его собственным входом, причина в журнале
+      if (session.ownerAs) await closeOwnerAsWithSession(session, session.ownerAs);
+      redirect("/login?ended=1");
+    }
     await touchDevice(device.id, device.lastSeenAt);
     person = device.person;
     via = device.method;
@@ -154,11 +186,49 @@ export async function requireContext(): Promise<AppContext> {
     if ((await getTeamLogin()) === "off") redirect("/login?team=off");
     if (!session.personId) redirect("/choose");
     const found = await prisma.person.findUnique({ where: { id: session.personId } });
-    if (!found || !found.active) redirect("/choose");
+    // Этап 71: по общему логину только люди без личного пароля. Человек задал пароль: профиль, выбранный раньше на этом
+    // устройстве, больше не открывается, выбор заново
+    if (!found || !found.active || !teamChoosable(found)) redirect("/choose");
     person = found;
   }
 
-  const managementRole = managementRoleFor(person.role);
+  // Вход владельца в профиль другого человека (этап 71): проверяется на каждом запросе. Владельца выключили или сняли с
+  // него роль: возврата нет, вход на устройстве завершается. Срок вышел, человека выключили или сделали владельцем:
+  // владелец снова видит себя, изменения закрыты, пока он не вернётся в свой профиль
+  if (session.ownerAs && deviceId) {
+    const grant = session.ownerAs;
+    const target = await prisma.person.findUnique({ where: { id: grant.targetId } });
+    const reason = ownerAsEndReason(grant, person, target) ?? (await ownerAsEndRecorded(person.id, grant));
+    if (!reason && target) {
+      const info: OwnerAsInfo = { id: grant.id, owner: { id: person.id, slug: person.slug, fullName: person.fullName, shortName: person.shortName }, until: grant.until, remainingMs: grant.until - Date.now() };
+      return { session, person: target, management: null, managementRole: null, via: "OWNER_AS", deviceId: null, viewAs: null, viewAsEnded: null, ownerAs: info, ownerAsEnded: null };
+    }
+    const ended = reason ?? "inactive";
+    const meta = { ip: await requestIp(), via };
+    if (!ownerAsReturnable(ended)) {
+      await prisma.deviceSession.updateMany({ where: { id: deviceId, revokedAt: null }, data: { revokedAt: new Date(), revokedBy: "owner-as" } });
+      await endOwnerAs(person, grant, ended, meta);
+      redirect("/login?ended=1");
+    }
+    // Конец пишется первым запросом, который его увидел; повтор исключён по номеру входа
+    await endOwnerAs(person, grant, ended, meta);
+    return {
+      session,
+      person,
+      management: null,
+      managementRole: null,
+      via,
+      deviceId,
+      viewAs: null,
+      viewAsEnded: null,
+      ownerAs: null,
+      ownerAsEnded: { id: grant.id, target: target ? { id: target.id, fullName: target.fullName } : null, reason: ended },
+    };
+  }
+
+  // Этап 71: режим управления только при личном входе. По общему логину профиль выбирают из списка (там бывает и
+  // владелец без личного пароля), поэтому режима управления у такого входа нет, даже если он остался в cookie
+  const managementRole = managementRoleOf(person.role, via);
   const grant = activeManagement(session, managementEpoch);
   // Режим управления действует, только если он выдан этой же роли профиля
   const management = grant && managementRole === grant.role ? grant : null;
@@ -167,13 +237,34 @@ export async function requireContext(): Promise<AppContext> {
   const state = await viewAsState(session, person, via, management);
   if (state.kind === "active") {
     const target = state.target;
-    return { session, person: target, management: null, managementRole: managementRoleFor(target.role), via, deviceId: null, viewAs: state.info, viewAsEnded: null };
+    return { session, person: target, management: null, managementRole: managementRoleFor(target.role), via, deviceId: null, viewAs: state.info, viewAsEnded: null, ownerAs: null, ownerAsEnded: null };
   }
   if (state.kind === "ended") {
     // Конец просмотра пишется первым запросом, который его увидел; повтор исключён по номеру просмотра
     await endViewAs(person, state.token, state.ended.reason, { ip: await requestIp(), via });
   }
-  return { session, person, management, managementRole, via, deviceId, viewAs: null, viewAsEnded: state.kind === "ended" ? state.ended : null };
+  return { session, person, management, managementRole, via, deviceId, viewAs: null, viewAsEnded: state.kind === "ended" ? state.ended : null, ownerAs: null, ownerAsEnded: null };
+}
+
+/**
+ * Вход владельца в чужой профиль кончается вместе с его собственным входом (этап 71): запись устройства завершена
+ * (выход везде, владельца выключили, новый вход в этом браузере) или cookie сменилась. В журнале причина: владелец
+ * выключен или вход завершён. Один раз на вход
+ */
+async function closeOwnerAsWithSession(session: SessionData, grant: OwnerAsGrant, fallback: OwnerAsEnd = "session"): Promise<void> {
+  if (!session.personId) return;
+  const owner = await prisma.person.findUnique({ where: { id: session.personId }, select: { id: true, fullName: true, active: true } });
+  if (!owner) return;
+  await endOwnerAs(owner, grant, owner.active ? fallback : "owner", { ip: await requestIp(), via: session.via ?? null });
+}
+
+/**
+ * Снять вход владельца в чужой профиль из сессии этого браузера при выходе и при новом входе (этап 71): в журнал конец
+ * входа с причиной how, если он ещё не записан. Саму cookie сессии меняет или стирает тот, кто вызвал
+ */
+export async function closeOwnerAs(how: "logout" | "session"): Promise<void> {
+  const session = await readSession();
+  if (session?.ownerAs) await closeOwnerAsWithSession(session, session.ownerAs, how);
 }
 
 /** Подписанная cookie просмотра, если она есть и подпись верна. Чья она и действует ли, решает viewAsState */
@@ -231,7 +322,11 @@ export async function closeViewAs(how: "stop" | "logout" | "login" | "start"): P
  * этой сессии ещё есть: «просмотр закончился, обновите страницу», иначе вкладка, оставшаяся от просмотра, записала бы
  * правку выбранного человека от имени владельца
  */
-export function assertWritable(ctx: Pick<AppContext, "viewAs" | "viewAsEnded">, tab: ViewAsTab | null = null): void {
+export function assertWritable(ctx: Pick<AppContext, "viewAs" | "viewAsEnded"> & Partial<Pick<AppContext, "ownerAs" | "ownerAsEnded">>, tab: ViewAsTab | null = null): void {
+  // Этап 71: вход владельца в чужой профиль. Вкладка, показанная для другого профиля, не пишет от имени этого: правка
+  // ушла бы не от того имени. После конца входа, пока владелец не вернулся, изменения закрыты
+  const own = ownerAsWriteRefusal({ active: ctx.ownerAs?.id ?? null, ended: ctx.ownerAsEnded?.id ?? null }, tab);
+  if (own) throw new ViewAsReadOnlyError(own);
   const refusal = viewAsWriteRefusal({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null }, tab);
   if (refusal) throw new ViewAsReadOnlyError(refusal);
 }
@@ -268,11 +363,19 @@ export async function clearViewAs(): Promise<void> {
   store.delete(TEAM_VIEW_COOKIE);
 }
 
+/**
+ * Владелец или администратор выбран по общему логину (этап 71): режима управления у такого входа нет, и страницы
+ * управления не уходят молча на главную, а ведут на /manage с объяснением (MANAGEMENT_TEAM_REFUSAL)
+ */
+export function teamManagementRefused(ctx: Pick<AppContext, "via" | "person">): boolean {
+  return ctx.via === "TEAM" && managementRoleFor(ctx.person.role) !== null;
+}
+
 /** Страницы режима управления. roles сужает доступ, например только владельцу */
 export async function requireManagement(roles: ManagementRole[] = ["OWNER", "ADMIN"], next = "/"): Promise<AppContext> {
   const ctx = await requireContext();
   if (!ctx.management) {
-    if (!ctx.managementRole) redirect("/");
+    if (!ctx.managementRole && !teamManagementRefused(ctx)) redirect("/");
     redirect(`/manage?next=${encodeURIComponent(next)}`);
   }
   if (!roles.includes(ctx.management.role)) redirect("/");

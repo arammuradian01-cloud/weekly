@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import pg from "pg";
 import { mkdirSync } from "node:fs";
 import { E2E_PASSWORDS } from "./global-setup";
-import { enter } from "./helpers";
+import { enter, enterPersonal, sql } from "./helpers";
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -31,7 +31,14 @@ async function signIn(page: Page, password = E2E_PASSWORDS.team) {
 }
 
 async function chooseMe(page: Page, fullName: string) {
+  // Личный пароль мог остаться от прошлого прогона этого же файла (ноутбук идёт перед телефоном): с ним человека
+  // в списке общего логина нет
+  await sql(`UPDATE people SET "passwordHash" = NULL, "passwordSetAt" = NULL WHERE "fullName" = $1`, [fullName]);
   await expect(page).toHaveURL(/\/choose$/);
+  // Список строится на сервере при открытии страницы: после снятия пароля он нужен заново
+  await page.reload();
+  // Этап 71: в списке все люди структуры, сразу видны первые 100: человека находят поиском
+  await page.getByLabel("Поиск по ФИО, должности или подразделению").fill(fullName);
   await page.getByRole("button", { name: new RegExp(fullName) }).click();
   await expect(page).toHaveURL(/\/$/);
 }
@@ -67,8 +74,16 @@ test("5 неверных паролей закрывают вход на 15 ми
 });
 
 test("лидер входит, выбирает себя и видит свою неделю без режима управления", async ({ page }) => {
+  // Этап 71: в списке общего логина только люди без личного пароля: владелец без пароля там есть с подписью роли,
+  // Логинова с паролем нет. Пароли могли остаться от других файлов: задаём явно
+  // Рева выбирает себя из списка общего логина: личный пароль ему мог задать другой файл (login.spec, помощник входа)
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug IN ('muradyan', 'reva')`);
+  await sql(`UPDATE people SET "passwordHash" = 'x' WHERE slug = 'loginova'`);
   await signIn(page);
   await expect(page).toHaveURL(/\/choose$/);
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toContainText("Владелец");
+  await expect(page.getByRole("button", { name: /Логинова Светлана/ })).toHaveCount(0);
+  await sql(`UPDATE people SET "passwordHash" = NULL WHERE slug = 'loginova'`);
   await shot(page, "03-choose");
   await chooseMe(page, "Рева Тарас");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Тарас");
@@ -91,8 +106,8 @@ test("лидер входит, выбирает себя и видит свою 
 });
 
 test("владелец включает режим управления только своим паролем", async ({ page }) => {
-  await signIn(page);
-  await chooseMe(page, "Мурадян Арам");
+  // Этап 71: владелец входит только своим логином и паролем
+  await enterPersonal(page, "muradyan");
   await openProfileMenu(page);
   await page.getByRole("menuitem", { name: "Включить режим управления" }).click();
   await expect(page).toHaveURL(/\/manage/);
@@ -122,8 +137,17 @@ test("владелец включает режим управления толь
 });
 
 test("администратор не видит разделы владельца", async ({ page }) => {
+  // Этап 71: по общему логину режим управления не включается: администратор входит своим логином и паролем
   await signIn(page);
   await chooseMe(page, "Головкин Владислав");
+  await page.goto("/manage");
+  // Этап 71: не молчаливый уход на главную, а объяснение, почему режима управления нет
+  await expect(page).toHaveURL(/\/manage$/);
+  await expect(page.getByTestId("management-team-refusal")).toContainText("только при личном входе");
+  // Выход из общего логина кнопкой с той же страницы, дальше личный вход администратора
+  await page.getByRole("button", { name: "Войти своим логином" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await enterPersonal(page, "golovkin");
   await page.goto("/manage");
   await page.getByLabel("Пароль администраторов").fill(E2E_PASSWORDS.admin);
   await page.getByRole("button", { name: "Включить на 12 часов" }).click();

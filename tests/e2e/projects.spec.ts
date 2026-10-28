@@ -110,7 +110,8 @@ test("помощник «Собрать из структуры»: руково�
   await expect(dialog.getByRole("textbox", { name: "Название команды" })).toHaveValue(name);
   await shot(reva, "new-dialog");
   await dialog.getByRole("button", { name: "Создать команду" }).click();
-  await expect(reva.getByText(`Команда «${name}»: добавлено 0, ждут согласия руководителя 3`).first()).toBeVisible();
+  // Сообщение живёт 5 секунд, а следом переход на карточку новой команды: ждём устойчивое состояние, карточку команды
+  await expect(reva.getByTestId("team-card").getByRole("heading", { name, level: 2 })).toBeVisible();
   const [team] = await sql("SELECT id, kind, \"parentId\" FROM teams WHERE name = $1", [name]);
   expect(team!.kind).toBe("CUSTOM");
   // Каждого согласует его непосредственный руководитель по структуре
@@ -149,7 +150,8 @@ test("помощник «Собрать из структуры»: руково�
   const add = reva.getByRole("dialog", { name: `В команду «${name}»` });
   await expect(add).toContainText("Токов Никита Андреевич");
   await add.getByRole("button", { name: "Добавить" }).click();
-  await expect(reva.getByText(`Команда «${name}»: добавлено 1`).first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд), а состав команды
+  await expect(add).toHaveCount(0);
   await expect(target).toContainText("в команде 2 человека, ждут согласия 3");
   await expect(card.getByTestId("team-members")).toContainText("Токов Никита Андреевич");
   expect((await sql('SELECT external FROM team_members m JOIN people p ON p.id = m."personId" WHERE m."teamId" = $1 AND p.slug = $2', [team!.id, tokov]))[0]?.external).toBe(false);
@@ -162,8 +164,9 @@ test("помощник «Собрать из структуры»: руково�
   await expect(empty.getByRole("button", { name: "Создать команду" })).toBeDisabled();
   await empty.getByRole("textbox", { name: "Название команды" }).fill("Кросс-продажи");
   await empty.getByRole("button", { name: "Создать команду" }).click();
-  await expect(reva.getByText("Команда «Кросс-продажи» создана").first()).toBeVisible();
+  // Не сообщение (живёт 5 секунд, следом переход), а открывшаяся карточка новой команды и запись в базе
   await expect(reva.getByTestId("team-card").getByRole("heading", { name: "Кросс-продажи", level: 2 })).toBeVisible();
+  await expect.poll(async () => (await sql("SELECT count(*)::int AS n FROM teams WHERE name = $1 AND active", ["Кросс-продажи"]))[0]!.n).toBe(1);
   // Карточка новой команды открылась переходом без перезагрузки страницы (этап 70): раскрытое дерево помощника на месте
   if (!isPhone()) await expect(ready.getByTestId(`unit-${ins}`).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "true");
 });

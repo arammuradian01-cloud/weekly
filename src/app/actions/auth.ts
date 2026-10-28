@@ -1,6 +1,6 @@
 "use server";
 
-import { topTeamOnly } from "@/lib/org/people";
+import { teamChoosableWhere } from "@/lib/org/people";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
@@ -8,12 +8,13 @@ import { getEpochs, getSetting } from "@/lib/settings";
 import { PASSWORD_SETTING_KEYS, verifyPassword } from "@/lib/passwords";
 import { LOCK_MS } from "@/lib/rate-limit";
 import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "@/lib/login/attempts";
-import { managementPasswordKind } from "@/lib/roles";
+import { MANAGEMENT_TEAM_REFUSAL, managementPasswordKind } from "@/lib/roles";
 import { MANAGEMENT_TTL_MS } from "@/lib/session";
 import { formatTime } from "@/lib/week";
 import {
   baseUrl,
   clearSession,
+  closeOwnerAs,
   closeViewAs,
   readSession,
   requestIp,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/auth";
 import { actorOf } from "@/lib/action-runner";
 import { VIEW_AS_DENIED } from "@/lib/view-as";
+import { OWNER_AS_ENDED, OWNER_AS_TEXTS } from "@/lib/owner-as";
 import { consumeLoginLink, consumeStepUp, getTeamLogin, requestEmailLink, requestStepUp } from "@/lib/login/service";
 import { loginWithPassword, setPasswordByLink } from "@/lib/login/password";
 import { confirmEmail } from "@/lib/login/email";
@@ -91,6 +93,8 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
   // Иначе запись устройства жила бы ещё 30 дней, и уведомления прежнего человека приходили бы в этот браузер (этап 26)
   // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
   await closeViewAs("login");
+  // Вход владельца в чужой профиль (этап 71) прежнего входа в этом браузере тоже заканчивается с записью в журнал
+  await closeOwnerAs("session");
   const previous = (await readSession())?.sid ?? null;
   if (previous) await prisma.deviceSession.updateMany({ where: { id: previous, revokedAt: null }, data: { revokedAt: now, revokedBy: "replaced" } });
   const { epoch } = await getEpochs();
@@ -105,8 +109,10 @@ async function personalLogin(loginValue: string, password: string): Promise<Form
   const previous = (await readSession())?.sid ?? null;
   const result = await loginWithPassword(loginValue, password, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous);
   if (!result.ok) return { error: result.error };
-  // Просмотр «Смотреть как» прежнего входа в этом браузере закрывается с записью в журнал (этап 63)
+  // Просмотр «Смотреть как» и вход владельца в чужой профиль прежнего входа в этом браузере закрываются с записью в
+  // журнал (этапы 63 и 71)
   await closeViewAs("login");
+  await closeOwnerAs("session");
   const { epoch } = await getEpochs();
   await writeSession({ epoch, personId: result.personId, sid: result.sessionId, via: "PASSWORD" });
   redirect("/");
@@ -115,8 +121,11 @@ async function personalLogin(loginValue: string, password: string): Promise<Form
 export async function chooseProfile(formData: FormData): Promise<void> {
   const session = await requireSignedIn();
   const personId = String(formData.get("personId") ?? "");
-  const person = await prisma.person.findFirst({ where: { id: personId, active: true, ...topTeamOnly } });
-  if (!person) redirect("/choose");
+  // Этап 71 (поправка 23.10): все включённые люди структуры без личного пароля, владелец и администратор без пароля тоже.
+  // Режима управления и прав владельца или администратора такой вход не даёт. Тем же условием строится список на экране,
+  // но решает сервер: подставить в форму номер человека с личным паролем или выключенного не выйдет
+  const person = personId ? await prisma.person.findFirst({ where: { id: personId, ...teamChoosableWhere } }) : null;
+  if (!person) redirect("/choose?denied=1");
   await writeSession({ epoch: session.epoch, personId: person.id, via: "TEAM" });
   await writeAudit({
     action: "profile.choose",
@@ -136,6 +145,13 @@ export async function chooseProfile(formData: FormData): Promise<void> {
 async function managementContext(): Promise<{ ctx: AppContext; error?: undefined } | { ctx?: undefined; error: string }> {
   const ctx = await requireContext();
   if (ctx.viewAs) return { error: VIEW_AS_DENIED };
+  // Этап 71: во время входа владельца в чужой профиль режим управления не включается (ни паролем, ни ссылкой на почту),
+  // после конца входа сначала возврат в свой профиль
+  if (ctx.ownerAs) return { error: OWNER_AS_TEXTS.management };
+  if (ctx.ownerAsEnded) return { error: OWNER_AS_ENDED };
+  // Этап 71: режим управления только при личном входе. По общему логину можно выбрать владельца или администратора без
+  // личного пароля: ни пароль управления, ни ссылка на почту такому входу режим не включают
+  if (ctx.via === "TEAM") return { error: MANAGEMENT_TEAM_REFUSAL };
   return { ctx };
 }
 
@@ -203,6 +219,8 @@ export async function logout(): Promise<void> {
   // Выход во время «Смотреть как» (этап 63): просмотр заканчивается, в журнале кого смотрели. Если он закончился сам
   // и конец уже записан, второй записи нет. До завершения устройства: иначе причиной стал бы «вход завершён»
   await closeViewAs("logout");
+  // Выход во время входа владельца в чужой профиль (этап 71): в журнале конец входа «выход из ресурса»
+  await closeOwnerAs("logout");
   // Личный вход завершается и в базе: cookie с этого устройства больше не откроет ресурс
   if (session?.sid) {
     await prisma.deviceSession.updateMany({ where: { id: session.sid, revokedAt: null }, data: { revokedAt: new Date(), revokedBy: "self" } });
@@ -232,6 +250,7 @@ export async function consumeLinkAction(_prev: FormState, formData: FormData): P
     // Без пароля входят только по ссылке из письма: по ссылке от владельца человек сначала задаёт пароль
     const { session, person, method } = await consumeLoginLink(token, { ip: await requestIp(), userAgent: await requestUserAgent() }, new Date(), previous, ["EMAIL"]);
     await closeViewAs("login");
+    await closeOwnerAs("session");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: method });
     target = "/";
@@ -263,6 +282,7 @@ export async function setPasswordAction(_prev: FormState, formData: FormData): P
       previous,
     );
     await closeViewAs("login");
+    await closeOwnerAs("session");
     const { epoch } = await getEpochs();
     await writeSession({ epoch, personId: person.id, sid: session.id, via: session.method === "INVITE" ? "INVITE" : "EMAIL" });
     // Первый вход (этап 52): если рабочей почты ещё нет, ресурс предлагает её указать

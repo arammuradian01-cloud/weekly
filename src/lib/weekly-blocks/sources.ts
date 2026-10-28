@@ -338,7 +338,7 @@ export type Assembly = { blocks: ReportBlock[]; hint: string | null };
 async function assemble(actor: Actor, key: WeekKey, scope: Scope, template: readonly TemplateBlock[], focus: string[] | null, now: Date, levelOverride?: NumbersLevel): Promise<Assembly> {
   const keys = new Set(template.map((t) => t.key));
   const needs = (k: string) => keys.has(k);
-  const [meta, level] = await Promise.all([blocksMeta(), levelOverride ?? numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management })]);
+  const [meta, level] = await Promise.all([blocksMeta(), levelOverride ?? numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management, via: actor.via })]);
   const numbersOn = level !== "none";
   const [wow, month, news, competitors, entries, tasks, goals, notion] = await Promise.all([
     needs("wow") ? (numbersOn ? wowInput(key) : Promise.resolve({ closed: true } as WowInput)) : Promise.resolve(null),

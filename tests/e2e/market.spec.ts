@@ -1,6 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 62: рынок КАСКО и ОСАГО. Владелец при личном входе загружает пакет рынка (синтетический
 // tests/fixtures/market/bundle.json, цифры выдуманные), дашборд работает в изолированном окне: расчёты, фильтр и
@@ -37,7 +38,14 @@ async function personal(browser: Browser, page: Page, slug: string) {
 
 async function teamLogin(browser: Browser, page: Page, fullName: string) {
   const p = await (await browser.newContext({ viewport: page.viewportSize()!, isMobile: isPhone(), hasTouch: isPhone() })).newPage();
-  await enter(p, fullName);
+  await p.goto("/login");
+  await p.getByLabel("Логин").fill("team");
+  await p.getByLabel("Пароль").fill(E2E_PASSWORDS.team);
+  await p.getByRole("button", { name: "Войти" }).click();
+  await expect(p).toHaveURL(/\/choose$/);
+  await p.getByLabel("Поиск по ФИО, должности или подразделению").fill(fullName);
+  await p.getByRole("button", { name: new RegExp(fullName) }).click();
+  await expect(p).toHaveURL(/\/$/);
   return p;
 }
 
@@ -183,8 +191,8 @@ test("человек не из списка при личном входе: пу
   expect((await admin.request.get("/api/market/data")).status()).toBe(200);
   expect((await upload(admin)).status()).toBe(403);
 
-  // Этап 72: Логинова по общему логину (её нет в списке): пункт меню, дашборд с данными, без загрузки
-  const team = await teamLogin(browser, page, "Логинова Светлана");
+  // Общий вход человека без личного пароля и вне списка доступа. Логинова уже задала пароль и больше не выбирается.
+  const team = await teamLogin(browser, page, "Фатьянов Евгений");
   const link = await marketLinks(team);
   await expect(link).toBeVisible();
   await link.click();
@@ -211,7 +219,8 @@ test("человек не из списка при личном входе: пу
   await expect(team).toHaveURL(/\/market$/);
 
   // Владелец по общему логину видит раздел, но загрузка только при личном входе
-  const teamOwner = await teamLogin(browser, page, "Мурадян Арам");
+  await sql(`INSERT INTO people (id, slug, "fullName", "shortName", role, zone, "updatedAt") VALUES ('test-market-owner', 'test-market-owner', 'Тестовый совладелец рынка', 'Совладелец', 'OWNER', '', now())`);
+  const teamOwner = await teamLogin(browser, page, "Тестовый совладелец рынка");
   await teamOwner.goto("/market");
   await expect(teamOwner.frameLocator(FRAME).locator("#k-total")).toHaveText("42");
   await expect(teamOwner.getByTestId("market-upload")).toHaveCount(0);
@@ -353,8 +362,8 @@ test("первая встреча месяца начинается с разб�
   await expect(loginova.getByText(/Данные рынка от|Свежий пакет рынка/)).toHaveCount(0);
   await shot(loginova, "meeting-closed");
 
-  // Этап 72: та же Логинова по общему логину видит кнопку «Открыть рынок» и подпись пункта
-  const team = await teamLogin(browser, page, "Логинова Светлана");
+  // Общий вход человека без личного пароля видит кнопку «Открыть рынок» и подпись пункта.
+  const team = await teamLogin(browser, page, "Фатьянов Евгений");
   await team.goto("/weekly/meeting");
   await expect(team.getByRole("heading", { level: 2, name: first!.title })).toBeVisible();
   await expect(team.getByTestId("agenda-market-open")).toHaveAttribute("href", "/market");
