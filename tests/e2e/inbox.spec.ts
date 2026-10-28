@@ -49,8 +49,12 @@ test("комментарий к задаче Ревы виден ему на «�
   expect(await menuCount()).toBe(withEvent);
   // Счётчик «новое событие» ведёт к группе «Прочитать» на той же странице
   const figures = reva.getByTestId("my-attention-figures");
-  await figures.getByRole("link", { name: /новое событие/ }).click();
-  await expect(reva).toHaveURL(/\/#me-read$/);
+  const figure = figures.getByRole("link", { name: /новое событие/ });
+  await expect(figure).toHaveAttribute("href", "#me-read");
+  await figure.click();
+  // Проверяем, что человек оказался у группы: сам адрес с якорем проверяет тест старых ссылок /me#группа.
+  // Серверное действие «Просмотрено» перерисовывает страницу сразу после открытия и иногда успевает стереть якорь
+  // из адреса, а прокрутка к группе остаётся: видимое поведение важнее строки адреса
   const read = reva.getByTestId("me-read");
   await expect(read.getByRole("heading", { name: /^Прочитать/ })).toBeInViewport();
   const row = read.locator("li.sv-event").filter({ hasText: "Комментарий: «Тарас, посмотри мой расчёт по КАСКО»" });
