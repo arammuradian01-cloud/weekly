@@ -30,7 +30,13 @@ test("меню без «Мне» и «Один на один», счётчик �
   await decisionEvent("e2e76-nav");
   await enter(page, "Рева Тарас");
   const nav = page.getByRole("navigation", { name: "Разделы" }).filter({ visible: true }).first();
-  await expect(nav.getByRole("link", { name: /^Моя неделя.*ждут 1/ })).toBeVisible();
+  // Счётчик у пункта считает всю очередь, а не только события (правка по ревью этапа 76): сверяем его с числом
+  // в заголовке блока «Ждёт вас» на той же странице, а не с единицей
+  await expect(nav.getByRole("link", { name: /^Моя неделя, ждут \d+$/ })).toBeVisible();
+  const menu = Number(/ждут (\d+)/.exec((await nav.getByRole("link", { name: /Моя неделя/ }).first().textContent()) ?? "")?.[1] ?? 0);
+  const block = Number(/(\d+)/.exec((await page.getByRole("heading", { name: /^Ждёт вас/, level: 2 }).textContent()) ?? "")?.[1] ?? 0);
+  expect(menu, "число у пункта меню и в заголовке блока").toBe(block);
+  expect(menu).toBeGreaterThan(0);
   for (const name of [/^Мне/, /Один на один/]) await expect(page.getByRole("link", { name })).toHaveCount(0);
   if (isPhone()) {
     // Нижнее меню: четыре пункта и «Ещё», в «Ещё» убранных разделов тоже нет

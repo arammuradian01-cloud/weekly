@@ -8,8 +8,11 @@ test.beforeEach(async () => {
 });
 
 test("комментарий к задаче Ревы виден ему на «Моей неделе» в «Ждёт вас»: счётчик, напомнить, разобрано", async ({ page, browser }) => {
+  // Задача со сроком позже завтрашнего: она не стоит строкой в «Срок прошёл» и «Сегодня и завтра», поэтому событие
+  // о ней видно в группе «Прочитать» (правка по ревью этапа 76: событие по задаче из этих групп не дублирует её строку)
   const [{ number }] = await sql(
-    `SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1`,
+    `SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId"
+     WHERE p.slug = 'reva' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL AND t.due > current_date + 1 ORDER BY t.number LIMIT 1`,
   );
 
   // Фатьянов комментирует задачу Ревы
