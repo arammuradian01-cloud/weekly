@@ -6,8 +6,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import pg from "pg";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
-import { listInbox, markDone } from "@/lib/inbox/service";
+import { listInbox, markDone, markSeen } from "@/lib/inbox/service";
 import { attentionCountFor } from "@/lib/inbox/attention";
+import { createRequest, myRequests } from "@/lib/requests/service";
+import { listTasks } from "@/lib/tasks/service";
+import { attentionTotal, eventCount, hotTasks, queueCounts, splitRequests } from "@/components/inbox/me-tasks";
+import { addDays, fromCalendar } from "@/domain/dates";
+import { moscowDate } from "@/lib/week";
 import { journalEvents } from "@/lib/journal";
 import { MISSED_WEEKS_BACK, currentReportingKey, ensureWeek, missedWeeks } from "@/lib/weekly/service";
 import { shiftWeek } from "@/lib/weekly/weeks";
@@ -29,7 +34,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await prisma.task.deleteMany({ where: { number: { gte: 7600, lt: 7610 } } });
+  await prisma.task.deleteMany({ where: { number: { gte: 7600, lt: 7640 } } });
   await db.end();
   await prisma.$disconnect();
 });
@@ -168,6 +173,109 @@ describe("«Не сдан weekly за неделю N»", () => {
     } finally {
       await reset();
       await prisma.person.update({ where: { id: reva }, data: { createdAt: person.createdAt, active: true } });
+    }
+  });
+});
+
+/**
+ * Правка по ревью этапа 76: меню и блок «Ждёт вас» считают одну величину. Блок считают эти же чистые функции
+ * (my-week.tsx), поэтому здесь число блока собирается из серверных данных ровно как на странице, а рядом стоит
+ * счёт руками: так видно, что сходятся не две одинаковые опечатки, а правило и ожидаемое человеком число
+ */
+async function blockNumber(slug: string, now = new Date()) {
+  const actor = await tasks.actorFor(slug);
+  const today = fromCalendar(moscowDate(now));
+  const [all, requests, inbox, missed] = await Promise.all([
+    listTasks({ reader: { personId: actor.personId, role: actor.role } }),
+    myRequests(actor, now),
+    listInbox(actor.personId, now),
+    missedWeeks(actor.personId, now),
+  ]);
+  const hot = hotTasks({ tasks: all, today }, { slug: actor.slug, role: actor.role });
+  const counts = queueCounts(hot, splitRequests(requests.incoming, today), eventCount(inbox.items, requests.incoming, hot));
+  return attentionTotal(counts, missed.length);
+}
+
+describe("счётчик в меню совпадает с числом в блоке «Ждёт вас»", () => {
+  const nums = [7620, 7621, 7622];
+  afterAll(async () => {
+    await prisma.helpRequest.deleteMany({ where: { text: { startsWith: "Сверка счётчика" } } });
+    await prisma.task.deleteMany({ where: { number: { in: nums } } });
+  });
+
+  it("три просроченные задачи и просьба без ответа: событий нет, меню показывает 4, как и блок", async () => {
+    const [aram, reva] = [await idOf("muradyan"), await idOf("reva")];
+    const directionId = (await prisma.dictionaryItem.findFirstOrThrow({ where: { kind: "DIRECTION", code: "department" } })).id;
+    const today = moscowToday();
+    const past = addDays(today, -3);
+    const before = await attentionCountFor(reva);
+    expect(before).toBe(await blockNumber("reva"));
+
+    for (const number of nums) {
+      await prisma.task.create({
+        data: { number, title: `Просрочена ${number}`, outcome: "Сделать", directionId, due: dbDate(past), whereUpdatedAt: dbDate(past), teamId: TOP_TEAM, ownerId: reva, createdById: reva, status: "IN_PROGRESS", sourceCode: "other" },
+      });
+    }
+    // Просьба от Арама к Реве: она ждёт ответа и стоит в очереди своей строкой, её событие в счёт не идёт
+    await createRequest(await tasks.actorFor("muradyan"), { to: "reva", text: "Сверка счётчика: посмотрите, пожалуйста", due: addDays(today, 5) });
+    expect(aram).not.toBe(reva);
+
+    // Три задачи плюс просьба: событие о просьбе дублирует её строку и не считается
+    expect(await attentionCountFor(reva)).toBe(before + 4);
+    expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
+  });
+
+  it("событие по просьбе, которая уже стоит строкой, не добавляет лишнего ни в меню, ни в блок", async () => {
+    const reva = await idOf("reva");
+    const open = (await myRequests(await tasks.actorFor("reva"))).incoming.find((r) => r.text.startsWith("Сверка счётчика"));
+    expect(open).toBeTruthy();
+    const before = await attentionCountFor(reva);
+    // Ещё одно событие по той же просьбе: строка в очереди та же, число не растёт
+    const extra = await prisma.inboxEvent.create({
+      data: { recipientId: reva, kind: "REQUEST", subject: `request:${open!.number}`, text: "Напоминание о просьбе", requestId: (await prisma.helpRequest.findFirstOrThrow({ where: { number: open!.number } })).id },
+    });
+    try {
+      expect(await attentionCountFor(reva)).toBe(before);
+      expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
+    } finally {
+      await prisma.inboxEvent.deleteMany({ where: { id: extra.id } });
+    }
+  });
+
+  it("событие по задаче, которая уже стоит строкой в «Срок прошёл», тоже не считается дважды", async () => {
+    const reva = await idOf("reva");
+    const before = await attentionCountFor(reva);
+    const task = await prisma.task.findFirstOrThrow({ where: { number: nums[0] } });
+    const extra = await prisma.inboxEvent.create({
+      data: { recipientId: reva, kind: "TASK_COMMENT", subject: `task:${nums[0]}`, text: "Комментарий к просроченной задаче", taskId: task.id },
+    });
+    try {
+      expect(await attentionCountFor(reva)).toBe(before);
+      expect(await attentionCountFor(reva)).toBe(await blockNumber("reva"));
+    } finally {
+      await prisma.inboxEvent.deleteMany({ where: { id: extra.id } });
+    }
+  });
+});
+
+describe("просмотренными помечаются только показанные события", () => {
+  it("markSeen со списком предметов не трогает остальные: письмо о непоказанных событиях не пропадает", async () => {
+    const reva = await idOf("reva");
+    const made = [];
+    for (let i = 0; i < 3; i += 1) {
+      made.push(await prisma.inboxEvent.create({ data: { recipientId: reva, kind: "MEETING", subject: `seen-test:${i}`, text: `Событие ${i}` } }));
+    }
+    try {
+      // Показаны только первые два: третье осталось за «Показать все» и просмотренным не считается
+      expect(await markSeen(reva, ["seen-test:0", "seen-test:1"])).toBe(2);
+      const rows = await prisma.inboxEvent.findMany({ where: { id: { in: made.map((m) => m.id) } }, orderBy: { subject: "asc" }, select: { subject: true, seenAt: true } });
+      expect(rows.map((r) => [r.subject, r.seenAt !== null])).toEqual([
+        ["seen-test:0", true],
+        ["seen-test:1", true],
+        ["seen-test:2", false],
+      ]);
+    } finally {
+      await prisma.inboxEvent.deleteMany({ where: { id: { in: made.map((m) => m.id) } } });
     }
   });
 });
