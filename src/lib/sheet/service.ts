@@ -9,6 +9,7 @@ import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { connection, serviceEmail } from "./runner";
 import { GoogleSheetsError } from "./google";
 import { PROD_SHEET_ID, SheetBusyError, pushChanges, rebuild, reconcile, type PushResult, type ReconcileResult } from "./sync";
+import { auditVia } from "@/lib/audit";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -63,7 +64,7 @@ export async function setSpreadsheet(actor: Actor, input: string): Promise<{ id:
           before: before ?? "не подключена",
           after: id ?? "не подключена",
           ip: actor.ip,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     });

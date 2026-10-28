@@ -148,8 +148,16 @@ describe("кто включает «Смотреть как»", () => {
   it("без режима управления, по общему логину, администратор, лидер: нельзя", async () => {
     await signIn("muradyan");
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.management });
-    await signIn("muradyan", { management: true, team: true });
-    expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.personal });
+    // Этап 71: владелец по общему логину выбирается, только пока у него нет личного пароля, и режима управления не получает
+    const { passwordHash } = await prisma.person.findUniqueOrThrow({ where: { slug: "muradyan" } });
+    await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash: null } });
+    try {
+      await signIn("muradyan", { management: true, team: true });
+      expect((await requireContext()).management).toBeNull();
+      expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.personal });
+    } finally {
+      await prisma.person.update({ where: { slug: "muradyan" }, data: { passwordHash } });
+    }
     await signIn("golovkin", { management: true });
     expect(await startAs("reva")).toEqual({ ok: false, error: VIEW_AS_TEXTS.ownerOnly });
     await signIn("reva");
@@ -425,7 +433,17 @@ const READ = new Set([
   "weekViewAction",
 ]);
 /** Сам просмотр: выбор и начало отвечают «сначала выйдите из просмотра», выход (кнопкой и перед выходом из ресурса) проверен отдельно */
-const SPECIAL = new Set(["viewAsPeopleAction", "startViewAsAction", "stopViewAsAction", "endViewAsForLogoutAction"]);
+const SPECIAL = new Set([
+  "viewAsPeopleAction",
+  "startViewAsAction",
+  "stopViewAsAction",
+  "endViewAsForLogoutAction",
+  // «Сменить профиль» у владельца (этап 71): выбор и вход отвечают «сначала выйдите из просмотра», возврат без входа в
+  // чужой профиль отвечает «вы и так в своём профиле». Проверено в tests/db/owner-as.test.ts
+  "ownerAsPeopleAction",
+  "startOwnerAsAction",
+  "returnToOwnProfileAction",
+]);
 
 type Outcome = "denied" | string;
 

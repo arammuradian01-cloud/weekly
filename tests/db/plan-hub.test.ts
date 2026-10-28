@@ -645,7 +645,7 @@ describe("ОСАГО по СК в карточке", () => {
     expect(obs.source.serviceEmail).toBeNull();
   });
 
-  it("под общим логином выручка и КВ по СК скрыты, кроме режима владельца: под общим логином можно выбрать чужой профиль", async () => {
+  it("под общим логином выручка и КВ по СК скрыты у всех, даже у владельца: под общим логином можно выбрать чужой профиль", async () => {
     const owner = await actor.owner();
     await hub.applyHub(owner, NOW);
     const team = (a: tasks.Actor): tasks.Actor => ({ ...a, via: "TEAM" });
@@ -655,7 +655,9 @@ describe("ОСАГО по СК в карточке", () => {
     expect(leader.rows[0]!.mtd).not.toBeNull();
     expect(await hub.seesSensitive(team(await actor.admin()))).toBe(false);
     expect(await hub.seesSensitive(team(await actor.sakhibullina()))).toBe(false);
-    expect(await hub.seesSensitive(team(owner))).toBe(true);
+    // Этап 71: режима управления по общему логину нет, роль владельца в выбранном профиле цифр не открывает
+    expect(await hub.seesSensitive(team(owner))).toBe(false);
+    expect(await hub.seesSensitive(owner)).toBe(true);
     expect(await hub.seesSensitive({ ...(await actor.golovkin()), via: "EMAIL" })).toBe(true);
   });
 

@@ -14,6 +14,7 @@ import type { ManagementRole } from "@/lib/session";
 import { prisma } from "@/lib/db";
 import { TOP_TEAM } from "@/domain/teams";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
+import { auditVia } from "@/lib/audit";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -155,7 +156,7 @@ export async function saveMarketSettings(actor: Actor, input: { people?: string[
     for (const [action, field, from, to] of lines) {
       if (from === to) continue;
       await tx.auditLog.create({
-        data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: action === "settings.marketAccess" ? MARKET_ACCESS_KEY : MARKET_MEETING_KEY, field, before: from.slice(0, 1000), after: to.slice(0, 1000), ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "settings", entityId: action === "settings.marketAccess" ? MARKET_ACCESS_KEY : MARKET_MEETING_KEY, field, before: from.slice(0, 1000), after: to.slice(0, 1000), ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
   });

@@ -5,9 +5,9 @@
 // На телефоне открывается кнопкой поиска в шапке и занимает весь экран
 
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { unstable_rethrow, usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
-import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Map as MapIcon, type LucideIcon } from "lucide-react";
+import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, Inbox, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Undo2, UserRoundCog, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { compactName } from "@/domain/people";
 import { formatShort } from "@/domain/dates";
@@ -18,6 +18,7 @@ import { searchAction } from "@/app/(app)/search/actions";
 import { openNewTask } from "@/components/prototype/new-task";
 import { stopViewAsAction } from "@/app/actions/view-as";
 import { openViewAs } from "./view-as";
+import { openOwnerAs, returnToOwnProfile } from "./owner-as";
 
 const OPEN_EVENT = "weekly:command-palette";
 
@@ -51,11 +52,15 @@ export function Highlight({ text, className }: { text: string; className?: strin
 
 const DEBOUNCE_MS = 180;
 
-/** canViewAs: владелец может открыть «Смотреть как…», viewing: идёт просмотр, есть «Выйти из просмотра» (этап 63) */
-export function CommandPalette({ management, market = false, canViewAs = false, viewing = false }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean }) {
+/**
+ * canViewAs: владелец может открыть «Смотреть как…», viewing: идёт просмотр, есть «Выйти из просмотра» (этап 63).
+ * ownerAs: владелец может открыть «Сменить профиль…», inside: владелец в чужом профиле, есть «Вернуться в свой профиль»
+ * (этап 71): короткое имя человека, чьи черновики уйдут перед возвратом, пустая строка после конца входа
+ */
+export function CommandPalette({ management, market = false, canViewAs = false, viewing = false, ownerAs = false, inside = null }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean; ownerAs?: boolean; inside?: string | null }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { observer } = usePrototype();
+  const { observer, notify } = usePrototype();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
@@ -162,12 +167,33 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
     if (market) list.push({ id: "go:/market", label: "Открыть: Рынок КАСКО и ОСАГО", icon: TrendingUp, keywords: "рынок каско осаго нсис доля страховые регионы", run: () => go("/market") });
     if (canViewAs) list.push({ id: "view-as", label: "Смотреть как…", icon: Eye, keywords: "смотреть как просмотр глазами человека профиль чужой права проверить", run: () => { setOpen(false); openViewAs(); } });
     if (viewing) list.push({ id: "view-as-stop", label: "Выйти из просмотра", icon: EyeOff, keywords: "смотреть как просмотр выйти вернуться к себе", run: () => { setOpen(false); startTransition(() => stopViewAsAction()); } });
+    if (ownerAs) list.push({ id: "owner-as", label: "Сменить профиль…", icon: UserRoundCog, keywords: "сменить профиль войти в профиль человека от имени владелец", run: () => { setOpen(false); openOwnerAs(); } });
+    if (inside !== null)
+      list.push({
+        id: "owner-as-return",
+        label: "Вернуться в свой профиль",
+        icon: Undo2,
+        keywords: "сменить профиль вернуться в свой профиль к себе владелец",
+        run: () => {
+          setOpen(false);
+          startTransition(async () => {
+            try {
+              const error = await returnToOwnProfile(inside || null);
+              if (error) notify(error, "error");
+            } catch (e) {
+              // Возврата нет (владельца выключили, сняли роль): сервер уводит на экран входа
+              unstable_rethrow(e);
+              notify("Нет связи с сервером. Попробуйте ещё раз", "error");
+            }
+          });
+        },
+      });
     if (management) {
       list.push({ id: "go:/ceo-report", label: "Открыть: Отчёт CEO", icon: FileText, keywords: "отчёт ceo", run: () => go("/ceo-report") });
       list.push({ id: "go:/journal", label: "Открыть: Журнал", icon: FileText, keywords: "журнал аудит история", run: () => go("/journal") });
     }
     return list;
-  }, [observer, management, market, canViewAs, viewing, go]);
+  }, [observer, management, market, canViewAs, viewing, ownerAs, inside, notify, go]);
 
   const query = q.trim().toLowerCase();
   const shownCommands = useMemo(() => {

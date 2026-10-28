@@ -58,6 +58,7 @@ import { ensureWeek } from "@/lib/weekly/service";
 import { cleanMeetings } from "@/lib/ceo/text";
 import { IMPORTED_BASIS, STANDARD_KEYS, blocksToLegacy, cleanBlocks, standardOf, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { SOFT_MAX as INITIATIVES_SOFT_MAX } from "@/lib/initiatives/rules";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 type Db = PrismaClient | Tx;
@@ -1737,7 +1738,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
         },
       });
       await tx.auditLog.create({
-        data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: row.id, field: "Решение из наполнения", after: `${formatLong(d.date)}: ${d.text}`, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: row.id, field: "Решение из наполнения", after: `${formatLong(d.date)}: ${d.text}`, ip: actor.ip ?? null, ...auditVia(actor) },
       });
       await remember(tx, "decision", d.key, row.id, d, { text: d.text, ownerId: p.ownerId ?? null, status: d.status });
     } else {
@@ -1745,7 +1746,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       if (Object.keys(p.data ?? {}).length) {
         await tx.decision.update({ where: { id: cur.id }, data: p.data! });
         await tx.auditLog.create({
-          data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: cur.id, field: "Решение обновлено из наполнения", before: cur.text, after: p.data!.text === undefined ? cur.text : d.text, ip: actor.ip ?? null, via: actor.via ?? null },
+          data: { action: "meeting.decision", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: cur.id, field: "Решение обновлено из наполнения", before: cur.text, after: p.data!.text === undefined ? cur.text : d.text, ip: actor.ip ?? null, ...auditVia(actor) },
         });
       }
       // Новые связи с задачами добавляем, прежние не убираем
@@ -1813,7 +1814,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
           before: now ? `${now.main}\n${now.risks}\n${now.next}`.trim().slice(0, 4000) : undefined,
           after: `${legacy.main}\n${legacy.risks}\n${legacy.next}`.trim().slice(0, 4000),
           ip: actor.ip ?? null,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
       // База: блоки и встречи, какими их записала загрузка (из базы, в том виде, в каком их хранит jsonb)
@@ -1831,7 +1832,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       continue;
     }
     await tx.auditLog.create({
-      data: { action: "decision.delete", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: p.existingId!, field: "Решение стёрто из наполнения", before: p.text ?? "", ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "decision.delete", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "decision", entityId: p.existingId!, field: "Решение стёрто из наполнения", before: p.text ?? "", ip: actor.ip ?? null, ...auditVia(actor) },
     });
     await tx.decision.delete({ where: { id: p.existingId! } });
     await tx.contentImportKey.deleteMany({ where: { kind: "decision", key: p.r.key } });
@@ -1850,7 +1851,7 @@ async function applyIn(tx: Tx, actor: Actor, pkg: ContentPackage, opts: ImportOp
       field: "Загружено наполнение",
       after: `Задачи: новых ${result.tasks.add}, обновлено ${result.tasks.update}, пропущено ${result.tasks.skip}. Решения: новых ${result.decisions.add}, обновлено ${result.decisions.update}, пропущено ${result.decisions.skip}. Цели: новых ${result.goals.add}, обновлено ${result.goals.update}, пропущено ${result.goals.skip}. Связи с целями: новых ${result.links.add}, обновлено ${result.links.update}, пропущено ${result.links.skip}${(pkg.initiatives ?? []).length ? `. Инициативы: новых ${result.initiatives.add}, обновлено ${result.initiatives.update}, пропущено ${result.initiatives.skip}` : ""}${(pkg.ceoReports ?? []).length ? `. Weekly для CEO: новых ${result.ceoReports.add}, обновлено ${result.ceoReports.update}, пропущено ${result.ceoReports.skip}` : ""}${(pkg.remove ?? []).length ? `. Стёрто решений: ${removed}, пропущено ${result.removals.skip}` : ""}`,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
   return result;
@@ -1869,7 +1870,7 @@ async function applyInitiatives(tx: Tx, actor: Actor, plan: Plan, goalIds: Map<s
   const now = new Date();
   const goalOf = (g: InitiativeGoal | undefined): string | null => (!g ? null : "id" in g ? g.id : (goalIds.get(g.key) ?? null));
   const audit = (action: string, id: string, title: string, after: string) =>
-    tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, via: actor.via ?? null } });
+    tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "initiative", entityId: id, field: title, after, ip: actor.ip ?? null, ...auditVia(actor) } });
   let order = (await tx.initiative.aggregate({ _max: { sortOrder: true }, where: { closedAt: null } }))._max.sortOrder ?? 0;
   for (const p of plan.initiatives) {
     const x = p.x;

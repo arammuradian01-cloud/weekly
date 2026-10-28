@@ -85,6 +85,8 @@ describe("дерево целей и права", () => {
   });
 
   it("задачу привязывают к цели своей команды или выше; чужая ветка нельзя", async () => {
+    // Журнал только дописывается, а номера задач после сброса настройки в других файлах повторяются: считаем записи этого теста
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
     const sector = await teamOf("Антонов");
     const antonov = await actor("Антонов");
     const alisa = await actor("Чемоданова");
@@ -97,7 +99,7 @@ describe("дерево целей и права", () => {
     const options = await goals.goalOptions(who(antonov), t1.number);
     expect(options.map((o) => o.id).sort()).toEqual([ids.d1, ids.p1, ids.s1].sort());
     expect((await svc.getTask(t1.number))!.goal?.id).toBe(ids.s1);
-    expect(await prisma.auditLog.count({ where: { entity: "task", entityId: String(t1.number), field: "Цель" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { id: { gt: mark }, entity: "task", entityId: String(t1.number), field: "Цель" } })).toBe(1);
     // Закрыли одну задачу, вторая просрочена
     await svc.changeStatus(alisa, t1.number, "done", "Форма свёрстана");
     await prisma.task.update({ where: { number: t2.number }, data: { due: dbDate(addDays(moscowToday(), -2)) } });

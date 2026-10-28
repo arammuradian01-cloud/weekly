@@ -29,6 +29,7 @@ import { partnerSnapshot, partnerView, writePartners } from "./partners-service"
 import { hubSource, hubState, skView } from "./hub-service";
 import { personalLogin, type NumbersLevel } from "./access";
 import type { AdjustInput, AdjustmentView, MonthPlanView, PlanPerson, PlanSource, PullPreview } from "./types";
+import { auditVia } from "@/lib/audit";
 
 export type { AdjustInput, AdjustmentView, MonthPlanView, PartnerAdjustInput, PullPreview } from "./types";
 
@@ -358,7 +359,7 @@ export async function applyPull(actor: Actor, monthInput: string): Promise<{ mon
         before: had ? "загружено раньше" : "не загружено",
         after: `выручка по продуктам: LBE ${formatPlan(total("LBE"), "mln")} млн, бюджет ${formatPlan(total("BUD"), "mln")} млн${withPartners ? `; партнёрский канал, партнёров: ${partners.lines.length}` : ""}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -643,7 +644,7 @@ export async function adjust(actor: Actor, input: AdjustInput): Promise<MonthPla
         before: formatPlan(effective, unit),
         after: `${value === null ? `как в LBE, ${formatPlan(base, unit)}` : formatPlan(value, unit)}. ${reasonLabelOf(reason)}: ${comment}`,
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -682,7 +683,7 @@ export async function setOwners(actor: Actor, productCode: string, slugs: string
         before: before.map((s) => beforeNames.get(s)?.name ?? s).join(", ") || "никто",
         after: clean.map((s) => found.get(s)!.name).join(", ") || "никто",
         ip: actor.ip ?? null,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });
@@ -706,7 +707,7 @@ export async function setPlanSource(actor: Actor, input: string): Promise<string
   if (before === id) return id;
   await setSetting("plan.sourceId", id);
   await prisma.auditLog.create({
-    data: { action: "plan.source", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "source", field: "LRF для прогноза месяца", before: before ?? "не задан", after: id, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action: "plan.source", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "plan", entityId: "source", field: "LRF для прогноза месяца", before: before ?? "не задан", after: id, ip: actor.ip ?? null, ...auditVia(actor) },
   });
   return id;
 }

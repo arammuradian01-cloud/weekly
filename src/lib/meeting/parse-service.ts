@@ -47,6 +47,7 @@ import {
   type ParseTaskDraft,
   type RawMeeting,
 } from "./parse-types";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -139,7 +140,7 @@ type GoalWho = { personId: string; role: Actor["role"]; management: Actor["manag
 const whoOf = (actor: Actor): GoalWho => ({ personId: actor.personId, role: actor.role, management: actor.management, limited: actor.via === "TEAM" && !actor.management });
 
 async function audit(db: Tx | typeof prisma, actor: Actor, action: string, entityId: string, field: string, after: string | null, before: string | null = null) {
-  await db.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "meeting", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await db.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "meeting", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 const keyOf = (row: Pick<ParseRow, "meeting">) => isoFromDbDate(row.meeting.week.start) as WeekKey;

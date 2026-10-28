@@ -33,6 +33,10 @@ import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
 import { canViewAs } from "@/lib/view-as-service";
 import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
 import { VIEW_AS_END_TEXTS, viewAsTabState, viewAsTitleMark } from "@/lib/view-as";
+import { canOwnerAs } from "@/lib/owner-as-service";
+import { OWNER_AS_END_TEXTS, ownerAsTitleMark } from "@/lib/owner-as";
+import { OwnerAsBanner, OwnerAsDialog, OwnerAsEndedBanner } from "@/components/shell/owner-as";
+import type { SwitchProfile } from "@/components/shell/profile-menu";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -40,8 +44,9 @@ export const dynamic = "force-dynamic";
 /** В просмотре «Смотреть как» (этап 63) в названии вкладки пометка «Как <ФИО>»: вкладки просмотра не спутать с обычными */
 export async function generateMetadata(): Promise<Metadata> {
   const ctx = await requireContext();
-  if (!ctx.viewAs) return {};
-  const mark = viewAsTitleMark(ctx.person.fullName);
+  if (!ctx.viewAs && !ctx.ownerAs) return {};
+  // Этап 71: во входе владельца в чужой профиль пометка «Профиль <ФИО>»
+  const mark = ctx.ownerAs ? ownerAsTitleMark(ctx.person.fullName) : viewAsTitleMark(ctx.person.fullName);
   return { title: { default: `${mark} | Weekly`, template: `${mark}: %s | Weekly` } };
 }
 
@@ -78,9 +83,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const viewAs = ctx.viewAs
     ? { name: ctx.person.fullName, shortName: ctx.person.shortName, until: formatTime(new Date(ctx.viewAs.until)), remainingMs: ctx.viewAs.remainingMs, ownerSlug: ctx.viewAs.owner.slug }
     : null;
-  const viewAsOpen = !ctx.viewAs && canViewAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: false });
-  // Состояние просмотра для остальных вкладок этого браузера: сменилось, и вкладка с прежним состоянием перезагружается
-  const viewAsState = viewAsTabState({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null });
+  const viewAsOpen = !ctx.viewAs && !ctx.ownerAs && !ctx.ownerAsEnded && canViewAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, management: ctx.management, viewing: false });
+  // «Сменить профиль» (этап 71): владелец при личном входе входит в профиль другого человека, во время входа плашка и
+  // возврат. Общий логин выбирает себя из списка, остальные при личном входе выходят и входят заново
+  const ownerAs = ctx.ownerAs ? { name: ctx.person.fullName, ownerName: ctx.ownerAs.owner.fullName, until: formatTime(new Date(ctx.ownerAs.until)), remainingMs: ctx.ownerAs.remainingMs, targetSlug: ctx.person.slug } : null;
+  const ownerAsOpen = !ctx.viewAs && !ctx.ownerAs && !ctx.ownerAsEnded && canOwnerAs({ person: ctx.person, sid: ctx.session.sid, via: ctx.via, viewing: false, inside: false });
+  const switchProfile: SwitchProfile = ctx.viewAs || ctx.ownerAs || ctx.ownerAsEnded ? null : ctx.via === "TEAM" ? "team" : ownerAsOpen ? "owner" : "logout";
+  // Состояние просмотра и входа для остальных вкладок этого браузера: сменилось, и вкладка с прежним состоянием перезагружается
+  const viewAsState = viewAsTabState({ viewing: ctx.viewAs?.id ?? null, ended: ctx.viewAsEnded?.id ?? null, ownerAs: ctx.ownerAs?.id ?? null, ownerAsEnded: ctx.ownerAsEnded?.id ?? null });
 
   const profile = {
     fullName: ctx.person.fullName,
@@ -91,7 +101,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     canManage: ctx.managementRole !== null,
     management: ctx.management?.role ?? null,
     managementUntil,
-    personal: ctx.via !== "TEAM",
+    switchProfile,
+    ownerAs: ownerAs ? { ownerName: ownerAs.ownerName, targetSlug: ownerAs.targetSlug } : null,
+    ownerAsEnded: !!ctx.ownerAsEnded,
     canViewAs: viewAsOpen,
     viewing: !!viewAs,
     ownerSlug: viewAs?.ownerSlug ?? null,
@@ -104,7 +116,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
       limited={subject.limited}
-      viewing={!!viewAs || !!ctx.viewAsEnded}
+      viewing={!!viewAs || !!ctx.viewAsEnded || !!ctx.ownerAsEnded}
       initialTasks={tasks}
       registry={registry}
       team={teamView}
@@ -150,6 +162,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-col lg:col-start-2">
         {viewAs ? <ViewAsBanner name={viewAs.name} shortName={viewAs.shortName} until={viewAs.until} remainingMs={viewAs.remainingMs} /> : null}
         {ctx.viewAsEnded ? <ViewAsEndedBanner name={ctx.viewAsEnded.target?.fullName ?? null} reason={VIEW_AS_END_TEXTS[ctx.viewAsEnded.reason]} /> : null}
+        {ownerAs ? <OwnerAsBanner name={ownerAs.name} ownerName={ownerAs.ownerName} until={ownerAs.until} remainingMs={ownerAs.remainingMs} targetSlug={ownerAs.targetSlug} /> : null}
+        {ctx.ownerAsEnded ? <OwnerAsEndedBanner name={ctx.ownerAsEnded.target?.fullName ?? null} reason={OWNER_AS_END_TEXTS[ctx.ownerAsEnded.reason]} /> : null}
         {lagging ? (
           <div role="status" className="sv-alert sv-alert--warning rounded-none border-b border-warning-line px-4 sm:px-6 lg:px-[var(--content-pad)]">
             <span>
@@ -174,11 +188,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} />
+    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} ownerAs={ownerAsOpen} inside={ownerAs ? ownerAs.targetSlug : ctx.ownerAsEnded ? "" : null} />
     <RequestDialogHost />
-    {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются */}
-    {viewAs || ctx.viewAsEnded ? null : <DeviceSync />}
+    {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются.
+        Во входе владельца в чужой профиль (этап 71) черновики человека уходят от его имени, подписка браузера владельца не трогается */}
+    {viewAs || ctx.viewAsEnded || ctx.ownerAsEnded ? null : <DeviceSync push={!ctx.ownerAs} />}
     {viewAsOpen ? <ViewAsDialog /> : null}
+    {ownerAsOpen ? <OwnerAsDialog ownerName={ctx.person.fullName} /> : null}
     <ViewAsSync state={viewAsState} />
     </InboxCountProvider>
     </TaskActionsProvider>

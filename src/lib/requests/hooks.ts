@@ -7,9 +7,10 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { formatShort } from "@/domain/dates";
 import { notify } from "@/lib/inbox/notify";
+import { auditVia, type AsOwner } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
-type Who = { personId: string; fullName: string; ip?: string | null; via?: Prisma.AuditLogCreateInput["via"] };
+type Who = { personId: string; fullName: string; ip?: string | null; via?: Prisma.AuditLogCreateInput["via"]; asOwner?: AsOwner | null };
 
 export const requestSubject = (number: number) => `request:${number}`;
 
@@ -34,7 +35,7 @@ async function journal(tx: Tx, actor: Who, rows: { number: number; before: strin
       before: r.before,
       after,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     })),
   });
 }

@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { canUploadMarket } from "./access";
 import type { MarketBundleInput, MarketRow } from "./bundle";
+import { auditVia } from "@/lib/audit";
 
 const BUNDLE_ID = "current";
 
@@ -167,7 +168,7 @@ export async function uploadMarketBundle(actor: Actor, bundle: MarketBundleInput
           before: before ? `Наборов ${before.datasetsCount}, строк ${before.rowsTotal}` : undefined,
           after: `Наборов ${bundle.datasetsCount}, строк ${bundle.rowsTotal}, файлов кода ${Object.keys(bundle.files).length}`,
           ip: actor.ip ?? null,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     },

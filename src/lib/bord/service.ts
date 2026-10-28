@@ -10,6 +10,7 @@ import { GoogleSheetsError, serviceAccountFromEnv } from "@/lib/sheet/google";
 import { BORD_PULL_ON, PULL_EVERY_MS, PULL_RETRY_MS, bordConnection, bordPullOn, serviceEmail } from "@/lib/sheet/runner";
 import { BORD_TAB } from "./parse";
 import { pullState, runPull, type PullReport, type PullState } from "./pull";
+import { auditVia } from "@/lib/audit";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -64,7 +65,7 @@ export async function setBordSource(actor: Actor, input: string): Promise<{ id: 
           before: before ?? "забор выключен",
           after: id ?? "забор выключен",
           ip: actor.ip,
-          via: actor.via ?? null,
+          ...auditVia(actor),
         },
       });
     });
@@ -105,7 +106,7 @@ export async function setBordPull(actor: Actor, on: boolean): Promise<{ on: bool
         before: before ? "включён" : "выключен",
         after: on ? "включён" : "выключен",
         ip: actor.ip,
-        via: actor.via ?? null,
+        ...auditVia(actor),
       },
     });
   });

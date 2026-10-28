@@ -12,22 +12,15 @@ import type { EntryPromise } from "@/lib/weekly/promises";
 import { issueEntryUndoToken, readEntryUndoToken } from "@/lib/weekly/undo";
 import type { CeoSections } from "@/lib/weekly/rules";
 import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
+import { actorOf } from "@/lib/action-runner";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekKey, WeekView, WeeklyEntry } from "@/domain/types";
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /** Кто меняет weekly: в режиме «Смотреть как» отказ (этап 63) */
 async function actor(): Promise<Actor> {
-  const ctx = await requireWriteContext();
-  return {
-    personId: ctx.person.id,
-    slug: ctx.person.slug as PersonSlug,
-    fullName: ctx.person.fullName,
-    role: ctx.person.role,
-    management: ctx.management?.role ?? null,
-    ip: await requestIp(),
-    via: ctx.via,
-  };
+  // Тот же разбор, что у всех действий, с пометкой входа владельца в чужой профиль (этап 71)
+  return actorOf(await requireWriteContext(), await requestIp());
 }
 
 async function run<T>(fn: (a: Actor) => Promise<T>): Promise<Result<T>> {

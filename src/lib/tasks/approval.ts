@@ -21,6 +21,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import { taskSubject } from "@/lib/inbox/notify";
 import { APPROVAL_KEY, approvalSettingOf, type ApprovalMode, type ApprovalSetting } from "./approval-modes";
+import { auditVia, type AsOwner } from "@/lib/audit";
+import type { LoginMethod } from "@/generated/prisma/enums";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -146,7 +148,7 @@ export async function closeApprovalEvents(tx: Prisma.TransactionClient, taskId: 
   await tx.inboxEvent.updateMany({ where: { taskId, recipientId, kind: "APPROVAL", doneAt: null }, data: { doneAt: now } });
 }
 
-type Who = { personId: string; fullName: string };
+type Who = { personId: string; fullName: string; via?: LoginMethod | null; asOwner?: AsOwner | null };
 
 /**
  * Структура поменялась: у задач, которые ждут согласования, согласованы или о которых руководитель проинформирован,
@@ -201,6 +203,7 @@ export async function refreshApprovals(tx: Prisma.TransactionClient, actor: Who,
     field,
     before,
     after,
+    ...auditVia(actor),
   });
   const events: Prisma.InboxEventCreateManyInput[] = [];
   const event = (recipientId: string, row: { id: string; number: number }, text: string): Prisma.InboxEventCreateManyInput => ({

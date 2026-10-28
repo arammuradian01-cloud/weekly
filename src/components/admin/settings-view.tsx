@@ -467,7 +467,7 @@ function PeopleSection({
   me: string;
   absences: Record<string, AbsenceView[]>;
   weeks: { value: string; label: string }[];
-  /** Личный вход: подпись роли владельцев задаёт главный владелец только при нём (этап 69) */
+  /** Подпись роли любой владелец задаёт при личном входе */
   personal: boolean;
 }) {
   const run = useRunAction();
@@ -482,8 +482,8 @@ function PeopleSection({
   const [away, setAway] = useState<PersonView | null>(null);
   const [titleFor, setTitleFor] = useState<PersonView | null>(null);
   const team = people.filter((p) => p.active && p.role !== "OBSERVER");
-  // Подпись роли владельцев (этап 69) задаёт только главный владелец при личном входе
-  const canTitle = personal && people.some((x) => x.primaryOwner && x.slug === me);
+  // Подпись роли любой владелец задаёт при личном входе
+  const canTitle = personal;
   // Поиск по ФИО, логину и почте (этап 52): людей в ресурсе станет несколько сотен
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -558,8 +558,8 @@ function PeopleSection({
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-1 lg:max-w-[60%] lg:justify-end">
-                  {/* Входом главного владельца управляет только он сам (этап 52): совладельцу эти кнопки не показываем */}
-                  {p.active && (!p.primaryOwner || p.slug === me) ? (
+                  {/* [Codex] У всех владельцев одинаковые действия управления доступом */}
+                  {p.active ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -573,7 +573,7 @@ function PeopleSection({
                       Ссылка для входа
                     </Button>
                   ) : null}
-                  {p.active && p.role === "OWNER" && !p.primaryOwner && people.some((x) => x.primaryOwner && x.slug === me) ? (
+                  {p.active && p.role === "OWNER" && !p.primaryOwner ? (
                     <Button
                       size="sm"
                       variant="ghost"
@@ -597,13 +597,13 @@ function PeopleSection({
                       Отсутствие
                     </Button>
                   ) : null}
-                  {p.passwordSetAt && p.slug !== me && !p.primaryOwner ? (
+                  {p.passwordSetAt && p.slug !== me ? (
                     <Button size="sm" variant="ghost" aria-label={`Сбросить пароль: ${p.fullName}`} onClick={() => setResetFor(p)}>
                       <KeyRound className="h-4 w-4" aria-hidden="true" />
                       Сбросить пароль
                     </Button>
                   ) : null}
-                  {p.devices && (!p.primaryOwner || p.slug === me) ? (
+                  {p.devices ? (
                     <Button size="sm" variant="ghost" aria-label={`Завершить входы: ${p.fullName}`} onClick={() => setRevoke(p)}>
                       <LogOut className="h-4 w-4" aria-hidden="true" />
                       Завершить входы

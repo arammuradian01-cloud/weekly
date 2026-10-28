@@ -26,6 +26,7 @@ import { isNotionHost } from "./notion-api";
 import { agendaTitle, STATE_CODE as INITIATIVE_STATE } from "@/lib/initiatives/rules";
 import { marketAgendaDraft, marketAgendaNoteNow } from "@/lib/market/meeting";
 import { canSeeMarket } from "@/lib/market/access";
+import { auditVia } from "@/lib/audit";
 import { oneItemPerTask, type TaskDraft } from "./task-items";
 
 type Tx = Prisma.TransactionClient;
@@ -517,7 +518,7 @@ async function meetingAccess(db: Db, actor: Actor, meetingId: string): Promise<A
 }
 
 async function audit(tx: Tx, actor: Actor, action: string, entityId: string, field: string, before: string | null, after: string | null) {
-  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "meeting", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null } });
+  await tx.auditLog.create({ data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "meeting", entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) } });
 }
 
 /** Ручной пункт ведущего: вопросом, в конец блока «риски и помощь» или перед решениями */

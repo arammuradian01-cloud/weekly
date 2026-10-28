@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireContext } from "@/lib/auth";
+import { requireContext, teamManagementRefused } from "@/lib/auth";
 import { PageHeader } from "@/components/page-header";
+import { managementPasswordPolicy } from "@/lib/login/management-password";
 import { mailConfigured } from "@/lib/mail";
 import { ManageForm, StepUpForm } from "./manage-form";
+import { TeamRefusal } from "./team-refusal";
 
 export const metadata: Metadata = { title: "Режим управления" };
 
@@ -11,10 +13,13 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
   const ctx = await requireContext();
   const { next } = await searchParams;
   const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  // Этап 71: владелец или администратор, выбранный по общему логину, видит, почему режима нет, а не уходит молча
+  if (teamManagementRefused(ctx)) return <TeamRefusal />;
   if (!ctx.managementRole) redirect("/");
   if (ctx.management) redirect(target);
 
   const owner = ctx.managementRole === "OWNER";
+  const personal = owner && (await managementPasswordPolicy(ctx.person)).mode === "personal";
   // Этап 68: подписи шапки нет: профиль, что открывает режим, и срок отдельными строками. Метки sv-tag на фоне
   // страницы не видны (field почти равен page), поэтому разделы простым текстом
   return (
@@ -33,8 +38,9 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
           </dl>
         }
       />
-      <ManageForm passwordLabel={owner ? "Пароль владельца" : "Пароль администраторов"} next={target} />
-      {ctx.via !== "TEAM" && mailConfigured() && ctx.person.email ? (
+      {personal ? <p className="mb-4 text-body text-muted">Введите тот же личный пароль, с которым входите в Weekly.</p> : null}
+      <ManageForm passwordLabel={personal ? "Ваш личный пароль" : owner ? "Пароль владельца" : "Пароль администраторов"} next={target} />
+      {!owner && ctx.via !== "TEAM" && mailConfigured() && ctx.person.email ? (
         <div className="mt-8 border-t border-line pt-6">
           <h2 className="text-title-sm font-semibold text-ink">Без пароля</h2>
           <p className="mb-4 mt-1 text-small text-muted">Ссылка придёт на {ctx.person.email}. Откройте её на этом же устройстве.</p>

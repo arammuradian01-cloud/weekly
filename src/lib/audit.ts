@@ -13,7 +13,22 @@ export type AuditInput = {
   after?: Prisma.InputJsonValue;
   ip?: string | null;
   via?: LoginMethod | null;
+  /** Этап 71: запись во время входа владельца в чужой профиль (via OWNER_AS): кто из владельцев вошёл */
+  asOwnerId?: string | null;
+  asOwnerName?: string | null;
 };
+
+/** Кто из владельцев вошёл в профиль автора (этап 71): есть только у входа владельца, иначе null */
+export type AsOwner = { id: string; fullName: string };
+
+/**
+ * Как вошёл автор, для записи журнала: способ входа и, во время входа владельца в чужой профиль (этап 71), кто из
+ * владельцев вошёл. Все записи журнала от имени человека берут эти поля отсюда, а не только via: так пометка
+ * «вошёл владелец» не теряется ни в одной записи (проверяют настоящие действия в tests/db/owner-as.test.ts)
+ */
+export function auditVia(actor: { via?: LoginMethod | null; asOwner?: AsOwner | null }): { via: LoginMethod | null; asOwnerId: string | null; asOwnerName: string | null } {
+  return { via: actor.via ?? null, asOwnerId: actor.asOwner?.id ?? null, asOwnerName: actor.asOwner?.fullName ?? null };
+}
 
 /** Запись в журнал. Ошибка записи журнала не должна ронять действие пользователя, но попадает в лог сервера */
 export async function writeAudit(input: AuditInput): Promise<void> {
@@ -31,6 +46,8 @@ export async function writeAudit(input: AuditInput): Promise<void> {
         after: input.after,
         ip: input.ip ?? null,
         via: input.via ?? null,
+        asOwnerId: input.asOwnerId ?? null,
+        asOwnerName: input.asOwnerName ?? null,
       },
     });
   } catch (error) {
@@ -49,9 +66,13 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "management.fail": "Неверный пароль режима управления",
   "management.blocked": "Попытка режима управления во время блокировки",
   "management.exit": "Выключен режим управления",
+  "management.password-mode": "Изменён источник пароля управления",
   // Этап 63: владелец смотрит приложение глазами другого человека, кого смотрели, в записи
   "viewAs.start": "Начат просмотр «Смотреть как»",
   "viewAs.stop": "Закончен просмотр «Смотреть как»",
+  // Этап 71: владелец вошёл в профиль другого человека и вернулся в свой
+  "ownerAs.start": "Вход владельца в профиль",
+  "ownerAs.stop": "Возврат в свой профиль",
   logout: "Выход",
   "password.set": "Задан пароль",
   "setup.fail": "Неверный ключ первичной настройки",
