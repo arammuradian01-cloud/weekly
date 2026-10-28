@@ -423,7 +423,9 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
             </span>
             <Segmented
               label="Группировка"
-              value={picked}
+              // Группировку не выбирали, а целей квартала нет: переключатель стоит там же, где экран, на «По задачам».
+              // Во время выбора показываем выбранное: цели приходят с сервера, ждать ответа переключателю незачем
+              value={!chosenGroup ? group : picked}
               // Смена группировки сбрасывает раскрытие: в новой группировке своё состояние по умолчанию
               onChange={(v) => setParams({ group: v === "goals" ? null : v, open: null })}
               options={GROUPS}
