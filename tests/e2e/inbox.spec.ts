@@ -23,13 +23,27 @@ test("комментарий к задаче Ревы виден ему на «�
 
   const reva = await browser.newPage({ viewport: page.viewportSize() ?? undefined });
   await enter(reva, "Рева Тарас");
-  // Этап 76: после входа сразу «Моя неделя», счётчик «ждут 1» у её пункта, пункта «Мне» нет
+  // Этап 76: после входа сразу «Моя неделя» со счётчиком у её пункта, пункта «Мне» нет. Правка по ревью: счётчик
+  // считает всю очередь (задачи, просьбы, события, несданные weekly), поэтому сверяем его с числом в заголовке блока
   const nav = reva.getByRole("navigation", { name: "Разделы" }).filter({ visible: true }).first();
-  await expect(nav.getByRole("link", { name: /Моя неделя.*ждут 1/ })).toBeVisible();
+  const menuCount = async () => {
+    // Число у пункта меню стоит строкой для экранного диктора (sr-only), поэтому читаем текст ссылки целиком
+    const label = await nav.getByRole("link", { name: /Моя неделя/ }).first().textContent();
+    return Number(/ждут (\d+)/.exec(label ?? "")?.[1] ?? 0);
+  };
+  const blockCount = async () => {
+    const text = (await reva.getByRole("heading", { name: /^Ждёт вас/, level: 2 }).textContent()) ?? "";
+    return Number(/(\d+)/.exec(text)?.[1] ?? 0);
+  };
+  await expect(nav.getByRole("link", { name: /Моя неделя.*ждут \d/ })).toBeVisible();
   await expect(nav.getByRole("link", { name: /^Мне/ })).toHaveCount(0);
   await nav.getByRole("link", { name: /Моя неделя/ }).click();
   await expect(reva).toHaveURL(/\/$/);
   await expect(reva.getByRole("heading", { name: /^Ждёт вас/, level: 2 })).toBeVisible();
+  // Одна величина в меню и в заголовке блока (правка по ревью этапа 76)
+  const withEvent = await blockCount();
+  expect(withEvent).toBeGreaterThan(0);
+  expect(await menuCount()).toBe(withEvent);
   // Счётчик «новое событие» ведёт к группе «Прочитать» на той же странице
   const figures = reva.getByTestId("my-attention-figures");
   await figures.getByRole("link", { name: /новое событие/ }).click();
@@ -49,7 +63,9 @@ test("комментарий к задаче Ревы виден ему на «�
   // Событий нет: группы «Прочитать» в очереди нет (этап 44), отложенное видно строкой
   await expect(reva.getByTestId("me-read")).toHaveCount(0);
   await expect(reva.getByText("Отложено до напоминания: 1")).toBeVisible();
-  await expect(nav.getByRole("link", { name: /Моя неделя.*ждут/ })).toHaveCount(0);
+  // Событие ушло: число в меню и в заголовке упало ровно на единицу и по-прежнему совпадает
+  await expect.poll(menuCount).toBe(withEvent - 1);
+  expect(await blockCount()).toBe(withEvent - 1);
   const [snoozed] = await sql(`SELECT count(*)::int AS n FROM inbox_events WHERE "snoozeUntil" > now() AND "doneAt" IS NULL`);
   expect(snoozed.n).toBe(1);
 
@@ -57,7 +73,8 @@ test("комментарий к задаче Ревы виден ему на «�
   await sql(`UPDATE inbox_events SET "snoozeUntil" = now() - interval '1 minute'`);
   await reva.reload();
   await expect(read.getByText("Комментарий: «Тарас, посмотри мой расчёт по КАСКО»")).toBeVisible();
-  await expect(nav.getByRole("link", { name: /Моя неделя.*ждут 1/ })).toBeVisible();
+  await expect.poll(menuCount).toBe(withEvent);
+  expect(await blockCount()).toBe(withEvent);
 
   // «Разобрано»: группа пуста, ссылка ведёт к задаче
   await expect(read.getByRole("link", { name: new RegExp(`^${number} `) }).first()).toHaveAttribute("href", `/tasks/${number}`);
@@ -65,7 +82,8 @@ test("комментарий к задаче Ревы виден ему на «�
   await expect(reva.getByTestId("me-read")).toHaveCount(0);
   const [done] = await sql(`SELECT count(*)::int AS n FROM inbox_events WHERE "doneAt" IS NOT NULL`);
   expect(done.n).toBe(1);
-  await expect(nav.getByRole("link", { name: /Моя неделя.*ждут/ })).toHaveCount(0);
+  await expect.poll(menuCount).toBe(withEvent - 1);
+  expect(await blockCount()).toBe(withEvent - 1);
   await reva.close();
 });
 
