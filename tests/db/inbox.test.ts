@@ -86,12 +86,14 @@ describe("кто получает события", () => {
 
 describe("разбор", () => {
   it("события одной задачи склеены, «Разобрано» убирает строку, новое событие возвращает её", async () => {
+    // Счётчик меню считает не только события (правка по ревью этапа 76), поэтому сверяем прирост, а не само число
+    const base = await attentionCountFor((await actor.reva()).personId);
     const { task } = await tasks.createTask(await actor.owner(), { title: "Склейка", outcome: "Готово", owner: "reva", direction: "product", due: future });
     await tasks.addComment(await actor.owner(), task.number, "Первый");
     await tasks.addComment(await actor.owner(), task.number, "Второй");
     const reva = await actor.reva();
     expect(await items("reva")).toMatchObject([{ taskNumber: task.number, text: "Комментарий: «Второй»", count: 3 }]);
-    expect(await attentionCountFor(reva.personId)).toBe(1);
+    expect(await attentionCountFor(reva.personId)).toBe(base + 1);
 
     expect(await inbox.markDone(reva, inbox.taskSubject(task.number))).toBe(3);
     expect(await items("reva")).toEqual([]);
@@ -111,14 +113,18 @@ describe("разбор", () => {
     // В понедельник «в понедельник» значит следующий
     expect(inbox.snoozeMoment("monday", new Date("2026-10-12T05:00:00Z")).toISOString()).toBe("2026-10-19T06:00:00.000Z");
 
+    const reva0 = await actor.reva();
+    const t = new Date();
+    // Прирост, а не само число: у человека в очереди есть и задачи с просьбами (правка по ревью этапа 76)
+    const base = await attentionCountFor(reva0.personId, t);
     const { task } = await tasks.createTask(await actor.owner(), { title: "Отложить", outcome: "Готово", owner: "reva", direction: "product", due: future });
     const reva = await actor.reva();
     const subject = inbox.taskSubject(task.number);
-    const t = new Date();
     await inbox.snooze(reva, subject, "tomorrow", t);
     expect((await inbox.listInbox(reva.personId, t)).items).toEqual([]);
     expect((await inbox.listInbox(reva.personId, t)).snoozed).toBe(1);
-    expect(await attentionCountFor(reva.personId, t)).toBe(0);
+    // Отложенное событие в счёт не идёт: число вернулось к тому, что было до задачи
+    expect(await attentionCountFor(reva.personId, t)).toBe(base);
     const morning = inbox.snoozeMoment("tomorrow", t);
     expect(await items("reva", new Date(morning.getTime() + 1000))).toHaveLength(1);
 
