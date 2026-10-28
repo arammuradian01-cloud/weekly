@@ -397,8 +397,10 @@ export function RoadmapTimeline({
     const open = isOpen(key);
     const Chevron = open ? ChevronDown : ChevronRight;
     const controls = `tl-goal-tasks-${g.id}`;
-    // У цели без задач на roadmap вместо «0 задач» её сроки: «до конца квартала» или «задач нет, до конца квартала»
-    const meta = [goalOrigin(g, quarter), goalProgressText(g), group.empty ? goalSpanText(group) : groupCount(group)].filter(Boolean).join(", ");
+    // У цели без задач на roadmap вместо «0 задач» её сроки: «до конца квартала» или «задач нет, до конца квартала».
+    // Прогресс по закрытым задачам у такой цели не пишем: он сказал бы «задач пока нет» второй раз
+    const progress = g.progress.total || g.numeric ? goalProgressText(g) : null;
+    const meta = [goalOrigin(g, quarter), progress, group.empty ? goalSpanText(group) : groupCount(group)].filter(Boolean).join(", ");
     const colors = goalColors(row);
     const narrow = !line.outside && ((line.to - line.from + 1) / range.days) * trackPx < 110;
     const place: React.CSSProperties =
