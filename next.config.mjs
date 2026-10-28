@@ -27,6 +27,11 @@ const nextConfig = {
       { source: "/my-teams", destination: "/people/leader", permanent: true },
       { source: "/structure", destination: "/people/structure", permanent: true },
       { source: "/analytics", destination: "/people/analytics", permanent: true },
+      // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе», «Один на один» удалён. Переход временный (307): браузер
+      // не запоминает его навсегда. Якорь группы (/me#me-late) браузер переносит на новый адрес сам, группы те же
+      { source: "/me", destination: "/", permanent: false },
+      { source: "/one-on-one", destination: "/", permanent: false },
+      { source: "/one-on-one/:path*", destination: "/", permanent: false },
     ];
   },
   async headers() {

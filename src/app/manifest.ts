@@ -21,8 +21,8 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе», а она и так открывается с иконки (start_url): дубль убран
     shortcuts: [
-      { name: "Мне", short_name: "Мне", url: "/me", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
       { name: "Сдать weekly", short_name: "Weekly", url: "/weekly/submit", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
       { name: "Мои задачи", short_name: "Задачи", url: "/tasks/mine", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
     ],

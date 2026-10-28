@@ -715,7 +715,7 @@ function DecisionButton({ meeting, itemId, run, busy, taskNumber }: { meeting: M
         <Plus className="h-4 w-4" aria-hidden="true" />
         Записать решение
       </Button>
-      <Modal open={open} onOpenChange={setOpen} title="Решение встречи" description="Одна фраза: что решили. Владелец получит событие в «Мне», решение останется в журнале.">
+      <Modal open={open} onOpenChange={setOpen} title="Решение встречи" description="Одна фраза: что решили. Владелец получит событие на «Моей неделе», решение останется в журнале.">
         <form onSubmit={submit} className="flex flex-col gap-4">
           <TextArea label="Что решили" id="decision-text" value={text} onChange={(e) => setText(e.target.value)} rows={3} autoFocus counter={{ value: text.length, max: 1000 }} />
           <PersonSelect id="decision-owner" label="Владелец решения, если есть" value={owner} onChange={setOwner} exclude={"" as PersonSlug} />
@@ -827,7 +827,7 @@ function Protocol({ meeting }: { meeting: MeetingView }) {
             Протокол
           </h2>
           <p className="text-small text-muted">
-            {meeting.protocolSentAt ? `Отправлен участникам ${new Date(meeting.protocolSentAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : "Письма не ушли: почта не настроена или у участников нет адресов. Протокол виден здесь и в «Мне»"}
+            {meeting.protocolSentAt ? `Отправлен участникам ${new Date(meeting.protocolSentAt).toLocaleString("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}` : "Письма не ушли: почта не настроена или у участников нет адресов. Протокол виден здесь и на «Моей неделе»"}
           </p>
         </div>
         <div className="flex gap-2">

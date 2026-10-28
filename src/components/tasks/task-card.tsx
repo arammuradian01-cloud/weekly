@@ -14,7 +14,7 @@ import type { HistoryItem, Task } from "@/domain/types";
 import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskAction, moveTaskAction, reactCommentAction, setTaskStartAction, taskHistoryAction } from "@/app/(app)/tasks/actions";
 import { CommentList } from "@/components/discuss/comment-list";
 import { MentionArea } from "@/components/discuss/mention-area";
-import { markSeenAction } from "@/app/(app)/me/actions";
+import { markSeenAction } from "@/app/actions/inbox";
 import { teamName } from "@/domain/teams";
 import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
@@ -66,7 +66,7 @@ export function TaskCard({
   const can = useTaskPermissions(task);
   // Задача человеку из другого департамента ждёт согласования его руководителя (этап 54)
   const pendingApproval = task.status === "proposed" && task.approval?.state === "pending";
-  // Задачу открыли: события «Мне» по ней просмотрены, письмо о них не нужно (этап 20)
+  // Задачу открыли: события очереди по ней просмотрены, письмо о них не нужно (этап 20)
   useEffect(() => {
     if (brief) return;
     markSeenAction([`task:${listed.number}`]).catch(() => undefined);

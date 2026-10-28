@@ -4,7 +4,6 @@ import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as cal from "@/lib/calendar/service";
 import * as rating from "@/lib/meeting-rating/service";
-import * as oo from "@/lib/one-on-one/service";
 import * as login from "@/lib/login/service";
 import * as pw from "@/lib/login/password";
 import { TOP_TEAM } from "@/lib/org/scope";
@@ -32,7 +31,6 @@ async function clean() {
   await prisma.calendarFeed.deleteMany();
   await prisma.meetingRatingVote.deleteMany();
   await prisma.meetingRatingBox.deleteMany();
-  await prisma.oneOnOnePair.deleteMany();
   await prisma.task.deleteMany({ where: { number: { gt: 7700, lt: 7800 } } });
 }
 
@@ -63,7 +61,7 @@ describe("календарь сроков", () => {
     await prisma.person.update({ where: { slug: "ceo" }, data: { active: false } });
   });
 
-  it("файл: сроки своих задач без названий, срок weekly и встречи; с названиями появляется название задачи и имя", async () => {
+  it("файл: сроки своих задач без названий, срок weekly и встречи команды; с названиями появляется название задачи", async () => {
     const reva = await idOf("reva");
     const today = moscowToday();
     const t = await prisma.task.create({
@@ -74,9 +72,6 @@ describe("календарь сроков", () => {
     await prisma.task.create({
       data: { number: ++number, title: "Закрытая", outcome: "-", directionId, due: dbDate(today), whereUpdatedAt: dbDate(today), teamId: TOP_TEAM, ownerId: reva, status: "DONE", resolution: "Готово" },
     });
-    // Встреча один на один с руководителем
-    await oo.scheduleMeeting(await as("muradyan", "PASSWORD", "OWNER"), "reva", addDays(today, 2));
-    const pair = await prisma.oneOnOnePair.findFirstOrThrow({ where: { reportId: reva } });
 
     const ics = await cal.calendarFile(reva, false, "https://weekly.example");
     const flat = ics.replace(/\r\n /g, "");
@@ -85,8 +80,9 @@ describe("календарь сроков", () => {
     expect(flat).not.toContain("секретным");
     expect(flat).not.toContain("Чужая задача");
     expect(flat).not.toContain(`№${number}`);
-    expect(flat).toContain("SUMMARY:Встреча один на один");
-    expect(flat).toContain(`URL:https://weekly.example/one-on-one?pair=${pair.id}`);
+    // Этап 76: встреч один на один в календаре больше нет
+    expect(flat).not.toContain("один на один");
+    expect(flat).not.toContain("/one-on-one");
     expect(flat).not.toContain("Мурадян");
     expect(flat).toMatch(/SUMMARY:Срок weekly\\, неделя \d+/);
     // Топ-команда без названий тоже просто «команда»: по календарю не видно, кто в неё входит
@@ -95,7 +91,7 @@ describe("календарь сроков", () => {
 
     const titled = (await cal.calendarFile(reva, true, "https://weekly.example")).replace(/\r\n /g, "");
     expect(titled).toContain(`SUMMARY:№${t.number} ${SECRET}`);
-    expect(titled).toContain("SUMMARY:Один на один: Мурадян");
+    expect(titled).not.toContain("Один на один");
   });
 
   it("ссылка по токену: новая заменяет старую, отключение гасит; названия включаются без новой ссылки", async () => {

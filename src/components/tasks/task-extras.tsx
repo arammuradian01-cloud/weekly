@@ -51,7 +51,7 @@ export function TaskExtrasBlock({ task, headingLevel = "h3" }: { task: Task; hea
     setBusy(false);
     if (!r.ok) return notify(r.error, "error");
     setExtras({ ...extras, watching: r.value.watching });
-    notify(r.value.watching ? "Вы следите за задачей: смена статуса и срока придёт в «Мне»" : "Вы больше не следите за задачей");
+    notify(r.value.watching ? "Вы следите за задачей: смена статуса и срока появится на «Моей неделе»" : "Вы больше не следите за задачей");
   };
   const ask = async () => {
     setBusy(true);

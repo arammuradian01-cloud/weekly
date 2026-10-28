@@ -99,9 +99,10 @@ test("владелец смотрит как Рева: его неделя и we
   await page.keyboard.press("Escape");
   await shot(page, "my-week");
 
-  // Встречи один на один и анонимная оценка встреч в просмотре закрыты
+  // Анонимная оценка встреч в просмотре закрыта. Этап 76: «Один на один» удалён, адрес ведёт на «Мою неделю» Ревы
   await page.goto("/one-on-one");
-  await expect(page.getByText("Встречи один на один в просмотре закрыты")).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("view-as-banner")).toBeVisible();
   await page.goto("/meeting-rating");
   await expect(page.getByText("Оценка встреч в просмотре закрыта")).toBeVisible();
 

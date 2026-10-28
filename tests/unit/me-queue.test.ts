@@ -1,6 +1,6 @@
 // Этап 44: очередь «Мне» по срочности. Задачи делятся на «срок прошёл» и «сегодня или завтра», просьбы на четыре группы
 import { describe, expect, it } from "vitest";
-import { hotTasks, meFigureLabels, splitRequests, withoutRequestEvents } from "@/components/inbox/me-tasks";
+import { QUEUE_GROUPS, attentionTotal, eventCount, hotTasks, notesByTask, queueCounts, queueFigures, splitRequests, withoutShownEvents } from "@/components/inbox/me-tasks";
 import type { RequestView } from "@/domain/requests";
 import type { Task } from "@/domain/types";
 
@@ -95,17 +95,77 @@ describe("просьбы ко мне по группам", () => {
   });
 });
 
-describe("строка цифр и события", () => {
-  it("подписи согласуются с числом", () => {
-    expect(meFigureLabels({ late: 13, soon: 1, answer: 2, events: 5 })).toEqual({ late: "просрочено", soon: "срок сегодня или завтра", answer: "просьбы ждут ответа", events: "событий" });
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).soon).toBe("срока сегодня или завтра");
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).answer).toBe("просьба ждёт ответа");
-    expect(meFigureLabels({ late: 0, soon: 3, answer: 1, events: 21 }).events).toBe("событие");
+describe("счётчики очереди «Ждёт вас» и события", () => {
+  it("этап 76: счётчики ведут якорем к группам на той же странице, подписи согласуются с числом, нулей нет", () => {
+    const figures = queueFigures({ late: 13, soon: 1, answer: 2, events: 5 });
+    expect(figures.map((f) => [f.n, f.label, f.href])).toEqual([
+      [13, "срок прошёл", "#me-late"],
+      [1, "сегодня и завтра", "#me-soon"],
+      [2, "просьбы без ответа", "#me-answer"],
+      [5, "новых событий", "#me-read"],
+    ]);
+    // Ни один счётчик не ведёт в убранный раздел «Мне»
+    for (const f of figures) expect(f.href.startsWith("#")).toBe(true);
+    const some = queueFigures({ late: 0, soon: 0, answer: 1, events: 21 });
+    expect(some.map((f) => f.label)).toEqual(["просьба без ответа", "новое событие"]);
+    expect(queueFigures({ late: 0, soon: 0, answer: 0, events: 0 })).toEqual([]);
+    // Якоря групп прежние: старые ссылки /me#me-late после перехода на «Мою неделю» находят ту же группу
+    expect(QUEUE_GROUPS).toEqual({ late: "me-late", soon: "me-soon", answer: "me-answer", read: "me-read", later: "me-later" });
   });
-  it("событие о просьбе, которая уже в очереди, не показывается второй раз", () => {
-    const items = [{ requestNumber: 7 }, { requestNumber: null }, { requestNumber: 9 }];
-    expect(withoutRequestEvents(items, [{ number: 7 }])).toEqual([{ requestNumber: null }, { requestNumber: 9 }]);
-    expect(withoutRequestEvents(items, [])).toHaveLength(3);
+  it("этап 76: числа групп считают задачи и просьбы вместе, как строки в группах", () => {
+    const t = { late: [{}, {}], soon: [{}] } as unknown as Parameters<typeof queueCounts>[0];
+    const r = { late: [{}], soon: [{}, {}], answer: [{}, {}, {}], later: [{}] } as unknown as Parameters<typeof queueCounts>[1];
+    expect(queueCounts(t, r, 4)).toEqual({ late: 3, soon: 3, answer: 3, events: 4 });
+  });
+  it("событие о просьбе или задаче, которая уже стоит строкой в очереди, не показывается второй раз", () => {
+    const none = { late: [], soon: [] } as unknown as Parameters<typeof withoutShownEvents>[2];
+    const items = [
+      { requestNumber: 7, taskNumber: null },
+      { requestNumber: null, taskNumber: null },
+      { requestNumber: 9, taskNumber: null },
+    ];
+    expect(withoutShownEvents(items, [{ number: 7 }], none)).toEqual([items[1], items[2]]);
+    expect(withoutShownEvents(items, [], none)).toHaveLength(3);
+    // Правка по ревью этапа 76: задача из групп «Срок прошёл» и «Сегодня и завтра» в событиях не повторяется
+    const byTask = [
+      { requestNumber: null, taskNumber: 11 },
+      { requestNumber: null, taskNumber: 22 },
+      { requestNumber: null, taskNumber: null },
+    ];
+    const hot = { late: [{ number: 11 }], soon: [{ number: 33 }] } as unknown as Parameters<typeof withoutShownEvents>[2];
+    expect(withoutShownEvents(byTask, [], hot)).toEqual([byTask[1], byTask[2]]);
+    const soon = { late: [], soon: [{ number: 22 }] } as unknown as Parameters<typeof withoutShownEvents>[2];
+    expect(withoutShownEvents(byTask, [], soon)).toEqual([byTask[0], byTask[2]]);
+  });
+  it("в счёт событий не идут тихие и те, что уже стоят строкой выше", () => {
+    const hot = { late: [{ number: 11 }], soon: [] } as unknown as Parameters<typeof eventCount>[2];
+    const items = [
+      { requestNumber: null, taskNumber: 11, kind: "TASK_COMMENT" as const },
+      { requestNumber: 7, taskNumber: null, kind: "REQUEST" as const },
+      { requestNumber: null, taskNumber: 44, kind: "TASK_COMMENT" as const },
+      { requestNumber: null, taskNumber: null, kind: "NEWS" as const },
+    ];
+    expect(eventCount(items, [{ number: 7 }], hot)).toBe(1);
+  });
+  it("текст спрятанного события остаётся подписью к строке задачи", () => {
+    const hot = { late: [{ number: 11 }], soon: [{ number: 22 }] } as unknown as Parameters<typeof notesByTask>[1];
+    const items = [
+      { requestNumber: null, taskNumber: 11, text: "Просят обновить задачу: где сейчас, состояние и срок" },
+      { requestNumber: null, taskNumber: 11, text: "Комментарий: «Посмотрите»" },
+      { requestNumber: null, taskNumber: 99, text: "Событие по задаче не из очереди" },
+      { requestNumber: 7, taskNumber: 22, text: "Событие по просьбе" },
+    ];
+    const notes = notesByTask(items, hot);
+    expect(notes.get(11)).toEqual({ text: "Просят обновить задачу: где сейчас, состояние и срок", more: 1 });
+    // У задачи не из групп очереди подписи нет: её событие и так стоит строкой в «Прочитать»
+    expect(notes.has(99)).toBe(false);
+    // Событие просьбы подписью к задаче не становится: у просьбы своя строка
+    expect(notes.has(22)).toBe(false);
+  });
+  it("несданные weekly считаются в том же числе, что задачи, просьбы и события", () => {
+    const counts = { late: 3, soon: 1, answer: 2, events: 1 };
+    expect(attentionTotal(counts)).toBe(7);
+    expect(attentionTotal(counts, 2)).toBe(9);
   });
   it("принятая просьба со вчерашним сроком попадает в «срок прошёл» и без отметки сервера", () => {
     const groups = splitRequests([request({ number: 1, status: "accepted", acceptedDue: "2026-10-10", overdue: false })], today);

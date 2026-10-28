@@ -12,7 +12,8 @@ import * as news from "@/lib/news/service";
 import { setNewsTransport, FeedError, MESSAGES } from "@/lib/news/transport";
 import { setClaudeCall } from "@/lib/news/claude";
 import { setMailTransport, type Mail } from "@/lib/mail";
-import { inboxCount, listInbox } from "@/lib/inbox/service";
+import { listInbox } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { pathOf } from "@/lib/letters/phrases";
 import { newsTick } from "@/lib/news/loop";
 
@@ -356,11 +357,13 @@ describe("дайджесты", () => {
     await onlyThese({});
     await prisma.person.update({ where: { id: golovkin.id }, data: { email: "v.golovkin@sravni.ru" } });
     await news.saveNewsPrefs(await personal("golovkin"), { frequency: "daily", directions: null });
+    // Счётчик меню считает и задачи с просьбами (правка по ревью этапа 76), поэтому берём его до дайджеста
+    const quiet = await attentionCountFor(golovkin.id, WED);
     expect(await news.newsDigestPass(WED)).toEqual({ sent: 1, skipped: 0, failed: 0 });
     const inbox = (await listInbox(golovkin.id, WED)).items;
     expect(inbox).toHaveLength(1);
-    // Тихое событие: в «Мне» строкой, но не в счётчике меню и не в «ждут вашего внимания»
-    expect(await inboxCount(golovkin.id, WED)).toBe(0);
+    // Тихое событие: строкой в очереди, но не в счётчике меню и не в «ждут вашего внимания»: число не выросло
+    expect(await attentionCountFor(golovkin.id, WED)).toBe(quiet);
     expect(inbox[0]).toMatchObject({ kind: "NEWS", text: "Новости за 21.10.2026: 1 новость (ОСАГО)" });
     const digest = await prisma.newsDigest.findFirstOrThrow();
     expect(inbox[0]!.subject).toBe(`news:${digest.id}`);

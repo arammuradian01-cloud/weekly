@@ -439,7 +439,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
           <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-ink" aria-hidden="true" />
           <span>
             Отправлено CEO {moment(view.ceoSentAt)}
-            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт CEO» и событие в «Мне». Можно поправить и отправить ещё раз.
+            {view.ceoSentBy ? `, отправил ${view.ceoSentBy}` : ""}. CEO видит собранный отчёт на странице «Отчёт CEO» и событие на «Моей неделе». Можно поправить и отправить ещё раз.
           </span>
         </p>
       ) : null}
@@ -451,7 +451,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
       {view.ceo ? (
         <div className="flex flex-col gap-3 sv-card sv-card--soft px-5 py-4">
           <p className="text-body text-ink">
-            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие в «Мне» и отчёт на странице «Отчёт CEO».
+            Получит: <span className="font-medium">{view.ceo.recipients.length ? view.ceo.recipients.join(", ") : "CEO не найден"}</span>. Только в приложении: событие на «Моей неделе» и отчёт на странице «Отчёт CEO».
           </p>
           {filled ? (
             <>

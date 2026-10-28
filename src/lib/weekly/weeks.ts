@@ -70,3 +70,11 @@ export function meetingWeekKey(input: { now: Date; deadline: DeadlineSetting; re
 }
 
 export { moscowDateTime };
+
+/**
+ * Сдача weekly за выбранную неделю (этап 76, строка «Не сдан weekly за неделю N» на «Моей неделе»). Пока экран сдачи
+ * не знает параметр week (его добавляет этап 73), откроется отчётная неделя
+ */
+export function submitWeekHref(key: WeekKey): string {
+  return `/weekly/submit?week=${key}`;
+}

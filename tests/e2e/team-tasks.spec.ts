@@ -63,8 +63,8 @@ test("руководитель видит просрочку сектора на
   const reva = await person(browser, page, "Рева");
   // Этап 41: панель руководителя вкладкой «Руководителю» на странице «Люди». На телефоне «Люди» за «Ещё»
   if (test.info().project.name === "phone") {
-    await reva.getByRole("button", { name: "Ещё", exact: true }).click();
-    await reva.getByRole("dialog", { name: "Разделы" }).getByRole("link", { name: "Люди", exact: true }).click();
+    // Этап 76: «Люди» в нижнем меню телефона на месте «Мне», без «Ещё»
+    await reva.locator("nav.fixed").getByRole("link", { name: "Люди", exact: true }).click();
   } else {
     await reva.getByRole("link", { name: "Люди", exact: true }).locator("visible=true").first().click();
   }
@@ -93,9 +93,9 @@ test("руководитель видит просрочку сектора на
   await expect(reva.getByText(/Вы следите за задачей/).first()).toBeVisible();
   await reva.close();
 
-  // Ответственный видит просьбу в «Мне»
+  // Ответственный видит просьбу на «Моей неделе»: задача стоит строкой в очереди, просьба подписью к ней
   const alisa = await person(browser, page, "Чемоданова");
-  await alisa.goto("/me");
+  await alisa.goto("/");
   await expect(alisa.getByText("Просят обновить задачу: где сейчас, состояние и срок")).toBeVisible();
   await alisa.close();
 });

@@ -25,11 +25,12 @@ describe("текст уведомления в браузере", () => {
     expect(pushPayload([ev({ subject: "entry:e1", kind: "MENTION", taskNumber: null, entryId: "e1", createdAt: at(1) })])).toMatchObject({ body: "Рева Тарас: упоминание в записи weekly", url: "/weekly/entry/e1" });
   });
 
-  it("несколько предметов: одно уведомление со счётом и ссылкой на «Мне», без содержимого", () => {
+  it("несколько предметов: одно уведомление со счётом и ссылкой на очередь «Ждёт вас» на «Моей неделе», без содержимого", () => {
     const p = pushPayload([ev({ subject: "task:47", createdAt: at(1) }), ev({ subject: "task:48", taskNumber: 48, createdAt: at(2) }), ev({ subject: "request:5", kind: "REQUEST", requestNumber: 5, createdAt: at(3) })]);
-    expect(p).toEqual({ title: "Weekly", body: "3 события ждут вас в «Мне»", url: "/me", tag: "inbox" });
+    // Этап 76: раздела «Мне» нет, ссылка ведёт к блоку на «Моей неделе»
+    expect(p).toEqual({ title: "Weekly", body: "3 события ждут вас на «Моей неделе»", url: "/#me-queue", tag: "inbox" });
     const five = Array.from({ length: 5 }, (_, i) => ev({ subject: `task:${i}`, taskNumber: i, createdAt: at(i) }));
-    expect(pushPayload(five)?.body).toBe("5 событий ждут вас в «Мне»");
+    expect(pushPayload(five)?.body).toBe("5 событий ждут вас на «Моей неделе»");
     expect(pushPayload([])).toBeNull();
   });
 });

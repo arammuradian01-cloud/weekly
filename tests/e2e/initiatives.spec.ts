@@ -49,7 +49,7 @@ test("владелец заводит инициативу, ответствен
   const ctx = await browser.newContext({ viewport: page.viewportSize()!, isMobile: phone(), hasTouch: phone() });
   const reva = await ctx.newPage();
   await enterByLink(reva, "reva");
-  await reva.goto("/me");
+  await reva.goto("/");
   await reva.getByRole("link", { name: "Крупная инициатива" }).click();
   await expect(reva).toHaveURL(/\/initiatives#i-/);
   const mine = reva.getByRole("article", { name: "Подписка ОСАГО в приложении" });

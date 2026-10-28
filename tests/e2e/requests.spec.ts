@@ -53,18 +53,19 @@ test("просьба из карточки задачи: адресат прин
   await expect(row.getByText("Ждёт ответа")).toBeVisible();
   await shot(page, "task-card");
 
-  // Адресат отвечает из «Мне»
+  // Адресат отвечает из очереди «Ждёт вас» на «Моей неделе»
   const loginova = await second(browser, page, "Логинова Светлана");
-  await loginova.goto("/me");
-  // Очередь «Мне» (этап 44): просьба без ответа в группе «Ответить», после ответа переезжает в «Принятые, срок позже»
-  const incoming = loginova.locator("section", { has: loginova.getByRole("heading", { name: /^Ответить/ }) });
+  await loginova.goto("/");
+  // Очередь «Ждёт вас» на «Моей неделе» (этап 44, с этапа 76 на главной): просьба без ответа в группе «Ответить», после
+  // ответа переезжает в «Принятые, срок позже»
+  const incoming = loginova.getByTestId("me-answer");
   await expect(incoming.getByRole("link", { name: /Данные по трафику ДВС/ })).toBeVisible();
   await incoming.getByRole("button", { name: "Другой срок" }).click();
   const accept = loginova.getByRole("dialog", { name: `Принять просьбу ${requestNumber}` });
   await accept.getByRole("button", { name: "Через неделю" }).click();
   await accept.getByRole("button", { name: "Принять", exact: true }).click();
   await expect(loginova.getByText("Просьба принята")).toBeVisible();
-  const accepted = loginova.locator("section", { has: loginova.getByRole("heading", { name: /Принятые, срок позже/ }) });
+  const accepted = loginova.getByTestId("me-later");
   await expect(accepted.getByText("Принята")).toBeVisible();
   await shot(loginova, "me");
 
@@ -85,8 +86,8 @@ test("просьба из карточки задачи: адресат прин
   await expect(loginova.getByText("Задача адресата")).toBeVisible();
   await shot(loginova, "request-page");
 
-  // Автор открывает просьбу из «Мне»: событие об ответе ведёт на страницу просьбы
-  await page.goto("/me");
+  // Автор открывает просьбу из «Ждёт вас»: событие об ответе ведёт на страницу просьбы
+  await page.goto("/");
   await page.getByRole("link", { name: new RegExp(`Просьба ${requestNumber}:`) }).first().click();
   await expect(page.getByRole("heading", { name: `Просьба ${requestNumber}` })).toBeVisible();
   await expect(page.getByRole("button", { name: "Отозвать" })).toBeVisible();
@@ -95,7 +96,7 @@ test("просьба из карточки задачи: адресат прин
 
 test("отклонить можно только с причиной; зависшая просьба видна на встрече", async ({ page, browser }) => {
   await enter(page, "Рева Тарас");
-  await page.goto("/me");
+  await page.goto("/");
   await page.getByRole("button", { name: "Попросить коллегу" }).click();
   const dialog = page.getByRole("dialog", { name: "Попросить коллегу" });
   await dialog.getByLabel("Кого просите").selectOption("fatyanov");
@@ -109,7 +110,7 @@ test("отклонить можно только с причиной; завис
   await expect(page.getByText(/^Просьба \d+ ушла/).last()).toBeVisible();
 
   const fatyanov = await second(browser, page, "Фатьянов Евгений");
-  await fatyanov.goto("/me");
+  await fatyanov.goto("/");
   await fatyanov.getByRole("button", { name: "Отклонить" }).click();
   const decline = fatyanov.getByRole("dialog", { name: /^Отклонить просьбу/ });
   await decline.getByRole("button", { name: "Отклонить" }).click();

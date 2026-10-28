@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { markSeenAction } from "@/app/(app)/me/actions";
+import { markSeenAction } from "@/app/actions/inbox";
 
-/** Предмет открыт: события «Мне» по нему просмотрены, письмо о них не уйдёт (этап 20) */
+/** Предмет открыт: события очереди по нему просмотрены, письмо о них не уйдёт (этап 20) */
 export function SeenMark({ subject }: { subject: string }) {
   useEffect(() => {
     markSeenAction([subject]).catch(() => undefined);

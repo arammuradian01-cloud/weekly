@@ -153,7 +153,7 @@ export function ProfileMenu({ fullName, shortName, roleLabel, canManage, managem
           </div>
           <Menu.Separator className="my-1 h-px bg-line" />
 
-          {/* Разделы «Управление», «Один на один» и «Инициативы» на телефоне за кнопкой «Ещё» нижнего меню (этап 41) */}
+          {/* Разделы «Управление» и «Инициативы» на телефоне за кнопкой «Ещё» нижнего меню (этап 41) */}
           <Menu.Item asChild>
             <Link href="/profile" className={itemClass}>
               <UserRound className="h-[18px] w-[18px] text-text-secondary" strokeWidth={1.5} aria-hidden="true" />

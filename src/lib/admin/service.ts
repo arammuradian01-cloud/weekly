@@ -6,7 +6,7 @@ import { fillMissingLogins, lockPeopleNames, loginProblem, reservedLogins, taken
 import { refreshApprovals } from "@/lib/tasks/approval";
 import { ownerTitles, PRIMARY_OWNER_KEY, primaryOwnerSlug } from "@/lib/login/primary";
 import { checkOwnerTitle, OWNER_TITLES_KEY, titleOf } from "@/lib/owner-title";
-import { personalLogin } from "@/lib/one-on-one/rules";
+import { personalLogin } from "@/lib/login/personal";
 import { TOP_TEAM } from "@/domain/teams";
 import { prisma } from "@/lib/db";
 import { getSetting } from "@/lib/settings";

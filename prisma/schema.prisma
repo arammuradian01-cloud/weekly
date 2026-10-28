@@ -224,10 +224,6 @@ model Person {
   planPartnerAdjustments PlanPartnerAdjustment[] @relation("PlanPartnerAdjustmentAuthor")
   goalFacts              GoalFact[]              @relation("GoalFactAuthor")
   /// Встречи один на один (этап 28)
-  oneOnOneManaged        OneOnOnePair[]          @relation("OneOnOneManager")
-  oneOnOneReported       OneOnOnePair[]          @relation("OneOnOneReport")
-  oneOnOneTopics         OneOnOneTopic[]         @relation("OneOnOneTopicAuthor")
-  oneOnOneNotes          OneOnOneNote[]
   /// Личная ссылка на календарь сроков (этап 29)
   calendarFeed           CalendarFeed?
   /// Кто уже оценил встречи команды (этап 29): без связи с самой оценкой
@@ -413,8 +409,6 @@ model Task {
   /// Встреча 2.0 (этап 23): пункты повестки по задаче и решения, к которым она привязана
   agendaItems    AgendaItem[]
   decisions      DecisionTask[]
-  /// Тема встречи один на один, из которой поставлена задача (этап 28)
-  oneOnOneTopics OneOnOneTopic[]
   /// Повтор задачи (этап 25): еженедельно или ежемесячно. Следующая создаётся при закрытии или по расписанию в день срока
   repeat         RepeatKind?
   repeatMode     RepeatMode          @default(ON_CLOSE)
@@ -1071,7 +1065,8 @@ enum InboxKind {
   THANKS
   /// Встреча (этап 23): протокол готов, вы владелец решения
   MEETING
-  /// Встреча один на один (этап 28): новая тема от второго участника, встреча назначена
+  /// Встреча один на один (этап 28). Раздел удалён на этапе 76 вместе с событиями; значение осталось в типе базы,
+  /// потому что Postgres не убирает значения перечисления, а пересоздание типа задело бы миграции параллельных этапов
   ONE_ON_ONE
   /// Крупная инициатива (этап 30): вас назначили ответственным, сменилось состояние
   INITIATIVE
@@ -1870,96 +1865,6 @@ model PushSubscription {
 
   @@index([personId])
   @@map("push_subscriptions")
-}
-
-/// Встречи один на один (этап 28): руководитель и человек его команды. Видят только эти двое и только при личном входе:
-/// ни режим управления, ни общий логин, ни журнал содержимое не показывают
-enum OneOnOneStatus {
-  PLANNED
-  DONE
-}
-
-enum OneOnOneTopicStatus {
-  OPEN
-  DISCUSSED
-  DROPPED
-}
-
-/// Пара «руководитель и человек». Темы живут у пары: незакрытая тема переходит на следующую встречу сама
-model OneOnOnePair {
-  id        String   @id @default(cuid())
-  managerId String
-  manager   Person   @relation("OneOnOneManager", fields: [managerId], references: [id], onDelete: Cascade)
-  reportId  String
-  report    Person   @relation("OneOnOneReport", fields: [reportId], references: [id], onDelete: Cascade)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-
-  meetings OneOnOne[]
-  topics   OneOnOneTopic[]
-
-  @@unique([managerId, reportId])
-  @@index([reportId])
-  @@map("one_on_one_pairs")
-}
-
-/// Встреча пары. Запланированная у пары одна (уникальный индекс в миграции)
-model OneOnOne {
-  id         String         @id @default(cuid())
-  pairId     String
-  pair       OneOnOnePair   @relation(fields: [pairId], references: [id], onDelete: Cascade)
-  date       DateTime       @db.Date
-  status     OneOnOneStatus @default(PLANNED)
-  /// Общие заметки: видят оба участника
-  notes      String         @default("")
-  closedAt   DateTime?      @db.Timestamptz(3)
-  closedById String?
-  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt  DateTime       @updatedAt @db.Timestamptz(3)
-
-  topics       OneOnOneTopic[]
-  privateNotes OneOnOneNote[]
-
-  @@index([pairId, date])
-  @@map("one_on_ones")
-}
-
-/// Тема встречи: кто поставил, итог обсуждения, задача из темы
-model OneOnOneTopic {
-  id        String              @id @default(cuid())
-  pairId    String
-  pair      OneOnOnePair        @relation(fields: [pairId], references: [id], onDelete: Cascade)
-  authorId  String?
-  author    Person?             @relation("OneOnOneTopicAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  text      String
-  status    OneOnOneTopicStatus @default(OPEN)
-  /// Итог: о чём договорились
-  outcome   String?
-  /// Встреча, на которой тему обсудили или сняли
-  meetingId String?
-  meeting   OneOnOne?           @relation(fields: [meetingId], references: [id], onDelete: SetNull)
-  taskId    String?
-  task      Task?               @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  createdAt DateTime            @default(now()) @db.Timestamptz(3)
-  closedAt  DateTime?           @db.Timestamptz(3)
-
-  @@index([pairId, status])
-  @@index([meetingId])
-  @@index([taskId])
-  @@map("one_on_one_topics")
-}
-
-/// Личная заметка к встрече: видит только автор
-model OneOnOneNote {
-  id        String   @id @default(cuid())
-  meetingId String
-  meeting   OneOnOne @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  authorId  String
-  author    Person   @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  text      String   @default("")
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
-
-  @@unique([meetingId, authorId])
-  @@map("one_on_one_notes")
 }
 
 /// Личная ссылка на календарь сроков (этап 29): подписка в Google, Яндекс или Outlook. Хранится только отпечаток

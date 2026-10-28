@@ -1,4 +1,4 @@
-// Раздел «Мне» (этап 11, модуль М2 плана Weekly 2.0): одно место, где видно, чего ждут от человека.
+// Очередь «Ждёт вас» (этап 11 как раздел «Мне», с этапа 76 блок на «Моей неделе»): одно место, где видно, чего ждут от человека.
 //
 // События пишутся в той же транзакции, что и правка задачи: правка прошла, значит адресат увидит событие.
 // Предмет (subject) склеивает события одной задачи в одну строку. «Разобрано» закрывает строку, новое событие
@@ -49,16 +49,11 @@ export type InboxItem = {
 export type InboxView = { items: InboxItem[]; snoozed: number };
 
 /**
- * События встреч один на один (этап 28) общему логину не показываем совсем, даже в режиме управления. Прогноз месяца
- * (этап 35) тоже: его проверяют и корректируют при личном входе
+ * Прогноз месяца (этап 35), состав команд (этап 53) и согласования (этап 54) общему логину не показываем совсем, даже
+ * в режиме управления: их проверяют и решают при личном входе. Встречи один на один ушли на этапе 76 вместе с событиями
  */
 const privateKinds = (viewer: ScopeSubject | undefined): Prisma.InboxEventWhereInput =>
-  viewer?.shared || viewer?.limited
-    ? { kind: { notIn: ["ONE_ON_ONE", "PLAN", "TEAM", "APPROVAL"] } }
-    : // «Смотреть как» (этап 63): встречи один на один видят только двое участников, владельцу в просмотре их нет
-      viewer?.viewAs
-      ? { kind: { notIn: ["ONE_ON_ONE"] } }
-      : {};
+  viewer?.shared || viewer?.limited ? { kind: { notIn: ["PLAN", "TEAM", "APPROVAL"] } } : {};
 
 const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxEventWhereInput => ({
   recipientId: personId,
@@ -69,7 +64,7 @@ const open = (personId: string, now: Date, viewer?: ScopeSubject): Prisma.InboxE
 
 /**
  * Общий логин без режима управления видит только топ-команду (этап 14). Профиль можно выбрать чужой, поэтому
- * в «Мне» такой вход показывает только события о задачах и записях, которые видны и так. viewer не задан: личный вход
+ * такой вход показывает в очереди только события о задачах и записях, которые видны и так. viewer не задан: личный вход
  */
 async function limitedFilter(personId: string, viewer: ScopeSubject | undefined) {
   if (!viewer?.limited) return null;
@@ -86,8 +81,6 @@ async function limitedFilter(personId: string, viewer: ScopeSubject | undefined)
     // Просьбы по общему логину: только между людьми топ-команды (этап 21). Благодарности так же: от людей топ-команды
     if (r.request) return top.has(r.request.authorId) && top.has(r.request.addresseeId);
     if (r.kind === "THANKS" || r.kind === "MEETING") return !!r.actorId && top.has(r.actorId);
-    // Встречи один на один (этап 28) только при личном входе: по общему логину профиль выбирают сами
-    if (r.kind === "ONE_ON_ONE") return false;
     if (r.task) return !r.task.archivedAt && seesTask(scope, r.task, personId);
     if (r.entry) return seesEntry(scope, nodes, { authorId: r.entry.authorId, ceo: r.entry.ceo, promotedBy: r.entry.promotions.map((p) => p.byId) }, personId);
     return true;
@@ -141,18 +134,9 @@ export async function listInbox(personId: string, now = new Date(), viewer?: Sco
   return { items: [...bySubject.values()], snoozed: snoozed.filter((s) => !openSubjects.has(s.subject)).length };
 }
 
-/**
- * Тихие события (этап 60): дайджест новостей виден в «Мне» строкой, но не ждёт ответа. Его нет в счётчике меню
- * и в «ждут вашего внимания» дайджеста к встрече и главной
- */
-export const QUIET_KINDS: InboxKind[] = ["NEWS"];
-
-/** Счётчик в меню: сколько предметов ждут. Тихие события не считаются */
-export async function inboxCount(personId: string, now = new Date(), viewer?: ScopeSubject): Promise<number> {
-  if (viewer?.limited) return (await listInbox(personId, now, viewer)).items.filter((i) => !QUIET_KINDS.includes(i.kind)).length;
-  const subjects = await prisma.inboxEvent.groupBy({ by: ["subject"], where: { AND: [open(personId, now, viewer), { kind: { notIn: QUIET_KINDS } }] } });
-  return subjects.length;
-}
+// Счётчик в меню считается в attention.ts: он должен совпадать с числом в заголовке блока «Ждёт вас», а туда входят
+// ещё задачи, просьбы и несданные weekly. Тихие события (дайджест новостей) живут в QUIET_KINDS в me-tasks.ts
+export { QUIET_KINDS } from "@/components/inbox/me-tasks";
 
 /** «Разобрано»: все события предмета у этого человека уходят из списка */
 export async function markDone(actor: Actor, subject: string, now = new Date()): Promise<number> {
@@ -163,8 +147,8 @@ export async function markDone(actor: Actor, subject: string, now = new Date()):
 }
 
 /**
- * Человек видел события в ресурсе (этап 20): открыл «Мне» или сам предмет. Письмо по таким событиям не уходит.
- * subjects не задан: всё, что сейчас видно в «Мне»
+ * Человек видел события в ресурсе (этап 20): открыл очередь «Ждёт вас» или сам предмет. Письмо по таким событиям
+ * не уходит. subjects не задан: всё, что сейчас открыто у человека (осталось для карточек и действий)
  */
 export async function markSeen(personId: string, subjects?: string[], now = new Date()): Promise<number> {
   const where: Prisma.InboxEventWhereInput = subjects ? { recipientId: personId, subject: { in: subjects.map(String).slice(0, 50) }, seenAt: null } : { ...open(personId, now), seenAt: null };
@@ -188,11 +172,9 @@ function viewerOf(actor: Actor): ScopeSubject {
   return { id: actor.personId, role: actor.role, limited: actor.via === "TEAM" && !actor.management, shared: actor.via === "TEAM" };
 }
 
-/** Общий логин трогает только предметы, которые ему показаны в «Мне» */
+/** Общий логин трогает только предметы, которые ему показаны в очереди */
 async function requireVisible(actor: Actor, subjects: string[], now: Date): Promise<void> {
   const viewer = viewerOf(actor);
-  // Встречи один на один общий логин не трогает, даже в режиме управления
-  if (viewer.shared && subjects.some((s) => s.startsWith("1on1:"))) fail("Это уже разобрано");
   if (!viewer.limited) return;
   const shown = new Set((await listInbox(actor.personId, now, viewer)).items.map((i) => i.subject));
   if (subjects.some((s) => !shown.has(s))) fail("Это уже разобрано");

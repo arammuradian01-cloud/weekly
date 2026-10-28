@@ -112,7 +112,7 @@ describe("проход отправки", () => {
     await event("reva", { subject: "request:5", kind: "REQUEST", createdAt: ago(2 * MIN) });
     expect(await push.pushPass(NOW)).toEqual({ sent: 2, skipped: 0, failed: 0 });
     expect(sent.map((s) => s.endpoint).sort()).toEqual([sub(1).endpoint, sub(2).endpoint]);
-    expect(sent[0]!.payload).toEqual({ title: "Weekly", body: "2 события ждут вас в «Мне»", url: "/me", tag: "inbox" });
+    expect(sent[0]!.payload).toEqual({ title: "Weekly", body: "2 события ждут вас на «Моей неделе»", url: "/#me-queue", tag: "inbox" });
     expect(await prisma.inboxEvent.count({ where: { pushedAt: null } })).toBe(0);
     sent = [];
     expect(await push.pushPass(new Date(NOW.getTime() + MIN))).toEqual({ sent: 0, skipped: 0, failed: 0 });

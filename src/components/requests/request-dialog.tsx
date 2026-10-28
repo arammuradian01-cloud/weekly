@@ -1,6 +1,6 @@
 "use client";
 
-// «Попросить коллегу» (этап 21): одно окно на всё приложение. Открывается из карточки задачи, из «Мне»,
+// «Попросить коллегу» (этап 21): одно окно на всё приложение. Открывается из карточки задачи, из очереди «Ждёт вас»,
 // с «Моей недели», из записи weekly. Просьба к задаче или записи несёт ссылку на них.
 
 import { useEffect, useState } from "react";
@@ -77,7 +77,7 @@ export function RequestDialogHost() {
       if (!r.ok) return setError(r.error);
       setOpen(false);
       window.dispatchEvent(new Event(REQUESTS_CHANGED));
-      notify(`Просьба ${r.value.number} ушла. Ответ придёт в «Мне»`);
+      notify(`Просьба ${r.value.number} ушла. Ответ появится на «Моей неделе»`);
       router.refresh();
     } catch {
       setError("Нет связи с сервером: просьба не ушла");
@@ -87,7 +87,7 @@ export function RequestDialogHost() {
   };
 
   return (
-    <Modal open={open} onOpenChange={setOpen} title="Попросить коллегу" description="Адресат увидит просьбу в «Мне», примет её со сроком или ответит отказом. Следить за ответом можно в блоке «Жду от коллег».">
+    <Modal open={open} onOpenChange={setOpen} title="Попросить коллегу" description="Адресат увидит просьбу на «Моей неделе», примет её со сроком или ответит отказом. Следить за ответом можно в блоке «Жду от коллег».">
       <form onSubmit={submit} className="flex flex-col gap-4" noValidate>
         {task ? (
           <p className="rounded-lg bg-field px-3.5 py-2.5 text-small text-ink">

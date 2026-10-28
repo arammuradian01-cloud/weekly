@@ -16,8 +16,9 @@ describe("описание приложения", () => {
     expect(existsSync("public/icons/badge-96.png")).toBe(true);
   });
 
-  it("быстрые действия ведут в «Мне», сдачу weekly и мои задачи", () => {
-    expect((m.shortcuts ?? []).map((s) => s.url)).toEqual(["/me", "/weekly/submit", "/tasks/mine"]);
+  it("быстрые действия ведут в сдачу weekly и мои задачи; «Мне» убрано (этап 76), «Моя неделя» открывается с иконки", () => {
+    expect((m.shortcuts ?? []).map((s) => s.url)).toEqual(["/weekly/submit", "/tasks/mine"]);
+    expect(m.start_url).toBe("/");
   });
 });
 

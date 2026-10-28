@@ -209,7 +209,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             Лидеры <span className="font-normal text-muted">{data.leaders.length}</span>
           </h2>
           <p className="mt-1 text-small text-muted">
-            Карточка на каждого руководителя ниже, без рейтинга: для разговора один на один.
+            Карточка на каждого руководителя ниже, без рейтинга: для личного разговора.
           </p>
         </div>
         {data.leaders.length ? (
@@ -217,7 +217,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
             <StripLegend />
             <ul className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               {data.leaders.map((c) => (
-                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} firstWeek={data.tasks[0]?.number ?? 0} meet={data.viewerLeads} />
+                <LeaderCardView key={c.key} card={c} staleDays={data.staleDays} firstWeek={data.tasks[0]?.number ?? 0} />
               ))}
             </ul>
           </>
@@ -235,7 +235,7 @@ export function AnalyticsScreen({ data }: { data: Analytics }) {
   );
 }
 
-/** Weekly лидера по неделям: клетки с формой по смыслу (этап 27, используются и во встрече один на один) */
+/** Weekly лидера по неделям: клетки с формой по смыслу (этап 27) */
 export function WeeklyStrip({ cells }: { cells: LeaderCard["weekly"]["cells"] }) {
   return (
     <span className="sv-wstrip" role="img" aria-label={`Weekly по неделям: ${cells.map((x) => `неделя ${x.number} ${CELL_WORDS[x.cell]}`).join(", ")}`}>
@@ -357,7 +357,7 @@ function Spark({ values, label }: { values: number[]; label: string }) {
   );
 }
 
-function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderCard; staleDays: number; firstWeek: number; meet: boolean }) {
+function LeaderCardView({ card: c, staleDays, firstWeek }: { card: LeaderCard; staleDays: number; firstWeek: number }) {
   const first = c.overdue[0] ?? 0;
   const last = c.overdue[c.overdue.length - 1] ?? 0;
   const trend = last > first ? `больше, чем на конец недели ${firstWeek} (${first})` : last < first ? `меньше, чем на конец недели ${firstWeek} (${first})` : `столько же, сколько на конец недели ${firstWeek}`;
@@ -448,11 +448,6 @@ function LeaderCardView({ card: c, staleDays, firstWeek, meet }: { card: LeaderC
         {deeper ? (
           <Link href={`/people/analytics?team=${deeper.id}`} className="text-link hover:underline">
             Аналитика команды
-          </Link>
-        ) : null}
-        {meet && c.leader?.active ? (
-          <Link href={`/one-on-one/${c.leader.slug}`} className="text-link hover:underline">
-            Один на один
           </Link>
         ) : null}
       </div>

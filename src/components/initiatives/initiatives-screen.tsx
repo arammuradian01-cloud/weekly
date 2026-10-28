@@ -25,7 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/overlays";
-import { markSeenAction } from "@/app/(app)/me/actions";
+import { markSeenAction } from "@/app/actions/inbox";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 import { Figures } from "@/components/ui/data";
@@ -87,7 +87,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
   const longSearch = data.active.filter((i) => i.flags.longSearch).length;
   const stale = data.active.filter((i) => i.flags.stale).length;
 
-  // Переход по ссылке из «Мне» или повестки: карточка с якорем в поле зрения и подсвечена. Закрытая инициатива
+  // Переход по ссылке из очереди «Ждёт вас» или повестки: карточка с якорем в поле зрения и подсвечена. Закрытая инициатива
   // лежит в свёрнутом списке: он раскрывается
   const [target, setTarget] = useState<string | null>(null);
   const [closedOpen, setClosedOpen] = useState(false);
@@ -104,7 +104,7 @@ export function InitiativesScreen({ data }: { data: InitiativesPage }) {
     requestAnimationFrame(() => document.getElementById(hash)?.scrollIntoView({ block: "center" }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Человек открыл страницу инициатив: события «Мне» о них прочитаны, письма о них уже не нужны
+  // Человек открыл страницу инициатив: события очереди о них прочитаны, письма о них уже не нужны
   const subjects = [...data.active, ...data.closed].map((i) => `initiative:${i.id}`).join("|");
   useEffect(() => {
     if (subjects) markSeenAction(subjects.split("|")).catch(() => undefined);

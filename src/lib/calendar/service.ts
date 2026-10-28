@@ -5,17 +5,17 @@
 // - ссылка гаснет сама, если человека выключили, владелец сбросил ему пароль или человек нажал «выйти везде».
 
 import { prisma } from "@/lib/db";
-import { addDays, type IsoDate } from "@/domain/dates";
+import type { IsoDate } from "@/domain/dates";
 import type { WeekKey } from "@/domain/types";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
-import { dbDate, isoFromDbDate, moscowToday } from "@/lib/tasks/dates";
+import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
 import { hashToken, newToken } from "@/lib/login/service";
-import { personalLogin } from "@/lib/one-on-one/rules";
+import { personalLogin } from "@/lib/login/personal";
 import { loadTeamNodes } from "@/lib/org/scope";
 import { weekSettings } from "@/lib/weekly/service";
 import { deadlineOf, meetingOf, reportingKey, shiftWeek } from "@/lib/weekly/weeks";
 import { buildIcs } from "./ics";
-import { feedEvents, ONE_ON_ONE_DAYS_BACK, TASKS_MAX, WEEKS_AHEAD, WEEKS_BACK, type FeedWeek } from "./rules";
+import { feedEvents, TASKS_MAX, WEEKS_AHEAD, WEEKS_BACK, type FeedWeek } from "./rules";
 import { auditVia } from "@/lib/audit";
 import { refuseOwnerAs } from "@/lib/owner-as";
 
@@ -89,14 +89,13 @@ export async function feedByToken(token: string, now = new Date()) {
 
 /** Файл календаря человека */
 export async function calendarFile(personId: string, withTitles: boolean, base: string, now = new Date()): Promise<string> {
-  const today = moscowToday(now);
   const { deadline, meeting } = await weekSettings();
   const reporting = reportingKey(now, deadline);
   const keys: WeekKey[] = [];
   for (let i = -WEEKS_BACK; i <= WEEKS_AHEAD; i++) keys.push(shiftWeek(reporting, i));
   const starts = keys.map(dbDate);
 
-  const [tasks, nodes, weekRows, absences, pairs] = await Promise.all([
+  const [tasks, nodes, weekRows, absences] = await Promise.all([
     prisma.task.findMany({
       where: { archivedAt: null, status: { in: ["IN_PROGRESS", "CLARIFY"] }, OR: [{ ownerId: personId }, { coExecutors: { some: { personId } } }] },
       select: { id: true, number: true, title: true, due: true },
@@ -106,15 +105,6 @@ export async function calendarFile(personId: string, withTitles: boolean, base: 
     loadTeamNodes(prisma),
     prisma.week.findMany({ where: { start: { in: starts } }, select: { id: true, start: true, deadline: true, meetingDate: true } }),
     prisma.absence.findMany({ where: { personId, week: { start: { in: starts } } }, select: { week: { select: { start: true } } } }),
-    prisma.oneOnOne.findMany({
-      where: { status: "PLANNED", date: { gte: dbDate(addDays(today, -ONE_ON_ONE_DAYS_BACK)) }, pair: { OR: [{ managerId: personId }, { reportId: personId }] } },
-      select: {
-        id: true,
-        date: true,
-        pair: { select: { id: true, managerId: true, manager: { select: { fullName: true, active: true } }, report: { select: { fullName: true, active: true } } } },
-      },
-      orderBy: { date: "asc" },
-    }),
   ]);
   const weekIds = weekRows.map((w) => w.id);
   const stored = weekIds.length ? await prisma.meeting.findMany({ where: { weekId: { in: weekIds } }, select: { teamId: true, date: true, week: { select: { start: true } } } }) : [];
@@ -132,10 +122,6 @@ export async function calendarFile(personId: string, withTitles: boolean, base: 
       meetings,
     };
   });
-  const oneOnOnes = pairs.flatMap((m) => {
-    const other = m.pair.managerId === personId ? m.pair.report : m.pair.manager;
-    return other.active ? [{ id: m.id, pairId: m.pair.id, date: isoFromDbDate(m.date), otherName: other.fullName }] : [];
-  });
   const events = feedEvents({
     personId,
     withTitles,
@@ -143,7 +129,6 @@ export async function calendarFile(personId: string, withTitles: boolean, base: 
     tasks: tasks.map((t) => ({ id: t.id, number: t.number, title: t.title, due: isoFromDbDate(t.due) })),
     weeks,
     nodes,
-    oneOnOnes,
   });
   return buildIcs(events, { name: "Сроки weekly", description: "Сроки задач, weekly и встречи из ресурса weekly", stamp: now });
 }

@@ -14,7 +14,7 @@ const moment = (iso: string) =>
 
 export function CeoSentReport({ view }: { view: CeoInboxView }) {
   const c = view.current;
-  if (!c) return <EmptyState title="Отчётов пока не отправляли">Когда руководитель отправит weekly по итогам встречи, он появится здесь, а в «Мне» придёт событие.</EmptyState>;
+  if (!c) return <EmptyState title="Отчётов пока не отправляли">Когда руководитель отправит weekly по итогам встречи, он появится здесь, а на «Моей неделе» появится событие.</EmptyState>;
   return (
     <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,1fr)_260px] lg:gap-8">
       <article className="flex min-w-0 flex-col gap-5" data-testid="ceo-sent-report">

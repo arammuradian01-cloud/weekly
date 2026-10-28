@@ -2,7 +2,7 @@
 // управления, только включённого человека), что видно в просмотре, когда просмотр гаснет (владелец вышел, потерял
 // роль или режим управления, человека выключили, срок, другое устройство), журнал начала и конца. Главное: каждое
 // серверное действие ресурса и каждый обработчик с изменениями в режиме просмотра отказывает одним текстом, база не
-// меняется, письма не уходят, события «Мне» не отмечаются прочитанными за другого человека.
+// меняется, письма не уходят, события очереди «Ждёт вас» не отмечаются прочитанными за другого человека.
 // cookie и заголовки запроса подменены: вход читает подписанные cookie так же, как на сервере.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -33,7 +33,8 @@ import { MANAGEMENT_TTL_MS, SESSION_COOKIE, signSession, type ManagementGrant } 
 import { getEpochs } from "@/lib/settings";
 import { closeViewAs, requireContext, requireWriteContext } from "@/lib/auth";
 import { VIEW_AS_COOKIE, VIEW_AS_DENIED, VIEW_AS_ENDED, VIEW_AS_TEXTS, ViewAsReadOnlyError, signViewAs } from "@/lib/view-as";
-import { inboxCount, listInbox } from "@/lib/inbox/service";
+import { listInbox } from "@/lib/inbox/service";
+import { attentionCountFor } from "@/lib/inbox/attention";
 import { subjectOf } from "@/lib/org/current";
 import { setMailTransport, type Mail } from "@/lib/mail";
 import * as tasks from "@/lib/tasks/service";
@@ -43,7 +44,7 @@ import * as viewAs from "@/app/actions/view-as";
 import { enterManagement, exitManagement, login, logout } from "@/app/actions/auth";
 import { PASSWORD_SETTING_KEYS, hashPassword } from "@/lib/passwords";
 import { setTeamAction } from "@/app/actions/team";
-import { markSeenAction, markDoneAction } from "@/app/(app)/me/actions";
+import { markSeenAction, markDoneAction } from "@/app/actions/inbox";
 import { getTaskAction } from "@/app/(app)/tasks/actions";
 import { searchAction } from "@/app/(app)/search/actions";
 import { weekViewAction } from "@/app/(app)/weekly/actions";
@@ -369,29 +370,30 @@ describe("просмотр закончился сам", () => {
   });
 });
 
-describe("встречи один на один в просмотре", () => {
-  it("события встреч один на один выбранного человека не видны в «Мне», на главной и в счётчике", async () => {
+describe("очередь «Ждёт вас» в просмотре", () => {
+  // Этап 76: встречи один на один удалены вместе с событиями, исключений для просмотра в очереди больше нет: владелец
+  // видит на «Моей неделе» выбранного человека ту же очередь и тот же счётчик, что и он сам
+  it("события выбранного человека видны на «Моей неделе» и в счётчике так же, как ему самому", async () => {
     const reva = await person("reva");
     const events = await Promise.all([
-      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "ONE_ON_ONE", subject: "1on1:view-as", text: "Новая тема в повестке встречи один на один" } }),
-      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "TEAM", subject: "team:view-as-1on1", text: "Событие о команде" } }),
+      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "TEAM", subject: "team:view-as-queue", text: "Событие о команде" } }),
+      prisma.inboxEvent.create({ data: { recipientId: reva.id, kind: "MEETING", subject: "meeting:view-as-queue", text: "Протокол встречи" } }),
     ]);
     try {
       await signIn("reva");
       const self = await requireContext();
-      // Только события этого теста: в «Мне» Ревы могут лежать события из других файлов тестов
-      const mine = (items: { subject: string | null }[]) => items.map((i) => i.subject).filter((s) => s === "1on1:view-as" || s === "team:view-as-1on1");
+      // Только события этого теста: в очереди Ревы могут лежать события из других файлов тестов
+      const mine = (items: { subject: string | null }[]) => items.map((i) => i.subject).filter((s) => s?.endsWith(":view-as-queue")).sort();
       const own = await listInbox(reva.id, new Date(), subjectOf(self));
-      expect(mine(own.items).sort()).toEqual(["1on1:view-as", "team:view-as-1on1"]);
+      expect(mine(own.items)).toEqual(["meeting:view-as-queue", "team:view-as-queue"]);
 
       await signIn("muradyan", { management: true });
       expect(await startAs("reva")).toBe("redirect");
       const ctx = await requireContext();
       expect(subjectOf(ctx).viewAs).toBe(true);
       const seen = await listInbox(reva.id, new Date(), subjectOf(ctx));
-      expect(mine(seen.items)).toEqual(["team:view-as-1on1"]);
-      expect(seen.items.some((i) => i.kind === "ONE_ON_ONE")).toBe(false);
-      expect(await inboxCount(reva.id, new Date(), subjectOf(ctx))).toBe((await inboxCount(reva.id, new Date(), subjectOf(self))) - 1);
+      expect(mine(seen.items)).toEqual(["meeting:view-as-queue", "team:view-as-queue"]);
+      expect(await attentionCountFor(reva.id, new Date(), subjectOf(ctx))).toBe(await attentionCountFor(reva.id, new Date(), subjectOf(self)));
     } finally {
       await prisma.inboxEvent.deleteMany({ where: { id: { in: events.map((e) => e.id) } } });
     }

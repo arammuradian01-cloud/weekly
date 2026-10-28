@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase } from "./helpers";
+import { enter, enterManagement, resetDatabase } from "./helpers";
 
-// Этап 37: визуальная система разделов, волна 2. Weekly, сдача weekly, отчёт CEO, журнал, один на один, настройки и
-// синхронизация: шапка как у всех разделов, ключевые цифры, журнал одной таблицей, пустые экраны с действием.
+// Этап 37: визуальная система разделов, волна 2. Weekly, сдача weekly, отчёт CEO, журнал, настройки и синхронизация
+// (один на один удалён на этапе 76): шапка как у всех разделов, ключевые цифры, журнал одной таблицей, пустые экраны
+// с действием.
 // Ноутбук 1440 и телефон 360
 
 const SHOTS = "tests/e2e/screenshots";
@@ -80,17 +81,4 @@ test("отчёт CEO, журнал, настройки и синхронизац
   await page.getByTestId("sync-tab-mirror").click();
   await expect(page.getByRole("heading", { name: "Таблица для просмотра" })).toBeVisible();
   await shot(page, "sync-mirror");
-});
-
-test("один на один: цифры встреч при личном входе", async ({ page }) => {
-  await enterByLink(page, "reva");
-  await page.goto("/one-on-one");
-  const figures = page.getByRole("list", { name: "Встречи в цифрах" });
-  if (await page.getByRole("heading", { name: "Встреч один на один пока нет" }).isVisible()) {
-    await expect(figures).toHaveCount(0);
-  } else {
-    await expect(figures).toBeVisible();
-    await expect(page.getByTestId("oo-fig-pairs")).not.toContainText(/^0/);
-  }
-  await shot(page, "one-on-one");
 });

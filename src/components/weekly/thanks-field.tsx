@@ -1,7 +1,7 @@
 "use client";
 
 // «Спасибо @коллега за…» в weekly (этап 22, модуль М6): необязательная строка. Сохраняется сама через пару секунд,
-// упомянутый коллега получает событие в «Мне». Строки собираются в блок «Благодарности» отчёта CEO.
+// упомянутый коллега получает событие в очереди «Ждёт вас». Строки собираются в блок «Благодарности» отчёта CEO.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePrototype } from "@/domain/store";
@@ -68,7 +68,7 @@ export function ThanksField({ week, initial, canEdit }: { week: WeekKey; initial
         rows={1}
         disabled={!canEdit}
         counter={{ value: value.length, max: THANKS_MAX }}
-        hint="Например: «Спасибо @Логинова Светлана за выгрузку по убыткам». Коллега увидит это в «Мне», строка попадёт в отчёт CEO"
+        hint="Например: «Спасибо @Логинова Светлана за выгрузку по убыткам». Коллега увидит это на «Моей неделе», строка попадёт в отчёт CEO"
       />
       <span className="text-caption text-muted" aria-live="polite">
         {state === "saving" ? "Сохраняю" : state === "saved" ? "Благодарность сохранена" : ""}

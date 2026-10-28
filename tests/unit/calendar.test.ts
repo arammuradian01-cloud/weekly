@@ -27,7 +27,6 @@ const input = (over: Partial<FeedInput> = {}): FeedInput => ({
   tasks: [{ id: "t1", number: 412, title: "Запуск ОСАГО, секретный партнёр", due: "2026-10-31" }],
   weeks: [{ ...week("2026-10-05"), deadline: new Date("2026-10-12T15:00:00Z"), meetingDate: "2026-10-13" }],
   nodes,
-  oneOnOnes: [{ id: "m1", pairId: "pair-1", date: "2026-10-15", otherName: "Антонов Дмитрий" }],
   ...over,
 });
 
@@ -81,16 +80,14 @@ describe("события календаря", () => {
     expect(task.summary).toBe("Срок задачи №412");
     expect(task.url).toBe("https://weekly.example/tasks/412");
     expect(task.date).toBe("2026-10-31");
-    // Встреча один на один по ссылке с ключом пары, без короткого имени человека в адресе
-    const oo = events.find((e) => e.uid === u("one-on-one-m1"))!;
-    expect(oo.summary).toBe("Встреча один на один");
-    expect(oo.url).toBe("https://weekly.example/one-on-one?pair=pair-1");
+    // Этап 76: встречи один на один удалены, в календаре их нет и ссылок на убранный раздел тоже
+    expect(events.some((e) => e.uid.startsWith("one-on-one-"))).toBe(false);
+    expect(text).not.toContain("/one-on-one");
   });
 
-  it("с названиями: название задачи, имя собеседника и название команды", () => {
+  it("с названиями: название задачи и название команды", () => {
     const events = feedEvents(input({ withTitles: true }));
     expect(events.find((e) => e.uid === u("task-t1"))!.summary).toBe("№412 Запуск ОСАГО, секретный партнёр");
-    expect(events.find((e) => e.uid === u("one-on-one-m1"))!.summary).toBe("Один на один: Антонов Дмитрий");
     expect(events.some((e) => e.summary === "Встреча команды «Развитие продуктов», неделя 41")).toBe(true);
   });
 
@@ -111,7 +108,7 @@ describe("события календаря", () => {
     const away = feedEvents(input({ weeks: [{ ...week("2026-10-05", true), deadline: new Date("2026-10-12T15:00:00Z"), meetingDate: "2026-10-13" }] }));
     expect(away.some((e) => e.uid.startsWith("weekly-"))).toBe(false);
     // Специалист без weekly: срока weekly нет, встреча своей команды есть
-    const antonov = feedEvents(input({ personId: "antonov", oneOnOnes: [], tasks: [] }));
+    const antonov = feedEvents(input({ personId: "antonov", tasks: [] }));
     expect(antonov.some((e) => e.uid.startsWith("weekly-"))).toBe(false);
     expect(antonov.map((e) => e.uid)).toEqual([u("meeting-cpo-2026-10-05", "antonov")]);
   });
@@ -134,7 +131,7 @@ describe("события календаря", () => {
     const events = feedEvents(input());
     expect(events.every((e) => !e.url?.includes("example//"))).toBe(true);
     const order = events.map((e) => e.uid);
-    expect(order.indexOf(u("weekly-2026-10-05"))).toBeLessThan(order.indexOf(u("one-on-one-m1")));
+    expect(order.indexOf(u("weekly-2026-10-05"))).toBeLessThan(order.indexOf(u("meeting-cpo-2026-10-05")));
     expect(order.at(-1)).toBe(u("task-t1"));
   });
 });

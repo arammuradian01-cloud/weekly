@@ -11,7 +11,7 @@ import { SeenMark } from "@/components/inbox/seen-mark";
 
 export const metadata: Metadata = { title: "Запись weekly" };
 
-/** Запись weekly с обсуждением (этап 20): сюда ведут «Мне» и письма */
+/** Запись weekly с обсуждением (этап 20): сюда ведут очередь «Ждёт вас» и письма */
 export default async function EntryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const actor = await currentActor();

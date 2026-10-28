@@ -64,7 +64,7 @@ test("руководитель канала меняет полисы партн
   // Руководитель канала по личному входу: событие и корректировка полисов партнёра
   await page.context().clearCookies();
   await enterByLink(page, "sakhibullina");
-  await page.goto("/me");
+  await page.goto("/");
   await expect(page.getByText(/Проверьте прогноз: Партнёрский канал/)).toBeVisible();
   await page.goto("/forecast?tab=partners");
   const row = partnerRow(page, "Банк Север");

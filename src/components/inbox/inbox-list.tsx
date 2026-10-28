@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
-import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, MessagesSquare, Presentation, Rocket, Rss, SquareCheck, TrendingUp, Users, type LucideIcon } from "lucide-react";
+import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, Presentation, Rocket, Rss, SquareCheck, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { planHref } from "@/lib/plan/links";
-import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/(app)/me/actions";
+import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/actions/inbox";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
 import { usePrototype } from "@/domain/store";
 import { addDays, formatShort } from "@/domain/dates";
@@ -15,6 +15,8 @@ import { IconCircle } from "@/components/ui/tile";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 import type { Result } from "@/lib/action-runner";
+import { QUEUE_GROUPS, QUEUE_GROUP_LIMIT } from "./me-tasks";
+import { GroupTitle, ShowAll } from "./queue-parts";
 
 const when = (iso: string, today: string) => {
   const at = new Date(iso);
@@ -34,7 +36,6 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("team-report:")) return { icon: FileText, tone: "info" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
-  if (item.subject.startsWith("1on1:")) return { icon: MessagesSquare, tone: "info" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
   if (item.subject.startsWith("plan:")) return { icon: TrendingUp, tone: "warning" };
   if (item.subject.startsWith("news:")) return { icon: Rss, tone: "info" };
@@ -46,15 +47,23 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   return { icon: SquareCheck, tone: "accent" };
 }
 
-/** События «Мне»: одна строка на задачу, свежие сверху. Этап 44: группа «Прочитать» в общей очереди, только когда события есть */
+/**
+ * События очереди «Ждёт вас»: одна строка на предмет, свежие сверху. Этап 44: группа «Прочитать» в общей очереди, только
+ * когда события есть. Этап 76: очередь на «Моей неделе», в группе пять строк, остальные по «Показать все». Событие
+ * с предметом без своей страницы (например, встречи один на один до их удаления) показывается текстом, без ссылки
+ */
 export function InboxEvents({ items }: { items: InboxItem[] }) {
   const run = useRunAction();
   const { data } = usePrototype();
   const [busy, setBusy] = useState<string | null>(null);
-  // Человек открыл «Мне» и видит события: письма о них уже не нужны (этап 20)
-  const seenKey = items.map((i) => `${i.subject}:${i.count}`).join("|");
+  const [all, setAll] = useState(false);
+  const shown = all ? items : items.slice(0, QUEUE_GROUP_LIMIT);
+  // Человек видит события и письма о них уже не нужны (этап 20). Правка по ревью этапа 76: помечаем только показанные
+  // строки, а не всю очередь. Главная открыта весь день, а события за «Показать все» человек так и не увидел: пометить
+  // их просмотренными значило бы отменить письмо о том, чего он не читал. Раскрыл «Показать все»: пометятся и они
+  const seenKey = shown.map((i) => `${i.subject}:${i.count}`).join("|");
   useEffect(() => {
-    if (seenKey) markSeenAction().catch(() => undefined);
+    if (seenKey) markSeenAction(seenKey.split("|").map((k) => k.slice(0, k.lastIndexOf(":")))).catch(() => undefined);
   }, [seenKey]);
 
   const act = async (subject: string, fn: () => Promise<Result<unknown>>, ok: string) => {
@@ -64,11 +73,11 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
   };
 
   return (
-    <section aria-labelledby="me-read" className="sv-section !mt-0 scroll-mt-24" data-testid="me-read">
-      <div className="sv-section__head">
-        <h2 id="me-read" className="sv-section__title scroll-mt-[calc(6rem+var(--view-as-h,0px))]">
-          Прочитать <span className="sv-section__count">{items.length}</span>
-        </h2>
+    <section aria-labelledby={QUEUE_GROUPS.read} className="flex flex-col" data-testid="me-read">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <GroupTitle id={QUEUE_GROUPS.read} count={items.length}>
+          Прочитать
+        </GroupTitle>
         {items.length > 1 ? (
           <Button size="sm" variant="ghost" className="ml-auto" disabled={busy !== null} onClick={() => void act("*", () => markAllDoneAction(), "Всё разобрано")}>
             <CheckCheck className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
@@ -77,8 +86,8 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
         ) : null}
       </div>
       {items.length ? (
-        <ul className="sv-event-list m-0 list-none p-0">
-          {items.map((item) => {
+        <ul id={`${QUEUE_GROUPS.read}-list`} className="sv-event-list m-0 list-none p-0">
+          {shown.map((item) => {
             const kind = eventIcon(item);
             return (
             <li key={item.subject} className={cn("sv-event is-unread", busy === item.subject && "opacity-60")}>
@@ -123,10 +132,6 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   <Link href={`/weekly?week=${item.subject.split(":")[1]}`} className="sv-event__text font-semibold hover:text-link">
                     Благодарность в weekly
                   </Link>
-                ) : item.subject.startsWith("1on1:") ? (
-                  <Link href={`/one-on-one?pair=${encodeURIComponent(item.subject.slice(5))}`} className="sv-event__text font-semibold hover:text-link">
-                    {item.actorName ? `Один на один: ${item.actorName}` : "Встреча один на один"}
-                  </Link>
                 ) : item.subject.startsWith("initiative:") ? (
                   <Link href={`/initiatives#i-${encodeURIComponent(item.subject.slice(11))}`} className="sv-event__text font-semibold hover:text-link">
                     Крупная инициатива
@@ -153,7 +158,7 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                 ) : null}
                 <p className="sv-event__text mt-0.5">{item.text}</p>
                 {item.requestQuickDue ? (
-                  // Принять просьбу прямо отсюда (этап 26): с телефона это второе нажатие после «Мне»
+                  // Принять просьбу прямо отсюда (этап 26): с телефона одно нажатие на «Моей неделе» (этап 76)
                   <Button
                     size="sm"
                     className="mt-2"
@@ -224,6 +229,7 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
           })}
         </ul>
       ) : null}
+      <ShowAll total={items.length} open={all} onToggle={() => setAll((o) => !o)} controls={`${QUEUE_GROUPS.read}-list`} label="Прочитать" />
     </section>
   );
 }

@@ -29,10 +29,10 @@ test("упоминание в комментарии задачи приходи
   const [{ number }] = await sql(
     `SELECT t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'loginova' AND t.status = 'IN_PROGRESS' AND t."archivedAt" IS NULL ORDER BY t.number LIMIT 1`,
   );
-  // Рева заранее открыл «Мне» и ничего не перезагружает
+  // Рева заранее открыл «Мою неделю» с очередью «Ждёт вас» и ничего не перезагружает
   const reva = await second(browser, page, "Рева Тарас");
-  await reva.goto("/me");
-  await expect(reva.getByRole("heading", { name: "Мне", level: 1 })).toBeVisible();
+  await reva.goto("/");
+  await expect(reva.getByRole("heading", { name: /^Ждёт вас/, level: 2 })).toBeVisible();
   await expect(reva.getByTestId("me-read")).toHaveCount(0);
 
   await enter(page, "Фатьянов Евгений");
@@ -101,7 +101,7 @@ test("обсуждение записи weekly: вопрос к встрече, 
 
   // Автор записи видит её в «Мне» и переходит к обсуждению
   const loginova = await second(browser, page, "Логинова Светлана");
-  await loginova.goto("/me");
+  await loginova.goto("/");
   await expect(loginova.getByText("Упоминание в обсуждении записи: «@Логинова Светлана какой план по срокам?»")).toBeVisible();
   await loginova.getByRole("link", { name: `Запись weekly: ${what}` }).click();
   await expect(loginova).toHaveURL(new RegExp(`/weekly/entry/${id}$`));

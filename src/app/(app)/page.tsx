@@ -21,14 +21,13 @@ import type { MeetingSetting } from "@/lib/weekly/weeks";
 import { Suspense } from "react";
 import { audienceOf, currentTeam, subjectOf } from "@/lib/org/current";
 import { MyWeek } from "@/components/weekly/my-week";
-import { getMyWeekly, weeklyStates } from "@/lib/weekly/service";
+import { getMyWeekly, missedWeeks, weeklyStates } from "@/lib/weekly/service";
 import { promiseHistory } from "@/lib/weekly/promise-service";
 import { shiftWeek } from "@/lib/weekly/weeks";
 import { addDays, formatLong, fromCalendar } from "@/domain/dates";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { myRequests } from "@/lib/requests/service";
-import { QUIET_KINDS, listInbox } from "@/lib/inbox/service";
-import { withoutRequestEvents } from "@/components/inbox/me-tasks";
+import { listInbox } from "@/lib/inbox/service";
 import { currentActor } from "@/lib/action-runner";
 import { ratingPrompt } from "@/lib/meeting-rating/service";
 import { NewsBlock } from "@/components/news/news-block";
@@ -56,7 +55,7 @@ export default async function MyWeekPage() {
   const weekKey = fromCalendar(week.start);
   const current = management ? await currentTeam(subjectOf(ctx)) : null;
   const actor = await currentActor();
-  const [mine, team, requests, stats, rating, inbox] = await Promise.all([
+  const [mine, team, requests, stats, rating, inbox, missed] = await Promise.all([
     getMyWeekly(person.id, weekKey),
     current ? weeklyStates(weekKey, audienceOf(current)) : Promise.resolve(null),
     myRequests(actor, now),
@@ -66,11 +65,11 @@ export default async function MyWeekPage() {
     // Анонимная оценка встреч (этап 29): напоминание в конце месяца и в первые дни следующего. В «Смотреть как»
     // (этап 63) его нет: по напоминанию видно, ответил ли человек
     ctx.viewAs ? Promise.resolve(null) : ratingPrompt(actor, now),
-    // События для «Требует внимания» (этап 44): без просьб, которые и так в списке своей строкой
+    // Очередь «Ждёт вас» (этап 76, раньше раздел «Мне»): события без просьб, которые и так в очереди своей строкой
     listInbox(person.id, now, subjectOf(ctx)),
+    // Прошлые недели без сданного weekly, пока они открыты (этап 76)
+    missedWeeks(person.id, now),
   ]);
-  // Дайджест новостей (этап 60) тихий: в «Требует внимания» не считается
-  const events = withoutRequestEvents(inbox.items, requests.incoming).filter((i) => !QUIET_KINDS.includes(i.kind)).length;
   // Свой срок человека (этап 15): команда может сдавать раньше департамента
   const deadline = new Date(mine.week.deadline);
   const today = moscowDate(now);
@@ -117,7 +116,9 @@ export default async function MyWeekPage() {
           entriesCount={mine.entries.length}
           team={team}
           requests={requests}
-          events={events}
+          items={inbox.items}
+          snoozed={inbox.snoozed}
+          missed={missed.map((w) => ({ key: w.key, number: w.number, range: `${formatLong(w.start)} - ${formatLong(w.end)}` }))}
           promiseStats={stats[0]}
           meetingText={`Встреча ${WEEKDAYS_ACCUSATIVE[meetingSetting.weekday - 1]}, ${formatLong(meetingDay)}`}
           meetingDay={meetingDay}

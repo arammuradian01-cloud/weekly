@@ -257,7 +257,7 @@ export function TaskActionsProvider({ children }: { children: React.ReactNode })
                 ) : mode === "person" ? (
                   <>
                     <PersonSelect id="st-person" label="Кого ждёт" value={person} onChange={setPerson} exclude={me.slug} />
-                    <TextArea label="Что нужно от человека" id="st-ask" value={ask} onChange={(e) => setAsk(e.target.value)} hint="Уйдёт ему просьбой в «Мне»: он примет её со сроком или ответит отказом" />
+                    <TextArea label="Что нужно от человека" id="st-ask" value={ask} onChange={(e) => setAsk(e.target.value)} hint="Уйдёт ему просьбой на «Мою неделю»: он примет её со сроком или ответит отказом" />
                     <DueField id="st-ask-due" label="К какому сроку" value={askDue} onChange={setAskDue} today={data.today} />
                   </>
                 ) : (
