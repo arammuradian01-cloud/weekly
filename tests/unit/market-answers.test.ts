@@ -17,9 +17,12 @@ describe("ответ загрузки пакета", () => {
     expect(await read(json(401, { ok: false, error: MARKET_ANSWER_TEXTS.upload.signedOut }))).toEqual({ ok: false, error: MARKET_ANSWER_TEXTS.upload.signedOut });
   });
 
-  it("ответ не JSON по статусу: 401 вход, 413 размер, остальное общий текст", async () => {
+  it("ответ не JSON по статусу: 401 вход, 413 отказ прокси по размеру, остальное общий текст", async () => {
     expect(await read(html(401))).toEqual({ ok: false, error: "Вход закончился: обновите страницу, войдите и загрузите пакет снова" });
-    expect(await read(html(413))).toEqual({ ok: false, error: "Файл больше 25 МБ: пакет рынка может быть не больше 25 МБ" });
+    // Этап 83: 413 не нашим ответом приходит от прокси хостинга, текст подсказывает сжатый файл
+    expect(await read(html(413))).toEqual({ ok: false, error: "Сервер отклонил файл по размеру. Загрузите сжатый файл .json.gz" });
+    // Наш отказ по размеру приходит JSON и показывается как есть
+    expect(await read(json(413, { ok: false, error: MARKET_ANSWER_TEXTS.upload.tooBig }))).toEqual({ ok: false, error: MARKET_ANSWER_TEXTS.upload.tooBig });
     expect(await read(html(502))).toEqual({ ok: false, error: "Не получилось загрузить, попробуйте ещё раз" });
     expect(await read(html(500))).toEqual({ ok: false, error: "Не получилось загрузить, попробуйте ещё раз" });
     // Ответ 200, но не JSON (чужая страница) и битый JSON: тоже общий текст, а не «Вход закончился»
