@@ -23,7 +23,7 @@ import { cn } from "@/lib/cn";
 import { Modal } from "@/components/ui/overlays";
 import { TextArea } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
-import { GoalCode, GoalStatus, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount } from "./roadmap-goals";
+import { GoalStatus, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount } from "./roadmap-goals";
 import { TaskTipBubble, useTaskTip } from "./task-tooltip";
 
 type Span = { start: IsoDate; end: IsoDate };
@@ -64,7 +64,9 @@ function goalBarText(line: GoalLine): string {
 /** Сколько пикселей нужно сдвинуть указатель, чтобы нажатие стало перетаскиванием */
 const DRAG_THRESHOLD = 6;
 /** Ширина трека до первого замера: ноутбук 1440 с боковым меню */
-const TRACK_PX = 860;
+const TRACK_PX = 820;
+/** Ширина колонки слева: в неё помещается строка цели с кодом, названием, статусом и прогрессом */
+const COL_PX = 320;
 
 const pct = (day: number, range: TimelineRange) => `${(day / range.days) * 100}%`;
 
@@ -151,8 +153,8 @@ export function RoadmapTimeline({
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    // Трек: ширина карты без колонки задач (280 px) и её рамки. Карта на месте всегда, строки меняются фильтрами
-    const measure = () => setTrackPx(Math.max(0, el.clientWidth - 281) || TRACK_PX);
+    // Трек: ширина карты без колонки слева и её рамки. Карта на месте всегда, строки меняются фильтрами
+    const measure = () => setTrackPx(Math.max(0, el.clientWidth - (COL_PX + 1)) || TRACK_PX);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -292,7 +294,7 @@ export function RoadmapTimeline({
     return (
       <li
         key={base.task.number}
-        className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0"
+        className="grid h-14 grid-cols-[320px_minmax(0,1fr)] border-b border-line last:border-b-0"
         // Подсказка по всей строке задачи, не только по полосе: название в колонке слева тоже обрезано
         onMouseEnter={hover ? (e) => tip.show(base.task, e.currentTarget) : undefined}
         onMouseLeave={hover ? () => tip.hide(base.task.number) : undefined}
@@ -402,33 +404,34 @@ export function RoadmapTimeline({
     const place: React.CSSProperties =
       line.outside === "before" ? { left: 0 } : line.outside === "after" ? { right: 0 } : { left: `min(${pct(line.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(line.to - line.from + 1, range)})` };
     return (
-      <div className="grid min-h-16 grid-cols-[280px_minmax(0,1fr)] border-b border-line" data-testid={`timeline-goal-${g.id}`}>
+      <div className="grid min-h-16 grid-cols-[320px_minmax(0,1fr)] border-b border-line" data-testid={`timeline-goal-${g.id}`}>
         <div className="relative flex min-w-0 flex-col justify-center gap-0.5 py-2 pl-3 pr-4">
-          <h2 id={headingId} className="m-0 min-w-0">
-            {/* Растянутая кнопка: нажимается вся колонка цели, а не один значок. Ссылка на цель лежит поверх неё */}
+          <h2 id={headingId} className="m-0 flex min-w-0 items-center gap-1.5">
+            {/* Код цели это ссылка на экран «Цели»: она лежит поверх растянутой кнопки и нажимается отдельно */}
+            <Link
+              href={goalHref(g)}
+              aria-label={`Открыть цель ${name} на экране «Цели»`}
+              className="relative z-[1] inline-flex min-h-8 shrink-0 items-center rounded-md bg-blue-soft px-2 text-caption font-semibold tabular-nums text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+              data-testid={`timeline-goal-link-${g.id}`}
+            >
+              {g.code ?? "Цель"}
+            </Link>
+            {/* Растянутая кнопка: нажимается вся колонка цели, а не один значок */}
             <button
               type="button"
               onClick={() => onToggle?.(key)}
               aria-expanded={open}
               aria-controls={controls}
-              className="flex min-h-11 w-full min-w-0 items-center gap-1.5 text-left text-small font-semibold text-ink after:absolute after:inset-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0"
+              className="flex min-h-11 w-full min-w-0 items-center gap-1.5 text-left text-small font-semibold text-ink after:absolute after:inset-0 after:content-[''] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus lg:min-h-0"
               data-testid={`timeline-goal-toggle-${g.id}`}
             >
               <Chevron className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
-              <GoalCode code={g.code} />
               <span className="min-w-0 truncate">{g.title}</span>
             </button>
           </h2>
-          <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap pl-5 text-caption text-muted">
+          <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-caption text-muted">
             <GoalStatus goal={g} />
             <span className="min-w-0 truncate">{meta}</span>
-            <Link
-              href={goalHref(g)}
-              className="relative z-[1] inline-flex min-h-11 shrink-0 items-center font-medium text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0"
-              data-testid={`timeline-goal-link-${g.id}`}
-            >
-              Открыть цель
-            </Link>
           </p>
         </div>
         <div className="relative border-l border-line">
@@ -473,7 +476,7 @@ export function RoadmapTimeline({
         {live}
       </p>
       {/* В просмотре «Смотреть как» (этап 63) под верхней панелью липнет плашка: строка месяцев встаёт под ней */}
-      <div className="sticky top-[calc(4rem+var(--view-as-h,0px))] z-10 grid grid-cols-[280px_minmax(0,1fr)] border-b border-line bg-surface" aria-hidden="true">
+      <div className="sticky top-[calc(4rem+var(--view-as-h,0px))] z-10 grid grid-cols-[320px_minmax(0,1fr)] border-b border-line bg-surface" aria-hidden="true">
         <p className="m-0 self-end px-4 py-2 text-caption font-semibold text-muted">{sections.some((sec) => sec.kind === "goal") ? "Цель и задачи" : "Задача"}</p>
         <div className="relative h-11 border-l border-line">
           {range.months.map((m) => (
@@ -485,7 +488,7 @@ export function RoadmapTimeline({
       </div>
 
       <div className="relative">
-        <span className="pointer-events-none absolute inset-y-0 z-[3] w-0.5 bg-danger-ink" style={{ left: `calc(280px + (100% - 280px) * ${(todayAt + 0.5) / range.days})` }} aria-hidden="true" />
+        <span className="pointer-events-none absolute inset-y-0 z-[3] w-0.5 bg-danger-ink" style={{ left: `calc(320px + (100% - 320px) * ${(todayAt + 0.5) / range.days})` }} aria-hidden="true" />
         {sections.map((sec) => {
           if (sec.kind === "direction")
             return (
