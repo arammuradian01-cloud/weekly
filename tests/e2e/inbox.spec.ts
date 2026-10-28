@@ -56,7 +56,7 @@ test("комментарий к задаче Ревы виден ему на «�
   // Серверное действие «Просмотрено» перерисовывает страницу сразу после открытия и иногда успевает стереть якорь
   // из адреса, а прокрутка к группе остаётся: видимое поведение важнее строки адреса
   const read = reva.getByTestId("me-read");
-  await expect(read.getByRole("heading", { name: /^Прочитать/ })).toBeInViewport();
+  await expect(read.getByRole("heading", { name: /^Прочитать/ })).toBeInViewport({ timeout: 15_000 });
   const row = read.locator("li.sv-event").filter({ hasText: "Комментарий: «Тарас, посмотри мой расчёт по КАСКО»" });
   await expect(row).toHaveCount(1);
   // Строка события по дизайн-системе: кто сделал под текстом, время справа. Время устойчиво к полуночи

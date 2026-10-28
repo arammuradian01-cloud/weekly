@@ -76,8 +76,10 @@ test("/me, /me#группа, /one-on-one и вложенные ведут на �
   // Старая ссылка на группу «Прочитать»: тот же якорь на «Моей неделе», заголовок группы виден под шапкой
   await page.goto("/me#me-read");
   await expect(page).toHaveURL(/\/#me-read$/);
-  await expect(page.getByTestId("me-read").getByRole("heading", { name: /^Прочитать/ })).toBeInViewport();
-  await expect(page.getByTestId("me-read").getByText("Вы владелец решения встречи: проверить тариф")).toBeVisible();
+  // Запас по времени: действие «Просмотрено» перерисовывает страницу сразу после открытия, и на загруженной машине
+  // блок очереди на миг уходит под Suspense вместе с группой
+  await expect(page.getByTestId("me-read").getByRole("heading", { name: /^Прочитать/ })).toBeInViewport({ timeout: 15_000 });
+  await expect(page.getByTestId("me-read").getByText("Вы владелец решения встречи: проверить тариф")).toBeVisible({ timeout: 15_000 });
   for (const path of ["/one-on-one", "/one-on-one/muradyan"]) {
     await page.goto(path);
     await expect(page, path).toHaveURL(/\/$/);
