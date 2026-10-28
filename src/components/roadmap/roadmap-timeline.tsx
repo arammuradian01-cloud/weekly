@@ -199,6 +199,8 @@ export function RoadmapTimeline({
     const track = el?.closest<HTMLElement>("[data-rm-track]");
     if (!el || !track) return;
     e.stopPropagation();
+    // Подсказка во время перетаскивания мешает смотреть на полосу: прячем её, пока тянут
+    tip.hide();
     dragged.current = false;
     if (preview[base.task.number]) {
       cancel(base.task.number);
