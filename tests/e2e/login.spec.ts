@@ -49,10 +49,10 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva.getByText(/только из цифр/)).toBeVisible();
   await setPasswordByLink(reva, url);
 
-  // Профиль из списка не выбирается: «Сменить профиль» нет, есть «Профиль»
+  // Профиль из списка не выбирается: «Сменить профиль» при личном входе выходит из системы (этап 71), есть «Профиль»
   await reva.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
-  await expect(reva.getByRole("menuitem", { name: "Сменить профиль" })).toHaveCount(0);
-  await reva.getByRole("menuitem", { name: "Профиль" }).click();
+  await expect(reva.getByRole("menuitem", { name: "Сменить профиль" })).toBeVisible();
+  await reva.getByRole("menuitem", { name: "Профиль", exact: true }).click();
   await expect(reva).toHaveURL(/\/profile$/);
   await expect(reva.getByText("ссылка от владельца").first()).toBeVisible();
   await reva.goto("/choose");
@@ -97,7 +97,10 @@ test("владелец выдаёт ссылку, человек входит п
   await expect(reva).toHaveURL(/\/login/);
   await reva.goto("/");
   await expect(reva).toHaveURL(/\/login/);
-  expect((await sql("SELECT count(*)::int AS n FROM device_sessions WHERE \"revokedAt\" IS NULL"))[0].n).toBe(0);
+  expect((await sql(`SELECT count(*)::int AS n FROM device_sessions WHERE "revokedAt" IS NULL AND "personId" = (SELECT id FROM people WHERE slug = 'reva')`))[0].n).toBe(0);
+  // Личный вход владельца остаётся: человек завершает только собственные устройства.
+  await page.goto("/settings");
+  await expect(page).toHaveURL(/\/settings$/);
   await reva.context().close();
 });
 
@@ -141,13 +144,10 @@ test("владелец выключает общий логин только п�
   const leader = await freshPage(browser, page);
   await enter(leader, "Рева Тарас");
 
+  // Этап 71: владелец по общему логину режим управления не включает, поэтому выключает общий логин всегда из личного входа
+  // (отказ «Сначала войдите сами лично» для общего логина проверяют тесты базы). Ссылка самому себе, вход по ней, режим
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await page.goto("/settings");
-  await page.getByRole("radiogroup", { name: "Способ входа" }).getByRole("radio", { name: "Только личный" }).click();
-  await expect(page.getByText(/Сначала войдите сами лично/).first()).toBeVisible();
-
-  // Ссылка самому себе, вход по ней, режим управления заново
   const url = await issueInvite(page, "Мурадян Арам");
   await setPasswordByLink(page, url);
   await enterManagement(page, "owner");

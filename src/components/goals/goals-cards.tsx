@@ -1,6 +1,6 @@
 "use client";
 
-// Цели карточками (этап 68). Вид по умолчанию: цели по командам, в карточке код,
+// Цели карточками (этап 68). Вид по умолчанию: цели по людям (или по командам), в карточке код,
 // название, статус, путь к целевому значению (полоса Meter из таблицы) или доля закрытых задач, риск одной строкой,
 // владелец и задачи. Карточка раскрывается: описание и задачи цели. Таблица и дерево остались видами рядом.
 // Сверху шкала квартала: статусы одной полосой, подписи под ней включают отбор. Ссылка на цель (#goal-...) открывает
@@ -11,6 +11,7 @@ import { useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { GoalNode } from "@/lib/goals/service";
 import { goalTasksText } from "@/lib/goals/links";
+import { groupGoals, type GoalGroupBy } from "@/lib/goals/by-person";
 import { formatShort, plural } from "@/domain/dates";
 import { cn } from "@/lib/cn";
 import { Badge } from "@/components/ui/badge";
@@ -51,27 +52,22 @@ export function QuarterBar({ total, slices, onAll, allActive }: { total: number;
 
 type Actions = { onEdit: (g: GoalNode) => void; onMark: (g: GoalNode) => void; onAdd: (g: GoalNode) => void; onFact: (g: GoalNode) => void; creatable: boolean };
 
-export function GoalsCards({ goals, ...actions }: { goals: GoalNode[] } & Actions) {
-  // Группы по командам в порядке первой встречи: сервис уже отдаёт департамент первым
-  const groups: { team: string; name: string; goals: GoalNode[] }[] = [];
-  for (const g of goals) {
-    const group = groups.find((x) => x.team === g.team.id);
-    if (group) group.goals.push(g);
-    else groups.push({ team: g.team.id, name: g.team.name, goals: [g] });
-  }
+export function GoalsCards({ goals, groupBy, ...actions }: { goals: GoalNode[]; groupBy: GoalGroupBy } & Actions) {
+  // Порядок групп и подписи те же, что в таблице (groupGoals): по людям по алфавиту, «Без владельца» последней
+  const groups = groupGoals(goals, groupBy);
   return (
     <div className="flex flex-col gap-8 p-4 sm:p-5" data-testid="goals-cards">
       {groups.map((gr) => (
-        <section key={gr.team} aria-labelledby={`gc-${gr.team}`} className="flex flex-col gap-3">
-          <h3 id={`gc-${gr.team}`} className="m-0 flex items-baseline gap-2 text-title-sm font-semibold text-ink">
-            {gr.name}
+        <section key={gr.key} aria-labelledby={`gc-${groupBy}-${gr.key}`} className="flex flex-col gap-3" data-testid={`goals-group-${gr.key}`}>
+          <h3 id={`gc-${groupBy}-${gr.key}`} className="m-0 flex flex-wrap items-baseline gap-2 text-title-sm font-semibold text-ink">
+            {gr.label}
             <span className="text-small font-normal text-muted">
               {gr.goals.length} {plural(gr.goals.length, "цель", "цели", "целей")}
             </span>
           </h3>
           <ul className="m-0 grid list-none gap-3 p-0 md:grid-cols-2 2xl:grid-cols-3">
             {gr.goals.map((g) => (
-              <GoalCard key={g.id} goal={g} {...actions} />
+              <GoalCard key={g.id} goal={g} groupBy={groupBy} {...actions} />
             ))}
           </ul>
         </section>
@@ -80,7 +76,7 @@ export function GoalsCards({ goals, ...actions }: { goals: GoalNode[] } & Action
   );
 }
 
-function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal: GoalNode } & Actions) {
+function GoalCard({ goal: g, groupBy, onEdit, onMark, onAdd, onFact, creatable }: { goal: GoalNode; groupBy: GoalGroupBy } & Actions) {
   const [open, setOpen] = useState(false);
   const status = goalStatus(g);
   const pct = g.progress.total ? Math.round((g.progress.done / g.progress.total) * 100) : 0;
@@ -123,7 +119,9 @@ function GoalCard({ goal: g, onEdit, onMark, onAdd, onFact, creatable }: { goal:
       ) : null}
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-3 text-caption text-muted">
-        {g.owner ? <span className="font-semibold text-ink">{g.owner.fullName}</span> : null}
+        {/* Группа уже называет владельца или команду: второй раз в карточке их не повторяем */}
+        {groupBy === "team" && g.owner ? <span className="font-semibold text-ink">{g.owner.fullName}</span> : null}
+        {groupBy === "person" ? <span>{g.team.name}</span> : null}
         {g.numeric && g.progress.total ? <span>задач {goalTasksText(g.progress.done, g.progress.total)}</span> : null}
         {g.progress.overdue ? <span className="font-semibold text-danger-ink">просрочено {g.progress.overdue}</span> : null}
         {g.below.total ? <span>целей ниже {g.below.achieved} из {g.below.total}</span> : null}

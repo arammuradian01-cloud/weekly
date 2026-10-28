@@ -100,7 +100,7 @@ test("владелец загружает структуру, команды п�
   await lead.close();
 });
 
-test("общий логин предлагает только людей топ-команды", async ({ page }) => {
+test("общий логин предлагает всех людей структуры без личного пароля (этап 71)", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await loadStructure(page);
@@ -112,7 +112,10 @@ test("общий логин предлагает только людей топ-
   await p.getByRole("button", { name: "Войти" }).click();
   await expect(p).toHaveURL(/\/choose$/);
   await expect(p.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
-  await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toHaveCount(0);
+  // Владелец вошёл своим логином и паролем выше: по общему логину его профиль больше не открыть
+  await expect(p.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
+  await p.getByLabel("Поиск по ФИО, должности или подразделению").fill("антонов");
+  await expect(p.getByRole("button", { name: /Антонов Дмитрий/ })).toBeVisible();
   await other.close();
 });
 
@@ -194,13 +197,15 @@ test("дерево подчинённых: схема с путём наверх
   await page.goto(`/goals?find=${encodeURIComponent("Рева Тарас")}`);
   await expect(page.getByLabel("Поиск цели")).toHaveValue("Рева Тарас");
 
-  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя
+  // Общий логин без режима управления: дерево видно, вакансий нет, даже с профилем руководителя. Этап 71: владелец по
+  // общему логину не входит, поэтому профиль руководителя ветки здесь у Ревы
   const other = await page.context().browser()!.newContext({ viewport: page.viewportSize()!, isMobile: test.info().project.name === "phone" });
   const shared = await other.newPage();
-  await enter(shared, "Мурадян Арам");
+  await enter(shared, "Рева Тарас");
   await shared.goto("/people/structure");
   const sharedTree = shared.getByTestId("people-tree");
-  await sharedTree.getByTestId(`person-${reva}`).click();
+  // Дерево открывается на собственном профиле Ревы: повторно выбирать его не нужно.
+  await expect(sharedTree.getByTestId("person-focus")).toContainText("Рева Тарас");
   await sharedTree.getByTestId(`person-${antonov}`).click();
   await expect(sharedTree.getByTestId("person-focus")).toContainText("Антонов Дмитрий");
   await expect(sharedTree.getByTestId("person-focus")).not.toContainText("Открытые вакансии");

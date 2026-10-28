@@ -27,6 +27,8 @@ import {
   type PushPayload,
   type PushPrefs,
 } from "./rules";
+import { auditVia } from "@/lib/audit";
+import { refuseOwnerAs } from "@/lib/owner-as";
 
 const fail = (message: string): never => {
   throw new TaskRuleError(message);
@@ -202,6 +204,8 @@ export async function pushPass(now = new Date()): Promise<PushPassResult> {
 // ---------- Подписки и настройки ----------
 
 function personalOnly(actor: Actor, deviceId: string | null): string {
+  // Этап 71: устройство принадлежит владельцу, вошедшему в профиль человека: уведомления человека сюда не подключаются
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM" || !deviceId) fail("Уведомления в браузере включаются при личном входе: по общему логину можно выбрать чужой профиль");
   return deviceId!;
 }
@@ -219,7 +223,7 @@ async function audit(actor: Actor, field: string, before: string | null, after: 
       before: before ?? undefined,
       after: after ?? undefined,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
 }
@@ -243,6 +247,8 @@ export async function saveSubscription(actor: Actor, deviceId: string | null, in
  * прежний владелец перестаёт получать уведомления на это устройство. owner: кто включал, по метке на устройстве
  */
 export async function syncSubscription(actor: Actor, deviceId: string | null, input: unknown, owner: string | null): Promise<{ keep: boolean }> {
+  // Этап 71: подписка браузера принадлежит владельцу, вошедшему в чужой профиль: сверка её не трогает
+  refuseOwnerAs(actor);
   const sub = parseSubscription(input);
   if (!sub) return { keep: false };
   const row = await prisma.pushSubscription.findUnique({ where: { endpoint: sub.endpoint } });
@@ -268,6 +274,7 @@ export async function syncSubscription(actor: Actor, deviceId: string | null, in
 
 /** Выключить на этом устройстве. Чужую подписку так не удалить */
 export async function removeSubscription(actor: Actor, endpoint: string): Promise<number> {
+  refuseOwnerAs(actor);
   const found = await prisma.pushSubscription.findMany({ where: { endpoint: String(endpoint ?? ""), personId: actor.personId } });
   if (!found.length) return 0;
   await prisma.pushSubscription.deleteMany({ where: { id: { in: found.map((s) => s.id) } } });
@@ -277,6 +284,7 @@ export async function removeSubscription(actor: Actor, endpoint: string): Promis
 
 /** Выключить на устройстве из списка в профиле */
 export async function removeSubscriptionById(actor: Actor, id: string): Promise<number> {
+  refuseOwnerAs(actor);
   const found = await prisma.pushSubscription.findFirst({ where: { id: String(id ?? ""), personId: actor.personId } });
   if (!found) fail("Это устройство уже не получает уведомления");
   await prisma.pushSubscription.delete({ where: { id: found!.id } });
@@ -298,6 +306,7 @@ export async function pushPrefsFor(personId: string): Promise<PushPrefs> {
 }
 
 export async function savePushPrefs(actor: Actor, input: unknown): Promise<PushPrefs> {
+  refuseOwnerAs(actor);
   if (actor.via === "TEAM") fail("Уведомления настраиваются при личном входе: по общему логину можно выбрать чужой профиль");
   const prefs = pushPrefsOf(input);
   const before = await pushPrefsFor(actor.personId);

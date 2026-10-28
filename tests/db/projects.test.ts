@@ -333,6 +333,18 @@ describe("цифры прогноза", () => {
     expect(await numbersLevel({ ...(await who("Котов")), management: "OWNER" })).toBe("full");
   });
 
+  it("роль владельца или администратора открывает все цифры только при личном входе, не по общему логину", async () => {
+    await prisma.setting.deleteMany({ where: { key: { in: [NUMBERS_ACCESS_KEY, "plan.owners"] } } });
+    const kotov = await who("Котов");
+    for (const role of ["OWNER", "ADMIN"] as const) {
+      expect(await numbersLevel({ ...kotov, role })).toBe("full");
+      expect(await numbersLevel({ ...kotov, role, via: "PASSWORD" })).toBe("full");
+      // Этап 71: по общему логину выбранный профиль владельца или администратора видит цифры по общим правилам
+      expect(await numbersLevel({ ...kotov, role, via: "TEAM" })).toBe("none");
+      expect(await canSeeNumbers({ ...kotov, role, via: "TEAM" })).toBe(false);
+    }
+  });
+
   it("команда продукта из «Прогноза» видит все цифры, даже если она из другого департамента", async () => {
     const kotov = await person("Котов");
     await prisma.setting.upsert({ where: { key: "plan.owners" }, update: { value: { osago: [kotov.slug] } }, create: { key: "plan.owners", value: { osago: [kotov.slug] } } });

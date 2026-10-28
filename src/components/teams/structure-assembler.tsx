@@ -20,6 +20,7 @@ import { Button, buttonClass } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
 import { TextInput } from "@/components/ui/primitives";
 import { BATCH_MAX, NAME_MAX } from "./team-dialogs";
+import { STICKY_COLUMN } from "./sticky-column";
 
 /** Перетаскиваемая область: долгое нажатие на телефоне не выделяет текст и не открывает системное меню */
 const dragArea = "cursor-grab select-none [-webkit-touch-callout:none]";
@@ -366,7 +367,7 @@ export function StructureAssembler({
           )}
         </section>
 
-        <aside aria-labelledby="assemble-targets" className="flex flex-col gap-3 self-start lg:sticky lg:top-20">
+        <aside aria-labelledby="assemble-targets" className={cn("flex flex-col gap-3", STICKY_COLUMN)}>
           <h3 id="assemble-targets" className="text-title-sm font-semibold text-ink">
             Куда добавить
           </h3>

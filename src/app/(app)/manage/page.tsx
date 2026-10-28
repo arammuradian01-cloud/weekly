@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireContext } from "@/lib/auth";
+import { requireContext, teamManagementRefused } from "@/lib/auth";
 import { PageHeader } from "@/components/page-header";
 import { managementPasswordPolicy } from "@/lib/login/management-password";
 import { mailConfigured } from "@/lib/mail";
 import { ManageForm, StepUpForm } from "./manage-form";
+import { TeamRefusal } from "./team-refusal";
 
 export const metadata: Metadata = { title: "Режим управления" };
 
@@ -12,6 +13,8 @@ export default async function ManagePage({ searchParams }: { searchParams: Promi
   const ctx = await requireContext();
   const { next } = await searchParams;
   const target = next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  // Этап 71: владелец или администратор, выбранный по общему логину, видит, почему режима нет, а не уходит молча
+  if (teamManagementRefused(ctx)) return <TeamRefusal />;
   if (!ctx.managementRole) redirect("/");
   if (ctx.management) redirect(target);
 

@@ -10,22 +10,55 @@
 // как» полосы не двигаются (начало задаётся в карточке задачи), сервер всё равно проверяет права и режим просмотра.
 
 import { useEffect, useRef, useState } from "react";
-import { Star } from "lucide-react";
+import Link from "next/link";
+import { Star, Target } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { diffDays, formatLong, formatShort, plural, type IsoDate } from "@/domain/dates";
 import { ownerName } from "@/domain/people";
 import { IMPORTANCE_LABEL } from "@/lib/tasks/roadmap";
-import { barOf, dayAtX, dragSpan, handleInside, HANDLE_PX, spanPlan, type Bar, type DragMode, type TimelineRange, type TimelineRow } from "@/lib/tasks/timeline";
+import { barOf, dayAtX, dragSpan, handleInside, HANDLE_PX, spanPlan, type Bar, type DragMode, type TimelineRange } from "@/lib/tasks/timeline";
+import type { GoalLine, GoalTimelineRow } from "@/lib/tasks/roadmap-goals";
 import { moveTaskSpanAction, setTaskStartAction, transferDueAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
 import { Modal } from "@/components/ui/overlays";
 import { TextArea } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { GoalCode, GoalStatus, GroupToggle, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount, tasksText } from "./roadmap-goals";
 
 type Span = { start: IsoDate; end: IsoDate };
 /** abs: тянут обрезанный край, он встаёт на дату под указателем; left: левый край трека на экране */
 type Drag = { number: number; mode: DragMode; x0: number; y0: number; left: number; width: number; base: Span; abs: boolean; moved: boolean; span: Span | null };
 type Pending = { task: Task; before: Span; after: Span };
+
+/**
+ * Раздел карты (этап 77). direction: направление с полосами задач («По задачам»); goals: строки целей без задач («По
+ * целям»); goal: строка цели и под ней полосы её задач, сворачивается («Цели и задачи»); nogoal: задачи без цели
+ */
+export type TimelineSection =
+  | { kind: "direction"; key: string; label: string; bars: Bar[]; important: number }
+  | { kind: "goals"; key: string; label: string; rows: GoalTimelineRow[] }
+  | { kind: "goal"; key: string; row: GoalTimelineRow }
+  | { kind: "nogoal"; key: string; label: string; bars: Bar[]; important: number; overdue: number };
+
+/**
+ * Цвет полосы цели по статусу, как метка статуса на экране «Цели»: в риске красная, достигнута зелёная, закрыта не
+ * полностью или цель другого квартала серая, идёт фиолетовая (у задач голубые). У цели без задач полоса пунктиром на
+ * фоне карты. Текст держит 4,5:1 в обеих темах
+ */
+function goalColors(row: GoalTimelineRow): { filled: string; empty: string } {
+  const g = row.group.goal;
+  if (!g.known || (g.result !== "IN_PROGRESS" && g.result !== "ACHIEVED")) return { filled: "bg-field text-ink ring-1 ring-inset ring-steel", empty: "bg-surface text-ink border-2 border-dashed border-steel" };
+  if (g.result === "IN_PROGRESS" && g.risk) return { filled: "bg-danger-soft text-danger-ink ring-1 ring-inset ring-danger-ink", empty: "bg-surface text-danger-ink border-2 border-dashed border-danger-ink" };
+  if (g.result === "ACHIEVED") return { filled: "bg-green-soft text-green-ink ring-1 ring-inset ring-green-ink", empty: "bg-surface text-green-ink border-2 border-dashed border-green-ink" };
+  return { filled: "bg-info-soft text-info-ink ring-1 ring-inset ring-info-ink", empty: "bg-surface text-info-ink border-2 border-dashed border-info-ink" };
+}
+
+/** Подпись на полосе цели: сроки или обрубок за окном */
+function goalBarText(line: GoalLine): string {
+  if (line.outside === "before") return `${line.late ? "просрочено с" : "срок"} ${formatShort(line.end)}`;
+  if (line.outside === "after") return `с ${formatShort(line.start)}`;
+  return line.empty ? "задач нет, до конца квартала" : `по ${formatShort(line.end)}`;
+}
 
 /** Сколько пикселей нужно сдвинуть указатель, чтобы нажатие стало перетаскиванием */
 const DRAG_THRESHOLD = 6;
@@ -81,15 +114,23 @@ function EdgeHandle({ side, inside, dashed = false, onPointerDown }: { side: "st
 
 export function RoadmapTimeline({
   range,
-  rows,
+  sections,
   today,
+  quarter = "",
+  collapsed,
+  onToggle,
   canMove,
   onOpen,
   runTask,
 }: {
   range: TimelineRange;
-  rows: TimelineRow[];
+  sections: TimelineSection[];
   today: IsoDate;
+  /** Текущий квартал: у цели другого квартала он подписан */
+  quarter?: string;
+  /** Свёрнутые группы «Цели и задачи»: ключи разделов */
+  collapsed?: ReadonlySet<string>;
+  onToggle?: (key: string) => void;
   canMove: (t: Task) => boolean;
   onOpen: (number: number) => void;
   runTask: (action: () => Promise<TaskActionResult>, toastText: string) => Promise<boolean>;
@@ -116,7 +157,9 @@ export function RoadmapTimeline({
   // Нажатие после перетаскивания: click приходит следом за отпусканием кнопки, задачу он открывать не должен
   const dragged = useRef(false);
   const todayAt = diffDays(range.start, today);
-  const anyMovable = rows.some((r) => r.bars.some((b) => canMove(b.task)));
+  const allBars = sections.flatMap((sec) => (sec.kind === "goals" ? [] : sec.kind === "goal" ? sec.row.bars : sec.bars));
+  const anyMovable = allBars.some((b) => canMove(b.task));
+  const isOpen = (key: string) => !collapsed?.has(key);
 
   const cancel = (number: number) =>
     setPreview((p) => {
@@ -225,6 +268,158 @@ export function RoadmapTimeline({
     }
   };
 
+  const renderBar = (base: Bar, indent = false) => {
+    const span = preview[base.task.number];
+    const bar = span ? barOf(base.task, range, today, span) : base;
+    const can = canMove(base.task);
+    const words = [`${bar.task.number}. ${bar.task.title}`, spanText(bar), ...(bar.importance ? [IMPORTANCE_LABEL[bar.importance].toLowerCase()] : []), ...(bar.overdue ? ["просрочена"] : [])];
+    const label = words.join(", ");
+    // Полоса за окном карты: обрубок прижат к краю трека с подписью даты, ширина по подписи
+    const place: React.CSSProperties = bar.outside === "before" ? { left: 0 } : bar.outside === "after" ? { right: 0 } : { left: `min(${pct(bar.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(bar.to - bar.from + 1, range)})` };
+    const edges = can && !bar.outside;
+    // Ширина полосы в пикселях: по ней ручки решают, сколько их внутри, и отступ текста
+    const barPx = Math.max(12, ((bar.to - bar.from + 1) / range.days) * trackPx);
+    const inL = handleInside(barPx);
+    const inR = handleInside(barPx, bar.cutEnd);
+    return (
+      <li key={base.task.number} className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0">
+        <div className={cn("flex min-w-0 flex-col justify-center pr-4", indent ? "pl-10" : "pl-4")}>
+          <p className="m-0 truncate text-small font-semibold text-ink" title={bar.task.title}>
+            <span className="mr-1.5 font-normal tabular-nums text-muted">{bar.task.number}</span>
+            {bar.task.title}
+          </p>
+          <p className="m-0 truncate text-caption text-muted">
+            {ownerName(bar.task.owner, true)}, {spanText(bar)}
+            {bar.overdue ? <span className="font-semibold text-danger-ink">, просрочена</span> : null}
+          </p>
+        </div>
+        <div data-rm-track className="relative border-l border-line">
+          {range.months.slice(1).map((m) => (
+            <span key={m.key} className="absolute inset-y-0 w-px bg-line" style={{ left: pct(m.offset, range) }} aria-hidden="true" />
+          ))}
+          <div
+            data-rm-bar
+            role="button"
+            tabIndex={0}
+            aria-label={label}
+            aria-describedby={can ? "timeline-keys" : undefined}
+            title={label}
+            onPointerDown={can ? (e) => begin(e, base, "move") : undefined}
+            onPointerMove={can ? move : undefined}
+            onPointerUp={can ? () => end(base.task) : undefined}
+            onPointerCancel={
+              can
+                ? () => {
+                    drag.current = null;
+                    cancel(base.task.number);
+                  }
+                : undefined
+            }
+            onClick={() => click(bar.task.number)}
+            onKeyDown={
+              can
+                ? (e) => onKey(e, bar, base)
+                : (e) => {
+                    if (e.key !== "Enter" && e.key !== " ") return;
+                    e.preventDefault();
+                    onOpen(bar.task.number);
+                  }
+            }
+            className={cn(
+              "absolute top-3 flex h-8 items-center rounded-control text-caption font-semibold select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
+              tone(bar),
+              can ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+              span && "shadow-medium",
+              (bar.cutStart || bar.outside === "before") && "rounded-l-none",
+              (bar.cutEnd || bar.outside === "after") && "rounded-r-none",
+            )}
+            style={place}
+            data-testid={`timeline-bar-${bar.task.number}`}
+            data-outside={bar.outside ?? undefined}
+            data-cut={bar.cutStart ? (bar.cutEnd ? "both" : "start") : bar.cutEnd ? "end" : undefined}
+          >
+            {/* Ручки краёв: нажимается полоса 24 px, внутри полосы не больше четверти её ширины, у узкой полосы ручки
+                снаружи. Обрезанный край тоже с ручкой: он встаёт на дату под указателем */}
+            {edges ? (
+              <EdgeHandle side="start" inside={inL} dashed={!bar.startKnown} onPointerDown={(e) => begin(e, base, "start")} />
+            ) : !bar.startKnown && !bar.outside && !bar.cutStart ? (
+              <span className="absolute inset-y-0 left-0 border-l-[3px] border-dashed border-current" aria-hidden="true" />
+            ) : null}
+            {/* Звёздочки и текст внутри своей обёртки с обрезкой: у узкой полосы они не вылезают, ручки снаружи видны */}
+            <span className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap", barPx < 40 && !bar.outside ? "px-1" : "px-3")}>
+              {bar.importance ? (
+                // Звёздочки цветом текста полосы: цветные звёздочки доски на тёмной и синей полосе не видны
+                <span className="inline-flex shrink-0 items-center" aria-hidden="true">
+                  {Array.from({ length: bar.importance }, (_, i) => (
+                    <Star key={i} className="h-3.5 w-3.5" fill="currentColor" strokeWidth={1.5} />
+                  ))}
+                </span>
+              ) : null}
+              <span className="min-w-0 truncate">{bar.outside ? outsideText(bar) : bar.to - bar.from > 10 ? bar.task.title : formatShort(bar.end)}</span>
+            </span>
+            {edges ? <EdgeHandle side="end" inside={inR} onPointerDown={(e) => begin(e, base, "end")} /> : null}
+          </div>
+        </div>
+      </li>
+    );
+  };
+
+  // Строка цели: слева код, название (ссылка на цель), статус, прогресс и счётчик задач; справа полоса цели от начала
+  // первой задачи до самого позднего срока. Полоса тоже ведёт к цели, с клавиатуры хватает ссылки в названии
+  const renderGoalRow = (row: GoalTimelineRow, toggle: { key: string; controls: string } | null, headingId?: string) => {
+    const { group, line } = row;
+    const g = group.goal;
+    const name = goalName(g);
+    const Heading = headingId ? "h2" : "p";
+    const meta = [goalOrigin(g, quarter), goalProgressText(g), group.tasks.length ? (toggle ? groupCount(group) : tasksText(group.tasks.length)) : null].filter(Boolean).join(", ");
+    const colors = goalColors(row);
+    const narrow = !line.outside && ((line.to - line.from + 1) / range.days) * trackPx < 110;
+    const place: React.CSSProperties =
+      line.outside === "before" ? { left: 0 } : line.outside === "after" ? { right: 0 } : { left: `min(${pct(line.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(line.to - line.from + 1, range)})` };
+    return (
+      <div className="grid h-16 grid-cols-[280px_minmax(0,1fr)] border-b border-line" data-testid={`timeline-goal-${g.id}`}>
+        <div className="flex min-w-0 flex-col justify-center gap-1 px-4">
+          <Heading id={headingId} className="m-0 flex min-w-0 items-center gap-1.5 text-small font-semibold text-ink">
+            {toggle ? <GroupToggle open={isOpen(toggle.key)} onToggle={() => onToggle?.(toggle.key)} controls={toggle.controls} label={`задачи цели ${name}, ${tasksText(group.tasks.length)}`} /> : null}
+            <GoalCode code={g.code} />
+            <Link href={goalHref(g)} className="min-w-0 truncate hover:underline" title={g.title} data-testid={`timeline-goal-link-${g.id}`}>
+              {g.title}
+            </Link>
+          </Heading>
+          <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-caption text-muted">
+            <GoalStatus goal={g} />
+            <span className="min-w-0 truncate">{meta}</span>
+          </p>
+        </div>
+        <div className="relative border-l border-line">
+          {range.months.slice(1).map((m) => (
+            <span key={m.key} className="absolute inset-y-0 w-px bg-line" style={{ left: pct(m.offset, range) }} aria-hidden="true" />
+          ))}
+          <Link
+            href={goalHref(g)}
+            tabIndex={-1}
+            aria-label={`Цель ${name}: ${goalSpanText(group)}`}
+            title={`${name}: ${goalSpanText(group)}`}
+            className={cn(
+              cn("absolute top-4 flex h-8 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-control text-caption font-semibold", narrow ? "px-1.5" : "px-3"),
+              line.empty ? colors.empty : colors.filled,
+              (line.cutStart || line.outside === "before") && "rounded-l-none",
+              (line.cutEnd || line.outside === "after") && "rounded-r-none",
+            )}
+            style={place}
+            data-testid={`timeline-goalbar-${g.id}`}
+            data-empty={line.empty ? "true" : undefined}
+            data-outside={line.outside ?? undefined}
+          >
+            {/* У короткой полосы без значка и только дата: иначе подпись обрезается до «по…» */}
+            {narrow ? null : <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+            <span className="min-w-0 truncate">{narrow && !line.outside && !line.empty ? formatShort(line.end) : goalBarText(line)}</span>
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
   const shift = pending ? diffDays(pending.before.end, pending.after.end) : 0;
 
   return (
@@ -235,7 +430,7 @@ export function RoadmapTimeline({
       </p>
       {/* В просмотре «Смотреть как» (этап 63) под верхней панелью липнет плашка: строка месяцев встаёт под ней */}
       <div className="sticky top-[calc(4rem+var(--view-as-h,0px))] z-10 grid grid-cols-[280px_minmax(0,1fr)] border-b border-line bg-surface" aria-hidden="true">
-        <p className="m-0 self-end px-4 py-2 text-caption font-semibold text-muted">Задача</p>
+        <p className="m-0 self-end px-4 py-2 text-caption font-semibold text-muted">{sections.some((sec) => sec.kind === "goals") ? "Цель" : sections.some((sec) => sec.kind === "goal") ? "Цель и задачи" : "Задача"}</p>
         <div className="relative h-11 border-l border-line">
           {range.months.map((m) => (
             <span key={m.key} className="absolute inset-y-0 border-l border-line px-2 pt-2 text-small font-semibold text-ink first:border-l-0" style={{ left: pct(m.offset, range), width: pct(m.days, range) }}>
@@ -247,114 +442,66 @@ export function RoadmapTimeline({
 
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 z-[3] w-0.5 bg-danger-ink" style={{ left: `calc(280px + (100% - 280px) * ${(todayAt + 0.5) / range.days})` }} aria-hidden="true" />
-        {rows.map((row) => (
-          <section key={row.direction} aria-labelledby={`tl-${row.direction}`} data-testid={`timeline-row-${row.direction}`}>
-            <h2 id={`tl-${row.direction}`} className="m-0 flex items-baseline gap-2 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
-              {row.label}
-              <span className="text-small font-normal text-muted">
-                {row.bars.length} {plural(row.bars.length, "задача", "задачи", "задач")}
-                {row.important ? `, важных ${row.important}` : ""}
-              </span>
-            </h2>
-            <ul className="m-0 list-none p-0">
-              {row.bars.map((base) => {
-                const span = preview[base.task.number];
-                const bar = span ? barOf(base.task, range, today, span) : base;
-                const can = canMove(base.task);
-                const words = [`${bar.task.number}. ${bar.task.title}`, spanText(bar), ...(bar.importance ? [IMPORTANCE_LABEL[bar.importance].toLowerCase()] : []), ...(bar.overdue ? ["просрочена"] : [])];
-                const label = words.join(", ");
-                // Полоса за окном карты: обрубок прижат к краю трека с подписью даты, ширина по подписи
-                const place: React.CSSProperties = bar.outside === "before" ? { left: 0 } : bar.outside === "after" ? { right: 0 } : { left: `min(${pct(bar.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(bar.to - bar.from + 1, range)})` };
-                const edges = can && !bar.outside;
-                // Ширина полосы в пикселях: по ней ручки решают, сколько их внутри, и отступ текста
-                const barPx = Math.max(12, ((bar.to - bar.from + 1) / range.days) * trackPx);
-                const inL = handleInside(barPx);
-                const inR = handleInside(barPx, bar.cutEnd);
-                return (
-                  <li key={base.task.number} className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0">
-                    <div className="flex min-w-0 flex-col justify-center px-4">
-                      <p className="m-0 truncate text-small font-semibold text-ink" title={bar.task.title}>
-                        <span className="mr-1.5 font-normal tabular-nums text-muted">{bar.task.number}</span>
-                        {bar.task.title}
-                      </p>
-                      <p className="m-0 truncate text-caption text-muted">
-                        {ownerName(bar.task.owner, true)}, {spanText(bar)}
-                        {bar.overdue ? <span className="font-semibold text-danger-ink">, просрочена</span> : null}
-                      </p>
-                    </div>
-                    <div data-rm-track className="relative border-l border-line">
-                      {range.months.slice(1).map((m) => (
-                        <span key={m.key} className="absolute inset-y-0 w-px bg-line" style={{ left: pct(m.offset, range) }} aria-hidden="true" />
-                      ))}
-                      <div
-                        data-rm-bar
-                        role="button"
-                        tabIndex={0}
-                        aria-label={label}
-                        aria-describedby={can ? "timeline-keys" : undefined}
-                        title={label}
-                        onPointerDown={can ? (e) => begin(e, base, "move") : undefined}
-                        onPointerMove={can ? move : undefined}
-                        onPointerUp={can ? () => end(base.task) : undefined}
-                        onPointerCancel={
-                          can
-                            ? () => {
-                                drag.current = null;
-                                cancel(base.task.number);
-                              }
-                            : undefined
-                        }
-                        onClick={() => click(bar.task.number)}
-                        onKeyDown={
-                          can
-                            ? (e) => onKey(e, bar, base)
-                            : (e) => {
-                                if (e.key !== "Enter" && e.key !== " ") return;
-                                e.preventDefault();
-                                onOpen(bar.task.number);
-                              }
-                        }
-                        className={cn(
-                          "absolute top-3 flex h-8 items-center rounded-control text-caption font-semibold select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-                          tone(bar),
-                          can ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
-                          span && "shadow-medium",
-                          (bar.cutStart || bar.outside === "before") && "rounded-l-none",
-                          (bar.cutEnd || bar.outside === "after") && "rounded-r-none",
-                        )}
-                        style={place}
-                        data-testid={`timeline-bar-${bar.task.number}`}
-                        data-outside={bar.outside ?? undefined}
-                        data-cut={bar.cutStart ? (bar.cutEnd ? "both" : "start") : bar.cutEnd ? "end" : undefined}
-                      >
-                        {/* Ручки краёв: нажимается полоса 24 px, внутри полосы не больше четверти её ширины, у узкой полосы ручки
-                            снаружи. Обрезанный край тоже с ручкой: он встаёт на дату под указателем */}
-                        {edges ? (
-                          <EdgeHandle side="start" inside={inL} dashed={!bar.startKnown} onPointerDown={(e) => begin(e, base, "start")} />
-                        ) : !bar.startKnown && !bar.outside && !bar.cutStart ? (
-                          <span className="absolute inset-y-0 left-0 border-l-[3px] border-dashed border-current" aria-hidden="true" />
-                        ) : null}
-                        {/* Звёздочки и текст внутри своей обёртки с обрезкой: у узкой полосы они не вылезают, ручки снаружи видны */}
-                        <span className={cn("flex h-full min-w-0 flex-1 items-center gap-1.5 overflow-hidden whitespace-nowrap", barPx < 40 && !bar.outside ? "px-1" : "px-3")}>
-                          {bar.importance ? (
-                            // Звёздочки цветом текста полосы: цветные звёздочки доски на тёмной и синей полосе не видны
-                            <span className="inline-flex shrink-0 items-center" aria-hidden="true">
-                              {Array.from({ length: bar.importance }, (_, i) => (
-                                <Star key={i} className="h-3.5 w-3.5" fill="currentColor" strokeWidth={1.5} />
-                              ))}
-                            </span>
-                          ) : null}
-                          <span className="min-w-0 truncate">{bar.outside ? outsideText(bar) : bar.to - bar.from > 10 ? bar.task.title : formatShort(bar.end)}</span>
-                        </span>
-                        {edges ? <EdgeHandle side="end" inside={inR} onPointerDown={(e) => begin(e, base, "end")} /> : null}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))}
+        {sections.map((sec) => {
+          if (sec.kind === "direction")
+            return (
+              <section key={sec.key} aria-labelledby={`tl-${sec.key}`} data-testid={`timeline-row-${sec.key}`}>
+                <h2 id={`tl-${sec.key}`} className="m-0 flex items-baseline gap-2 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
+                  {sec.label}
+                  <span className="text-small font-normal text-muted">
+                    {sec.bars.length} {plural(sec.bars.length, "задача", "задачи", "задач")}
+                    {sec.important ? `, важных ${sec.important}` : ""}
+                  </span>
+                </h2>
+                <ul className="m-0 list-none p-0">{sec.bars.map((b) => renderBar(b))}</ul>
+              </section>
+            );
+          if (sec.kind === "goals")
+            return (
+              <section key={sec.key} aria-labelledby={`tl-${sec.key}`} data-testid="timeline-goals">
+                <h2 id={`tl-${sec.key}`} className="m-0 flex items-baseline gap-2 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
+                  {sec.label}
+                  <span className="text-small font-normal text-muted">
+                    {sec.rows.length} {plural(sec.rows.length, "цель", "цели", "целей")}
+                  </span>
+                </h2>
+                <ul className="m-0 list-none p-0">
+                  {sec.rows.map((r) => (
+                    <li key={r.group.goal.id}>{renderGoalRow(r, null)}</li>
+                  ))}
+                </ul>
+              </section>
+            );
+          if (sec.kind === "goal") {
+            const id = sec.row.group.goal.id;
+            const open = isOpen(sec.key);
+            return (
+              <section key={sec.key} aria-labelledby={`tl-goal-${id}`} data-testid={`timeline-group-${id}`}>
+                {renderGoalRow(sec.row, { key: sec.key, controls: `tl-goal-tasks-${id}` }, `tl-goal-${id}`)}
+                <ul id={`tl-goal-tasks-${id}`} className="m-0 list-none p-0" hidden={!open}>
+                  {sec.row.bars.length ? (
+                    sec.row.bars.map((b) => renderBar(b, true))
+                  ) : (
+                    <li className="border-b border-line py-2 pl-10 pr-4 text-caption text-muted">Открытых задач у цели нет</li>
+                  )}
+                </ul>
+              </section>
+            );
+          }
+          const open = isOpen(sec.key);
+          return (
+            <section key={sec.key} aria-labelledby="tl-nogoal" data-testid="timeline-nogoal">
+              <h2 id="tl-nogoal" className="m-0 flex items-center gap-1.5 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
+                <GroupToggle open={open} onToggle={() => onToggle?.(sec.key)} controls="tl-nogoal-tasks" label={`${sec.label}, ${tasksText(sec.bars.length)}`} />
+                {sec.label}
+                <span className="text-small font-normal text-muted">{groupCount({ tasks: sec.bars, important: sec.important, overdue: sec.overdue })}</span>
+              </h2>
+              <ul id="tl-nogoal-tasks" className="m-0 list-none p-0" hidden={!open}>
+                {sec.bars.map((b) => renderBar(b))}
+              </ul>
+            </section>
+          );
+        })}
       </div>
       {anyMovable ? (
         // Видимая подсказка и есть описание полос для диктора (aria-describedby): одна копия текста, а не две

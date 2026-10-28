@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterTeam, resetDatabase, sql } from "./helpers";
 
 // Этап 35: прогноз месяца в процессах. После загрузки LBE лидер ОСАГО получает событие в «Мне», открывает прогноз и
 // отмечает «Прогноз проверен». Владелец загружает факт по дням и видит темп к прогнозу, сравнивает версии месяца,
@@ -220,7 +220,8 @@ test("общий логин и человек не из команд проду�
   const denied = await page.request.get("/forecast/export");
   expect(denied.status()).toBe(403);
   await page.context().clearCookies();
-  await enter(page, "Головкин Владислав");
+  // Общий логин: роль администратора цифр не открывает (этап 71), ссылки на прогноз в делах нет
+  await enterTeam(page, "Головкин Владислав");
   await page.goto("/me");
   await expect(page.getByRole("link", { name: "Прогноз месяца" })).toHaveCount(0);
 });

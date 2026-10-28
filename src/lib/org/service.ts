@@ -22,6 +22,7 @@ import { getSetting } from "@/lib/settings";
 import type { DeadlineSetting } from "@/lib/week";
 import { deadlineOf, reportingKey } from "@/lib/weekly/weeks";
 import { topTeamName } from "@/lib/org/top-name";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -70,7 +71,7 @@ async function audit(tx: Tx, actor: Actor, action: string, entity: string, entit
       before: before ?? undefined,
       after: after ?? undefined,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
 }
@@ -619,6 +620,8 @@ export async function updateTeam(actor: Actor, id: string, input: TeamInput): Pr
         const nodes = await loadTeamNodes(tx);
         if (subtreeOf(nodes, id).includes(parentId)) fail("Команда не может стоять ниже своей же команды");
         const parent = await teamOrFail(tx, parentId);
+        // Этап 70: под закрытую команду не ставим, её weekly никто не собирает
+        if (!parent.active) fail(`Команда «${parent.name}» закрыта: выберите действующую команду выше`);
         data.parentId = parentId;
         // Поставлено руками: загрузка структуры эту связь больше не пересчитывает
         data.parentManual = true;
@@ -836,11 +839,11 @@ export async function moveTask(actor: Actor, number: number, teamId: string): Pr
     const keepGoal = !goal || [teamId, ...ancestorsOf(nodes, teamId)].includes(goal.teamId);
     await tx.task.update({ where: { id: task.id }, data: { teamId, ...(keepGoal ? {} : { goalId: null }) } });
     await tx.auditLog.create({
-      data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Команда", before: from, after: target.name, ip: actor.ip ?? null, via: actor.via ?? null },
+      data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Команда", before: from, after: target.name, ip: actor.ip ?? null, ...auditVia(actor) },
     });
     if (!keepGoal) {
       await tx.auditLog.create({
-        data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: goal!.title, after: undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+        data: { action: "task.update", actorId: actor.personId, actorName: actor.fullName, source: "APP", entity: "task", entityId: String(number), field: "Цель", before: goal!.title, after: undefined, ip: actor.ip ?? null, ...auditVia(actor) },
       });
     }
   });

@@ -3,7 +3,7 @@
 import { writingActor } from "@/lib/action-runner";
 import { ViewAsReadOnlyError } from "@/lib/view-as";
 import type { Actor } from "@/lib/tasks/service";
-import { writeAudit } from "@/lib/audit";
+import { writeAudit, auditVia } from "@/lib/audit";
 import { monthLabel } from "@/lib/forecast/codes";
 import { canExportPlan, isMonth, monthPlan, ownersMap } from "@/lib/plan/service";
 import { buildPlanExport } from "@/lib/plan/export";
@@ -39,7 +39,7 @@ export async function GET(request: Request) {
     field: `Прогноз месяца в Excel, ${monthLabel(view.month)}`,
     after: `строк ${rows}`,
     ip: actor.ip ?? null,
-    via: actor.via ?? null,
+    ...auditVia(actor),
   });
   return new Response(new Uint8Array(buffer), {
     headers: {

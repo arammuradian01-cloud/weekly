@@ -242,6 +242,9 @@ describe("по коду: изменения идут через проверку
       "myForecastAction",
       "planPeopleAction",
       "taskRequestsAction",
+      // «Сменить профиль» у владельца (этап 71): выбор и вход сами отказывают во время просмотра (ownerAsStartError)
+      "ownerAsPeopleAction",
+      "startOwnerAsAction",
       // Режим управления: свой отказ во время просмотра в managementContext, после конца просмотра можно (этап 63)
       "enterManagement",
       "exitManagement",

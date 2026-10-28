@@ -68,26 +68,38 @@ export type Bar = {
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
-export function barOf(task: Task, range: TimelineRange, today: IsoDate, span?: { start: IsoDate; end: IsoDate }): Bar {
-  const s = startOf(task);
-  const start = span?.start ?? s.date;
-  const end = span?.end ?? task.due;
+/** Положение отрезка дат на карте: видимые дни, обрезанные края, обрубок за окном. Общее для полос задач и целей (этап 77) */
+export type Place = Pick<Bar, "from" | "to" | "cutStart" | "cutEnd" | "outside">;
+
+export function placeOf(range: TimelineRange, start: IsoDate, end: IsoDate): Place {
   const a = diffDays(range.start, start);
   const b = diffDays(range.start, end);
   return {
-    task,
-    start,
-    end,
-    startKnown: s.known || !!span,
     from: clamp(a, 0, range.days - 1),
     to: clamp(b, 0, range.days - 1),
     cutStart: a < 0,
     cutEnd: b > range.days - 1,
     outside: b < 0 ? "before" : a > range.days - 1 ? "after" : null,
+  };
+}
+
+export function barOf(task: Task, range: TimelineRange, today: IsoDate, span?: { start: IsoDate; end: IsoDate }): Bar {
+  const s = startOf(task);
+  const start = span?.start ?? s.date;
+  const end = span?.end ?? task.due;
+  return {
+    task,
+    start,
+    end,
+    startKnown: s.known || !!span,
+    ...placeOf(range, start, end),
     overdue: end < today && task.status !== "proposed",
     importance: importanceOf(task.priority),
   };
 }
+
+/** Полосы задач по началу, потом по сроку и номеру */
+export const byStart = (a: Bar, b: Bar) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end) || a.task.number - b.task.number;
 
 export type DragMode = "move" | "start" | "end";
 
@@ -170,7 +182,7 @@ export function buildTimeline(tasks: Task[], today: IsoDate, filter: RoadmapFilt
     const bars = Object.values(r.cells)
       .flat()
       .map((t) => barOf(t, range, today))
-      .sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end) || a.task.number - b.task.number);
+      .sort(byStart);
     return { direction: r.direction, label: r.label, bars, important: r.important };
   });
   return { range, rows, total: board.total };

@@ -19,6 +19,13 @@ export type ManagementGrant = {
   credential?: string;
 };
 
+/**
+ * Вход владельца в профиль другого человека (этап 71): номер входа (по нему в журнале связаны начало и конец), в чей
+ * профиль вошли и до какого момента. Владелец остаётся в personId и sid сессии: возврат только к нему и только с его
+ * записи устройства. Правила в src/lib/owner-as.ts
+ */
+export type OwnerAsGrant = { id: string; targetId: string; until: number };
+
 /** Как вошли: общий логин team с выбором профиля, личная ссылка (на почту или приглашение владельца) или личный пароль */
 export type SessionVia = "TEAM" | "EMAIL" | "INVITE" | "PASSWORD";
 
@@ -30,6 +37,8 @@ export type SessionData = {
   /** Личный вход (этап 9): запись устройства в базе. Пока она не завершена, вход действует */
   sid?: string;
   via?: SessionVia;
+  /** Этап 71: владелец вошёл в профиль другого человека. Только при личном входе, режима управления при этом нет */
+  ownerAs?: OwnerAsGrant;
 };
 
 function keyFrom(secret: string) {
@@ -74,6 +83,10 @@ export async function verifySession(
     ) {
       data.management = { role: m.role, until: m.until, epoch: m.epoch };
       if (m.credential !== undefined) data.management.credential = m.credential;
+    }
+    const o = payload.ownerAs as Partial<OwnerAsGrant> | undefined;
+    if (o && typeof o.id === "string" && o.id && typeof o.targetId === "string" && o.targetId && typeof o.until === "number" && Number.isFinite(o.until)) {
+      data.ownerAs = { id: o.id, targetId: o.targetId, until: o.until };
     }
     return data;
   } catch {

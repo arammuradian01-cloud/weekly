@@ -24,6 +24,7 @@ import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
 import { topTeamName } from "@/lib/org/top-name";
+import { auditVia } from "@/lib/audit";
 
 export { TaskRuleError as WeeklyRuleError };
 
@@ -162,13 +163,16 @@ function viewClosed(row: WeekRow, teams: WeekTeams, teamIds: string[] | undefine
   return teamIds.every((id) => id !== TOP_TEAM && teams.closedTeams.has(id));
 }
 
-/** Неделя для ленты, режима встречи и отчёта CEO. Без ключа: отчётная, а если она пустая, последняя с записями */
-export async function getWeekView(key: WeekKey | null, now = new Date(), audience?: WeekAudience): Promise<WeekView> {
+/**
+ * Неделя для ленты, режима встречи и отчёта CEO. Без ключа: отчётная, а если она пустая, последняя с записями.
+ * fallback: false (встреча и отчёт CEO, этап 73б): без ключа всегда отчётная, даже пустая
+ */
+export async function getWeekView(key: WeekKey | null, now = new Date(), audience?: WeekAudience, opts: { fallback?: boolean } = {}): Promise<WeekView> {
   const reporting = await currentReportingKey(now);
   let target = key && isWeekKey(key) ? key : reporting;
   let fallback = false;
   const scope = entryScope(audience);
-  if (!key) {
+  if (!key && opts.fallback !== false) {
     const reportingWeek = await prisma.week.findUnique({ where: { start: dbDate(reporting) }, select: { id: true } });
     const filled = reportingWeek ? await prisma.weeklyEntry.count({ where: { AND: [{ weekId: reportingWeek.id }, scope] } }) : 0;
     if (!filled) {
@@ -329,7 +333,7 @@ function checkLinks(links: unknown): Link[] {
 
 export async function audit(db: Tx, actor: Actor, action: string, entity: string, entityId: string, field: string, before?: string | null, after?: string | null) {
   await db.auditLog.create({
-    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, via: actor.via ?? null },
+    data: { action, actorId: actor.personId, actorName: actor.fullName, source: "APP", entity, entityId, field, before: before ?? undefined, after: after ?? undefined, ip: actor.ip ?? null, ...auditVia(actor) },
   });
 }
 

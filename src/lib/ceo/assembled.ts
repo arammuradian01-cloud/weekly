@@ -61,7 +61,7 @@ async function seesTop(actor: Actor): Promise<boolean> {
  * отправили ему целиком
  */
 export async function ceoContext(actor: Actor, key: WeekKey, opts: { recipient?: boolean } = {}): Promise<CeoContext> {
-  const level = await numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management });
+  const level = await numbersLevel({ personId: actor.personId, role: actor.role, management: actor.management, via: actor.via });
   const weekNumber = weekNumberOf(key);
   const [reporting, top] = await Promise.all([currentReportingKey(), opts.recipient ? Promise.resolve(true) : seesTop(actor)]);
   const [numbers, plan, decisions, thanks] = await Promise.all([

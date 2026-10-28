@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { requireContext } from "@/lib/auth";
+import { requireContext, teamManagementRefused } from "@/lib/auth";
 import { PageHeader } from "@/components/page-header";
 import { ConfirmStepUpForm } from "../manage-form";
+import { TeamRefusal } from "../team-refusal";
 
 export const metadata: Metadata = { title: "Подтверждение режима управления" };
 
@@ -10,6 +11,7 @@ export const metadata: Metadata = { title: "Подтверждение режи�
 export default async function ConfirmStepUpPage({ searchParams }: { searchParams: Promise<{ t?: string }> }) {
   const ctx = await requireContext();
   const { t = "" } = await searchParams;
+  if (teamManagementRefused(ctx)) return <TeamRefusal />;
   if (!ctx.managementRole) redirect("/");
   if (ctx.management) redirect("/");
   return (

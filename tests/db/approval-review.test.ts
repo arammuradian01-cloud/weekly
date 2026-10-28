@@ -230,6 +230,8 @@ describe("обходы закрыты", () => {
 
 describe("структура поменялась", () => {
   it("R10: человек перешёл к другому руководителю, согласующий выключен: согласующий пересчитан", async () => {
+    // Журнал только дописывается, а номера задач после сброса настройки в других файлах повторяются: считаем записи этого теста
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
     const t = await newTask(reva, (await person("Погосова")).slug, revaTeam, "R10 до переезда");
     // Погосова переходит в управление хранения данных: согласует Комаричев, у Кацембы событие разобрано
     await org.applyStructure(await owner(), rows("Управление хранения данных"));
@@ -245,7 +247,7 @@ describe("структура поменялась", () => {
     const t3 = await newTask(reva, (await person("Белов")).slug, revaTeam, "R10 новая задача");
     expect(t3.approval?.approver).toBe((await person("Харченко")).slug);
     // Пересчёт записан в журнал задачи
-    expect(await prisma.auditLog.count({ where: { entity: "task", entityId: String(t2.number), field: "Согласующий" } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { id: { gt: mark }, entity: "task", entityId: String(t2.number), field: "Согласующий" } })).toBe(1);
     await setPersonActive(await owner(), (await person("Комаричев")).slug, true);
   });
 });

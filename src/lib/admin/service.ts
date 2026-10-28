@@ -22,6 +22,7 @@ import type { EditableDictKind } from "@/domain/dictionaries";
 import type { Prisma, Role } from "@/generated/prisma/client";
 import { ReloadProblemsError, planReload, reloadFromBord, type ReloadPlan, type ReloadResult } from "./reload";
 import { deviceSummary, normalizeEmail, revokeOnDeactivate } from "@/lib/login/service";
+import { auditVia } from "@/lib/audit";
 
 type Tx = Prisma.TransactionClient;
 
@@ -70,7 +71,7 @@ async function audit(tx: Tx, actor: Actor, action: string, entity: string, entit
       before: before ?? undefined,
       after: after ?? undefined,
       ip: actor.ip ?? null,
-      via: actor.via ?? null,
+      ...auditVia(actor),
     },
   });
 }
