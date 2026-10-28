@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Star, Target } from "lucide-react";
+import { ChevronDown, ChevronRight, Star, Target } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { diffDays, formatLong, formatShort, plural, type IsoDate } from "@/domain/dates";
 import { ownerName } from "@/domain/people";
@@ -23,7 +23,8 @@ import { cn } from "@/lib/cn";
 import { Modal } from "@/components/ui/overlays";
 import { TextArea } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
-import { GoalCode, GoalStatus, GroupToggle, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount, tasksText } from "./roadmap-goals";
+import { GoalCode, GoalStatus, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount } from "./roadmap-goals";
+import { TaskTipBubble, useTaskTip } from "./task-tooltip";
 
 type Span = { start: IsoDate; end: IsoDate };
 /** abs: тянут обрезанный край, он встаёт на дату под указателем; left: левый край трека на экране */
@@ -31,12 +32,12 @@ type Drag = { number: number; mode: DragMode; x0: number; y0: number; left: numb
 type Pending = { task: Task; before: Span; after: Span };
 
 /**
- * Раздел карты (этап 77). direction: направление с полосами задач («По задачам»); goals: строки целей без задач («По
- * целям»); goal: строка цели и под ней полосы её задач, сворачивается («Цели и задачи»); nogoal: задачи без цели
+ * Раздел карты (этап 77, переделан на этапе 84). direction: направление с полосами задач («По задачам»);
+ * goal: строка цели, под ней полосы её задач, раскрывается нажатием на цель; nogoal: задачи без цели, тоже
+ * раскрывается. В группировке «По целям» группы свёрнуты, в «Цели и задачи» раскрыты, дальше решает адрес страницы
  */
 export type TimelineSection =
   | { kind: "direction"; key: string; label: string; bars: Bar[]; important: number }
-  | { kind: "goals"; key: string; label: string; rows: GoalTimelineRow[] }
   | { kind: "goal"; key: string; row: GoalTimelineRow }
   | { kind: "nogoal"; key: string; label: string; bars: Bar[]; important: number; overdue: number };
 
@@ -53,11 +54,11 @@ function goalColors(row: GoalTimelineRow): { filled: string; empty: string } {
   return { filled: "bg-info-soft text-info-ink ring-1 ring-inset ring-info-ink", empty: "bg-surface text-info-ink border-2 border-dashed border-info-ink" };
 }
 
-/** Подпись на полосе цели: сроки или обрубок за окном */
+/** Подпись на полосе цели: сроки или обрубок за окном. «Задач нет» только при нулевом прогрессе (этап 84) */
 function goalBarText(line: GoalLine): string {
   if (line.outside === "before") return `${line.late ? "просрочено с" : "срок"} ${formatShort(line.end)}`;
   if (line.outside === "after") return `с ${formatShort(line.start)}`;
-  return line.empty ? "задач нет, до конца квартала" : `по ${formatShort(line.end)}`;
+  return line.empty ? `${line.blank ? "задач нет, " : ""}до конца квартала` : `по ${formatShort(line.end)}`;
 }
 
 /** Сколько пикселей нужно сдвинуть указатель, чтобы нажатие стало перетаскиванием */
@@ -117,8 +118,9 @@ export function RoadmapTimeline({
   sections,
   today,
   quarter = "",
-  collapsed,
+  open: openKeys,
   onToggle,
+  hover = false,
   canMove,
   onOpen,
   runTask,
@@ -128,9 +130,11 @@ export function RoadmapTimeline({
   today: IsoDate;
   /** Текущий квартал: у цели другого квартала он подписан */
   quarter?: string;
-  /** Свёрнутые группы «Цели и задачи»: ключи разделов */
-  collapsed?: ReadonlySet<string>;
+  /** Раскрытые группы целей: ключи разделов. Этап 84: набор приходит из адреса страницы */
+  open?: ReadonlySet<string>;
   onToggle?: (key: string) => void;
+  /** Указатель умеет наводиться: подсказка по задаче от мыши. С клавиатуры подсказка работает всегда */
+  hover?: boolean;
   canMove: (t: Task) => boolean;
   onOpen: (number: number) => void;
   runTask: (action: () => Promise<TaskActionResult>, toastText: string) => Promise<boolean>;
@@ -157,9 +161,11 @@ export function RoadmapTimeline({
   // Нажатие после перетаскивания: click приходит следом за отпусканием кнопки, задачу он открывать не должен
   const dragged = useRef(false);
   const todayAt = diffDays(range.start, today);
-  const allBars = sections.flatMap((sec) => (sec.kind === "goals" ? [] : sec.kind === "goal" ? sec.row.bars : sec.bars));
+  const allBars = sections.flatMap((sec) => (sec.kind === "goal" ? sec.row.bars : sec.bars));
   const anyMovable = allBars.some((b) => canMove(b.task));
-  const isOpen = (key: string) => !collapsed?.has(key);
+  const isOpen = (key: string) => !!openKeys?.has(key);
+  // Подсказка по задаче: одна на карту, появляется от мыши и от клавиатуры, закрывается по Escape (этап 84)
+  const tip = useTaskTip(today);
 
   const cancel = (number: number) =>
     setPreview((p) => {
@@ -282,9 +288,15 @@ export function RoadmapTimeline({
     const inL = handleInside(barPx);
     const inR = handleInside(barPx, bar.cutEnd);
     return (
-      <li key={base.task.number} className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0">
+      <li
+        key={base.task.number}
+        className="grid h-14 grid-cols-[280px_minmax(0,1fr)] border-b border-line last:border-b-0"
+        // Подсказка по всей строке задачи, не только по полосе: название в колонке слева тоже обрезано
+        onMouseEnter={hover ? (e) => tip.show(base.task, e.currentTarget) : undefined}
+        onMouseLeave={hover ? () => tip.hide(base.task.number) : undefined}
+      >
         <div className={cn("flex min-w-0 flex-col justify-center pr-4", indent ? "pl-10" : "pl-4")}>
-          <p className="m-0 truncate text-small font-semibold text-ink" title={bar.task.title}>
+          <p className="m-0 truncate text-small font-semibold text-ink">
             <span className="mr-1.5 font-normal tabular-nums text-muted">{bar.task.number}</span>
             {bar.task.title}
           </p>
@@ -302,8 +314,12 @@ export function RoadmapTimeline({
             role="button"
             tabIndex={0}
             aria-label={label}
-            aria-describedby={can ? "timeline-keys" : undefined}
-            title={label}
+            // Описание полосы: подсказки про клавиши и, пока она видна, подсказка по самой задаче (этап 84)
+            aria-describedby={[can ? "timeline-keys" : null, tip.describedBy(base.task.number)].filter(Boolean).join(" ") || undefined}
+            onMouseEnter={hover ? (e) => tip.show(base.task, e.currentTarget) : undefined}
+            onMouseLeave={hover ? () => tip.hide(base.task.number) : undefined}
+            onFocus={(e) => tip.show(base.task, e.currentTarget)}
+            onBlur={() => tip.hide(base.task.number)}
             onPointerDown={can ? (e) => begin(e, base, "move") : undefined}
             onPointerMove={can ? move : undefined}
             onPointerUp={can ? () => end(base.task) : undefined}
@@ -364,57 +380,81 @@ export function RoadmapTimeline({
     );
   };
 
-  // Строка цели: слева код, название (ссылка на цель), статус, прогресс и счётчик задач; справа полоса цели от начала
-  // первой задачи до самого позднего срока. Полоса тоже ведёт к цели, с клавиатуры хватает ссылки в названии
-  const renderGoalRow = (row: GoalTimelineRow, toggle: { key: string; controls: string } | null, headingId?: string) => {
+  /**
+   * Строка цели (этап 84). Слева вся колонка это кнопка: нажатие на цель раскрывает её задачи под ней, повторное
+   * сворачивает. Рядом ссылка «Открыть цель» на экран «Цели». Справа полоса цели от начала первой задачи до самого
+   * позднего срока; она тоже раскрывает группу, диктору её не читаем: то же самое уже сказала кнопка слева.
+   * У снятой и недостигнутой цели без задач полосы нет: срока впереди у неё не осталось
+   */
+  const renderGoalRow = (row: GoalTimelineRow, key: string, headingId: string) => {
     const { group, line } = row;
     const g = group.goal;
     const name = goalName(g);
-    const Heading = headingId ? "h2" : "p";
-    const meta = [goalOrigin(g, quarter), goalProgressText(g), group.tasks.length ? (toggle ? groupCount(group) : tasksText(group.tasks.length)) : null].filter(Boolean).join(", ");
+    const open = isOpen(key);
+    const Chevron = open ? ChevronDown : ChevronRight;
+    const controls = `tl-goal-tasks-${g.id}`;
+    const meta = [goalOrigin(g, quarter), goalProgressText(g), groupCount(group)].filter(Boolean).join(", ");
     const colors = goalColors(row);
     const narrow = !line.outside && ((line.to - line.from + 1) / range.days) * trackPx < 110;
     const place: React.CSSProperties =
       line.outside === "before" ? { left: 0 } : line.outside === "after" ? { right: 0 } : { left: `min(${pct(line.from, range)}, calc(100% - 12px))`, width: `max(12px, ${pct(line.to - line.from + 1, range)})` };
     return (
-      <div className="grid h-16 grid-cols-[280px_minmax(0,1fr)] border-b border-line" data-testid={`timeline-goal-${g.id}`}>
-        <div className="flex min-w-0 flex-col justify-center gap-1 px-4">
-          <Heading id={headingId} className="m-0 flex min-w-0 items-center gap-1.5 text-small font-semibold text-ink">
-            {toggle ? <GroupToggle open={isOpen(toggle.key)} onToggle={() => onToggle?.(toggle.key)} controls={toggle.controls} label={`задачи цели ${name}, ${tasksText(group.tasks.length)}`} /> : null}
-            <GoalCode code={g.code} />
-            <Link href={goalHref(g)} className="min-w-0 truncate hover:underline" title={g.title} data-testid={`timeline-goal-link-${g.id}`}>
-              {g.title}
-            </Link>
-          </Heading>
-          <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-caption text-muted">
+      <div className="grid min-h-16 grid-cols-[280px_minmax(0,1fr)] border-b border-line" data-testid={`timeline-goal-${g.id}`}>
+        <div className="relative flex min-w-0 flex-col justify-center gap-0.5 py-2 pl-3 pr-4">
+          <h2 id={headingId} className="m-0 min-w-0">
+            {/* Растянутая кнопка: нажимается вся колонка цели, а не один значок. Ссылка на цель лежит поверх неё */}
+            <button
+              type="button"
+              onClick={() => onToggle?.(key)}
+              aria-expanded={open}
+              aria-controls={controls}
+              className="flex min-h-11 w-full min-w-0 items-center gap-1.5 text-left text-small font-semibold text-ink after:absolute after:inset-0 after:content-[''] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0"
+              data-testid={`timeline-goal-toggle-${g.id}`}
+            >
+              <Chevron className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+              <GoalCode code={g.code} />
+              <span className="min-w-0 truncate">{g.title}</span>
+            </button>
+          </h2>
+          <p className="m-0 flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap pl-5 text-caption text-muted">
             <GoalStatus goal={g} />
             <span className="min-w-0 truncate">{meta}</span>
+            <Link
+              href={goalHref(g)}
+              className="relative z-[1] inline-flex min-h-11 shrink-0 items-center font-medium text-link hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus lg:min-h-0"
+              data-testid={`timeline-goal-link-${g.id}`}
+            >
+              Открыть цель
+            </Link>
           </p>
         </div>
         <div className="relative border-l border-line">
           {range.months.slice(1).map((m) => (
             <span key={m.key} className="absolute inset-y-0 w-px bg-line" style={{ left: pct(m.offset, range) }} aria-hidden="true" />
           ))}
-          <Link
-            href={goalHref(g)}
-            tabIndex={-1}
-            aria-label={`Цель ${name}: ${goalSpanText(group)}`}
-            title={`${name}: ${goalSpanText(group)}`}
-            className={cn(
-              cn("absolute top-4 flex h-8 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-control text-caption font-semibold", narrow ? "px-1.5" : "px-3"),
-              line.empty ? colors.empty : colors.filled,
-              (line.cutStart || line.outside === "before") && "rounded-l-none",
-              (line.cutEnd || line.outside === "after") && "rounded-r-none",
-            )}
-            style={place}
-            data-testid={`timeline-goalbar-${g.id}`}
-            data-empty={line.empty ? "true" : undefined}
-            data-outside={line.outside ?? undefined}
-          >
-            {/* У короткой полосы без значка и только дата: иначе подпись обрезается до «по…» */}
-            {narrow ? null : <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
-            <span className="min-w-0 truncate">{narrow && !line.outside && !line.empty ? formatShort(line.end) : goalBarText(line)}</span>
-          </Link>
+          {line.hidden ? null : (
+            <button
+              type="button"
+              onClick={() => onToggle?.(key)}
+              tabIndex={-1}
+              aria-hidden="true"
+              className={cn(
+                cn("absolute top-1/2 flex h-8 -translate-y-1/2 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded-control text-caption font-semibold", narrow ? "px-1.5" : "px-3"),
+                line.empty ? colors.empty : colors.filled,
+                (line.cutStart || line.outside === "before") && "rounded-l-none",
+                (line.cutEnd || line.outside === "after") && "rounded-r-none",
+              )}
+              style={place}
+              data-testid={`timeline-goalbar-${g.id}`}
+              data-empty={line.empty ? "true" : undefined}
+              data-outside={line.outside ?? undefined}
+            >
+              {/* У короткой полосы без значка и только дата: иначе подпись обрезается до «по…» */}
+              {narrow ? null : <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />}
+              <span className="min-w-0 truncate">{narrow && !line.outside && !line.empty ? formatShort(line.end) : goalBarText(line)}</span>
+            </button>
+          )}
+          <span className="sr-only">{`Цель ${name}: ${goalSpanText(group)}`}</span>
         </div>
       </div>
     );
@@ -430,7 +470,7 @@ export function RoadmapTimeline({
       </p>
       {/* В просмотре «Смотреть как» (этап 63) под верхней панелью липнет плашка: строка месяцев встаёт под ней */}
       <div className="sticky top-[calc(4rem+var(--view-as-h,0px))] z-10 grid grid-cols-[280px_minmax(0,1fr)] border-b border-line bg-surface" aria-hidden="true">
-        <p className="m-0 self-end px-4 py-2 text-caption font-semibold text-muted">{sections.some((sec) => sec.kind === "goals") ? "Цель" : sections.some((sec) => sec.kind === "goal") ? "Цель и задачи" : "Задача"}</p>
+        <p className="m-0 self-end px-4 py-2 text-caption font-semibold text-muted">{sections.some((sec) => sec.kind === "goal") ? "Цель и задачи" : "Задача"}</p>
         <div className="relative h-11 border-l border-line">
           {range.months.map((m) => (
             <span key={m.key} className="absolute inset-y-0 border-l border-line px-2 pt-2 text-small font-semibold text-ink first:border-l-0" style={{ left: pct(m.offset, range), width: pct(m.days, range) }}>
@@ -456,28 +496,12 @@ export function RoadmapTimeline({
                 <ul className="m-0 list-none p-0">{sec.bars.map((b) => renderBar(b))}</ul>
               </section>
             );
-          if (sec.kind === "goals")
-            return (
-              <section key={sec.key} aria-labelledby={`tl-${sec.key}`} data-testid="timeline-goals">
-                <h2 id={`tl-${sec.key}`} className="m-0 flex items-baseline gap-2 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
-                  {sec.label}
-                  <span className="text-small font-normal text-muted">
-                    {sec.rows.length} {plural(sec.rows.length, "цель", "цели", "целей")}
-                  </span>
-                </h2>
-                <ul className="m-0 list-none p-0">
-                  {sec.rows.map((r) => (
-                    <li key={r.group.goal.id}>{renderGoalRow(r, null)}</li>
-                  ))}
-                </ul>
-              </section>
-            );
           if (sec.kind === "goal") {
             const id = sec.row.group.goal.id;
             const open = isOpen(sec.key);
             return (
               <section key={sec.key} aria-labelledby={`tl-goal-${id}`} data-testid={`timeline-group-${id}`}>
-                {renderGoalRow(sec.row, { key: sec.key, controls: `tl-goal-tasks-${id}` }, `tl-goal-${id}`)}
+                {renderGoalRow(sec.row, sec.key, `tl-goal-${id}`)}
                 <ul id={`tl-goal-tasks-${id}`} className="m-0 list-none p-0" hidden={!open}>
                   {sec.row.bars.length ? (
                     sec.row.bars.map((b) => renderBar(b, true))
@@ -491,10 +515,20 @@ export function RoadmapTimeline({
           const open = isOpen(sec.key);
           return (
             <section key={sec.key} aria-labelledby="tl-nogoal" data-testid="timeline-nogoal">
-              <h2 id="tl-nogoal" className="m-0 flex items-center gap-1.5 border-b border-line bg-canvas px-4 py-2 text-body font-semibold text-ink">
-                <GroupToggle open={open} onToggle={() => onToggle?.(sec.key)} controls="tl-nogoal-tasks" label={`${sec.label}, ${tasksText(sec.bars.length)}`} />
-                {sec.label}
-                <span className="text-small font-normal text-muted">{groupCount({ tasks: sec.bars, important: sec.important, overdue: sec.overdue })}</span>
+              <h2 id="tl-nogoal" className="m-0 border-b border-line bg-canvas text-body font-semibold text-ink">
+                {/* Группа «Задачи без цели» раскрывается так же, как цель: нажатием на весь заголовок */}
+                <button
+                  type="button"
+                  onClick={() => onToggle?.(sec.key)}
+                  aria-expanded={open}
+                  aria-controls="tl-nogoal-tasks"
+                  className="flex min-h-11 w-full items-center gap-1.5 px-4 py-2 text-left focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
+                  data-testid="timeline-nogoal-toggle"
+                >
+                  {open ? <ChevronDown className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />}
+                  {sec.label}
+                  <span className="text-small font-normal text-muted">{groupCount({ tasks: sec.bars, important: sec.important, overdue: sec.overdue })}</span>
+                </button>
               </h2>
               <ul id="tl-nogoal-tasks" className="m-0 list-none p-0" hidden={!open}>
                 {sec.bars.map((b) => renderBar(b))}
@@ -510,6 +544,8 @@ export function RoadmapTimeline({
           указателем. С клавиатуры: стрелки двигают полосу на день, Alt со стрелкой меняет начало, Shift со стрелкой срок, Enter сохраняет, Escape отменяет.
         </p>
       ) : null}
+
+      <TaskTipBubble shown={tip.shown} />
 
       <Modal
         open={!!pending}
