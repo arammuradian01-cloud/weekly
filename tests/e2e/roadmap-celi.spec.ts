@@ -108,7 +108,7 @@ test("три группировки на карте сроков и на дос�
     await shot(page, "goals-list", { contrast: true });
   } else {
     const tl = page.getByTestId("roadmap-timeline");
-    await expect(tl.getByTestId("timeline-goals")).toBeVisible();
+    await expect(tl.getByTestId("timeline-group-e77-g1")).toBeVisible();
     await expect(tl.getByTestId("timeline-goal-e77-g1")).toContainText("РТ-1");
     await expect(tl.getByTestId("timeline-goal-e77-g2")).toContainText("В риске");
     // Цель без задач: полоса пунктиром до конца квартала

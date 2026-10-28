@@ -393,7 +393,8 @@ export function RoadmapTimeline({
     const open = isOpen(key);
     const Chevron = open ? ChevronDown : ChevronRight;
     const controls = `tl-goal-tasks-${g.id}`;
-    const meta = [goalOrigin(g, quarter), goalProgressText(g), groupCount(group)].filter(Boolean).join(", ");
+    // У цели без задач на roadmap вместо «0 задач» её сроки: «до конца квартала» или «задач нет, до конца квартала»
+    const meta = [goalOrigin(g, quarter), goalProgressText(g), group.empty ? goalSpanText(group) : groupCount(group)].filter(Boolean).join(", ");
     const colors = goalColors(row);
     const narrow = !line.outside && ((line.to - line.from + 1) / range.days) * trackPx < 110;
     const place: React.CSSProperties =
@@ -454,7 +455,8 @@ export function RoadmapTimeline({
               <span className="min-w-0 truncate">{narrow && !line.outside && !line.empty ? formatShort(line.end) : goalBarText(line)}</span>
             </button>
           )}
-          <span className="sr-only">{`Цель ${name}: ${goalSpanText(group)}`}</span>
+          {/* Полоса цели нарисована для глаз: диктору те же сроки словами */}
+          <span className="sr-only">{`Сроки цели ${name}: ${goalSpanText(group)}`}</span>
         </div>
       </div>
     );
