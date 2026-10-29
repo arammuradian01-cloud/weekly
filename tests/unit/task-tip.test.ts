@@ -78,12 +78,3 @@ describe("ответственный и где сейчас", () => {
   });
 });
 
-describe("текст для диктора", () => {
-  it("собирает заголовок, описание и все строки", () => {
-    const tip = taskTip(task({ outcome: "Продление работает" }), TODAY);
-    expect(tip.speech).toContain("412. Подписка ОСАГО");
-    expect(tip.speech).toContain("Продление работает");
-    expect(tip.speech).toContain("Срок: до 30 окт");
-    expect(tip.speech).toContain("Ответственный: Рева Тарас");
-  });
-});

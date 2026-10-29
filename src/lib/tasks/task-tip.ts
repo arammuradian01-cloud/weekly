@@ -18,8 +18,6 @@ export type TaskTip = {
   description: string | null;
   /** Строки под описанием: срок, состояние, ответственный, где сейчас */
   rows: TaskTipRow[];
-  /** Тот же текст одной строкой: его читает диктор */
-  speech: string;
 };
 
 /** Текст без лишних пробелов и переводов строк: в подсказке он идёт одним куском */
@@ -52,6 +50,7 @@ export function taskTip(task: Task, today: IsoDate): TaskTip {
   if (task.state === "at-risk" && clean(task.riskNote)) rows.push({ label: "Что вернёт в график", text: clean(task.riskNote) });
   rows.push({ label: "Ответственный", text: ownerName(task.owner) });
   if (clean(task.where)) rows.push({ label: "Где сейчас", text: clean(task.where) });
-  const speech = [title, description, ...rows.map((r) => `${r.label}: ${r.text}`)].filter(Boolean).join(". ");
-  return { title, description, rows, speech };
+  // Отдельной строки «для диктора» здесь нет: подсказка связана с полосой через aria-describedby, и диктор читает
+  // её разметку целиком. Вторая копия того же текста читалась бы дважды
+  return { title, description, rows };
 }
