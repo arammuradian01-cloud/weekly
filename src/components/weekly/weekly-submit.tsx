@@ -108,6 +108,8 @@ export function WeeklySubmit({
 
   const saveHeadline = useCallback(async () => {
     const value = pendingHeadline.current;
+    // Фраза за пределом: сервер откажет, сохранять нечего. Строка состояния ниже говорит об этом прямо,
+    // иначе человек видит «Черновик сохранён в 00:12» от прошлого сохранения и дописывает в пустоту
     if (value === savedHeadline.current || value.length > HEADLINE_MAX) return;
     setSaving(true);
     try {
@@ -395,9 +397,17 @@ export function WeeklySubmit({
             </p>
           </div>
           {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
-          <p className="mt-2 inline-flex items-center gap-1.5 text-caption text-muted" aria-live="polite">
+          <p className={canEdit && headline.length > HEADLINE_MAX ? "mt-2 inline-flex items-center gap-1.5 text-caption font-semibold text-warning-ink" : "mt-2 inline-flex items-center gap-1.5 text-caption text-muted"} aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
-            {!canEdit ? "Только просмотр" : saving ? "Сохраняем черновик" : savedAt ? `Черновик сохранён в ${savedAt}` : "Черновик сохраняется на сервере сам"}
+            {!canEdit
+              ? "Только просмотр"
+              : headline.length > HEADLINE_MAX
+                ? `Автосохранение остановлено: главная фраза длиннее ${HEADLINE_MAX} знаков`
+                : saving
+                  ? "Сохраняем черновик"
+                  : savedAt
+                    ? `Черновик сохранён в ${savedAt}`
+                    : "Черновик сохраняется на сервере сам"}
           </p>
           {canEdit && (offline || outbox > 0) ? (
             <p role="status" className="mt-3 sv-alert sv-alert--warning inline-flex items-start gap-2 text-small">
