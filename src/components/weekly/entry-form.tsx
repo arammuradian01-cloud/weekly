@@ -104,7 +104,7 @@ export function EntryForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [autoState, setAutoState] = useState<"idle" | "saving" | "saved" | "offline" | "paused">("idle");
+  const [autoState, setAutoState] = useState<"idle" | "saving" | "saved" | "offline">("idle");
   const dirty = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
@@ -213,11 +213,8 @@ export function EntryForm({
   useEffect(() => {
     const back = () => {
       const what = latest.current.e.what.trim();
-      if (viewing || !dirty.current || !what) return;
-      if (what.length > WEEKLY_LIMITS.what) {
-        setAutoState("paused");
-        return;
-      }
+      // Длинная фраза: сервер откажет, отправлять нечего
+      if (viewing || !dirty.current || !what || what.length > WEEKLY_LIMITS.what) return;
       void autosaveRef.current();
     };
     window.addEventListener("online", back);
@@ -230,14 +227,10 @@ export function EntryForm({
     if (viewing || !dirty.current) return;
     if (timer.current) clearTimeout(timer.current);
     const what = e.what.trim();
-    if (!what) return;
-    // Фраза вышла за предел: сохранять нечего, сервер откажет. Раньше обработчик выходил молча, а строка состояния
-    // оставалась от прошлого сохранения («Черновик записи сохранён»), и человек терял всё, что дописал после предела
-    if (what.length > WEEKLY_LIMITS.what) {
-      setAutoState("paused");
-      return;
-    }
-    setAutoState((prev) => (prev === "paused" ? "idle" : prev));
+    // Фраза вышла за предел: сохранять нечего, сервер откажет. О том, что автосохранение стоит, говорит строка
+    // состояния внизу формы: она считается от самого текста, а не от состояния сохранения, поэтому не может
+    // остаться на «Черновик записи сохранён» от прошлого раза
+    if (!what || what.length > WEEKLY_LIMITS.what) return;
     timer.current = setTimeout(() => void autosave(), 2500);
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -281,6 +274,8 @@ export function EntryForm({
   };
 
   const saved = !isLocalId(e.id);
+  /** Фраза длиннее предела: автосохранение стоит, и строка состояния внизу формы говорит об этом прямо */
+  const paused = e.what.trim().length > WEEKLY_LIMITS.what;
 
   // «Отмена» у несохранённой записи выбрасывает и черновик на устройстве. «Закрыть» у сохранённой оставляет только то,
   // что ждёт сети: человек видел, что оно уйдёт само
@@ -427,12 +422,12 @@ export function EntryForm({
       ) : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
         <span
-          className={autoState === "offline" || offline || autoState === "paused" ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"}
+          className={autoState === "offline" || offline || paused ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"}
           aria-live="polite"
         >
           {autoState === "offline" || offline
             ? OFFLINE_TEXT
-            : autoState === "paused"
+            : paused
               ? PAUSED_TEXT
               : autoState === "saving"
                 ? "Сохраняю черновик записи"
