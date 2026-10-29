@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
+import { gzipSync } from "node:zlib";
 import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
 import { E2E_PASSWORDS } from "./global-setup";
 
@@ -15,6 +16,7 @@ import { E2E_PASSWORDS } from "./global-setup";
 // данные) только у тех, кому раздел открыт. Этап 82: ответ с данными сжат, но браузер его не хранит (no-store, без
 // отпечатков); вкладка и фильтр пишутся в адрес без перезагрузки страницы.
 // Этап 59: заголовок дашборда внутри окна меньше заголовка страницы, двух заголовков первого уровня подряд нет.
+// Этап 83: пакет принимается и сжатым .json.gz, обычный .json браузер сжимает сам перед отправкой.
 // Ноутбук 1440 и телефон 360 без горизонтальной прокрутки
 
 const SHOTS = "tests/e2e/screenshots";
@@ -376,4 +378,44 @@ test("первая встреча месяца начинается с разб�
   await expect(team.getByTestId("agenda-market-open")).toHaveAttribute("href", "/market");
   await expect(team.getByTestId("agenda-market-closed")).toHaveCount(0);
   await expect(team.getByText(/^(Данные рынка от|Свежий пакет рынка в этом месяце ещё не загружали: данные от) \d{1,2} [а-я]+\.$/)).toBeVisible();
+});
+
+test("этап 83: владелец загружает сжатый пакет .json.gz, обычный файл браузер сжимает сам", async ({ page }) => {
+  test.setTimeout(150_000);
+  await enterByLink(page, "muradyan");
+  await page.goto("/market");
+  await expect(page.getByText("Данных рынка пока нет")).toBeVisible();
+  // Подпись у кнопки говорит про сжатый файл
+  await expect(page.getByTestId("market-upload-hint")).toContainText("сжатый .json.gz");
+
+  // Сжатый файл: браузер отправляет его как есть, сервер распаковывает
+  const plain = readFileSync(BUNDLE);
+  const sent = () => page.waitForRequest((r) => r.url().endsWith("/api/market/upload"));
+  let wait = sent();
+  await page.getByTestId("market-upload-input").setInputFiles({ name: "rynok-paket.json.gz", mimeType: "application/gzip", buffer: gzipSync(plain) });
+  const first = await wait;
+  await expect(page.getByText("Пакет рынка загружен: 2 набора данных, 6 строк").first()).toBeVisible();
+  const frame = page.frameLocator(FRAME);
+  await expect(frame.locator("#k-total")).toHaveText("42");
+  expect(first.headers()["content-encoding"]).toBe("gzip");
+  expect((first.postDataBuffer() ?? Buffer.alloc(0)).byteLength).toBeLessThan(plain.byteLength);
+  // Размером пакета считается распакованный, а не то, что пришло по сети
+  const [bundle] = await sql(`SELECT bytes FROM market_bundles ORDER BY version DESC LIMIT 1`);
+  expect(Number(bundle!.bytes)).toBe(plain.byteLength);
+
+  // Обычный .json: браузер сжимает его сам и отправляет с Content-Encoding: gzip
+  wait = sent();
+  await page.getByTestId("market-upload-input").setInputFiles(BUNDLE);
+  const second = await wait;
+  expect(second.headers()["content-encoding"]).toBe("gzip");
+  expect((second.postDataBuffer() ?? Buffer.alloc(0)).byteLength).toBeLessThan(plain.byteLength);
+  await expect.poll(async () => (await sql(`SELECT max(version)::int AS v FROM market_bundles`))[0]?.v).toBe(2);
+  const [{ n }] = await sql(`SELECT count(*)::int AS n FROM market_bundles`);
+  expect(n).toBe(1);
+  await shot(page, "upload-gz");
+
+  // Битый сжатый файл: понятная ошибка, прежний пакет на месте
+  await page.getByTestId("market-upload-input").setInputFiles({ name: "bitiy.json.gz", mimeType: "application/gzip", buffer: gzipSync(plain).subarray(0, 400) });
+  await expect(page.getByText("Сжатый файл не распаковывается: похоже, он повреждён. Соберите пакет заново и загрузите снова")).toBeVisible();
+  await expect(frame.locator("#k-total")).toHaveText("42");
 });

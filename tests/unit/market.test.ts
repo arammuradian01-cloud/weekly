@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { spawnSync } from "node:child_process";
 import vm from "node:vm";
 import { describe, expect, it } from "vitest";
@@ -607,6 +608,11 @@ describe("скрипт сборки пакета", () => {
       const b = parseBundle(readFileSync(out, "utf8"));
       expect(Object.keys(b.files).sort()).toEqual(["d3.min.js", "index.html"]);
       expect(b.rowsTotal).toBe(1);
+      // Этап 83: рядом лежит сжатая копия, из неё получается тот же пакет
+      expect(ok.stdout).toContain("Сжатая копия для загрузки");
+      const packed = gunzipSync(readFileSync(`${out}.gz`)).toString("utf8");
+      expect(packed).toBe(readFileSync(out, "utf8"));
+      expect(parseBundle(packed).rowsTotal).toBe(1);
     } finally {
       rmSync(src, { recursive: true, force: true });
     }
