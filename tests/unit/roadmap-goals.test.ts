@@ -49,11 +49,42 @@ const goal = (id: string, patch: Partial<RoadmapGoal> = {}): RoadmapGoal => ({
 const link = (g: RoadmapGoal) => ({ id: g.id, title: `${g.code}. ${g.title}`, code: g.code, quarter: g.quarter });
 
 describe("группировка в адресе", () => {
-  it("по задачам по умолчанию, по целям и цели и задачи", () => {
-    expect(groupByOf(null)).toBe("tasks");
-    expect(groupByOf("что-то")).toBe("tasks");
+  // Этап 84: по умолчанию «По целям», плоский список направлений по ?group=tasks
+  it("по целям по умолчанию, по задачам и цели и задачи", () => {
+    expect(groupByOf(null)).toBe("goals");
+    expect(groupByOf("что-то")).toBe("goals");
     expect(groupByOf("goals")).toBe("goals");
+    expect(groupByOf("tasks")).toBe("tasks");
     expect(groupByOf("both")).toBe("both");
+  });
+});
+
+describe("цель без задач на roadmap (этап 84)", () => {
+  const span = { start: "2026-10-01", end: "2026-12-31" } as const;
+  const empty = { tasks: [] as Task[], span, empty: true };
+
+  it("«задач нет» только при нулевом прогрессе", () => {
+    const blank = buildGoalGroups([], [goal("g1")], TODAY, NONE).goals[0]!;
+    expect(blank.blank).toBe(true);
+    expect(blank.closed).toBe(false);
+    // У цели закрыты задачи на целях ниже: «задач нет» было бы неправдой
+    const moved = buildGoalGroups([], [goal("g2", { progress: { done: 3, total: 5, overdue: 0 } })], TODAY, NONE).goals[0]!;
+    expect(moved.blank).toBe(false);
+    // Прогресс по числам тоже считается продвижением
+    const numeric = buildGoalGroups([], [goal("g3", { numeric: { share: 0.4, down: false }, fact: "12" })], TODAY, NONE).goals[0]!;
+    expect(numeric.blank).toBe(false);
+  });
+
+  it("снятая и недостигнутая цель без задач полосы не получает", () => {
+    for (const result of ["DROPPED", "MISSED", "PARTIAL"] as const) {
+      const group = buildGoalGroups([], [goal(`g-${result}`, { result })], TODAY, NONE).goals[0]!;
+      expect(group.closed, result).toBe(true);
+      expect(goalLineOf(group, timelineRange(TODAY), TODAY).hidden, result).toBe(true);
+    }
+    // Идущая цель без задач полосу пунктиром сохраняет
+    const live = buildGoalGroups([], [goal("g-live")], TODAY, NONE).goals[0]!;
+    expect(goalLineOf(live, timelineRange(TODAY), TODAY).hidden).toBe(false);
+    expect(goalLineOf({ ...empty, blank: true, closed: false }, timelineRange(TODAY), TODAY).blank).toBe(true);
   });
 });
 

@@ -43,8 +43,16 @@ export function goalProgressText(g: RoadmapGoal): string | null {
   return goalTasksText(g.progress.done, g.progress.total);
 }
 
-/** Сроки цели словами: «до 25 нояб.», у цели без задач «задач нет, до конца квартала» */
-export const goalSpanText = (group: Pick<GoalGroup, "span" | "empty">) => (group.empty ? `задач нет, до конца квартала ${formatShort(group.span.end)}` : `с ${formatShort(group.span.start)} по ${formatShort(group.span.end)}`);
+/**
+ * Сроки цели словами: «с 1 окт. по 25 нояб.». У цели без задач на roadmap «до конца квартала», и только при нулевом
+ * прогрессе «задач нет» (этап 84: задачи цели могут висеть на целях ниже). У снятой и недостигнутой цели без задач
+ * срока впереди нет
+ */
+export function goalSpanText(group: Pick<GoalGroup, "span" | "empty" | "blank" | "closed">): string {
+  if (!group.empty) return `с ${formatShort(group.span.start)} по ${formatShort(group.span.end)}`;
+  if (group.closed) return "задач на roadmap нет";
+  return `${group.blank ? "задач нет, " : ""}до конца квартала ${formatShort(group.span.end)}`;
+}
 
 export function GoalStatus({ goal, className }: { goal: RoadmapGoal; className?: string }) {
   if (!goal.known) return <Badge tone="gray" className={className}>{goal.quarter ? `цель ${quarterLabel(goal.quarter)}` : "цель"}</Badge>;
@@ -61,7 +69,11 @@ export function GoalCode({ code }: { code: string | null }) {
   return <span className="inline-flex h-6 shrink-0 items-center rounded-md bg-blue-soft px-2 text-caption font-semibold tabular-nums text-link">{code}</span>;
 }
 
-/** Кнопка свернуть или развернуть группу. На телефоне цель нажатия 44 px */
+/**
+ * Кнопка раскрыть группу. Этап 84: подпись постоянная («Задачи цели РТ-1, 3 задачи»), раскрыта группа или нет
+ * говорит aria-expanded: меняющаяся подпись «Свернуть» и «Развернуть» сбивала диктор и поиск по кнопке.
+ * Цель нажатия 44 px на телефоне и на планшете, меньше только на широком экране с мышью
+ */
 export function GroupToggle({ open, onToggle, controls, label }: { open: boolean; onToggle: () => void; controls: string; label: string }) {
   const Icon = open ? ChevronDown : ChevronRight;
   return (
@@ -70,8 +82,8 @@ export function GroupToggle({ open, onToggle, controls, label }: { open: boolean
       onClick={onToggle}
       aria-expanded={open}
       aria-controls={controls}
-      aria-label={`${open ? "Свернуть" : "Развернуть"}: ${label}`}
-      className="-my-2 -ml-3 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-field hover:text-ink focus-visible:outline-2 focus-visible:outline-focus sm:-ml-2 sm:h-8 sm:w-8"
+      aria-label={label}
+      className="-my-2 -ml-3 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-control text-muted hover:bg-field hover:text-ink focus-visible:outline-2 focus-visible:outline-focus lg:-ml-2 lg:h-8 lg:w-8"
     >
       <Icon className="h-4 w-4" aria-hidden="true" />
     </button>
@@ -88,7 +100,7 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
       <div
         className={cn(
           "sv-card-task !cursor-pointer has-[a[data-rm-title]:focus-visible]:ring-2 has-[a[data-rm-title]:focus-visible]:ring-blue",
-          group.empty && "border-dashed border-steel",
+          group.empty && !group.closed && "border-dashed border-steel",
           g.known && g.risk && g.result === "IN_PROGRESS" && "border-danger-ink",
         )}
         data-testid={`roadmap-goal-${g.id}`}
@@ -121,7 +133,7 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
           )
         ) : null}
         <p className="m-0 flex flex-wrap gap-x-2 gap-y-0.5 text-caption text-muted">
-          <span className="tabular-nums">{group.empty ? "до конца квартала" : `до ${formatShort(group.span.end)}`}</span>
+          <span className="tabular-nums">{group.empty ? (group.closed ? "задач на roadmap нет" : "до конца квартала") : `до ${formatShort(group.span.end)}`}</span>
           {group.tasks.length ? <span>{`${group.tasks.length} ${plural(group.tasks.length, "открытая задача", "открытые задачи", "открытых задач")}`}</span> : null}
           {group.overdue ? <span className="font-semibold text-danger-ink">просрочено {group.overdue}</span> : null}
         </p>
@@ -134,13 +146,13 @@ export function GoalCard({ group, quarter }: { group: GoalGroup; quarter: string
 export function GoalGroupHeading({ group, quarter, id, open, onToggle, controls }: { group: GoalGroup; quarter: string; id: string; open: boolean; onToggle: () => void; controls: string }) {
   const g = group.goal;
   const name = goalName(g);
-  // У цели без открытых задач без «0 задач»: хватает «задач нет, до конца квартала»
+  // У цели без открытых задач без «0 задач»: хватает строки сроков
   const progress = g.progress.total || g.numeric ? goalProgressText(g) : null;
-  const meta = [goalOrigin(g, quarter), progress, group.empty ? "задач нет, до конца квартала" : `${groupCount(group)}, до ${formatShort(group.span.end)}`].filter(Boolean);
+  const meta = [goalOrigin(g, quarter), progress, group.empty ? goalSpanText(group) : `${groupCount(group)}, до ${formatShort(group.span.end)}`].filter(Boolean);
   return (
     <div className="flex flex-col gap-1">
       <h2 id={id} className="m-0 flex min-w-0 items-center gap-2 text-body font-semibold text-ink">
-        <GroupToggle open={open} onToggle={onToggle} controls={controls} label={`задачи цели ${name}, ${tasksText(group.tasks.length)}`} />
+        <GroupToggle open={open} onToggle={onToggle} controls={controls} label={`Задачи цели ${name}, ${tasksText(group.tasks.length)}`} />
         <GoalCode code={g.code} />
         <Link href={goalHref(g)} className="min-w-0 [overflow-wrap:anywhere] hover:underline" data-testid={`roadmap-goal-link-${g.id}`}>
           {g.title}

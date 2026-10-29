@@ -3,17 +3,20 @@
 // Доска roadmap (этап 56): задачи команды или человека по направлениям и срокам, важные со звёздочками.
 // На широком экране строки направлений и пять столбцов сроков. Уже 1280 пикселей столбцов нет: по каждому
 // направлению список сроков сверху вниз, пустые сроки не показываются. Рисуется одно дерево, не два сразу.
-// Фильтры «Чьи задачи» и «Только важные» живут в адресе страницы: ссылкой на доску человека можно поделиться, «Назад»
-// возвращает прежний фильтр.
+// Фильтры «Чьи задачи» и «Только важные» живут в адресе страницы: ссылкой на доску человека можно поделиться.
+// Адрес меняется через router.replace, поэтому «Назад» уходит на прежний экран, а не отменяет последний фильтр.
 // Этап 68: на широком экране по умолчанию карта сроков (roadmap-timeline.tsx), доска вторым видом в адресе ?view=board.
-// Этап 77: группировка «По задачам» (направления, как раньше), «По целям» (строки целей квартала) и «Цели и задачи»
-// (под каждой целью её задачи, последней группой задачи без цели), в адресе ?group=goals|both. Работает и на карте
-// сроков, и на доске. Адрес меняется через router.replace: нативный history.replaceState в Next 16.3 перезагружает
-// страницу целиком (этап 70), а цели для группировок приходят с сервера по адресу.
+// Этап 77: группировка «По задачам» (направления, как раньше), «По целям» и «Цели и задачи», в адресе ?group=.
+// Этап 84: карта сроков начинается с целей. «По целям» теперь вид по умолчанию: строки целей со своими полосами,
+// задачи спрятаны, нажатие на цель их раскрывает. «Цели и задачи» это тот же вид, но раскрытый сразу, «По задачам»
+// остался плоским списком направлений (?group=tasks). Какие группы раскрыты, живёт в адресе (?open=): ссылкой можно
+// поделиться, «Назад» возвращает прежний вид. Адрес меняется через router.replace: нативный history.replaceState в
+// Next 16.3 перезагружает страницу целиком (этап 70), а цели для группировок приходят с сервера по адресу.
 
 import { useOptimistic, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Loader2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { ownerName, personOf } from "@/domain/people";
 import { DIRECTIONS, directionLabel, type PriorityCode } from "@/domain/dictionaries";
@@ -21,6 +24,7 @@ import { formatShort, plural } from "@/domain/dates";
 import { isOverdue, overdueDays, permissions } from "@/lib/tasks/rules";
 import { buildRoadmap, importanceOf, proposedLate, roadmapCells, type Period, type RoadmapRow } from "@/lib/tasks/roadmap";
 import { buildGoalGroups, buildGoalTimeline, goalPeriodOf, groupByOf, type GoalGroup, type GoalGroups, type RoadmapGoal, type RoadmapGroupBy } from "@/lib/tasks/roadmap-goals";
+import { NO_GOAL_KEY, openKeys, toggleOpen, type OpenGroup } from "@/lib/tasks/roadmap-open";
 import type { Task } from "@/domain/types";
 import { changePriorityAction } from "@/app/(app)/tasks/actions";
 import { cn } from "@/lib/cn";
@@ -39,9 +43,11 @@ import { GoalCard, GoalGroupHeading, NoGoalHeading } from "./roadmap-goals";
 const WIDE = "(min-width: 1280px)";
 /** Сенсорный экран (этап 68): полосы карты сроков пальцем не тянут, начало задаётся в карточке задачи */
 const COARSE = "(pointer: coarse)";
+/** Указатель умеет наводиться: только тогда подсказка по задаче всплывает от мыши (этап 84) */
+const HOVER = "(hover: hover)";
 /** Значение «Вся команда» в выборе человека: пустая строка в поиске значит «человек печатает» */
 const WHOLE_TEAM = "__team";
-const NO_GOAL = "nogoal";
+const NO_GOAL = NO_GOAL_KEY;
 function useMedia(query: string): boolean {
   return useSyncExternalStore(
     (cb) => {
@@ -175,6 +181,7 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   const pathname = usePathname();
   const wide = useMedia(WIDE);
   const coarse = useMedia(COARSE);
+  const hover = useMedia(HOVER);
   // Адрес меняется через router.replace (этап 77): пока сервер отвечает, переключатели уже стоят в новом положении
   // (useOptimistic), а не ждут ответа, как ждали бы с адресом из useSearchParams
   const [query, setQuery] = useOptimistic(params.toString(), (_current: string, next: string) => next);
@@ -184,32 +191,28 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   const onlyImportant = q.get("important") === "1";
   // Этап 68: карта сроков на широком экране по умолчанию, доска по ?view=board. На узком экране только доска списком
   const view = q.get("view") === "board" ? "board" : "timeline";
-  // Выбранная группировка. Цели для группировок по целям приходят с сервера по новому адресу: пока их нет, на экране
-  // прежняя группировка «По задачам», а не пустое «Целей квартала нет»
+  // Выбранная группировка. Этап 84: по умолчанию «По целям». Цели приходят с сервера по новому адресу: пока их нет,
+  // на экране «По задачам», а не пустое «Целей квартала нет». Так же, если группировку не выбирали, а целей квартала
+  // у команды нет совсем: пустой roadmap по умолчанию никому не нужен
   const picked = groupByOf(q.get("group"));
-  const group: RoadmapGroupBy = picked !== "tasks" && !goals ? "tasks" : picked;
-  // Свёрнутые группы «Цели и задачи»: по умолчанию все раскрыты
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(() => new Set());
-  const toggle = (key: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const chosenGroup = q.get("group") !== null;
+  const group: RoadmapGroupBy = picked !== "tasks" && (!goals || (!chosenGroup && !goals.goals.length)) ? "tasks" : picked;
 
   // Этап 77: адрес меняется через router.replace без прокрутки, а не нативным history.replaceState: тот в Next 16.3
   // перезагружал страницу целиком (разобрано на этапе 70). Цели для группировок сервер отдаёт по новому адресу
-  const setParam = (key: string, value: string | null) => {
+  const setParams = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(query);
-    if (value) next.set(key, value);
-    else next.delete(key);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
     const qs = next.toString();
     startNavigation(() => {
       setQuery(qs);
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     });
   };
+  const setParam = (key: string, value: string | null) => setParams({ [key]: value });
 
   // Направления в порядке справочника; скрытое направление, у которого остались задачи, в конце с пометкой
   // Пересчёт доски запоминает компилятор React: ручной useMemo здесь ему только мешает
@@ -228,6 +231,11 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   const quarter = goals?.quarter ?? "";
   // Группы целей считаются из тех же задач на экране: правка срока или цели задачи сразу видна в группах
   const goalGroups = group !== "tasks" ? buildGoalGroups(data.teamTasks, goals?.goals ?? [], data.today, filter) : null;
+  // Раскрытые группы целей: ключи из адреса (?open=). «По целям» по умолчанию всё свёрнуто, «Цели и задачи» раскрыто
+  const openGroup: OpenGroup = group === "both" ? "both" : "goals";
+  const groupKeys = goalGroups ? [...goalGroups.goals.map((g) => g.goal.id), ...(goalGroups.noGoal.length ? [NO_GOAL] : [])] : [];
+  const openGroups = openKeys(q.get("open"), openGroup, groupKeys);
+  const toggle = (key: string) => setParam("open", toggleOpen(q.get("open"), openGroup, groupKeys, key));
 
   const changeImportance = (t: Task, next: PriorityCode) => void runTask(() => changePriorityAction(t.number, next), `Важность задачи ${t.number}: ${importanceWord(next)}`);
   const card = (t: Task, showGoal = true) => (
@@ -237,7 +245,8 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
   const rows = board.rows.map((r) => ({ ...r, hidden: directions.hidden.has(r.direction) }));
   const showTimeline = wide && view === "timeline";
   const where = showTimeline ? "На карте" : "На доске";
-  const summary = summaryText(group, where, board, goalGroups);
+  // На карте сроков «По целям» показывает и группу «Задачи без цели»: подпись считаем как у «Цели и задачи»
+  const summary = summaryText(group === "goals" && showTimeline ? "both" : group, where, board, goalGroups);
   const boardKey = `${team.id}-${chosen}-${onlyImportant}-${group}`;
   // Права как у срока. В «Смотреть как» и на сенсорном экране полосы не двигаются: сервер в просмотре всё равно откажет,
   // а пальцем полосу легко сдвинуть случайно. Начало и срок тогда меняют в карточке задачи. В группировках по целям так же
@@ -254,16 +263,14 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
     } else if (goalGroups) {
       const timeline = buildGoalTimeline(goalGroups, data.today);
       range = timeline.range;
-      if (group === "goals") sections = timeline.goals.length ? [{ kind: "goals", key: "goals", label: "Цели квартала", rows: timeline.goals }] : [];
-      else {
-        sections = timeline.goals.map((row) => ({ kind: "goal", key: row.group.goal.id, row }));
-        if (timeline.noGoal.length)
-          sections.push({ kind: "nogoal", key: NO_GOAL, label: "Задачи без цели", bars: timeline.noGoal, important: goalGroups.noGoal.filter((t) => importanceOf(t.priority) > 0).length, overdue: timeline.noGoal.filter((b) => b.overdue).length });
-      }
+      // Этап 84: «По целям» и «Цели и задачи» на карте это один вид, разница только в том, что раскрыто сразу
+      sections = timeline.goals.map((row) => ({ kind: "goal", key: row.group.goal.id, row }));
+      if (timeline.noGoal.length)
+        sections.push({ kind: "nogoal", key: NO_GOAL, label: "Задачи без цели", bars: timeline.noGoal, important: goalGroups.noGoal.filter((t) => importanceOf(t.priority) > 0).length, overdue: timeline.noGoal.filter((b) => b.overdue).length });
     }
   }
 
-  const empty = group === "tasks" ? !rows.length : group === "goals" ? !goalGroups?.goals.length : !goalGroups?.goals.length && !goalGroups?.noGoal.length;
+  const empty = group === "tasks" ? !rows.length : showTimeline ? !goalGroups?.goals.length && !goalGroups?.noGoal.length : group === "goals" ? !goalGroups?.goals.length : !goalGroups?.goals.length && !goalGroups?.noGoal.length;
   const noGoalCount = goalGroups
     ? { tasks: goalGroups.noGoal, important: goalGroups.noGoal.filter((t) => importanceOf(t.priority) > 0).length, overdue: goalGroups.noGoal.filter((t) => isOverdue(t, data.today)).length }
     : null;
@@ -374,7 +381,7 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
         {wide ? <PeriodsHeader periods={board.periods} /> : null}
         {list.map((g) => {
           const id = g.goal.id;
-          const isOpen = !collapsed.has(id);
+          const isOpen = openGroups.has(id);
           const name = g.goal.code ? `Цель ${g.goal.code}` : g.goal.title;
           return (
             <section key={id} aria-labelledby={`${prefix}-goal-${id}`} className={sectionCls} data-testid={`roadmap-group-${id}`}>
@@ -385,8 +392,8 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
         })}
         {noGoalCount && noGoalCount.tasks.length ? (
           <section aria-labelledby={`${prefix}-nogoal`} className={sectionCls} data-testid="roadmap-nogoal">
-            <NoGoalHeading count={noGoalCount} id={`${prefix}-nogoal`} open={!collapsed.has(NO_GOAL)} onToggle={() => toggle(NO_GOAL)} controls={`${prefix}-nogoal-tasks`} />
-            {tasksOf(noGoalCount.tasks, "Задачи без цели", `${prefix}-nogoal-tasks`, !collapsed.has(NO_GOAL))}
+            <NoGoalHeading count={noGoalCount} id={`${prefix}-nogoal`} open={openGroups.has(NO_GOAL)} onToggle={() => toggle(NO_GOAL)} controls={`${prefix}-nogoal-tasks`} />
+            {tasksOf(noGoalCount.tasks, "Задачи без цели", `${prefix}-nogoal-tasks`, openGroups.has(NO_GOAL))}
           </section>
         ) : null}
       </div>
@@ -416,8 +423,11 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
             </span>
             <Segmented
               label="Группировка"
-              value={picked}
-              onChange={(v) => setParam("group", v === "tasks" ? null : v)}
+              // Группировку не выбирали, а целей квартала нет: переключатель стоит там же, где экран, на «По задачам».
+              // Во время выбора показываем выбранное: цели приходят с сервера, ждать ответа переключателю незачем
+              value={!chosenGroup ? group : picked}
+              // Смена группировки сбрасывает раскрытие: в новой группировке своё состояние по умолчанию
+              onChange={(v) => setParams({ group: v === "goals" ? null : v, open: null })}
               options={GROUPS}
               className="max-sm:flex max-sm:w-full max-sm:[&>*]:min-h-11 max-sm:[&>*]:min-w-0 max-sm:[&>*]:flex-1 max-sm:[&>*]:whitespace-normal max-sm:[&>*]:text-center max-sm:[&>*]:leading-tight"
             />
@@ -465,9 +475,18 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
         </p>
       ) : null}
 
-      <p className="text-small text-muted" data-testid="roadmap-summary" aria-live="polite">
-        {summary}
-      </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p className="m-0 text-small text-muted" data-testid="roadmap-summary" aria-live="polite">
+          {summary}
+        </p>
+        {/* Видимый признак загрузки: цели для группировок считает сервер, ответ приходит не мгновенно (этап 84) */}
+        {navigating ? (
+          <span className="inline-flex items-center gap-1.5 text-small text-muted" data-testid="roadmap-loading">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Обновляем
+          </span>
+        ) : null}
+      </div>
 
       {empty ? (
         emptyState
@@ -478,8 +497,9 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
           sections={sections}
           today={data.today}
           quarter={quarter}
-          collapsed={collapsed}
+          open={openGroups}
           onToggle={toggle}
+          hover={hover}
           canMove={canMove}
           onOpen={open}
           runTask={runTask}
