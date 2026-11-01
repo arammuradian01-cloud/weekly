@@ -234,7 +234,10 @@ test("карта сроков: обрезанный край встаёт на �
   const [cut, after, before, short] = open.map((r) => r.number as number);
   const month = `date_trunc('month', ${MSK}::timestamp)`;
   // Началась до окна карты, срок в окне; целиком после окна; срок до окна (просрочена); короткая полоса в два дня
-  await sql(`UPDATE tasks SET "startOn" = (${month} - interval '20 days')::date, due = ${MSK} + 30 WHERE number = $1`, [cut]);
+  // Срок берётся последним днём второго месяца окна, а не «сегодня плюс 30»: ниже начало тянут на 10-е число второго
+  // месяца, и при сроке «сегодня плюс 30» в первые девять дней месяца цель перетаскивания оказывалась позже срока,
+  // а начало упирается в срок (timeline.ts, startOf). Так тест падал каждое первое число
+  await sql(`UPDATE tasks SET "startOn" = (${month} - interval '20 days')::date, due = (${month} + interval '2 month' - interval '1 day')::date WHERE number = $1`, [cut]);
   await sql(`UPDATE tasks SET "startOn" = ${MSK} + 150, due = ${MSK} + 160 WHERE number = $1`, [after]);
   await sql(`UPDATE tasks SET "startOn" = NULL, due = (${month} - interval '10 days')::date WHERE number = $1`, [before]);
   await sql(`UPDATE tasks SET "startOn" = ${MSK} + 10, due = ${MSK} + 11 WHERE number = $1`, [short]);
