@@ -15,7 +15,9 @@ describe("меню", () => {
     expect(MAIN_NAV.find((i) => i.href === COUNTER_HREF)?.label).toBe("Моя неделя");
     // Этап 62: «Рынок» закрытый раздел, пункт видят только те, кому он открыт
     expect(MAIN_NAV.filter((i) => i.restricted).map((i) => i.href)).toEqual(["/market"]);
-    expect(MANAGEMENT_NAV.map((i) => i.href)).toEqual(["/ceo-report", "/journal", "/sync", "/settings"]);
+    // Этап 86: «Состояние» рядом с «Синхронизацией», тоже только владельцу
+    expect(MANAGEMENT_NAV.map((i) => i.href)).toEqual(["/ceo-report", "/journal", "/sync", "/status", "/settings"]);
+    expect(MANAGEMENT_NAV.filter((i) => i.ownerOnly).map((i) => i.href)).toEqual(["/sync", "/status"]);
     // Адреса не повторяются и у каждого пункта есть подпись и иконка
     const all = [...MAIN_NAV, ...MANAGEMENT_NAV];
     expect(new Set(all.map((i) => i.href)).size).toBe(all.length);

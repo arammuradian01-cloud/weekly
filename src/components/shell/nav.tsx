@@ -20,6 +20,7 @@ import {
   Map as MapIcon,
   Rss,
   ChartLine,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -93,6 +94,8 @@ export const MANAGEMENT_NAV: NavItem[] = [
   { href: "/ceo-report", label: "Отчёт CEO", icon: Mail },
   { href: "/journal", label: "Журнал", icon: ScrollText },
   { href: "/sync", label: "Синхронизация", icon: RefreshCw, ownerOnly: true },
+  // Состояние (этап 86): жива ли база, когда была проверка, что собрано, какие сбои. Владельцу, как «Синхронизация»
+  { href: "/status", label: "Состояние", icon: Activity, ownerOnly: true },
   { href: "/settings", label: "Настройки", icon: Settings },
 ];
 
