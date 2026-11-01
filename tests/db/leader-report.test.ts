@@ -231,13 +231,23 @@ describe("комментарий руководителя к отчёту", () =
   it("отказ одинаковый, есть отчёт за неделю или нет: по ответу не узнать, кто и когда отправлял", async () => {
     await sendReport();
     await memberPerson();
+    /** Текст отказа словами: его и сравниваем, иначе разницу в формулировках тест бы не увидел */
+    const refusal = async (actor: tasks.Actor, week: string) => {
+      try {
+        await addReportComment(actor, { teamId, week }, "Замечание");
+        return "комментарий прошёл";
+      } catch (error) {
+        return error instanceof tasks.TaskRuleError ? error.message : String(error);
+      }
+    };
     const member = await personal("t7381-member");
-    const sentWeek = addReportComment(member, { teamId, week: key }, "Замечание");
-    const emptyWeek = addReportComment(member, { teamId, week: "2026-01-05" }, "Замечание");
-    await expectRule(sentWeek, /Обсуждение этого отчёта вам недоступно/);
-    await expectRule(emptyWeek, /Обсуждение этого отчёта вам недоступно/);
+    // Неделя с отправленным отчётом и неделя без него: ответ слово в слово один
+    const withReport = await refusal(member, key);
+    const without = await refusal(member, "2026-01-05");
+    expect(withReport).toBe(without);
+    expect(withReport).toMatch(/Обсуждение этого отчёта вам недоступно/);
     // И получателю отчёта за неделю без отправки отвечают тем же текстом
-    await expectRule(addReportComment(await personal("t7381-boss"), { teamId, week: "2026-01-05" }, "Замечание"), /Обсуждение этого отчёта вам недоступно/);
+    expect(await refusal(await personal("t7381-boss"), "2026-01-05")).toBe(withReport);
   });
 
   it("наблюдателю комментарии закрыты, даже если отчёт отправили ему", async () => {
