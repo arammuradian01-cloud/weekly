@@ -35,9 +35,13 @@ test("заголовки безопасности: политика с метк�
   const headers = response!.headers();
   const policy = headers["content-security-policy"];
   expect(policy).toBeTruthy();
-  // Встроенные скрипты только с одноразовой меткой, страницу не встроить в чужую, жалобы идут на свой адрес
-  expect(policy).toContain("'nonce-");
-  expect(policy).toContain("frame-ancestors 'none'");
+  // Политика по умолчанию: чужие адреса закрыты, запросы и формы только к себе, жалобы идут на свой адрес.
+  // Встроенные скрипты разрешены: иначе не работает дашборд рынка в окне srcdoc (src/lib/security.ts)
+  expect(policy).toContain("default-src 'self'");
+  expect(policy).toContain("script-src 'self' 'unsafe-inline'");
+  expect(policy).toContain("connect-src 'self'");
+  expect(policy).toContain("form-action 'self'");
+  expect(policy).toContain("object-src 'none'");
   expect(policy).toContain("report-uri /api/errors");
   expect(headers["reporting-endpoints"]).toContain("/api/errors");
   // Режим не «только жалобы»: политика действительно действует
@@ -49,7 +53,7 @@ test("заголовки безопасности: политика с метк�
   expect(headers["x-robots-tag"]).toContain("noindex");
 
   await expect(page.getByLabel("Логин")).toBeVisible();
-  // Встроенный скрипт темы получил метку и сработал: без метки политика его бы не пустила
+  // Встроенный скрипт темы сработал: политика его пустила
   await expect(page.locator("html")).toHaveAttribute("data-theme", /^(light|dark)$/);
   expect(refusals, refusals.join("\n")).toEqual([]);
 });

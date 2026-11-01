@@ -27,8 +27,8 @@ export type StatusView = {
   version: string;
   /** Настроены ли оповещения в Telegram */
   alerts: boolean;
-  /** Политика CSP: действует, только жалобы или выключена */
-  csp: "on" | "report-only" | "off";
+  /** Политика CSP: действует, действует строго, только жалобы или выключена */
+  csp: "on" | "strict" | "report-only" | "off";
   /** Значение HSTS или null, если заголовок не уходит (адрес http) */
   hsts: string | null;
   /** Разрешена ли перезаливка данных переменной окружения */
@@ -39,10 +39,11 @@ export type StatusView = {
   errors: StatusErrorView[];
 };
 
-const CSP_LABELS: Record<StatusView["csp"], { value: string; tone: StatusItem["tone"] }> = {
-  on: { value: "действует", tone: "ok" },
-  "report-only": { value: "только жалобы", tone: "warning" },
-  off: { value: "выключена", tone: "danger" },
+const CSP_LABELS: Record<StatusView["csp"], string> = {
+  on: "действует",
+  strict: "действует строго, встроенные скрипты только с меткой",
+  "report-only": "только жалобы, ничего не блокируется",
+  off: "выключена",
 };
 
 export function StatusPanel({ view }: { view: StatusView }) {
@@ -82,7 +83,7 @@ export function StatusPanel({ view }: { view: StatusView }) {
         title="Защита"
         description="Заголовки безопасности и опасные действия. Меняются только переменными окружения на хостинге"
         params={[
-          { label: "Политика CSP", value: CSP_LABELS[view.csp].value },
+          { label: "Политика CSP", value: CSP_LABELS[view.csp] },
           { label: "Только по https (HSTS)", value: view.hsts ? view.hsts : "не уходит: адрес http" },
           { label: "Перезаливка данных", value: view.reload ? "разрешена переменной RELOAD_ENABLED" : "закрыта" },
           { label: "Зеркало в Google", value: view.mirror.on ? `только департамент «${view.mirror.name}»` : "все департаменты" },
