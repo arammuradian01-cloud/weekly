@@ -1,0 +1,95 @@
+import { expect, test, type Page } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { enter, resetDatabase, sql } from "./helpers";
+
+// Этап 73+81: weekly можно смотреть и сдавать за прошлые недели. Переключатель недель на экране сдачи, состояние каждой
+// недели, сдача прошлой открытой недели с отметкой «Сдан с опозданием» и закрытая неделя только для просмотра.
+// Сценарий идёт и на ноутбуке 1440, и на телефоне 360.
+
+const SHOTS = "tests/e2e/screenshots";
+mkdirSync(SHOTS, { recursive: true });
+
+/**
+ * Понедельник позапрошлой календарной недели по Москве. Две недели назад, а не одна: отчётная неделя в понедельник до
+ * срока это ещё прошлая календарная неделя, и одна неделя назад совпала бы с отчётной
+ */
+function pastMonday() {
+  const date = new Date(Date.now() + 3 * 3600_000);
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7) - 14);
+  return date.toISOString().slice(0, 10);
+}
+
+let past: string;
+
+test.beforeEach(async () => {
+  await resetDatabase();
+  past = pastMonday();
+  await sql(
+    `INSERT INTO weeks (id, start, "isoYear", "isoNumber", deadline, "meetingDate") VALUES ($1, $2::date, EXTRACT(ISOYEAR FROM $2::date), EXTRACT(WEEK FROM $2::date), $2::date + interval '7 days 15 hours', $2::date + 8) ON CONFLICT (start) DO NOTHING`,
+    [`test-7381w-${past}`, past],
+  );
+});
+
+async function shot(page: Page, name: string) {
+  const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
+  expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-past-${name}.png`, fullPage: true });
+}
+
+test("переключатель недель на экране сдачи: прошлую открытую неделю ещё можно сдать", async ({ page }) => {
+  test.setTimeout(120_000);
+  await enter(page, "Афанасьев Павел");
+  await page.goto("/weekly/submit");
+  const weeks = page.getByTestId("submit-weeks");
+  await expect(weeks).toBeVisible();
+  // Отчётная неделя отмечена как текущая страница переключателя
+  await expect(weeks.getByRole("link", { name: /отчётная/ })).toHaveAttribute("aria-current", "page");
+  await shot(page, "switcher");
+
+  // Прошлая неделя: заголовок её номера, пометка «это прошлая неделя» и кнопка сдачи на месте
+  await page.goto(`/weekly/submit?week=${past}`);
+  await expect(page.getByTestId("submit-past-note")).toContainText("Это прошлая неделя");
+  await expect(page.getByTestId(`submit-week-${past}`)).toHaveAttribute("aria-current", "page");
+
+  await page.getByLabel("Главное одной фразой").fill("Итоги прошлой недели");
+  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByLabel("Что произошло").fill("Запись за прошлую неделю");
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await expect(page.getByRole("heading", { name: "Запись за прошлую неделю" })).toBeVisible();
+  await page.getByRole("button", { name: "Сдать weekly" }).click();
+  await expect(page.getByText("Сдан с опозданием").first()).toBeVisible();
+  await shot(page, "submitted-late");
+
+  // Запись и состояние остались у прошлой недели, а не у отчётной
+  await page.reload();
+  await expect(page.getByTestId(`submit-week-${past}`)).toContainText("сдан с опозданием");
+  await page.goto("/weekly/submit");
+  await expect(page.getByRole("heading", { name: "Запись за прошлую неделю" })).toHaveCount(0);
+  const rows = await sql(
+    `SELECT w.start::text AS start, r.state FROM weekly_reports r JOIN weeks w ON w.id = r."weekId" JOIN people p ON p.id = r."authorId" WHERE p."fullName" = $1 AND w.start = $2::date`,
+    ["Афанасьев Павел", past],
+  );
+  expect(rows).toEqual([{ start: past, state: "LATE" }]);
+});
+
+test("закрытая прошлая неделя: только просмотр, подсказка говорит, кто её откроет", async ({ page }) => {
+  await sql(`UPDATE weeks SET "closedAt" = now() WHERE start = $1::date`, [past]);
+  await enter(page, "Афанасьев Павел");
+  await page.goto(`/weekly/submit?week=${past}`);
+  await expect(page.getByTestId("submit-closed-note")).toContainText("закрыта после встречи");
+  await expect(page.getByTestId(`submit-week-${past}`)).toContainText("закрыта");
+  await expect(page.getByText("Только просмотр")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
+  // Права не менялись: поле главной фразы закрыто, открыть неделю может только владелец или администратор
+  await expect(page.getByLabel("Главное одной фразой")).toBeDisabled();
+  await shot(page, "closed");
+});
+
+test("за будущую неделю weekly не пишут: открывается отчётная", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  const future = new Date(Date.now() + 3 * 3600_000);
+  future.setUTCDate(future.getUTCDate() - ((future.getUTCDay() + 6) % 7) + 14);
+  await page.goto(`/weekly/submit?week=${future.toISOString().slice(0, 10)}`);
+  await expect(page.getByText("За будущую неделю weekly не пишут")).toBeVisible();
+  await expect(page.getByTestId("submit-weeks").getByRole("link", { name: /отчётная/ })).toHaveAttribute("aria-current", "page");
+});
