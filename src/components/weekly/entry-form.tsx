@@ -29,6 +29,9 @@ export const isLocalId = (id: string) => id.startsWith("new-");
 
 const OFFLINE_TEXT = "Нет сети: запись сохранена на этом устройстве и уйдёт на сервер, когда появится связь";
 
+/** Фраза длиннее предела: сервер запись не примет, автосохранение стоит. Человек должен видеть это сразу, а не узнать при «Сохранить запись» */
+const PAUSED_TEXT = `Автосохранение остановлено: «Что произошло» длиннее ${WEEKLY_LIMITS.what} знаков. Сократите фразу, подробности перенесите в «Подробнее»`;
+
 /** Больше ссылок в записи не нужно: сервер оставит первые десять */
 const LINKS_MAX = 10;
 
@@ -209,7 +212,10 @@ export function EntryForm({
   // Связь вернулась: черновик уходит сам, без нажатий
   useEffect(() => {
     const back = () => {
-      if (!viewing && dirty.current && latest.current.e.what.trim()) void autosaveRef.current();
+      const what = latest.current.e.what.trim();
+      // Длинная фраза: сервер откажет, отправлять нечего
+      if (viewing || !dirty.current || !what || what.length > WEEKLY_LIMITS.what) return;
+      void autosaveRef.current();
     };
     window.addEventListener("online", back);
     return () => window.removeEventListener("online", back);
@@ -221,6 +227,9 @@ export function EntryForm({
     if (viewing || !dirty.current) return;
     if (timer.current) clearTimeout(timer.current);
     const what = e.what.trim();
+    // Фраза вышла за предел: сохранять нечего, сервер откажет. О том, что автосохранение стоит, говорит строка
+    // состояния внизу формы: она считается от самого текста, а не от состояния сохранения, поэтому не может
+    // остаться на «Черновик записи сохранён» от прошлого раза
     if (!what || what.length > WEEKLY_LIMITS.what) return;
     timer.current = setTimeout(() => void autosave(), 2500);
     return () => {
@@ -235,6 +244,15 @@ export function EntryForm({
     if (!e.what.trim()) return setError("Напишите одной фразой, что произошло");
     if (e.what.trim().length > WEEKLY_LIMITS.what) return setError(`«Что произошло» длиннее ${WEEKLY_LIMITS.what} знаков: сократите до одной фразы`);
     if ((e.details ?? "").length > WEEKLY_LIMITS.details) return setError(`«Подробнее» длиннее ${WEEKLY_LIMITS.details} знаков`);
+    const over = (
+      [
+        ["Влияние на бизнес", e.impact, WEEKLY_LIMITS.impact],
+        ["Цифра или факт", e.fact, WEEKLY_LIMITS.fact],
+        ["Что делаем дальше", e.next, WEEKLY_LIMITS.next],
+        ["Какая помощь нужна", e.help, WEEKLY_LIMITS.help],
+      ] as const
+    ).find(([, value, max]) => (value ?? "").length > max);
+    if (over) return setError(`${over[0]}: не длиннее ${over[2]} знаков`);
     if (needHelp && !(e.help ?? "").trim()) return setError("Напишите, какая помощь нужна и от кого");
     if (timer.current) clearTimeout(timer.current);
     setBusy(true);
@@ -256,6 +274,8 @@ export function EntryForm({
   };
 
   const saved = !isLocalId(e.id);
+  /** Фраза длиннее предела: автосохранение стоит, и строка состояния внизу формы говорит об этом прямо */
+  const paused = e.what.trim().length > WEEKLY_LIMITS.what;
 
   // «Отмена» у несохранённой записи выбрасывает и черновик на устройстве. «Закрыть» у сохранённой оставляет только то,
   // что ждёт сети: человек видел, что оно уйдёт само
@@ -305,11 +325,11 @@ export function EntryForm({
         hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись на «Моей неделе»"
       />
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} hint="Словами: что это меняет для выручки, маржи или клиентов" />
-        <TextArea label="Цифра или факт" id={`${initial.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} hint="Одна цифра или факт, на который опирается запись" />
+        <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} counter={{ value: (e.impact ?? "").length, max: WEEKLY_LIMITS.impact }} hint="Словами: что это меняет для выручки, маржи или клиентов" />
+        <TextArea label="Цифра или факт" id={`${initial.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} counter={{ value: (e.fact ?? "").length, max: WEEKLY_LIMITS.fact }} hint="Одна цифра или факт, на который опирается запись" />
       </div>
       <div className="flex flex-col gap-2">
-        <TextArea label="Что делаем дальше" id={`${initial.id}-next`} value={e.next ?? ""} onChange={(ev) => set("next", ev.target.value)} rows={2} />
+        <TextArea label="Что делаем дальше" id={`${initial.id}-next`} value={e.next ?? ""} onChange={(ev) => set("next", ev.target.value)} rows={2} counter={{ value: (e.next ?? "").length, max: WEEKLY_LIMITS.next }} />
         <div className="flex flex-wrap items-center gap-3">
           {e.taskNumber ? (
             <span className="text-small text-muted">По записи уже есть задача {e.taskNumber}</span>
@@ -348,6 +368,7 @@ export function EntryForm({
             value={e.help ?? ""}
             onChange={(v) => set("help", v)}
             rows={2}
+            counter={{ value: (e.help ?? "").length, max: WEEKLY_LIMITS.help }}
             hint="Упомяните, от кого ждёте помощи: @ и начало имени. Чтобы у помощи были срок и ответ, оформите её просьбой"
           />
         ) : null}
@@ -400,8 +421,19 @@ export function EntryForm({
         </p>
       ) : null}
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-        <span className={autoState === "offline" || offline ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"} aria-live="polite">
-          {autoState === "offline" || offline ? OFFLINE_TEXT : autoState === "saving" ? "Сохраняю черновик записи" : autoState === "saved" ? "Черновик записи сохранён" : ""}
+        <span
+          className={autoState === "offline" || offline || paused ? "text-caption font-semibold text-warning-ink sm:mr-auto" : "text-caption text-muted sm:mr-auto"}
+          aria-live="polite"
+        >
+          {autoState === "offline" || offline
+            ? OFFLINE_TEXT
+            : paused
+              ? PAUSED_TEXT
+              : autoState === "saving"
+                ? "Сохраняю черновик записи"
+                : autoState === "saved"
+                  ? "Черновик записи сохранён"
+                  : ""}
         </span>
         <Button type="button" variant="ghost" onClick={cancel}>
           {saved ? "Закрыть" : "Отмена"}
