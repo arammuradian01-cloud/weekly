@@ -79,7 +79,17 @@ test("страница «Состояние»: база, проверка, ве�
   await expect(page.getByTestId("status-version")).not.toBeEmpty();
   await expect(page.getByRole("heading", { name: "Проверки и версия" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Защита" })).toBeVisible();
-  // Сбоев ещё не было
+  // Сбоев ещё не было. Если что-то всплыло, оно названо прямо в ошибке теста: источник, текст и страница
+  const rows = (await sql(`SELECT source, message, place, times FROM error_events ORDER BY "lastAt" DESC`)) as {
+    source: string;
+    message: string;
+    place: string | null;
+    times: number;
+  }[];
+  expect(
+    rows.map((r) => `${r.source}: ${r.message} (${r.place ?? "без страницы"}, раз ${r.times})`),
+    "сбои ресурса за вход, режим управления и открытие «Состояния»",
+  ).toEqual([]);
   await expect(page.getByTestId("status-errors-empty")).toBeVisible();
   await noScroll(page, "sostoyanie");
   expect(refusals, refusals.join("\n")).toEqual([]);
@@ -99,10 +109,24 @@ test("сбой из браузера доходит до страницы «Со
   await expect(list).toContainText("Браузер");
   // Одинаковые сбои сложены в одну запись со счётчиком
   await expect(list).toContainText("раз: 2");
-  // Счётчик за сутки показывает число, а не «нет». Точное число не сверяем: в прогоне в список попадают и сбои
-  // самих страниц, их бывает по-разному
-  await expect(page.getByTestId("status-errors-count")).not.toContainText("нет");
+  // Счётчик за сутки считает случаи, а не записи: два одинаковых сбоя это два случая
+  const counter = (await page.getByTestId("status-errors-count").textContent()) ?? "";
+  const perDay = Number(/за сутки\D*(\d+)/.exec(counter)?.[1] ?? "0");
+  expect(perDay, counter).toBeGreaterThanOrEqual(2);
   await noScroll(page, "sostoyanie-sboi");
+  // Своих сбоев у ресурса за весь сценарий (вход, режим управления, две страницы) быть не должно: в списке только
+  // тот сбой, который отправил тест. Если что-то всплыло, оно названо прямо в ошибке теста, а не теряется
+  const rows = (await sql(`SELECT source, message, place, times FROM error_events ORDER BY "lastAt" DESC`)) as {
+    source: string;
+    message: string;
+    place: string | null;
+    times: number;
+  }[];
+  const mine = rows.filter((r) => r.message === "Проверка сбора сбоев");
+  expect(mine).toHaveLength(1);
+  expect(mine[0]!.times).toBe(2);
+  const others = rows.filter((r) => r.message !== "Проверка сбора сбоев").map((r) => `${r.source}: ${r.message} (${r.place ?? "без страницы"}, раз ${r.times})`);
+  expect(others, "посторонние сбои за сценарий").toEqual([]);
 });
 
 test("«Состояние» закрыто без режима управления и не владельцу", async ({ page }) => {

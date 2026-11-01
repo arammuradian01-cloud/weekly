@@ -12,8 +12,11 @@ import { useEffect } from "react";
 const MAX_REPORTS = 5;
 /**
  * Шум, а не сбой: запрос оборвал переход на другую страницу, человек ушёл со страницы или пропала сеть. Такие
- * сообщения приходят при обычной работе и не говорят ни о чём: в сквозном прогоне они набежали сами и завалили бы
- * владельцу список сбоев (прогон 41335268396). Настоящий сбой сети виден по странице «Нет сети» (этап 26)
+ * сообщения приходят при обычной работе и ни о чём не говорят. В сквозном прогоне они набежали сами на одном
+ * прогоне из двух (41335268396): это тот самый случай, когда запрос обрывает переход. Фильтр стоит только на
+ * общих слушателях страницы; экраны сбоя (error.tsx, global-error.tsx) сообщают о себе всегда, даже если внутри
+ * тот же текст: упавшая страница — это находка, а не шум. Настоящая пропажа сети видна по странице «Нет сети»
+ * (этап 26)
  */
 const NOISE = /failed to fetch|load failed|networkerror|aborterror|operation was aborted|signal is aborted|the user aborted|resizeobserver loop/i;
 /** Счётчик и память повторов живут в модуле, а не в состоянии: отправка не перерисовывает страницу */
@@ -24,7 +27,7 @@ const seen = new Set<string>();
 export function reportBrowserError(message: unknown, stack?: unknown): void {
   if (typeof window === "undefined") return;
   const text = String(message ?? "").trim().slice(0, 300);
-  if (!text || NOISE.test(text) || sent >= MAX_REPORTS || seen.has(text)) return;
+  if (!text || sent >= MAX_REPORTS || seen.has(text)) return;
   seen.add(text);
   sent += 1;
   try {
@@ -40,16 +43,22 @@ export function reportBrowserError(message: unknown, stack?: unknown): void {
   }
 }
 
+/** То же, но шум не отправляется: так сообщают о себе общие слушатели страницы */
+function reportUnlessNoise(message: unknown, stack?: unknown): void {
+  if (NOISE.test(String(message ?? ""))) return;
+  reportBrowserError(message, stack);
+}
+
 /** Слушатели ошибок страницы. Ничего не рисует */
 export function ErrorReporter() {
   useEffect(() => {
     const onError = (event: ErrorEvent) => {
       const place = event.filename ? `${event.filename}:${event.lineno ?? 0}` : "";
-      reportBrowserError(event.message || event.error, event.error instanceof Error ? (event.error.stack ?? place) : place);
+      reportUnlessNoise(event.message || event.error, event.error instanceof Error ? (event.error.stack ?? place) : place);
     };
     const onRejection = (event: PromiseRejectionEvent) => {
       const reason = event.reason;
-      reportBrowserError(
+      reportUnlessNoise(
         reason instanceof Error ? `Обещание отклонено: ${reason.message}` : `Обещание отклонено: ${String(reason ?? "")}`,
         reason instanceof Error ? reason.stack : undefined,
       );
