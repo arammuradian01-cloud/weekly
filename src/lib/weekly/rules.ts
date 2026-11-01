@@ -22,6 +22,72 @@ export function submitState(now: Date, deadline: Date): "submitted" | "late" {
   return now.getTime() <= deadline.getTime() ? "submitted" : "late";
 }
 
+// ---------- Weekly за прошлые недели (этап 73+81) ----------
+//
+// Сервер и раньше разрешал писать свой weekly за прошлую неделю, пока она открыта (canEditWeekly), а экран сдачи всегда
+// брал отчётную неделю. Здесь то, что нужно экрану сдачи для любой недели. Права не меняются: закрытая неделя остаётся
+// только для владельца и администраторов, как было.
+
+/** Сколько недель в переключателе экрана сдачи: отчётная и прошлые. Более старые открываются стрелкой или адресом */
+export const SUBMIT_WEEKS = 8;
+
+/**
+ * Неделя экрана сдачи по адресу (?week=<понедельник>). Нет недели или она не понедельник: отчётная. Будущая: тоже
+ * отчётная, и экран говорит, что за будущую неделю weekly не пишут
+ */
+export function submitWeekOf(wanted: unknown, reporting: WeekKey, isKey: (v: unknown) => v is WeekKey): { key: WeekKey; future: boolean } {
+  if (!isKey(wanted)) return { key: reporting, future: false };
+  if (wanted > reporting) return { key: reporting, future: true };
+  return { key: wanted, future: false };
+}
+
+/** Состояние недели в переключателе: сдан, сдан с опозданием, черновик, не сдан; закрытая неделя поверх любого */
+export type SubmitWeekState = "submitted" | "late" | "draft" | "not-started" | "closed";
+
+export function submitWeekState(state: "submitted" | "late" | "draft" | "not-started", closed: boolean): SubmitWeekState {
+  if (closed && state !== "submitted" && state !== "late") return "closed";
+  return state;
+}
+
+export const SUBMIT_WEEK_LABEL: Record<SubmitWeekState, string> = {
+  submitted: "сдан",
+  late: "сдан с опозданием",
+  draft: "черновик",
+  "not-started": "не сдан",
+  closed: "закрыта",
+};
+
+/** Момент по Москве для подсказок: «20 октября, 18:05» */
+export function moscowMoment(iso: string): string {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(" в ", ", ");
+}
+
+/** Отчёт руководителю (или отчёт команды), куда идут записи автора, уже отправлен за эту неделю */
+export type SentReportNote = { team: string; at: string; to: string[] };
+
+/**
+ * Предупреждение при сдаче weekly за неделю, отчёт руководителю за которую уже ушёл: записи попадут в ленту и в отчёт
+ * команды, но в отправленную версию сами не войдут. Пусто: предупреждать не о чем
+ */
+export function sentReportsWarning(list: readonly SentReportNote[], weekNumber: number): string | null {
+  if (!list.length) return null;
+  const parts = list.map((r) => `команда «${r.team}», ${moscowMoment(r.at)}${r.to.length ? `, получил ${r.to.join(", ")}` : ""}`);
+  const head = list.length === 1 ? `Отчёт руководителю за неделю ${weekNumber} уже отправлен` : `Отчёты руководителю за неделю ${weekNumber} уже отправлены`;
+  return `${head} (${parts.join("; ")}). Записи попадут в ленту и в отчёт команды, но в отправленную версию сами не войдут: при необходимости отчёт отправят ещё раз.`;
+}
+
+/**
+ * Кто закрыл неделю и кто может её открыть: подсказка автору, который открыл свой weekly за закрытую неделю.
+ * teams: команды, которые ждут его weekly и закрыли неделю, с их руководителями
+ */
+export function closedWeekHint(weekNumber: number, department: boolean, teams: readonly { name: string; leader: string | null }[]): string {
+  if (department || !teams.length) return `Неделя ${weekNumber} закрыта после встречи: записи правят только владелец и администраторы. Открыть неделю может владелец или администратор в режиме управления.`;
+  const names = teams.map((t) => `«${t.name}»${t.leader ? ` (${t.leader})` : ""}`).join(", ");
+  return teams.length === 1
+    ? `Неделю ${weekNumber} закрыл руководитель команды ${names}. Открыть её может руководитель этой команды или руководитель выше, а также владелец и администраторы.`
+    : `Неделю ${weekNumber} закрыли руководители команд ${names}. Открыть её могут руководители этих команд или руководители выше, а также владелец и администраторы.`;
+}
+
 export type CeoSections = { main: string; risks: string; next: string };
 
 /** Длинное тире и стрелки в отчёте CEO заменяются на дефис автоматически (раздел 3 ТЗ и правило текстов Арама) */

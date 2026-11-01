@@ -24,6 +24,7 @@ import { AbsentBadge, substituteText } from "./absence";
 import { useRunWeekly } from "./use-weekly";
 import { PromoteControl, PromotedNote } from "./promote";
 import { WeekSwitcher } from "./week-switcher";
+import { submitWeekHref } from "@/lib/weekly/weeks";
 
 type View = "people" | "blocks";
 
@@ -204,9 +205,10 @@ export function WeeklyFeed({
             <span className="sm:hidden">Встреча</span>
             <span className="hidden sm:inline">Режим встречи</span>
           </Link>
-          <Link href="/weekly/submit" className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
+          {/* Этап 73+81: на прошлой неделе кнопка ведёт на сдачу именно за неё, а не за отчётную */}
+          <Link href={submitWeekHref(week.key)} className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
             <PenLine className="h-4 w-4" aria-hidden="true" />
-            {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
+            {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : week.reporting ? "Сдать weekly" : `Сдать за неделю ${week.number}`}
           </Link>
           {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
           {/* Этап 66: отчёт команды по смысловым блокам и шаблон блоков у руководителя команды */}
@@ -304,11 +306,9 @@ export function WeeklyFeed({
           title={`За неделю ${week.number} записей нет`}
           className="mt-6"
           action={
-            week.reporting ? (
-              <Link href="/weekly/submit" className={buttonClass("secondary", "sm")}>
-                Написать свой weekly
-              </Link>
-            ) : undefined
+            <Link href={submitWeekHref(week.key)} className={buttonClass("secondary", "sm")}>
+              {week.reporting ? "Написать свой weekly" : `Написать weekly за неделю ${week.number}`}
+            </Link>
           }
         >
           {week.reporting ? "Записи появятся, как только лидеры начнут писать weekly." : "Архив хранится без ограничения срока: листайте недели назад."}

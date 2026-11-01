@@ -7,37 +7,83 @@ import { entryPromises } from "@/lib/weekly/promise-service";
 import { skippedFactKeys, weekFacts } from "@/lib/weekly/facts-service";
 import { templateForAuthor } from "@/lib/weekly-blocks/team";
 import { subjectOf } from "@/lib/org/current";
-import { canEditWeekly } from "@/lib/weekly/rules";
+import { canEditWeekly, sentReportsWarning, submitWeekOf } from "@/lib/weekly/rules";
+import { closedWeekText, sentReportsFor, submitWeeks } from "@/lib/weekly/submit-weeks";
+import { isWeekKey, shiftWeek } from "@/lib/weekly/weeks";
+import { weeklyReaders } from "@/lib/leader-report/service";
 import { formatLong } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
 import { WeeklySubmit } from "@/components/weekly/weekly-submit";
+import { SubmitWeeks } from "@/components/weekly/submit-weeks";
 import { TaskDrawer } from "@/components/tasks/task-drawer";
 import { PageHeader } from "@/components/page-header";
 
 export const metadata: Metadata = { title: "Сдать weekly" };
 
-export default async function SubmitWeeklyPage() {
+/**
+ * Сдача weekly за неделю из адреса (этап 73+81): без недели отчётная, прошлые открываются переключателем. Права те же,
+ * что были: свой weekly за открытую неделю пишет автор, закрытую неделю правят владелец и администраторы
+ */
+export default async function SubmitWeeklyPage({ searchParams }: { searchParams: Promise<{ week?: string }> }) {
   const ctx = await requireContext();
-  const key = await currentReportingKey();
-  const [mine, promises, facts, skipped, template] = await Promise.all([
+  const params = await searchParams;
+  const one = (v: unknown) => (Array.isArray(v) ? (v[0] as string | undefined) : (v as string | undefined));
+  const reporting = await currentReportingKey();
+  const wanted = submitWeekOf(one(params.week), reporting, isWeekKey);
+  const key = wanted.key;
+  const [mine, promises, facts, skipped, template, readers, weeks, closedText, sentReports] = await Promise.all([
     getMyWeekly(ctx.person.id, key),
     entryPromises(ctx.person.id, key),
     weekFacts(ctx.person.id, key, { limited: subjectOf(ctx).limited }),
     skippedFactKeys(ctx.person.id, key),
     // Смысловые блоки weekly команды (этап 66): записи сдаются по ним
     templateForAuthor(ctx.person.id),
+    // Кто получит weekly (этап 73а)
+    weeklyReaders(ctx.person.id),
+    // Переключатель недель (этап 73+81)
+    submitWeeks(ctx.person.id, key),
+    closedWeekText(ctx.person.id, key),
+    sentReportsFor(ctx.person.id, key),
   ]);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
   const msLeft = deadline.getTime() - now.getTime();
-  const canEdit = canEditWeekly(mine.week, key, { slug: ctx.person.slug as PersonSlug, management: ctx.management?.role ?? null, observer: ctx.person.role === "OBSERVER" }, ctx.person.slug as PersonSlug);
-
+  const canEdit = canEditWeekly(mine.week, reporting, { slug: ctx.person.slug as PersonSlug, management: ctx.management?.role ?? null, observer: ctx.person.role === "OBSERVER" }, ctx.person.slug as PersonSlug);
+  const past = key < reporting;
+  const sentWarning = past ? sentReportsWarning(sentReports, mine.week.number) : null;
   return (
     <>
       {/* Этап 37: шапка как у остальных разделов */}
-      <PageHeader title={`Weekly за неделю ${mine.week.number}`} description={`${formatLong(mine.week.start)} - ${formatLong(mine.week.end)}. Четыре шага на одном экране, обычно до 15 минут`} />
+      <PageHeader
+        title={`Weekly за неделю ${mine.week.number}`}
+        description={`${formatLong(mine.week.start)} - ${formatLong(mine.week.end)}. Четыре шага на одном экране, обычно до 15 минут`}
+      />
+      {/* «Раньше» открывает неделю перед списком: оттуда список снова листается назад по одной неделе */}
+      <SubmitWeeks weeks={weeks} selected={key} older={shiftWeek(weeks[weeks.length - 1]?.key ?? key, -1)} />
+      {wanted.future ? (
+        <p role="status" className="sv-alert sv-alert--warning mb-4 text-small">
+          За будущую неделю weekly не пишут: открыта отчётная неделя {mine.week.number}.
+        </p>
+      ) : null}
+      {past ? (
+        <p className="mb-4 text-small text-muted" data-testid="submit-past-note">
+          Это прошлая неделя {mine.week.number}. {canEdit ? "Сдать её ещё можно: сдача после срока отмечается «Сдан с опозданием»." : "Weekly за неё только для просмотра."}
+        </p>
+      ) : null}
+      {closedText ? (
+        <p role="status" className="sv-alert sv-alert--warning mb-4 text-small" data-testid="submit-closed-note">
+          {closedText}
+        </p>
+      ) : null}
+      {sentWarning ? (
+        <p role="status" className="sv-alert sv-alert--warning mb-4 text-small" data-testid="submit-sent-warning">
+          {sentWarning}
+        </p>
+      ) : null}
       <Suspense>
         <WeeklySubmit
+          // Ключ по неделе: смена недели пересоздаёт редактор, и набранное за одну неделю не переезжает в другую
+          key={key}
           week={mine.week}
           initialReport={mine.report}
           initialEntries={mine.entries}
@@ -51,6 +97,7 @@ export default async function SubmitWeeklyPage() {
           facts={facts}
           skippedFacts={skipped}
           template={template}
+          readers={readers}
         />
         <TaskDrawer />
       </Suspense>
