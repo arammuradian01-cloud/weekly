@@ -82,8 +82,9 @@ test("закрытая прошлая неделя: только просмот�
   await expect(page.getByTestId(`submit-week-${past}`)).toContainText("закрыта");
   await expect(page.getByText("Только просмотр")).toBeVisible();
   await expect(page.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
-  // Права не менялись: поле главной фразы закрыто, открыть неделю может только владелец или администратор
-  await expect(page.getByLabel("Главное одной фразой")).toBeDisabled();
+  // Права не менялись: поле главной фразы только для чтения (readonly, текст можно выделить), открыть неделю может
+  // только владелец или администратор
+  await expect(page.getByLabel("Главное одной фразой")).not.toBeEditable();
   await shot(page, "closed");
 });
 

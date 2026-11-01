@@ -27,9 +27,10 @@ const soloPerson = () => prisma.person.create({ data: { slug: "t7381-solo", full
 async function clean() {
   await prisma.weeklyEntry.deleteMany({ where: { importBatch: "t7381past" } });
   await prisma.weeklyReport.deleteMany({ where: { author: { slug: "cheychenets" }, week: { start: { in: [dbDate(reporting), dbDate(past)] } } } });
-  await prisma.teamWeekClose.deleteMany({ where: { week: { start: dbDate(past) } } });
+  // Закрытия недель мог оставить соседний файл тестов на той же базе: обе недели начинаются открытыми
+  await prisma.teamWeekClose.deleteMany({ where: { week: { start: { in: [dbDate(reporting), dbDate(past)] } } } });
   await prisma.ceoReport.deleteMany({ where: { week: { start: dbDate(past) } } });
-  await prisma.week.updateMany({ where: { start: dbDate(past) }, data: { closedAt: null } });
+  await prisma.week.updateMany({ where: { start: { in: [dbDate(reporting), dbDate(past)] } }, data: { closedAt: null } });
   await prisma.teamMember.deleteMany({ where: { team: { name: { startsWith: "Тест 7381" } } } });
   await prisma.team.deleteMany({ where: { name: { startsWith: "Тест 7381" } } });
   await prisma.teamMember.deleteMany({ where: { person: { slug: "t7381-solo" } } });
@@ -60,10 +61,12 @@ describe("переключатель недель на экране сдачи",
     // Недели без строки в базе ресурс не вёл: они открыты и пусты, строки для них не создаются
     expect(weeks.every((w) => typeof w.number === "number" && w.number > 0)).toBe(true);
     const old = shiftWeek(reporting, -20);
+    const rows = await prisma.week.count({ where: { start: dbDate(old) } });
     const withOld = await submitWeeks(author.personId, old);
     expect(withOld).toHaveLength(SUBMIT_WEEKS + 1);
     expect(withOld.at(-1)).toMatchObject({ key: old });
-    expect(await prisma.week.findUnique({ where: { start: dbDate(old) } })).toBeNull();
+    // Строки недель переключатель не создаёт: неделя без строки открыта и пуста
+    expect(await prisma.week.count({ where: { start: dbDate(old) } })).toBe(rows);
   });
 
   it("состояние недели: черновик, сдан, закрыта", async () => {

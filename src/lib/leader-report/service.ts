@@ -32,19 +32,20 @@ export type ReportViewer = Pick<Actor, "personId" | "role" | "via" | "management
  * администраторами в режиме управления: они и так ведут отчёт CEO и отчёты команд
  */
 export async function leaderReportScope(actor: ReportViewer): Promise<LeaderReportScope> {
+  // Расчёт идёт на каждой странице (пункт меню), поэтому выходим как можно раньше и считаем остальное разом
   if (actor.via === "TEAM" || actor.role === "OBSERVER") return { allowed: false, canLead: false, teams: [], nodes: [] };
   const nodes = await loadTeamNodes(prisma);
   const scope = scopeOf(nodes, { id: actor.personId, role: actor.role });
   const teams = nodes.filter((n) => n.active && (n.leaderId === actor.personId || scope.leads.includes(n.id)));
   const canLead = teams.length > 0;
   if (canLead || actor.management === "OWNER" || actor.management === "ADMIN") return { allowed: true, canLead, teams, nodes };
-  if (await isCeo(actor.personId)) return { allowed: true, canLead, teams, nodes };
   // Прежний получатель остаётся с доступом, даже если больше не руководит командой: отправленное ему не исчезает
-  const [team, ceo] = await Promise.all([
+  const [ceo, team, ceoReports] = await Promise.all([
+    isCeo(actor.personId),
     prisma.teamWeeklyReport.count({ where: { sentAt: { not: null }, sentTo: sentTo(actor.personId), team: { active: true } } }),
     prisma.ceoReport.count({ where: { sentAt: { not: null }, sentTo: sentTo(actor.personId) } }),
   ]);
-  return { allowed: team + ceo > 0, canLead, teams, nodes };
+  return { allowed: ceo || team + ceoReports > 0, canLead, teams, nodes };
 }
 
 /** Виден ли человеку пункт меню «Отчёт руководителю»: тот же расчёт, что у страницы */

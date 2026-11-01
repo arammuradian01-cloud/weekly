@@ -58,7 +58,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/weekly", label: "Weekly", icon: Newspaper },
       // Отчёт руководителю (этап 73+81): отдельный пункт меню, внутри вкладки «Отправленные» и «Полученные».
       // Пункт видят руководители команд и те, кому отчёты отправляют, при личном входе
-      { href: "/leader-report", label: "Отчёт руководителю", icon: Mail, restricted: "leaderReport", shortLabel: "Отчёт" },
+      { href: "/leader-report", label: "Отчёт руководителю", icon: Mail, restricted: "leaderReport" },
       { href: "/tasks", label: "Задачи", icon: SquareCheck },
       // Roadmap (этап 56): задачи по направлениям и месяцам, важные со звёздочками
       { href: "/roadmap", label: "Roadmap", icon: MapIcon },
