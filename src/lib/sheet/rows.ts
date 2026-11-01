@@ -7,6 +7,7 @@ import { listTasks } from "@/lib/tasks/service";
 import { isoFromDbDate } from "@/lib/tasks/dates";
 import { priorityOf, stateLabel, statusOf } from "@/domain/dictionaries";
 import type { Cell } from "./client";
+import { loadDepartmentGate } from "./department";
 
 export type Column = { header: string; width: number; kind?: "date" | "datetime" | "number" };
 export type TabSpec = { key: "tasks" | "comments" | "weekly"; title: string; columns: Column[] };
@@ -101,7 +102,9 @@ const linksText = (list: { title?: string; url?: string }[]) => list.map((l) => 
 
 /** Строки вкладки «Задачи». numbers: только эти задачи; null: все. Задачи в архиве в таблицу не попадают */
 export async function taskRows(numbers: number[] | null): Promise<Map<string, Cell[]>> {
-  const [all, people, dicts, fromBord, teams] = await Promise.all([
+  const [gate, all, people, dicts, fromBord, teams] = await Promise.all([
+    // Этап 86: с SHEET_DEPARTMENT_ONLY=1 в таблицу идут только задачи своего департамента
+    loadDepartmentGate(),
     listTasks({ archived: true }),
     prisma.person.findMany({ select: { slug: true, fullName: true } }),
     prisma.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] } } }),
@@ -110,7 +113,7 @@ export async function taskRows(numbers: number[] | null): Promise<Map<string, Ce
     prisma.team.findMany({ select: { id: true, name: true } }).then((rows) => new Map(rows.map((r) => [r.id, r.name]))),
   ]);
   const wanted = numbers ? new Set(numbers) : null;
-  const tasks = all.filter((t) => !t.archived && (!wanted || wanted.has(t.number)));
+  const tasks = all.filter((t) => !t.archived && (!wanted || wanted.has(t.number)) && gate.allowsSlug(t.owner));
   const name = (slug: string) => (slug === "all" ? "Все лидеры" : (people.find((p) => p.slug === slug)?.fullName ?? slug));
   const label = (kind: string, code: string) => dicts.find((d) => d.kind === kind && d.code === code)?.label ?? code;
   // Кем и когда обновлено: последняя запись журнала по задаче
@@ -156,42 +159,54 @@ export async function taskRows(numbers: number[] | null): Promise<Map<string, Ce
 
 /** Строки вкладки «Комментарии к задачам». Комментарии задач в архиве не выгружаются */
 export async function commentRows(ids: string[] | null): Promise<Map<string, Cell[]>> {
-  const list = await prisma.taskComment.findMany({
-    where: { ...(ids ? { id: { in: ids } } : {}), task: { archivedAt: null } },
-    include: { task: { select: { number: true, title: true } }, author: { select: { fullName: true } } },
-    orderBy: [{ at: "asc" }, { id: "asc" }],
-  });
-  return new Map(list.map((c) => [c.id, [c.task.number, c.task.title, c.author.fullName, serialMoment(c.at), c.text, c.id]]));
+  // Этап 86: комментарий идёт в таблицу вместе со своей задачей, поэтому отбор по ответственному за задачу
+  const [gate, list] = await Promise.all([
+    loadDepartmentGate(),
+    prisma.taskComment.findMany({
+      where: { ...(ids ? { id: { in: ids } } : {}), task: { archivedAt: null } },
+      include: { task: { select: { number: true, title: true, ownerId: true } }, author: { select: { fullName: true } } },
+      orderBy: [{ at: "asc" }, { id: "asc" }],
+    }),
+  ]);
+  return new Map(
+    list.filter((c) => gate.allowsId(c.task.ownerId)).map((c) => [c.id, [c.task.number, c.task.title, c.author.fullName, serialMoment(c.at), c.text, c.id]]),
+  );
 }
 
 /** Строки вкладки «Weekly»: одна строка на запись */
 export async function weeklyRows(ids: string[] | null): Promise<Map<string, Cell[]>> {
-  const list = await prisma.weeklyEntry.findMany({
-    where: ids ? { id: { in: ids } } : {},
-    include: { week: true, author: true, direction: true, block: true, type: true, tasks: { select: { number: true }, orderBy: { number: "asc" }, take: 1 } },
-    orderBy: [{ week: { start: "asc" } }, { sortOrder: "asc" }, { id: "asc" }],
-  });
+  // Этап 86: отбор по автору записи. Общие записи без автора идут в таблицу всегда
+  const [gate, list] = await Promise.all([
+    loadDepartmentGate(),
+    prisma.weeklyEntry.findMany({
+      where: ids ? { id: { in: ids } } : {},
+      include: { week: true, author: true, direction: true, block: true, type: true, tasks: { select: { number: true }, orderBy: { number: "asc" }, take: 1 } },
+      orderBy: [{ week: { start: "asc" } }, { sortOrder: "asc" }, { id: "asc" }],
+    }),
+  ]);
   return new Map(
-    list.map((e) => [
-      e.id,
-      [
-        e.week.isoNumber,
-        serialDate(isoFromDbDate(e.week.start)),
-        e.author?.fullName ?? "Общее, без автора",
-        e.direction.label,
-        e.block.label,
-        e.type.label,
-        e.what,
-        e.details ?? "",
-        e.impact ?? "",
-        e.fact ?? "",
-        e.next ?? "",
-        e.help ?? "",
-        linksText(Array.isArray(e.links) ? (e.links as { title?: string; url?: string }[]) : []),
-        e.tasks[0]?.number ?? "",
+    list
+      .filter((e) => gate.allowsId(e.authorId))
+      .map((e) => [
         e.id,
-      ],
-    ]),
+        [
+          e.week.isoNumber,
+          serialDate(isoFromDbDate(e.week.start)),
+          e.author?.fullName ?? "Общее, без автора",
+          e.direction.label,
+          e.block.label,
+          e.type.label,
+          e.what,
+          e.details ?? "",
+          e.impact ?? "",
+          e.fact ?? "",
+          e.next ?? "",
+          e.help ?? "",
+          linksText(Array.isArray(e.links) ? (e.links as { title?: string; url?: string }[]) : []),
+          e.tasks[0]?.number ?? "",
+          e.id,
+        ],
+      ]),
   );
 }
 
