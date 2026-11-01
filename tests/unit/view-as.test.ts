@@ -211,8 +211,18 @@ describe("по коду: изменения идут через проверку
     const routes = files("src/app", (n) => n === "route.ts" || n === "route.tsx");
     const mutating = routes.filter((f) => /export\s+(async\s+)?function\s+(POST|PUT|PATCH|DELETE)\b|export\s+const\s+(POST|PUT|PATCH|DELETE)\b/.test(readFileSync(f, "utf8")));
     expect(mutating.length).toBeGreaterThan(0);
+    // Этап 86: сбор сбоев (/api/errors) входа не берёт и не может: жалобу политики CSP браузер присылает без cookie,
+    // а сбой случается и на экране входа. Данных людей обработчик не пишет, только технические записи о сбоях,
+    // поэтому проверка записи «Смотреть как» к нему не относится. Исключение одно, названо по имени, и ниже
+    // проверяется, что входа в нём действительно нет совсем
+    const ERRORS_ROUTE = join("src", "app", "api", "errors", "route.ts");
+    expect(mutating).toContain(ERRORS_ROUTE);
     for (const file of mutating) {
       const code = readFileSync(file, "utf8");
+      if (file === ERRORS_ROUTE) {
+        expect(/writingActor|requireWriteContext|\bcurrentActor\b|\brequireContext\b/.test(code), `${file}: сбор сбоев берёт вход, хотя не должен`).toBe(false);
+        continue;
+      }
       expect(/writingActor|requireWriteContext/.test(code), `${file}: изменение без проверки «Смотреть как»`).toBe(true);
       expect(/\bcurrentActor\b|\brequireContext\b/.test(code), `${file}: вход для чтения в обработчике, который меняет данные`).toBe(false);
     }
