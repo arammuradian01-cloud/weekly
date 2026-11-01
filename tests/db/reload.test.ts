@@ -10,7 +10,7 @@ import * as tasks from "@/lib/tasks/service";
 import { importBordTasks } from "@/lib/tasks/bord-import";
 import { importBordWeekly } from "@/lib/weekly/bord-import";
 import * as admin from "@/lib/admin/service";
-import { reloadFromBord } from "@/lib/admin/reload";
+import { reloadAllowed, reloadFromBord } from "@/lib/admin/reload";
 import { ensureWeek } from "@/lib/weekly/service";
 
 const TASKS = "data/bord/zadachi-2026-10-05.csv";
@@ -147,5 +147,35 @@ describe("перезаливка из выгрузки Bord", () => {
     // После включения плашки «Пилот» перезаливка закрыта
     await prisma.setting.update({ where: { key: "stand.banner" }, data: { value: "pilot" } });
     await expect(admin.previewReload(owner, tasksText, weeklyText)).rejects.toThrow(/только до пилота/);
+  });
+
+  // Этап 86: перезаливка идёт только при переменной окружения, иначе её нельзя запустить ни с экрана, ни командой
+  it("без переменной RELOAD_ENABLED перезаливка не запускается и база не тронута", async () => {
+    const tasksText = readFileSync(TASKS, "utf8");
+    const weeklyText = readFileSync(WEEKLY, "utf8");
+    const owner = await tasks.actorFor("muradyan", "OWNER");
+    const before = await prisma.task.count();
+    const saved = process.env.RELOAD_ENABLED;
+    try {
+      delete process.env.RELOAD_ENABLED;
+      expect(reloadAllowed()).toBe(false);
+      // Экран настроек: отказ до всего остального
+      await expect(admin.previewReload(owner, tasksText, weeklyText)).rejects.toThrow(/RELOAD_ENABLED/);
+      await expect(admin.runReload(owner, tasksText, weeklyText, "перезалить")).rejects.toThrow(/RELOAD_ENABLED/);
+      // Сама перезаливка тоже отказывает: мимо проверки на экране её не запустить
+      await expect(
+        reloadFromBord(prisma, tasksText, weeklyText, { batch: "reload-86", actor: { personId: owner.personId, name: owner.fullName, source: "SYSTEM" } }),
+      ).rejects.toThrow(/RELOAD_ENABLED/);
+      // Команда на сервере: отказ ещё до чтения файлов
+      const run = reload(["--tasks", TASKS, "--weekly", WEEKLY, "--yes"]);
+      expect(run.code).toBe(1);
+      expect(run.out).toMatch(/RELOAD_ENABLED/);
+      expect(await prisma.task.count()).toBe(before);
+    } finally {
+      if (saved === undefined) delete process.env.RELOAD_ENABLED;
+      else process.env.RELOAD_ENABLED = saved;
+    }
+    // С переменной всё как было
+    expect(reloadAllowed()).toBe(true);
   });
 });
