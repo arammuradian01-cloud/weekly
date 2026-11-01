@@ -1,9 +1,12 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import "@fontsource/open-sans/400.css";
 import "@fontsource/open-sans/600.css";
 import "@fontsource-variable/golos-text";
 import "./globals.css";
 import { ServiceWorkerRegister } from "@/components/pwa/register";
+import { ErrorReporter } from "@/components/errors/reporter";
+import { NONCE_HEADER } from "@/lib/security";
 
 export const metadata: Metadata = {
   title: { default: "Weekly", template: "%s | Weekly" },
@@ -29,15 +32,18 @@ export const viewport: Viewport = {
  */
 const THEME_SCRIPT = `(function(){try{var m=document.cookie.match(/(?:^|; )theme=(light|dark|system)/);var t=m?m[1]:"system";var d=t==="dark"||(t==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.setAttribute("data-theme",d?"dark":"light");document.documentElement.setAttribute("data-theme-choice",t);}catch(e){}})();`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Метка встроенных скриптов для политики CSP (этап 86): её выдаёт proxy на каждый ответ. Пусто: политика выключена
+  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
   return (
     <html lang="ru" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
       </head>
       <body className="min-h-dvh">
         {children}
         <ServiceWorkerRegister />
+        <ErrorReporter />
       </body>
     </html>
   );
