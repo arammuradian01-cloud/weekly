@@ -6,6 +6,8 @@ import { contrastReport } from "./contrast";
 // Этап 77: roadmap по целям. Группировка «По задачам», «По целям» и «Цели и задачи» на карте сроков и на доске,
 // выбор в адресе (?group=), переход к цели на экран «Цели», группа «Задачи без цели», свёртка групп, перетаскивание
 // полосы задачи под целью с проверкой прав, у строки цели перетаскивания нет. Ноутбук 1440 и телефон 360.
+// Этап 84: карта сроков начинается с целей. «По целям» вид по умолчанию, задачи под целью спрятаны и раскрываются
+// нажатием на цель, раскрытие живёт в адресе (?open=). Подсказка по задаче при наведении и с клавиатуры.
 
 const SHOTS = "tests/e2e/screenshots";
 mkdirSync(SHOTS, { recursive: true });
@@ -77,7 +79,9 @@ test("три группировки на карте сроков и на дос�
   await enterManagement(page, "owner");
   await page.goto("/roadmap");
   const groupSwitch = page.getByRole("radiogroup", { name: "Группировка" });
-  await expect(groupSwitch.getByRole("radio", { name: "По задачам" })).toHaveAttribute("aria-checked", "true");
+  // Этап 84: по умолчанию «По целям», адрес при этом чистый
+  await expect(groupSwitch.getByRole("radio", { name: "По целям" })).toHaveAttribute("aria-checked", "true");
+  await expect(page).not.toHaveURL(/group=/);
 
   if (phone()) {
     // Телефон: переключатель помещается в 360, кнопки не ниже 44 px, вида карты сроков нет
@@ -94,8 +98,6 @@ test("три группировки на карте сроков и на дос�
   }
 
   // По целям
-  await groupSwitch.getByRole("radio", { name: "По целям" }).click();
-  await expect(page).toHaveURL(/group=goals/);
   if (phone()) {
     const list = page.getByTestId("roadmap-list");
     await expect(list).toHaveAttribute("data-group", "goals");
@@ -106,7 +108,7 @@ test("три группировки на карте сроков и на дос�
     await shot(page, "goals-list", { contrast: true });
   } else {
     const tl = page.getByTestId("roadmap-timeline");
-    await expect(tl.getByTestId("timeline-goals")).toBeVisible();
+    await expect(tl.getByTestId("timeline-group-e77-g1")).toBeVisible();
     await expect(tl.getByTestId("timeline-goal-e77-g1")).toContainText("РТ-1");
     await expect(tl.getByTestId("timeline-goal-e77-g2")).toContainText("В риске");
     // Цель без задач: полоса пунктиром до конца квартала
@@ -115,13 +117,35 @@ test("три группировки на карте сроков и на дос�
     await expect(tl.getByTestId("timeline-goalbar-e77-g1")).not.toHaveAttribute("data-empty", "true");
     // У строки цели нет ручек перетаскивания и подсказки про клавиатуру
     await expect(tl.getByTestId("timeline-goal-e77-g1").locator("[data-handle]")).toHaveCount(0);
+    // Этап 84: задачи цели спрятаны, пока цель не раскрыли
+    await expect(tl.getByTestId(`timeline-bar-${own}`)).toBeHidden();
     await expect(page.getByTestId("roadmap-summary")).toContainText("На карте 3 цели");
     await shot(page, "goals-timeline", { contrast: true });
+
+    // Нажатие на цель раскрывает её задачи, адрес запоминает раскрытие, повторное нажатие сворачивает
+    const toggle = tl.getByTestId("timeline-goal-toggle-e77-g1");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(tl.getByTestId(`timeline-bar-${own}`)).toBeVisible();
+    await expect(page).toHaveURL(/open=e77-g1/);
+    // Перезагрузка по этой же ссылке: цель снова раскрыта
+    await page.reload();
+    await expect(page.getByTestId("roadmap-timeline").getByTestId(`timeline-bar-${own}`)).toBeVisible();
+    await page.getByTestId("timeline-goal-toggle-e77-g1").click();
+    await expect(page.getByTestId("roadmap-timeline").getByTestId(`timeline-bar-${own}`)).toBeHidden();
+    await expect(page).not.toHaveURL(/open=/);
+    // Группа «Задачи без цели» тоже сворачивается
+    const nogoal = page.getByTestId("timeline-nogoal");
+    await expect(nogoal.getByTestId(`timeline-bar-${free}`)).toBeHidden();
+    await nogoal.getByTestId("timeline-nogoal-toggle").click();
+    await expect(nogoal.getByTestId(`timeline-bar-${free}`)).toBeVisible();
+    await expect(page).toHaveURL(/open=nogoal/);
+    await page.goto("/roadmap");
 
     // Доска по месяцам: карточки целей по месяцу самого позднего срока
     await page.getByRole("radio", { name: "Доска по месяцам" }).click();
     await expect(page).toHaveURL(/view=board/);
-    await expect(page).toHaveURL(/group=goals/);
     const grid = page.getByTestId("roadmap-grid");
     await expect(grid).toHaveAttribute("data-group", "goals");
     await expect(grid.getByTestId("roadmap-goal-e77-g1")).toBeVisible();
@@ -146,12 +170,17 @@ test("три группировки на карте сроков и на дос�
   const order = await container.locator("section[data-testid^='roadmap-']").evaluateAll((els) => els.map((e) => e.getAttribute("data-testid")));
   expect(order.at(-1)).toBe("roadmap-nogoal");
   // Группа сворачивается и раскрывается, по умолчанию раскрыта
-  const fold = g1.getByRole("button", { name: /^Свернуть: задачи цели РТ-1/ });
+  // Этап 84: подпись у кнопки постоянная, раскрыта группа или нет говорит aria-expanded
+  const fold = g1.getByRole("button", { name: /^Задачи цели РТ-1/ });
   await expect(fold).toHaveAttribute("aria-expanded", "true");
   await fold.click();
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
   await expect(g1.getByTestId(`roadmap-task-${own}`)).toBeHidden();
-  await g1.getByRole("button", { name: /^Развернуть: задачи цели РТ-1/ }).click();
+  // Раскрытие живёт в адресе: по ссылке видно то же самое
+  await expect(page).toHaveURL(/open=/);
+  await fold.click();
   await expect(g1.getByTestId(`roadmap-task-${own}`)).toBeVisible();
+  await expect(page).not.toHaveURL(/open=/);
   await shot(page, "both-board", { contrast: true });
 
   if (!phone()) {
@@ -164,9 +193,9 @@ test("три группировки на карте сроков и на дос�
     await expect(g1.getByTestId("timeline-goalbar-e77-g1")).toBeVisible();
     await expect(g1.getByTestId(`timeline-bar-${own}`)).toBeVisible();
     await expect(tl.getByTestId("timeline-nogoal").getByTestId(`timeline-bar-${free}`)).toBeVisible();
-    await g1.getByRole("button", { name: /^Свернуть: задачи цели РТ-1/ }).click();
+    await g1.getByTestId("timeline-goal-toggle-e77-g1").click();
     await expect(g1.getByTestId(`timeline-bar-${own}`)).toBeHidden();
-    await g1.getByRole("button", { name: /^Развернуть: задачи цели РТ-1/ }).click();
+    await g1.getByTestId("timeline-goal-toggle-e77-g1").click();
     await shot(page, "both-timeline", { contrast: true });
   }
 
@@ -192,7 +221,7 @@ test("три группировки на карте сроков и на дос�
   await page.getByRole("option", { name: "Вся команда" }).click();
   await expect(page).not.toHaveURL(/person=/);
   await page.getByRole("radiogroup", { name: "Группировка" }).getByRole("radio", { name: "По целям" }).click();
-  await expect(page).toHaveURL(/group=goals/);
+  await expect(page).not.toHaveURL(/group=/);
   if (phone()) await page.getByTestId("roadmap-goal-e77-g1").getByRole("link").click();
   else await page.getByTestId("timeline-goal-link-e77-g1").click();
   await expect(page).toHaveURL(new RegExp(`/goals\\?q=${q}#goal-e77-g1$`));
@@ -200,7 +229,7 @@ test("три группировки на карте сроков и на дос�
 
   // «Назад» возвращает roadmap по целям
   await page.goBack();
-  await expect(page).toHaveURL(/\/roadmap\?.*group=goals/);
+  await expect(page).toHaveURL(/\/roadmap/);
   await expect(page.getByRole("radiogroup", { name: "Группировка" }).getByRole("radio", { name: "По целям" })).toHaveAttribute("aria-checked", "true");
 });
 
@@ -243,7 +272,8 @@ test("«Цели и задачи» на карте сроков: свою зад
   // Строка цели: полоса без ручек, она ссылка на цель, а не полоса задачи
   const goalBar = g1.getByTestId("timeline-goalbar-e77-g1");
   await expect(goalBar.locator("[data-handle]")).toHaveCount(0);
-  await expect(goalBar).toHaveAttribute("href", /\/goals\?q=.*#goal-e77-g1$/);
+  // Этап 84: полоса цели раскрывает её задачи, а на экран «Цели» ведёт ссылка в колонке слева
+  await expect(g1.getByTestId("timeline-goal-link-e77-g1")).toHaveAttribute("href", /\/goals\?q=.*#goal-e77-g1$/);
   const goalText = await goalBar.textContent();
 
   // Своя задача: правый край вправо, окно причины, срок переносится; самый поздний срок цели не меняется (у Фатьянова позже)
@@ -280,4 +310,62 @@ test("тёмная тема: контраст текста в группиров
     await expect(page.getByText("Подписка ОСАГО запущена").first()).toBeVisible();
     await shot(page, `dark-${i + 1}`, { contrast: true });
   }
+});
+
+test("подсказка по задаче на карте сроков: наведение и клавиатура, Escape закрывает", async ({ page }) => {
+  test.skip(phone(), "Карта сроков только на широком экране, наведения на телефоне нет");
+  test.setTimeout(120_000);
+  const { own } = await seed();
+  await sql(`UPDATE tasks SET outcome = $2, "whereNow" = 'У подрядчика', state = 'AT_RISK', "riskNote" = 'Подрядчик выйдет в среду' WHERE number = $1`, [
+    own,
+    "Продление по карте работает у всех партнёров и не требует повторного ввода данных",
+  ]);
+  const title = (await sql(`SELECT title FROM tasks WHERE number = $1`, [own]))[0]!.title as string;
+
+  await enter(page, "Мурадян Арам");
+  await enterManagement(page, "owner");
+  // Все цели раскрыты: полосы задач видны
+  await page.goto("/roadmap?open=all");
+  const tl = page.getByTestId("roadmap-timeline");
+  const bar = tl.getByTestId(`timeline-bar-${own}`);
+  await expect(bar).toBeVisible();
+  await expect(page.getByTestId("task-tip")).toHaveCount(0);
+
+  // Наведение: подсказка с полным названием, описанием, сроком и состоянием, карточка задачи не открывается
+  await bar.hover();
+  const tip = page.getByTestId("task-tip");
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveAttribute("role", "tooltip");
+  await expect(tip).toContainText(title);
+  await expect(tip).toContainText("Продление по карте работает");
+  await expect(tip).toContainText("Что вернёт в график");
+  await expect(tip).toContainText("У подрядчика");
+  await expect(page).not.toHaveURL(/task=/);
+  // Подсказка не вылезает за окно и не шире разумного
+  const box = (await tip.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(1440);
+  expect(box.width).toBeLessThanOrEqual(400);
+  await shot(page, "tip-hover");
+
+  // Указатель ушёл: подсказка закрылась
+  await page.mouse.move(5, 5);
+  await expect(page.getByTestId("task-tip")).toHaveCount(0);
+
+  // Клавиатура: подсказка появляется на фокусе и связана с полосой через aria-describedby
+  await bar.focus();
+  await expect(page.getByTestId("task-tip")).toBeVisible();
+  const described = (await bar.getAttribute("aria-describedby")) ?? "";
+  expect(described.split(" ")).toContain("roadmap-task-tip");
+  // Фокус остался на полосе: подсказка его не перехватывает
+  await expect(bar).toBeFocused();
+
+  // Escape закрывает подсказку, фокус на месте
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("task-tip")).toHaveCount(0);
+  await expect(bar).toBeFocused();
+  await expect(page).not.toHaveURL(/task=/);
+
+  // Атрибута title на полосе нет: он медленный и с клавиатуры не читается
+  await expect(bar).not.toHaveAttribute("title", /./);
 });

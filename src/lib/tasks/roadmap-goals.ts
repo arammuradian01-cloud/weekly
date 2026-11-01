@@ -18,8 +18,11 @@ import { barOf, byStart, placeOf, startOf, timelineRange, type Bar, type Place, 
 
 export type RoadmapGroupBy = "tasks" | "goals" | "both";
 
-/** Группировка из адреса (?group=goals|both), по умолчанию «По задачам» */
-export const groupByOf = (value: string | null | undefined): RoadmapGroupBy => (value === "goals" || value === "both" ? value : "tasks");
+/**
+ * Группировка из адреса (?group=tasks|both). Этап 84: по умолчанию «По целям»: карта сроков начинается со строк
+ * целей, задачи под целью раскрываются нажатием. «Цели и задачи» это то же самое, только сразу раскрытое
+ */
+export const groupByOf = (value: string | null | undefined): RoadmapGroupBy => (value === "tasks" || value === "both" ? value : "goals");
 
 /** Цель в строке roadmap: код, название, статус и прогресс как на экране «Цели», без истории фактов и описания */
 export type RoadmapGoal = {
@@ -57,6 +60,25 @@ export function quarterSpan(quarter: string): { start: IsoDate; end: IsoDate } |
   return { start: `${year}-${pad(first)}-01`, end: `${year}-${pad(last)}-${pad(days)}` };
 }
 
+/**
+ * Цель уже сдвинулась с места: закрыта хотя бы одна её задача или по числам пройден кусок пути. Этап 84: у такой
+ * цели без задач на roadmap не пишем «задач нет», это неправда (задачи могут висеть на целях ниже)
+ */
+export function goalMoved(goal: Pick<RoadmapGoal, "known" | "progress" | "numeric" | "fact" | "result">): boolean {
+  if (!goal.known) return false;
+  if (goal.result !== "IN_PROGRESS") return true;
+  if (goal.progress.done > 0) return true;
+  return !!goal.numeric && goal.numeric.share > 0;
+}
+
+/**
+ * Цель снята или итог уже подведён не в пользу цели: впереди у неё срока нет. Этап 84: полосу пунктиром до конца
+ * квартала такой цели не рисуем
+ */
+export function goalClosed(goal: Pick<RoadmapGoal, "known" | "result">): boolean {
+  return goal.known && (goal.result === "DROPPED" || goal.result === "MISSED" || goal.result === "PARTIAL");
+}
+
 export type GoalGroup = {
   goal: RoadmapGoal;
   /** Открытые задачи цели после фильтров: по началу, потом по сроку и номеру */
@@ -65,6 +87,13 @@ export type GoalGroup = {
   span: { start: IsoDate; end: IsoDate };
   /** Задач нет: полоса до конца квартала, рисуется пунктиром */
   empty: boolean;
+  /**
+   * Этап 84: у цели нет ни задач на roadmap, ни продвижения. Задачи цели могут висеть на целях ниже, и тогда
+   * «задач нет» вводит в заблуждение: писать так только при нулевом прогрессе
+   */
+  blank: boolean;
+  /** Этап 84: цель снята или не достигнута, срока впереди у неё нет: полосу до конца квартала не рисуем */
+  closed: boolean;
   important: number;
   overdue: number;
 };
@@ -152,6 +181,8 @@ export function buildGoalGroups(tasks: Task[], goals: RoadmapGoal[], today: IsoD
       tasks: list,
       span,
       empty: list.length === 0,
+      blank: list.length === 0 && !goalMoved(goal),
+      closed: goalClosed(goal),
       important: list.filter((t) => importanceOf(t.priority) > 0).length,
       overdue: list.filter((t) => periodOf(t, today) === "overdue").length,
     });
@@ -177,12 +208,16 @@ export function goalPeriodOf(group: Pick<GoalGroup, "tasks" | "span" | "empty">,
   return periodOf({ due: group.span.end, status }, today, periods);
 }
 
-/** Полоса цели на карте сроков: положение отрезка, даты и признак «задач нет» */
-export type GoalLine = Place & { start: IsoDate; end: IsoDate; empty: boolean; late: boolean };
+/**
+ * Полоса цели на карте сроков: положение отрезка, даты и признаки. empty: задач на roadmap нет, полоса до конца
+ * квартала пунктиром. blank: к тому же нет и продвижения, только тогда подпись «задач нет». hidden: цель снята или
+ * не достигнута и задач нет, полосы не рисуем совсем (этап 84)
+ */
+export type GoalLine = Place & { start: IsoDate; end: IsoDate; empty: boolean; blank: boolean; hidden: boolean; late: boolean };
 
-export function goalLineOf(group: Pick<GoalGroup, "tasks" | "span" | "empty">, range: TimelineRange, today: IsoDate): GoalLine {
+export function goalLineOf(group: Pick<GoalGroup, "tasks" | "span" | "empty" | "blank" | "closed">, range: TimelineRange, today: IsoDate): GoalLine {
   const late = !group.empty && group.span.end < today && group.tasks.some((t) => t.due === group.span.end && t.status !== "proposed");
-  return { ...placeOf(range, group.span.start, group.span.end), start: group.span.start, end: group.span.end, empty: group.empty, late };
+  return { ...placeOf(range, group.span.start, group.span.end), start: group.span.start, end: group.span.end, empty: group.empty, blank: group.blank, hidden: group.empty && group.closed, late };
 }
 
 export type GoalTimelineRow = { group: GoalGroup; line: GoalLine; bars: Bar[] };
