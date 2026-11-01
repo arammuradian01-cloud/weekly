@@ -1,6 +1,7 @@
 // Тексты событий очереди «Ждёт вас» (до этапа 76 раздел «Мне») для писем и уведомлений в браузере: кто и что, без содержимого (этапы 20 и 26). Чистые функции.
 
 import { planHref } from "@/lib/plan/links";
+import { parseCommentSubject, reportHref } from "@/lib/leader-report/rules";
 import type { InboxKind } from "@/generated/prisma/enums";
 
 export type EventLine = { kind: InboxKind; actorName: string | null; taskNumber: number | null; entryId: string | null; commentId: string | null; requestNumber?: number | null; subject?: string };
@@ -38,6 +39,9 @@ export function eventPhrase(e: EventLine): string {
       return `${who}благодарность в weekly`;
     case "MEETING":
       return `${who}встреча: протокол или решение`;
+    case "REPORT_COMMENT":
+      // Этап 73+81: комментарий руководителя к отправленному отчёту или ответ в обсуждении
+      return `${who}обсуждение отчёта руководителю`;
     case "TASK_DEPENDENCY":
       return `${who}изменения по связанной задаче${n}`;
     case "REQUEST_ANSWER":
@@ -76,6 +80,11 @@ export function pathOf(e: { taskNumber: number | null; entryId: string | null; r
   if (e.subject?.startsWith("join:")) return "/people/teams#join-requests";
   // Дайджест новостей (этап 60): страница дайджеста
   if (e.subject?.startsWith("news:")) return `/news?digest=${encodeURIComponent(e.subject.slice(5))}`;
+  // Обсуждение отчёта руководителю (этап 73+81): автору во вкладку «Отправленные», получателю в «Полученные»
+  if (e.subject?.startsWith("report-comment:")) {
+    const parsed = parseCommentSubject(e.subject);
+    if (parsed) return reportHref(parsed.side, { week: parsed.week, team: parsed.teamId });
+  }
   if (e.requestNumber) return `/requests/${e.requestNumber}`;
   if (e.taskNumber) return `/tasks/${e.taskNumber}`;
   if (e.entryId) return `/weekly/entry/${e.entryId}`;

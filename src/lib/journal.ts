@@ -155,6 +155,11 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return what ? `Запись weekly «${short(what)}»` : "Запись weekly";
     }
     if (entity === "ceo-report" && id) return `Отчёт CEO, неделя ${weekNumberOf(id)}`;
+    // Этап 73+81: обсуждение отправленного отчёта руководителю, id это команда и неделя
+    if (entity === "leader-report" && id) {
+      const week = id.split("/")[1];
+      return `Отчёт руководителю${week ? `, неделя ${weekNumberOf(week)}` : ""}`;
+    }
     if (entity === "meeting") return "Встреча";
     if (entity === "dict" && id) {
       const [kind, code] = id.split("/");
