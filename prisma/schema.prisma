@@ -319,6 +319,39 @@ model LoginAttempt {
   @@map("login_attempts")
 }
 
+/// Откуда пришёл сбой (этап 86): с сервера, из браузера или жалобой политики CSP
+enum ErrorSource {
+  SERVER
+  BROWSER
+  CSP
+}
+
+/// Сбои приложения в одном месте (этап 86): страница «Состояние». Одинаковые сбои складываются в одну запись
+/// со счётчиком, поэтому таблица не растёт от одной и той же ошибки на каждом переходе.
+/// Содержимого задач и weekly здесь нет: только текст сбоя, путь страницы и первые строки стека
+model ErrorEvent {
+  id          BigInt      @id @default(autoincrement())
+  source      ErrorSource
+  /// Отпечаток сбоя: по нему записи складываются. Считается из источника, текста и места (src/lib/errors.ts)
+  fingerprint String
+  /// Короткий текст сбоя
+  message     String
+  /// Где случилось: путь страницы или обработчика
+  place       String?
+  /// Первые строки стека (сервер) или файл и строка (браузер)
+  stack       String?
+  /// Сколько раз случился этот сбой
+  times       Int         @default(1)
+  firstAt     DateTime    @default(now()) @db.Timestamptz(3)
+  lastAt      DateTime    @default(now()) @db.Timestamptz(3)
+  /// Когда об этом сбое уходило оповещение в Telegram: чаще раза в час один и тот же сбой не повторяется
+  notifiedAt  DateTime?   @db.Timestamptz(3)
+
+  @@unique([source, fingerprint])
+  @@index([lastAt])
+  @@map("error_events")
+}
+
 /// Задача (раздел 4 ТЗ). Номер сквозной и не меняется, новые выдаются из настройки tasks.nextNumber.
 model Task {
   id                 String         @id @default(cuid())
