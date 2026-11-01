@@ -36,7 +36,7 @@ export type NavItem = {
   icon: LucideIcon;
   ownerOnly?: boolean;
   /** Раздел открыт не всем (этап 62): пункт видят только те, кому он открыт */
-  restricted?: "market";
+  restricted?: "market" | "leaderReport";
   /** Подпись в нижнем меню телефона, если полная не влезает */
   shortLabel?: string;
 };
@@ -56,6 +56,9 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Команда",
     items: [
       { href: "/weekly", label: "Weekly", icon: Newspaper },
+      // Отчёт руководителю (этап 73+81): отдельный пункт меню, внутри вкладки «Отправленные» и «Полученные».
+      // Пункт видят руководители команд и те, кому отчёты отправляют, при личном входе
+      { href: "/leader-report", label: "Отчёт руководителю", icon: Mail, restricted: "leaderReport", shortLabel: "Отчёт" },
       { href: "/tasks", label: "Задачи", icon: SquareCheck },
       // Roadmap (этап 56): задачи по направлениям и месяцам, важные со звёздочками
       { href: "/roadmap", label: "Roadmap", icon: MapIcon },
@@ -82,11 +85,11 @@ export const NAV_GROUPS: NavGroup[] = [
 export const MAIN_NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
 /** Что открыто человеку из закрытых разделов */
-export type NavAccess = { market: boolean };
+export type NavAccess = { market: boolean; /** Отчёт руководителю (этап 73+81) */ leaderReport?: boolean };
 
 /** Группы меню без закрытых разделов, которые человеку не открыты */
 export function visibleGroups(access: NavAccess): NavGroup[] {
-  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.restricted || access[i.restricted]) })).filter((g) => g.items.length);
+  return NAV_GROUPS.map((g) => ({ ...g, items: g.items.filter((i) => !i.restricted || !!access[i.restricted]) })).filter((g) => g.items.length);
 }
 
 export const MANAGEMENT_NAV: NavItem[] = [
