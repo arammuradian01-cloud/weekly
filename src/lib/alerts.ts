@@ -7,7 +7,7 @@
 // Отсюда уходят сбои приложения (src/lib/errors.ts). Внешний пинг «приложение не отвечает» шлёт сообщение сам,
 // из проверки в GitHub (.github/workflows/ping.yml): если упал сервер целиком, он сообщить о себе не может.
 
-export type AlertEnv = { TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; ALERTS?: string; APP_URL?: string };
+export type AlertEnv = { TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; ALERTS?: string; APP_URL?: string; [key: string]: string | undefined };
 
 export type TelegramConfig = { token: string; chatId: string };
 

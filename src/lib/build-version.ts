@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 export const UNKNOWN_VERSION = "неизвестна";
 
-export type VersionEnv = { APP_VERSION?: string; BUILD_SHA?: string };
+export type VersionEnv = { APP_VERSION?: string; BUILD_SHA?: string; [key: string]: string | undefined };
 
 /** Чистая часть: её проверяют тесты, чтение файла передаётся снаружи */
 export function buildVersionFrom(env: VersionEnv, buildId: string | null): string {

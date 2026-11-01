@@ -32,7 +32,7 @@ export const RELOAD_ENV = "RELOAD_ENABLED";
 export const RELOAD_DISABLED =
   "Перезаливка выключена: в переменных приложения нет RELOAD_ENABLED=1. Она удаляет все задачи и weekly, поэтому включается только на время работы и потом убирается";
 
-export function reloadAllowed(env: { RELOAD_ENABLED?: string } = process.env): boolean {
+export function reloadAllowed(env: { RELOAD_ENABLED?: string; [key: string]: string | undefined } = process.env): boolean {
   const value = (env.RELOAD_ENABLED ?? "").trim().toLowerCase();
   return value === "1" || value === "true" || value === "on" || value === "yes";
 }

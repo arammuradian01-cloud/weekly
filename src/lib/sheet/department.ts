@@ -18,7 +18,7 @@ import { prisma } from "@/lib/db";
 import { departmentOf } from "@/lib/tasks/approval";
 import { TOP_TEAM } from "@/domain/teams";
 
-export function departmentOnly(env: { SHEET_DEPARTMENT_ONLY?: string } = process.env): boolean {
+export function departmentOnly(env: { SHEET_DEPARTMENT_ONLY?: string; [key: string]: string | undefined } = process.env): boolean {
   const value = (env.SHEET_DEPARTMENT_ONLY ?? "").trim().toLowerCase();
   return value === "1" || value === "true" || value === "on" || value === "yes";
 }

@@ -21,7 +21,7 @@
 // владелец ставит CSP_MODE=report-only и перезапускает приложение, а жалобы видит на странице «Состояние».
 
 /** Переменные окружения, которые читают эти функции */
-export type SecurityEnv = { APP_URL?: string; CSP_MODE?: string; HSTS?: string; HSTS_MAX_AGE?: string };
+export type SecurityEnv = { APP_URL?: string; CSP_MODE?: string; HSTS?: string; HSTS_MAX_AGE?: string; [key: string]: string | undefined };
 
 export type CspMode = "on" | "report-only" | "off";
 
