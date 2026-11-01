@@ -50,7 +50,9 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
   const msLeft = deadline.getTime() - now.getTime();
   const canEdit = canEditWeekly(mine.week, reporting, { slug: ctx.person.slug as PersonSlug, management: ctx.management?.role ?? null, observer: ctx.person.role === "OBSERVER" }, ctx.person.slug as PersonSlug);
   const past = key < reporting;
-  const sentWarning = past ? sentReportsWarning(sentReports, mine.week.number) : null;
+  // Предупреждение нужно и на отчётной неделе: отчёт за неделю N отправляют внутри недели N, и опоздавшие сдают
+  // weekly уже после отправки - именно тогда оно и важно
+  const sentWarning = sentReportsWarning(sentReports, mine.week.number);
   return (
     <>
       {/* Этап 37: шапка как у остальных разделов */}

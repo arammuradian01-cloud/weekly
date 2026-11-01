@@ -15,6 +15,7 @@ import { addReportComment, reportComments } from "@/lib/leader-report/comments";
 import { canSeeLeaderReport, leaderReportScope, leaderReportView } from "@/lib/leader-report/service";
 import { receivedReportsOf, reportWeeksOf, sentReportsOf } from "@/lib/leader-report/reports";
 import { commentSubject } from "@/lib/leader-report/rules";
+import { NUMBERS_HIDDEN_TEXT } from "@/lib/weekly-blocks/types";
 import { dbDate } from "@/lib/tasks/dates";
 import type { WeekKey } from "@/domain/types";
 
@@ -32,6 +33,10 @@ const TEMPLATE = [
 ];
 const BOSS = "Руководитель Тест";
 const MEMBER = "Участник Тест";
+/** Свои люди теста: их команды, подчинение и доступ к цифрам не зависят от соседних файлов на той же базе */
+const TEST_PEOPLE = ["t7381-boss", "t7381-member", "t7381-lead", "t7381-low"];
+/** Строка с цифрами в блоке «Неделя к неделе»: такие строки видит только зритель с доступом к цифрам (этап 57) */
+const FIGURES_LINE = "ОСАГО: заявок 12 345, рост 7%";
 
 let key: WeekKey;
 let teamId: string;
@@ -50,9 +55,9 @@ async function clean() {
   await prisma.team.updateMany({ where: { name: { startsWith: "Тест 73" } }, data: { parentId: null } });
   await prisma.team.deleteMany({ where: { name: { startsWith: "Тест 73" } } });
   await prisma.person.update({ where: { slug: "reva" }, data: { managerId: null } });
-  await prisma.teamMember.deleteMany({ where: { person: { slug: { in: ["t7381-boss", "t7381-member"] } } } });
-  await prisma.weeklyReport.deleteMany({ where: { author: { slug: { in: ["t7381-boss", "t7381-member"] } } } });
-  await prisma.person.deleteMany({ where: { slug: { in: ["t7381-boss", "t7381-member"] } } });
+  await prisma.teamMember.deleteMany({ where: { person: { slug: { in: TEST_PEOPLE } } } });
+  await prisma.weeklyReport.deleteMany({ where: { author: { slug: { in: TEST_PEOPLE } } } });
+  await prisma.person.deleteMany({ where: { slug: { in: TEST_PEOPLE } } });
 }
 
 beforeAll(async () => {
@@ -77,6 +82,28 @@ async function memberPerson() {
   const person = await prisma.person.create({ data: { slug: "t7381-member", fullName: MEMBER, shortName: "Тест", role: "LEADER", zone: "Тест 73", active: true } });
   await prisma.teamMember.create({ data: { teamId, personId: person.id } });
   return person;
+}
+
+/**
+ * Человек вне топ-команды и подразделений: цифр он не видит совсем (numbersLevel = none). Люди стартового списка в
+ * топ-команде, и у них все цифры, поэтому для проверки границы этапа 57 нужен свой
+ */
+const noFiguresPerson = (slug: string, fullName: string) =>
+  prisma.person.create({ data: { slug, fullName, shortName: "Тест", role: "LEADER", zone: "Тест 73", active: true } });
+
+/**
+ * Отчёт со строкой цифр, уже отправленный: снимок пишем прямо в базу. Проверяется чтение переписки по уровню зрителя,
+ * а не отправка этапа 66 - её проверяет tests/db/team-blocks.test.ts
+ */
+async function sendFiguresReport(leaderId: string, recipient: { id: string; name: string }) {
+  const t = await prisma.team.create({ data: { name: "Тест 73 цифры", kind: "CUSTOM", leaderId, specialistsWeekly: true } });
+  const week = await weekly.ensureWeek(prisma, key);
+  // Блок «Неделя к неделе» целиком про цифры: каждая его строка видна только с доступом к цифрам
+  const blocks = [{ key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "deposits", text: FIGURES_LINE, href: null, source: null }] }];
+  await prisma.teamWeeklyReport.create({
+    data: { teamId: t.id, weekId: week.id, blocks, updatedById: leaderId, sentAt: new Date(), sentById: leaderId, sentTo: [recipient], sentSnapshot: blocks },
+  });
+  return t.id;
 }
 
 /** Отчёт команды собран и отправлен руководителю: так выглядит вход в раздел у обеих сторон */
@@ -186,19 +213,37 @@ describe("комментарий руководителя к отчёту", () =
     expect((await listInbox(boss.personId)).items.find((i) => i.subject === commentSubject("received", teamId, key))).toMatchObject({ kind: "REPORT_COMMENT" });
 
     // Автор не начинает обсуждение сам, участник команды не пишет и не читает
-    await expectRule(addReportComment(reva, { teamId, week: key }, "Своё замечание"), /оставляет тот, кому его отправили/);
+    await expectRule(addReportComment(reva, { teamId, week: key }, "Своё замечание"), /Обсуждение этого отчёта вам недоступно/);
     await memberPerson();
     const member = await personal("t7381-member");
-    await expectRule(addReportComment(member, { teamId, week: key }, "Чужое замечание"), /оставляет тот, кому его отправили/);
-    await expectRule(addReportComment(member, { teamId, week: key, parentId }, "Чужой ответ"), /Ответить в ветке/);
+    await expectRule(addReportComment(member, { teamId, week: key }, "Чужое замечание"), /Обсуждение этого отчёта вам недоступно/);
+    await expectRule(addReportComment(member, { teamId, week: key, parentId }, "Чужой ответ"), /Обсуждение этого отчёта вам недоступно/);
     // Владелец в режиме управления переписку читает, но не пишет; участник не читает совсем
     const owner = await personal("muradyan", "OWNER");
     const report = (await sentReportsOf(owner, [key])).find((r) => r.teamId === teamId)!;
     expect(await reportComments(member, report)).toMatchObject({ access: { sees: false, canStart: false, canReply: false }, comments: [] });
     expect((await reportComments(owner, report)).access).toEqual({ sees: true, canStart: false, canReply: false });
-    await expectRule(addReportComment(owner, { teamId, week: key }, "Замечание владельца"), /оставляет тот, кому его отправили/);
+    await expectRule(addReportComment(owner, { teamId, week: key }, "Замечание владельца"), /Обсуждение этого отчёта вам недоступно/);
     // Общий логин комментарии не пишет
     await expectRule(addReportComment(await shared("t7381-boss"), { teamId, week: key }, "С общего логина"), /при личном входе/);
+  });
+
+  it("отказ одинаковый, есть отчёт за неделю или нет: по ответу не узнать, кто и когда отправлял", async () => {
+    await sendReport();
+    await memberPerson();
+    const member = await personal("t7381-member");
+    const sentWeek = addReportComment(member, { teamId, week: key }, "Замечание");
+    const emptyWeek = addReportComment(member, { teamId, week: "2026-01-05" }, "Замечание");
+    await expectRule(sentWeek, /Обсуждение этого отчёта вам недоступно/);
+    await expectRule(emptyWeek, /Обсуждение этого отчёта вам недоступно/);
+    // И получателю отчёта за неделю без отправки отвечают тем же текстом
+    await expectRule(addReportComment(await personal("t7381-boss"), { teamId, week: "2026-01-05" }, "Замечание"), /Обсуждение этого отчёта вам недоступно/);
+  });
+
+  it("наблюдателю комментарии закрыты, даже если отчёт отправили ему", async () => {
+    await sendReport();
+    await prisma.person.update({ where: { slug: "t7381-boss" }, data: { role: "OBSERVER" } });
+    await expectRule(addReportComment(await personal("t7381-boss"), { teamId, week: key }, "Замечание наблюдателя"), /Наблюдатель/);
   });
 
   it("комментарий к строке берёт текст строки из отправленной версии; пустой и длинный текст не проходят", async () => {
@@ -210,11 +255,9 @@ describe("комментарий руководителя к отчёту", () =
     await expectRule(addReportComment(boss, { teamId, week: key, blockKey: "risks", lineIndex: 9 }, "Нет такой строки"), /строки в отправленном отчёте нет/);
     await expectRule(addReportComment(boss, { teamId, week: key }, "   "), /Напишите комментарий/);
     await expectRule(addReportComment(boss, { teamId, week: key }, "я".repeat(1001)), /длиннее 1000 знаков/);
-    // Неделя без отправленного отчёта: комментировать нечего
-    await expectRule(addReportComment(boss, { teamId, week: "2026-01-05" }, "Замечание"), /отчёт этой команды не отправляли/);
   });
 
-  it("строку убрали при повторной отправке: комментарий остаётся цитатой", async () => {
+  it("строку убрали при повторной отправке: цитата пропадает, остаётся подпись блока", async () => {
     await sendReport();
     const boss = await personal("t7381-boss");
     await addReportComment(boss, { teamId, week: key, blockKey: "risks", lineIndex: 0 }, "Эту строку уточните");
@@ -223,6 +266,46 @@ describe("комментарий руководителя к отчёту", () =
     const without = current.blocks.map((b) => (b.key === "risks" ? { ...b, lines: [] } : b));
     await team.sendTeamReport(reva, teamId, key, without, current.updatedAt);
     const again = await receivedReportsOf(boss, [key]);
-    expect((await reportComments(boss, again[0]!)).comments[0]).toMatchObject({ lineText: "Ставки падают, спрос ниже", linePresent: false });
+    expect((await reportComments(boss, again[0]!)).comments[0]).toMatchObject({ blockKey: "risks", blockTitle: "Риски", lineText: null, linePresent: false });
+    // В базе цитата осталась: она нужна для истории
+    expect((await prisma.leaderReportComment.findFirstOrThrow({ where: { teamId } })).lineText).toBe("Ставки падают, спрос ниже");
+  });
+});
+
+describe("цитата строки и уровень доступа к цифрам (этап 57)", () => {
+  it("автор отчёта без доступа к цифрам не получает цитату строки с цифрами", async () => {
+    // Отчёт идёт вверх: автор цифр не видит, получатель видит. Цитата не должна вернуть цифры вниз
+    const lead = await noFiguresPerson("t7381-lead", "Безцифров Тест");
+    const reva = await personal("reva");
+    const tid = await sendFiguresReport(lead.id, { id: reva.personId, name: "Рева Тарас" });
+
+    // Получателю цифры открыты: он видит строку и комментирует её
+    const got = (await receivedReportsOf(reva, [key])).find((r) => r.teamId === tid)!;
+    expect(got.blocks.find((b) => b.key === "wow")!.lines.map((l) => l.text)).toEqual([FIGURES_LINE]);
+    const after = await addReportComment(reva, { teamId: tid, week: key, blockKey: "wow", lineIndex: 0 }, "Уточните рост");
+    expect(after.comments[0]).toMatchObject({ lineText: FIGURES_LINE, linePresent: true });
+
+    // Автор отчёта цифр не видит: ни строки в своём отчёте, ни цитаты в переписке
+    const author = await personal("t7381-lead");
+    const own = (await sentReportsOf(author, [key])).find((r) => r.teamId === tid)!;
+    expect(own.blocks.find((b) => b.key === "wow")!.lines.map((l) => l.text)).toEqual([NUMBERS_HIDDEN_TEXT]);
+    const seen = await reportComments(author, own);
+    expect(seen.access.sees).toBe(true);
+    expect(seen.comments[0]).toMatchObject({ text: "Уточните рост", lineText: null, blockTitle: "Неделя к неделе", linePresent: false });
+    expect(JSON.stringify(seen)).not.toMatch("12 345");
+    // В базе цитата осталась: она нужна для истории, наружу её отдаёт только уровень доступа читателя
+    expect((await prisma.leaderReportComment.findFirstOrThrow({ where: { teamId: tid } })).lineText).toBe(FIGURES_LINE);
+  });
+
+  it("строку вместо закрытых цифр комментировать нельзя", async () => {
+    // Получателю цифры закрыты: вместо строки он видит пометку, и это не строка отчёта
+    const low = await noFiguresPerson("t7381-low", "Получатель без цифр");
+    const tid = await sendFiguresReport(await id("reva"), { id: low.id, name: "Получатель без цифр" });
+    const actor = await personal("t7381-low");
+    const got = (await receivedReportsOf(actor, [key])).find((r) => r.teamId === tid)!;
+    expect(got.blocks.find((b) => b.key === "wow")!.lines.map((l) => l.text)).toEqual([NUMBERS_HIDDEN_TEXT]);
+    await expectRule(addReportComment(actor, { teamId: tid, week: key, blockKey: "wow", lineIndex: 0 }, "Замечание"), /не строка отчёта/);
+    // К отчёту целиком он написать может: закрыты цифры, а не обсуждение
+    expect((await addReportComment(actor, { teamId: tid, week: key }, "Пришлите цифры отдельно")).comments).toHaveLength(1);
   });
 });

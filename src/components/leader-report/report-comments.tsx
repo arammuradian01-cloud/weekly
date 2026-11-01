@@ -13,7 +13,7 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { addReportCommentAction } from "@/app/(app)/leader-report/actions";
 import { REPORT_COMMENT_MAX } from "@/lib/leader-report/rules";
 import type { ReportComment, ReportCommentsView } from "@/lib/leader-report/comments";
-import type { ReportBlock } from "@/lib/weekly-blocks/types";
+import { isFiguresPlaceholder, type ReportBlock } from "@/lib/weekly-blocks/types";
 
 const moment = (iso: string) =>
   new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(" в ", ", ");
@@ -26,6 +26,8 @@ function places(blocks: readonly ReportBlock[]) {
   const out = [{ value: WHOLE, label: "К отчёту целиком" }];
   for (const b of blocks) {
     b.lines.forEach((line, index) => {
+      // Строка-пометка вместо закрытых цифр это не строка отчёта: комментировать там нечего. Сервер её тоже не берёт
+      if (isFiguresPlaceholder(line)) return;
       const text = line.text.length > 70 ? `${line.text.slice(0, 69)}…` : line.text;
       out.push({ value: placeValue(b.key, index), label: `${b.title}: ${text}` });
     });
@@ -97,10 +99,11 @@ export function ReportComments({
         <ul className="m-0 flex list-none flex-col gap-4 p-0">
           {view.comments.map((c: ReportComment) => (
             <li key={c.id} className="sv-card sv-card--soft min-w-0 p-4" data-testid="report-comment">
-              {c.blockKey && c.lineText ? (
+              {/* Цитата строки только если сервер её вернул: строку, которой нет в вашей версии отчёта (её убрали при
+                  повторной отправке или вам закрыты её цифры), подписываем нейтрально, без текста */}
+              {c.blockKey ? (
                 <p className="mb-2 break-words border-l-2 border-accent-line pl-3 text-small text-muted">
-                  {c.lineText}
-                  {!c.linePresent ? " (этой строки в отчёте больше нет)" : ""}
+                  {c.lineText ?? `Комментарий к строке блока «${c.blockTitle ?? "отчёта"}»: этой строки в вашей версии отчёта нет`}
                 </p>
               ) : null}
               <p className="text-caption text-muted">

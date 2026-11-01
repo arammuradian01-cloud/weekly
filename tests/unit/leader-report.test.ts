@@ -16,6 +16,7 @@ import {
 } from "@/lib/leader-report/rules";
 import { SUBMIT_WEEKS, SUBMIT_WEEK_LABEL, closedWeekHint, sentReportsWarning, submitWeekOf, submitWeekState } from "@/lib/weekly/rules";
 import { isWeekKey } from "@/lib/weekly/weeks";
+import { NUMBERS_HIDDEN_TEXT, isFiguresPlaceholder } from "@/lib/weekly-blocks/types";
 import { MAIN_NAV, visibleGroups } from "@/components/shell/nav";
 
 // Этап 73+81: отчёт руководителю (вкладки, роли, комментарии) и weekly за прошлые недели. Чистые правила: их считают и
@@ -104,6 +105,23 @@ describe("строка отчёта, к которой написан комме
   it("строки больше нет или блока нет: -1", () => {
     expect(findLine(blocks, "risks", "Убрали", 0)).toBe(-1);
     expect(findLine(blocks, "numbers", "Первая", 0)).toBe(-1);
+  });
+});
+
+describe("строка вместо закрытых цифр", () => {
+  it("это не строка отчёта: её не хранят и к ней не оставляют комментарий", () => {
+    expect(isFiguresPlaceholder({ text: NUMBERS_HIDDEN_TEXT, href: null })).toBe(true);
+    // Со ссылкой это настоящая строка, просто с таким же текстом
+    expect(isFiguresPlaceholder({ text: NUMBERS_HIDDEN_TEXT, href: "/forecast" })).toBe(false);
+    expect(isFiguresPlaceholder({ text: "ОСАГО: заявок 12 345", href: null })).toBe(false);
+  });
+
+  it("цитата строки разрешается по блокам читателя: закрытой строки в них нет", () => {
+    // Так блоки видит зритель без доступа к цифрам: вместо строки с цифрами пометка
+    const hidden = [{ key: "wow", lines: [{ text: NUMBERS_HIDDEN_TEXT }] }];
+    const full = [{ key: "wow", lines: [{ text: "ОСАГО: заявок 12 345" }] }];
+    expect(findLine(full, "wow", "ОСАГО: заявок 12 345", 0)).toBe(0);
+    expect(findLine(hidden, "wow", "ОСАГО: заявок 12 345", 0)).toBe(-1);
   });
 });
 

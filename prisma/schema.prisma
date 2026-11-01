@@ -1282,7 +1282,8 @@ model LeaderReportComment {
   weekId    String
   week      Week                  @relation(fields: [weekId], references: [id], onDelete: Cascade)
   authorId  String
-  author    Person                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// Без каскада, как у комментария к записи weekly: выключение или удаление человека не стирает его замечания
+  author    Person                @relation(fields: [authorId], references: [id])
   parentId  String?
   parent    LeaderReportComment?  @relation("ReportCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
   replies   LeaderReportComment[] @relation("ReportCommentReplies")

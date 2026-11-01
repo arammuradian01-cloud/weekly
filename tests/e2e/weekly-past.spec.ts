@@ -88,6 +88,30 @@ test("закрытая прошлая неделя: только просмот�
   await shot(page, "closed");
 });
 
+test("отчёт руководителю за эту неделю уже отправлен: предупреждение и на отчётной неделе", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  await page.goto("/weekly/submit");
+  // Неделю берём из самого переключателя: отчётную считает сервер по сроку недели
+  const current = page.getByTestId("submit-weeks").locator('[aria-current="page"]');
+  const key = (await current.getAttribute("data-testid"))!.replace("submit-week-", "");
+  await expect(page.getByTestId("submit-sent-warning")).toHaveCount(0);
+
+  // Отчёт за эту же неделю уже ушёл CEO: опоздавший сдаёт weekly после отправки
+  const ceo = (await sql("SELECT id FROM people WHERE slug = 'ceo'"))[0]!.id as string;
+  const author = (await sql("SELECT id FROM people WHERE slug = 'muradyan'"))[0]!.id as string;
+  await sql(
+    `INSERT INTO ceo_reports (id, "weekId", main, risks, next, "updatedAt", "sentAt", "sentById", "sentTo", "sentSnapshot")
+     SELECT 'test-7381-ceo', w.id, 'Итог', '', '', now(), now(), $2, $3::jsonb, $4::jsonb FROM weeks w WHERE w.start = $1::date
+     ON CONFLICT ("weekId") DO NOTHING`,
+    [key, author, JSON.stringify([{ id: ceo, name: "CEO" }]), JSON.stringify({ main: "Итог", risks: "", next: "", meetings: [], blocks: null })],
+  );
+  await page.reload();
+  const warning = page.getByTestId("submit-sent-warning");
+  await expect(warning).toContainText("Отчёт руководителю за неделю");
+  await expect(warning).toContainText("в отправленную версию сами не войдут");
+  await shot(page, "sent-warning");
+});
+
 test("за будущую неделю weekly не пишут: открывается отчётная", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   const future = new Date(Date.now() + 3 * 3600_000);
