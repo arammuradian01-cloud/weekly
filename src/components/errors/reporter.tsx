@@ -10,6 +10,12 @@
 import { useEffect } from "react";
 
 const MAX_REPORTS = 5;
+/**
+ * Шум, а не сбой: запрос оборвал переход на другую страницу, человек ушёл со страницы или пропала сеть. Такие
+ * сообщения приходят при обычной работе и не говорят ни о чём: в сквозном прогоне они набежали сами и завалили бы
+ * владельцу список сбоев (прогон 41335268396). Настоящий сбой сети виден по странице «Нет сети» (этап 26)
+ */
+const NOISE = /failed to fetch|load failed|networkerror|aborterror|operation was aborted|signal is aborted|the user aborted|resizeobserver loop/i;
 /** Счётчик и память повторов живут в модуле, а не в состоянии: отправка не перерисовывает страницу */
 let sent = 0;
 const seen = new Set<string>();
@@ -18,7 +24,7 @@ const seen = new Set<string>();
 export function reportBrowserError(message: unknown, stack?: unknown): void {
   if (typeof window === "undefined") return;
   const text = String(message ?? "").trim().slice(0, 300);
-  if (!text || sent >= MAX_REPORTS || seen.has(text)) return;
+  if (!text || NOISE.test(text) || sent >= MAX_REPORTS || seen.has(text)) return;
   seen.add(text);
   sent += 1;
   try {
