@@ -52,6 +52,8 @@ test("переключатель недель на экране сдачи: пр
   await expect(page.getByTestId(`submit-week-${past}`)).toHaveAttribute("aria-current", "page");
 
   await page.getByLabel("Главное одной фразой").fill("Итоги прошлой недели");
+  // Главная фраза уходит на сервер сама через пару секунд: без неё сдача не пройдёт
+  await expect(page.getByText(/Черновик сохранён/)).toBeVisible({ timeout: 10_000 });
   await page.getByRole("button", { name: "Добавить запись" }).click();
   await page.getByLabel("Что произошло").fill("Запись за прошлую неделю");
   await page.getByRole("button", { name: "Сохранить запись" }).click();
