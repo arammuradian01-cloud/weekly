@@ -29,12 +29,17 @@ type ErrorContext = { routePath?: string; routeType?: string };
 export async function onRequestError(error: unknown, request: ErrorRequest, context: ErrorContext): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   try {
-    const { recordError } = await import("./lib/errors");
+    const { pathOf, recordError, serverNoise } = await import("./lib/errors");
+    const message = error instanceof Error ? error.message : String(error);
+    // Оборванный поток ответа это не сбой: человек ушёл со страницы, и начатая загрузка соседней отменилась
+    if (serverNoise(message)) return;
     const kind = context?.routeType ? ` (${context.routeType})` : "";
     await recordError({
       source: "SERVER",
-      message: `${error instanceof Error ? error.message : String(error)}${kind}`,
-      place: request?.path ?? context?.routePath ?? null,
+      // Только путь, без параметров адреса: иначе у каждого запроса с ?_rsc=<случайное> был бы свой отпечаток
+      // и одинаковые сбои не складывались бы в одну запись
+      place: pathOf(request?.path) ?? context?.routePath ?? null,
+      message: `${message}${kind}`,
       stack: error instanceof Error ? error.stack : null,
     });
   } catch (failure) {

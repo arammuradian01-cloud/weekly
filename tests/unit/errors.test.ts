@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MESSAGE_MAX, REPORT_BODY_MAX, fingerprintOf, normalizeError, parseErrorReport, pathOf, shortText } from "@/lib/errors";
+import { MESSAGE_MAX, REPORT_BODY_MAX, fingerprintOf, normalizeError, parseErrorReport, pathOf, serverNoise, shortText } from "@/lib/errors";
 
 // Этап 86: разбор сообщений о сбоях. Браузер, жалоба политики по-старому и по Reporting API
 
@@ -17,9 +17,29 @@ describe("путь из адреса", () => {
   it("остаётся только путь, без адреса и параметров", () => {
     expect(pathOf("https://example.ru/tasks?team=top")).toBe("/tasks");
     expect(pathOf("/weekly?week=2026-10-26")).toBe("/weekly");
+    // Запросы Next несут случайную метку в адресе: без обрезки у каждого был бы свой отпечаток
+    expect(pathOf("/weekly/submit?_rsc=tXyZJ52UQVBCVsD3")).toBe("/weekly/submit");
     expect(pathOf("https://example.ru")).toBe("/");
     expect(pathOf("")).toBeNull();
     expect(pathOf(undefined)).toBeNull();
+  });
+});
+
+describe("шум сервера", () => {
+  it("оборванный поток ответа не сбой: нашли сквозные тесты, в список он не попадает", () => {
+    expect(serverNoise("The destination stream closed early.")).toBe(true);
+    expect(serverNoise("Response aborted")).toBe(true);
+    expect(serverNoise("AbortError: The operation was aborted")).toBe(true);
+    expect(serverNoise("read ECONNRESET")).toBe(true);
+    expect(serverNoise("write EPIPE")).toBe(true);
+  });
+
+  it("настоящие сбои глушить нельзя, даже если в тексте есть похожие слова", () => {
+    // Слово «aborted» целиком не берём: это настоящий сбой базы
+    expect(serverNoise("current transaction is aborted, commands ignored until end of transaction block")).toBe(false);
+    expect(serverNoise("Нет связи с базой")).toBe(false);
+    expect(serverNoise("")).toBe(false);
+    expect(serverNoise(undefined)).toBe(false);
   });
 });
 

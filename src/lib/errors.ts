@@ -92,6 +92,22 @@ function fromExtension(value: string): boolean {
   return /^(chrome|moz|safari|webkit|ms-browser)-extension:/i.test(value.trim());
 }
 
+/**
+ * Шум сервера, а не сбой: читатель ушёл со страницы, и поток ответа оборвался на полпути.
+ *
+ * Так Next сообщает об обычном деле: человек щёлкнул ссылку, браузер отменил начатую загрузку соседней страницы
+ * (запросы с `?_rsc=`), и сервер пишет «The destination stream closed early». Нашли это сквозные тесты: запись
+ * «SERVER: The destination stream closed early. (render) (/weekly/submit?_rsc=...)» попала в список сбоев и
+ * ушла бы владельцу в Telegram (прогон 41363391377). Чинить тут нечего, а список сбоев такие записи забивают.
+ *
+ * Слово «aborted» целиком не берём: «transaction aborted» из базы — настоящий сбой, его глушить нельзя.
+ */
+export const SERVER_NOISE = /destination stream closed early|response aborted|responseaborted|aborterror|request aborted|the user aborted|econnreset|epipe/i;
+
+export function serverNoise(message: unknown): boolean {
+  return SERVER_NOISE.test(String(message ?? ""));
+}
+
 type CspBody = {
   "document-uri"?: unknown;
   documentURL?: unknown;
