@@ -6,6 +6,10 @@
 // - режим управления: счёт неверных попыток и по адресу, и по человеку (этап 29 считал только по адресу).
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+// server-only в тестах базы подменяется пустышкой, как в остальных тестах базы (view-as, team-management):
+// иначе модуль службы страницы «Состояние» не импортируется
+vi.mock("server-only", () => ({}));
+
 // Telegram в тестах не вызывается: подменяем модуль оповещений и смотрим, о чём ресурс пытался оповестить
 const alerts = vi.hoisted(() => ({ calls: [] as { source: string; place?: string | null; times: number }[] }));
 vi.mock("@/lib/alerts", () => ({
