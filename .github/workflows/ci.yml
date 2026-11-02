@@ -4,8 +4,21 @@ on:
   push:
   pull_request:
 
+# Новый прогон по той же ветке отменяет прежний: очередь не копится и не ждёт чужих минут
+concurrency:
+  group: proverki-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+# Этап 85: работы идут одновременно, а не одной очередью. Полный прогон был около 40 минут
+# последовательными шагами в работе test; теперь самый долгий путь это сборка и за ней шесть частей
+# сквозных тестов. Что проверяется, не изменилось: линтер, типы, правила, правила на настоящей базе,
+# сверка импорта Bord, сборка, сквозные тесты на двух ширинах, сборка образа. Любая упавшая работа
+# или часть роняет весь прогон: итог собран в работе itog.
 jobs:
-  # Линтер отдельно и без базы: ответ быстрее, а тесты в соседней задаче идут, даже если линтер упал
+  # Линтер отдельно и без базы: ответ быстрее, а остальные проверки идут, даже если линтер упал
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -14,13 +27,28 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       # Исправленные находки, которые остались в eslint-suppressions.json, всплывут как изменение файла
       - name: Линтер (правила Next.js, TypeScript, хуки React, базовые правила доступности)
         run: npx eslint . --max-warnings 0 --prune-suppressions && git diff --exit-code eslint-suppressions.json
 
-  test:
-    # ubuntu-latest перешёл на 26.04, где Playwright не ставит браузер: тестам нужна версия с поддержкой
+  # Типы и правила без базы: идут рядом с линтером, а не ждут своей очереди в работе с базой
+  tipy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Типы TypeScript
+        run: npm run typecheck
+      - name: Правила (vitest)
+        run: npm test
+
+  # Настоящая PostgreSQL: правила на базе и сверка импорта Bord
+  baza:
     runs-on: ubuntu-24.04
     services:
       postgres:
@@ -45,22 +73,124 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npx prisma migrate deploy
-      - run: npm run typecheck
-      - run: npm test
       - name: Правила задач и weekly на настоящей базе
         run: npm run test:db
       - name: Сверка импорта с выгрузкой таблицы (0 расхождений)
         run: BORD_IMPORT=on npx tsx prisma/seed.ts && npm run reconcile:bord
+
+  # Сборка один раз на весь прогон: части сквозных тестов берут её готовой, а не собирают каждая заново
+  sborka:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: weekly
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weekly
+      SESSION_SECRET: ci-secret-0123456789-0123456789-abcdef
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Кэш сборки Next: при неизменных зависимостях пересобирается только то, что поменялось
+      - name: Кэш сборки Next
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+            next-${{ runner.os }}-
+      - run: npx prisma migrate deploy
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      # Складываем сборку в один файл сами: так в частях она разворачивается тем же путём .next
+      - name: Упаковать сборку без кэша
+        run: tar -cf sborka-next.tar --exclude=.next/cache .next
+      - name: Сборка для частей сквозных тестов
+        uses: actions/upload-artifact@v4
+        with:
+          name: sborka-next
+          path: sborka-next.tar
+          retention-days: 1
+          compression-level: 1
+
+  # Сквозные тесты шестью частями одновременно. Внутри части по-прежнему один поток и две ширины
+  # (1440 и 360): параллельность взялась от деления между работами, а не от ослабления тестов.
+  # У каждой части своя PostgreSQL и своя база weekly_e2e, поэтому части друг другу не мешают
+  e2e:
+    needs: sborka
+    # ubuntu-latest перешёл на 26.04, где Playwright не ставит браузер: тестам нужна версия с поддержкой
+    runs-on: ubuntu-24.04
+    strategy:
+      # Упавшая часть не отменяет остальные: видно сразу все падения, а не только первое
+      fail-fast: false
+      matrix:
+        chast: [1, 2, 3, 4, 5, 6]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: weekly
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weekly
+      SESSION_SECRET: ci-secret-0123456789-0123456789-abcdef
+      APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Готовая сборка из работы sborka
+        uses: actions/download-artifact@v4
+        with:
+          name: sborka-next
+      - name: Развернуть сборку
+        run: tar -xf sborka-next.tar && rm sborka-next.tar
+      # Браузер кладётся в кэш: при неизменной версии Playwright его не нужно качать заново
+      - name: Кэш браузера Playwright
+        id: kesh-brauzera
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Браузер и системные пакеты
+        if: steps.kesh-brauzera.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Системные пакеты для браузера из кэша
+        if: steps.kesh-brauzera.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: Сквозные тесты, часть ${{ matrix.chast }} из 6
+        run: npm run test:e2e -- --shard=${{ matrix.chast }}/6
       - name: Трассы упавших сквозных тестов
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-traces
+          name: e2e-traces-chast-${{ matrix.chast }}
           path: test-results/
           retention-days: 7
 
@@ -70,3 +200,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Сборка образа, который собирает App Platform
         run: docker build -t weekly:ci .
+
+  # Итог прогона одной отметкой: падение любой работы или любой части сквозных тестов роняет её
+  itog:
+    if: always()
+    needs: [lint, tipy, baza, sborka, e2e, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Какая-то из проверок не прошла
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: |
+          echo "линтер: ${{ needs.lint.result }}"
+          echo "типы и правила: ${{ needs.tipy.result }}"
+          echo "база: ${{ needs.baza.result }}"
+          echo "сборка: ${{ needs.sborka.result }}"
+          echo "сквозные тесты: ${{ needs.e2e.result }}"
+          echo "образ: ${{ needs.docker.result }}"
+          exit 1
+      - name: Все проверки прошли
+        run: echo "Все проверки прошли"
