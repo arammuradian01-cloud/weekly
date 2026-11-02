@@ -31,6 +31,10 @@ import { actorFor, createTask } from "@/lib/tasks/service";
 import { loadDepartmentGate } from "@/lib/sheet/department";
 import { taskRows } from "@/lib/sheet/rows";
 import { POST } from "@/app/api/errors/route";
+import { clearErrors } from "@/lib/status-service";
+import { FakeSheets } from "@/lib/sheet/fake";
+import { ID_HEADER, SUMMARY_TAB, TASKS_TAB } from "@/lib/sheet/rows";
+import { rebuild } from "@/lib/sheet/sync";
 
 beforeEach(async () => {
   await prisma.errorEvent.deleteMany();
@@ -143,6 +147,61 @@ describe("оповещения о сбоях", () => {
     expect(flood.message).toContain("Много разных сбоев");
     // Факт потока виден на экране, а не потерян
     expect((await recentErrors()).some((r) => r.message.includes("Много разных сбоев"))).toBe(true);
+  });
+
+  it("поток из браузера не съедает бюджет сервера: настоящая авария записывается и оповещает (замечание ревью)", async () => {
+    // Открытый обработчик может переполнить бюджет браузера из интернета. Если бюджет общий, настоящая новая
+    // авария сервера уходит в сборник: ни текста, ни пути, ни стека, и одно оповещение в час
+    await prisma.errorEvent.createMany({
+      data: Array.from({ length: FLOOD_MAX + 5 }, (_, i) => ({
+        source: "BROWSER" as const,
+        fingerprint: `browser-flood-${i}`,
+        message: `Чужой текст ${i}`,
+        times: 1,
+        firstAt: now,
+        lastAt: now,
+      })),
+    });
+    await recordError({ source: "SERVER", message: "Can't reach database server", place: "/weekly", stack: "prisma:1" }, now);
+    const row = await prisma.errorEvent.findFirstOrThrow({ where: { source: "SERVER" } });
+    // Запись своя, а не сборник: текст, путь и стек сохранились
+    expect(row.fingerprint).not.toBe(FLOOD_FINGERPRINT);
+    expect(row.message).toBe("Can't reach database server");
+    expect(row.place).toBe("/weekly");
+    expect(row.stack).toBe("prisma:1");
+    // И оповещение ушло, с местом
+    expect(alerts.calls).toHaveLength(1);
+    expect(alerts.calls[0]).toMatchObject({ source: "Сервер", place: "/weekly" });
+    // А вот новый сбой браузера складывается в сборник: свой бюджет он уже израсходовал
+    await recordError({ source: "BROWSER", message: "И ещё чужой текст", place: "/" }, now);
+    expect(await prisma.errorEvent.count({ where: { source: "BROWSER", fingerprint: FLOOD_FINGERPRINT } })).toBe(1);
+  });
+});
+
+describe("очистка списка сбоев", () => {
+  const now = new Date("2026-11-02T10:00:00Z");
+
+  it("владелец очищает, запись в журнале; администратор и лидер не могут", async () => {
+    await recordError({ source: "SERVER", message: "Сбой на сервере", place: "/" }, now);
+    await recordError({ source: "BROWSER", message: "Сбой в браузере", place: "/" }, now);
+    expect(await prisma.errorEvent.count()).toBe(2);
+
+    const admin = await actorFor("golovkin", "ADMIN");
+    const leader = await actorFor("reva");
+    await expect(clearErrors(admin)).rejects.toThrow(/только владелец/);
+    await expect(clearErrors(leader)).rejects.toThrow(/только владелец/);
+    expect(await prisma.errorEvent.count()).toBe(2);
+
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
+    const owner = await actorFor("muradyan", "OWNER");
+    expect(await clearErrors(owner)).toEqual({ removed: 2 });
+    expect(await prisma.errorEvent.count()).toBe(0);
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { id: { gt: mark }, action: "errors.clear" } });
+    expect([log.actorId, log.after]).toEqual([owner.personId, "очищено записей: 2"]);
+
+    // Пустой список очищать нечего, и записи в журнале не появляется
+    expect(await clearErrors(owner)).toEqual({ removed: 0 });
+    expect(await prisma.auditLog.count({ where: { id: { gt: mark }, action: "errors.clear" } })).toBe(1);
   });
 });
 
@@ -312,6 +371,24 @@ describe("зеркало в Google только по департаменту", 
       const only = await taskRows(null);
       expect(only.has(numberOf(TITLE_OWN))).toBe(true);
       expect(only.has(numberOf(TITLE_OTHER))).toBe(false);
+
+      // И в таблице: строки чужой задачи нет, а в сводке нет её ответственного (замечание ревью: сводка брала
+      // людей своим запросом и оставляла ФИО чужих департаментов с нулями во всех колонках)
+      // Замок и разметка с чистого листа: соседний файл тестов мог оставить свои
+      await prisma.setting.deleteMany({ where: { key: { in: ["sheet.layout", "sheet.synced", "sheet.lock"] } } });
+      const fake = new FakeSheets();
+      await rebuild(fake, { serviceEmail: "weekly-sync@test.iam.gserviceaccount.com" });
+      const tasksGrid = fake.tab(TASKS_TAB.title).grid;
+      const idAt = tasksGrid[0]!.indexOf(ID_HEADER);
+      const ids = tasksGrid.slice(1).map((r) => String(r[idAt] ?? ""));
+      expect(ids).toContain(numberOf(TITLE_OWN));
+      expect(ids).not.toContain(numberOf(TITLE_OTHER));
+      const summaryNames = fake
+        .tab(SUMMARY_TAB.title)
+        .grid.slice(1)
+        .map((r) => String(r[0] ?? ""));
+      expect(summaryNames).toContain(mine.fullName);
+      expect(summaryNames).not.toContain(alien.fullName);
     } finally {
       if (saved === undefined) delete process.env.SHEET_DEPARTMENT_ONLY;
       else process.env.SHEET_DEPARTMENT_ONLY = saved;
@@ -324,6 +401,8 @@ describe("зеркало в Google только по департаменту", 
       await prisma.orgUnit.delete({ where: { id: company.id } });
       // Очередь выгрузки от созданных задач не нужна: таблица в тестах не подключена
       await prisma.sheetOutbox.deleteMany();
+      await prisma.setting.deleteMany({ where: { key: { in: ["sheet.layout", "sheet.synced", "sheet.lock"] } } });
+      await prisma.sheetRun.deleteMany();
     }
   });
 });

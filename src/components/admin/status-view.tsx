@@ -3,6 +3,7 @@
 // Ни ключей, ни адресов с ключами здесь нет: про оповещения в Telegram видно только «настроены» или «не настроены».
 
 import { Module, StatusLine, type StatusItem } from "@/components/ui/data";
+import { ClearErrors } from "@/components/admin/status-clear";
 
 export type StatusErrorView = {
   id: string;
@@ -36,7 +37,10 @@ export type StatusView = {
   /** Зеркало в Google: идёт ли отбор по департаменту и по какому */
   mirror: { on: boolean; name: string | null };
   totals: { day: number; week: number; kinds: number };
-  errors: StatusErrorView[];
+  /** Сбои сервера: приходят из onRequestError, подделать их снаружи нельзя */
+  server: StatusErrorView[];
+  /** Сбои браузера и жалобы политики: приходят в открытый обработчик, текст в них задаёт кто угодно */
+  outside: StatusErrorView[];
 };
 
 const CSP_LABELS: Record<StatusView["csp"], string> = {
@@ -103,33 +107,55 @@ export function StatusPanel({ view }: { view: StatusView }) {
         </p>
       </Module>
 
+      {/* Два списка, а не один: иначе поток сообщений в открытый обработчик выдавливал бы настоящие сбои сервера
+          из общего списка, и содержимое главного экрана наблюдения задавал бы посторонний (замечание ревью) */}
       <Module
-        title="Сбои"
-        description="Сбои сервера, браузера и жалобы политики в одном месте. Одинаковые сложены вместе, в записях нет содержимого задач и weekly"
-        params={[{ label: "Разных сбоев", value: String(view.totals.kinds) }]}
+        title="Сбои сервера"
+        description="Приходят изнутри ресурса, из обработчика ошибок Next. Одинаковые сложены вместе, содержимого задач и weekly в записях нет"
+        params={[{ label: "Разных сбоев всего", value: String(view.totals.kinds) }]}
       >
-        {view.errors.length === 0 ? (
+        {view.server.length === 0 ? (
+          <p className="text-body text-muted" data-testid="status-errors-server-empty">
+            Сбоев сервера нет.
+          </p>
+        ) : (
+          <ErrorList items={view.server} testId="status-errors-server" />
+        )}
+      </Module>
+
+      <Module
+        title="Сбои браузера и жалобы политики"
+        description="Их присылает браузер на открытый адрес /api/errors, поэтому текст в них может прийти и со стороны. Оповещения по ним не уходят"
+        actions={<ClearErrors count={view.server.length + view.outside.length} />}
+      >
+        {view.outside.length === 0 ? (
           <p className="text-body text-muted" data-testid="status-errors-empty">
             Сбоев нет.
           </p>
         ) : (
-          <ul className="flex flex-col gap-3" data-testid="status-errors">
-            {view.errors.map((e) => (
-              <li key={e.id} className="rounded-card border border-border p-3">
-                <div className="flex flex-wrap items-baseline gap-2">
-                  <span className="text-caption text-muted">{e.sourceLabel}</span>
-                  <span className="text-caption text-muted">{e.at}</span>
-                  {e.times > 1 ? <span className="text-caption text-muted">раз: {e.times}</span> : null}
-                </div>
-                <p className="mt-1 break-words text-body text-ink">{e.message}</p>
-                {e.place ? <p className="mt-1 break-words text-small text-muted">Где: {e.place}</p> : null}
-                {e.stack ? <p className="mt-1 break-all text-caption text-muted">{e.stack}</p> : null}
-                {e.times > 1 ? <p className="mt-1 text-caption text-muted">Впервые: {e.firstAt}</p> : null}
-              </li>
-            ))}
-          </ul>
+          <ErrorList items={view.outside} testId="status-errors" />
         )}
       </Module>
     </>
+  );
+}
+
+function ErrorList({ items, testId }: { items: StatusErrorView[]; testId: string }) {
+  return (
+    <ul className="flex flex-col gap-3" data-testid={testId}>
+      {items.map((e) => (
+        <li key={e.id} className="rounded-card border border-border p-3">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="text-caption text-muted">{e.sourceLabel}</span>
+            <span className="text-caption text-muted">{e.at}</span>
+            {e.times > 1 ? <span className="text-caption text-muted">раз: {e.times}</span> : null}
+          </div>
+          <p className="mt-1 break-words text-body text-ink">{e.message}</p>
+          {e.place ? <p className="mt-1 break-words text-small text-muted">Где: {e.place}</p> : null}
+          {e.stack ? <p className="mt-1 break-all text-caption text-muted">{e.stack}</p> : null}
+          {e.times > 1 ? <p className="mt-1 text-caption text-muted">Впервые: {e.firstAt}</p> : null}
+        </li>
+      ))}
+    </ul>
   );
 }

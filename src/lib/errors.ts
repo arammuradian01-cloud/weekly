@@ -237,7 +237,12 @@ async function storeError(ready: ErrorInput, now: Date): Promise<StoredError> {
   if (known) {
     return prisma.errorEvent.update({ where: { id: known.id }, data: { ...data, times: { increment: 1 }, lastAt: now }, select: { id: true, times: true, notifiedAt: true } });
   }
-  const fresh = await prisma.errorEvent.count({ where: { firstAt: { gte: new Date(now.getTime() - FLOOD_WINDOW_MS) } } });
+  // Предел считается по своему источнику, а не общий (замечание второго круга ревью). Общий бюджет мог пополнить
+  // кто угодно из интернета: адрес /api/errors виден прямо в заголовке политики, и поток сообщений из браузера с
+  // меняющимся текстом держал бы его переполненным. Тогда настоящая новая авария сервера уходила бы в сборник,
+  // то есть её текст, путь и стек не сохранялись бы нигде, а оповещение приходило бы раз в час и без места.
+  // SERVER приходит только из onRequestError, снаружи его не подделать, поэтому свой бюджет у него не отнять
+  const fresh = await prisma.errorEvent.count({ where: { source: ready.source, firstAt: { gte: new Date(now.getTime() - FLOOD_WINDOW_MS) } } });
   if (fresh >= FLOOD_MAX) return foldFlood(ready.source, now);
   try {
     const created = await prisma.errorEvent.create({
@@ -283,9 +288,19 @@ export type ErrorRow = {
   lastAt: string;
 };
 
-/** Последние сбои, свежие сверху */
-export async function recentErrors(limit = 20): Promise<ErrorRow[]> {
-  const rows = await prisma.errorEvent.findMany({ orderBy: { lastAt: "desc" }, take: Math.min(Math.max(limit, 1), 200) });
+/**
+ * Последние сбои, свежие сверху. sources: только эти источники.
+ *
+ * Страница «Состояние» просит два списка отдельно (замечание второго круга ревью): сбои сервера и всё остальное.
+ * Иначе поток сообщений в открытый /api/errors выдавливал бы настоящие сбои сервера из общего списка — содержимое
+ * главного экрана наблюдения задавал бы посторонний
+ */
+export async function recentErrors(limit = 20, sources?: ErrorSourceKind[]): Promise<ErrorRow[]> {
+  const rows = await prisma.errorEvent.findMany({
+    where: sources ? { source: { in: sources } } : undefined,
+    orderBy: { lastAt: "desc" },
+    take: Math.min(Math.max(limit, 1), 200),
+  });
   return rows.map((r) => ({
     id: String(r.id),
     source: r.source as ErrorSourceKind,

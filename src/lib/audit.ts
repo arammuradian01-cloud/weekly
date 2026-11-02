@@ -147,6 +147,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "settings.banner": "Плашка над страницами изменена",
   "export.excel": "Выгрузка в Excel",
   "sync.revert": "Сверка вернула значение в таблице",
+  // Этап 86: страница «Состояние»
+  "errors.clear": "Список сбоев очищен",
   "sync.rebuild": "Вкладки таблицы пересобраны",
   "sync.settings": "Изменена таблица для выгрузки",
   "sync.bord": "Изменён Bord для забора задач",

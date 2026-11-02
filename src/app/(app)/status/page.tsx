@@ -2,13 +2,13 @@ import type { Metadata } from "next";
 import { requireManagement } from "@/lib/auth";
 import { OWNER_ROLES } from "@/lib/roles";
 import { PageHeader } from "@/components/page-header";
-import { StatusPanel, type StatusView } from "@/components/admin/status-view";
+import { StatusPanel, type StatusErrorView, type StatusView } from "@/components/admin/status-view";
 import { databaseAlive, healthMarks } from "@/lib/health";
 import { buildVersion } from "@/lib/build-version";
 import { alertsConfigured } from "@/lib/alerts";
 import { cspMode, hstsValue } from "@/lib/security";
 import { reloadAllowed } from "@/lib/admin/reload";
-import { errorTotals, recentErrors } from "@/lib/errors";
+import { errorTotals, recentErrors, type ErrorRow } from "@/lib/errors";
 import { loadDepartmentGate } from "@/lib/sheet/department";
 
 export const metadata: Metadata = { title: "Состояние" };
@@ -34,12 +34,34 @@ function ago(iso: string, now: Date): string {
   return moscow(iso);
 }
 
+/** Запись сбоя для экрана: время по Москве, остальное как есть */
+function shown(e: ErrorRow): StatusErrorView {
+  return {
+    id: e.id,
+    sourceLabel: e.sourceLabel,
+    message: e.message,
+    place: e.place,
+    stack: e.stack,
+    times: e.times,
+    at: moscow(e.lastAt),
+    firstAt: moscow(e.firstAt),
+  };
+}
+
 export default async function StatusPage() {
   await requireManagement(OWNER_ROLES, "/status");
   const now = new Date();
   // Страница только спрашивает базу и ничего не отмечает: иначе она затирала бы отметку, которую сама показывает,
   // и «последняя удачная проверка» всегда была бы моментом открытия страницы. Отметку ставит только /api/health
-  const [db, marks, totals, errors, gate] = await Promise.all([databaseAlive(), healthMarks(), errorTotals(now), recentErrors(30), loadDepartmentGate()]);
+  // Два списка отдельно: поток в открытый обработчик не должен выдавливать сбои сервера с главного экрана наблюдения
+  const [db, marks, totals, server, outside, gate] = await Promise.all([
+    databaseAlive(),
+    healthMarks(),
+    errorTotals(now),
+    recentErrors(20, ["SERVER"]),
+    recentErrors(20, ["BROWSER", "CSP"]),
+    loadDepartmentGate(),
+  ]);
   const view: StatusView = {
     db,
     lastOk: marks.lastOkAt
@@ -53,16 +75,8 @@ export default async function StatusPage() {
     reload: reloadAllowed(),
     mirror: { on: gate.on, name: gate.name },
     totals,
-    errors: errors.map((e) => ({
-      id: e.id,
-      sourceLabel: e.sourceLabel,
-      message: e.message,
-      place: e.place,
-      stack: e.stack,
-      times: e.times,
-      at: moscow(e.lastAt),
-      firstAt: moscow(e.firstAt),
-    })),
+    server: server.map(shown),
+    outside: outside.map(shown),
   };
   return (
     <>

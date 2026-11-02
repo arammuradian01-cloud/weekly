@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { getSetting, setSetting } from "@/lib/settings";
 import { PROD_SHEET_ID, colLetter, q, type Cell, type Grid, type SheetInfo, type SheetsClient } from "./client";
 import { ID_HEADER, LOG_TAB, RENDER, RESOURCE_TABS, SUMMARY_TAB, TASKS_TAB, sameCell, serialMoment, type TabSpec } from "./rows";
+import { loadDepartmentGate, type DepartmentGate } from "./department";
 import type { Prisma } from "@/generated/prisma/client";
 
 export { PROD_SHEET_ID };
@@ -205,7 +206,7 @@ function freeName(base: string, taken: string[]): string {
  * Имена вкладок Google сравнивает без учёта регистра: «weekly» и «Weekly» для него одно имя.
  * Если разметка уже сделана и все вкладки на месте, шапки не читаем: это экономит обращения к Google каждые 30 секунд
  */
-export async function ensureLayout(client: SheetsClient, opts: SyncOptions = {}, { refreshSummary = false } = {}): Promise<Sheets> {
+export async function ensureLayout(client: SheetsClient, opts: SyncOptions = {}, { refreshSummary = false, only }: { refreshSummary?: boolean; only?: DepartmentGate } = {}): Promise<Sheets> {
   const current = await marked("sheet.layout", opts, true);
   let sheets = await client.sheets();
   const fresh = new Set<string>();
@@ -248,7 +249,7 @@ export async function ensureLayout(client: SheetsClient, opts: SyncOptions = {},
   const heads = WANTED.filter((w) => w.spec && fresh.has(w.title)).map((w) => ({ range: `${q(w.title)}!A1:${lastCol(w.spec!)}1`, values: [header(w.spec!)] }));
   if (fresh.has(LOG_TAB.title)) heads.push({ range: `${q(LOG_TAB.title)}!A1:E1`, values: [LOG_TAB.columns] });
   await client.setValues(heads);
-  if (fresh.has(SUMMARY_TAB.title) || refreshSummary || !current) await writeSummary(client, exact(SUMMARY_TAB.title)!);
+  if (fresh.has(SUMMARY_TAB.title) || refreshSummary || !current) await writeSummary(client, exact(SUMMARY_TAB.title)!, only);
 
   // Оформление и защита: новым вкладкам всегда, всем вкладкам один раз на таблицу, версию разметки и служебный аккаунт
   const toFormat = WANTED.filter((w) => !current || fresh.has(w.title));
@@ -270,9 +271,10 @@ async function ensureRows(client: SheetsClient, sheet: SheetInfo, rows: number) 
  * Имена пишутся как есть (RAW): имя, похожее на формулу или дату, не превратится в формулу или дату.
  * Формулы на SUMPRODUCT с одним аргументом: им не важно, запятая или точка с запятой разделяют аргументы в языке таблицы
  */
-async function writeSummary(client: SheetsClient, sheet: SheetInfo) {
+async function writeSummary(client: SheetsClient, sheet: SheetInfo, only?: DepartmentGate) {
   // Сводка по людям топ-команды и по всем, у кого есть открытые задачи: 85 строк нулей никому не нужны (этап 14)
-  const people = await prisma.person.findMany({
+  const gate = only ?? (await loadDepartmentGate());
+  const found = await prisma.person.findMany({
     where: {
       active: true,
       role: { not: "OBSERVER" },
@@ -280,6 +282,10 @@ async function writeSummary(client: SheetsClient, sheet: SheetInfo) {
     },
     orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
   });
+  // Этап 86: с отбором по департаменту в сводке остаются только свои. Иначе строки задач чужих департаментов из
+  // вкладки «Задачи» уходят, а ФИО этих людей остаются в сводке с нулями во всех колонках: формулы считают по
+  // вкладке «Задачи», где их строк уже нет
+  const people = found.filter((p) => gate.allowsId(p.id));
   const T = q(TASKS_TAB.title);
   const col = (h: string) => {
     const c = colLetter(TASKS_TAB.columns.findIndex((x) => x.header === h) + 1);
@@ -379,12 +385,15 @@ async function pushBody(client: SheetsClient, opts: SyncOptions): Promise<PushRe
     if (r.kind === "entry") keys.weekly.add(r.key);
   }
   const result = await run("push", opts.now, async () => {
-    const sheets = await ensureLayout(client, opts, { refreshSummary: summary });
+    // Правило отбора по департаменту читается один раз на проход и передаётся внутрь: при трёх отдельных чтениях
+    // вкладки могли бы разойтись, если структуру или руководителя топ-команды правят прямо во время выгрузки
+    const only = await loadDepartmentGate();
+    const sheets = await ensureLayout(client, opts, { refreshSummary: summary, only });
     let items = 0;
     for (const t of RESOURCE_TABS) {
       const k = keys[t.key];
       if (!full && !k.size) continue;
-      const desired = await RENDER[t.key](full ? null : [...k]);
+      const desired = await RENDER[t.key](full ? null : [...k], only);
       const where = await idRows(client, t);
       const scope = full ? new Set([...desired.keys(), ...where.keys()]) : k;
       items += await apply(client, t, sheets.get(t.title)!, planFor(t, scope, desired, where));
@@ -420,7 +429,8 @@ export function reconcile(client: SheetsClient, opts: SyncOptions = {}): Promise
     await pushBody(client, opts);
     const fence = (await prisma.sheetOutbox.aggregate({ _max: { id: true } }))._max.id ?? BigInt(0);
     return run("reconcile", opts.now, async () => {
-      const sheets = await ensureLayout(client, opts, { refreshSummary: true });
+      const only = await loadDepartmentGate();
+      const sheets = await ensureLayout(client, opts, { refreshSummary: true, only });
       const diffs: Diff[] = [];
       const removed: { tab: string; row: string }[] = [];
       const restored: { tab: string; id: string }[] = [];
@@ -433,7 +443,7 @@ export function reconcile(client: SheetsClient, opts: SyncOptions = {}): Promise
           diffs.push({ tab: t.title, id: "шапка", field: "Шапка вкладки", before: (sheet[0] ?? []).map(show).join(" | "), after: head.join(" | ") });
           items += 1;
         }
-        const desired = await RENDER[t.key](null);
+        const desired = await RENDER[t.key](null, only);
         const plan: Plan = { updates: [], deletes: [], appends: [] };
         const seen = new Set<string>();
         sheet.slice(1).forEach((row, i) => {
@@ -514,12 +524,13 @@ export function rebuild(client: SheetsClient, opts: SyncOptions = {}): Promise<{
     run("rebuild", opts.now, async () => {
       // Очередь читаем до чтения базы: правка, сделанная во время пересборки, останется в очереди
       const pending = await prisma.sheetOutbox.findMany({ select: { id: true } });
-      const sheets = await ensureLayout(client, opts, { refreshSummary: true });
+      const only = await loadDepartmentGate();
+      const sheets = await ensureLayout(client, opts, { refreshSummary: true, only });
       let items = 0;
       for (const t of RESOURCE_TABS) {
         const info = sheets.get(t.title)!;
         const old = (await client.getValues(`${q(t.title)}!A1:${lastCol(t)}`)).length;
-        const desired = [...(await RENDER[t.key](null)).values()];
+        const desired = [...(await RENDER[t.key](null, only)).values()];
         // Запас строк сверх старых данных: хвост удалится, а под шапкой останется хотя бы одна строка
         await ensureRows(client, info, Math.max(desired.length + 2, old + 1));
         await client.setValues([{ range: `${q(t.title)}!A1:${lastCol(t)}${desired.length + 1}`, values: [header(t), ...desired] }]);

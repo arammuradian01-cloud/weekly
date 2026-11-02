@@ -182,6 +182,8 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return action === "system.oneOnOne.removed" ? (AUDIT_ACTION_LABELS[action] ?? action) : "Встреча один на один (раздел удалён)";
     }
     if (entity === "export") return "Выгрузка в Excel";
+    // Этап 86: страница «Состояние»
+    if (entity === "errors") return "Список сбоев";
     if (entity === "sheet") {
       if (action === "sync.settings") return "Google-таблица: подключение";
       if (action === "sync.bord") return "Bord: забор задач";

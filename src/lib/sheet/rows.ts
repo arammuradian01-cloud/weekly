@@ -7,7 +7,7 @@ import { listTasks } from "@/lib/tasks/service";
 import { isoFromDbDate } from "@/lib/tasks/dates";
 import { priorityOf, stateLabel, statusOf } from "@/domain/dictionaries";
 import type { Cell } from "./client";
-import { loadDepartmentGate } from "./department";
+import { loadDepartmentGate, type DepartmentGate } from "./department";
 
 export type Column = { header: string; width: number; kind?: "date" | "datetime" | "number" };
 export type TabSpec = { key: "tasks" | "comments" | "weekly"; title: string; columns: Column[] };
@@ -101,10 +101,11 @@ const appUrl = () => (process.env.APP_URL ?? "").replace(/\/+$/, "");
 const linksText = (list: { title?: string; url?: string }[]) => list.map((l) => (l.title ? `${l.title}: ${l.url}` : (l.url ?? ""))).join("\n");
 
 /** Строки вкладки «Задачи». numbers: только эти задачи; null: все. Задачи в архиве в таблицу не попадают */
-export async function taskRows(numbers: number[] | null): Promise<Map<string, Cell[]>> {
+export async function taskRows(numbers: number[] | null, only?: DepartmentGate): Promise<Map<string, Cell[]>> {
   const [gate, all, people, dicts, fromBord, teams] = await Promise.all([
-    // Этап 86: с SHEET_DEPARTMENT_ONLY=1 в таблицу идут только задачи своего департамента
-    loadDepartmentGate(),
+    // Этап 86: с SHEET_DEPARTMENT_ONLY=1 в таблицу идут только задачи своего департамента. Правило приходит
+    // сверху одним на весь проход выгрузки: иначе три вкладки могли бы разойтись, если структуру правят прямо сейчас
+    only ? Promise.resolve(only) : loadDepartmentGate(),
     listTasks({ archived: true }),
     prisma.person.findMany({ select: { slug: true, fullName: true } }),
     prisma.dictionaryItem.findMany({ where: { kind: { in: ["DIRECTION", "TASK_SOURCE"] } } }),
@@ -158,10 +159,10 @@ export async function taskRows(numbers: number[] | null): Promise<Map<string, Ce
 }
 
 /** Строки вкладки «Комментарии к задачам». Комментарии задач в архиве не выгружаются */
-export async function commentRows(ids: string[] | null): Promise<Map<string, Cell[]>> {
+export async function commentRows(ids: string[] | null, only?: DepartmentGate): Promise<Map<string, Cell[]>> {
   // Этап 86: комментарий идёт в таблицу вместе со своей задачей, поэтому отбор по ответственному за задачу
   const [gate, list] = await Promise.all([
-    loadDepartmentGate(),
+    only ? Promise.resolve(only) : loadDepartmentGate(),
     prisma.taskComment.findMany({
       where: { ...(ids ? { id: { in: ids } } : {}), task: { archivedAt: null } },
       include: { task: { select: { number: true, title: true, ownerId: true } }, author: { select: { fullName: true } } },
@@ -174,10 +175,10 @@ export async function commentRows(ids: string[] | null): Promise<Map<string, Cel
 }
 
 /** Строки вкладки «Weekly»: одна строка на запись */
-export async function weeklyRows(ids: string[] | null): Promise<Map<string, Cell[]>> {
+export async function weeklyRows(ids: string[] | null, only?: DepartmentGate): Promise<Map<string, Cell[]>> {
   // Этап 86: отбор по автору записи. Общие записи без автора идут в таблицу всегда
   const [gate, list] = await Promise.all([
-    loadDepartmentGate(),
+    only ? Promise.resolve(only) : loadDepartmentGate(),
     prisma.weeklyEntry.findMany({
       where: ids ? { id: { in: ids } } : {},
       include: { week: true, author: true, direction: true, block: true, type: true, tasks: { select: { number: true }, orderBy: { number: "asc" }, take: 1 } },
@@ -210,8 +211,8 @@ export async function weeklyRows(ids: string[] | null): Promise<Map<string, Cell
   );
 }
 
-export const RENDER: Record<TabSpec["key"], (keys: string[] | null) => Promise<Map<string, Cell[]>>> = {
-  tasks: (keys) => taskRows(keys ? keys.map(Number).filter(Number.isFinite) : null),
+export const RENDER: Record<TabSpec["key"], (keys: string[] | null, only?: DepartmentGate) => Promise<Map<string, Cell[]>>> = {
+  tasks: (keys, only) => taskRows(keys ? keys.map(Number).filter(Number.isFinite) : null, only),
   comments: commentRows,
   weekly: weeklyRows,
 };
