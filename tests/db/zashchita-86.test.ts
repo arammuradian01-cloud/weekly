@@ -157,10 +157,9 @@ describe("обработчик /api/errors", () => {
 
   const withLength = (body: string) => ({ "content-length": String(Buffer.byteLength(body, "utf8")) });
 
-  // Порядок важен: предел сообщений с адреса считается на весь прогон файла, ключ один (адрес «local»)
   it("тело без заявленной длины, с нечисловой длиной и длиннее предела не читается", async () => {
     const body = JSON.stringify({ message: "Не должно записаться", place: "/" });
-    const cases: Record<string, string>[] = [{}, { "content-length": "не число" }, { "content-length": String(REPORT_BODY_MAX + 1) }];
+    const cases: Record<string, string>[] = [{}, { "content-length": "abc" }, { "content-length": String(REPORT_BODY_MAX + 1) }];
     for (const headers of cases) {
       const response = await POST(report(body, headers));
       // Ответ всегда «принято»: по нему нельзя узнать ни про ресурс, ни про людей
@@ -169,17 +168,28 @@ describe("обработчик /api/errors", () => {
     expect(await prisma.errorEvent.count({ where: { message: "Не должно записаться" } })).toBe(0);
   });
 
-  it("с одного адреса принимается не больше REPORTS_PER_IP сообщений в минуту", async () => {
-    const body = JSON.stringify({ message: "Сбой из потока", place: "/" });
-    for (let i = 0; i < REPORTS_PER_IP + 5; i++) {
-      expect((await POST(report(body, withLength(body)))).status).toBe(204);
+  it("с одного адреса принимается не больше REPORTS_PER_IP сообщений в минуту, у соседнего свой счёт", async () => {
+    // На стенде TRUST_PROXY=true, и адрес берётся из X-Forwarded-For: так у теста свой адрес и свой счётчик,
+    // не зависящий от других запросов в прогоне
+    const saved = process.env.TRUST_PROXY;
+    process.env.TRUST_PROXY = "true";
+    try {
+      const body = JSON.stringify({ message: "Сбой из потока", place: "/" });
+      const headers = { ...withLength(body), "x-forwarded-for": "203.0.113.7" };
+      for (let i = 0; i < REPORTS_PER_IP + 5; i++) {
+        expect((await POST(report(body, headers))).status).toBe(204);
+      }
+      expect((await prisma.errorEvent.findFirstOrThrow({ where: { message: "Сбой из потока" } })).times).toBe(REPORTS_PER_IP);
+      // Сосед с другого адреса не задет
+      const other = JSON.stringify({ message: "Сбой соседа", place: "/" });
+      expect((await POST(report(other, { ...withLength(other), "x-forwarded-for": "203.0.113.8" }))).status).toBe(204);
+      expect((await prisma.errorEvent.findFirstOrThrow({ where: { message: "Сбой соседа" } })).times).toBe(1);
+      // И по открытому обработчику никто не оповещается
+      expect(alerts.calls).toEqual([]);
+    } finally {
+      if (saved === undefined) delete process.env.TRUST_PROXY;
+      else process.env.TRUST_PROXY = saved;
     }
-    // Три запроса израсходовал тест выше: предел считает и отказанные запросы
-    const used = 3;
-    const row = await prisma.errorEvent.findFirstOrThrow({ where: { message: "Сбой из потока" } });
-    expect(row.times).toBe(REPORTS_PER_IP - used);
-    // И по открытому обработчику никто не оповещается
-    expect(alerts.calls).toEqual([]);
   });
 });
 
