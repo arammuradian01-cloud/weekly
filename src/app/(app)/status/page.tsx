@@ -3,7 +3,7 @@ import { requireManagement } from "@/lib/auth";
 import { OWNER_ROLES } from "@/lib/roles";
 import { PageHeader } from "@/components/page-header";
 import { StatusPanel, type StatusView } from "@/components/admin/status-view";
-import { checkHealth, healthMarks } from "@/lib/health";
+import { databaseAlive, healthMarks } from "@/lib/health";
 import { buildVersion } from "@/lib/build-version";
 import { alertsConfigured } from "@/lib/alerts";
 import { cspMode, hstsValue } from "@/lib/security";
@@ -15,6 +15,9 @@ export const metadata: Metadata = { title: "Состояние" };
 export const dynamic = "force-dynamic";
 
 /** Страница «Состояние» (этап 86): владельцу видно, жива ли база, когда была проверка, что собрано и что сбоило */
+
+/** Проверки не приходили дольше этого — говорим об этом прямо: наблюдения нет */
+const STALE_CHECK_MS = 30 * 60_000;
 
 function moscow(iso: string): string {
   return new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })
@@ -34,12 +37,14 @@ function ago(iso: string, now: Date): string {
 export default async function StatusPage() {
   await requireManagement(OWNER_ROLES, "/status");
   const now = new Date();
-  // Проверка идёт прямо сейчас: она же отмечает время удачной проверки в настройках
-  const health = await checkHealth(now);
-  const [marks, totals, errors, gate] = await Promise.all([healthMarks(), errorTotals(now), recentErrors(30), loadDepartmentGate()]);
+  // Страница только спрашивает базу и ничего не отмечает: иначе она затирала бы отметку, которую сама показывает,
+  // и «последняя удачная проверка» всегда была бы моментом открытия страницы. Отметку ставит только /api/health
+  const [db, marks, totals, errors, gate] = await Promise.all([databaseAlive(), healthMarks(), errorTotals(now), recentErrors(30), loadDepartmentGate()]);
   const view: StatusView = {
-    db: health.db,
-    lastOk: marks.lastOkAt ? { ago: ago(marks.lastOkAt, now), at: moscow(marks.lastOkAt) } : null,
+    db,
+    lastOk: marks.lastOkAt
+      ? { ago: ago(marks.lastOkAt, now), at: moscow(marks.lastOkAt), stale: now.getTime() - new Date(marks.lastOkAt).getTime() > STALE_CHECK_MS }
+      : null,
     lastFail: marks.lastFailAt ? moscow(marks.lastFailAt) : null,
     version: buildVersion(),
     alerts: alertsConfigured(),

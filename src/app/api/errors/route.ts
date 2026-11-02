@@ -16,9 +16,10 @@ export async function POST(request: Request) {
   const accepted = new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   const ip = clientIp(request.headers);
   if (!rateLimit(`errors:${ip}`, REPORTS_PER_IP, REPORTS_WINDOW_MS)) return accepted;
-  // Длинное тело не читаем целиком: Content-Length больше предела — сразу «принято»
-  const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > REPORT_BODY_MAX) return accepted;
+  // Тело принимаем только с заявленной длиной в пределе: без заголовка (тело частями) и с нечисловым значением
+  // отказываем, иначе предел не действовал бы вовсе и обработчик читал бы сколько прислали
+  const declared = Number(request.headers.get("content-length"));
+  if (!Number.isFinite(declared) || declared <= 0 || declared > REPORT_BODY_MAX) return accepted;
   let body = "";
   try {
     body = await request.text();

@@ -4,8 +4,13 @@
 // тестах и документах их нет. Переменных нет — оповещения просто не уходят, остальное работает как обычно.
 // Выключить при заданных переменных: ALERTS=off.
 //
-// Отсюда уходят сбои приложения (src/lib/errors.ts). Внешний пинг «приложение не отвечает» шлёт сообщение сам,
-// из проверки в GitHub (.github/workflows/ping.yml): если упал сервер целиком, он сообщить о себе не может.
+// Отсюда уходят сбои сервера (src/lib/errors.ts) — и только они. Сбои браузера и жалобы политики приходят в
+// открытый обработчик /api/errors, то есть их текст и число задаёт кто угодно из интернета: оповещать по ним
+// нельзя, иначе этим каналом можно обманывать владельца от имени его же наблюдения и забивать лимиты Telegram,
+// после чего настоящее сообщение о падении стенда не дойдёт. Их видно на странице «Состояние».
+//
+// Внешний пинг «приложение не отвечает» шлёт сообщение сам, из проверки в GitHub (.github/workflows/ping.yml):
+// если упал сервер целиком, он сообщить о себе не может.
 
 export type AlertEnv = { TELEGRAM_BOT_TOKEN?: string; TELEGRAM_CHAT_ID?: string; ALERTS?: string; APP_URL?: string; [key: string]: string | undefined };
 
@@ -35,18 +40,23 @@ export function telegramUrl(config: TelegramConfig): string {
   return `https://api.telegram.org/bot${config.token}/sendMessage`;
 }
 
-export type ErrorAlert = { source: string; message: string; place?: string | null; stack?: string | null; times: number };
+/**
+ * О чём оповещаем. Текста сбоя здесь нарочно нет: в сообщения об ошибках ресурса попадает содержимое данных
+ * (например разбор выгрузки Bord вставляет в текст ошибки ячейку файла, см. src/lib/tasks/bord-import.ts), и
+ * такой текст не должен уезжать со стенда в чужой мессенджер. В Telegram уходит только то, что случилось и где,
+ * а сам текст владелец читает на странице «Состояние», внутри ресурса
+ */
+export type ErrorAlert = { source: string; place?: string | null; times: number };
 
-/** Текст сообщения о сбое: что, где, сколько раз и на каком стенде */
+/** Текст сообщения о сбое: где, сколько раз и на каком стенде. Без текста самого сбоя */
 export function errorAlertText(alert: ErrorAlert, env: AlertEnv = process.env): string {
   const where = (env.APP_URL ?? "").trim() || "адрес не задан";
   const lines = [
-    `Weekly: сбой (${alert.source})`,
-    alert.message,
+    `Weekly: сбой на сервере (${alert.source})`,
     alert.place ? `Где: ${alert.place}` : null,
     alert.times > 1 ? `Случился раз: ${alert.times}` : null,
     `Стенд: ${where}`,
-    "Подробности: страница «Состояние»",
+    "Что именно случилось: страница «Состояние» в ресурсе",
   ].filter((x): x is string => !!x);
   const text = lines.join("\n");
   return text.length > ALERT_TEXT_MAX ? `${text.slice(0, ALERT_TEXT_MAX - 1)}…` : text;

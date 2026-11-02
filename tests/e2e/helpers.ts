@@ -194,3 +194,16 @@ export async function enterByLink(page: Page, slug: string) {
   const link = out.split("\n").find((l) => l.startsWith("http"))!;
   await setPasswordByLink(page, link);
 }
+
+/**
+ * Жалобы политики CSP из консоли браузера (этап 86). Со строгими запретами часть страницы может перестать
+ * работать тихо: элементы на месте, а код внутри не запустился. Слушатель ставится до перехода на страницу,
+ * а в конце сценария список должен быть пустым
+ */
+export function watchCspRefusals(page: Page): string[] {
+  const refusals: string[] = [];
+  page.on("console", (message) => {
+    if (/Content Security Policy/i.test(message.text())) refusals.push(message.text());
+  });
+  return refusals;
+}

@@ -36,6 +36,16 @@ export const STACK_MAX = 1200;
 export const KEEP_DAYS = 90;
 /** Об одном и том же сбое оповещение в Telegram уходит не чаще раза в час */
 export const NOTIFY_REPEAT_MS = 60 * 60 * 1000;
+/**
+ * Сколько разных сбоев заводится за час. Дальше всё новое складывается в одну запись на источник: иначе
+ * /api/errors открыт без входа, а отпечаток считается по тексту, и поток сообщений с меняющимся текстом завёл бы
+ * столько записей, сколько пришло сообщений. Чистка по сроку (KEEP_DAYS) от этого не защищает: она снимает только
+ * старое, а свежий мусор остаётся
+ */
+export const FLOOD_MAX = 50;
+export const FLOOD_WINDOW_MS = 60 * 60 * 1000;
+/** Отпечаток записи-сборника: у каждого источника свой */
+export const FLOOD_FINGERPRINT = "flood";
 /** Сколько сообщений о сбоях с одного адреса принимает /api/errors за минуту: от потока жалоб база не страдает */
 export const REPORTS_PER_IP = 60;
 export const REPORTS_WINDOW_MS = 60_000;
@@ -97,15 +107,32 @@ function fromExtension(value: string): boolean {
  *
  * Так Next сообщает об обычном деле: человек щёлкнул ссылку, браузер отменил начатую загрузку соседней страницы
  * (запросы с `?_rsc=`), и сервер пишет «The destination stream closed early». Нашли это сквозные тесты: запись
- * «SERVER: The destination stream closed early. (render) (/weekly/submit?_rsc=...)» попала в список сбоев и
- * ушла бы владельцу в Telegram (прогон 41363391377). Чинить тут нечего, а список сбоев такие записи забивают.
+ * «SERVER: The destination stream closed early. (render) (/weekly/submit?_rsc=...)» попала в список сбоев
+ * (прогон 41363391377). Чинить тут нечего, а список сбоев такие записи забивают.
  *
- * Слово «aborted» целиком не берём: «transaction aborted» из базы — настоящий сбой, его глушить нельзя.
+ * Здесь ровно один случай, подтверждённый прогоном, и расширять этот список нельзя. Первый заход выбрасывал ещё
+ * ECONNRESET, EPIPE и любой AbortError — а это настоящие аварии: управляемая база рвёт соединения, `SELECT 1`
+ * в /api/health при этом проходит, и получилось бы «База отвечает, сбоев нет», пока люди получают пятисотые.
+ * Таймауты своих запросов (AbortSignal.timeout в src/lib/alerts.ts и в заборе лент) тоже дают AbortError, и
+ * молчать о них нельзя. Если обрывы когда-нибудь начнут мешать, отбрасывать их надо по признаку запроса
+ * (`?_rsc=` в пути), а не по тексту.
  */
-export const SERVER_NOISE = /destination stream closed early|response aborted|responseaborted|aborterror|request aborted|the user aborted|econnreset|epipe/i;
+export const SERVER_NOISE = /destination stream closed early/i;
 
 export function serverNoise(message: unknown): boolean {
   return SERVER_NOISE.test(String(message ?? ""));
+}
+
+/**
+ * Оповещаем только о сбоях сервера: они приходят из onRequestError, снаружи их не подделать. Сбои браузера и
+ * жалобы политики приходят в открытый обработчик /api/errors, то есть их текст, число и частоту задаёт кто угодно
+ * из интернета. Оповещать по ним нельзя: этим каналом можно обманывать владельца от имени его же наблюдения и
+ * забить лимиты Telegram, после чего настоящее сообщение о падении стенда не дойдёт. Они видны на «Состоянии».
+ * Об одном и том же сбое — не чаще раза в час
+ */
+export function shouldNotify(source: ErrorSourceKind, notifiedAt: Date | null, now: Date): boolean {
+  if (source !== "SERVER") return false;
+  return !notifiedAt || now.getTime() - notifiedAt.getTime() >= NOTIFY_REPEAT_MS;
 }
 
 type CspBody = {
@@ -179,27 +206,65 @@ export function parseErrorReport(contentType: string, body: string): ErrorInput[
   return one ? [one] : [];
 }
 
+/** Нарушение единственности в базе: тот же отпечаток успел записать параллельный запрос */
+function alreadyThere(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "P2002";
+}
+
+type StoredError = { id: bigint; times: number; notifiedAt: Date | null };
+
+/** Запись-сборник источника: в неё складывается поток новых сбоев, когда их за час стало слишком много */
+function foldFlood(source: ErrorSourceKind, now: Date): Promise<StoredError> {
+  const message = `Много разных сбоев (${ERROR_SOURCE_LABELS[source]}) за короткое время: дальше они складываются сюда`;
+  return prisma.errorEvent.upsert({
+    where: { source_fingerprint: { source, fingerprint: FLOOD_FINGERPRINT } },
+    create: { source, fingerprint: FLOOD_FINGERPRINT, message, place: null, stack: null, times: 1, firstAt: now, lastAt: now },
+    update: { message, times: { increment: 1 }, lastAt: now },
+    select: { id: true, times: true, notifiedAt: true },
+  });
+}
+
+/**
+ * Запись в базу: у знакомого сбоя растёт счётчик, незнакомый заводится новой записью, но не больше FLOOD_MAX
+ * новых за час. Параллельная запись того же отпечатка не теряется: на нарушение единственности счётчик
+ * увеличивается у уже созданной записи
+ */
+async function storeError(ready: ErrorInput, now: Date): Promise<StoredError> {
+  const fingerprint = fingerprintOf(ready);
+  const where = { source_fingerprint: { source: ready.source, fingerprint } };
+  const data = { message: ready.message, place: ready.place, stack: ready.stack };
+  const known = await prisma.errorEvent.findUnique({ where, select: { id: true } });
+  if (known) {
+    return prisma.errorEvent.update({ where: { id: known.id }, data: { ...data, times: { increment: 1 }, lastAt: now }, select: { id: true, times: true, notifiedAt: true } });
+  }
+  const fresh = await prisma.errorEvent.count({ where: { firstAt: { gte: new Date(now.getTime() - FLOOD_WINDOW_MS) } } });
+  if (fresh >= FLOOD_MAX) return foldFlood(ready.source, now);
+  try {
+    const created = await prisma.errorEvent.create({
+      data: { source: ready.source, fingerprint, ...data, times: 1, firstAt: now, lastAt: now },
+      select: { id: true, times: true, notifiedAt: true },
+    });
+    // Новая запись: заодно убираем всё, что старше срока
+    await prisma.errorEvent.deleteMany({ where: { lastAt: { lt: new Date(now.getTime() - KEEP_DAYS * 86_400_000) } } });
+    return created;
+  } catch (error) {
+    if (!alreadyThere(error)) throw error;
+    return prisma.errorEvent.update({ where, data: { ...data, times: { increment: 1 }, lastAt: now }, select: { id: true, times: true, notifiedAt: true } });
+  }
+}
+
 /**
  * Запись сбоя. Никогда не бросает исключение: сбор ошибок не должен сам ронять страницу или обработчик.
- * Новая запись заодно убирает записи старше KEEP_DAYS дней и уводит оповещение в Telegram
+ * Оповещение уходит только о сбоях сервера и не чаще раза в час (shouldNotify)
  */
 export async function recordError(input: ErrorInput, now = new Date()): Promise<void> {
   const ready = normalizeError(input);
   if (!ready) return;
   try {
-    const fingerprint = fingerprintOf(ready);
-    const row = await prisma.errorEvent.upsert({
-      where: { source_fingerprint: { source: ready.source, fingerprint } },
-      create: { source: ready.source, fingerprint, message: ready.message, place: ready.place, stack: ready.stack, times: 1, firstAt: now, lastAt: now },
-      update: { message: ready.message, place: ready.place, stack: ready.stack, times: { increment: 1 }, lastAt: now },
-    });
-    if (row.times === 1) {
-      await prisma.errorEvent.deleteMany({ where: { lastAt: { lt: new Date(now.getTime() - KEEP_DAYS * 86_400_000) } } });
-    }
-    // Жалобы политики в Telegram не уходят: неверная политика дала бы поток сообщений, их смотрят на «Состоянии»
-    if (ready.source === "CSP") return;
-    if (row.notifiedAt && now.getTime() - row.notifiedAt.getTime() < NOTIFY_REPEAT_MS) return;
-    const sent = await notifyError({ ...ready, times: row.times });
+    const row = await storeError(ready, now);
+    if (!shouldNotify(ready.source, row.notifiedAt, now)) return;
+    // В Telegram только источник, место и счётчик: текст сбоя со стенда не уходит (src/lib/alerts.ts)
+    const sent = await notifyError({ source: ERROR_SOURCE_LABELS[ready.source], place: ready.place, times: row.times });
     if (sent) await prisma.errorEvent.update({ where: { id: row.id }, data: { notifiedAt: now } });
   } catch (error) {
     console.error("Сбой не записан", error);

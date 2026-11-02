@@ -20,8 +20,8 @@ export type StatusErrorView = {
 export type StatusView = {
   /** Видит ли приложение базу прямо сейчас */
   db: boolean;
-  /** Последняя удачная проверка: «12 мин назад» и точное время */
-  lastOk: { ago: string; at: string } | null;
+  /** Последняя удачная проверка: «12 мин назад», точное время и признак «давно не приходили» */
+  lastOk: { ago: string; at: string; stale: boolean } | null;
   /** Последняя неудачная проверка */
   lastFail: string | null;
   version: string;
@@ -52,8 +52,16 @@ export function StatusPanel({ view }: { view: StatusView }) {
       label: "База",
       value: view.db ? "отвечает" : "не отвечает",
       tone: view.db ? "ok" : "danger",
-      hint: view.lastOk ? `проверка ${view.lastOk.ago}` : "проверок ещё не было",
       testId: "status-db",
+    },
+    // Проверки приходят снаружи: от внешнего пинга и от проверки состояния хостинга. Если они перестали
+    // приходить, об этом нужно сказать прямо: иначе наблюдения нет, а выглядит как будто всё хорошо
+    {
+      label: "Последняя проверка",
+      value: view.lastOk ? view.lastOk.ago : "не приходили",
+      tone: !view.lastOk || view.lastOk.stale ? "warning" : "ok",
+      hint: view.lastOk?.stale ? "проверки давно не приходили: посмотрите внешний пинг" : undefined,
+      testId: "status-check",
     },
     { label: "Версия сборки", value: view.version, testId: "status-version" },
     {

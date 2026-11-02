@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MESSAGE_MAX, REPORT_BODY_MAX, fingerprintOf, normalizeError, parseErrorReport, pathOf, serverNoise, shortText } from "@/lib/errors";
+import { MESSAGE_MAX, NOTIFY_REPEAT_MS, REPORT_BODY_MAX, fingerprintOf, normalizeError, parseErrorReport, pathOf, serverNoise, shortText, shouldNotify } from "@/lib/errors";
 
 // Этап 86: разбор сообщений о сбоях. Браузер, жалоба политики по-старому и по Reporting API
 
@@ -28,18 +28,41 @@ describe("путь из адреса", () => {
 describe("шум сервера", () => {
   it("оборванный поток ответа не сбой: нашли сквозные тесты, в список он не попадает", () => {
     expect(serverNoise("The destination stream closed early.")).toBe(true);
-    expect(serverNoise("Response aborted")).toBe(true);
-    expect(serverNoise("AbortError: The operation was aborted")).toBe(true);
-    expect(serverNoise("read ECONNRESET")).toBe(true);
-    expect(serverNoise("write EPIPE")).toBe(true);
+    expect(serverNoise("Error: The destination stream closed early. (render)")).toBe(true);
   });
 
-  it("настоящие сбои глушить нельзя, даже если в тексте есть похожие слова", () => {
-    // Слово «aborted» целиком не берём: это настоящий сбой базы
+  it("обрывы связи и таймауты это настоящие аварии, глушить их нельзя (замечание ревью)", () => {
+    // Управляемая база рвёт соединения, а SELECT 1 в /api/health проходит: без этих записей вышло бы
+    // «база отвечает, сбоев нет», пока люди получают пятисотые
+    expect(serverNoise("read ECONNRESET")).toBe(false);
+    expect(serverNoise("write EPIPE")).toBe(false);
+    // Свои таймауты (AbortSignal.timeout к Google-таблице, почте, лентам) тоже должны быть видны
+    expect(serverNoise("AbortError: The operation was aborted due to timeout")).toBe(false);
+    expect(serverNoise("Response aborted")).toBe(false);
+    // И обычный сбой базы
     expect(serverNoise("current transaction is aborted, commands ignored until end of transaction block")).toBe(false);
     expect(serverNoise("Нет связи с базой")).toBe(false);
     expect(serverNoise("")).toBe(false);
     expect(serverNoise(undefined)).toBe(false);
+  });
+});
+
+describe("о чём оповещаем в Telegram", () => {
+  const now = new Date("2026-11-02T10:00:00Z");
+
+  it("только о сбоях сервера: открытый обработчик не должен писать владельцу", () => {
+    // Сбой браузера и жалобу политики присылает кто угодно из интернета, без входа и с любым текстом
+    expect(shouldNotify("BROWSER", null, now)).toBe(false);
+    expect(shouldNotify("CSP", null, now)).toBe(false);
+    expect(shouldNotify("SERVER", null, now)).toBe(true);
+  });
+
+  it("об одном и том же сбое не чаще раза в час", () => {
+    const halfHour = new Date(now.getTime() - 30 * 60_000);
+    const twoHours = new Date(now.getTime() - 2 * 60 * 60_000);
+    expect(shouldNotify("SERVER", halfHour, now)).toBe(false);
+    expect(shouldNotify("SERVER", twoHours, now)).toBe(true);
+    expect(shouldNotify("SERVER", new Date(now.getTime() - NOTIFY_REPEAT_MS), now)).toBe(true);
   });
 });
 

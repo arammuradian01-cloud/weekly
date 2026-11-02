@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterManagement, resetDatabase, sql, watchCspRefusals } from "./helpers";
 
 // Этап 86: защита и наблюдение. Заголовки безопасности, страница «Состояние», сбор ошибок из браузера.
 // Ноутбук 1440 и телефон 360. Сквозной стенд идёт с политикой CSP по-настоящему (CSP_MODE=on в playwright.config.ts):
@@ -14,23 +14,14 @@ test.beforeEach(async () => {
   await sql("DELETE FROM error_events");
 });
 
-/** Жалобы политики из консоли браузера: с ними страница работает не целиком */
-function watchRefusals(page: Page): string[] {
-  const refusals: string[] = [];
-  page.on("console", (message) => {
-    if (/Content Security Policy/i.test(message.text())) refusals.push(message.text());
-  });
-  return refusals;
-}
-
 async function noScroll(page: Page, name: string) {
   const overflow = (await page.evaluate(() => document.documentElement.scrollWidth)) - page.viewportSize()!.width;
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-z86-${name}.png`, fullPage: true });
 }
 
-test("заголовки безопасности: политика с меткой, скрипт темы работает", async ({ page }) => {
-  const refusals = watchRefusals(page);
+test("заголовки безопасности: политика уходит, встроенный скрипт темы работает", async ({ page }) => {
+  const refusals = watchCspRefusals(page);
   const response = await page.goto("/login");
   const headers = response!.headers();
   const policy = headers["content-security-policy"];
@@ -59,7 +50,7 @@ test("заголовки безопасности: политика с метк�
 });
 
 test("главные страницы под политикой открываются без жалоб", async ({ page }) => {
-  const refusals = watchRefusals(page);
+  const refusals = watchCspRefusals(page);
   await enter(page, "Мурадян Арам");
   for (const path of ["/", "/tasks", "/weekly", "/people"]) {
     await page.goto(path);
@@ -70,7 +61,7 @@ test("главные страницы под политикой открываю
 });
 
 test("страница «Состояние»: база, проверка, версия и сбои", async ({ page }) => {
-  const refusals = watchRefusals(page);
+  const refusals = watchCspRefusals(page);
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
   await page.goto("/status");
@@ -95,14 +86,15 @@ test("страница «Состояние»: база, проверка, ве�
   expect(refusals, refusals.join("\n")).toEqual([]);
 });
 
-test("сбой из браузера доходит до страницы «Состояние»", async ({ page }) => {
+test("сбой из браузера доходит до страницы «Состояние»", async ({ page, request }) => {
+  // Сообщение уходит до всякого входа, отдельным запросом без cookie: так его присылает браузер с экрана входа и
+  // так браузер присылает жалобу политики. Обработчик открыт нарочно и всегда отвечает «принято» без текста
+  const sent = await request.post("/api/errors", { data: { message: "Проверка сбора сбоев", place: "/weekly?week=1", stack: "zashchita-86.spec.ts:1" } });
+  expect(sent.status()).toBe(204);
+  const again = await request.post("/api/errors", { data: { message: "Проверка сбора сбоев", place: "/weekly?week=2" } });
+  expect(again.status()).toBe(204);
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  // Так же сообщает о себе браузер человека: обработчик открыт без входа и всегда отвечает «принято»
-  const sent = await page.request.post("/api/errors", { data: { message: "Проверка сбора сбоев", place: "/weekly?week=1", stack: "zashchita-86.spec.ts:1" } });
-  expect(sent.status()).toBe(204);
-  const again = await page.request.post("/api/errors", { data: { message: "Проверка сбора сбоев", place: "/weekly?week=2" } });
-  expect(again.status()).toBe(204);
   await page.goto("/status");
   const list = page.getByTestId("status-errors");
   await expect(list).toContainText("Проверка сбора сбоев");

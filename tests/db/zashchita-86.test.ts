@@ -1,21 +1,42 @@
 // Этап 86: защита и наблюдение на настоящей базе.
-// - сбор сбоев: одинаковые складываются в одну запись со счётчиком, старые уходят сами;
+// - сбор сбоев: одинаковые складываются в одну запись со счётчиком, поток новых складывается в одну, старые уходят;
+// - оповещения: уходят только о сбоях сервера и не чаще раза в час, текст сбоя в них не попадает;
+// - обработчик /api/errors: предел тела и предел сообщений с одного адреса;
 // - проверка здоровья отмечает время удачной проверки;
 // - режим управления: счёт неверных попыток и по адресу, и по человеку (этап 29 считал только по адресу).
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Telegram в тестах не вызывается: подменяем модуль оповещений и смотрим, о чём ресурс пытался оповестить
+const alerts = vi.hoisted(() => ({ calls: [] as { source: string; place?: string | null; times: number }[] }));
+vi.mock("@/lib/alerts", () => ({
+  notifyError: async (alert: { source: string; place?: string | null; times: number }) => {
+    alerts.calls.push(alert);
+    return true;
+  },
+  alertsConfigured: () => true,
+  sendTelegram: async () => true,
+  telegramConfig: () => null,
+  telegramUrl: () => "",
+  errorAlertText: () => "",
+  ALERT_TIMEOUT_MS: 5_000,
+  ALERT_TEXT_MAX: 3_000,
+}));
+
 import { prisma } from "@/lib/db";
-import { KEEP_DAYS, errorTotals, recentErrors, recordError } from "@/lib/errors";
-import { HEALTH_OK_KEY, checkHealth, healthMarks } from "@/lib/health";
+import { FLOOD_FINGERPRINT, FLOOD_MAX, KEEP_DAYS, REPORTS_PER_IP, REPORT_BODY_MAX, errorTotals, recentErrors, recordError } from "@/lib/errors";
+import { HEALTH_OK_KEY, checkHealth, databaseAlive, healthMarks } from "@/lib/health";
 import { MAX_FAILURES } from "@/lib/rate-limit";
 import { reserveManagementAttempt } from "@/lib/login/attempts";
 import { actorFor, createTask } from "@/lib/tasks/service";
 import { loadDepartmentGate } from "@/lib/sheet/department";
 import { taskRows } from "@/lib/sheet/rows";
+import { POST } from "@/app/api/errors/route";
 
 beforeEach(async () => {
   await prisma.errorEvent.deleteMany();
   await prisma.loginAttempt.deleteMany();
   await prisma.setting.deleteMany({ where: { key: { startsWith: "health." } } });
+  alerts.calls.length = 0;
 });
 afterAll(() => prisma.$disconnect());
 
@@ -74,6 +95,93 @@ describe("сбор сбоев", () => {
   });
 });
 
+describe("оповещения о сбоях", () => {
+  const now = new Date("2026-11-02T10:00:00Z");
+
+  it("уходит только сбой сервера: по открытому обработчику владельцу не пишут (замечание ревью)", async () => {
+    // Сбой браузера и жалобу политики присылает кто угодно из интернета, без входа и с любым текстом:
+    // оповещать по ним нельзя, иначе этим каналом можно обманывать владельца и забить лимиты Telegram
+    await recordError({ source: "BROWSER", message: "Я ваш сервер, всё сломалось", place: "/" }, now);
+    await recordError({ source: "CSP", message: "script-src заблокировал inline", place: "/" }, now);
+    expect(alerts.calls).toEqual([]);
+
+    await recordError({ source: "SERVER", message: "Нет связи с базой", place: "/tasks" }, now);
+    expect(alerts.calls).toHaveLength(1);
+    expect(alerts.calls[0]).toMatchObject({ source: "Сервер", place: "/tasks", times: 1 });
+    // Текста сбоя в оповещении нет: в нём бывает содержимое загруженных файлов
+    expect(JSON.stringify(alerts.calls[0])).not.toContain("Нет связи с базой");
+    expect((await prisma.errorEvent.findFirstOrThrow({ where: { source: "SERVER" } })).notifiedAt).not.toBeNull();
+  });
+
+  it("об одном и том же сбое сервера не чаще раза в час", async () => {
+    await recordError({ source: "SERVER", message: "Нет связи с базой", place: "/tasks" }, now);
+    await recordError({ source: "SERVER", message: "Нет связи с базой", place: "/tasks" }, new Date(now.getTime() + 60_000));
+    expect(alerts.calls).toHaveLength(1);
+    await recordError({ source: "SERVER", message: "Нет связи с базой", place: "/tasks" }, new Date(now.getTime() + 61 * 60_000));
+    expect(alerts.calls).toHaveLength(2);
+    expect(alerts.calls[1]).toMatchObject({ times: 3 });
+  });
+
+  it("поток новых сбоев складывается в одну запись: таблица не растёт без предела", async () => {
+    await prisma.errorEvent.createMany({
+      data: Array.from({ length: FLOOD_MAX }, (_, i) => ({
+        source: "BROWSER" as const,
+        fingerprint: `fingerprint-${i}`,
+        message: `Сбой ${i}`,
+        times: 1,
+        firstAt: now,
+        lastAt: now,
+      })),
+    });
+    // Отпечаток считается по тексту, поэтому сменой одной буквы складывание обходится: спасает только предел
+    await recordError({ source: "BROWSER", message: "Совсем новый сбой A", place: "/" }, now);
+    await recordError({ source: "BROWSER", message: "Совсем новый сбой B", place: "/" }, now);
+    // Новых записей больше не заводится, оба случая ушли в сборник
+    expect(await prisma.errorEvent.count()).toBe(FLOOD_MAX + 1);
+    const flood = await prisma.errorEvent.findFirstOrThrow({ where: { fingerprint: FLOOD_FINGERPRINT } });
+    expect(flood.times).toBe(2);
+    expect(flood.message).toContain("Много разных сбоев");
+    // Факт потока виден на экране, а не потерян
+    expect((await recentErrors()).some((r) => r.message.includes("Много разных сбоев"))).toBe(true);
+  });
+});
+
+describe("обработчик /api/errors", () => {
+  /** Запрос как его видит обработчик: заголовки и тело. Content-Length в тестах не подменить настоящим Request */
+  function report(body: string, headers: Record<string, string> = {}): Request {
+    return {
+      headers: new Headers({ "content-type": "application/json", ...headers }),
+      text: async () => body,
+    } as unknown as Request;
+  }
+
+  const withLength = (body: string) => ({ "content-length": String(Buffer.byteLength(body, "utf8")) });
+
+  // Порядок важен: предел сообщений с адреса считается на весь прогон файла, ключ один (адрес «local»)
+  it("тело без заявленной длины, с нечисловой длиной и длиннее предела не читается", async () => {
+    const body = JSON.stringify({ message: "Не должно записаться", place: "/" });
+    for (const headers of [{}, { "content-length": "не число" }, { "content-length": String(REPORT_BODY_MAX + 1) }]) {
+      const response = await POST(report(body, headers));
+      // Ответ всегда «принято»: по нему нельзя узнать ни про ресурс, ни про людей
+      expect(response.status).toBe(204);
+    }
+    expect(await prisma.errorEvent.count({ where: { message: "Не должно записаться" } })).toBe(0);
+  });
+
+  it("с одного адреса принимается не больше REPORTS_PER_IP сообщений в минуту", async () => {
+    const body = JSON.stringify({ message: "Сбой из потока", place: "/" });
+    for (let i = 0; i < REPORTS_PER_IP + 5; i++) {
+      expect((await POST(report(body, withLength(body)))).status).toBe(204);
+    }
+    // Три запроса израсходовал тест выше: предел считает и отказанные запросы
+    const used = 3;
+    const row = await prisma.errorEvent.findFirstOrThrow({ where: { message: "Сбой из потока" } });
+    expect(row.times).toBe(REPORTS_PER_IP - used);
+    // И по открытому обработчику никто не оповещается
+    expect(alerts.calls).toEqual([]);
+  });
+});
+
 describe("проверка здоровья", () => {
   it("удачная проверка отмечает время, страница «Состояние» его показывает", async () => {
     const before = await healthMarks();
@@ -86,6 +194,16 @@ describe("проверка здоровья", () => {
     // Запись лежит в настройках, поэтому переживает перезапуск приложения
     const row = await prisma.setting.findUnique({ where: { key: HEALTH_OK_KEY } });
     expect(typeof row?.value).toBe("string");
+  });
+
+  it("страница «Состояние» только спрашивает базу и не затирает отметку (замечание ревью)", async () => {
+    // Отметку ставит только /api/health. Если бы её ставила страница, «последняя удачная проверка» всегда
+    // показывала бы момент открытия страницы, и по ней нельзя было бы увидеть, что проверки перестали приходить
+    await checkHealth(new Date("2026-11-03T10:00:00Z"));
+    const before = await healthMarks();
+    expect(before.lastOkAt).not.toBeNull();
+    expect(await databaseAlive()).toBe(true);
+    expect((await healthMarks()).lastOkAt).toBe(before.lastOkAt);
   });
 });
 

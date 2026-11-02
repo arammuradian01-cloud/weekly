@@ -21,15 +21,23 @@ let markedAt = 0;
 
 export type HealthResult = { ok: boolean; db: boolean };
 
-/** Жива ли база. Отмечает проверку в настройках; отметка не мешает ответу, если сама не удалась */
-export async function checkHealth(now = new Date()): Promise<HealthResult> {
-  let ok = false;
+/**
+ * Отвечает ли база прямо сейчас. Ничего не записывает: страница «Состояние» спрашивает именно так, иначе она
+ * затирала бы отметку, которую сама же показывает, и «последняя удачная проверка» всегда была бы моментом
+ * открытия страницы. А вся ценность отметки в том, чтобы увидеть, что проверки перестали приходить
+ */
+export async function databaseAlive(): Promise<boolean> {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    ok = true;
+    return true;
   } catch {
-    ok = false;
+    return false;
   }
+}
+
+/** Жива ли база. Отмечает проверку в настройках; отметка не мешает ответу, если сама не удалась */
+export async function checkHealth(now = new Date()): Promise<HealthResult> {
+  const ok = await databaseAlive();
   try {
     if (ok) {
       if (now.getTime() - markedAt >= HEALTH_WRITE_MS) {

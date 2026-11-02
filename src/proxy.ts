@@ -7,7 +7,7 @@ import { securityHeaders, type SecurityHeaders } from "@/lib/security";
 // Без входа открыты экран входа, первичная настройка паролей, проверки здоровья для хостинга и сбор ошибок. Календарь
 // сроков (этап 29) забирают сервисы календарей без cookie: доступ даёт секретная часть адреса. Сбор ошибок
 // (этап 86) открыт без входа нарочно: жалобы политики CSP и сбои браузера приходят и с экрана входа, и без cookie
-const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live", "/api/calendar", "/api/errors"];
+export const PUBLIC_PATHS = ["/login", "/setup", "/api/health", "/api/live", "/api/calendar", "/api/errors"];
 
 /** Заголовки запроса со своими добавками: из них Next берёт метку встроенных скриптов (этап 86) */
 function withRequestHeaders(request: NextRequest, security: SecurityHeaders): Headers {

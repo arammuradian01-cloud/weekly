@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CSP_REPORT_PATH, HSTS_MAX_AGE, NONCE_HEADER, cspMode, cspPolicy, hstsValue, isHttps, newNonce, securityHeaders } from "@/lib/security";
+import { PUBLIC_PATHS } from "@/proxy";
 
 // Этап 86: заголовки безопасности. HSTS только на https; политика одна на всё приложение (она живёт на документе,
 // а не на адресе страницы), по умолчанию со встроенными скриптами, в режиме strict только с меткой nonce
@@ -132,5 +133,17 @@ describe("заголовки ответа", () => {
     const headers = securityHeaders({ APP_URL: "http://localhost:3000" }, "nonce5");
     expect(headers.response["Strict-Transport-Security"]).toBeUndefined();
     expect(headers.response["Content-Security-Policy"]).toContain("script-src 'self' 'unsafe-inline'");
+  });
+});
+
+describe("открытые пути", () => {
+  it("сбор сбоев открыт без входа: жалобу политики браузер присылает без cookie, и сбой бывает на экране входа", () => {
+    expect(PUBLIC_PATHS).toContain(CSP_REPORT_PATH);
+    expect(PUBLIC_PATHS).toContain("/api/health");
+    expect(PUBLIC_PATHS).toContain("/login");
+    // Страницы с данными открытыми не становятся
+    expect(PUBLIC_PATHS).not.toContain("/");
+    expect(PUBLIC_PATHS).not.toContain("/tasks");
+    expect(PUBLIC_PATHS).not.toContain("/status");
   });
 });

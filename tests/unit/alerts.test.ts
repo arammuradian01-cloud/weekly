@@ -32,29 +32,38 @@ describe("настройки оповещений", () => {
 describe("текст сообщения о сбое", () => {
   const env = { APP_URL: "https://example.ru", TELEGRAM_BOT_TOKEN: "token", TELEGRAM_CHAT_ID: "chat" };
 
-  it("что, где, сколько раз и на каком стенде", () => {
-    const text = errorAlertText({ source: "SERVER", message: "Нет связи с базой", place: "/tasks", times: 3 }, env);
-    expect(text).toContain("Нет связи с базой");
+  it("где, сколько раз и на каком стенде", () => {
+    const text = errorAlertText({ source: "Сервер", place: "/tasks", times: 3 }, env);
+    expect(text).toContain("Сервер");
     expect(text).toContain("Где: /tasks");
     expect(text).toContain("Случился раз: 3");
     expect(text).toContain("https://example.ru");
+    expect(text).toContain("страница «Состояние»");
     // Ключи в текст не попадают
     expect(text).not.toContain("token");
     expect(text).not.toContain("chat");
   });
 
+  it("текста самого сбоя в сообщении нет: в нём бывает содержимое данных (замечание ревью)", () => {
+    // В ошибки разбора выгрузки подставляется ячейка файла (src/lib/tasks/bord-import.ts), и такой текст не
+    // должен уезжать со стенда в мессенджер. Поэтому сообщение о сбое его и не принимает: только место и счётчик
+    const text = errorAlertText({ source: "Сервер", place: "/api/market/upload", times: 1 }, env);
+    expect(text).not.toMatch(/строка|ячейк|Иванов/i);
+    expect(Object.keys({ source: "", place: "", times: 0 })).not.toContain("message");
+  });
+
   it("один раз: строки про счётчик нет; без места строки про место нет", () => {
-    const text = errorAlertText({ source: "BROWSER", message: "Сбой страницы", times: 1 }, env);
+    const text = errorAlertText({ source: "Сервер", times: 1 }, env);
     expect(text).not.toContain("Случился раз");
     expect(text).not.toContain("Где:");
   });
 
   it("длинный текст обрезается: Telegram не принимает больше четырёх тысяч знаков", () => {
-    const text = errorAlertText({ source: "SERVER", message: "я".repeat(5000), times: 1 }, env);
+    const text = errorAlertText({ source: "Сервер", place: `/${"я".repeat(5000)}`, times: 1 }, env);
     expect(text.length).toBeLessThanOrEqual(ALERT_TEXT_MAX);
   });
 
   it("без APP_URL в сообщении видно, что адрес не задан", () => {
-    expect(errorAlertText({ source: "SERVER", message: "Сбой", times: 1 }, {})).toContain("адрес не задан");
+    expect(errorAlertText({ source: "Сервер", times: 1 }, {})).toContain("адрес не задан");
   });
 });
