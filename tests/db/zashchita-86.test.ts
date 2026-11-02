@@ -160,7 +160,8 @@ describe("обработчик /api/errors", () => {
   // Порядок важен: предел сообщений с адреса считается на весь прогон файла, ключ один (адрес «local»)
   it("тело без заявленной длины, с нечисловой длиной и длиннее предела не читается", async () => {
     const body = JSON.stringify({ message: "Не должно записаться", place: "/" });
-    for (const headers of [{}, { "content-length": "не число" }, { "content-length": String(REPORT_BODY_MAX + 1) }]) {
+    const cases: Record<string, string>[] = [{}, { "content-length": "не число" }, { "content-length": String(REPORT_BODY_MAX + 1) }];
+    for (const headers of cases) {
       const response = await POST(report(body, headers));
       // Ответ всегда «принято»: по нему нельзя узнать ни про ресурс, ни про людей
       expect(response.status).toBe(204);
