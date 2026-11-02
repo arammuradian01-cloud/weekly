@@ -24,6 +24,8 @@ export const isCeoReport = (teamId: string) => teamId === TOP_TEAM;
 export type SentReport = {
   teamId: string;
   teamName: string;
+  /** Команда ещё работает. false: её расформировали, отчёт остался историей, но открыть её экран уже нельзя */
+  teamActive: boolean;
   week: WeekKey;
   weekNumber: number;
   /** ceo: отчёт топ-команды из ceo_reports; team: отчёт команды из team_weekly_reports */
@@ -65,6 +67,7 @@ export const levelOf = (actor: Actor): Promise<ViewerLevel> =>
 type Row = {
   teamId: string;
   teamName: string;
+  teamActive: boolean;
   week: WeekKey;
   weekNumber: number;
   kind: "ceo" | "team";
@@ -78,7 +81,7 @@ type Row = {
 
 /** Отчёты CEO, отправленные за эти недели (или за все, если недели не заданы) */
 async function ceoRows(db: Tx, keys: WeekKey[] | null, take: number): Promise<Row[]> {
-  const top = await db.team.findUnique({ where: { id: TOP_TEAM }, select: { id: true, name: true, leaderId: true } });
+  const top = await db.team.findUnique({ where: { id: TOP_TEAM }, select: { id: true, name: true, leaderId: true, active: true } });
   if (!top) return [];
   const rows = await db.ceoReport.findMany({
     where: { sentAt: { not: null }, ...(keys ? { week: { start: { in: keys.map((k) => dbDate(k)) } } } : {}) },
@@ -89,6 +92,7 @@ async function ceoRows(db: Tx, keys: WeekKey[] | null, take: number): Promise<Ro
   return rows.map((r) => ({
     teamId: top.id,
     teamName: top.name,
+    teamActive: top.active,
     week: isoFromDbDate(r.week.start) as WeekKey,
     weekNumber: r.week.isoNumber,
     kind: "ceo" as const,
@@ -101,17 +105,22 @@ async function ceoRows(db: Tx, keys: WeekKey[] | null, take: number): Promise<Ro
   }));
 }
 
-/** Отчёты команд, отправленные за эти недели (или за все) */
+/**
+ * Отчёты команд, отправленные за эти недели (или за все). Команда выключена - отчёт остаётся: отправленное за прошлую
+ * неделю это история, и расформирование команды её не отменяет. Иначе получатель терял и отчёт, и всё обсуждение, а
+ * раздел обещает обратное
+ */
 async function teamRows(db: Tx, keys: WeekKey[] | null, take: number): Promise<Row[]> {
   const rows = await db.teamWeeklyReport.findMany({
-    where: { sentAt: { not: null }, team: { active: true }, ...(keys ? { week: { start: { in: keys.map((k) => dbDate(k)) } } } : {}) },
-    include: { week: { select: { start: true, isoNumber: true } }, team: { select: { id: true, name: true, leaderId: true } } },
+    where: { sentAt: { not: null }, ...(keys ? { week: { start: { in: keys.map((k) => dbDate(k)) } } } : {}) },
+    include: { week: { select: { start: true, isoNumber: true } }, team: { select: { id: true, name: true, leaderId: true, active: true } } },
     orderBy: { sentAt: "desc" },
     take,
   });
   return rows.map((r) => ({
     teamId: r.team.id,
     teamName: r.team.name,
+    teamActive: r.team.active,
     week: isoFromDbDate(r.week.start) as WeekKey,
     weekNumber: r.week.isoNumber,
     kind: "team" as const,
@@ -139,6 +148,7 @@ async function toSent(db: Tx, rows: Row[], level: ViewerLevel): Promise<SentRepo
   return rows.map((r) => ({
     teamId: r.teamId,
     teamName: r.teamName,
+    teamActive: r.teamActive,
     week: r.week,
     weekNumber: r.weekNumber,
     kind: r.kind,
@@ -201,7 +211,8 @@ export async function reportWeeksOf(actor: Actor): Promise<{ weeks: { key: WeekK
     prisma.team.findUnique({ where: { id: TOP_TEAM }, select: { leaderId: true } }),
     prisma.ceoReport.findMany({ where: { sentAt: { not: null } }, select: { sentById: true, sentTo: true, week }, orderBy: { week: { start: "desc" } }, take: TAKE }),
     prisma.teamWeeklyReport.findMany({
-      where: { sentAt: { not: null }, team: { active: true } },
+      // Выключенная команда отчёт не уносит: он уже отправлен, и неделя остаётся в списке раздела
+      where: { sentAt: { not: null } },
       select: { sentById: true, sentTo: true, team: { select: { leaderId: true } }, week },
       orderBy: { sentAt: "desc" },
       take: TAKE,

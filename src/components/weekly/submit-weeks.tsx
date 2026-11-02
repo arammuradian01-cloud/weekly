@@ -9,7 +9,8 @@ import { SUBMIT_WEEK_LABEL } from "@/lib/weekly/rules";
 import type { SubmitWeekOption } from "@/lib/weekly/submit-weeks";
 import { buttonClass } from "@/components/ui/button";
 
-export function SubmitWeeks({ weeks, selected, older }: { weeks: SubmitWeekOption[]; selected: string; older: string }) {
+/** older: неделя перед списком. null: дошли до самой старой недели ресурса, листать дальше некуда */
+export function SubmitWeeks({ weeks, selected, older }: { weeks: SubmitWeekOption[]; selected: string; older: string | null }) {
   return (
     <nav aria-label="Неделя weekly" className="mb-5 flex min-w-0 flex-wrap items-center gap-2" data-testid="submit-weeks">
       {weeks.map((w) => {
@@ -35,10 +36,12 @@ export function SubmitWeeks({ weeks, selected, older }: { weeks: SubmitWeekOptio
         );
       })}
       {/* Недели старше списка открываются по одной: ресурс живёт не первый месяц, а список недель на экране короткий */}
-      <Link href={`/weekly/submit?week=${older}`} className={buttonClass("ghost", "sm")} aria-label="Открыть неделю раньше списка">
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-        Раньше
-      </Link>
+      {older ? (
+        <Link href={`/weekly/submit?week=${older}`} className={buttonClass("ghost", "sm")} aria-label="Открыть неделю раньше списка">
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          Раньше
+        </Link>
+      ) : null}
     </nav>
   );
 }

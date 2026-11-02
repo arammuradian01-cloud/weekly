@@ -47,6 +47,8 @@ export function ReceivedReportsView({ view, labels, order }: { view: LeaderRepor
                 {report.by ? `, отправил ${report.by}` : ""}.
               </p>
               {report.editedAfter ? <p className="mt-1 text-small text-muted">После отправки автор внёс правки: здесь версия, которую вам отправили.</p> : null}
+              {/* Отправленный отчёт остаётся историей и после расформирования команды, но её экран уже не открыть */}
+              {!report.teamActive ? <p className="mt-1 text-small text-muted">Команда расформирована: отчёт и обсуждение остаются здесь.</p> : null}
             </div>
             {report.kind === "ceo" && view.ceo ? (
               <CeoSentReport view={view.ceo} showWeeks={false} />
@@ -55,7 +57,7 @@ export function ReceivedReportsView({ view, labels, order }: { view: LeaderRepor
             ) : (
               <p className="text-body text-muted">Отправленная версия без блоков: отчёт уходил в прежнем виде.</p>
             )}
-            {report.kind === "team" ? (
+            {report.kind === "team" && report.teamActive ? (
               <div>
                 <Link href={`/weekly/team-report?team=${encodeURIComponent(report.teamId)}&week=${report.week}`} className={buttonClass("secondary", "sm")}>
                   Открыть отчёт команды

@@ -39,11 +39,14 @@ export async function leaderReportScope(actor: ReportViewer): Promise<LeaderRepo
   const teams = nodes.filter((n) => n.active && (n.leaderId === actor.personId || scope.leads.includes(n.id)));
   const canLead = teams.length > 0;
   if (canLead || actor.management === "OWNER" || actor.management === "ADMIN") return { allowed: true, canLead, teams, nodes };
-  // Прежний получатель остаётся с доступом, даже если больше не руководит командой: отправленное ему не исчезает
+  // Прежний получатель и прежний автор остаются с доступом, даже если больше не руководят командой и команду
+  // расформировали: отправленное не исчезает. Фильтра по активности команды здесь нет намеренно
   const [ceo, team, ceoReports] = await Promise.all([
     isCeo(actor.personId),
-    prisma.teamWeeklyReport.count({ where: { sentAt: { not: null }, sentTo: sentTo(actor.personId), team: { active: true } } }),
-    prisma.ceoReport.count({ where: { sentAt: { not: null }, sentTo: sentTo(actor.personId) } }),
+    prisma.teamWeeklyReport.count({
+      where: { sentAt: { not: null }, OR: [{ sentTo: sentTo(actor.personId) }, { sentById: actor.personId }, { team: { leaderId: actor.personId } }] },
+    }),
+    prisma.ceoReport.count({ where: { sentAt: { not: null }, OR: [{ sentTo: sentTo(actor.personId) }, { sentById: actor.personId }] } }),
   ]);
   return { allowed: ceo || team + ceoReports > 0, canLead, teams, nodes };
 }

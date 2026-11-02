@@ -16,6 +16,7 @@ import { canSeeLeaderReport, leaderReportScope, leaderReportView } from "@/lib/l
 import { receivedReportsOf, reportWeeksOf, sentReportsOf } from "@/lib/leader-report/reports";
 import { commentSubject } from "@/lib/leader-report/rules";
 import { NUMBERS_HIDDEN_TEXT } from "@/lib/weekly-blocks/types";
+import { NUMBERS_ACCESS_KEY } from "@/lib/plan/access";
 import { dbDate } from "@/lib/tasks/dates";
 import type { WeekKey } from "@/domain/types";
 
@@ -34,9 +35,14 @@ const TEMPLATE = [
 const BOSS = "Руководитель Тест";
 const MEMBER = "Участник Тест";
 /** Свои люди теста: их команды, подчинение и доступ к цифрам не зависят от соседних файлов на той же базе */
-const TEST_PEOPLE = ["t7381-boss", "t7381-member", "t7381-lead", "t7381-low"];
+const TEST_PEOPLE = ["t7381-boss", "t7381-member", "t7381-lead", "t7381-low", "t7381-mid"];
+const MID = "Основные цифры Тест";
 /** Строка с цифрами в блоке «Неделя к неделе»: такие строки видит только зритель с доступом к цифрам (этап 57) */
 const FIGURES_LINE = "ОСАГО: заявок 12 345, рост 7%";
+/** Разрез по партнёрам: это уровень «все цифры», с основными цифрами строка не видна */
+const SECRET_LINE = "Партнёр А: 4 820 полисов";
+/** Обычная строка того же блока: видна на любом уровне */
+const PLAIN_LINE = "Подключили нового партнёра";
 
 let key: WeekKey;
 let teamId: string;
@@ -58,6 +64,8 @@ async function clean() {
   await prisma.teamMember.deleteMany({ where: { person: { slug: { in: TEST_PEOPLE } } } });
   await prisma.weeklyReport.deleteMany({ where: { author: { slug: { in: TEST_PEOPLE } } } });
   await prisma.person.deleteMany({ where: { slug: { in: TEST_PEOPLE } } });
+  // Доступ к цифрам задаётся настройкой: её ставит только тест про уровень «основные цифры»
+  await prisma.setting.deleteMany({ where: { key: NUMBERS_ACCESS_KEY } });
 }
 
 beforeAll(async () => {
@@ -95,16 +103,22 @@ const noFiguresPerson = (slug: string, fullName: string) =>
  * Отчёт со строкой цифр, уже отправленный: снимок пишем прямо в базу. Проверяется чтение переписки по уровню зрителя,
  * а не отправка этапа 66 - её проверяет tests/db/team-blocks.test.ts
  */
-async function sendFiguresReport(leaderId: string, recipient: { id: string; name: string }) {
+type SnapshotBlocks = { key: string; title: string; hidden: boolean; note: null; lines: { product: string; text: string; href: string | null; source: string | null }[] }[];
+
+async function sendSnapshotReport(leaderId: string, recipients: { id: string; name: string }[], blocks: SnapshotBlocks) {
   const t = await prisma.team.create({ data: { name: "Тест 73 цифры", kind: "CUSTOM", leaderId, specialistsWeekly: true } });
   const week = await weekly.ensureWeek(prisma, key);
-  // Блок «Неделя к неделе» целиком про цифры: каждая его строка видна только с доступом к цифрам
-  const blocks = [{ key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "deposits", text: FIGURES_LINE, href: null, source: null }] }];
   await prisma.teamWeeklyReport.create({
-    data: { teamId: t.id, weekId: week.id, blocks, updatedById: leaderId, sentAt: new Date(), sentById: leaderId, sentTo: [recipient], sentSnapshot: blocks },
+    data: { teamId: t.id, weekId: week.id, blocks, updatedById: leaderId, sentAt: new Date(), sentById: leaderId, sentTo: recipients, sentSnapshot: blocks },
   });
   return t.id;
 }
+
+/** Блок «Неделя к неделе» целиком про цифры: каждая его строка видна только с доступом к цифрам */
+const sendFiguresReport = (leaderId: string, recipient: { id: string; name: string }) =>
+  sendSnapshotReport(leaderId, [recipient], [
+    { key: "wow", title: "Неделя к неделе", hidden: false, note: null, lines: [{ product: "deposits", text: FIGURES_LINE, href: null, source: null }] },
+  ]);
 
 /** Отчёт команды собран и отправлен руководителю: так выглядит вход в раздел у обеих сторон */
 async function sendReport() {
@@ -157,6 +171,27 @@ describe("вкладки «Отправленные» и «Полученные�
     // Общий логин не видит ни отправленного, ни полученного
     expect(await sentReportsOf(await shared("reva"), [key])).toEqual([]);
     expect(await receivedReportsOf(await shared("t7381-boss"), [key])).toEqual([]);
+  });
+
+  it("команду расформировали: отчёт и обсуждение остаются у обеих сторон, раздел не закрывается", async () => {
+    await sendReport();
+    const boss = await personal("t7381-boss");
+    const reva = await personal("reva");
+    await addReportComment(boss, { teamId, week: key }, "Поправьте вывод по вкладам");
+    await prisma.team.update({ where: { id: teamId }, data: { active: false } });
+
+    // Получатель: отчёт на месте, помечен расформированной командой, переписка цела, неделя в списке раздела
+    const got = await receivedReportsOf(boss, [key]);
+    expect(got.map((r) => r.teamId)).toEqual([teamId]);
+    expect(got[0]).toMatchObject({ teamActive: false });
+    expect((await reportComments(boss, got[0]!)).comments.map((c) => c.text)).toEqual(["Поправьте вывод по вкладам"]);
+    expect((await reportWeeksOf(boss)).weeks.map((w) => w.key)).toContain(key);
+    expect(await canSeeLeaderReport(boss)).toBe(true);
+
+    // Автор отчёта тоже: командой он больше не руководит, но отправленное за прошлую неделю остаётся историей
+    expect((await sentReportsOf(reva, [key])).map((r) => r.teamId)).toEqual([teamId]);
+    expect(await canSeeLeaderReport(reva)).toBe(true);
+    expect((await leaderReportScope(reva)).canLead).toBe(false);
   });
 
   it("вкладка по умолчанию: руководителю «Отправленные», только получателю «Полученные»", async () => {
@@ -305,6 +340,51 @@ describe("цитата строки и уровень доступа к цифр
     expect(JSON.stringify(seen)).not.toMatch("12 345");
     // В базе цитата осталась: она нужна для истории, наружу её отдаёт только уровень доступа читателя
     expect((await prisma.leaderReportComment.findFirstOrThrow({ where: { teamId: tid } })).lineText).toBe(FIGURES_LINE);
+  });
+
+  it("с основными цифрами строка со всеми цифрами не видна ни в отчёте, ни в цитате, ни по номеру строки", async () => {
+    // Уровень summary единственный, где blocksForLevel выбрасывает строки без подстановки пометки: номера строк
+    // сдвигаются, и это ровно та механика, из которой выросла найденная утечка
+    const mid = await noFiguresPerson("t7381-mid", MID);
+    await prisma.setting.create({
+      data: { key: NUMBERS_ACCESS_KEY, value: { full: { units: null, people: [] }, summary: { topManagement: false, units: [], people: ["t7381-mid"] } } },
+    });
+    const lead = await noFiguresPerson("t7381-lead", "Безцифров Тест");
+    const reva = await personal("reva");
+    // Строка со всеми цифрами первой, обычная второй: для summary первая исчезает, и обычная встаёт на её место
+    const tid = await sendSnapshotReport(lead.id, [{ id: reva.personId, name: "Рева Тарас" }, { id: mid.id, name: MID }], [
+      {
+        key: "partners",
+        title: "Партнёрский канал",
+        hidden: false,
+        note: null,
+        lines: [
+          { product: "partners", text: SECRET_LINE, href: "/forecast?tab=partners", source: "Прогноз: партнёры" },
+          { product: "partners", text: PLAIN_LINE, href: null, source: null },
+        ],
+      },
+    ]);
+
+    // Получателю со всеми цифрами видны обе строки, и он комментирует закрытую
+    const full = (await receivedReportsOf(reva, [key])).find((r) => r.teamId === tid)!;
+    expect(full.blocks.find((b) => b.key === "partners")!.lines.map((l) => l.text)).toEqual([SECRET_LINE, PLAIN_LINE]);
+    await addReportComment(reva, { teamId: tid, week: key, blockKey: "partners", lineIndex: 0 }, "Разбейте по партнёрам");
+
+    // У читателя с основными цифрами в блоке только обычная строка, без пометки о закрытых цифрах
+    const reader = await personal("t7381-mid");
+    const seen = (await receivedReportsOf(reader, [key])).find((r) => r.teamId === tid)!;
+    expect(seen.blocks.find((b) => b.key === "partners")!.lines.map((l) => l.text)).toEqual([PLAIN_LINE]);
+    // Цитата закрытой строки ему не отдаётся: ни по номеру (он сдвинулся), ни по тексту
+    const view = await reportComments(reader, seen);
+    expect(view.comments[0]).toMatchObject({ text: "Разбейте по партнёрам", lineText: null, blockTitle: "Партнёрский канал", linePresent: false });
+    expect(JSON.stringify(view)).not.toMatch(SECRET_LINE);
+
+    // Нулевая строка у него теперь обычная: сервер решает номер в его же блоках, до закрытой строки номером не дойти
+    const mine = await addReportComment(reader, { teamId: tid, week: key, blockKey: "partners", lineIndex: 0 }, "А это уточните");
+    expect(mine.comments.find((c) => c.text === "А это уточните")).toMatchObject({ lineText: PLAIN_LINE });
+    expect(JSON.stringify(mine)).not.toMatch(SECRET_LINE);
+    // За своим блоком строк для него нет: вторая строка ему закрыта, и номер 1 не существует
+    await expectRule(addReportComment(reader, { teamId: tid, week: key, blockKey: "partners", lineIndex: 1 }, "Замечание"), /строки в отправленном отчёте нет/);
   });
 
   it("строку вместо закрытых цифр комментировать нельзя", async () => {

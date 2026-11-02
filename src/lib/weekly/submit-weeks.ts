@@ -75,6 +75,15 @@ export async function submitWeeks(personId: string, selected?: WeekKey | null, n
   });
 }
 
+/**
+ * Самая старая неделя, которую ресурс вёл. Дальше неё переключатель не листает: открытие недели создаёт её строку
+ * (`ensureWeek` на чтении), и без границы «Раньше» завело бы в базе недели, которых никогда не было. null: недель нет
+ */
+export async function earliestWeek(): Promise<WeekKey | null> {
+  const row = await prisma.week.findFirst({ orderBy: { start: "asc" }, select: { start: true } });
+  return row ? (isoFromDbDate(row.start) as WeekKey) : null;
+}
+
 /** Кто закрыл неделю для weekly человека и кто может её открыть. null: неделя для него открыта */
 export async function closedWeekText(personId: string, key: WeekKey): Promise<string | null> {
   const row = await prisma.week.findUnique({ where: { start: dbDate(key) }, select: { id: true, isoNumber: true, closedAt: true } });

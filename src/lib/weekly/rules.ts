@@ -33,12 +33,19 @@ export const SUBMIT_WEEKS = 8;
 
 /**
  * Неделя экрана сдачи по адресу (?week=<понедельник>). Нет недели или она не понедельник: отчётная. Будущая: тоже
- * отчётная, и экран говорит, что за будущую неделю weekly не пишут
+ * отчётная, и экран говорит, что за будущую неделю weekly не пишут. earliest: самая старая неделя, которую ресурс
+ * вёл; неделя раньше неё заменяется ею, иначе открытие недели заводило бы в базе недели, которых никогда не было
  */
-export function submitWeekOf(wanted: unknown, reporting: WeekKey, isKey: (v: unknown) => v is WeekKey): { key: WeekKey; future: boolean } {
-  if (!isKey(wanted)) return { key: reporting, future: false };
-  if (wanted > reporting) return { key: reporting, future: true };
-  return { key: wanted, future: false };
+export function submitWeekOf(
+  wanted: unknown,
+  reporting: WeekKey,
+  isKey: (v: unknown) => v is WeekKey,
+  earliest?: WeekKey | null,
+): { key: WeekKey; future: boolean; tooOld: boolean } {
+  if (!isKey(wanted)) return { key: reporting, future: false, tooOld: false };
+  if (wanted > reporting) return { key: reporting, future: true, tooOld: false };
+  if (earliest && wanted < earliest) return { key: earliest, future: false, tooOld: true };
+  return { key: wanted, future: false, tooOld: false };
 }
 
 /** Состояние недели в переключателе: сдан, сдан с опозданием, черновик, не сдан; закрытая неделя поверх любого */

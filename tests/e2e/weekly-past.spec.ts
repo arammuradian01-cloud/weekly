@@ -112,6 +112,19 @@ test("отчёт руководителю за эту неделю уже отп
   await shot(page, "sent-warning");
 });
 
+test("неделя раньше самой старой недели ресурса: открывается самая старая, недель в базе не прибавляется", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  const before = (await sql("SELECT count(*)::int AS n FROM weeks"))[0]!.n as number;
+  await page.goto("/weekly/submit?week=2019-01-07");
+  await expect(page.getByTestId("submit-too-old-note")).toBeVisible();
+  // Недели 2019 года ресурс не вёл: чтением её не заводим
+  expect(await sql("SELECT start::text AS start FROM weeks WHERE start < '2020-01-01'::date")).toEqual([]);
+  expect((await sql("SELECT count(*)::int AS n FROM weeks"))[0]!.n).toBe(before);
+  // На самой старой неделе листать дальше некуда: ссылки «Раньше» нет
+  await expect(page.getByRole("link", { name: "Открыть неделю раньше списка" })).toHaveCount(0);
+  await shot(page, "too-old");
+});
+
 test("за будущую неделю weekly не пишут: открывается отчётная", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   const future = new Date(Date.now() + 3 * 3600_000);

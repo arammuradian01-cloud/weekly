@@ -27,6 +27,8 @@ export function SentReportsView({ view, labels, order }: { view: LeaderReportVie
               {report.by ? `, отправил ${report.by}` : ""}. Получатель: {report.to.map((t) => t.name).join(", ") || "не указан"}.
             </p>
             {report.editedAfter ? <p className="mt-1 text-small text-muted">После отправки отчёт правили в приложении: здесь отправленная версия.</p> : null}
+            {/* Отправленный отчёт остаётся историей и после расформирования команды */}
+            {!report.teamActive ? <p className="mt-1 text-small text-muted">Команда расформирована: отчёт и обсуждение остаются здесь.</p> : null}
           </div>
           {visibleBlocks(report.blocks).length ? (
             <BlocksView blocks={report.blocks} labels={labels} order={order} idPrefix={`sent-${report.teamId}`} />

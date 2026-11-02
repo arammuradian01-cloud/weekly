@@ -5,9 +5,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import * as tasks from "@/lib/tasks/service";
 import * as weekly from "@/lib/weekly/service";
-import { closedWeekText, sentReportsFor, submitWeeks } from "@/lib/weekly/submit-weeks";
-import { SUBMIT_WEEKS, canEditWeekly } from "@/lib/weekly/rules";
-import { shiftWeek } from "@/lib/weekly/weeks";
+import { closedWeekText, earliestWeek, sentReportsFor, submitWeeks } from "@/lib/weekly/submit-weeks";
+import { SUBMIT_WEEKS, canEditWeekly, submitWeekOf } from "@/lib/weekly/rules";
+import { isWeekKey, shiftWeek } from "@/lib/weekly/weeks";
 import { dbDate } from "@/lib/tasks/dates";
 import type { PersonSlug, WeekKey } from "@/domain/types";
 
@@ -67,6 +67,16 @@ describe("переключатель недель на экране сдачи",
     expect(withOld.at(-1)).toMatchObject({ key: old });
     // Строки недель переключатель не создаёт: неделя без строки открыта и пуста
     expect(await prisma.week.count({ where: { start: dbDate(old) } })).toBe(rows);
+  });
+
+  it("дальше самой старой недели ресурса не листаем: недель, которых не было, не создаём", async () => {
+    const earliest = await earliestWeek();
+    expect(earliest).toBeTruthy();
+    // Неделя `past` создана в beforeEach, значит самая старая неделя не позже неё
+    expect(earliest! <= past).toBe(true);
+    // Недели раньше самой старой в базе нет, и просьба о ней заменяется ею: строка недели на чтении не заводится
+    expect(await prisma.week.count({ where: { start: { lt: dbDate(earliest!) } } })).toBe(0);
+    expect(submitWeekOf(shiftWeek(earliest!, -10), reporting, isWeekKey, earliest)).toMatchObject({ key: earliest!, tooOld: true });
   });
 
   it("состояние недели: черновик, сдан, закрыта", async () => {

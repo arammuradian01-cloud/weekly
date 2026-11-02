@@ -117,7 +117,11 @@ describe("строка вместо закрытых цифр", () => {
   });
 
   it("цитата строки разрешается по блокам читателя: закрытой строки в них нет", () => {
-    // Так блоки видит зритель без доступа к цифрам: вместо строки с цифрами пометка
+    // ВНИМАНИЕ: здесь блоки собраны руками и findLine вызывается напрямую. Этот тест НЕ гарантирует, что
+    // reportComments передаёт findLine именно урезанные blocksForLevel блоки читателя: он останется зелёным, даже
+    // если однажды туда начнут передавать полные блоки. Саму границу этапа 57 держат тесты базы в
+    // tests/db/leader-report.test.ts («автор отчёта без доступа к цифрам не получает цитату», «с основными цифрами
+    // строка со всеми цифрами не видна»). Здесь проверяется только сравнение текста
     const hidden = [{ key: "wow", lines: [{ text: NUMBERS_HIDDEN_TEXT }] }];
     const full = [{ key: "wow", lines: [{ text: "ОСАГО: заявок 12 345" }] }];
     expect(findLine(full, "wow", "ОСАГО: заявок 12 345", 0)).toBe(0);
@@ -136,11 +140,19 @@ describe("предмет события о комментарии", () => {
 
 describe("weekly за прошлые недели", () => {
   it("неделя экрана сдачи по адресу: кривая и будущая дают отчётную", () => {
-    expect(submitWeekOf("2026-10-19", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-19", future: false });
-    expect(submitWeekOf(undefined, "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: false });
+    expect(submitWeekOf("2026-10-19", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-19", future: false, tooOld: false });
+    expect(submitWeekOf(undefined, "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: false, tooOld: false });
     // Не понедельник: не ключ недели
-    expect(submitWeekOf("2026-10-20", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: false });
-    expect(submitWeekOf("2026-11-02", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: true });
+    expect(submitWeekOf("2026-10-20", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: false, tooOld: false });
+    expect(submitWeekOf("2026-11-02", "2026-10-26", isWeekKey)).toEqual({ key: "2026-10-26", future: true, tooOld: false });
+  });
+
+  it("неделя раньше самой старой недели ресурса заменяется ею: открытие недели создаёт её строку", () => {
+    expect(submitWeekOf("2019-01-07", "2026-10-26", isWeekKey, "2026-09-14")).toEqual({ key: "2026-09-14", future: false, tooOld: true });
+    expect(submitWeekOf("2026-09-14", "2026-10-26", isWeekKey, "2026-09-14")).toEqual({ key: "2026-09-14", future: false, tooOld: false });
+    expect(submitWeekOf("2026-10-19", "2026-10-26", isWeekKey, "2026-09-14")).toEqual({ key: "2026-10-19", future: false, tooOld: false });
+    // Границы нет (недель в базе нет совсем): ведём себя как раньше
+    expect(submitWeekOf("2019-01-07", "2026-10-26", isWeekKey, null)).toEqual({ key: "2019-01-07", future: false, tooOld: false });
   });
 
   it("состояние недели в переключателе: закрытая неделя поверх несданного, сданный остаётся сданным", () => {
