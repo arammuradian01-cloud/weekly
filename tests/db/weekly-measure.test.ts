@@ -23,8 +23,11 @@ const TEMPLATE = [
   { key: "risks", title: "Риски" },
   { key: "plan", title: "План на неделю" },
 ];
-/** Запись длиннее предела строки отчёта: 600 знаков */
-const LONG = `${"Переписали расчёт тарифа и выкатили его на весь трафик ".repeat(14)}и закончили`;
+// Запись длиннее предела строки отчёта. «Что произошло» не может быть длиннее 150 знаков: предел стоит и в базе
+// (проверка weekly_entries_what_len). На «Влияние» проверки в базе нет, предел формы 500. Строка отчёта это
+// «Что произошло» плюс «Влияние», когда «Цифры» нет: около 150 + 2 + 500 знаков, то есть больше 600
+const LONG_WHAT = "Переписали расчёт тарифа и выкатили его на весь трафик. ".repeat(4).slice(0, 150).trim();
+const LONG_IMPACT = "Рост по всем линиям продаж и по партнёрскому каналу. ".repeat(12).slice(0, 500).trim();
 
 const id = async (slug: string) => (await prisma.person.findUniqueOrThrow({ where: { slug } })).id;
 const personal = async (slug: string): Promise<tasks.Actor> => ({ ...(await tasks.actorFor(slug)), via: "PASSWORD" });
@@ -82,7 +85,7 @@ beforeEach(async () => {
       // Сдана по своему блоку шаблона: переезжает в него же
       { ...base, weekId: week.id, authorId: cheychenets, section: "c:hire0001", what: "Закрыли вакансию аналитика", impact: "Команда выйдет на план быстрее", fact: "2 оффера", links: [{ title: "Воронка найма", url: "https://example.test/hiring" }] },
       // Сдана по блоку, которого в шаблоне уже нет: блок теряется
-      { ...base, weekId: week.id, authorId: cheychenets, section: "c:ghost001", what: LONG },
+      { ...base, weekId: week.id, authorId: cheychenets, section: "c:ghost001", what: LONG_WHAT, impact: LONG_IMPACT },
       // Риск партнёрки: по смыслу в «Риски»
       { ...base, weekId: week.id, authorId: afanasyev, directionId: partners.id, blockId: risksBlock.id, typeId: risk.id, what: "Агрегатор сдвигает интеграцию", next: "Собрать встречу с партнёром" },
       // Руководитель команды: weekly от него не ждёт ни одна команда, шаблона у него нет
@@ -113,7 +116,8 @@ describe("замер живых данных (этап 87)", () => {
     expect(hire).toMatchObject({ authorName: "Чейченец Евгений", blockLabel: "Ключевые изменения", direction: "deposits", type: "result", links: 1 });
     expect(hire.impact).toBe("Команда выйдет на план быстрее");
     const share = (list: MeasureEntry[], field: string) => fieldShares(list).find((f) => f.key === field)!;
-    expect(share(mine, "impact").filled).toBe(1);
+    // «Влияние» заполнено у двух записей: у записи про найм и у длинной записи
+    expect(share(mine, "impact").filled).toBe(2);
     expect(share(mine, "fact").filled).toBe(1);
     expect(share(mine, "next").filled).toBe(1);
     expect(share(mine, "help").filled).toBe(0);

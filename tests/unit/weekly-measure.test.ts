@@ -134,8 +134,11 @@ describe("2. шаблоны блоков команд", () => {
 
 describe("3. обрезка строки отчёта", () => {
   it("считает записи, которые не влезают в предел, и показывает длину до и после", () => {
-    const long = `${"Очень длинная запись про тариф ".repeat(30)}конец`;
-    const part = cutPart(input({ entries: [entry({ what: long, id: "long" }), entry({ what: "Коротко" })] }), 3);
+    // «Что произошло» не длиннее 150 знаков (предел стоит и в базе), поэтому в 600 знаков не влезает запись с длинным
+    // «Влиянием» и пустой «Цифрой»: строка отчёта это фраза плюс «Влияние»
+    const what = "Переписали расчёт тарифа и выкатили его на весь трафик. ".repeat(4).slice(0, 150).trim();
+    const impact = "Рост по всем линиям продаж и по партнёрскому каналу. ".repeat(12).slice(0, 500).trim();
+    const part = cutPart(input({ entries: [entry({ what, impact, id: "long" }), entry({ what: "Коротко" })] }), 3);
     expect(part.limit).toBe(BLOCK_LIMITS.text);
     expect(part.checked).toBe(2);
     expect(part.cut).toBe(1);
@@ -146,7 +149,7 @@ describe("3. обрезка строки отчёта", () => {
     expect(part.examples[0]!.cut.length).toBe(part.examples[0]!.after);
     // Строка отчёта считается так же, как в автосборке: «Цифра или факт» дописывается к фразе
     expect(reportLine(entry({ what: "Запустили тариф", fact: "120 заявок" })).full).toBe("Запустили тариф. 120 заявок");
-    expect(part.longest).toBe(reportLine(entry({ what: long })).full.length);
+    expect(part.longest).toBe(reportLine(entry({ what, impact })).full.length);
   });
 });
 
