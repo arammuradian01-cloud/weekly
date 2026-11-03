@@ -169,6 +169,45 @@ test("помощник «Собрать из структуры»: руково�
   await expect.poll(async () => (await sql("SELECT count(*)::int AS n FROM teams WHERE name = $1 AND active", ["Кросс-продажи"]))[0]!.n).toBe(1);
   // Карточка новой команды открылась переходом без перезагрузки страницы (этап 70): раскрытое дерево помощника на месте
   if (!isPhone()) await expect(ready.getByTestId(`unit-${ins}`).locator("button[aria-expanded]").first()).toHaveAttribute("aria-expanded", "true");
+
+  // Этап 74: предел найденных в помощнике не срабатывает молча. Пятьдесят однофамильцев одним запросом, как в
+  // owner-as.spec.ts для длинного списка людей: сорок строк рисуются, про остальных экран говорит
+  await sql(
+    `INSERT INTO people (id, slug, "fullName", "shortName", role, zone, position, "updatedAt")
+     SELECT 'e2e74a' || i, 'e2e74a' || i, 'Предельников Сотрудник ' || lpad(i::text, 3, '0'), 'Сотрудник', 'EMPLOYEE', '', 'Специалист', now()
+     FROM generate_series(1, 50) AS i`,
+  );
+  // К списку команд: на телефоне карточка занимает экран целиком, и помощника на нём нет
+  await reva.goto("/people/teams");
+  const assembleSearch = reva.getByLabel("Найти человека или подразделение");
+  await expect(assembleSearch).toBeVisible();
+  await assembleSearch.fill("предельников");
+  const found = reva.getByTestId("assemble-found");
+  await expect(found.getByRole("button", { name: /Предельников Сотрудник .*: добавить в команду/ })).toHaveCount(40);
+  await expect(found).toContainText("Ещё 10 человек: уточните запрос");
+  // И поиск человека дошёл до подразделения: по названию подразделения находятся его люди
+  await assembleSearch.fill("продуктового развития");
+  await expect(found.getByRole("button", { name: /Токов Никита Андреевич: добавить в команду/ })).toBeVisible();
+
+  // Этап 74: те же пятьдесят человек достают порог и в дереве подчинённых. Подсказка поиска показывает восемь и
+  // говорит, сколько ещё; блок «Другие ветки» показывает тридцать и тоже говорит, а не молчит при полном числе в
+  // заголовке
+  await reva.goto("/people/structure");
+  const treeSearch = reva.getByLabel("Найти человека");
+  await treeSearch.fill("предельников");
+  const hints = reva.getByRole("list", { name: "Найденные люди" });
+  await expect(hints.getByRole("button")).toHaveCount(8);
+  await expect(hints).toContainText("Ещё 42: уточните поиск");
+  // Подсказка поиска закрывается, иначе она лежит поверх блока «Другие ветки»
+  await treeSearch.press("Escape");
+  await expect(hints).toHaveCount(0);
+  const roots = reva.getByTestId("other-roots");
+  // Полное число в заголовке зависит от того, у кого ещё в структуре нет руководителя, поэтому проверяем не его, а то,
+  // что показано ровно тридцать и про остальных сказано
+  await expect(roots).toContainText(/Другие ветки и люди без руководителя в структуре: \d+/);
+  await roots.locator("summary").click();
+  await expect(roots.getByRole("list", { name: "Другие ветки" }).getByRole("button")).toHaveCount(30);
+  await expect(roots).toContainText(/Ещё \d+: найдите человека поиском выше/);
 });
 
 test("сотрудник Money: цифры прогноза закрыты, команды только для просмотра, под логотипом нет департамента", async ({ page, browser }) => {
