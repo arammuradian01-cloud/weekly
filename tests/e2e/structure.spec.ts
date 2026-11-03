@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { pickTeam } from "./team-picker";
 
 // Этап 14: структура департамента и команды. Владелец загружает структуру, руководитель сектора видит свою команду
 // и не видит задач топ-команды, переключатель команд меняет список задач. Ноутбук 1440 и телефон 360
@@ -55,6 +56,47 @@ test("владелец загружает структуру, команды п�
   await expect(page.getByText("Вакансии: PO KASKO")).toBeVisible();
   await shot(page, "units");
 
+  // Этап 74: подразделение выбирают поиском, а не системным списком. Список в потоке окна, краем окна не обрезан,
+  // и вторая строка пункта говорит вид, подразделение выше и руководителя: одноимённые отделы не спутать
+  await page.getByRole("button", { name: "Изменить подразделение: Сектор автострахования" }).click();
+  const unitModal = page.getByRole("dialog", { name: "Сектор автострахования" });
+  const above = unitModal.getByRole("combobox", { name: "Подразделение выше" });
+  const aboveList = unitModal.getByRole("listbox", { name: "Подразделение выше" });
+  await expect(above).toHaveAttribute("data-value", /.+/);
+  await above.click();
+  await expect(above).toHaveAttribute("aria-expanded", "true");
+  // Весь список виден целиком: раньше всплывающий список обрезался прокруткой окна (этап 70 завёл список в потоке)
+  const count = await aboveList.getByRole("option").count();
+  expect(count).toBeGreaterThanOrEqual(3);
+  await expect(aboveList.getByRole("option").nth(count - 1)).toBeInViewport({ ratio: 1 });
+  await expect(aboveList.getByRole("option", { name: /Отдел развития продуктов/ })).toContainText("Отдел в «Управление развития продуктов»");
+  await shot(page, "unit-above");
+  // Поиск по названию отбирает, а чужое слово даёт понятный отказ
+  await above.fill("отдел развития");
+  await expect(aboveList.getByRole("option")).toHaveCount(1);
+  await above.fill("абвгде");
+  await expect(unitModal.getByText("Такого подразделения нет: проверьте написание").first()).toBeVisible();
+  // Поле не бывает пустым: Escape закрывает список и возвращает прежний выбор, а не стирает подразделение
+  await above.press("Escape");
+  await above.press("Escape");
+  await expect(above).toHaveAttribute("data-value", /.+/);
+  await unitModal.getByRole("button", { name: "Отмена" }).click();
+  await expect(unitModal).toHaveCount(0);
+
+  // Подразделение человека: тот же поиск в том же окне с прокруткой. Не сохраняем: Антонов ведёт сектор, и остальной
+  // сценарий этого теста на том и держится
+  await page.getByRole("button", { name: "Изменить: Антонов Дмитрий" }).click();
+  const personModal = page.getByRole("dialog", { name: "Антонов Дмитрий" });
+  const unitField = personModal.getByRole("combobox", { name: "Подразделение", exact: true });
+  await expect(unitField).toHaveValue("Сектор автострахования");
+  await unitField.fill("управление развития");
+  await personModal.getByRole("option", { name: /Управление развития продуктов/ }).click();
+  // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
+  await expect(unitField).toHaveValue("Управление развития продуктов");
+  await expect(unitField).toHaveAttribute("data-value", /.+/);
+  await personModal.getByRole("button", { name: "Отмена" }).click();
+  await expect(personModal).toHaveCount(0);
+
   // Команды: сектор Антонова под командой Тараса, Тарас под топ-командой. С этапа 64 здесь только просмотр
   await page.getByRole("radio", { name: /Команды/ }).click();
   await expect(page.getByTestId("manage-teams")).toBeVisible();
@@ -66,8 +108,8 @@ test("владелец загружает структуру, команды п�
   // Владелец ставит задачу в команду сектора через переключатель команд
   const sector = (await sql("SELECT id FROM teams WHERE name = 'Сектор автострахования'"))[0]!.id as string;
   await page.goto("/tasks");
-  const switcher = page.locator(test.info().project.name === "phone" ? "#team-switcher-m" : "#team-switcher");
-  await switcher.selectOption(sector);
+  // Этап 74: у владельца в выборе все команды компании, нужную находим поиском по названию
+  await pickTeam(page, test.info().project.name === "phone", sector, "Сектор автострахования");
   await expect(page.getByText("В команде пока нет задач")).toBeVisible();
   await page.keyboard.press("n");
   const dialog = page.getByRole("dialog", { name: "Новая задача" });

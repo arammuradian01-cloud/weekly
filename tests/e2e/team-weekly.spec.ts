@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { enterByLink, resetDatabase, sql } from "./helpers";
+import { expectTeam, pickTeam } from "./team-picker";
 
 // Этап 15: weekly команд. Руководитель сектора включает weekly специалистов и свой срок, специалист пишет запись,
 // руководитель поднимает её наверх, руководитель выше видит её в ленте своей команды. Ноутбук 1440 и телефон 360
@@ -101,7 +102,7 @@ test("руководитель сектора включает weekly специ
   const reva = await person(browser, page, "Рева");
   const revaTeam = (await sql("SELECT id FROM teams WHERE name = 'Управление развития продуктов'"))[0]!.id as string;
   await reva.goto("/weekly");
-  await reva.locator(phone ? "#team-switcher-m" : "#team-switcher").selectOption(revaTeam);
+  await pickTeam(reva, phone, revaTeam);
   await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
   const fromTeam = reva.getByRole("main").getByRole("heading", { name: /Из команды/ });
   await expect(fromTeam).toBeVisible();
@@ -137,7 +138,7 @@ test("weekly человека из дерева подчинённых: подс
 
   // Переход в команду: переключатель команды меняется, отбор по Антонову включается, подсказка уходит
   await hint.getByRole("button", { name: "Перейти в эту команду" }).click();
-  await expect(reva.locator(phone ? "#team-switcher-m" : "#team-switcher")).toHaveValue(revaTeam);
+  await expectTeam(reva, phone, revaTeam);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
   await expect(reva.locator("#f-author")).toBeVisible();
   await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
@@ -145,15 +146,14 @@ test("weekly человека из дерева подчинённых: подс
   await shot(reva, "focus-switched");
 
   // Тот же переход переключателем в шапке: отбор включается сам, как и по кнопке подсказки
-  const switcher = reva.locator(phone ? "#team-switcher-m" : "#team-switcher");
-  await switcher.selectOption("top");
+  await pickTeam(reva, phone, "top");
   // Ушли в команду, где Антонова нет: отбор снимается, снова подсказка, «Автор» показывает «Все»
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
   await expect(reva.locator("#f-author")).toHaveValue("");
   await reva.goto(`/weekly?author=${antonov}`);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toBeVisible();
   await expect(reva.locator("#f-author")).toHaveValue("");
-  await switcher.selectOption(revaTeam);
+  await pickTeam(reva, phone, revaTeam);
   await expect(reva.getByTestId("weekly-focus-elsewhere")).toHaveCount(0);
   await expect(reva.locator("#f-author")).toHaveValue(antonov as string);
   await reva.close();

@@ -6,6 +6,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { searchKey } from "@/domain/search-key";
 
 export type PickerOption = {
   value: string;
@@ -16,8 +17,8 @@ export type PickerOption = {
   note?: string | null;
 };
 
-/** Строка для поиска: регистр и ё не важны */
-export const searchKey = (text: string) => text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+/** Строка для поиска: регистр и ё не важны. Само правило в `@/domain/search-key`: оно нужно и без React */
+export { searchKey };
 
 /** Подходит ли вариант: каждое слово запроса есть в названии или второй строке */
 export function matchOption(option: PickerOption, query: string): boolean {
@@ -134,6 +135,8 @@ export function SearchPicker({
         aria-autocomplete="list"
         aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
         aria-describedby={hint ? `${id}-hint` : undefined}
+        // Выбранное значение для проверок и автотестов: в поле человек видит подпись, а не код (этап 74)
+        data-value={value}
         placeholder={placeholder}
         value={text}
         autoFocus={autoFocus}

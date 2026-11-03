@@ -5,6 +5,7 @@ import type { IsoDate } from "@/domain/dates";
 import { priorityOf, statusOf } from "@/domain/dictionaries";
 import { isClosed, isDueThisWeek, isMine, isOverdue, isStale, defaultOrder } from "@/domain/rules";
 import { ownerName } from "@/domain/people";
+import { searchKey } from "@/domain/search-key";
 import type { Role, Task } from "@/domain/types";
 
 export type QuickFilter = "mine" | "overdue" | "critical" | "week" | "blocked" | "stale" | "unassigned";
@@ -79,12 +80,6 @@ export function listParamsToQuery(p: ListParams): string {
 export function hasFilters(p: ListParams): boolean {
   return !!(p.q.trim() || p.filters.length || p.owner || p.direction || p.group !== "owner" || p.closed || p.sort);
 }
-
-/**
- * Строка для поиска, как везде в ресурсе (этап 74): регистр, «ё» и лишние пробелы не важны. Без этого «Алёна» не
- * находилась по «алена», а «учёт» по «учет»
- */
-const searchKey = (text: string) => text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
 
 /**
  * Подходит ли задача под поиск: номер целиком или каждое слово запроса где-нибудь в задаче, в любом порядке

@@ -103,7 +103,8 @@ test("владелец собирает повестку, ведёт встре�
   await page.getByRole("button", { name: "Записать решение" }).click();
   const dialog = page.getByRole("dialog", { name: "Решение встречи" });
   await dialog.getByLabel("Что решили").fill("Доступ от СК запрашивает Тарас до пятницы");
-  await dialog.getByLabel("Владелец решения, если есть").selectOption("reva");
+  await dialog.getByLabel("Владелец решения, если есть").fill("рева");
+  await dialog.getByRole("option", { name: /Рева Тарас/ }).click();
   await dialog.getByRole("button", { name: "Записать" }).click();
   await expect(page.getByText("Решение записано").first()).toBeVisible();
   await expect(page.getByText("Доступ от СК запрашивает Тарас до пятницы")).toBeVisible();
@@ -168,7 +169,7 @@ test("лидер без режима управления видит повес�
   await dialog.getByLabel("Текст разбора").fill("- Решили: пилот КАСКО для такси в ноябре\n- @Логинова прислать выгрузку по убыткам до пятницы");
   await dialog.getByRole("button", { name: "Разобрать" }).click();
   await expect(dialog.getByRole("radio", { name: "Решение", checked: true })).toBeVisible();
-  await expect(dialog.getByLabel("Ответственный")).toHaveValue("loginova");
+  await expect(dialog.getByLabel("Ответственный")).toHaveAttribute("data-value", "loginova");
   await dialog.getByRole("button", { name: /Принять выбранное: 2/ }).click();
   await expect(page.getByText("Принято: задач 1, решений 1").first()).toBeVisible();
   await openAgenda(page);
