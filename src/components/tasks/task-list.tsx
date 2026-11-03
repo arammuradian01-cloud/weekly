@@ -251,7 +251,9 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
         <>
           <TaskTable groups={shownGroups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
           {moreTasks > 0 ? (
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-small text-muted">
+            // Плашка выбранных задач висит у нижнего края поверх страницы: без запаса она накрывает «Показать ещё», и
+            // кнопку не нажать ни человеку, ни автотесту. Запас только когда плашка на экране
+            <div className={cn("mt-3 flex flex-wrap items-center gap-3 text-small text-muted", bulk.selected.size > 0 && "mb-28 lg:mb-20")}>
               <Button size="sm" variant="secondary" className="max-sm:min-h-11" onClick={showMore} data-testid="tasks-more">
                 Показать ещё {Math.min(TASKS_PAGE, moreTasks)}
               </Button>
