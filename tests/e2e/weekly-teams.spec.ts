@@ -301,8 +301,8 @@ test("владелец собирает команду поиском из ра�
   const picker = page.getByTestId("team-picker");
   await expect(picker).toBeVisible();
   // Фокус сразу в поиске: команду ищут, а не листают
-  const find = picker.getByRole("combobox");
-  await expect(find).toBeFocused();
+  const pickerSearch = picker.getByRole("combobox");
+  await expect(pickerSearch).toBeFocused();
   // Разделы: свои команды сверху, ниже все команды по дереву, и «Все мои команды» первым пунктом
   await expect(picker.getByText("Ваши команды", { exact: true })).toBeVisible();
   await expect(picker.getByText("Все команды", { exact: true })).toBeVisible();
@@ -310,13 +310,13 @@ test("владелец собирает команду поиском из ра�
   await shot(page, "team-picker");
 
   // Поиск по названию
-  await find.fill("кредитных");
+  await pickerSearch.fill("кредитных");
   await expect(picker.getByText("Найдено", { exact: true })).toBeVisible();
   await expect(picker.getByRole("option")).toHaveCount(1);
   await expect(picker.getByRole("option").first()).toContainText("Управление кредитных продуктов");
 
   // Поиск по фамилии руководителя: находит обе команды Беловой, и вторая строка говорит, кто руководитель
-  await find.fill("белова");
+  await pickerSearch.fill("белова");
   const byLeader = picker.getByRole("option");
   await expect(byLeader).toHaveCount(2);
   await expect(byLeader.first()).toContainText("Руководитель: Белова Ольга");
@@ -324,14 +324,14 @@ test("владелец собирает команду поиском из ра�
   await expect(picker.getByRole("option", { name: /Партнёрский пилот/ })).toBeVisible();
 
   // Ничего не нашлось: экран говорит об этом и предлагает поискать по руководителю
-  await find.fill("абвгде");
+  await pickerSearch.fill("абвгде");
   await expect(picker.getByRole("option")).toHaveCount(0);
   await expect(picker.getByText(/Команды «абвгде» нет/)).toBeVisible();
 
   // Enter выбирает первый найденный: команду Ершова находим по фамилии и выбираем с клавиатуры
-  await find.fill("ершов");
+  await pickerSearch.fill("ершов");
   await expect(picker.getByRole("option")).toHaveCount(1);
-  await find.press("Enter");
+  await pickerSearch.press("Enter");
   await expect(picker).toHaveCount(0);
   await expectTeam(page, isPhone(), money);
   await expect(teamSwitcher(page, isPhone())).toContainText("Департамент Money");
@@ -340,7 +340,7 @@ test("владелец собирает команду поиском из ра�
   await teamSwitcher(page, isPhone()).click();
   await expect(picker.getByText("Недавние", { exact: true })).toBeVisible();
   await expect(picker.locator('[role="option"][data-team="' + money + '"]').first()).toContainText("выбрана сейчас");
-  await find.press("Escape");
+  await pickerSearch.press("Escape");
   await expect(picker).toHaveCount(0);
   // Escape вернул фокус на кнопку: с клавиатуры из окна не выпасть
   await expect(teamSwitcher(page, isPhone())).toBeFocused();
