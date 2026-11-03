@@ -80,11 +80,24 @@ export function hasFilters(p: ListParams): boolean {
   return !!(p.q.trim() || p.filters.length || p.owner || p.direction || p.group !== "owner" || p.closed || p.sort);
 }
 
+/**
+ * Строка для поиска, как везде в ресурсе (этап 74): регистр, «ё» и лишние пробелы не важны. Без этого «Алёна» не
+ * находилась по «алена», а «учёт» по «учет»
+ */
+const searchKey = (text: string) => text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+
+/**
+ * Подходит ли задача под поиск: номер целиком или каждое слово запроса где-нибудь в задаче, в любом порядке
+ * (этап 74). Ищем по названию, по тому, что нужно сделать, по «где сейчас», по ответственному и по цели: цель видна
+ * в строке списка, и по её коду («РТ-1») задачу искали, а поиск её не знал. Слова по отдельности: «отчёт иванов»
+ * находит «Иванов» в ответственном и «отчет» в названии, как ищут командная строка, цели и команды
+ */
 export function matchesText(task: Task, q: string): boolean {
-  if (!q) return true;
-  const query = q.toLowerCase().trim();
-  if (/^\d+$/.test(query)) return String(task.number) === query || task.title.toLowerCase().includes(query);
-  return [task.title, task.outcome, task.where, ownerName(task.owner)].some((s) => s.toLowerCase().includes(query));
+  const query = searchKey(q);
+  if (!query) return true;
+  if (/^\d+$/.test(query)) return String(task.number) === query || searchKey(task.title).includes(query);
+  const hay = searchKey([task.title, task.outcome, task.where, ownerName(task.owner), task.goal?.code ?? "", task.goal?.title ?? ""].join(" "));
+  return query.split(" ").every((w) => hay.includes(w));
 }
 
 export function quickPredicate(key: QuickFilter, me: { slug: string; role: Role }, today: IsoDate): (t: Task) => boolean {
