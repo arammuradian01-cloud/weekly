@@ -8,7 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, Target, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, initials as personInitials, ownerName } from "@/domain/people";
+import { compactName, initials as personInitials, ownerName, positionOf } from "@/domain/people";
 import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -18,9 +18,10 @@ import { cn } from "@/lib/cn";
 import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
 import { GoalTag, GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { Button } from "@/components/ui/button";
 import type { SavedViewDto } from "@/lib/views/service";
-import { QUICK_FILTERS, DEFAULT_PARAMS, applyListParams, hasFilters, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
+import { QUICK_FILTERS, DEFAULT_PARAMS, TASKS_PAGE, applyListParams, hasFilters, limitGroups, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
 import { PrioritySelect, StateSelect, StatusSelect } from "./task-fields";
 import { useOpenTask } from "./task-drawer";
 import { SavedViews } from "./saved-views";
@@ -33,10 +34,11 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const fromUrl = useMemo(() => parseListParams(new URLSearchParams(params.toString())), [params]);
-  // Экран меняется сразу, адрес догоняет: пока router.replace в пути, действует местная копия параметров
-  const [local, setLocal] = useState<ListParams | null>(null);
-  useEffect(() => setLocal(null), [fromUrl]);
-  const p = local ?? fromUrl;
+  // Экран меняется сразу, адрес догоняет: пока router.replace в пути, действует местная копия параметров. Копия
+  // помнит, от какого разбора адреса она сделана, и перестаёт действовать сама, как только адрес стал другим.
+  // Раньше её сбрасывал useEffect: setState в теле эффекта правилами проекта запрещён, значение выводим при отрисовке
+  const [local, setLocal] = useState<{ from: ListParams; next: ListParams } | null>(null);
+  const p = local?.from === fromUrl ? local.next : fromUrl;
   // Текст поиска набирается без ожидания ответа адреса: в адрес уходит с задержкой. Из адреса поле берётся только
   // при внешней навигации (ссылка, вид), а не после своего же ввода, иначе пропадали бы пробелы и буквы
   const [q, setQ] = useState(p.q);
@@ -54,13 +56,13 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       const next = { ...p, ...patch };
       // Архив виден только владельцу в режиме управления: в адрес не пишем у остальных
       if (manageRole !== "OWNER") next.archive = false;
-      setLocal(next);
+      setLocal({ from: fromUrl, next });
       const query = listParamsToQuery(next);
       const task = params.get("task");
       const full = [query, task ? `task=${encodeURIComponent(task)}` : ""].filter(Boolean).join("&");
       router.replace(full ? `${pathname}?${full}` : pathname, { scroll: false });
     },
-    [p, params, pathname, router, manageRole],
+    [p, fromUrl, params, pathname, router, manageRole],
   );
   const onQ = (value: string) => {
     setQ(value);
@@ -106,6 +108,19 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
     return order.map((k) => ({ key: k, title: titleOf(k), tasks: filtered.filter((t) => keyOf(t) === k) })).filter((g) => g.tasks.length > 0);
   }, [filtered, p.group, teamPeople]);
 
+  // Рисуем не всё (этап 74): у владельца в списке бывают тысячи задач, и экран от них встаёт. Предел на разметку, а не
+  // на отбор: счётчики, массовые действия и поиск по-прежнему считают все отобранные задачи
+  const [shownTasks, setShownTasks] = useState(TASKS_PAGE);
+  // Сменили фильтр, поиск или группировку: предел снова с начала, чтобы «Показать ещё» не тянуло прежний хвост
+  const pageKey = `${listParamsToQuery(p)}|${archive ? 1 : 0}`;
+  const [pageBase, setPageBase] = useState(pageKey);
+  const limit = pageBase === pageKey ? shownTasks : TASKS_PAGE;
+  const { shown: shownGroups, more: moreTasks } = useMemo(() => limitGroups(groups, limit), [groups, limit]);
+  const showMore = () => {
+    setPageBase(pageKey);
+    setShownTasks(limit + TASKS_PAGE);
+  };
+
   const toggle = (f: QuickFilter) => setParams({ filters: p.filters.includes(f) ? p.filters.filter((x) => x !== f) : [...p.filters, f] });
   const sortBy = (key: SortKey) => {
     if (p.sort !== key) return setParams({ sort: key, dir: key === "updated" ? "desc" : "asc" });
@@ -125,7 +140,9 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const canBulk = !observer && !limited && (manage || leads.length > 0);
   const bulk = useBulkSelection(filtered);
 
-  const ownerOptions = [{ value: "", label: "Все ответственные" }, ...teamPeople.map((x) => ({ value: x.slug, label: x.fullName })), { value: "all", label: "Все лидеры (общие)" }];
+  // Людей в команде бывают десятки, а в «Все мои команды» и больше (этап 74): ответственного ищут по фамилии, как на
+  // карте сроков с этапа 77. Пустое поле: все ответственные
+  const ownerOptions: { value: string; label: string; hint?: string | null }[] = [...teamPeople.map((x) => ({ value: x.slug, label: x.fullName, hint: positionOf(x.slug) })), { value: "all", label: "Все лидеры (общие)" }];
   if (p.owner && !ownerOptions.some((o) => o.value === p.owner)) ownerOptions.push({ value: p.owner, label: ownerName(p.owner) });
 
   return (
@@ -154,7 +171,16 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               className="sv-control h-11 w-full pl-9 pr-3 text-body"
             />
           </div>
-          <SelectField label="Ответственный" id="filter-owner" value={p.owner ?? ""} onChange={(e) => setParams({ owner: e.target.value || null })} className="sm:w-52" options={ownerOptions} />
+          <SearchPicker
+            label="Ответственный"
+            id="filter-owner"
+            value={p.owner ?? ""}
+            onChange={(v) => setParams({ owner: v || null })}
+            className="sm:w-56"
+            options={ownerOptions}
+            placeholder="Все ответственные"
+            emptyText="Такого человека в команде нет: проверьте написание"
+          />
           <SelectField
             label="Группировать"
             id="group-by"
@@ -222,7 +248,17 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               : "Снимите часть фильтров или поищите по номеру задачи."}
         </EmptyState>
       ) : (
-        <TaskTable groups={groups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
+        <>
+          <TaskTable groups={shownGroups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
+          {moreTasks > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-small text-muted">
+              <Button size="sm" variant="secondary" className="max-sm:min-h-11" onClick={showMore} data-testid="tasks-more">
+                Показать ещё {Math.min(TASKS_PAGE, moreTasks)}
+              </Button>
+              <span aria-live="polite">{`Показано ${filtered.length - moreTasks} из ${filtered.length}`}</span>
+            </div>
+          ) : null}
+        </>
       )}
       {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} /> : null}
     </div>

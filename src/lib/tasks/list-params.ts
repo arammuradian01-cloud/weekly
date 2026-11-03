@@ -87,6 +87,24 @@ export function matchesText(task: Task, q: string): boolean {
   return [task.title, task.outcome, task.where, ownerName(task.owner)].some((s) => s.toLowerCase().includes(query));
 }
 
+/** Сколько задач список рисует сразу, дальше «Показать ещё» (этап 74) */
+export const TASKS_PAGE = 100;
+
+/**
+ * Первые `limit` задач по группам: группа, на которой предел кончился, обрезается, следующие в разметку не попадают.
+ * На реальных данных у владельца в списке бывают тысячи задач, и рисовать их все незачем: экран от этого встаёт.
+ * Возвращает обрезанные группы и сколько задач не показано
+ */
+export function limitGroups<G extends { tasks: Task[] }>(groups: G[], limit: number): { shown: G[]; more: number } {
+  const total = groups.reduce((sum, g) => sum + g.tasks.length, 0);
+  if (total <= limit) return { shown: groups, more: 0 };
+  const before = groups.map((_, i) => groups.slice(0, i).reduce((sum, g) => sum + g.tasks.length, 0));
+  const shown = groups
+    .map((g, i) => ({ ...g, tasks: g.tasks.slice(0, Math.max(0, limit - before[i]!)) }))
+    .filter((g) => g.tasks.length > 0);
+  return { shown, more: total - limit };
+}
+
 export function quickPredicate(key: QuickFilter, me: { slug: string; role: Role }, today: IsoDate): (t: Task) => boolean {
   switch (key) {
     case "mine":

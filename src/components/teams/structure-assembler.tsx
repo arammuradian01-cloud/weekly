@@ -31,6 +31,10 @@ type Dialog = { target: Target; what: Drag };
 
 const people = (n: number) => `${n} ${plural(n, "человек", "человека", "человек")}`;
 
+/** Сколько найденных показываем сразу: остальных находит уточнённый запрос */
+const PEOPLE_SHOWN = 40;
+const UNITS_SHOWN = 20;
+
 /** Подразделения деревом: дети по родителю, люди по подразделению, сколько людей в ветке */
 function useTree(units: PickUnit[], persons: PickPerson[]) {
   return useMemo(() => {
@@ -298,10 +302,17 @@ export function StructureAssembler({
     if (team) ask({ kind: "team", id: team.id, name: team.name }, what);
   };
 
-  // Поиск: люди и подразделения по имени, плоским списком
+  // Поиск: люди и подразделения по имени, плоским списком. Человек находится и по подразделению (этап 74): так ищут
+  // соседние экраны, «Добавить участников» и «Смотреть как», и подпись поля это обещает
   const q = teamSearchKey(query);
-  const foundPeople = q ? persons.filter((p) => teamSearchKey(`${p.fullName} ${p.position ?? ""}`).includes(q)).slice(0, 40) : [];
-  const foundUnits = q ? units.filter((u) => u.kind !== "COMPANY" && teamSearchKey(u.name).includes(q)).slice(0, 20) : [];
+  const unitNameOf = (id: string | null) => (id ? (units.find((u) => u.id === id)?.name ?? "") : "");
+  const matchedPeople = q ? persons.filter((p) => teamSearchKey(`${p.fullName} ${p.position ?? ""} ${unitNameOf(p.unitId)}`).includes(q)) : [];
+  const matchedUnits = q ? units.filter((u) => u.kind !== "COMPANY" && teamSearchKey(u.name).includes(q)) : [];
+  const foundPeople = matchedPeople.slice(0, PEOPLE_SHOWN);
+  const foundUnits = matchedUnits.slice(0, UNITS_SHOWN);
+  // Предел не должен срабатывать молча (этап 74): раньше сорок человек и двадцать подразделений просто обрезались
+  const morePeople = matchedPeople.length - foundPeople.length;
+  const moreUnits = matchedUnits.length - foundUnits.length;
 
   const labelOf = (id: string | number) => {
     const s = String(id);
@@ -339,7 +350,7 @@ export function StructureAssembler({
                 : "Перетащите департамент, подразделение или человека в команду справа либо нажмите «В команду» у строки."}
             </p>
           </div>
-          {persons.length ? <TextInput label="Найти человека или подразделение" id="assemble-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Фамилия, должность или название" /> : null}
+          {persons.length ? <TextInput label="Найти человека или подразделение" id="assemble-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Фамилия, должность, подразделение или название" /> : null}
           {q ? (
             <div className="sv-card bg-surface p-3" data-testid="assemble-found">
               {!foundPeople.length && !foundUnits.length ? <p className="text-small text-muted">Никого не нашли: проверьте написание</p> : null}
@@ -348,6 +359,7 @@ export function StructureAssembler({
                   {foundUnits.map((u) => (
                     <UnitNode key={u.id} unit={u} depth={1} tree={tree} where={where} open={open} toggle={toggle} leaf />
                   ))}
+                  {moreUnits > 0 ? <p className="m-0 text-small text-muted">{`Ещё подразделений ${moreUnits}: уточните запрос`}</p> : null}
                 </div>
               ) : null}
               {foundPeople.length ? (
@@ -355,8 +367,13 @@ export function StructureAssembler({
                   {foundPeople.map((p) => (
                     <PersonChip key={p.slug} person={p} where={where} />
                   ))}
+                  {morePeople > 0 ? <li className="pt-1 text-small text-muted">{`Ещё ${people(morePeople)}: уточните запрос`}</li> : null}
                 </ul>
               ) : null}
+              {/* Сколько нашлось: экранный диктор читает это при вводе */}
+              <span className="sr-only" aria-live="polite">
+                {matchedUnits.length || matchedPeople.length ? `Нашлось: подразделений ${matchedUnits.length}, ${people(matchedPeople.length)}` : "Никого не нашли"}
+              </span>
             </div>
           ) : (
             <div className="flex flex-col gap-3" data-testid="ready-teams">

@@ -1,6 +1,6 @@
 // Этап 25: параметры списка в адресе, сортировка, запрос к словарю поиска, виды и повтор без базы
 import { describe, expect, it } from "vitest";
-import { applyListParams, listParamsToQuery, parseListParams, sortTasks, DEFAULT_PARAMS, hasFilters } from "@/lib/tasks/list-params";
+import { applyListParams, limitGroups, listParamsToQuery, parseListParams, sortTasks, DEFAULT_PARAMS, TASKS_PAGE, hasFilters } from "@/lib/tasks/list-params";
 import { plainSnippet, taskNumberOf, tsQueryOf, MARK_END, MARK_START } from "@/lib/search/common";
 import { normalizeQuery } from "@/lib/views/query";
 import { addMonth, nextRepeatDue } from "@/lib/tasks/repeat";
@@ -66,6 +66,25 @@ describe("параметры списка в адресе", () => {
     expect(applyListParams(tasks, { ...DEFAULT_PARAMS, closed: true }, me, today).map((t) => t.number)).toEqual([1, 2, 3]);
     expect(applyListParams(tasks, { ...DEFAULT_PARAMS, archive: true }, me, today).map((t) => t.number)).toEqual([4]);
     expect(applyListParams(tasks, { ...DEFAULT_PARAMS, q: "2" }, me, today).map((t) => t.number)).toEqual([2]);
+  });
+
+  it("список рисует не всё: предел идёт по группам подряд (этап 74)", () => {
+    const g = (key: string, n: number, from = 1) => ({ key, tasks: Array.from({ length: n }, (_, i) => task({ number: from + i })) });
+    const groups = [g("a", 3), g("b", 4, 10), g("c", 2, 20)];
+    // Предел больше, чем задач: те же группы, ничего не скрыто
+    expect(limitGroups(groups, 100)).toEqual({ shown: groups, more: 0 });
+    expect(limitGroups(groups, 9).more).toBe(0);
+    // Предел кончился в середине второй группы: она обрезана, третья в разметку не попала
+    const cut = limitGroups(groups, 5);
+    expect(cut.shown.map((x) => [x.key, x.tasks.length])).toEqual([["a", 3], ["b", 2]]);
+    expect(cut.more).toBe(4);
+    // Предел ровно по границе группы: пустых групп в разметке нет
+    expect(limitGroups(groups, 3).shown.map((x) => x.key)).toEqual(["a"]);
+    expect(limitGroups(groups, 3).more).toBe(6);
+    // Порядок задач внутри группы не меняется: обрезается хвост
+    expect(cut.shown[1]!.tasks.map((t) => t.number)).toEqual([10, 11]);
+    // Пустой список и предел по умолчанию
+    expect(limitGroups([], TASKS_PAGE)).toEqual({ shown: [], more: 0 });
   });
 
   it("сортировка по колонкам в обе стороны, без колонки прежний порядок", () => {

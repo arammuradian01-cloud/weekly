@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Plus, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, personOf } from "@/domain/people";
+import { PEOPLE, personOf, positionOf } from "@/domain/people";
 import { teamOf, teamPeople } from "@/domain/teams";
 import { dictOptions, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner, PersonSlug, Task } from "@/domain/types";
@@ -14,6 +14,8 @@ import { addLinkAction, assignOwnerAction, editTaskAction, removeLinkAction, set
 import { Modal } from "@/components/ui/overlays";
 import { SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { PeoplePicker } from "@/components/teams/people-picker";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { useTaskPermissions } from "./task-fields";
 
 export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -106,24 +108,31 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
           </>
         ) : null}
         {can.owner ? (
-          <SelectField label="Ответственный" id="te-owner" value={owner} onChange={(e) => setOwner(e.target.value as Owner)} options={[...people, { value: "all", label: "Все лидеры" }]} />
+          // Этап 74: в большой команде ответственного ищут по фамилии. Список в потоке окна, краем окна не обрезан
+          <SearchPicker
+            label="Ответственный"
+            id="te-owner"
+            value={owner}
+            onChange={(v) => setOwner(v as Owner)}
+            options={[...people, { value: "all", label: "Все лидеры" }]}
+            placeholder="Фамилия или имя"
+            emptyText="В команде такого человека нет: проверьте написание"
+            clearable={false}
+            inline
+          />
         ) : null}
         {can.coExecutors ? (
           <fieldset>
             <legend className="mb-2 text-sm font-medium text-ink">Соисполнители</legend>
-            <div className="grid gap-1 sm:grid-cols-2">
-              {coChoices.map((p) => (
-                <label key={p.slug} className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1 text-body text-ink hover:bg-field">
-                  <input
-                    type="checkbox"
-                    checked={co.includes(p.slug)}
-                    onChange={(e) => setCo((prev) => (e.target.checked ? [...prev, p.slug] : prev.filter((s) => s !== p.slug)))}
-                    className="h-4 w-4 accent-blue-700"
-                  />
-                  {label(p.slug)}
-                </label>
-              ))}
-            </div>
+            {/* Этап 74: был флажок на каждого человека пула, без поиска и предела, а пул без снимка команды это вся
+                компания. Тот же выбор нескольких людей с поиском, что в «Добавить участников» (этап 64) */}
+            <PeoplePicker
+              id="te-co"
+              label="Найти человека"
+              people={coChoices.map((p) => ({ slug: p.slug, fullName: label(p.slug), position: positionOf(p.slug), unit: null }))}
+              value={co}
+              onChange={(next) => setCo(next as PersonSlug[])}
+            />
           </fieldset>
         ) : null}
         {error ? (
