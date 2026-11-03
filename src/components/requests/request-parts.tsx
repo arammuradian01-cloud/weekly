@@ -71,7 +71,6 @@ export function PersonSelect({
   onChange,
   exclude,
   only,
-  hint,
   inline = true,
   placeholder = "Фамилия, имя или должность",
 }: {
@@ -82,7 +81,6 @@ export function PersonSelect({
   exclude: PersonSlug;
   /** Только эти люди, например команда задачи */
   only?: PersonSlug[];
-  hint?: string;
   /**
    * Список вариантов в потоке под полем, а не поверх (этап 70): так он не обрезается краем окна с прокруткой.
    * Поле почти всегда в окне, поэтому по умолчанию в потоке; на странице (разбор встречи) список поверх
@@ -103,7 +101,6 @@ export function PersonSelect({
       options={options}
       placeholder={placeholder}
       emptyText={only ? "В команде такого человека нет: проверьте написание" : "Никого не нашли: проверьте написание"}
-      hint={hint}
       inline={inline}
     />
   );

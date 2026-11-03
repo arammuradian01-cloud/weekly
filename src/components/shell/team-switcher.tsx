@@ -65,16 +65,17 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
       note: t.relation === "leader" ? "вы руководитель" : t.relation === "member" ? "вы участник" : null,
     });
     const allRow: Omit<Row, "index"> = { key: "all:*", ...ALL_ROW, depth: 0, note: null };
-    // Сквозной номер пункта: по нему стрелки ходят через все разделы подряд
-    let n = 0;
-    return teamSections(picks, recent, query)
+    const filled = teamSections(picks, recent, query)
       .map((s) => {
         const own = s.items.map((t) => rowOf(s.key, t, s.key === "all"));
         // «Все мои команды» первым пунктом раздела всех команд, а в поиске — если запрос подходит к её названию
         const withAll = s.key === "all" ? [allRow, ...own] : s.key === "found" && matchTeam({ name: allRow.name, leader: null }, query) ? [...own, allRow] : own;
-        return { key: s.key, title: s.title, rows: withAll.map((r) => ({ ...r, index: n++ })) };
+        return { key: s.key, title: s.title, items: withAll };
       })
-      .filter((s) => s.rows.length > 0);
+      .filter((s) => s.items.length > 0);
+    // Сквозной номер пункта: по нему стрелки ходят через все разделы подряд, поэтому у раздела свой сдвиг
+    const offsets = filled.map((_, i) => filled.slice(0, i).reduce((sum, s) => sum + s.items.length, 0));
+    return filled.map((s, i) => ({ key: s.key, title: s.title, rows: s.items.map((r, j) => ({ ...r, index: offsets[i]! + j })) }));
   }, [picks, recent, query]);
   const rows = useMemo(() => sections.flatMap((s) => s.rows), [sections]);
 
