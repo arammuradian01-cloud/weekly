@@ -700,7 +700,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
           {readOnly ? (
             <TextInput label="Ответственный" id={`${id}-owner`} value={t.owner ? personName(t.owner) : "не выбран"} readOnly />
           ) : (
-            <PersonSelect id={`${id}-owner`} label="Ответственный" value={t.owner ?? ""} onChange={(v) => change({ owner: v || null, coExecutors: t.coExecutors.filter((c) => c !== v) }, true)} exclude={"" as PersonSlug} inline={false} />
+            <PersonSelect id={`${id}-owner`} label="Ответственный" value={t.owner ?? ""} onChange={(v) => change({ owner: v || null, coExecutors: t.coExecutors.filter((c) => c !== v) }, true)} exclude={"" as PersonSlug} />
           )}
           {!t.owner ? (
             <p className={cn("text-small", t.on ? "text-danger-ink" : "text-muted")}>
@@ -739,7 +739,6 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
               value=""
               onChange={(v) => v && v !== t.owner && !t.coExecutors.includes(v) && change({ coExecutors: [...t.coExecutors, v] }, true)}
               exclude={(t.owner ?? "") as PersonSlug}
-              inline={false}
             />
           ) : null}
         </div>

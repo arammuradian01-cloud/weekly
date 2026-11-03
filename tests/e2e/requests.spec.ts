@@ -42,8 +42,8 @@ test("просьба из карточки задачи: адресат прин
   await dialog.getByRole("button", { name: "Попросить" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Выберите, кого просите");
   // Этап 74: людей в компании сотни, кого просить ищут по фамилии, а не листают системный список
-  await dialog.getByLabel("Кого просите").fill("логинова");
-  await dialog.getByRole("option", { name: /Логинова Светлана/ }).click();
+  await dialog.getByRole("combobox", { name: "Кого просите" }).fill("логинова");
+  await dialog.getByRole("option", { name: /^Логинова Светлана/ }).click();
   await dialog.getByLabel("Что нужно").fill("Данные по трафику ДВС за сентябрь в таблице");
   await dialog.getByRole("button", { name: "Пятница" }).click();
   await dialog.getByRole("button", { name: "Попросить" }).click();
@@ -101,14 +101,14 @@ test("отклонить можно только с причиной; завис
   await page.goto("/");
   await page.getByRole("button", { name: "Попросить коллегу" }).click();
   const dialog = page.getByRole("dialog", { name: "Попросить коллегу" });
-  await dialog.getByLabel("Кого просите").fill("фатьянов");
-  await dialog.getByRole("option", { name: /Фатьянов Евгений/ }).click();
+  await dialog.getByRole("combobox", { name: "Кого просите" }).fill("фатьянов");
+  await dialog.getByRole("option", { name: /^Фатьянов Евгений/ }).click();
   await dialog.getByLabel("Что нужно").fill("Посмотреть оффер для партнёра");
   await dialog.getByRole("button", { name: "Попросить" }).click();
   await expect(page.getByText(/^Просьба \d+ ушла/)).toBeVisible();
   await page.getByRole("button", { name: "Попросить коллегу" }).click();
-  await dialog.getByLabel("Кого просите").fill("логинова");
-  await dialog.getByRole("option", { name: /Логинова Светлана/ }).click();
+  await dialog.getByRole("combobox", { name: "Кого просите" }).fill("логинова");
+  await dialog.getByRole("option", { name: /^Логинова Светлана/ }).click();
   await dialog.getByLabel("Что нужно").fill("Согласовать текст рассылки");
   await dialog.getByRole("button", { name: "Попросить" }).click();
   await expect(page.getByText(/^Просьба \d+ ушла/).last()).toBeVisible();

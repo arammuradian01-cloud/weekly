@@ -100,8 +100,8 @@ test("этап 61: разбор встречи правилами, weekly для
   await page.getByRole("tab", { name: /^Задачи/ }).click();
   const drafts = page.getByTestId("task-draft");
   await expect(drafts).toHaveCount(3);
-  await expect(drafts.nth(0).getByLabel("Ответственный", { exact: true })).toHaveAttribute("data-value", "loginova");
-  await expect(drafts.nth(1).getByLabel("Ответственный", { exact: true })).toHaveAttribute("data-value", "fatyanov");
+  await expect(drafts.nth(0).getByRole("combobox", { name: "Ответственный", exact: true })).toHaveAttribute("data-value", "loginova");
+  await expect(drafts.nth(1).getByRole("combobox", { name: "Ответственный", exact: true })).toHaveAttribute("data-value", "fatyanov");
   await expect(drafts.nth(2)).toContainText("В тексте встречи «Иванов»");
   await page.getByRole("button", { name: "Создать задачи" }).click();
   await expect(page.getByText(/Выберите ответственного: «созвониться с СК по API»/)).toBeVisible();
@@ -170,8 +170,8 @@ test("этап 61: разбор через Claude (имитация ответа
   await page.getByRole("tab", { name: /^Задачи/ }).click();
   const drafts = page.getByTestId("task-draft");
   await expect(drafts).toHaveCount(2);
-  await expect(drafts.nth(0).getByLabel("Ответственный", { exact: true })).toHaveAttribute("data-value", "reva");
-  await expect(drafts.nth(1).getByLabel("Ответственный", { exact: true })).toHaveAttribute("data-value", "sakhibullina");
+  await expect(drafts.nth(0).getByRole("combobox", { name: "Ответственный", exact: true })).toHaveAttribute("data-value", "reva");
+  await expect(drafts.nth(1).getByRole("combobox", { name: "Ответственный", exact: true })).toHaveAttribute("data-value", "sakhibullina");
   await expect(drafts.nth(1)).toContainText("Павел А.");
   await shot(page, "claude-tasks");
   await page.getByRole("button", { name: "Создать задачи" }).click();

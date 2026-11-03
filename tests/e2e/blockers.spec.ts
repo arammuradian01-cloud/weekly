@@ -42,8 +42,8 @@ test("блокировка ждёт человека, затем задачу; �
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Выберите, кого ждёт задача");
   // Этап 74: кого ждёт задача, ищут по фамилии
-  await dialog.getByLabel("Кого ждёт").fill("логинова");
-  await dialog.getByRole("option", { name: /Логинова Светлана/ }).click();
+  await dialog.getByRole("combobox", { name: "Кого ждёт" }).fill("логинова");
+  await dialog.getByRole("option", { name: /^Логинова Светлана/ }).click();
   await dialog.getByLabel("Что нужно от человека").fill("Согласовать данные по убыткам");
   await dialog.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText(`Задача ${number} заблокирована, просьба ушла`)).toBeVisible();
@@ -85,8 +85,8 @@ test("ответственный передаёт задачу коллеге с
   await page.goto(`/tasks/${number}`);
   await page.getByRole("button", { name: "Передать" }).click();
   const dialog = page.getByRole("dialog", { name: `Передать задачу ${number}` });
-  await dialog.getByLabel("Кому передать").fill("фатьянов");
-  await dialog.getByRole("option", { name: /Фатьянов Евгений/ }).click();
+  await dialog.getByRole("combobox", { name: "Кому передать" }).fill("фатьянов");
+  await dialog.getByRole("option", { name: /^Фатьянов Евгений/ }).click();
   await dialog.getByRole("button", { name: "Передать" }).click();
   await expect(dialog.getByRole("alert")).toHaveText("Напишите, почему передаёте");
   await dialog.getByLabel("Почему передаёте").fill("Это зона КАСКО");

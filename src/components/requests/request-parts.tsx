@@ -71,7 +71,6 @@ export function PersonSelect({
   onChange,
   exclude,
   only,
-  inline = true,
   placeholder = "Фамилия, имя или должность",
 }: {
   id: string;
@@ -81,11 +80,6 @@ export function PersonSelect({
   exclude: PersonSlug;
   /** Только эти люди, например команда задачи */
   only?: PersonSlug[];
-  /**
-   * Список вариантов в потоке под полем, а не поверх (этап 70): так он не обрезается краем окна с прокруткой.
-   * Поле почти всегда в окне, поэтому по умолчанию в потоке; на странице (разбор встречи) список поверх
-   */
-  inline?: boolean;
   placeholder?: string;
 }) {
   const people = allPeople()
@@ -101,7 +95,6 @@ export function PersonSelect({
       options={options}
       placeholder={placeholder}
       emptyText={only ? "В команде такого человека нет: проверьте написание" : "Никого не нашли: проверьте написание"}
-      inline={inline}
     />
   );
 }

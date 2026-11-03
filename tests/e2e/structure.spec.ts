@@ -69,17 +69,19 @@ test("владелец загружает структуру, команды п�
   const count = await aboveList.getByRole("option").count();
   expect(count).toBeGreaterThanOrEqual(3);
   await expect(aboveList.getByRole("option").nth(count - 1)).toBeInViewport({ ratio: 1 });
-  await expect(aboveList.getByRole("option", { name: /Отдел развития продуктов/ })).toContainText("Отдел в «Управление развития продуктов»");
+  await expect(aboveList.getByRole("option", { name: /^Отдел развития продуктов/ })).toContainText("Отдел в «Управление развития продуктов»");
   await shot(page, "unit-above");
   // Поиск по названию отбирает, а чужое слово даёт понятный отказ
   await above.fill("отдел развития");
   await expect(aboveList.getByRole("option")).toHaveCount(1);
   await above.fill("абвгде");
   await expect(unitModal.getByText("Такого подразделения нет: проверьте написание").first()).toBeVisible();
-  // Поле не бывает пустым: Escape закрывает список и возвращает прежний выбор, а не стирает подразделение
+  // Поле не бывает пустым: Escape закрывает список, выбор остаётся прежним, а не стирается набранным текстом.
+  // Второй раз Escape не нажимаем: в окне он закрывает само окно (этап 55, keepOpenOnListEscape)
   await above.press("Escape");
-  await above.press("Escape");
+  await expect(aboveList).toHaveCount(0);
   await expect(above).toHaveAttribute("data-value", /.+/);
+  await expect(above).not.toHaveValue("абвгде");
   await unitModal.getByRole("button", { name: "Отмена" }).click();
   await expect(unitModal).toHaveCount(0);
 
@@ -90,7 +92,7 @@ test("владелец загружает структуру, команды п�
   const unitField = personModal.getByRole("combobox", { name: "Подразделение", exact: true });
   await expect(unitField).toHaveValue("Сектор автострахования");
   await unitField.fill("управление развития");
-  await personModal.getByRole("option", { name: /Управление развития продуктов/ }).click();
+  await personModal.getByRole("option", { name: /^Управление развития продуктов/ }).click();
   // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
   await expect(unitField).toHaveValue("Управление развития продуктов");
   await expect(unitField).toHaveAttribute("data-value", /.+/);

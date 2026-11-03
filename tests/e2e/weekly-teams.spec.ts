@@ -306,7 +306,8 @@ test("владелец собирает команду поиском из ра�
   // Разделы: свои команды сверху, ниже все команды по дереву, и «Все мои команды» первым пунктом
   await expect(picker.getByText("Ваши команды", { exact: true })).toBeVisible();
   await expect(picker.getByText("Все команды", { exact: true })).toBeVisible();
-  await expect(picker.getByRole("option").first()).toContainText("Все мои команды");
+  // «Все мои команды» первым пунктом раздела всех команд, а не первым пунктом окна: сверху свои команды
+  await expect(picker.locator('[role="option"][data-team="*"]')).toHaveCount(1);
   await shot(page, "team-picker");
 
   // Поиск по названию
@@ -320,8 +321,8 @@ test("владелец собирает команду поиском из ра�
   const byLeader = picker.getByRole("option");
   await expect(byLeader).toHaveCount(2);
   await expect(byLeader.first()).toContainText("Руководитель: Белова Ольга");
-  await expect(picker.getByRole("option", { name: /Департамент партнёрств/ })).toBeVisible();
-  await expect(picker.getByRole("option", { name: /Партнёрский пилот/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /^Департамент партнёрств/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /^Партнёрский пилот/ })).toBeVisible();
 
   // Ничего не нашлось: экран говорит об этом и предлагает поискать по руководителю
   await pickerSearch.fill("абвгде");
