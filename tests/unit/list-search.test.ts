@@ -71,18 +71,23 @@ describe("параметры списка в адресе", () => {
   it("список рисует не всё: предел идёт по группам подряд (этап 74)", () => {
     const g = (key: string, n: number, from = 1) => ({ key, tasks: Array.from({ length: n }, (_, i) => task({ number: from + i })) });
     const groups = [g("a", 3), g("b", 4, 10), g("c", 2, 20)];
-    // Предел больше, чем задач: те же группы, ничего не скрыто
-    expect(limitGroups(groups, 100)).toEqual({ shown: groups, more: 0 });
+    // Предел больше, чем задач: ничего не скрыто, и группа знает свой полный размер
+    const all = limitGroups(groups, 100);
+    expect(all.more).toBe(0);
+    expect(all.shown.map((x) => [x.key, x.tasks.length, x.total])).toEqual([["a", 3, 3], ["b", 4, 4], ["c", 2, 2]]);
     expect(limitGroups(groups, 9).more).toBe(0);
     // Предел кончился в середине второй группы: она обрезана, третья в разметку не попала
     const cut = limitGroups(groups, 5);
     expect(cut.shown.map((x) => [x.key, x.tasks.length])).toEqual([["a", 3], ["b", 2]]);
     expect(cut.more).toBe(4);
+    // Обрезанная группа помнит полный размер и все свои номера: по ним шапка печатает счётчик и отмечает «Выбрать
+    // все». Без этого счётчик врёт, а галочка молча берёт только нарисованные
+    expect(cut.shown[1]!.total).toBe(4);
+    expect(cut.shown[1]!.allNumbers).toEqual([10, 11, 12, 13]);
+    expect(cut.shown[1]!.tasks.map((t) => t.number)).toEqual([10, 11]);
     // Предел ровно по границе группы: пустых групп в разметке нет
     expect(limitGroups(groups, 3).shown.map((x) => x.key)).toEqual(["a"]);
     expect(limitGroups(groups, 3).more).toBe(6);
-    // Порядок задач внутри группы не меняется: обрезается хвост
-    expect(cut.shown[1]!.tasks.map((t) => t.number)).toEqual([10, 11]);
     // Пустой список и предел по умолчанию
     expect(limitGroups([], TASKS_PAGE)).toEqual({ shown: [], more: 0 });
   });

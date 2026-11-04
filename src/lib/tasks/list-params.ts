@@ -91,15 +91,23 @@ export function matchesText(task: Task, q: string): boolean {
 export const TASKS_PAGE = 100;
 
 /**
+ * Группа в разметке: нарисованные задачи, сколько их в группе на самом деле и номера всех задач группы.
+ * Шапка группы печатает `total`, а не длину нарисованного, и галочка «Выбрать все» отмечает `allNumbers`: иначе
+ * у обрезанной группы счётчик врёт, а «Выбрать все» молча берёт только нарисованные
+ */
+export type LimitedGroup<G> = G & { tasks: Task[]; total: number; allNumbers: number[] };
+
+/**
  * Первые `limit` задач по группам: группа, на которой предел кончился, обрезается, следующие в разметку не попадают.
  * На реальных данных у владельца в списке бывают тысячи задач, и рисовать их все незачем: экран от этого встаёт.
- * Возвращает обрезанные группы и сколько задач не показано
+ * Возвращает обрезанные группы (каждая помнит свой полный размер и все свои номера) и сколько задач не показано
  */
-export function limitGroups<G extends { tasks: Task[] }>(groups: G[], limit: number): { shown: G[]; more: number } {
+export function limitGroups<G extends { tasks: Task[] }>(groups: G[], limit: number): { shown: LimitedGroup<G>[]; more: number } {
+  const full = groups.map((g) => ({ ...g, total: g.tasks.length, allNumbers: g.tasks.map((t) => t.number) }));
   const total = groups.reduce((sum, g) => sum + g.tasks.length, 0);
-  if (total <= limit) return { shown: groups, more: 0 };
+  if (total <= limit) return { shown: full, more: 0 };
   const before = groups.map((_, i) => groups.slice(0, i).reduce((sum, g) => sum + g.tasks.length, 0));
-  const shown = groups
+  const shown = full
     .map((g, i) => ({ ...g, tasks: g.tasks.slice(0, Math.max(0, limit - before[i]!)) }))
     .filter((g) => g.tasks.length > 0);
   return { shown, more: total - limit };

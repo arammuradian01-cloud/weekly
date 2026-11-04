@@ -153,7 +153,7 @@ test("список задач рисует первые сто с «Показа
   await page.goto("/tasks?q=%D0%94%D0%BB%D0%B8%D0%BD%D0%BD%D1%8B%D0%B9%20%D1%81%D0%BF%D0%B8%D1%81%D0%BE%D0%BA&group=none");
 
   // Экран говорит, сколько отобрано всего, и сколько из них показано
-  await expect(page.getByText("Показано 120 по фильтрам")).toBeVisible();
+  await expect(page.getByText("Отобрано 120 по фильтрам")).toBeVisible();
   await expect(page.getByText("Показано 100 из 120")).toBeVisible();
   const rows = page.getByRole("row").filter({ hasText: /Длинный список задача/ });
   const cards = page.getByRole("button").filter({ hasText: /Длинный список задача/ });
@@ -179,16 +179,41 @@ test("список задач рисует первые сто с «Показа
   await owner.fill("рева");
   await page.getByRole("option", { name: /^Рева Тарас/ }).click();
   await expect(page).toHaveURL(/owner=reva/);
-  await expect(page.getByText("Показано 120 по фильтрам")).toBeVisible();
+  await expect(page.getByText("Отобрано 120 по фильтрам")).toBeVisible();
   await expect(page.getByText("Показано 100 из 120")).toBeVisible();
+  // Печать поверх выбранного фильтр не сбрасывает: пустое значение поля приходит, пока человек ищет нового человека
+  await owner.fill("мура");
+  await expect(page).toHaveURL(/owner=reva/);
+  await expect(page.getByText("Отобрано 120 по фильтрам")).toBeVisible();
+  // Уход из поля без выбора оставляет прежний фильтр, а «Все ответственные» его снимает
+  await owner.press("Escape");
+  await expect(page).toHaveURL(/owner=reva/);
+  await owner.fill("все ответственные");
+  await page.getByRole("option", { name: /^Все ответственные/ }).click();
+  await expect(page).not.toHaveURL(/owner=/);
 
-  // Выбор галочками не теряется, когда предел подрастает: отмечаем задачу, дорисовываем остальные, отметка на месте
+  // Выбор галочками не теряется, когда предел подрастает: отмечаем задачу, дорисовываем остальные, отметка на месте.
+  // Проверяем на обеих ширинах: на телефоне плашка выбора висит выше, и запас под неё другой
+  const bar = page.getByRole("region", { name: "Выбранные задачи" });
+  const first = isMobile
+    ? page.getByRole("listitem").filter({ hasText: "Длинный список задача 001" }).getByRole("checkbox")
+    : page.getByRole("row").filter({ hasText: "Длинный список задача 001" }).getByRole("checkbox");
+  await first.check();
+  await expect(bar).toContainText("Выбрано: 1");
+  await page.getByTestId("tasks-more").click();
+  await expect.poll(drawn).toBe(120);
+  await expect(bar).toContainText("Выбрано: 1");
+
+  // Группировка по умолчанию (по ответственному): шапка группы печатает полный размер группы, а не нарисованное,
+  // и «Выбрать все» отмечает всю группу. Иначе человек просит «все задачи Ревы», получает сто и об этом не узнаёт
+  await page.goto("/tasks?q=%D0%94%D0%BB%D0%B8%D0%BD%D0%BD%D1%8B%D0%B9%20%D1%81%D0%BF%D0%B8%D1%81%D0%BE%D0%BA");
+  await expect(page.getByText("Показано 100 из 120")).toBeVisible();
+  const group = isMobile ? page.getByRole("heading", { name: /Рева Тарас/ }) : page.getByRole("columnheader", { name: /Рева Тарас/ });
+  await expect(group).toContainText("120");
   if (!isMobile) {
-    const bar = page.getByRole("region", { name: "Выбранные задачи" });
-    await page.getByRole("row").filter({ hasText: "Длинный список задача 001" }).getByRole("checkbox").check();
-    await expect(bar).toContainText("Выбрано: 1");
-    await page.getByTestId("tasks-more").click();
-    await expect.poll(drawn).toBe(120);
-    await expect(bar).toContainText("Выбрано: 1");
+    await page.getByRole("checkbox", { name: "Выбрать все: Рева Тарас" }).check();
+    await expect(bar).toContainText("Выбрано: 120");
+    // И плашка не молчит о том, что отмечено не только нарисованное
+    await expect(bar).toContainText("из них 20 не на экране");
   }
 });

@@ -305,7 +305,10 @@ export function StructureAssembler({
   // Поиск: люди и подразделения по имени, плоским списком. Человек находится и по подразделению (этап 74): так ищут
   // соседние экраны, «Добавить участников» и «Смотреть как», и подпись поля это обещает
   const q = teamSearchKey(query);
-  const unitNameOf = (id: string | null) => (id ? (units.find((u) => u.id === id)?.name ?? "") : "");
+  // Название подразделения по номеру картой, а не поиском по массиву: иначе на паре тысяч людей и паре сотен
+  // подразделений это сотни тысяч сравнений строк на каждую набранную букву
+  const unitNameById = useMemo(() => new Map(units.map((u) => [u.id, u.name])), [units]);
+  const unitNameOf = (id: string | null) => (id ? (unitNameById.get(id) ?? "") : "");
   const matchedPeople = q ? persons.filter((p) => teamSearchKey(`${p.fullName} ${p.position ?? ""} ${unitNameOf(p.unitId)}`).includes(q)) : [];
   const matchedUnits = q ? units.filter((u) => u.kind !== "COMPANY" && teamSearchKey(u.name).includes(q)) : [];
   const foundPeople = matchedPeople.slice(0, PEOPLE_SHOWN);

@@ -52,7 +52,19 @@ export function useBulkSelection(visible: Task[]): Selection {
 
 type Kind = "status" | "owner" | "due" | "priority";
 
-export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Task[] }) {
+export function BulkBar({
+  selection,
+  tasks,
+  shown,
+}: {
+  selection: Selection;
+  tasks: Task[];
+  /**
+   * Номера задач, которые сейчас нарисованы (этап 74). Отметка с задачи за пределом не снимается, и действие
+   * применится к ней тоже, поэтому плашка обязана сказать, что отмечено не только то, что видно
+   */
+  shown?: number[];
+}) {
   const { data, applyTasks, notify, manage, leads, teamPeople } = usePrototype();
   const router = useRouter();
   const [kind, setKind] = useState<Kind | null>(null);
@@ -66,6 +78,8 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<{ done: number; failed: { number: number; error: string }[] } | null>(null);
   const count = selection.selected.size;
+  // Сколько отмеченных задач не на экране: предел разметки или группа ниже предела
+  const offScreen = shown ? [...selection.selected].filter((n) => !shown.includes(n)).length : 0;
   if (!count && !report) return null;
   const numbers = [...selection.selected];
   const picked = tasks.filter((t) => selection.selected.has(t.number));
@@ -118,7 +132,10 @@ export function BulkBar({ selection, tasks }: { selection: Selection; tasks: Tas
       {count ? (
         <div role="region" aria-label="Выбранные задачи" className="fixed inset-x-0 bottom-16 z-20 px-3 lg:bottom-4 lg:left-[248px]">
           <div className="mx-auto flex max-w-page flex-wrap items-center gap-2 rounded-xl bg-navy px-4 py-2.5 text-small text-white shadow-modal">
-            <span className="mr-1 font-semibold">Выбрано: {count}</span>
+            <span className="mr-1 font-semibold">
+              Выбрано: {count}
+              {offScreen > 0 ? `, из них ${offScreen} не на экране` : ""}
+            </span>
             <Button size="sm" variant="secondary" onClick={() => openKind("status")}>Статус</Button>
             {manage || leads.length ? <Button size="sm" variant="secondary" onClick={() => openKind("owner")}>Ответственный</Button> : null}
             <Button size="sm" variant="secondary" onClick={() => openKind("due")}>Срок</Button>

@@ -28,6 +28,9 @@ import { SavedViews } from "./saved-views";
 import { BulkBar, useBulkSelection } from "./bulk-actions";
 import { checklistProgress } from "./task-checklist";
 
+/** «Все ответственные» в поле с поиском: пустого значения у поля нет, оно приходит, пока человек печатает (этап 74) */
+const ANY_OWNER = "__any";
+
 export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const { data, me, manageRole, manage, leads, teamPeople, observer, limited } = usePrototype();
   const params = useSearchParams();
@@ -116,6 +119,8 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const [pageBase, setPageBase] = useState(pageKey);
   const limit = pageBase === pageKey ? shownTasks : TASKS_PAGE;
   const { shown: shownGroups, more: moreTasks } = useMemo(() => limitGroups(groups, limit), [groups, limit]);
+  // Что сейчас в разметке: по нему плашка выбора говорит, сколько отмеченного не на экране
+  const shownNumbers = useMemo(() => shownGroups.flatMap((g) => g.tasks.map((t) => t.number)), [shownGroups]);
   const showMore = () => {
     setPageBase(pageKey);
     setShownTasks(limit + TASKS_PAGE);
@@ -141,8 +146,13 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const bulk = useBulkSelection(filtered);
 
   // Людей в команде бывают десятки, а в «Все мои команды» и больше (этап 74): ответственного ищут по фамилии, как на
-  // карте сроков с этапа 77. Пустое поле: все ответственные
-  const ownerOptions: { value: string; label: string; hint?: string | null }[] = [...teamPeople.map((x) => ({ value: x.slug, label: x.fullName, hint: positionOf(x.slug) })), { value: "all", label: "Все лидеры (общие)" }];
+  // карте сроков с этапа 77. «Все ответственные» отдельным вариантом с сигнальным значением: иначе фильтр нечем
+  // сбросить, а пустое значение приходит, пока человек печатает поверх выбранного
+  const ownerOptions: { value: string; label: string; hint?: string | null }[] = [
+    { value: ANY_OWNER, label: "Все ответственные" },
+    ...teamPeople.map((x) => ({ value: x.slug, label: x.fullName, hint: positionOf(x.slug) })),
+    { value: "all", label: "Все лидеры (общие)" },
+  ];
   if (p.owner && !ownerOptions.some((o) => o.value === p.owner)) ownerOptions.push({ value: p.owner, label: ownerName(p.owner) });
 
   return (
@@ -174,11 +184,15 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
           <SearchPicker
             label="Ответственный"
             id="filter-owner"
-            value={p.owner ?? ""}
-            onChange={(v) => setParams({ owner: v || null })}
+            value={p.owner ?? ANY_OWNER}
+            // Пустое значение приходит, пока человек печатает: выбор не сбрасывается, пока не выбран новый вариант
+            onChange={(v) => {
+              if (!v) return;
+              setParams({ owner: v === ANY_OWNER ? null : v });
+            }}
             className="sm:w-56"
             options={ownerOptions}
-            placeholder="Все ответственные"
+            placeholder="Фамилия или имя"
             emptyText="Такого человека в команде нет: проверьте написание"
           />
           <SelectField
@@ -200,7 +214,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-small text-muted">
         <p aria-live="polite">
-          Показано {filtered.length} {active ? "по фильтрам" : archive ? "в архиве" : "открытых"}
+          Отобрано {filtered.length} {active ? "по фильтрам" : archive ? "в архиве" : "открытых"}
           {active ? (
             <button type="button" onClick={reset} className="ml-3 inline-flex items-center gap-1 font-medium text-blue-700 hover:underline">
               <X className="h-3.5 w-3.5" aria-hidden="true" />
@@ -248,21 +262,22 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               : "Снимите часть фильтров или поищите по номеру задачи."}
         </EmptyState>
       ) : (
-        <>
+        // Плашка выбранных задач висит у нижнего края поверх страницы, и запаса под неё на странице нет. Без запаса она
+        // накрывает хвост списка: последние карточки на телефоне и кнопку «Показать ещё», до которых тогда не
+        // дотянуться ни человеку, ни автотесту. Запас на всём списке и только когда плашка на экране
+        <div className={cn(bulk.selected.size > 0 && "pb-28 lg:pb-20")}>
           <TaskTable groups={shownGroups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
           {moreTasks > 0 ? (
-            // Плашка выбранных задач висит у нижнего края поверх страницы: без запаса она накрывает «Показать ещё», и
-            // кнопку не нажать ни человеку, ни автотесту. Запас только когда плашка на экране
-            <div className={cn("mt-3 flex flex-wrap items-center gap-3 text-small text-muted", bulk.selected.size > 0 && "mb-28 lg:mb-20")}>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-small text-muted">
               <Button size="sm" variant="secondary" className="max-sm:min-h-11" onClick={showMore} data-testid="tasks-more">
                 Показать ещё {Math.min(TASKS_PAGE, moreTasks)}
               </Button>
               <span aria-live="polite">{`Показано ${filtered.length - moreTasks} из ${filtered.length}`}</span>
             </div>
           ) : null}
-        </>
+        </div>
       )}
-      {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} /> : null}
+      {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} shown={shownNumbers} /> : null}
     </div>
   );
 }
@@ -323,7 +338,11 @@ export function TaskTable({
   onSort,
   selection,
 }: {
-  groups: { key: string; title: string; tasks: Task[] }[];
+  /**
+   * Группы для разметки. total и allNumbers у обрезанной группы отличаются от нарисованного: счётчик шапки печатает
+   * total, а «Выбрать все» отмечает allNumbers. Без них шапка врёт, а галочка молча берёт только нарисованные
+   */
+  groups: { key: string; title: string; tasks: Task[]; total?: number; allNumbers?: number[] }[];
   showOwner?: boolean;
   /** Своё действие по щелчку на задаче: образец компонентов не открывает карточку */
   onOpen?: (number: number) => void;
@@ -375,7 +394,8 @@ export function TaskTable({
           </tr>
         </thead>
         {groups.map((g) => {
-          const numbers = g.tasks.map((t) => t.number);
+          // Все номера группы, а не только нарисованные: человек просит «все задачи Ревы», а не «те, что на экране»
+          const numbers = g.allNumbers ?? g.tasks.map((t) => t.number);
           const allOn = selection ? numbers.every((n) => selection.selected.has(n)) : false;
           return (
             <tbody key={g.key}>
@@ -388,7 +408,7 @@ export function TaskTable({
                   ) : null}
                   <th scope="colgroup" colSpan={cols - (selection ? 1 : 0)} className="!static !h-8 !border-b !bg-canvas !px-3 !text-caption">
                     {g.title}
-                    <span className="sv-counter sv-counter--neutral ml-1.5">{g.tasks.length}</span>
+                    <span className="sv-counter sv-counter--neutral ml-1.5">{g.total ?? g.tasks.length}</span>
                   </th>
                 </tr>
               ) : null}
@@ -467,7 +487,7 @@ export function TaskTable({
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
               <h2 className="border-b border-line bg-canvas px-4 py-2 text-caption font-semibold text-text-secondary">
-                {g.title} <span className="sv-counter sv-counter--neutral ml-1">{g.tasks.length}</span>
+                {g.title} <span className="sv-counter sv-counter--neutral ml-1">{g.total ?? g.tasks.length}</span>
               </h2>
             ) : null}
             <ul className="divide-y divide-line">
