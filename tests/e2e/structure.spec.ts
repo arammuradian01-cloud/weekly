@@ -65,10 +65,11 @@ test("владелец загружает структуру, команды п�
   await expect(above).toHaveAttribute("data-value", /.+/);
   await above.click();
   await expect(above).toHaveAttribute("aria-expanded", "true");
-  // Весь список виден целиком: раньше всплывающий список обрезался прокруткой окна (этап 70 завёл список в потоке)
+  // Список здесь всплывающий, а не в потоке: под полем кнопки, и список в потоке сдвигал бы их на нажатии (см. inline
+  // в search-picker.tsx). Обратная сторона: краем окна с прокруткой он может обрезаться, поэтому «виден целиком»
+  // проверяем на поле с `inline` ниже, а здесь — что список открылся и ищет
   const count = await aboveList.getByRole("option").count();
   expect(count).toBeGreaterThanOrEqual(3);
-  await expect(aboveList.getByRole("option").nth(count - 1)).toBeInViewport({ ratio: 1 });
   await expect(aboveList.getByRole("option", { name: /^Отдел развития продуктов/ })).toContainText("Отдел в «Управление развития продуктов»");
   await shot(page, "unit-above");
   // Поиск по названию отбирает, а чужое слово даёт понятный отказ
@@ -95,7 +96,14 @@ test("владелец загружает структуру, команды п�
   await page.getByRole("button", { name: "Изменить: Антонов Дмитрий" }).click();
   const personModal = page.getByRole("dialog", { name: "Антонов Дмитрий" });
   const unitField = personModal.getByRole("combobox", { name: "Подразделение", exact: true });
+  const unitList = personModal.getByRole("listbox", { name: "Подразделение" });
   await expect(unitField).toHaveValue("Сектор автострахования");
+  // У этого поля список в потоке (`inline`): он не обрезается краем окна с прокруткой, и последний вариант виден
+  // целиком. Это и есть то, зачем этап 70 завёл `inline`
+  await unitField.click();
+  const units = await unitList.getByRole("option").count();
+  expect(units).toBeGreaterThanOrEqual(3);
+  await expect(unitList.getByRole("option").nth(units - 1)).toBeInViewport({ ratio: 1 });
   await unitField.fill("управление развития");
   await personModal.getByRole("option", { name: /^Управление развития продуктов/ }).click();
   // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
