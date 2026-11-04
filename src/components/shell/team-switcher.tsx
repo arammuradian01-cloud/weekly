@@ -158,6 +158,9 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
             data-testid={id}
             data-team={team.id ?? ""}
             aria-haspopup="dialog"
+            // Пока команда переключается, кнопка заперта: иначе на медленной сети человек выберет вторую команду,
+            // уйдут два setTeamAction, и какая окажется в cookie, зависит от порядка ответов
+            disabled={pending}
             aria-busy={pending}
             aria-label={`Команда: ${name}. Сменить команду`}
             className={cn("sv-team-switch__trigger max-w-full", open && "is-open", pending && "opacity-60")}

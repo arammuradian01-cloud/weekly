@@ -82,6 +82,11 @@ test("владелец загружает структуру, команды п�
   await expect(aboveList).toHaveCount(0);
   await expect(above).toHaveAttribute("data-value", /.+/);
   await expect(above).not.toHaveValue("абвгде");
+  // Кнопка под полем нажимается с раскрытым списком. Список здесь всплывающий, а не в потоке, и разметку не двигает:
+  // в потоке нажатие не дошло бы, потому что на mousedown поле теряет фокус, список свёртывается и кнопки прыгают.
+  // Нарочно не закрываем список перед нажатием: иначе правило про inline стеречь некому (см. search-picker.tsx)
+  await above.click();
+  await expect(aboveList).toBeVisible();
   await unitModal.getByRole("button", { name: "Отмена" }).click();
   await expect(unitModal).toHaveCount(0);
 
@@ -96,6 +101,11 @@ test("владелец загружает структуру, команды п�
   // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
   await expect(unitField).toHaveValue("Управление развития продуктов");
   await expect(unitField).toHaveAttribute("data-value", /.+/);
+  // И здесь кнопка под раскрытым списком последнего поля формы: раскрываем «Функциональный руководитель» и жмём
+  // «Отмена», не закрывая список
+  const functional = personModal.getByRole("combobox", { name: "Функциональный руководитель" });
+  await functional.click();
+  await expect(personModal.getByRole("listbox", { name: "Функциональный руководитель" })).toBeVisible();
   await personModal.getByRole("button", { name: "Отмена" }).click();
   await expect(personModal).toHaveCount(0);
 

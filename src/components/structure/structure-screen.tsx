@@ -287,7 +287,9 @@ function PersonOrgModal({
         />
         {/* Людей в компании сотни: выбор с поиском (этап 53). Пусто: не менять */}
         <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" inline />
-        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" inline />
+        {/* Последнее поле перед кнопками: списку в потоке здесь нельзя (см. inline в search-picker.tsx) — он сдвинул
+            бы кнопки, и нажатие на «Сохранить» с раскрытым списком не дошло бы */}
+        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Отмена
@@ -330,7 +332,8 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         <TextInput label="Название" id="un-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
         <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" inline />
         {!head ? <TextInput label="Пометка о руководителе" id="un-note" value={headNote} onChange={(e) => setHeadNote(e.target.value)} placeholder="Например, роль делят CPO, PMM и CRM Lead" /> : null}
-        {/* Поиск, как и у подразделения человека (этап 74): одноимённые отделы различает вторая строка */}
+        {/* Поиск, как и у подразделения человека (этап 74): одноимённые отделы различает вторая строка. Список здесь
+            всплывающий, а не в потоке: это последнее поле перед кнопками (см. inline в search-picker.tsx) */}
         <SearchPicker
           label="Подразделение выше"
           id="un-parent"
@@ -340,7 +343,6 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
           placeholder="Название подразделения или руководитель"
           emptyText="Такого подразделения нет: проверьте написание"
           clearable={false}
-          inline
         />
         <div className="flex flex-wrap justify-between gap-2">
           <Button
