@@ -208,7 +208,9 @@ test("список задач рисует первые сто с «Показа
   // и «Выбрать все» отмечает всю группу. Иначе человек просит «все задачи Ревы», получает сто и об этом не узнаёт
   await page.goto("/tasks?q=%D0%94%D0%BB%D0%B8%D0%BD%D0%BD%D1%8B%D0%B9%20%D1%81%D0%BF%D0%B8%D1%81%D0%BE%D0%BA");
   await expect(page.getByText("Показано 100 из 120")).toBeVisible();
-  const group = isMobile ? page.getByRole("heading", { name: /Рева Тарас/ }) : page.getByRole("columnheader", { name: /Рева Тарас/ });
+  // Шапка группы: на ноутбуке это строка таблицы, а не columnheader — роль у <th scope="colgroup"> в строке, где
+  // рядом <td> с галочкой, браузер считает иначе. Берём саму строку по классу, он для этого и есть
+  const group = isMobile ? page.getByRole("heading", { name: /Рева Тарас/ }) : page.locator("tr.sv-table__group").filter({ hasText: "Рева Тарас" });
   await expect(group).toContainText("120");
   if (!isMobile) {
     await page.getByRole("checkbox", { name: "Выбрать все: Рева Тарас" }).check();
