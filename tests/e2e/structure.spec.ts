@@ -65,9 +65,8 @@ test("владелец загружает структуру, команды п�
   await expect(above).toHaveAttribute("data-value", /.+/);
   await above.click();
   await expect(above).toHaveAttribute("aria-expanded", "true");
-  // Список здесь всплывающий, а не в потоке: под полем кнопки, и список в потоке сдвигал бы их на нажатии (см. inline
-  // в search-picker.tsx). Обратная сторона: краем окна с прокруткой он может обрезаться, поэтому «виден целиком»
-  // проверяем на поле с `inline` ниже, а здесь — что список открылся и ищет
+  // Список раскрывается вверх в пределах окна и не сдвигает кнопки. После поиска единственный пункт должен
+  // выбираться указателем: раньше кнопки перекрывали именно его, хотя проверка видимости проходила.
   const count = await aboveList.getByRole("option").count();
   expect(count).toBeGreaterThanOrEqual(3);
   await expect(aboveList.getByRole("option", { name: /^Отдел развития продуктов/ })).toContainText("Отдел в «Управление развития продуктов»");
@@ -75,6 +74,10 @@ test("владелец загружает структуру, команды п�
   // Поиск по названию отбирает, а чужое слово даёт понятный отказ
   await above.fill("отдел развития");
   await expect(aboveList.getByRole("option")).toHaveCount(1);
+  const firstAbove = aboveList.getByRole("option").first();
+  if (test.info().project.name === "phone") await firstAbove.tap();
+  else await firstAbove.click();
+  await expect(above).toHaveValue("Отдел развития продуктов");
   await above.fill("абвгде");
   await expect(unitModal.getByText("Такого подразделения нет: проверьте написание").first()).toBeVisible();
   // Поле не бывает пустым: Escape закрывает список, выбор остаётся прежним, а не стирается набранным текстом.
@@ -109,11 +112,23 @@ test("владелец загружает структуру, команды п�
   // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
   await expect(unitField).toHaveValue("Управление развития продуктов");
   await expect(unitField).toHaveAttribute("data-value", /.+/);
-  // И здесь кнопка под раскрытым списком последнего поля формы: раскрываем «Функциональный руководитель» и жмём
-  // «Отмена», не закрывая список
+  // Проверяем первый пункт «Нет», единственный найденный вариант и кнопку под открытым списком.
   const functional = personModal.getByRole("combobox", { name: "Функциональный руководитель" });
   await functional.click();
   await expect(personModal.getByRole("listbox", { name: "Функциональный руководитель" })).toBeVisible();
+  const noFunctional = personModal.getByRole("option", { name: "Нет", exact: true });
+  if (test.info().project.name === "phone") await noFunctional.tap();
+  else await noFunctional.click();
+  await expect(functional).toHaveAttribute("data-value", "-");
+  await expect(functional).toHaveValue("Нет");
+  await functional.fill("Тарас");
+  const foundFunctional = personModal.getByRole("listbox", { name: "Функциональный руководитель" }).getByRole("option");
+  await expect(foundFunctional).toHaveCount(1);
+  if (test.info().project.name === "phone") await foundFunctional.tap();
+  else await foundFunctional.click();
+  await expect(functional).toHaveAttribute("data-value", /.+/);
+  await expect(functional).toHaveValue(/Тарас/);
+  await functional.click();
   await personModal.getByRole("button", { name: "Отмена" }).click();
   await expect(personModal).toHaveCount(0);
 

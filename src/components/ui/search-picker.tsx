@@ -41,6 +41,7 @@ export function SearchPicker({
   className,
   autoFocus,
   inline = false,
+  side = "bottom",
   clearable = true,
 }: {
   id: string;
@@ -71,6 +72,8 @@ export function SearchPicker({
    * в портал, перестаёт и обрезаться, и двигать разметку, а это свойство исчезает.
    */
   inline?: boolean;
+  /** Последнее поле формы раскрывается вверх, чтобы список и кнопки не перекрывали друг друга. */
+  side?: "top" | "bottom";
   /**
    * Можно ли оставить поле пустым (этап 70). Нельзя: печать не снимает выбранное, уход из поля без выбора оставляет
    * прежнее, Escape не очищает. Так «Команда выше»: её меняют, но не убирают
@@ -96,6 +99,25 @@ export function SearchPicker({
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
+  useEffect(() => {
+    if (!open || inline || side !== "top") return;
+    const list = listRef.current;
+    const field = listInput.current?.parentElement;
+    const dialog = field?.closest<HTMLElement>('[role="dialog"]');
+    if (!list || !field) return;
+    // Ограничиваем высоту местом над полем внутри окна: верхние варианты не уходят за его край.
+    const resize = () => {
+      const top = Math.max(0, dialog?.getBoundingClientRect().top ?? 0) + 8;
+      list.style.maxHeight = `${Math.max(36, Math.min(320, field.getBoundingClientRect().top - top - 4))}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    dialog?.addEventListener("scroll", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      dialog?.removeEventListener("scroll", resize);
+    };
+  }, [open, inline, side]);
   // Активный пункт всегда в видимой части списка: стрелками можно уйти ниже края
   useEffect(() => {
     if (!open) return;
@@ -220,7 +242,7 @@ export function SearchPicker({
       />
       {inline ? null : hintBlock}
       {open ? (
-        <div ref={listRef} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
+        <div ref={listRef} style={!inline && side === "top" ? { top: "auto", bottom: "calc(100% + 4px)" } : undefined} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
           <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
             {shown.map((o, i) => (
               <li

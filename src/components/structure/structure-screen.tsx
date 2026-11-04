@@ -289,10 +289,9 @@ function PersonOrgModal({
         <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" inline />
         {/* Последнее поле перед кнопками: списку в потоке здесь нельзя (см. inline в search-picker.tsx) — он сдвинул
             бы кнопки, и нажатие на «Сохранить» с раскрытым списком не дошло бы */}
-        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
-        {/* Кнопки лежат выше всплывающего списка последнего поля (у `.sv-menu` z-index 20): иначе раскрытый список
-            накрывает их, и нажатие уходит в пункт списка вместо кнопки. Список при этом остаётся прокручиваемым */}
-        <div className="relative z-30 flex justify-end gap-2">
+        <SearchPicker label="Функциональный руководитель" id="po-functional" side="top" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
+        {/* Список последнего поля раскрывается вверх: кнопки доступны и не перекрывают варианты. */}
+        <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Отмена
           </Button>
@@ -339,6 +338,7 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         <SearchPicker
           label="Подразделение выше"
           id="un-parent"
+          side="top"
           value={parent}
           onChange={setParent}
           options={unitOptions(units).filter((o) => o.value !== unit.id)}
@@ -346,9 +346,8 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
           emptyText="Такого подразделения нет: проверьте написание"
           clearable={false}
         />
-        {/* Кнопки лежат выше всплывающего списка последнего поля (у `.sv-menu` z-index 20): иначе раскрытый список
-            накрывает их, и нажатие уходит в пункт списка вместо кнопки. Список при этом остаётся прокручиваемым */}
-        <div className="relative z-30 flex flex-wrap justify-between gap-2">
+        {/* Список последнего поля раскрывается вверх: кнопки доступны и не перекрывают варианты. */}
+        <div className="flex flex-wrap justify-between gap-2">
           <Button
             type="button"
             variant="ghost"
