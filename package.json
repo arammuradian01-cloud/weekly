@@ -34,6 +34,7 @@
     "import:bord": "tsx scripts/import-bord.ts",
     "import:bord-weekly": "tsx scripts/import-bord-weekly.ts",
     "reconcile:bord": "tsx scripts/reconcile-bord.ts",
+    "measure:weekly": "tsx scripts/measure-weekly.ts",
     "reload:bord": "tsx scripts/reload-bord.ts",
     "login-link": "tsx scripts/login-link.ts",
     "structure": "tsx scripts/load-structure.ts",
