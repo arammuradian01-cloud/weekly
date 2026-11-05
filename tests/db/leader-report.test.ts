@@ -454,14 +454,17 @@ describe("решения по доступу 05.11", () => {
     const outsider = { ...(await personal("t7381-member")), role: "ADMIN" as const, management: "ADMIN" as const };
     const hidden = await rowFor(outsider);
     expect(hidden.after).toBeUndefined();
+    expect(hidden.field).toBe("Обсуждение отчёта руководителю");
     expect(hidden.field).not.toContain(FIGURES_LINE);
     expect((await rowFor()).after).toBeUndefined();
     expect((await rowFor({ ...(await shared("reva")), management: "OWNER" })).after).toBeUndefined();
     const limited = await rowFor(await personal(low.slug));
     expect(limited.after).toBe("Закрытый комментарий теста журнала");
+    expect(limited.field).toContain("отчёта команды «Тест 73 цифры», неделя ");
     expect(limited.field).not.toContain(FIGURES_LINE);
     const allowed = await rowFor(boss);
     expect(allowed.after).toBe("Закрытый комментарий теста журнала");
+    expect(allowed.field).toContain("отчёта команды «Тест 73 цифры», неделя ");
     expect(allowed.field).toContain(FIGURES_LINE);
     for (const [actor, canRead, canQuote] of [[outsider, false, false], [await personal(low.slug), true, false], [boss, true, true]] as const) {
       const wb = new ExcelJS.Workbook();
@@ -469,6 +472,11 @@ describe("решения по доступу 05.11", () => {
       const journal = JSON.stringify(wb.getWorksheet("Журнал")!.getSheetValues());
       expect(journal.includes("Закрытый комментарий теста журнала")).toBe(canRead);
       expect(journal.includes(FIGURES_LINE)).toBe(canQuote);
+      if (canRead) {
+        const sheet = wb.getWorksheet("Журнал")!;
+        const comment = sheet.getRows(2, sheet.rowCount - 1)!.find((row) => row.getCell(7).value === "Закрытый комментарий теста журнала")!;
+        expect(comment.getCell(5).value).toContain("отчёта команды «Тест 73 цифры», неделя ");
+      }
     }
     expect((await prisma.auditLog.findUniqueOrThrow({ where: { id: event.id } })).field).toContain(FIGURES_LINE);
   });

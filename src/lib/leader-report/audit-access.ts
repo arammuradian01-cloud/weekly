@@ -41,7 +41,7 @@ export async function protectReportAudit<T extends AuditContent>(rows: T[], acto
     const visible = quote && report.blocks.some((b) => b.lines.some((line) => line.text === quote && !isFiguresPlaceholder(line)));
     result.push({
       ...row,
-      field: `Обсуждение отчёта руководителю${visible ? `, строка «${quote}»` : ""}`,
+      field: `Обсуждение отчёта команды «${report.teamName}», неделя ${report.weekNumber}${visible ? `, строка «${quote}»` : ""}`,
       before: null,
     });
   }
