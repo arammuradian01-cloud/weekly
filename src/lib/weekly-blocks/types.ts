@@ -143,7 +143,11 @@ export function figuresOf(line: Pick<BlockLine, "href" | "source" | "figures">, 
 
 /** Строка вместо цифр, которых зритель не видит */
 export const NUMBERS_HIDDEN_TEXT = "Цифры видны только с доступом к цифрам";
-const isPlaceholder = (l: Pick<BlockLine, "text" | "href">) => !l.href && l.text === NUMBERS_HIDDEN_TEXT;
+/**
+ * Строка-пометка вместо закрытых цифр: её ставит blocksForLevel зрителю без доступа. Это не строка отчёта: она не
+ * хранится и к ней не оставляют комментарий (этап 73+81). Правило одно на всех, поэтому живёт здесь
+ */
+export const isFiguresPlaceholder = (l: Pick<BlockLine, "text" | "href">) => !l.href && l.text === NUMBERS_HIDDEN_TEXT;
 
 /** Строка блока из формы или базы. directions: допустимые коды продуктов (null: любые непустые). blockKey: блок строки */
 export function cleanLine(raw: unknown, directions: Set<string> | null, blockKey: string | null = null): BlockLine | null {
@@ -173,7 +177,7 @@ export function cleanBlocks(input: unknown, directions: Set<string> | null): Rep
     const lines = (Array.isArray(raw.lines) ? raw.lines : [])
       .map((l) => cleanLine(l, directions, key))
       // Строка «цифры видны только с доступом» показывается вместо скрытых цифр и не хранится
-      .filter((l): l is BlockLine => !!l && !isPlaceholder(l))
+      .filter((l): l is BlockLine => !!l && !isFiguresPlaceholder(l))
       .slice(0, BLOCK_LIMITS.lines);
     const basis = typeof raw.basis === "string" && /^[a-z0-9]{1,16}$/.test(raw.basis) ? raw.basis : null;
     out.push({ key, title, hidden: raw.hidden === true, lines, note: tidy(raw.note, BLOCK_LIMITS.note) || null, ...(raw.edited === true ? { edited: true } : {}), ...(basis ? { basis } : {}) });
