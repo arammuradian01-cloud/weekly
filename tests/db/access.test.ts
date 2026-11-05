@@ -386,8 +386,12 @@ describe("после проверки кода этапа 52", () => {
 describe("ссылки пачкой", () => {
   it("срок 3, 7 или 14 дней, в ссылке должность для выгрузки", async () => {
     await prisma.person.update({ where: { slug: "loginova" }, data: { position: "Лидер RED" } });
-    const links = await pw.issueInvitesForAll(await owner(), t0, 14);
-    expect(links[0]!.expiresAt.getTime() - t0.getTime()).toBe(14 * 24 * 60 * 60 * 1000);
+    // Срок считаем от настоящего времени, а не от t0: listPeople отбирает живые приглашения условием
+    // expiresAt > now по настоящим часам (src/lib/admin/service.ts), поэтому ссылка от t0 на 14 дней
+    // перестаёт быть живой 04.11.2026 в 09:00 UTC, и проверка начинает падать каждый день после
+    const issuedAt = new Date();
+    const links = await pw.issueInvitesForAll(await owner(), issuedAt, 14);
+    expect(links[0]!.expiresAt.getTime() - issuedAt.getTime()).toBe(14 * 24 * 60 * 60 * 1000);
     expect(links.find((l) => l.slug === "loginova")?.position).toBe("Лидер RED");
     await expectRule(pw.issueInvitesForAll(await owner(), t0, 30), /3, 7 или 14/);
     const view = await admin.listPeople();
