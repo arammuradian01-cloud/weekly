@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, monthOfWeek, reportingWeekKey, resetDatabase, sql } from "./helpers";
 
 // Этап 35б: партнёрский канал в прогнозе месяца. Владелец загружает LBE вместе с листами LRF b2b, руководитель канала
 // по личному входу меняет полисы партнёра с обоснованием, лидер ОСАГО учитывает изменение в полисах B2B продукта.
@@ -14,18 +14,6 @@ async function shot(page: Page, name: string) {
   expect(overflow, `горизонтальная прокрутка на экране ${name}`).toBeLessThanOrEqual(0);
   await page.screenshot({ path: `${SHOTS}/${test.info().project.name}-plan35b-${name}.png`, fullPage: true });
 }
-
-const moscowToday = () => new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
-const thisWeek = () => {
-  const d = new Date(`${moscowToday()}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString().slice(0, 10);
-};
-const weekMonth = () => {
-  const d = new Date(`${thisWeek()}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 3);
-  return d.toISOString().slice(0, 7);
-};
 
 test.beforeEach(async () => {
   await resetDatabase({ weekly: false });
@@ -139,10 +127,16 @@ test("отборы и поиск партнёров, партнёры без п�
 test("канал в сводке отчёта CEO: строкой под итогом по продуктам", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
-  await pull(page, weekMonth());
-  await page.goto(`/ceo-report?week=${thisWeek()}`);
+  // Неделя отчёта и её месяц у приложения свои: на стыке месяцев отчётная неделя (а по понедельникам она прошлая)
+  // попадает в прошлый месяц. Ключ недели берём из приложения, месяц считаем от него
+  const week = await reportingWeekKey(page);
+  const month = monthOfWeek(week);
+  await pull(page, month);
+  await page.goto(`/ceo-report?week=${week}`);
   await page.getByTestId("ceo-plan-block").locator("summary").click();
-  await expect(page.getByTestId("plan-brief-partners")).toContainText("Партнёрский канал, внутри продуктов:");
+  // Сводка собрана по тому же месяцу, который загрузил тест: ссылка «Открыть прогноз» ведёт на него
+  await expect(page.locator("#plan-brief").getByRole("link", { name: "Открыть прогноз" })).toHaveAttribute("href", `/forecast?month=${month}`);
+  await expect(page.getByTestId("plan-brief-partners"), `партнёрский канал в сводке за ${month}, неделя ${week}`).toContainText("Партнёрский канал, внутри продуктов:");
   await expect(page.getByTestId("plan-brief-partners")).toContainText("млн");
   await shot(page, "ceo");
 });
