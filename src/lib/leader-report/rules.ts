@@ -19,10 +19,10 @@ export function defaultTab(opts: { canLead: boolean; hasSent: boolean; hasReceiv
 }
 
 /** Роли человека у отправленного отчёта */
-export type ReportRoles = { author: boolean; recipient: boolean; owner: boolean };
+export type ReportRoles = { author: boolean; successor: boolean; recipient: boolean; owner: boolean };
 
 /**
- * Кто у отправленного отчёта автор, получатель и владелец. Автор: руководитель команды и тот, кто отправил.
+ * Кто у отправленного отчёта автор, получатель и владелец. Автор: тот, кто отправил. Преемник: нынешний руководитель команды.
  * Получатель: тот, кому отправили. И то и другое только при личном входе: по общему логину профиль выбирают сами,
  * чужую переписку он открывать не должен. Владелец: в режиме управления видит отчёты и комментарии всех команд
  */
@@ -32,18 +32,19 @@ export function reportRoles(
 ): ReportRoles {
   const personal = viewer.via !== "TEAM";
   return {
-    author: personal && (report.leaderId === viewer.personId || report.sentById === viewer.personId),
+    author: personal && report.sentById === viewer.personId,
+    successor: personal && report.leaderId === viewer.personId && report.sentById !== viewer.personId,
     recipient: personal && report.to.some((t) => t.id === viewer.personId),
     owner: viewer.management === "OWNER",
   };
 }
 
-/** Комментарии видят только автор, получатель и владельцы; участники команды нет */
-export const seesComments = (r: ReportRoles) => r.author || r.recipient || r.owner;
+/** Комментарии видят отправитель, преемник, получатель и владельцы; участники команды нет */
+export const seesComments = (r: ReportRoles) => r.author || r.successor || r.recipient || r.owner;
 /** Комментарий к отчёту целиком или к строке пишет получатель: это его замечание автору */
 export const canStartComment = (r: ReportRoles) => r.recipient;
-/** Ответить в ветке могут автор отчёта и получатель */
-export const canReplyComment = (r: ReportRoles) => r.author || r.recipient;
+/** Ответить в ветке могут отправитель, преемник и получатель */
+export const canReplyComment = (r: ReportRoles) => r.author || r.successor || r.recipient;
 
 export const REPORT_COMMENT_MAX = 1000;
 

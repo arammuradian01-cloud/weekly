@@ -1,3 +1,4 @@
+import { actorOf } from "@/lib/action-runner";
 // Выгрузка всех данных в Excel: только владелец в режиме управления. Каждая выгрузка пишется в журнал. События рынка
 // в выгрузку попадают только при доступе к разделу «Рынок» при личном входе, как и в журнале (этап 72 их не меняет).
 
@@ -22,7 +23,7 @@ export async function GET() {
     throw error;
   }
   // События рынка (этап 62) в листе «Журнал» только тому, кому открыт раздел «Рынок» при личном входе, как и в журнале
-  const { buffer, summary } = await buildExport({ market: await canSeeMarketEvents({ personId: ctx.person.id, via: ctx.via }) });
+  const { buffer, summary } = await buildExport({ actor: actorOf(ctx, ""), market: await canSeeMarketEvents({ personId: ctx.person.id, via: ctx.via }) });
   await writeAudit({
     action: "export.excel",
     actorId: ctx.person.id,

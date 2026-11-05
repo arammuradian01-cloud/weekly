@@ -28,8 +28,8 @@ export type ReportViewer = Pick<Actor, "personId" | "role" | "via" | "management
 
 /**
  * Общий логин не удостоверяет человека: даже режим управления по нему не открывает чужую переписку с руководителем.
- * Раздел открыт при личном входе тем, кто руководит командой, кто CEO, кому отчёты отправляли, и владельцам с
- * администраторами в режиме управления: они и так ведут отчёт CEO и отчёты команд
+ * Раздел открыт при личном входе тем, кто руководит командой, кто CEO, кому отчёты отправляли, и владельцам в
+ * режиме управления. Роль администратора сама по себе раздел не открывает
  */
 export async function leaderReportScope(actor: ReportViewer): Promise<LeaderReportScope> {
   // Расчёт идёт на каждой странице (пункт меню), поэтому выходим как можно раньше и считаем остальное разом
@@ -38,7 +38,7 @@ export async function leaderReportScope(actor: ReportViewer): Promise<LeaderRepo
   const scope = scopeOf(nodes, { id: actor.personId, role: actor.role });
   const teams = nodes.filter((n) => n.active && (n.leaderId === actor.personId || scope.leads.includes(n.id)));
   const canLead = teams.length > 0;
-  if (canLead || actor.management === "OWNER" || actor.management === "ADMIN") return { allowed: true, canLead, teams, nodes };
+  if (canLead || actor.management === "OWNER") return { allowed: true, canLead, teams, nodes };
   // Прежний получатель и прежний автор остаются с доступом, даже если больше не руководят командой и команду
   // расформировали: отправленное не исчезает. Фильтра по активности команды здесь нет намеренно
   const [ceo, team, ceoReports] = await Promise.all([

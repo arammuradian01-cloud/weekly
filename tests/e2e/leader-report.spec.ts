@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enterByLink, enterTeam, resetDatabase, sql } from "./helpers";
+import { enterByLink, enterTeam, enterManagement, resetDatabase, sql } from "./helpers";
 
 // Этап 73+81: раздел «Отчёт руководителю» отдельным пунктом меню, внутри «Отправленные» и «Полученные». Получатель
 // пишет комментарий к полученному отчёту, автор отвечает. Участник команды и общий логин раздел не видят.
@@ -99,9 +99,26 @@ test("получатель пишет комментарий к полученн
   await shot(author, "sent");
   await context.close();
 
+  // Преемник получает историю, но прежний отправитель остаётся в подписи.
+  await sql('UPDATE teams SET "leaderId" = $1 WHERE id = $2', [await id("cheychenets"), "test-7381-team"]);
+  const nextContext = await browser.newContext({ viewport: page.viewportSize()! });
+  const successor = await nextContext.newPage();
+  await enterByLink(successor, "cheychenets");
+  await successor.goto(`/leader-report?tab=sent&week=${key}`);
+  await expect(successor.getByTestId("sent-report")).toContainText("отправил Рева Тарас");
+  const inherited = successor.getByTestId("report-comment").first();
+  await inherited.getByRole("button", { name: "Ответить", exact: true }).click();
+  await inherited.getByLabel("Ответ").fill("Продолжу работу как новый руководитель");
+  await inherited.getByRole("button", { name: "Ответить", exact: true }).click();
+  await expect(inherited).toContainText("Продолжу работу как новый руководитель");
+  await nextContext.close();
+
   // Ответ автора виден получателю
   await page.reload();
   await expect(page.getByTestId("report-comments")).toContainText("Поправил, отправлю ещё раз");
+  await expect(page.getByTestId("report-comments")).toContainText("Продолжу работу как новый руководитель");
+  const newAuthor = (await sql('SELECT "fullName" FROM people WHERE slug = $1', ["cheychenets"]))[0]!.fullName as string;
+  await expect(page.getByTestId("report-comments")).toContainText(newAuthor);
 });
 
 test("участник команды и общий логин раздел не видят", async ({ page, browser }) => {
@@ -121,4 +138,25 @@ test("участник команды и общий логин раздел не
   await sharedPage.goto(`/leader-report?week=${key}`);
   await expect(sharedPage.getByText("Раздел недоступен", { exact: true })).toBeVisible();
   await shared.close();
+});
+
+
+test("администратор без своих отчётов не видит раздел и содержание обсуждений в журнале", async ({ page }) => {
+  await seedSentReport();
+  await enterByLink(page, "fatyanov");
+  await page.goto(`/leader-report?tab=received&week=${key}`);
+  await page.getByLabel("К чему комментарий").selectOption({ label: "Риски: Ставки падают, спрос ниже" });
+  await page.getByLabel("Комментарий руководителя").fill("Содержание только для обсуждения");
+  await page.getByRole("button", { name: "Отправить комментарий" }).click();
+  await expect(page.getByTestId("report-comments")).toContainText("Содержание только для обсуждения");
+  await enterByLink(page, "golovkin");
+  await enterManagement(page, "admin");
+  await expect(page.locator('.sv-sidebar__item[href="/leader-report"]')).toHaveCount(0);
+  await page.goto(`/leader-report?week=${key}`);
+  await expect(page.getByText("Раздел недоступен", { exact: true })).toBeVisible();
+  const response = await page.goto("/journal");
+  const html = await response!.text();
+  expect(html).not.toContain("Содержание только для обсуждения");
+  expect(html).not.toContain("Ставки падают, спрос ниже");
+  await expect(page.getByText("Обсуждение отчёта руководителю", { exact: true }).first()).toBeVisible();
 });

@@ -56,13 +56,13 @@ describe("вкладки раздела «Отчёт руководителю»"
 describe("роли у отправленного отчёта", () => {
   const report = { leaderId: "lead", sentById: "lead", to: [{ id: "boss" }] };
 
-  it("автор это руководитель команды и тот, кто отправил; получатель это адресат; оба только при личном входе", () => {
-    expect(reportRoles({ personId: "lead", via: "PASSWORD", management: null }, report)).toEqual({ author: true, recipient: false, owner: false });
-    expect(reportRoles({ personId: "boss", via: "PASSWORD", management: null }, report)).toEqual({ author: false, recipient: true, owner: false });
+  it("автор это тот, кто отправил; получатель это адресат; оба только при личном входе", () => {
+    expect(reportRoles({ personId: "lead", via: "PASSWORD", management: null }, report)).toEqual({ author: true, successor: false, recipient: false, owner: false });
+    expect(reportRoles({ personId: "boss", via: "PASSWORD", management: null }, report)).toEqual({ author: false, successor: false, recipient: true, owner: false });
     // Отправил не руководитель, а администратор: он тоже автор
-    expect(reportRoles({ personId: "admin", via: "PASSWORD", management: "ADMIN" }, { ...report, sentById: "admin" })).toEqual({ author: true, recipient: false, owner: false });
+    expect(reportRoles({ personId: "admin", via: "PASSWORD", management: "ADMIN" }, { ...report, sentById: "admin" })).toEqual({ author: true, successor: false, recipient: false, owner: false });
     // Общий логин: ни автор, ни получатель, профиль по нему выбирают сами
-    expect(reportRoles({ personId: "lead", via: "TEAM", management: "OWNER" }, report)).toEqual({ author: false, recipient: false, owner: true });
+    expect(reportRoles({ personId: "lead", via: "TEAM", management: "OWNER" }, report)).toEqual({ author: false, successor: false, recipient: false, owner: true });
   });
 
   it("комментарии видят автор, получатель и владелец; начинает получатель, отвечают обе стороны", () => {
@@ -193,4 +193,17 @@ describe("weekly за прошлые недели", () => {
     ]);
     expect(many).toContain("закрыли руководители команд «Продукты», «Продажи» (Головкин Пётр)");
   });
+});
+
+
+it("преемник имеет право ответа, но не становится историческим автором", () => {
+  const report = { leaderId: "new", sentById: "old", to: [{ id: "boss" }] };
+  const successor = reportRoles({ personId: "new", via: "PASSWORD", management: null }, report);
+  expect(successor).toEqual({ author: false, successor: true, recipient: false, owner: false });
+  expect(seesComments(successor)).toBe(true);
+  expect(canReplyComment(successor)).toBe(true);
+  expect(canStartComment(successor)).toBe(false);
+  const shared = reportRoles({ personId: "new", via: "TEAM", management: null }, report);
+  expect(seesComments(shared)).toBe(false);
+  expect(canReplyComment(shared)).toBe(false);
 });

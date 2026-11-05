@@ -1,3 +1,6 @@
+import ExcelJS from "exceljs";
+import { journalEvents } from "@/lib/journal";
+import { buildExport } from "@/lib/admin/export";
 // Этап 73+81: раздел «Отчёт руководителю» на настоящей базе. Вкладка «Отправленные» показывает ровно отправленную
 // версию, вкладка «Полученные» - то, что отправили мне (экран этапа 73а), и weekly моих сотрудников. Комментарий к
 // полученному отчёту пишет получатель, отвечают обе стороны; участники команды переписку не видят. Права проверяются
@@ -383,6 +386,14 @@ describe("цитата строки и уровень доступа к цифр
     const mine = await addReportComment(reader, { teamId: tid, week: key, blockKey: "partners", lineIndex: 0 }, "А это уточните");
     expect(mine.comments.find((c) => c.text === "А это уточните")).toMatchObject({ lineText: PLAIN_LINE });
     expect(JSON.stringify(mine)).not.toMatch(SECRET_LINE);
+    const auditView = JSON.stringify(await journalEvents({ actor: reader, limit: 5000 }));
+    expect(auditView).not.toContain(SECRET_LINE);
+    expect(auditView).toContain(PLAIN_LINE);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildExport({ actor: reader })).buffer as unknown as ArrayBuffer);
+    const exported = JSON.stringify(wb.getWorksheet("Журнал")!.getSheetValues());
+    expect(exported).not.toContain(SECRET_LINE);
+    expect(exported).toContain(PLAIN_LINE);
     // За своим блоком строк для него нет: вторая строка ему закрыта, и номер 1 не существует
     await expectRule(addReportComment(reader, { teamId: tid, week: key, blockKey: "partners", lineIndex: 1 }, "Замечание"), /строки в отправленном отчёте нет/);
   });
@@ -397,5 +408,68 @@ describe("цитата строки и уровень доступа к цифр
     await expectRule(addReportComment(actor, { teamId: tid, week: key, blockKey: "wow", lineIndex: 0 }, "Замечание"), /не строка отчёта/);
     // К отчёту целиком он написать может: закрыты цифры, а не обсуждение
     expect((await addReportComment(actor, { teamId: tid, week: key }, "Пришлите цифры отдельно")).comments).toHaveLength(1);
+  });
+});
+
+
+describe("решения по доступу 05.11", () => {
+  it("роль ADMIN не открывает раздел, но адресат с той же ролью видит свой отчёт", async () => {
+    await sendReport();
+    await memberPerson();
+    await prisma.person.update({ where: { slug: "t7381-member" }, data: { role: "ADMIN" } });
+    const admin = await personal("t7381-member", "ADMIN");
+    expect(await canSeeLeaderReport(admin)).toBe(false);
+    await expectRule(leaderReportView(admin), /при личном входе/);
+    await prisma.person.update({ where: { slug: "t7381-boss" }, data: { role: "ADMIN" } });
+    const recipient = await personal("t7381-boss", "ADMIN");
+    expect(await canSeeLeaderReport(recipient)).toBe(true);
+    expect((await receivedReportsOf(recipient, [key])).map((r) => r.teamId)).toContain(teamId);
+  });
+
+  it("преемник отвечает от своего имени, отправитель и старые комментарии сохраняются", async () => {
+    await sendReport();
+    const boss = await personal("t7381-boss");
+    const comment = (await addReportComment(boss, { teamId, week: key }, "Уточните итог")).comments[0]!;
+    const successor = await memberPerson();
+    await prisma.team.update({ where: { id: teamId }, data: { leaderId: successor.id } });
+    const actor = await personal(successor.slug);
+    const report = (await sentReportsOf(actor, [key]))[0]!;
+    expect(report.sentById).toBe(await id("reva"));
+    expect(report.by).toBe("Рева Тарас");
+    const reply = await addReportComment(actor, { teamId, week: key, parentId: comment.id }, "Отвечаю как новый руководитель");
+    expect(reply.comments[0]!.author).toBe(BOSS);
+    expect(reply.comments[0]!.replies[0]!.author).toBe(MEMBER);
+    expect((await prisma.leaderReportComment.findUniqueOrThrow({ where: { id: reply.comments[0]!.replies[0]!.id } })).authorId).toBe(successor.id);
+    await expectRule(addReportComment(await shared(successor.slug), { teamId, week: key, parentId: comment.id }, "Чужой ответ"), /личном входе/);
+  });
+
+  it("журнал и Excel скрывают текст от постороннего, цитату — по уровню цифр, в том числе у старых событий", async () => {
+    const low = await noFiguresPerson("t7381-low", "Без цифр Тест");
+    const boss = await personal("reva");
+    const reportTeam = await sendFiguresReport(low.id, { id: boss.personId, name: boss.fullName });
+    await addReportComment(boss, { teamId: reportTeam, week: key, blockKey: "wow", lineIndex: 0 }, "Закрытый комментарий теста журнала");
+    const event = await prisma.auditLog.findFirstOrThrow({ where: { action: "weekly.report.comment", entityId: `${reportTeam}/${key}` }, orderBy: { id: "desc" } });
+    const rowFor = async (actor?: tasks.Actor) => (await journalEvents({ actor, limit: 5000 })).events.find((e) => e.id === `a${event.id}`)!;
+    await memberPerson();
+    const outsider = { ...(await personal("t7381-member")), role: "ADMIN" as const, management: "ADMIN" as const };
+    const hidden = await rowFor(outsider);
+    expect(hidden.after).toBeUndefined();
+    expect(hidden.field).not.toContain(FIGURES_LINE);
+    expect((await rowFor()).after).toBeUndefined();
+    expect((await rowFor({ ...(await shared("reva")), management: "OWNER" })).after).toBeUndefined();
+    const limited = await rowFor(await personal(low.slug));
+    expect(limited.after).toBe("Закрытый комментарий теста журнала");
+    expect(limited.field).not.toContain(FIGURES_LINE);
+    const allowed = await rowFor(boss);
+    expect(allowed.after).toBe("Закрытый комментарий теста журнала");
+    expect(allowed.field).toContain(FIGURES_LINE);
+    for (const [actor, canRead, canQuote] of [[outsider, false, false], [await personal(low.slug), true, false], [boss, true, true]] as const) {
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load((await buildExport({ actor })).buffer as unknown as ArrayBuffer);
+      const journal = JSON.stringify(wb.getWorksheet("Журнал")!.getSheetValues());
+      expect(journal.includes("Закрытый комментарий теста журнала")).toBe(canRead);
+      expect(journal.includes(FIGURES_LINE)).toBe(canQuote);
+    }
+    expect((await prisma.auditLog.findUniqueOrThrow({ where: { id: event.id } })).field).toContain(FIGURES_LINE);
   });
 });
