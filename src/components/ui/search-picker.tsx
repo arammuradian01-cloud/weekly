@@ -6,6 +6,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
+import { searchKey } from "@/domain/search-key";
 
 export type PickerOption = {
   value: string;
@@ -16,8 +17,8 @@ export type PickerOption = {
   note?: string | null;
 };
 
-/** Строка для поиска: регистр и ё не важны */
-export const searchKey = (text: string) => text.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim();
+/** Строка для поиска: регистр и ё не важны. Само правило в `@/domain/search-key`: оно нужно и без React */
+export { searchKey };
 
 /** Подходит ли вариант: каждое слово запроса есть в названии или второй строке */
 export function matchOption(option: PickerOption, query: string): boolean {
@@ -40,6 +41,7 @@ export function SearchPicker({
   className,
   autoFocus,
   inline = false,
+  side = "bottom",
   clearable = true,
 }: {
   id: string;
@@ -57,9 +59,21 @@ export function SearchPicker({
   autoFocus?: boolean;
   /**
    * Список вариантов в потоке под полем, а не поверх (этап 70): в окне с прокруткой (Modal) всплывающий список
-   * обрезается краем окна, а в потоке окно растёт и прокручивается вместе с ним
+   * обрезается краем окна, а в потоке окно растёт и прокручивается вместе с ним.
+   *
+   * Ставить его можно не всякому полю, и вот почему. Список в потоке сдвигает всё, что под ним. Закрывается он по
+   * уходу фокуса, а фокус уходит уже на нажатии мыши. Значит при нажатии на кнопку под раскрытым списком: нажатие по
+   * кнопке, фокус ушёл, список закрылся, разметка съехала вверх, отпускание попало уже не в кнопку, и события click
+   * не случилось вовсе. Кнопка просто не работает, и не только у автотеста: у человека между нажатием и отпусканием
+   * проходит 50-150 миллисекунд, этого хватает с запасом.
+   *
+   * Поэтому `inline` не ставим первому полю окна (Radix сам отдаёт ему фокус при открытии, и список раскрывается без
+   * просьбы) и полю, под которым есть кнопка, по которой человек нажмёт. Насовсем это снимет этап 89: список уходит
+   * в портал, перестаёт и обрезаться, и двигать разметку, а это свойство исчезает.
    */
   inline?: boolean;
+  /** Последнее поле формы раскрывается вверх, чтобы список и кнопки не перекрывали друг друга. */
+  side?: "top" | "bottom";
   /**
    * Можно ли оставить поле пустым (этап 70). Нельзя: печать не снимает выбранное, уход из поля без выбора оставляет
    * прежнее, Escape не очищает. Так «Команда выше»: её меняют, но не убирают
@@ -85,6 +99,25 @@ export function SearchPicker({
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
+  useEffect(() => {
+    if (!open || inline || side !== "top") return;
+    const list = listRef.current;
+    const field = listInput.current?.parentElement;
+    const dialog = field?.closest<HTMLElement>('[role="dialog"]');
+    if (!list || !field) return;
+    // Ограничиваем высоту местом над полем внутри окна: верхние варианты не уходят за его край.
+    const resize = () => {
+      const top = Math.max(0, dialog?.getBoundingClientRect().top ?? 0) + 8;
+      list.style.maxHeight = `${Math.max(36, Math.min(320, field.getBoundingClientRect().top - top - 4))}px`;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+    dialog?.addEventListener("scroll", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      dialog?.removeEventListener("scroll", resize);
+    };
+  }, [open, inline, side]);
   // Активный пункт всегда в видимой части списка: стрелками можно уйти ниже края
   useEffect(() => {
     if (!open) return;
@@ -134,6 +167,8 @@ export function SearchPicker({
         aria-autocomplete="list"
         aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
         aria-describedby={hint ? `${id}-hint` : undefined}
+        // Выбранное значение для проверок и автотестов: в поле человек видит подпись, а не код (этап 74)
+        data-value={value}
         placeholder={placeholder}
         value={text}
         autoFocus={autoFocus}
@@ -207,7 +242,7 @@ export function SearchPicker({
       />
       {inline ? null : hintBlock}
       {open ? (
-        <div ref={listRef} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
+        <div ref={listRef} style={!inline && side === "top" ? { top: "auto", bottom: "calc(100% + 4px)" } : undefined} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
           <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
             {shown.map((o, i) => (
               <li

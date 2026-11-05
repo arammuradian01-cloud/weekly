@@ -30,6 +30,7 @@ import { TeamSwitcher } from "@/components/shell/team-switcher";
 import { currentTeam, subjectOf } from "@/lib/org/current";
 import { ALL_TEAMS } from "@/domain/teams";
 import { canSeeMarketWith, loadMarketAccess } from "@/lib/market/access";
+import { canSeeLeaderReport } from "@/lib/leader-report/service";
 import { canViewAs } from "@/lib/view-as-service";
 import { ViewAsBanner, ViewAsDialog, ViewAsEndedBanner, ViewAsSync } from "@/components/shell/view-as";
 import { VIEW_AS_END_TEXTS, viewAsTabState, viewAsTitleMark } from "@/lib/view-as";
@@ -63,7 +64,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const team = await currentTeam(subject);
   const reader = { personId: ctx.person.id, role: ctx.person.role, limited: subject.limited };
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
-  const [tasks, registry, lagging, banner, owner, inbox, slugs, marketAccess] = await Promise.all([
+  const [tasks, registry, lagging, banner, owner, inbox, slugs, marketAccess, leaderReport] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER", reader, team: team.id && team.id !== ALL_TEAMS ? team.id : undefined }),
     loadRegistry(),
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
@@ -74,10 +75,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     attentionCountFor(ctx.person.id, new Date(), subjectOf(ctx)),
     prisma.person.findMany({ where: { id: { in: team.people } }, select: { slug: true } }),
     loadMarketAccess(),
+    // Отчёт руководителю (этап 73+81): пункт меню видят руководители команд и те, кому отчёты отправляют, при личном входе
+    canSeeLeaderReport({ personId: ctx.person.id, role: ctx.person.role, via: ctx.via, management: ctx.management?.role ?? null }),
   ]);
   // Рынок КАСКО и ОСАГО (этап 62): пункт меню только тем, кому открыт раздел. Этап 72: по общему логину и в режиме
   // управления всем
-  const nav = { market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess) };
+  const nav = {
+    market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess),
+    leaderReport,
+  };
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
   // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
   const viewAs = ctx.viewAs
@@ -188,7 +194,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <MobileNav management={profile.management} access={nav} />
     <Toaster />
     <GlobalHotkeys />
-    <CommandPalette management={profile.management} market={nav.market} canViewAs={viewAsOpen} viewing={!!viewAs} ownerAs={ownerAsOpen} inside={ownerAs ? ownerAs.targetSlug : ctx.ownerAsEnded ? "" : null} />
+    <CommandPalette management={profile.management} market={nav.market} leaderReport={nav.leaderReport} canViewAs={viewAsOpen} viewing={!!viewAs} ownerAs={ownerAsOpen} inside={ownerAs ? ownerAs.targetSlug : ctx.ownerAsEnded ? "" : null} />
     <RequestDialogHost />
     {/* В просмотре и после его конца, пока владелец не вернулся к себе, черновики с устройства и подписка на уведомления не сверяются.
         Во входе владельца в чужой профиль (этап 71) черновики человека уходят от его имени, подписка браузера владельца не трогается */}

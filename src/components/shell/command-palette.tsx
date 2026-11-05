@@ -57,7 +57,7 @@ const DEBOUNCE_MS = 180;
  * ownerAs: владелец может открыть «Сменить профиль…», inside: владелец в чужом профиле, есть «Вернуться в свой профиль»
  * (этап 71): короткое имя человека, чьи черновики уйдут перед возвратом, пустая строка после конца входа
  */
-export function CommandPalette({ management, market = false, canViewAs = false, viewing = false, ownerAs = false, inside = null }: { management: "OWNER" | "ADMIN" | null; market?: boolean; canViewAs?: boolean; viewing?: boolean; ownerAs?: boolean; inside?: string | null }) {
+export function CommandPalette({ management, market = false, leaderReport = false, canViewAs = false, viewing = false, ownerAs = false, inside = null }: { management: "OWNER" | "ADMIN" | null; market?: boolean; leaderReport?: boolean; canViewAs?: boolean; viewing?: boolean; ownerAs?: boolean; inside?: string | null }) {
   const router = useRouter();
   const pathname = usePathname();
   const { observer, notify } = usePrototype();
@@ -164,6 +164,15 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
     for (const [href, label, icon, keywords] of sections) list.push({ id: `go:${href}`, label: `Открыть: ${label}`, icon, keywords, run: () => go(href) });
     // Рынок КАСКО и ОСАГО (этап 62): только тем, кому открыт раздел
     if (market) list.push({ id: "go:/market", label: "Открыть: Рынок КАСКО и ОСАГО", icon: TrendingUp, keywords: "рынок каско осаго нсис доля страховые регионы", run: () => go("/market") });
+    // Отчёт руководителю (этап 73+81): только тем, кому открыт раздел
+    if (leaderReport)
+      list.push({
+        id: "go:/leader-report",
+        label: "Открыть: Отчёт руководителю",
+        icon: FileText,
+        keywords: "отчёт руководителю отправленные полученные комментарий руководителя отчёт команды",
+        run: () => go("/leader-report"),
+      });
     if (canViewAs) list.push({ id: "view-as", label: "Смотреть как…", icon: Eye, keywords: "смотреть как просмотр глазами человека профиль чужой права проверить", run: () => { setOpen(false); openViewAs(); } });
     if (viewing) list.push({ id: "view-as-stop", label: "Выйти из просмотра", icon: EyeOff, keywords: "смотреть как просмотр выйти вернуться к себе", run: () => { setOpen(false); startTransition(() => stopViewAsAction()); } });
     if (ownerAs) list.push({ id: "owner-as", label: "Сменить профиль…", icon: UserRoundCog, keywords: "сменить профиль войти в профиль человека от имени владелец", run: () => { setOpen(false); openOwnerAs(); } });
@@ -192,7 +201,7 @@ export function CommandPalette({ management, market = false, canViewAs = false, 
       list.push({ id: "go:/journal", label: "Открыть: Журнал", icon: FileText, keywords: "журнал аудит история", run: () => go("/journal") });
     }
     return list;
-  }, [observer, management, market, canViewAs, viewing, ownerAs, inside, notify, go]);
+  }, [observer, management, market, leaderReport, canViewAs, viewing, ownerAs, inside, notify, go]);
 
   const query = q.trim().toLowerCase();
   const shownCommands = useMemo(() => {

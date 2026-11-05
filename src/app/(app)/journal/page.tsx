@@ -1,3 +1,4 @@
+import { actorOf } from "@/lib/action-runner";
 import type { Metadata } from "next";
 import { requireManagement } from "@/lib/auth";
 import { JOURNAL_ROLES } from "@/lib/roles";
@@ -26,6 +27,7 @@ export default async function JournalPage({ searchParams }: { searchParams: Prom
   const ctx = await requireManagement(JOURNAL_ROLES, "/journal");
   const query = parse(await searchParams);
   const filter: JournalFilter = {
+    actor: actorOf(ctx, ""),
     who: query.who || undefined,
     days: query.period === "all" ? undefined : Number(query.period),
     kind: query.kind || undefined,

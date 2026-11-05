@@ -37,7 +37,9 @@ vi.mock("@/lib/action-runner", () => {
     return state.actor;
   };
   // Загрузка пакета берёт того, кто меняет, через writingActor (этап 63: в режиме «Смотреть как» отказ)
-  return { currentActor: actor, writingActor: actor };
+  return { currentActor: actor, writingActor: actor,
+    actorOf: (ctx: { person: { id: string }; via: string; management: { role: string } }) => ({ personId: ctx.person.id, via: ctx.via, management: ctx.management.role }),
+  };
 });
 vi.mock("@/lib/market/access", async (original) => ({
   ...(await original<typeof import("@/lib/market/access")>()),
@@ -247,6 +249,7 @@ describe("выгрузка в Excel", () => {
     expect((await exportExcel()).status).toBe(200);
     state.seesMarket = true;
     await exportExcel();
-    expect(state.exports).toEqual([{ market: false }, { market: true }]);
+    const viewer = { personId: "p1", via: "PASSWORD", management: "OWNER" };
+    expect(state.exports).toEqual([{ market: false, actor: viewer }, { market: true, actor: viewer }]);
   });
 });
