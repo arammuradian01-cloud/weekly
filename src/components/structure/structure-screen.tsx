@@ -13,7 +13,7 @@ import { usePrototype } from "@/domain/store";
 import { cn } from "@/lib/cn";
 import { Button, buttonClass } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlays";
-import { Segmented, SelectField, TextInput } from "@/components/ui/primitives";
+import { Segmented, TextInput } from "@/components/ui/primitives";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { EmptyState } from "@/components/empty-state";
 import { setPersonOrgAction, updateUnitAction } from "@/app/(app)/people/structure/actions";
@@ -200,7 +200,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                               {p.position ? <span className="text-muted">{p.position}</span> : null}
                               {p.functional ? <span className="text-muted">функционально: {p.functional}</span> : null}
                               {owner ? (
-                                <button type="button" className="text-blue-700 hover:underline" onClick={() => setEditing({ slug: p.slug, fullName: p.fullName, position: p.position, unit: u.id })}>
+                                <button type="button" aria-label={`Изменить: ${p.fullName}`} className="text-blue-700 hover:underline" onClick={() => setEditing({ slug: p.slug, fullName: p.fullName, position: p.position, unit: u.id })}>
                                   Изменить
                                 </button>
                               ) : null}
@@ -214,7 +214,7 @@ function UnitTree({ units, owner, people, onSave }: { units: UnitView[]; owner: 
                         </p>
                       ) : null}
                       {owner && u.depth > 0 ? (
-                        <button type="button" className="self-start text-small text-blue-700 hover:underline" onClick={() => setEditingUnit(u)}>
+                        <button type="button" aria-label={`Изменить подразделение: ${u.name}`} className="self-start text-small text-blue-700 hover:underline" onClick={() => setEditingUnit(u)}>
                           Изменить подразделение
                         </button>
                       ) : null}
@@ -272,10 +272,25 @@ function PersonOrgModal({
         }}
       >
         <TextInput label="Должность" id="po-position" value={position} onChange={(e) => setPosition(e.target.value)} maxLength={120} />
-        <SelectField label="Подразделение" id="po-unit" value={unit} onChange={(e) => setUnit(e.target.value)} options={units.map((u) => ({ value: u.id, label: `${"  ".repeat(u.depth)}${u.name}` }))} />
+        {/* Подразделений в компании десятки (этап 74): поиск по названию и по руководителю вместо системного списка.
+            Одноимённые отделы разных управлений в нём было не отличить: теперь их различает вторая строка */}
+        <SearchPicker
+          label="Подразделение"
+          id="po-unit"
+          value={unit}
+          onChange={setUnit}
+          options={unitOptions(units)}
+          placeholder="Название подразделения или руководитель"
+          emptyText="Такого подразделения нет: проверьте написание"
+          clearable={false}
+          inline
+        />
         {/* Людей в компании сотни: выбор с поиском (этап 53). Пусто: не менять */}
-        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" />
-        <SearchPicker label="Функциональный руководитель" id="po-functional" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
+        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" inline />
+        {/* Последнее поле перед кнопками: списку в потоке здесь нельзя (см. inline в search-picker.tsx) — он сдвинул
+            бы кнопки, и нажатие на «Сохранить» с раскрытым списком не дошло бы */}
+        <SearchPicker label="Функциональный руководитель" id="po-functional" side="top" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
+        {/* Список последнего поля раскрывается вверх: кнопки доступны и не перекрывают варианты. */}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Отмена
@@ -285,6 +300,19 @@ function PersonOrgModal({
       </form>
     </Modal>
   );
+}
+
+/**
+ * Подразделения для поля с поиском (этап 74): название, а второй строкой вид, подразделение выше и руководитель.
+ * Одноимённые отделы в разных управлениях различаются этой строкой, и по фамилии руководителя подразделение тоже
+ * находится. Порядок как пришёл: дерево структуры
+ */
+function unitOptions(units: UnitView[]): { value: string; label: string; hint: string }[] {
+  const byId = new Map(units.map((u) => [u.id, u]));
+  return units.map((u) => {
+    const parent = u.parentId ? byId.get(u.parentId) : undefined;
+    return { value: u.id, label: u.name, hint: `${u.kindLabel}${parent ? ` в «${parent.name}»` : ""}${u.head ? `, руководитель ${u.head.fullName}` : ""}` };
+  });
 }
 
 function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; units: UnitView[]; people: Candidate[]; onClose: () => void; onSave: Runner }) {
@@ -303,15 +331,22 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         }}
       >
         <TextInput label="Название" id="un-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" />
+        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" inline />
         {!head ? <TextInput label="Пометка о руководителе" id="un-note" value={headNote} onChange={(e) => setHeadNote(e.target.value)} placeholder="Например, роль делят CPO, PMM и CRM Lead" /> : null}
-        <SelectField
+        {/* Поиск, как и у подразделения человека (этап 74): одноимённые отделы различает вторая строка. Список здесь
+            всплывающий, а не в потоке: это последнее поле перед кнопками (см. inline в search-picker.tsx) */}
+        <SearchPicker
           label="Подразделение выше"
           id="un-parent"
+          side="top"
           value={parent}
-          onChange={(e) => setParent(e.target.value)}
-          options={units.filter((u) => u.id !== unit.id).map((u) => ({ value: u.id, label: `${"  ".repeat(u.depth)}${u.name}` }))}
+          onChange={setParent}
+          options={unitOptions(units).filter((o) => o.value !== unit.id)}
+          placeholder="Название подразделения или руководитель"
+          emptyText="Такого подразделения нет: проверьте написание"
+          clearable={false}
         />
+        {/* Список последнего поля раскрывается вверх: кнопки доступны и не перекрывают варианты. */}
         <div className="flex flex-wrap justify-between gap-2">
           <Button
             type="button"

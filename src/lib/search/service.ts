@@ -206,7 +206,9 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
   const personHits: SearchHit[] = peopleRows.map((p) => ({ kind: "person", slug: p.slug, fullName: p.fullName, position: p.position, snippet: mark(p.fullName, query) }));
 
   const hits = [...taskHits, ...entryHits, ...decisionHits, ...commentHits, ...personHits];
-  const truncated = taskHits.length >= perKind || entryHits.length >= perKind || commentHits.length >= perKind || decisionHits.length >= perKind;
+  // Людей считаем вместе с остальными видами (этап 74): по «ива» совпадают десятки, предел людей срабатывал молча, и
+  // экран говорил «показано всё», когда половины людей в ответе не было
+  const truncated = [taskHits, entryHits, commentHits, decisionHits, personHits].some((list) => list.length >= perKind);
   return { query, hits, total: hits.length, truncated };
 }
 
