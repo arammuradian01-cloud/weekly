@@ -207,3 +207,30 @@ export function watchCspRefusals(page: Page): string[] {
   });
   return refusals;
 }
+
+/**
+ * Отчётная неделя, какой её считает приложение: её ключ берётся из самого приложения, а не от сегодняшней даты. Дальше
+ * отчётной недели отчёт CEO не открывается: getWeekView приводит любую более позднюю неделю к отчётной, а встреча на
+ * неё перебрасывает. Отчётная неделя сменяется через сутки после срока сдачи, поэтому по понедельникам и до вечера
+ * вторника она прошлая, и от «сегодня» её не угадать. Нужен вход в режиме управления: отчёт открыт владельцу и
+ * администратору
+ */
+export async function reportingWeekKey(page: Page): Promise<string> {
+  await page.goto("/ceo-report");
+  // Переключатель недель: шаг назад кладёт ключ недели в адрес, «Текущая» ведёт на отчётную неделю приложения
+  await page.getByRole("button", { name: "Предыдущая неделя" }).click();
+  await expect(page).toHaveURL(/\/ceo-report\?week=\d{4}-\d{2}-\d{2}/);
+  await page.getByRole("button", { name: "Текущая" }).click();
+  // «Текущая» есть только на не отчётной неделе: пропала — значит в адресе уже ключ отчётной
+  await expect(page.getByRole("button", { name: "Текущая" })).toHaveCount(0);
+  const week = new URL(page.url()).searchParams.get("week") ?? "";
+  expect(week, "ключ отчётной недели в адресе отчёта CEO").toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  return week;
+}
+
+/** Месяц недели, как его считает приложение (planMonthOfWeek в src/lib/plan/brief.ts): месяц её четверга */
+export function monthOfWeek(week: string): string {
+  const d = new Date(`${week}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 3);
+  return d.toISOString().slice(0, 7);
+}

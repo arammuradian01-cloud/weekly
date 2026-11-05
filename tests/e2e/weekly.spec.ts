@@ -200,7 +200,10 @@ test("владелец отмечает записи в отчёт CEO, отчё
   await expect(page.getByText("Отчёт за неделю 39 сохранён").first()).toBeVisible();
   await page.reload();
   await expect(page.getByTestId("ceo-block-risks").getByRole("textbox").last()).toHaveValue("Проверка сохранения отчёта");
-  await expect(page.getByText(/^Сохранён \d+ октября/).first()).toBeVisible();
+  // Отметка о сохранении идёт московским днём и месяцем (ceo-report.tsx, Intl ru-RU). Месяц считаем от текущей даты:
+  // раньше он был записан буквами («октября») и с первого ноября тест падал
+  const savedToday = `Сохранён ${new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date())}`;
+  await expect(page.getByText(savedToday).first()).toBeVisible();
   await shot(page, "ceo-report");
 });
 

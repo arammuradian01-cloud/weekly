@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
-import { enter, enterByLink, enterManagement, enterTeam, resetDatabase, sql } from "./helpers";
+import { enter, enterByLink, enterManagement, enterTeam, monthOfWeek, reportingWeekKey, resetDatabase, sql } from "./helpers";
 
 // Этап 35: прогноз месяца в процессах. После загрузки LBE лидер ОСАГО получает событие в «Мне», открывает прогноз и
 // отмечает «Прогноз проверен». Владелец загружает факт по дням и видит темп к прогнозу, сравнивает версии месяца,
@@ -17,12 +17,6 @@ async function shot(page: Page, name: string) {
 
 const moscowToday = () => new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
 const ru = (iso: string) => iso.split("-").reverse().join(".");
-/** Понедельник текущей недели по Москве: ключ недели. Отчёт и встреча по умолчанию открывают неделю из данных теста */
-const thisWeek = () => {
-  const d = new Date(`${moscowToday()}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
-  return d.toISOString().slice(0, 10);
-};
 
 test.beforeEach(async () => {
   await resetDatabase({ weekly: false });
@@ -36,13 +30,6 @@ test.beforeEach(async () => {
   await sql(`DELETE FROM plan_lines`);
   await sql(`DELETE FROM settings WHERE key LIKE 'plan.%'`);
 });
-
-/** Месяц недели, как у отчёта CEO и встречи: месяц её четверга */
-const weekMonth = () => {
-  const d = new Date(`${thisWeek()}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 3);
-  return d.toISOString().slice(0, 7);
-};
 
 async function pull(page: Page, month?: string) {
   await page.goto("/forecast");
@@ -132,15 +119,20 @@ test("после загрузки LBE: событие в «Мне», «Прог�
 test("прогноз месяца в отчёте CEO и на встрече топ-команды; кто ещё не проверил", async ({ page }) => {
   await enter(page, "Мурадян Арам");
   await enterManagement(page, "owner");
+  // Отчёт и встреча открываются не позже отчётной недели, а она по понедельникам прошлая: её ключ берём из приложения.
   // У недели на стыке месяцев месяц четверга может отличаться от сегодняшнего
-  await pull(page, weekMonth());
+  const week = await reportingWeekKey(page);
+  const month = monthOfWeek(week);
+  await pull(page, month);
   // Прошлый месяц закрыт: проверять его уже не просят
-  const open = weekMonth() >= moscowToday().slice(0, 7);
-  await page.goto(`/ceo-report?week=${thisWeek()}`);
+  const open = month >= moscowToday().slice(0, 7);
+  await page.goto(`/ceo-report?week=${week}`);
   // Этап 47: блок прогноза в отчёте свёрнут
   await page.getByTestId("ceo-plan-block").locator("summary").click();
   const brief = page.getByTestId("plan-brief").first();
-  await expect(brief).toBeVisible();
+  // Сводка собрана по тому же месяцу, который загрузил тест: ссылка «Открыть прогноз» ведёт на него
+  await expect(page.locator("#plan-brief").getByRole("link", { name: "Открыть прогноз" })).toHaveAttribute("href", `/forecast?month=${month}`);
+  await expect(brief, `сводка прогноза за ${month}, неделя ${week}`).toBeVisible();
   await expect(page.getByTestId("plan-brief-revenue")).toContainText("млн");
   if (open) {
     await expect(page.getByTestId("plan-brief-waiting")).toContainText("Ждут проверки после загрузки LBE: ОСАГО, КАСКО");
@@ -148,8 +140,8 @@ test("прогноз месяца в отчёте CEO и на встрече т�
     await expect(page.getByTestId("plan-brief-table")).toContainText("ждёт проверки");
   }
   await shot(page, "ceo");
-  await page.goto(`/weekly/meeting?week=${thisWeek()}`);
-  await expect(page.getByTestId("plan-brief")).toBeVisible();
+  await page.goto(`/weekly/meeting?week=${week}`);
+  await expect(page.getByTestId("plan-brief"), `сводка прогноза на встрече за ${month}, неделя ${week}`).toBeVisible();
   if (open) await expect(page.getByTestId("plan-brief-waiting")).toContainText("КАСКО");
   // На встрече сводка короткая: без таблицы продуктов
   await expect(page.getByTestId("plan-brief-table")).toHaveCount(0);
@@ -164,9 +156,7 @@ test("отчёт CEO за прошлую неделю: прогноз на её 
   await page.getByRole("button", { name: "Предыдущая неделя" }).click();
   await expect(page).toHaveURL(/week=\d{4}-\d{2}-\d{2}/);
   const week = new URL(page.url()).searchParams.get("week")!;
-  const thursday = new Date(`${week}T00:00:00Z`);
-  thursday.setUTCDate(thursday.getUTCDate() + 3);
-  const month = thursday.toISOString().slice(0, 7);
+  const month = monthOfWeek(week);
   const sunday = new Date(`${week}T00:00:00Z`);
   sunday.setUTCDate(sunday.getUTCDate() + 6);
   const sundayKey = sunday.toISOString().slice(0, 10);
