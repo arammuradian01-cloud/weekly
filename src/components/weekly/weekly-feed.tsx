@@ -24,6 +24,8 @@ import { AbsentBadge, substituteText } from "./absence";
 import { useRunWeekly } from "./use-weekly";
 import { PromoteControl, PromotedNote } from "./promote";
 import { WeekSwitcher } from "./week-switcher";
+import { submitWeekHref } from "@/lib/weekly/weeks";
+import { canEditWeekly } from "@/lib/weekly/rules";
 
 type View = "people" | "blocks";
 
@@ -93,8 +95,11 @@ export function WeeklyFeed({
   /** Weekly человека по ссылке из дерева подчинённых (этап 39) */
   focus?: AuthorFocus | null;
 }) {
-  const { manage, teamPeople } = usePrototype();
+  const { manage, manageRole, observer, me, teamPeople } = usePrototype();
   const week = data.week;
+  // Этап 73+81: кнопки «Сдать» ведут на выбранную неделю, а не на отчётную, поэтому сначала считаем, можно ли вообще
+  // писать weekly за неё: закрытую неделю правят только владелец и администраторы, наблюдатель не пишет совсем
+  const canWrite = canEditWeekly(week, data.reportingKey, { slug: me.slug, management: manageRole, observer }, me.slug);
   const [view, setView] = useState<View>("people");
   const [direction, setDirection] = useState<DirectionCode | "">("");
   const [block, setBlock] = useState<BlockCode | "">("");
@@ -204,9 +209,17 @@ export function WeeklyFeed({
             <span className="sm:hidden">Встреча</span>
             <span className="hidden sm:inline">Режим встречи</span>
           </Link>
-          <Link href="/weekly/submit" className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
+          {/* Этап 73+81: на прошлой неделе кнопка ведёт на сдачу именно за неё, а не за отчётную. Писать за неделю
+              нельзя (закрыта, наблюдатель): подпись честная, экран откроется только для чтения */}
+          <Link href={submitWeekHref(week.key)} className={buttonClass("primary", "md", "col-span-2 px-3 sm:col-span-1 sm:px-5")}>
             <PenLine className="h-4 w-4" aria-hidden="true" />
-            {myState === "submitted" || myState === "late" ? "Мой weekly" : myState === "draft" ? "Продолжить weekly" : "Сдать weekly"}
+            {myState === "submitted" || myState === "late" || !canWrite
+              ? "Мой weekly"
+              : myState === "draft"
+                ? "Продолжить weekly"
+                : week.reporting
+                  ? "Сдать weekly"
+                  : `Сдать за неделю ${week.number}`}
           </Link>
           {teamWeek && !data.departmentClosed ? <TeamWeekLock week={week} team={teamWeek} /> : null}
           {/* Этап 66: отчёт команды по смысловым блокам и шаблон блоков у руководителя команды */}
@@ -304,9 +317,10 @@ export function WeeklyFeed({
           title={`За неделю ${week.number} записей нет`}
           className="mt-6"
           action={
-            week.reporting ? (
-              <Link href="/weekly/submit" className={buttonClass("secondary", "sm")}>
-                Написать свой weekly
+            // Зовём писать weekly только туда, где его правда можно написать: иначе ссылка ведёт на экран для чтения
+            canWrite ? (
+              <Link href={submitWeekHref(week.key)} className={buttonClass("secondary", "sm")}>
+                {week.reporting ? "Написать свой weekly" : `Написать weekly за неделю ${week.number}`}
               </Link>
             ) : undefined
           }

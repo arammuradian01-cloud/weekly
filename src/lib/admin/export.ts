@@ -1,6 +1,8 @@
 // Выгрузка всех данных в Excel для владельца (раздел 6 ТЗ): второй уровень защиты вместе с историей версий таблицы.
 // Один файл, по листу на вид данных. Время московское, подписи человеческие, без кодов.
 
+import { protectReportAudit } from "@/lib/leader-report/audit-access";
+import type { Actor } from "@/lib/tasks/service";
 import ExcelJS from "exceljs";
 import { prisma } from "@/lib/db";
 import { listTasks } from "@/lib/tasks/service";
@@ -45,7 +47,7 @@ export type ExportSummary = { tasks: number; entries: number; audit: number };
  * market: открыт ли выгружающему раздел «Рынок» (этап 62). Нет: события рынка в лист «Журнал» не попадают, как и в
  * журнале на экране. По умолчанию скрыты
  */
-export async function buildExport(options: { market?: boolean } = {}): Promise<{ buffer: Buffer; summary: ExportSummary }> {
+export async function buildExport(options: { market?: boolean; actor?: Actor } = {}): Promise<{ buffer: Buffer; summary: ExportSummary }> {
   const [tasks, people, dicts, weeks, reports, entries, ceo, audit, taskMeta, promiseRows, requests] = await Promise.all([
     listTasks({ archived: true }),
     prisma.person.findMany({ orderBy: [{ sortOrder: "asc" }], include: { defaultDirection: true } }),
@@ -354,7 +356,7 @@ export async function buildExport(options: { market?: boolean } = {}): Promise<{
       { header: "Откуда", width: 10 },
       { header: "Адрес", width: 16 },
     ],
-    audit.map((a) => [
+    (await protectReportAudit(audit, options.actor)).map((a) => [
       msk(a.at),
       // Этап 71: правка во время входа владельца в профиль автора, с пометкой, кто из владельцев вошёл
       `${(a.actorId && nameById.get(a.actorId)) || a.actorName || "Система"}${a.asOwnerName ? ` (вошёл владелец ${a.asOwnerName})` : ""}`,
