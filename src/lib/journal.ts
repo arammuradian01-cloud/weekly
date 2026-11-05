@@ -1,6 +1,8 @@
 // Журнал для страницы «Журнал»: события из базы в виде, понятном экрану (раздел 6 ТЗ).
 // Фильтры и подгрузка идут на сервере: журнал хранится без срока, за год это десятки тысяч строк.
 
+import { protectReportAudit } from "./leader-report/audit-access";
+import type { Actor } from "./tasks/service";
 import { prisma } from "./db";
 import { AUDIT_ACTION_LABELS } from "./audit";
 import { moscowIso, moscowTime } from "./tasks/dates";
@@ -12,6 +14,7 @@ import type { ChangeSource, Prisma } from "@/generated/prisma/client";
 
 export type JournalKind = JournalEvent["kind"];
 export type JournalFilter = {
+  actor?: Actor;
   /** Короткое имя человека или «system» */
   who?: string;
   /** Дней назад от сегодня; пусто: всё время */
@@ -155,6 +158,11 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
       return what ? `Запись weekly «${short(what)}»` : "Запись weekly";
     }
     if (entity === "ceo-report" && id) return `Отчёт CEO, неделя ${weekNumberOf(id)}`;
+    // Этап 73+81: обсуждение отправленного отчёта руководителю, id это команда и неделя
+    if (entity === "leader-report" && id) {
+      const week = id.split("/")[1];
+      return `Отчёт руководителю${week ? `, неделя ${weekNumberOf(week)}` : ""}`;
+    }
     if (entity === "meeting") return "Встреча";
     if (entity === "dict" && id) {
       const [kind, code] = id.split("/");
@@ -198,7 +206,8 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
     return AUDIT_ACTION_LABELS[action] ?? action;
   }
 
-  const events = rows.map((r) => ({
+  const safeRows = await protectReportAudit(rows, filter.actor);
+  const events = safeRows.map((r) => ({
     id: `a${r.id}`,
     at: moscowIso(r.at),
     time: moscowTime(r.at),

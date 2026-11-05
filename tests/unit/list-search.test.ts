@@ -68,6 +68,29 @@ describe("параметры списка в адресе", () => {
     expect(applyListParams(tasks, { ...DEFAULT_PARAMS, q: "2" }, me, today).map((t) => t.number)).toEqual([2]);
   });
 
+  it("поиск по словам в любом порядке, «ё» и регистр не важны, цель тоже ищется (этап 74)", () => {
+    const me = { slug: "reva", role: "LEADER" as const };
+    const find = (q: string, list: Task[]) => applyListParams(list, { ...DEFAULT_PARAMS, q }, me, "2026-10-07").map((t) => t.number);
+    const tasks = [
+      task({ number: 1, title: "Учёт убытков", outcome: "Свести учёт", owner: "reva" }),
+      task({ number: 2, title: "Выгрузка по ОСАГО", outcome: "Отчёт в СК", owner: "golovkin", goal: { id: "g1", title: "РТ-1. Рост выручки", code: "РТ-1" } }),
+      task({ number: 3, title: "Прочее", outcome: "Прочее", owner: "reva" }),
+    ];
+    // «ё» и регистр: «учет» находит «Учёт», «УЧЁТ» тоже
+    expect(find("учет", tasks)).toEqual([1]);
+    expect(find("УЧЁТ", tasks)).toEqual([1]);
+    // Слова в любом порядке и из разных полей: фамилия ответственного и слово из названия
+    expect(find("осаго головкин", tasks)).toEqual([2]);
+    expect(find("головкин выгрузка", tasks)).toEqual([2]);
+    // Цель задачи: по коду из метки в строке списка и по названию цели
+    expect(find("рт-1", tasks)).toEqual([2]);
+    expect(find("выручки", tasks)).toEqual([2]);
+    // Номер ищется целиком, как раньше: «2» это задача 2, а не всё, где есть цифра 2
+    expect(find("2", tasks)).toEqual([2]);
+    // Слово, которого нет ни в одной задаче, не находит ничего
+    expect(find("каско", tasks)).toEqual([]);
+  });
+
   it("сортировка по колонкам в обе стороны, без колонки прежний порядок", () => {
     const tasks = [
       task({ number: 1, title: "Б", due: "2026-10-30", priority: "low" }),

@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, enterPersonal, resetDatabase, sql } from "./helpers";
 import { E2E_PASSWORDS } from "./global-setup";
+import { expectTeam, openTeamsScreen, teamSwitcher } from "./team-picker";
 
 // Этап 64: один экран «Люди», «Weekly-команды». Владелец создаёт команду и добавляет людей поиском из разных
 // подразделений: своя ветка входит сразу, человек из другой ветки ждёт согласия своего руководителя. Переименование,
@@ -291,6 +292,60 @@ test("владелец собирает команду поиском из ра�
   // Команда встала под команду своего руководителя по структуре, а не под топ-команду владельца
   expect(pilotRow!.parent).toBe("Департамент партнёрств");
   await shot(page, "owner-pilot");
+
+  // Этап 74 (просьба Арама 23.10.2026): переключатель команды в шапке это окно с поиском, а не системный список.
+  // У владельца в режиме управления в нём все команды компании
+  const money = await teamId("Департамент Money");
+  await page.goto("/tasks");
+  await teamSwitcher(page, isPhone()).click();
+  const picker = page.getByTestId("team-picker");
+  await expect(picker).toBeVisible();
+  // Фокус сразу в поиске: команду ищут, а не листают
+  const pickerSearch = picker.getByRole("combobox");
+  await expect(pickerSearch).toBeFocused();
+  // Разделы: свои команды сверху, ниже все команды по дереву, и «Все мои команды» первым пунктом
+  await expect(picker.getByText("Ваши команды", { exact: true })).toBeVisible();
+  await expect(picker.getByText("Все команды", { exact: true })).toBeVisible();
+  // «Все мои команды» первым пунктом раздела всех команд, а не первым пунктом окна: сверху свои команды
+  await expect(picker.locator('[role="option"][data-team="*"]')).toHaveCount(1);
+  await shot(page, "team-picker");
+
+  // Поиск по названию
+  await pickerSearch.fill("кредитных");
+  await expect(picker.getByText("Найдено", { exact: true })).toBeVisible();
+  await expect(picker.getByRole("option")).toHaveCount(1);
+  await expect(picker.getByRole("option").first()).toContainText("Управление кредитных продуктов");
+
+  // Поиск по фамилии руководителя: находит обе команды Беловой, и вторая строка говорит, кто руководитель
+  await pickerSearch.fill("белова");
+  const byLeader = picker.getByRole("option");
+  await expect(byLeader).toHaveCount(2);
+  await expect(byLeader.first()).toContainText("Руководитель: Белова Ольга");
+  await expect(picker.getByRole("option", { name: /^Департамент партнёрств/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /^Партнёрский пилот/ })).toBeVisible();
+
+  // Ничего не нашлось: экран говорит об этом и предлагает поискать по руководителю
+  await pickerSearch.fill("абвгде");
+  await expect(picker.getByRole("option")).toHaveCount(0);
+  await expect(picker.getByText(/Команды «абвгде» нет/)).toBeVisible();
+
+  // Enter выбирает первый найденный: команду Ершова находим по фамилии и выбираем с клавиатуры
+  await pickerSearch.fill("ершов");
+  await expect(picker.getByRole("option")).toHaveCount(1);
+  await pickerSearch.press("Enter");
+  await expect(picker).toHaveCount(0);
+  await expectTeam(page, isPhone(), money);
+  await expect(teamSwitcher(page, isPhone())).toContainText("Департамент Money");
+
+  // Выбранная команда попала в «Недавние» и помечена галочкой как выбранная сейчас
+  await teamSwitcher(page, isPhone()).click();
+  await expect(picker.getByText("Недавние", { exact: true })).toBeVisible();
+  await expect(picker.locator('[role="option"][data-team="' + money + '"]').first()).toContainText("выбрана сейчас");
+  await pickerSearch.press("Escape");
+  await expect(picker).toHaveCount(0);
+  // Escape вернул фокус на кнопку: с клавиатуры из окна не выпасть
+  await expect(teamSwitcher(page, isPhone())).toBeFocused();
+
   await aram.close();
 });
 
@@ -300,7 +355,7 @@ test("руководитель видит свои команды, соглас�
   const reva = await personal(browser, page, "Рева");
   // Переключатель команды в шапке: внизу «Управлять командами»
   await reva.goto("/tasks");
-  await reva.locator(isPhone() ? "#team-switcher-m" : "#team-switcher").selectOption("__manage");
+  await openTeamsScreen(reva, isPhone());
   await expect(reva).toHaveURL(/\/people\/teams$/);
   const list = reva.getByTestId("teams-list");
   await expect(list).toContainText("Управление продуктового развития (insurance)");

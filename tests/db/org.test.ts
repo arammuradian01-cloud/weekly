@@ -137,6 +137,35 @@ describe("загрузка структуры", () => {
     expect(await prisma.auditLog.count({ where: { action: "structure.import", id: { gt: mark } } })).toBe(1);
   });
 
+  it("владелец переносит человека в другое подразделение: запись, журнал, отказ на несуществующем (этап 74)", async () => {
+    await org.applyStructure(await actors.owner(), STRUCTURE);
+    const before = await prisma.person.findFirstOrThrow({ where: { fullName: { startsWith: "Антонов" } }, include: { unit: true } });
+    expect(before.unit?.name).toBe("Сектор автострахования");
+    const mark = (await prisma.auditLog.aggregate({ _max: { id: true } }))._max.id ?? 0n;
+    const target = await prisma.orgUnit.findFirstOrThrow({ where: { name: "Управление развития продуктов" } });
+
+    await org.setPersonOrg(await actors.owner(), before.slug, { unit: target.id });
+    const after = await prisma.person.findUniqueOrThrow({ where: { slug: before.slug }, include: { unit: true } });
+    expect(after.unit?.name).toBe("Управление развития продуктов");
+    // Изменение подразделения попадает в журнал со старым и новым названием
+    const log = await prisma.auditLog.findMany({ where: { id: { gt: mark }, field: "Подразделение" } });
+    expect(log).toHaveLength(1);
+    expect(log[0]!.before).toBe("Сектор автострахования");
+    expect(log[0]!.after).toBe("Управление развития продуктов");
+
+    // Подразделения нет: правило отказывает, человек остаётся где был
+    await expect(org.setPersonOrg(await actors.owner(), before.slug, { unit: "нет-такого" })).rejects.toThrow(/Такого подразделения нет/);
+    expect((await prisma.person.findUniqueOrThrow({ where: { slug: before.slug }, include: { unit: true } })).unit?.name).toBe("Управление развития продуктов");
+    // Пустое подразделение снимает его совсем: человек без места в структуре
+    await org.setPersonOrg(await actors.owner(), before.slug, { unit: null });
+    expect((await prisma.person.findUniqueOrThrow({ where: { slug: before.slug } })).unitId).toBeNull();
+    // Меняет только владелец в режиме управления
+    await expect(org.setPersonOrg(await actors.reva(), before.slug, { unit: target.id })).rejects.toThrow();
+    // Возвращаем человека на место: следующие проверки в этом файле идут по структуре из файла
+    await org.setPersonOrg(await actors.owner(), before.slug, { unit: before.unitId });
+    expect((await prisma.person.findUniqueOrThrow({ where: { slug: before.slug }, include: { unit: true } })).unit?.name).toBe("Сектор автострахования");
+  });
+
   it("повторная загрузка того же файла ничего не дублирует и ручной состав команды не трогает", async () => {
     const before = await prisma.team.count();
     const revaTeam = await teamLedBy("Рева");

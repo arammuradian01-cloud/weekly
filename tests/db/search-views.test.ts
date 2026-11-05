@@ -110,6 +110,25 @@ describe("общий поиск", () => {
     expect((await search(await subject("muradyan"), "%%")).hits).toEqual([]);
   });
 
+  it("предел людей не срабатывает молча: ответ помечен обрезанным (этап 74)", async () => {
+    // Людей с одной фамилией больше, чем влезает в командную строку: экран обязан сказать, что показано не всё
+    const slugs = ["pred1", "pred2", "pred3", "pred4", "pred5", "pred6"];
+    await prisma.person.createMany({
+      data: slugs.map((slug, i) => ({ slug, fullName: `Пределов Сотрудник ${i + 1}`, shortName: `Пределов ${i + 1}`, role: "EMPLOYEE" as const, zone: "" })),
+    });
+    try {
+      const palette = await search(await subject("muradyan"), "пределов");
+      expect(palette.hits.filter((h) => h.kind === "person")).toHaveLength(5);
+      expect(palette.truncated).toBe(true);
+      // Шестерых хватает на странице поиска целиком: там предел 30, и обрезки нет
+      const page = await search(await subject("muradyan"), "пределов", "page");
+      expect(page.hits.filter((h) => h.kind === "person")).toHaveLength(6);
+      expect(page.truncated).toBe(false);
+    } finally {
+      await prisma.person.deleteMany({ where: { slug: { in: slugs } } });
+    }
+  });
+
   it("показывает только то, что человек видит: сотрудник не находит задачи и записи топ-команды, общий логин только топ-команду", async () => {
     const top = await mk("Секретная задача топ-команды про тарифы");
     // Задачу в команде Ревы ставит владелец: при общем логине Рева её не видит, при личном входе видит как руководитель

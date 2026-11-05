@@ -199,6 +199,8 @@ model Person {
   ownedGoals             Goal[]                  @relation("GoalOwner")
   createdGoals           Goal[]                  @relation("GoalCreator")
   entryComments          EntryComment[]
+  /// Комментарии к отправленным отчётам руководителю (этап 73+81)
+  reportComments         LeaderReportComment[]
   entryWatches           EntryWatch[]
   reactions              Reaction[]              @relation("ReactionPerson")
   discussed              Reaction[]              @relation("ReactionDiscussedBy")
@@ -859,6 +861,8 @@ model Week {
   forecasts  Forecast[]
   /// Weekly команд по блокам (этап 66)
   teamReports TeamWeeklyReport[]
+  /// Комментарии к отправленным отчётам руководителю (этап 73+81)
+  reportComments LeaderReportComment[]
 
   @@unique([isoYear, isoNumber])
   @@map("weeks")
@@ -1098,6 +1102,8 @@ enum InboxKind {
   THANKS
   /// Встреча (этап 23): протокол готов, вы владелец решения
   MEETING
+  /// Комментарий руководителя к отправленному отчёту или ответ на него (этап 73+81)
+  REPORT_COMMENT
   /// Встреча один на один (этап 28). Раздел удалён на этапе 76 вместе с событиями; значение осталось в типе базы,
   /// потому что Postgres не убирает значения перечисления, а пересоздание типа задело бы миграции параллельных этапов
   ONE_ON_ONE
@@ -1254,6 +1260,8 @@ model Team {
   /// Weekly по смысловым блокам (этап 66): шаблон блоков команды и собранные отчёты команды по неделям
   weeklyTemplate TeamWeeklyTemplate?
   weeklyReports  TeamWeeklyReport[]
+  /// Комментарии к отправленным отчётам руководителю (этап 73+81)
+  reportComments LeaderReportComment[]
 
   @@index([leaderId])
   @@index([parentId])
@@ -1293,6 +1301,34 @@ model TeamWeeklyReport {
   @@unique([teamId, weekId])
   @@index([weekId])
   @@map("team_weekly_reports")
+}
+
+/// Комментарий к отправленному отчёту руководителю (этап 73+81): получатель пишет к отчёту целиком (blockKey пусто)
+/// или к строке блока (blockKey, lineText: цитата строки в момент комментария, lineIndex: её место в отправленной
+/// версии). Ответ (parentId) пишут автор отчёта и получатель. Видят только автор (руководитель команды и тот, кто
+/// отправил), получатель и владельцы в режиме управления; участники команды нет. Отчёт задаётся командой и неделей:
+/// у команды страхования и инвестиций это отчёт CEO (ceo_reports), у остальных отчёт команды (team_weekly_reports)
+model LeaderReportComment {
+  id        String                @id @default(cuid())
+  teamId    String
+  team      Team                  @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  weekId    String
+  week      Week                  @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  authorId  String
+  /// Без каскада, как у комментария к записи weekly: выключение или удаление человека не стирает его замечания
+  author    Person                @relation(fields: [authorId], references: [id])
+  parentId  String?
+  parent    LeaderReportComment?  @relation("ReportCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies   LeaderReportComment[] @relation("ReportCommentReplies")
+  blockKey  String?
+  lineIndex Int?
+  lineText  String?
+  text      String
+  createdAt DateTime              @default(now()) @db.Timestamptz(3)
+
+  @@index([teamId, weekId])
+  @@index([parentId])
+  @@map("leader_report_comments")
 }
 
 /// Руководитель команды просит человека из другой ветки (этап 53). Человек входит в команду, когда согласится его

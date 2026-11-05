@@ -133,6 +133,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "weekly.absence.remove": "Отметка отсутствия снята",
   "data.reload": "База перезалита из выгрузки Bord",
   "ceo.save": "Отчёт CEO сохранён",
+  // Этап 73+81: обсуждение отправленного отчёта руководителю
+  "weekly.report.comment": "Комментарий к отчёту руководителю",
   "settings.dict.create": "Значение справочника добавлено",
   "settings.dict.rename": "Значение справочника переименовано",
   "settings.dict.hide": "Значение справочника скрыто",

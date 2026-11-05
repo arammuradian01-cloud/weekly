@@ -6,6 +6,7 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { AlarmClock, AtSign, CalendarClock, Check, CheckCheck, FileText, Gavel, Hand, Heart, MessageSquare, Presentation, Rocket, Rss, SquareCheck, TrendingUp, Users, type LucideIcon } from "lucide-react";
 import type { InboxItem } from "@/lib/inbox/service";
 import { planHref } from "@/lib/plan/links";
+import { parseCommentSubject, reportHref } from "@/lib/leader-report/rules";
 import { markAllDoneAction, markDoneAction, markSeenAction, snoozeAction } from "@/app/actions/inbox";
 import { acceptRequestAction } from "@/app/(app)/requests/actions";
 import { usePrototype } from "@/domain/store";
@@ -27,6 +28,12 @@ const when = (iso: string, today: string) => {
   return `${formatShort(day)} в ${time}`;
 };
 
+/** Ссылка события о комментарии к отчёту руководителю (этап 73+81). null: предмет не про комментарий */
+function reportCommentHref(subject: string): string | null {
+  const parsed = parseCommentSubject(subject);
+  return parsed ? reportHref(parsed.side, { week: parsed.week, team: parsed.teamId }) : null;
+}
+
 // Иконка события на круге, как в дизайн-системе (inbox/EventRow.jsx): по предмету события
 function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info" | "success" | "warning" | "neutral" } {
   if (item.requestNumber) return { icon: Hand, tone: "info" };
@@ -34,6 +41,8 @@ function eventIcon(item: InboxItem): { icon: LucideIcon; tone: "accent" | "info"
   if (item.subject.startsWith("ceo-report:")) return { icon: FileText, tone: "info" };
   if (item.subject.startsWith("meeting-parse:")) return { icon: Presentation, tone: "info" };
   if (item.subject.startsWith("team-report:")) return { icon: FileText, tone: "info" };
+  // Этап 73+81: комментарий руководителя к отправленному отчёту
+  if (item.subject.startsWith("report-comment:")) return { icon: MessageSquare, tone: "accent" };
   if (item.subject.startsWith("decision:")) return { icon: Gavel, tone: "neutral" };
   if (item.subject.startsWith("thanks:")) return { icon: Heart, tone: "success" };
   if (item.subject.startsWith("initiative:")) return { icon: Rocket, tone: "accent" };
@@ -118,6 +127,11 @@ export function InboxEvents({ items }: { items: InboxItem[] }) {
                   // Этап 66: руководитель команды отправил weekly команды по блокам
                   <Link href={`/weekly/team-report?team=${encodeURIComponent(item.subject.split(":")[1] ?? "")}&week=${item.subject.split(":")[2] ?? ""}`} className="sv-event__text font-semibold hover:text-link">
                     Weekly команды по блокам
+                  </Link>
+                ) : reportCommentHref(item.subject) ? (
+                  // Этап 73+81: комментарий руководителя к отчёту или ответ в обсуждении
+                  <Link href={reportCommentHref(item.subject)!} className="sv-event__text font-semibold hover:text-link">
+                    Обсуждение отчёта руководителю
                   </Link>
                 ) : item.subject.startsWith("meeting-parse:") ? (
                   // Этап 61: разбор встречи из Notion готов или не получился

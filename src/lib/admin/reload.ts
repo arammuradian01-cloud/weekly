@@ -113,8 +113,9 @@ export async function reloadFromBord(db: PrismaClient, tasksText: string, weekly
     // Черновики отчёта CEO уходят, отправленные CEO остаются: на них ведут события в «Мне» (этапы 61 и 66)
     await tx.ceoReport.deleteMany({ where: { sentAt: null } });
     // Недели, где не осталось ни записей, ни сдач других команд, ни отчётов CEO и команд (этап 66: отчёт команды
-    // собирается и из задач, он привязан к неделе и ушёл бы вместе с ней)
-    await tx.week.deleteMany({ where: { entries: { none: {} }, reports: { none: {} }, teamReports: { none: {} }, ceoReport: { is: null } } });
+    // собирается и из задач, он привязан к неделе и ушёл бы вместе с ней), ни обсуждения отчёта руководителю
+    // (этап 73+81: у LeaderReportComment.week каскад, и переписка ушла бы вместе с неделей молча)
+    await tx.week.deleteMany({ where: { entries: { none: {} }, reports: { none: {} }, teamReports: { none: {} }, ceoReport: { is: null }, reportComments: { none: {} } } });
     // Номера новых задач начнутся после самой старшей задачи из выгрузки, а при заборе из Bord от 1001
     const pullOn = await tx.setting.findUnique({ where: { key: "bord.sourceId" } });
     const first = typeof pullOn?.value === "string" && pullOn.value ? 1001 : 1;

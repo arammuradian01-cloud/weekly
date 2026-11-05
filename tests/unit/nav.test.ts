@@ -7,14 +7,15 @@ describe("меню", () => {
   it("группы и порядок разделов", () => {
     expect(NAV_GROUPS.map((g) => g.label)).toEqual(["Моё", "Команда", "Бизнес"]);
     // Этап 76: «Мне» стало блоком «Ждёт вас» на «Моей неделе», «Один на один» удалён
-    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/weekly", "/tasks", "/roadmap", "/people", "/goals", "/initiatives", "/decisions", "/forecast", "/market", "/news"]);
+    // Этап 73+81: «Отчёт руководителю» отдельным пунктом сразу под Weekly
+    expect(MAIN_NAV.map((i) => i.href)).toEqual(["/", "/weekly", "/leader-report", "/tasks", "/roadmap", "/people", "/goals", "/initiatives", "/decisions", "/forecast", "/market", "/news"]);
     expect(MAIN_NAV.map((i) => i.label)).not.toContain("Мне");
     expect(MAIN_NAV.map((i) => i.label)).not.toContain("Один на один");
     // Счётчик «ждут N» у пункта «Моя неделя»
     expect(COUNTER_HREF).toBe("/");
     expect(MAIN_NAV.find((i) => i.href === COUNTER_HREF)?.label).toBe("Моя неделя");
-    // Этап 62: «Рынок» закрытый раздел, пункт видят только те, кому он открыт
-    expect(MAIN_NAV.filter((i) => i.restricted).map((i) => i.href)).toEqual(["/market"]);
+    // Этапы 62 и 73+81: закрытые разделы видят только те, кому они открыты
+    expect(MAIN_NAV.filter((i) => i.restricted).map((i) => i.href)).toEqual(["/leader-report", "/market"]);
     // Этап 86: «Состояние» рядом с «Синхронизацией», тоже только владельцу
     expect(MANAGEMENT_NAV.map((i) => i.href)).toEqual(["/ceo-report", "/journal", "/sync", "/status", "/settings"]);
     expect(MANAGEMENT_NAV.filter((i) => i.ownerOnly).map((i) => i.href)).toEqual(["/sync", "/status"]);
