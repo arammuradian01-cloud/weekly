@@ -32,6 +32,11 @@ import { TOP_TEAM_NAME } from "@/domain/teams";
 /** Телефон и узкий ноутбук: карточка вместо списка, а не рядом с ним */
 const NARROW = "(max-width: 1023.98px)";
 
+/** Сколько команд показывает список сразу, дальше «Показать ещё» (этап 74) */
+const TEAMS_PAGE = 40;
+/** Сколько закрытых команд показывает свёрнутый блок сразу */
+const CLOSED_PAGE = 20;
+
 /** Широкий экран (список и карточка рядом). На сервере и до гидратации считаем узким: подсветку строки решает браузер */
 function subscribeWide(onChange: () => void) {
   const m = window.matchMedia(NARROW);
@@ -271,6 +276,14 @@ export function WeeklyTeams({ focus }: { focus: WeeklyTeam | null }) {
   }, [selected, view]);
 
   const found = useMemo(() => view.teams.filter((t) => matchTeam(t, query)), [view.teams, query]);
+  // Команд у владельца в режиме управления столько, сколько их в компании: список рисуется не весь (этап 74).
+  // Поиск появляется только при более чем трёх командах, и полагаться на то, что человек о нём догадается, нельзя
+  const [shownTeams, setShownTeams] = useState(TEAMS_PAGE);
+  const foundShown = found.slice(0, shownTeams);
+  const moreTeams = found.length - foundShown.length;
+  const [shownClosed, setShownClosed] = useState(CLOSED_PAGE);
+  const closedShown = view.closed.slice(0, shownClosed);
+  const moreClosed = view.closed.length - closedShown.length;
   const targets = useMemo(() => {
     const own = view.teams.filter((t) => t.rights.members && t.relation === "leader");
     // Владелец выбрал чужую команду: помощник добавляет и в неё
@@ -427,11 +440,18 @@ export function WeeklyTeams({ focus }: { focus: WeeklyTeam | null }) {
                 </div>
               ) : null}
               {found.length ? (
-                <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
-                  {found.map((t) => (
-                    <TeamRow key={t.id} team={t} selected={current?.id === t.id} opening={opening === t.id} onOpen={open} />
-                  ))}
-                </ul>
+                <>
+                  <ul className="sv-card m-0 list-none divide-y divide-line overflow-hidden bg-surface p-0" aria-label="Weekly-команды" data-testid="teams-list">
+                    {foundShown.map((t) => (
+                      <TeamRow key={t.id} team={t} selected={current?.id === t.id} opening={opening === t.id} onOpen={open} />
+                    ))}
+                  </ul>
+                  {moreTeams > 0 ? (
+                    <Button size="sm" variant="secondary" className="self-start max-sm:min-h-11" onClick={() => setShownTeams((n) => n + TEAMS_PAGE)} data-testid="teams-more">
+                      Показать ещё {Math.min(TEAMS_PAGE, moreTeams)} из {moreTeams}
+                    </Button>
+                  ) : null}
+                </>
               ) : (
                 <p className="sv-card bg-surface p-4 text-small text-muted" aria-live="polite">
                   Ничего не нашли: проверьте написание или очистите поиск
@@ -442,7 +462,7 @@ export function WeeklyTeams({ focus }: { focus: WeeklyTeam | null }) {
           {view.closed.length ? (
             <Collapsible id="closed-teams" title="Закрытые команды" hint={`${view.closed.length}: можно вернуть`} headingLevel={3} testId="closed-teams">
               <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
-                {view.closed.map((t) => (
+                {closedShown.map((t) => (
                   <li key={t.id} className="flex items-center justify-between gap-3 py-2">
                     <span className="min-w-0 text-body text-ink">{t.name}</span>
                     <Button size="sm" variant="secondary" className="max-sm:min-h-11" disabled={busy} onClick={() => void reopen(t.id, t.name)} aria-label={`Вернуть команду: ${t.name}`}>
@@ -450,6 +470,13 @@ export function WeeklyTeams({ focus }: { focus: WeeklyTeam | null }) {
                     </Button>
                   </li>
                 ))}
+                {moreClosed > 0 ? (
+                  <li className="py-2">
+                    <Button size="sm" variant="secondary" className="max-sm:min-h-11" onClick={() => setShownClosed((n) => n + CLOSED_PAGE)} data-testid="closed-more">
+                      Показать ещё {Math.min(CLOSED_PAGE, moreClosed)} из {moreClosed}
+                    </Button>
+                  </li>
+                ) : null}
               </ul>
             </Collapsible>
           ) : null}

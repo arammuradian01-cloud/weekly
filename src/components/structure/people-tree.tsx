@@ -17,6 +17,12 @@ import { groupReports, unitTitle, type ReportGroup } from "@/lib/org/tree-groups
 /** Поиск без регистра и без разницы «ё» и «е», как в остальном ресурсе */
 const norm = (s: string) => s.toLowerCase().replace(/ё/g, "е");
 
+/** Сколько человек показывает подсказка поиска: остальных находит уточнённый запрос */
+const FOUND_SHOWN = 8;
+
+/** Сколько людей без руководителя показываем списком: остальных находит поиск */
+const ROOTS_SHOWN = 30;
+
 export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree: PeopleTree; me: string; owner?: boolean; /** Человек из адреса (?person=), этап 45 */ start?: string | null }) {
   const [picked, setPicked] = useState<string | null>(start && tree.people[start] ? start : tree.start);
   const [mode, setMode] = useState<"chart" | "list">("chart");
@@ -47,7 +53,11 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
   }, [focus, people]);
 
   const q = norm(query.trim());
-  const found = q.length >= 2 ? Object.values(people).filter((p) => [p.fullName, p.position, p.unit].some((v) => v && norm(v).includes(q))).slice(0, 8) : [];
+  // Подсказка показывает первые восемь, но говорит, сколько нашлось всего (этап 74): раньше предел срабатывал молча,
+  // и человек, не увидев своего среди восьми, считал, что в ресурсе его нет
+  const matched = q.length >= 2 ? Object.values(people).filter((p) => [p.fullName, p.position, p.unit].some((v) => v && norm(v).includes(q))) : [];
+  const found = matched.slice(0, FOUND_SHOWN);
+  const more = matched.length - found.length;
 
   if (!tree.loaded) {
     return (
@@ -108,10 +118,17 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
                   </button>
                 </li>
               ))}
+              {more > 0 ? (
+                <li className="border-t border-border px-3 py-2 text-caption text-text-secondary">Ещё {more}: уточните поиск</li>
+              ) : null}
             </ul>
           ) : q.length >= 2 ? (
             <p className="mt-1 text-caption text-text-secondary">Никого не нашли</p>
           ) : null}
+          {/* Сколько нашлось: экранный диктор читает это при вводе */}
+          <span className="sr-only" aria-live="polite">
+            {q.length >= 2 ? (matched.length ? `Нашлось ${matched.length} ${plural(matched.length, "человек", "человека", "человек")}` : "Никого не нашли") : ""}
+          </span>
         </div>
         <Segmented label="Вид дерева" value={mode} onChange={setMode} options={[{ value: "chart", label: "Схема" }, { value: "list", label: "Список" }]} />
       </div>
@@ -158,13 +175,15 @@ export function PeopleTreeView({ tree, me, owner = false, start = null }: { tree
                 {`Другие ветки и люди без руководителя в структуре: ${otherRoots.length}`}
               </summary>
               <ul className="mt-1 flex flex-wrap gap-1.5" aria-label="Другие ветки">
-                {otherRoots.slice(0, 30).map((slug) => (
+                {otherRoots.slice(0, ROOTS_SHOWN).map((slug) => (
                   <li key={slug}>
                     <button type="button" className="rounded-tag bg-field px-2 py-1 text-caption text-ink hover:bg-accent-soft" onClick={() => open(slug)}>
                       {people[slug]!.fullName}
                     </button>
                   </li>
                 ))}
+                {/* Этап 74: в заголовке стоит полное число, а показано тридцать. Молчать об этом нельзя */}
+                {otherRoots.length > ROOTS_SHOWN ? <li className="px-1 py-1">{`Ещё ${otherRoots.length - ROOTS_SHOWN}: найдите человека поиском выше`}</li> : null}
               </ul>
             </details>
           ) : null}

@@ -8,7 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, Target, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, initials as personInitials, ownerName } from "@/domain/people";
+import { compactName, initials as personInitials, ownerName, positionOf } from "@/domain/people";
 import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -18,14 +18,18 @@ import { cn } from "@/lib/cn";
 import { Avatar, Chip, SelectField } from "@/components/ui/primitives";
 import { GoalTag, GreenOutsideNote, LateWaits, OverdueNote, StaleNote } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
+import { SearchPicker } from "@/components/ui/search-picker";
 import { Button } from "@/components/ui/button";
 import type { SavedViewDto } from "@/lib/views/service";
-import { QUICK_FILTERS, DEFAULT_PARAMS, applyListParams, hasFilters, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
+import { QUICK_FILTERS, DEFAULT_PARAMS, TASKS_PAGE, applyListParams, hasFilters, limitGroups, listParamsToQuery, parseListParams, quickPredicate, sortTasks, type ListParams, type QuickFilter, type SortDir, type SortKey } from "@/lib/tasks/list-params";
 import { PrioritySelect, StateSelect, StatusSelect } from "./task-fields";
 import { useOpenTask } from "./task-drawer";
 import { SavedViews } from "./saved-views";
 import { BulkBar, useBulkSelection } from "./bulk-actions";
 import { checklistProgress } from "./task-checklist";
+
+/** «Все ответственные» в поле с поиском: пустого значения у поля нет, оно приходит, пока человек печатает (этап 74) */
+const ANY_OWNER = "__any";
 
 export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const { data, me, manageRole, manage, leads, teamPeople, observer, limited } = usePrototype();
@@ -33,10 +37,11 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const fromUrl = useMemo(() => parseListParams(new URLSearchParams(params.toString())), [params]);
-  // Экран меняется сразу, адрес догоняет: пока router.replace в пути, действует местная копия параметров
-  const [local, setLocal] = useState<ListParams | null>(null);
-  useEffect(() => setLocal(null), [fromUrl]);
-  const p = local ?? fromUrl;
+  // Экран меняется сразу, адрес догоняет: пока router.replace в пути, действует местная копия параметров. Копия
+  // помнит, от какого разбора адреса она сделана, и перестаёт действовать сама, как только адрес стал другим.
+  // Раньше её сбрасывал useEffect: setState в теле эффекта правилами проекта запрещён, значение выводим при отрисовке
+  const [local, setLocal] = useState<{ from: ListParams; next: ListParams } | null>(null);
+  const p = local?.from === fromUrl ? local.next : fromUrl;
   // Текст поиска набирается без ожидания ответа адреса: в адрес уходит с задержкой. Из адреса поле берётся только
   // при внешней навигации (ссылка, вид), а не после своего же ввода, иначе пропадали бы пробелы и буквы
   const [q, setQ] = useState(p.q);
@@ -54,13 +59,13 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       const next = { ...p, ...patch };
       // Архив виден только владельцу в режиме управления: в адрес не пишем у остальных
       if (manageRole !== "OWNER") next.archive = false;
-      setLocal(next);
+      setLocal({ from: fromUrl, next });
       const query = listParamsToQuery(next);
       const task = params.get("task");
       const full = [query, task ? `task=${encodeURIComponent(task)}` : ""].filter(Boolean).join("&");
       router.replace(full ? `${pathname}?${full}` : pathname, { scroll: false });
     },
-    [p, params, pathname, router, manageRole],
+    [p, fromUrl, params, pathname, router, manageRole],
   );
   const onQ = (value: string) => {
     setQ(value);
@@ -106,6 +111,21 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
     return order.map((k) => ({ key: k, title: titleOf(k), tasks: filtered.filter((t) => keyOf(t) === k) })).filter((g) => g.tasks.length > 0);
   }, [filtered, p.group, teamPeople]);
 
+  // Рисуем не всё (этап 74): у владельца в списке бывают тысячи задач, и экран от них встаёт. Предел на разметку, а не
+  // на отбор: счётчики, массовые действия и поиск по-прежнему считают все отобранные задачи
+  const [shownTasks, setShownTasks] = useState(TASKS_PAGE);
+  // Сменили фильтр, поиск или группировку: предел снова с начала, чтобы «Показать ещё» не тянуло прежний хвост
+  const pageKey = `${listParamsToQuery(p)}|${archive ? 1 : 0}`;
+  const [pageBase, setPageBase] = useState(pageKey);
+  const limit = pageBase === pageKey ? shownTasks : TASKS_PAGE;
+  const { shown: shownGroups, more: moreTasks } = useMemo(() => limitGroups(groups, limit), [groups, limit]);
+  // Что сейчас в разметке: по нему плашка выбора говорит, сколько отмеченного не на экране
+  const shownNumbers = useMemo(() => shownGroups.flatMap((g) => g.tasks.map((t) => t.number)), [shownGroups]);
+  const showMore = () => {
+    setPageBase(pageKey);
+    setShownTasks(limit + TASKS_PAGE);
+  };
+
   const toggle = (f: QuickFilter) => setParams({ filters: p.filters.includes(f) ? p.filters.filter((x) => x !== f) : [...p.filters, f] });
   const sortBy = (key: SortKey) => {
     if (p.sort !== key) return setParams({ sort: key, dir: key === "updated" ? "desc" : "asc" });
@@ -125,7 +145,14 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const canBulk = !observer && !limited && (manage || leads.length > 0);
   const bulk = useBulkSelection(filtered);
 
-  const ownerOptions = [{ value: "", label: "Все ответственные" }, ...teamPeople.map((x) => ({ value: x.slug, label: x.fullName })), { value: "all", label: "Все лидеры (общие)" }];
+  // Людей в команде бывают десятки, а в «Все мои команды» и больше (этап 74): ответственного ищут по фамилии, как на
+  // карте сроков с этапа 77. «Все ответственные» отдельным вариантом с сигнальным значением: иначе фильтр нечем
+  // сбросить, а пустое значение приходит, пока человек печатает поверх выбранного
+  const ownerOptions: { value: string; label: string; hint?: string | null }[] = [
+    { value: ANY_OWNER, label: "Все ответственные" },
+    ...teamPeople.map((x) => ({ value: x.slug, label: x.fullName, hint: positionOf(x.slug) })),
+    { value: "all", label: "Все лидеры (общие)" },
+  ];
   if (p.owner && !ownerOptions.some((o) => o.value === p.owner)) ownerOptions.push({ value: p.owner, label: ownerName(p.owner) });
 
   return (
@@ -154,7 +181,20 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               className="sv-control h-11 w-full pl-9 pr-3 text-body"
             />
           </div>
-          <SelectField label="Ответственный" id="filter-owner" value={p.owner ?? ""} onChange={(e) => setParams({ owner: e.target.value || null })} className="sm:w-52" options={ownerOptions} />
+          <SearchPicker
+            label="Ответственный"
+            id="filter-owner"
+            value={p.owner ?? ANY_OWNER}
+            // Пустое значение приходит, пока человек печатает: выбор не сбрасывается, пока не выбран новый вариант
+            onChange={(v) => {
+              if (!v) return;
+              setParams({ owner: v === ANY_OWNER ? null : v });
+            }}
+            className="sm:w-56"
+            options={ownerOptions}
+            placeholder="Фамилия или имя"
+            emptyText="Такого человека в команде нет: проверьте написание"
+          />
           <SelectField
             label="Группировать"
             id="group-by"
@@ -174,7 +214,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-small text-muted">
         <p aria-live="polite">
-          Показано {filtered.length} {active ? "по фильтрам" : archive ? "в архиве" : "открытых"}
+          Отобрано {filtered.length} {active ? "по фильтрам" : archive ? "в архиве" : "открытых"}
           {active ? (
             <button type="button" onClick={reset} className="ml-3 inline-flex items-center gap-1 font-medium text-blue-700 hover:underline">
               <X className="h-3.5 w-3.5" aria-hidden="true" />
@@ -222,9 +262,22 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
               : "Снимите часть фильтров или поищите по номеру задачи."}
         </EmptyState>
       ) : (
-        <TaskTable groups={groups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
+        // Плашка выбранных задач висит у нижнего края поверх страницы, и запаса под неё на странице нет. Без запаса она
+        // накрывает хвост списка: последние карточки на телефоне и кнопку «Показать ещё», до которых тогда не
+        // дотянуться ни человеку, ни автотесту. Запас на всём списке и только когда плашка на экране
+        <div className={cn(bulk.selected.size > 0 && "pb-28 lg:pb-20")}>
+          <TaskTable groups={shownGroups} sort={p.sort} dir={p.dir} onSort={sortBy} selection={canBulk && !archive ? bulk : undefined} />
+          {moreTasks > 0 ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-small text-muted">
+              <Button size="sm" variant="secondary" className="max-sm:min-h-11" onClick={showMore} data-testid="tasks-more">
+                Показать ещё {Math.min(TASKS_PAGE, moreTasks)}
+              </Button>
+              <span aria-live="polite">{`Показано ${filtered.length - moreTasks} из ${filtered.length}`}</span>
+            </div>
+          ) : null}
+        </div>
       )}
-      {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} /> : null}
+      {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} shown={shownNumbers} /> : null}
     </div>
   );
 }
@@ -285,7 +338,11 @@ export function TaskTable({
   onSort,
   selection,
 }: {
-  groups: { key: string; title: string; tasks: Task[] }[];
+  /**
+   * Группы для разметки. total и allNumbers у обрезанной группы отличаются от нарисованного: счётчик шапки печатает
+   * total, а «Выбрать все» отмечает allNumbers. Без них шапка врёт, а галочка молча берёт только нарисованные
+   */
+  groups: { key: string; title: string; tasks: Task[]; total?: number; allNumbers?: number[] }[];
   showOwner?: boolean;
   /** Своё действие по щелчку на задаче: образец компонентов не открывает карточку */
   onOpen?: (number: number) => void;
@@ -337,7 +394,8 @@ export function TaskTable({
           </tr>
         </thead>
         {groups.map((g) => {
-          const numbers = g.tasks.map((t) => t.number);
+          // Все номера группы, а не только нарисованные: человек просит «все задачи Ревы», а не «те, что на экране»
+          const numbers = g.allNumbers ?? g.tasks.map((t) => t.number);
           const allOn = selection ? numbers.every((n) => selection.selected.has(n)) : false;
           return (
             <tbody key={g.key}>
@@ -350,7 +408,7 @@ export function TaskTable({
                   ) : null}
                   <th scope="colgroup" colSpan={cols - (selection ? 1 : 0)} className="!static !h-8 !border-b !bg-canvas !px-3 !text-caption">
                     {g.title}
-                    <span className="sv-counter sv-counter--neutral ml-1.5">{g.tasks.length}</span>
+                    <span className="sv-counter sv-counter--neutral ml-1.5">{g.total ?? g.tasks.length}</span>
                   </th>
                 </tr>
               ) : null}
@@ -429,7 +487,7 @@ export function TaskTable({
           <section key={g.key} aria-label={g.title || "Задачи"}>
             {g.title ? (
               <h2 className="border-b border-line bg-canvas px-4 py-2 text-caption font-semibold text-text-secondary">
-                {g.title} <span className="sv-counter sv-counter--neutral ml-1">{g.tasks.length}</span>
+                {g.title} <span className="sv-counter sv-counter--neutral ml-1">{g.total ?? g.tasks.length}</span>
               </h2>
             ) : null}
             <ul className="divide-y divide-line">

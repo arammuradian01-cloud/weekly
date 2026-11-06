@@ -100,11 +100,6 @@
       "count": 1
     }
   },
-  "src/components/tasks/task-list.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    }
-  },
   "src/components/weekly/entry-form.tsx": {
     "react-hooks/refs": {
       "count": 2

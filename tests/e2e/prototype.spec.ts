@@ -26,7 +26,7 @@ test("все экраны прототипа открываются без го�
     ["/weekly", /Сдали \d из 8/],
     ["/weekly/submit", /Обновить задачи/],
     ["/weekly/meeting", /Риски и запросы помощи/],
-    ["/tasks", /Задача и где сейчас|Показано/],
+    ["/tasks", /Задача и где сейчас|Отобрано/],
     ["/tasks/board", /Перетащите карточку/],
     ["/tasks/mine", /Просроченные|Срок на этой неделе|Срок на следующей неделе|Остальные в работе/],
     ["/tasks/review", /Задача со встречи|Критичные/],
@@ -48,12 +48,12 @@ test("быстрые фильтры, поиск и карточка задачи
   const overdue = page.getByRole("button", { name: /^Просроченные/ });
   const count = Number((await overdue.textContent())!.replace(/\D+/g, ""));
   await overdue.click();
-  await expect(page.getByText(`Показано ${count} по фильтрам`)).toBeVisible();
+  await expect(page.getByText(`Отобрано ${count} по фильтрам`)).toBeVisible();
   await overdue.click();
 
   // Задача 12 перенесена в таблице до запуска ресурса: исходный срок не записан
   await page.getByLabel("Поиск по тексту и номеру").fill("12");
-  await expect(page.getByText("Показано 1 по фильтрам")).toBeVisible();
+  await expect(page.getByText("Отобрано 1 по фильтрам")).toBeVisible();
   await page.getByRole("button", { name: "Оценить рынок КАСКО" }).filter({ visible: true }).click();
   await expect(page).toHaveURL(/task=12/);
   const card = page.getByRole("dialog");

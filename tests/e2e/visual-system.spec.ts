@@ -34,7 +34,7 @@ test("задачи: цифры под заголовком ведут на сп�
   await shot(page, "tasks");
   await overdue.getByRole("link").click();
   await expect(page).toHaveURL(/\/tasks\?f=overdue/);
-  await expect(page.getByText(`Показано ${count} по фильтрам`)).toBeVisible();
+  await expect(page.getByText(`Отобрано ${count} по фильтрам`)).toBeVisible();
   await expect(page.getByRole("button", { name: /^Просроченные/ })).toHaveAttribute("aria-pressed", "true");
 
   await page.goto("/tasks/people");
