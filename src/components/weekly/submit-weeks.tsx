@@ -12,7 +12,9 @@ import { buttonClass } from "@/components/ui/button";
 /** older: неделя перед списком. null: дошли до самой старой недели ресурса, листать дальше некуда */
 export function SubmitWeeks({ weeks, selected, older }: { weeks: SubmitWeekOption[]; selected: string; older: string | null }) {
   return (
-    <nav aria-label="Неделя weekly" className="mb-5 flex min-w-0 flex-wrap items-center gap-2" data-testid="submit-weeks">
+    <details className="mb-4" data-testid="submit-history">
+      <summary className="w-fit cursor-pointer py-2 text-small text-link">Выбрать другую неделю</summary>
+    <nav aria-label="Неделя weekly" className="mt-2 flex min-w-0 flex-wrap items-center gap-2" data-testid="submit-weeks">
       {weeks.map((w) => {
         const active = w.key === selected;
         return (
@@ -43,5 +45,6 @@ export function SubmitWeeks({ weeks, selected, older }: { weeks: SubmitWeekOptio
         </Link>
       ) : null}
     </nav>
+    </details>
   );
 }

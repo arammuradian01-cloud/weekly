@@ -1,7 +1,6 @@
 // Правила weekly из разделов 2 и 3 ТЗ. Чистые функции: ими пользуются сервер и экраны.
 
-import type { PersonSlug, WeekInfo, WeekKey, WeeklyEntry } from "@/domain/types";
-import type { DirectionCode } from "@/domain/dictionaries";
+import type { PersonSlug, WeekInfo, WeekKey } from "@/domain/types";
 import type { Viewer } from "@/lib/tasks/rules";
 
 export const WEEKLY_LIMITS = { headline: 150, what: 150, details: 1000, impact: 500, fact: 300, next: 500, help: 300, linkTitle: 120, url: 500 };
@@ -113,35 +112,6 @@ export function repeatsNumbers(extra: string, text: string): boolean {
   if (!own.length) return false;
   const have = new Set(numbersIn(text));
   return own.every((n) => have.has(n));
-}
-
-/**
- * Черновик отчёта CEO из записей с флажком «В отчёт CEO»: результаты и события в «Главное», риски в «Риски»,
- * «Что дальше» и планы в «Что дальше». Каждая строка начинается с продукта (направления записи), строки одного
- * продукта идут подряд: CEO читает отчёт по продуктам, а не по людям. «Цифра или факт» дописывается, если она
- * не повторяет числа из самой записи
- */
-export function buildCeoSections(entries: WeeklyEntry[], productOf: (code: DirectionCode) => string): CeoSections {
-  // Продукты в порядке первой отмеченной записи: важное, что владелец поставил выше, остаётся выше
-  const order = new Map<DirectionCode, number>();
-  for (const e of entries) if (e.ceo && !order.has(e.direction)) order.set(e.direction, order.size);
-  const flagged = entries.filter((e) => e.ceo).sort((a, b) => order.get(a.direction)! - order.get(b.direction)!);
-  const trim = (text: string) => text.trim().replace(/\.$/, "");
-  const line = (e: WeeklyEntry) => {
-    const extra = e.fact ?? e.impact;
-    const tail = extra && !repeatsNumbers(extra, e.what) ? `. ${trim(extra)}` : "";
-    return `- ${productOf(e.direction)}. ${trim(e.what)}${tail}`;
-  };
-  return {
-    main: cleanDash(flagged.filter((e) => e.type === "result" || e.type === "event").map(line).join("\n")),
-    risks: cleanDash(flagged.filter((e) => e.type === "risk").map(line).join("\n")),
-    next: cleanDash(
-      flagged
-        .filter((e) => e.next || e.type === "plan")
-        .map((e) => `- ${productOf(e.direction)}. ${trim(e.next ?? e.what)}`)
-        .join("\n"),
-    ),
-  };
 }
 
 /** Что произошло: первая фраза текста. Длинную режем по слову до 150 знаков, полный текст уходит в «Подробнее» */

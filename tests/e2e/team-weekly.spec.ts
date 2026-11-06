@@ -66,21 +66,24 @@ test("руководитель сектора включает weekly специ
   await modal.getByRole("button", { name: "Сохранить" }).click();
   await expect(antonov.getByText("Ритм команды сохранён").first()).toBeVisible();
   // Срок пятница 16:00 этой недели: после него в пятницу и в выходные вместо срока «срок прошёл»
-  await expect(teamCard.getByText(/Weekly: сдали 0 из 1.*(пт, 16:00|срок прошёл)/)).toBeVisible();
+  await expect(teamCard.getByText("Weekly: сдали 0 из 1", { exact: true })).toBeVisible();
+  await expect(teamCard).toContainText(/пт, 16:00|срок прошёл/);
   await shot(antonov, "structure-lights");
 
   // Специалист пишет запись: weekly от неё теперь ждут в секторе
   const alisa = await person(browser, page, "Чемоданова");
   await alisa.goto("/weekly/submit");
-  await expect(alisa.getByText("Сдаёте в команду: Сектор автострахования")).toBeVisible();
-  await alisa.getByRole("button", { name: "Добавить запись" }).click();
+  await alisa.locator("summary").filter({ hasText: /^Кто получит weekly$/ }).click();
+  await expect(alisa.getByTestId("weekly-delivery")).toContainText("Сектор автострахования");
+  await expect(alisa.getByTestId("weekly-template-hint")).toContainText("Сектор автострахования");
+  await alisa.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await alisa.getByLabel("Что произошло").fill("Согласовали макет формы расчёта ОСАГО");
   await expect(alisa.getByText("Черновик записи сохранён")).toBeVisible({ timeout: 8000 });
   await alisa.close();
 
   // Руководитель сектора поднимает запись в свой weekly с фразой от себя
   await antonov.goto("/weekly");
-  const card = antonov.getByRole("main").locator("li", { hasText: "Согласовали макет формы расчёта ОСАГО" }).first();
+  const card = antonov.getByRole("region", { name: "Чемоданова Алиса", exact: true }).locator("li", { hasText: "Согласовали макет формы расчёта ОСАГО" }).first();
   await card.getByRole("button", { name: "Наверх" }).click();
   await card.getByLabel("От себя одной фразой, если нужно").fill("Форма выйдет в релиз 20 октября");
   await card.getByRole("button", { name: "Поднять в мой weekly" }).click();
@@ -106,7 +109,7 @@ test("руководитель сектора включает weekly специ
   await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
   const fromTeam = reva.getByRole("main").getByRole("heading", { name: /Из команды/ });
   await expect(fromTeam).toBeVisible();
-  await expect(reva.getByText("Согласовали макет формы расчёта ОСАГО")).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Согласовали макет формы расчёта ОСАГО", exact: true })).toBeVisible();
   await expect(reva.getByText("Форма выйдет в релиз 20 октября")).toBeVisible();
   // Рева может поднять её дальше, в топ-команду
   await expect(reva.getByRole("button", { name: "Наверх" })).toBeVisible();
@@ -114,7 +117,7 @@ test("руководитель сектора включает weekly специ
   // Этап 39: weekly Антонова по отбору полный: и то, что он поднял из сектора
   await reva.goto(`/weekly?author=${(await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`))[0]!.slug}`);
   await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
-  await expect(reva.getByText("Согласовали макет формы расчёта ОСАГО")).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Согласовали макет формы расчёта ОСАГО", exact: true })).toBeVisible();
   await reva.close();
 });
 

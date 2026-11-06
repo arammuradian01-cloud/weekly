@@ -5,7 +5,9 @@ import { formatDuration, formatMoment } from "@/lib/week";
 import { currentReportingKey, getMyWeekly } from "@/lib/weekly/service";
 import { entryPromises } from "@/lib/weekly/promise-service";
 import { skippedFactKeys, weekFacts } from "@/lib/weekly/facts-service";
-import { templateForAuthor } from "@/lib/weekly-blocks/team";
+import { prisma } from "@/lib/db";
+import { currentActor } from "@/lib/action-runner";
+import { teamTemplateView, templateForAuthor } from "@/lib/weekly-blocks/team";
 import { subjectOf } from "@/lib/org/current";
 import { canEditWeekly, sentReportsWarning, submitWeekOf } from "@/lib/weekly/rules";
 import { closedWeekText, earliestWeek, sentReportsFor, submitWeeks } from "@/lib/weekly/submit-weeks";
@@ -50,6 +52,11 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
     closedWeekText(ctx.person.id, key),
     sentReportsFor(ctx.person.id, key),
   ]);
+  const actor = await currentActor();
+  const canManageTemplates = actor.role !== "OBSERVER" && (actor.via !== "TEAM" || !!actor.management);
+  const led = canManageTemplates ? await prisma.team.findMany({ where: { active: true, leaderId: ctx.person.id }, select: { id: true } }) : [];
+  const editableIds = [...new Set([...led.map((t) => t.id), ...(canManageTemplates && template ? [template.teamId] : [])])];
+  const templateEditors = (await Promise.all(editableIds.map((id) => teamTemplateView(actor, id)))).filter((t) => t.canEdit);
   const now = new Date();
   const deadline = new Date(mine.week.deadline);
   const msLeft = deadline.getTime() - now.getTime();
@@ -68,7 +75,7 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
       {/* Этап 37: шапка как у остальных разделов */}
       <PageHeader
         title={`Weekly за неделю ${mine.week.number}`}
-        description={`${formatLong(mine.week.start)} - ${formatLong(mine.week.end)}. Четыре шага на одном экране, обычно до 15 минут`}
+        description={`${formatLong(mine.week.start)} - ${formatLong(mine.week.end)}`}
       />
       {/* «Раньше» открывает неделю перед списком: оттуда список снова листается назад по одной неделе. Дошли до самой
           старой недели ресурса - ссылки нет */}
@@ -115,6 +122,7 @@ export default async function SubmitWeeklyPage({ searchParams }: { searchParams:
           facts={facts}
           skippedFacts={skipped}
           template={template}
+          templateEditors={templateEditors}
           readers={readers}
         />
         <TaskDrawer />

@@ -41,7 +41,14 @@ export type MeasureEntry = {
   links: number;
 };
 
-export type MeasureTeam = { id: string; name: string; /** null: шаблона нет */ template: TemplateBlock[] | null };
+export type MeasureTeam = {
+  id: string;
+  name: string;
+  /** Сохранённая настройка; null: руководитель ещё не задавал шаблон. */
+  template: TemplateBlock[] | null;
+  /** Рабочий шаблон после этапа 88: включает виртуальный стандарт и совместимость старых наборов. */
+  effective?: TemplateBlock[];
+};
 
 export type MeasureAuthor = {
   personId: string;
@@ -50,7 +57,7 @@ export type MeasureAuthor = {
   order: string[];
   /** Команды, чей отчёт видит записи человека: где он участник или руководитель */
   showing: string[];
-  /** Команда, чей шаблон человек получает по правилу приложения (templateForAuthor). null: шаблона нет ни в одной */
+  /** Команда, по чьему шаблону (своему или стандартному) человек сдаёт weekly. null: нет команды сдачи */
   templateTeamId: string | null;
 };
 
@@ -62,7 +69,7 @@ export type MeasureInput = {
   entries: MeasureEntry[];
   teams: MeasureTeam[];
   authors: MeasureAuthor[];
-  /** Сколько всего включённых команд, кроме топ-команды */
+  /** Сколько всего включённых команд, включая топ-команду */
   teamsTotal: number;
 };
 
@@ -241,7 +248,7 @@ export function multiTeamPart(input: MeasureInput): MultiTeamPart {
       name: a.name,
       teams: a.order.map((id) => ({ name: team(id)?.name ?? id, blocks: team(id)?.template?.length ?? null })),
       winner: winner?.name ?? null,
-      blocks: winner?.template?.map((b) => b.title) ?? [],
+      blocks: (winner?.effective ?? winner?.template)?.map((b) => b.title) ?? [],
       notFirst: !!a.templateTeamId && a.templateTeamId !== a.order[0],
     });
   }
@@ -338,7 +345,7 @@ export function movePart(input: MeasureInput): MovePart {
   for (const e of entries) {
     const author = e.authorId ? input.authors.find((a) => a.personId === e.authorId) : undefined;
     const home = author?.templateTeamId ? team(author.templateTeamId) : undefined;
-    const main = moveTo(e, home?.template ?? null);
+    const main = moveTo(e, home?.effective ?? home?.template ?? null);
     byReason[main.reason] += 1;
     const pairKey = `${e.block}>${main.to}`;
     const pair = pairs.get(pairKey) ?? { fromLabel: e.blockLabel, toTitle: main.toTitle, count: 0 };
@@ -351,8 +358,9 @@ export function movePart(input: MeasureInput): MovePart {
       .map((id) => team(id))
       .filter((t): t is MeasureTeam => !!t)
       .map((t) => {
-        const own = moveTo(e, t.template);
-        const keys = t.template?.map((b) => b.key) ?? [];
+        const template = t.effective ?? t.template;
+        const own = moveTo(e, template);
+        const keys = template?.map((b) => b.key) ?? [];
         return { team: t.name, toTitle: own.toTitle, inTemplate: keys.includes(own.to) };
       });
     const flags: MoveFlag[] = [];

@@ -1,13 +1,15 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { CheckCircle2, CircleAlert, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 
 /** Тост по дизайн-системе (system/Toast.jsx, sv-toast). «Сохранено» после каждой правки и отмена последнего действия в течение 5 секунд (раздел 7 ТЗ). Ошибки сервера здесь же */
 export function Toaster() {
   const { toast, undo, dismissToast } = usePrototype();
+  const submittingWeekly = usePathname() === "/weekly/submit";
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 lg:bottom-6 lg:justify-end lg:px-10" role="status" aria-live="polite">
+    <div className={`pointer-events-none fixed inset-x-0 ${submittingWeekly ? "bottom-[calc(10rem+env(safe-area-inset-bottom))] md:bottom-20" : "bottom-20"} z-50 flex justify-center px-4 lg:bottom-6 lg:justify-end lg:px-10`} role="status" aria-live="polite">
       {toast ? (
         <div
           key={toast.id}

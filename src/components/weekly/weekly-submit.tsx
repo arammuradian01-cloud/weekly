@@ -3,9 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, CheckCircle2, Cloud, CloudOff, Lock, Pencil, Plus, Trash2, Undo2 } from "lucide-react";
+import { CheckCircle2, Cloud, CloudOff, Lock, Undo2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { BLOCKS, entryTypeLabel, ENTRY_TYPES } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { isDueNextWeek, isDueThisWeek, isMine, isOverdue, isStale, overdueDays } from "@/lib/tasks/rules";
 import type { PersonWeekly, Task, WeekInfo, WeeklyEntry } from "@/domain/types";
@@ -16,23 +15,25 @@ import { promiseTasks, summarize, summaryText, taskPromiseOutcome, type EntryPro
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/empty-state";
 import { OverdueNote, StaleNote, WeeklyBadge } from "@/components/ui/task-badges";
 import { TextArea } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/overlays";
 import { StateSelect, StatusSelect } from "@/components/tasks/task-fields";
 import { useTaskActions } from "@/components/tasks/task-actions";
 import { useOpenTask } from "@/components/tasks/task-drawer";
-import { EntryForm, isLocalId } from "./entry-form";
+import { isLocalId } from "./entry-form";
 import { EntryItem } from "./entry-item";
 import { PromoteControl } from "./promote";
 import { PromiseStep } from "./promise-step";
-import { FactSuggestions } from "./fact-suggestions";
+import { WeeklyEntryBlocks } from "./weekly-entry-blocks";
+import { TeamBlocksTemplate } from "@/components/weekly-blocks/team-template";
+import type { TeamTemplateView } from "@/lib/weekly-blocks/team";
+import { classificationForSection } from "@/lib/weekly-blocks/entry-classification";
 import { ThanksField } from "./thanks-field";
 import { taskFacts, type WeekFact } from "@/lib/weekly/facts";
 import { greenOutside, greenOutsideText } from "@/lib/tasks/green-outside";
 import { submittedText } from "./weekly-feed";
-import type { TemplateBlock } from "@/lib/weekly-blocks/types";
+import { STANDARD_TEMPLATE, type TemplateBlock } from "@/lib/weekly-blocks/types";
 import { WeeklyDelivery, type WeeklyReader } from "./weekly-delivery";
 
 const HEADLINE_MAX = WEEKLY_LIMITS.headline;
@@ -42,8 +43,8 @@ function nowTime() {
 }
 
 /**
- * Сдача weekly в четыре шага на одном экране (раздел 3 ТЗ, этап 22): итоги обещаний прошлой недели,
- * обновить свои задачи, написать главное и записи, проверить и сдать.
+ * Сдача weekly как редактирование отчёта: смысловые блоки и одна открытая запись.
+ * Задачи и обещания доступны в компактном раскрывающемся разделе.
  * Черновик сохраняется на сервере сам: главная фраза через пару секунд после ввода, записи так же.
  * Этап 68 (из разбора этапа 59): шаги видны и на телефоне лентой под заголовком, кнопки без многоточий, в состоянии ожидания спиннер
  */
@@ -62,6 +63,7 @@ export function WeeklySubmit({
   skippedFacts = [],
   template = null,
   readers,
+  templateEditors = [],
 }: {
   week: WeekInfo;
   initialReport: PersonWeekly;
@@ -84,9 +86,13 @@ export function WeeklySubmit({
   template?: { teamId: string; teamName: string; blocks: TemplateBlock[] } | null;
   /** Кто получит weekly (этап 73а): руководители команд, в чью ленту он попадает */
   readers?: WeeklyReader[];
+  templateEditors?: TeamTemplateView[];
 }) {
   const { data, me, notify, notifyUndo, viewing } = usePrototype();
   const router = useRouter();
+  const writable = canEdit && !viewing;
+  const [changedTemplate, setChangedTemplate] = useState<TeamTemplateView | null>(null);
+  const blocks = changedTemplate?.blocks ?? template?.blocks ?? STANDARD_TEMPLATE;
   const [weekly, setWeekly] = useState<PersonWeekly>(initialReport);
   const [entries, setEntries] = useState<WeeklyEntry[]>(initialEntries);
   const submitted = weekly.state === "submitted" || weekly.state === "late";
@@ -95,6 +101,7 @@ export function WeeklySubmit({
   // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
   const setHeadline = (value: string) => {
     setHeadlineState(value);
+    setSavedAt(null);
     // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
     if (canEdit && !viewing) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
   };
@@ -108,35 +115,48 @@ export function WeeklySubmit({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedHeadline = useRef(initialReport.headline);
   const pendingHeadline = useRef(initialReport.headline);
+  const headlineQueue = useRef<Promise<unknown>>(Promise.resolve());
   pendingHeadline.current = headline;
 
-  const saveHeadline = useCallback(async () => {
-    const value = pendingHeadline.current;
-    // Фраза за пределом: сервер откажет, сохранять нечего. Строка состояния ниже говорит об этом прямо,
-    // иначе человек видит «Черновик сохранён в 00:12» от прошлого сохранения и дописывает в пустоту
-    if (value === savedHeadline.current || value.length > HEADLINE_MAX) return;
-    setSaving(true);
-    try {
-      const result = await saveHeadlineAction(week.key, value);
-      setOffline(false);
-      if (result.ok) {
-        savedHeadline.current = value;
-        settleHeadlineDraft(me.slug, week.key, value);
-        setWeekly(result.value);
-        setSavedAt(nowTime());
-      } else {
-        // Правило не пускает: черновик не повторяем при каждом открытии
-        dropHeadlineDraft(me.slug, week.key);
-        notify(result.error, "error");
+  const saveHeadline = useCallback(function enqueueHeadline(): Promise<boolean> {
+    // Blur, таймер и сдача могут сработать вместе. Каждый запрос берёт актуальный текст после предыдущего.
+    const operation = headlineQueue.current.then(async () => {
+      const value = pendingHeadline.current;
+      // Фраза за пределом: сервер откажет, сохранять нечего. Строка состояния ниже говорит об этом прямо,
+      // иначе человек видит «Черновик сохранён в 00:12» от прошлого сохранения и дописывает в пустоту
+      if (value.length > HEADLINE_MAX) return false;
+      if (value === savedHeadline.current) return true;
+      setSaving(true);
+      try {
+        const result = await saveHeadlineAction(week.key, value);
+        setOffline(false);
+        if (result.ok) {
+          savedHeadline.current = value;
+          settleHeadlineDraft(me.slug, week.key, value);
+          setWeekly(result.value);
+          setSavedAt(value === pendingHeadline.current ? nowTime() : null);
+          // Пока запрос шёл, текст могли вернуть к предыдущей сохранённой версии: эффект не поставит таймер.
+          // Добавляем актуальную фразу в ту же очередь, не ожидая её внутри текущей операции.
+          if (value !== pendingHeadline.current && canEdit && !viewing) void enqueueHeadline();
+          return true;
+        } else {
+          // Правило не пускает: черновик не повторяем при каждом открытии
+          dropHeadlineDraft(me.slug, week.key);
+          notify(result.error, "error");
+          return false;
+        }
+      } catch (error) {
+        // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
+        if (isNetworkError(error)) setOffline(true);
+        else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
+        return false;
+      } finally {
+        setSaving(false);
       }
-    } catch (error) {
-      // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
-      if (isNetworkError(error)) setOffline(true);
-      else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
-    } finally {
-      setSaving(false);
-    }
-  }, [week.key, notify, me.slug]);
+    });
+    headlineQueue.current = operation.catch(() => undefined);
+    return operation;
+  }, [week.key, notify, me.slug, canEdit, viewing]);
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
@@ -180,13 +200,13 @@ export function WeeklySubmit({
       (isOverdue(t, data.today) || isDueThisWeek(t, data.today) || isDueNextWeek(t, data.today) || isStale(t, data.today) || greenOutside(t, data.today) !== null),
   );
 
-  const newEntry = (): WeeklyEntry => ({
-    id: `new-${Date.now()}`,
+  const newEntry = (section: string): WeeklyEntry => ({
+    id: `new-${crypto.randomUUID()}`,
     week: week.key,
     author: me.slug,
     direction: me.direction,
-    block: BLOCKS.some((b) => b.code === "key-changes") ? "key-changes" : (BLOCKS[0]?.code ?? "key-changes"),
-    type: "event",
+    ...classificationForSection(section),
+    section,
     what: "",
     links: [],
     ceo: false,
@@ -307,8 +327,9 @@ export function WeeklySubmit({
   };
 
   const submit = async () => {
+    if (!writable || draft || editing || offline || outbox || submitting) return;
     setSubmitting(true);
-    await saveHeadline();
+    if (!(await saveHeadline())) { setSubmitting(false); return; }
     try {
       const result = await submitWeeklyAction(week.key);
       if (!result.ok) return notify(result.error, "error");
@@ -344,17 +365,14 @@ export function WeeklySubmit({
     !headline.trim() ? "Нет главной фразы недели" : null,
     entries.length === 0 && promoted.length === 0 ? "Нет ни одной записи" : null,
     headline.length > HEADLINE_MAX ? `Главная фраза длиннее ${HEADLINE_MAX} знаков` : null,
+    draft || editing ? "Завершите редактирование записи" : null,
+    offline || outbox ? "Дождитесь отправки черновика на сервер" : null,
   ].filter(Boolean) as string[];
 
-  const steps = [
-    { href: "#step-promises", label: "Обещания", note: `${promises.length + owed.length}`, done: submitted },
-    { href: "#step-tasks", label: "Обновить задачи", note: `${tasks.length}`, done: submitted || tasks.length === 0 },
-    { href: "#step-entries", label: "Главное и записи", note: `${entries.length}`, done: submitted },
-    { href: "#step-submit", label: "Проверить и сдать", note: submitted ? "сдан" : "", done: submitted },
-  ];
+  const submitButton = () => <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !writable} loading={submitting}>Сдать weekly</Button>;
 
   return (
-    <div className="lg:grid lg:grid-cols-[248px_minmax(0,840px)] lg:gap-10">
+    <div className="weekly-composer mx-auto flex max-w-[1040px] flex-col gap-5 pb-36 md:pb-8" data-testid="weekly-composer">
       <Modal
         open={confirmDelete !== null}
         onOpenChange={(open) => !open && setConfirmDelete(null)}
@@ -392,23 +410,16 @@ export function WeeklySubmit({
           <Button onClick={() => void reopen()}>Вернуть в черновик</Button>
         </div>
       </Modal>
-      <aside className="mb-4 lg:mb-0">
-        <div className="lg:sticky lg:top-24">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 lg:block">
+      <header className="flex flex-wrap items-start justify-between gap-3 md:sticky md:top-20 md:z-20 md:rounded-panel md:border md:border-line md:bg-surface md:p-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
             <WeeklyBadge state={weekly.state} />
-            <p className="text-small text-muted lg:mt-3">
-              Срок: {deadlineText}. {late ? <span className="font-medium text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}
-            </p>
+            <p className="text-small text-muted">Срок: {deadlineText}. {late ? <span className="text-danger-ink">Срок прошёл.</span> : `Осталось ${timeLeft}.`}</p>
           </div>
-          {expectedIn?.length ? <p className="mt-1 text-small text-muted">Сдаёте в команду: {expectedIn.map((t) => t.name).join(", ")}</p> : null}
-          {readers ? (
-            <div className="mt-3">
-              <WeeklyDelivery readers={readers} submitted={submitted} />
-            </div>
-          ) : null}
-          <p className={canEdit && headline.length > HEADLINE_MAX ? "mt-2 inline-flex items-center gap-1.5 text-caption font-semibold text-warning-ink" : "mt-2 inline-flex items-center gap-1.5 text-caption text-muted"} aria-live="polite">
+          {template ? <p className="mt-1 text-small text-muted" data-testid="weekly-template-hint">Блоки команды «{template.teamName}»</p> : null}
+          <p className={writable && headline.length > HEADLINE_MAX ? "mt-2 inline-flex items-center gap-1.5 text-caption font-semibold text-warning-ink" : "mt-2 inline-flex items-center gap-1.5 text-caption text-muted"} aria-live="polite">
             <Cloud className="h-4 w-4" aria-hidden="true" />
-            {!canEdit
+            {!writable
               ? "Только просмотр"
               : headline.length > HEADLINE_MAX
                 ? `Автосохранение остановлено: главная фраза длиннее ${HEADLINE_MAX} знаков`
@@ -418,7 +429,7 @@ export function WeeklySubmit({
                     ? `Черновик сохранён в ${savedAt}`
                     : "Черновик сохраняется на сервере сам"}
           </p>
-          {canEdit && (offline || outbox > 0) ? (
+          {writable && (offline || outbox > 0) ? (
             <p role="status" className="mt-3 sv-alert sv-alert--warning inline-flex items-start gap-2 text-small">
               <CloudOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
               <span>
@@ -432,111 +443,29 @@ export function WeeklySubmit({
               </span>
             </p>
           ) : null}
-          {/* Шаги по дизайн-системе (weekly/SubmitSteps.jsx): номер в кружке, сделанный шаг зелёный. Этап 68: на планшете
-              и телефоне шаги лентой под заголовком (sv-steps--row), раньше они были скрыты и человек не видел, сколько осталось */}
-          <nav aria-label="Шаги сдачи" className="mt-4 lg:mt-6">
-            <ol className="sv-steps sv-steps--row sv-steps--strip m-0 list-none p-0 lg:flex-col lg:gap-[2px] lg:overflow-visible">
-              {steps.map((s, i) => (
-                <li key={s.href}>
-                  <a href={s.href} className={cn("sv-step lg:w-full", s.done && "is-done")}>
-                    <span className="sv-step__n">{s.done ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" /> : i + 1}</span>
-                    <span className="lg:flex-1">{s.label}</span>
-                    <span className="text-caption tabular-nums text-text-secondary">{s.note}</span>
-                  </a>
-                </li>
-              ))}
-            </ol>
-          </nav>
         </div>
-      </aside>
-
-      <div className="flex min-w-0 flex-col gap-10">
-        {!canEdit ? (
-          <p className="inline-flex items-start gap-2 sv-card sv-card--soft px-5 py-4 text-body text-ink">
-            <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            {week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}
-          </p>
-        ) : null}
-        {expectedIn && expectedIn.length === 0 && !submitted ? (
-          <p className="sv-card sv-card--soft px-5 py-4 text-body text-ink">
-            Weekly от вас не ждут: в вашей команде его сдают руководители. Обновляйте задачи, а важное за неделю можно записать и сдать.
-          </p>
-        ) : null}
-        <Step
-          id="step-promises"
-          n={1}
-          title="Что вы обещали на прошлой неделе"
-          description="Итог по каждому плану. Невыполненное можно перенести на следующую неделю"
-        >
-          <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={canEdit} onCarried={upsert} />
-        </Step>
-
-        <Step
-          id="step-tasks"
-          n={2}
-          title="Обновить задачи"
-          description="Просроченные, со сроком на этой и следующей неделе, давно без обновлений"
-        >
-          {tasks.length === 0 ? (
-            // Этап 68: пустое состояние компонентом, как во всех остальных блоках (было простым текстом)
-            <EmptyState title="Срочных задач нет" tone="success" icon={CheckCircle2}>
-              Можно сразу писать главное за неделю
-            </EmptyState>
-          ) : (
-            <ul className="divide-y divide-line sv-card sv-card--soft">
-              {tasks.map((t) => (
-                <TaskUpdateRow key={`${t.number}-${t.where}`} task={t} />
-              ))}
-            </ul>
-          )}
-        </Step>
-
-        <Step id="step-entries" n={3} title="Главное за неделю" description="Одна фраза и записи о событиях, обычно от 3 до 7">
-          <TextArea
-            label="Главное одной фразой"
-            id="headline"
-            value={headline}
-            onChange={(e) => setHeadline(e.target.value)}
-            onBlur={() => void saveHeadline()}
-            rows={2}
-            readOnly={!canEdit}
-            counter={{ value: headline.length, max: HEADLINE_MAX }}
-          />
-          <div className="mt-6 flex flex-col gap-4">
-            {canEdit ? <FactSuggestions week={week.key} facts={facts} setFacts={setFacts} onAdded={upsert} /> : null}
-            <h3 className="text-lead font-semibold text-ink">
-              Записи <span className="font-normal text-muted">{entries.length}</span>
-            </h3>
-            {template ? (
-              <p className="text-small text-muted" data-testid="weekly-template-hint">
-                Команда «{template.teamName}» сдаёт weekly по блокам: {template.blocks.map((b) => b.title).join(", ")}. У каждой записи выберите блок отчёта.
-              </p>
-            ) : null}
-            {entries.length === 0 && !draft ? <p className="text-body text-muted">Пока ни одной записи.</p> : null}
-            <ul className="flex flex-col gap-3">
-              {entries.filter((e) => !(draft && e.id === draftId)).map((e) =>
-                editing === e.id ? (
-                  <li key={e.id}>
-                    <EntryForm initial={e} onSaved={onSaved} onAutosaved={upsert} onCancel={() => setEditing(null)} template={template?.blocks} />
-                  </li>
-                ) : (
-                  <li key={e.id} className="flex flex-col gap-3 sv-card sv-card--soft px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <EntryItem entry={e} discussion={false} compact />
-                    </div>
-                    {canEdit ? <div className="flex shrink-0 gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(e.id)} aria-label={`Изменить запись «${e.what}»`}>
-                        <Pencil className="h-4 w-4" aria-hidden="true" />
-                        Изменить
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(e)} aria-label={`Удалить запись «${e.what}»`}>
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                      </Button>
-                    </div> : null}
-                  </li>
-                ),
-              )}
-            </ul>
+        {!submitted ? <div className="hidden md:block">{submitButton()}</div> : null}
+      </header>
+      {readers ? <details className="text-small"><summary className="cursor-pointer text-link">{submitted ? "Кто читает ваш weekly" : "Кто получит weekly"}</summary><div className="mt-2"><WeeklyDelivery readers={readers} submitted={submitted} /></div></details> : null}
+      {!writable ? <p className="flex items-center gap-2 text-small text-muted"><Lock className="h-4 w-4" aria-hidden="true" />{week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}</p> : null}
+      {expectedIn && expectedIn.length === 0 && !submitted ? <p className="text-small text-muted">Weekly от вас не ждут. Важное за неделю можно записать и сдать.</p> : null}
+      <section id="step-entries" aria-label="Главное за неделю">
+        <TextArea label="Главное одной фразой" id="headline" value={headline} onChange={(e) => setHeadline(e.target.value)} onBlur={() => void saveHeadline()} rows={2} readOnly={!writable || submitting} counter={{ value: headline.length, max: HEADLINE_MAX }} />
+      </section>
+      {promises.length + owed.length + tasks.length > 0 ? <details className="rounded-control border border-line bg-surface p-4" data-testid="weekly-attention">
+        <summary className="cursor-pointer text-small font-semibold">Требуют внимания: {tasks.length} задач{promiseSummary.pending ? `, обещаний без итога: ${promiseSummary.pending}` : ""}</summary>
+        <div className="mt-5 space-y-6">
+          {promises.length + owed.length > 0 ? <section id="step-promises" aria-labelledby="promises-title">
+            <h2 id="promises-title" className="mb-3 text-lead font-semibold">Что вы обещали на прошлой неделе</h2>
+            <PromiseStep week={week} promises={promises} setPromises={setPromises} tasks={owed} canEdit={writable} onCarried={upsert} />
+          </section> : null}
+          {tasks.length ? <section id="step-tasks" aria-labelledby="tasks-title"><h2 id="tasks-title" className="mb-3 text-lead font-semibold">Обновить задачи</h2><ul className="divide-y divide-line">{tasks.map((t) => <TaskUpdateRow key={`${t.number}-${t.where}`} task={t} />)}</ul></section> : null}
+        </div>
+      </details> : null}
+      <WeeklyEntryBlocks week={week.key} blocks={blocks} entries={entries} facts={facts} canEdit={writable} draft={draft} draftId={draftId} editing={editing}
+        onAdd={(section) => setDraft(newEntry(section))} onEdit={setEditing} onDelete={setConfirmDelete}
+        onSaved={onSaved} onAutosaved={upsert} onDraftAutosaved={onAutosaved} onCancel={() => { setDraft(null); setDraftId(null); setEditing(null); }}
+        onFactAdded={upsert} setFacts={setFacts} />
             {promoted.length ? (
               <section aria-labelledby="from-team" className="flex flex-col gap-3">
                 <h3 id="from-team" className="text-lead font-semibold text-ink">
@@ -555,136 +484,31 @@ export function WeeklySubmit({
                             {note}
                           </p>
                         ) : null}
-                        <PromoteControl entry={e} promoteFrom={[]} closed={!canEdit} />
+                        <PromoteControl entry={e} promoteFrom={[]} closed={!writable} />
                       </li>
                     );
                   })}
                 </ul>
               </section>
             ) : null}
-            {!canEdit ? null : draft ? (
-              <EntryForm
-                initial={draft}
-                template={template?.blocks}
-                onSaved={onSaved}
-                onAutosaved={onAutosaved}
-                onCancel={() => {
-                  setDraft(null);
-                  setDraftId(null);
-                }}
-              />
-            ) : (
-              <div>
-                <Button variant="secondary" onClick={() => setDraft(newEntry())}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Добавить запись
-                </Button>
-              </div>
-            )}
+      <details open={initialReport.thanks ? true : undefined} className="text-small"><summary className="cursor-pointer text-link">Спасибо коллеге</summary><div className="pt-3"><ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={writable} /></div></details>
+      {writable ? templateEditors.map((editor) => <details key={editor.teamId} className="rounded-control border border-line p-4"><summary className="cursor-pointer text-small font-semibold">Настроить блоки команды «{editor.teamName}»</summary><div className="pt-4">
+        {draft || editing ? <p className="text-small text-muted">Сначала завершите редактирование записи.</p> : <TeamBlocksTemplate initial={changedTemplate?.teamId === editor.teamId ? changedTemplate : editor} onSaved={(updated) => { if (updated.teamId === template?.teamId) setChangedTemplate(updated); }} />}
+      </div></details>) : null}
+      <section id="step-submit" aria-label="Сдача weekly" className="space-y-3">
+        {submitted ? <div className="rounded-panel bg-green-soft p-4">
+          <p className="flex items-center gap-2 text-green-ink"><CheckCircle2 className="h-5 w-5" aria-hidden="true" /><span className="font-semibold">{weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}{weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}</span></p>
+          <div className="mt-3 flex flex-wrap items-center gap-3"><Link href={`/weekly?week=${week.key}`} className="text-small text-link">Открыть ленту недели</Link>
+            {writable ? <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening || !!draft || !!editing} loading={reopening}><Undo2 className="h-4 w-4" aria-hidden="true" />Вернуть в черновик</Button> : null}
           </div>
-          {/* «Спасибо коллеге» после записей (этап 43): необязательная строка в конце шага, а не между фразой и записями */}
-          <div className="mt-6">
-            <ThanksField week={week.key} initial={initialReport.thanks ?? ""} canEdit={canEdit} />
-          </div>
-        </Step>
-
-        <Step id="step-submit" n={4} title="Проверить и сдать" description="Править можно до закрытия недели">
-          {submitted ? (
-            <div className="flex flex-col gap-3 sv-card sv-card--soft bg-green-soft p-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="inline-flex items-start gap-2 text-lead text-green-ink">
-                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                <span>
-                  <span className="font-semibold">{weekly.state === "late" ? "Сдан с опозданием" : "Weekly сдан"}</span>
-                  {weekly.submittedAt ? `, ${submittedText(weekly.submittedAt).replace(/^сдан /, "")}` : ""}. Правки до закрытия недели разрешены.
-                </span>
-              </p>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Link href={`/weekly?week=${week.key}`} className="inline-flex h-11 items-center rounded-lg px-4 text-body font-semibold text-ink hover:bg-field">
-                  Открыть ленту недели
-                </Link>
-                {canEdit ? (
-                  <Button variant="ghost" onClick={() => setConfirmReopen(true)} disabled={reopening} loading={reopening}>
-                    <Undo2 className="h-4 w-4" aria-hidden="true" />
-                    Вернуть в черновик
-                  </Button>
-                ) : null}
-              </div>
-            </div>
-          ) : (
-            <div className="sv-card sv-card--soft">
-              <dl className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
-                <div>
-                  <dt className="text-caption text-muted">Обещания</dt>
-                  <dd className="mt-1 text-body text-ink">{summaryText(promiseSummary)}</dd>
-                </div>
-                <div>
-                  <dt className="text-caption text-muted">Главное</dt>
-                  <dd className={cn("mt-1 text-body", headline.trim() ? "text-ink" : "text-danger-ink")}>{headline.trim() || "Не написано"}</dd>
-                </div>
-                <div>
-                  <dt className="text-caption text-muted">Записи</dt>
-                  <dd className="mt-1 text-body text-ink">
-                    {entries.length
-                      ? ENTRY_TYPES.map((t) => ({ t, n: entries.filter((e) => e.type === t.code).length }))
-                          .filter((x) => x.n)
-                          .map((x) => `${entryTypeLabel(x.t.code)}: ${x.n}`)
-                          .join(", ")
-                      : "Нет"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-caption text-muted">Задачи на внимание</dt>
-                  <dd className="mt-1 text-body text-ink">
-                    {tasks.filter((t) => t.whereUpdatedAt === data.today).length} из {tasks.length} обновлены сегодня
-                  </dd>
-                </div>
-              </dl>
-              <div className="flex flex-col gap-3 border-t border-line p-5 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex flex-col gap-1">
-                  {problems.length ? (
-                    <ul className="text-small text-danger-ink">
-                      {problems.map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-small text-muted">Всё на месте. После сдачи weekly увидит вся команда.</p>
-                  )}
-                  {promiseSummary.pending ? (
-                    <p className="text-small text-ink">
-                      Без итога обещаний: {promiseSummary.pending}. В доле выполненных обещаний они считаются невыполненными, сдать weekly можно и так.
-                    </p>
-                  ) : null}
-                </div>
-                <Button onClick={() => void submit()} disabled={problems.length > 0 || submitting || !canEdit} loading={submitting} className="sm:min-w-44">
-                  Сдать weekly
-                </Button>
-              </div>
-            </div>
-          )}
-        </Step>
-      </div>
+        </div> : <>
+          {problems.length ? <ul className="text-small text-muted" aria-live="polite">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul> : <p className="text-small text-muted">Записей в отчёте: {entries.length + promoted.length}. Можно сдавать.</p>}
+          {promiseSummary.pending ? <p className="text-small text-muted">Обещаний без итога: {promiseSummary.pending}. Сдать weekly можно, но они будут считаться невыполненными.</p> : null}
+          <p className="sr-only">{summaryText(promiseSummary)}</p>
+          {!draft && !editing ? <div data-testid="weekly-submit-bar" className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 rounded-panel border border-line bg-surface p-3 shadow-sticky md:hidden"><span className="text-small text-muted">{entries.length + promoted.length} записей</span>{submitButton()}</div> : null}
+        </>}
+      </section>
     </div>
-  );
-}
-
-function Step({ id, n, title, description, children }: { id: string; n: number; title: string; description: string; children: React.ReactNode }) {
-  return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-32 lg:scroll-mt-24">
-      <div className="mb-4 flex items-start gap-3">
-        <span className="sv-step__n mt-1 !h-8 !w-8 !border-link !text-body !text-link" aria-hidden="true">
-          {n}
-        </span>
-        <div>
-          <h2 id={`${id}-title`} className="text-section">
-            <span className="sr-only">Шаг {n}. </span>
-            {title}
-          </h2>
-          <p className="mt-0.5 text-body text-text-secondary">{description}</p>
-        </div>
-      </div>
-      {children}
-    </section>
   );
 }
 
@@ -704,7 +528,7 @@ function TaskUpdateRow({ task }: { task: Task }) {
           <span className="mr-1.5 font-normal tabular-nums text-muted">{task.number}</span>
           {task.title}
         </button>
-        <span className="flex shrink-0 items-center gap-2 text-caption">
+        <span className="flex flex-wrap items-center gap-2 text-caption">
           <span className={cn("tabular-nums", overdue ? "font-semibold text-danger-ink" : "text-muted")}>срок {formatShort(task.due)}</span>
           {overdue ? <OverdueNote days={overdueDays(task, data.today)} /> : null}
           {isStale(task, data.today) ? <StaleNote /> : null}

@@ -81,7 +81,7 @@ export function TeamBlocksTemplate({ initial, onSaved }: { initial: TeamTemplate
   return (
     <div className="flex flex-col gap-4" data-testid="team-template">
       <p className="text-small text-muted">
-        Участники команды сдают weekly по этим блокам, отчёт команды собирается по ним же, в этом порядке. Без блоков weekly команды как раньше.
+        Рекомендуем 5–8 блоков, максимум 12. Порядок здесь совпадает с порядком в отчёте.
       </p>
       {blocks.length ? (
         <ol className="flex flex-col gap-2">
@@ -105,7 +105,7 @@ export function TeamBlocksTemplate({ initial, onSaved }: { initial: TeamTemplate
         </ol>
       ) : (
         <div className="flex flex-col gap-2 rounded-lg bg-field px-4 py-3">
-          <p className="text-body text-ink">Блоков пока нет: weekly команды как раньше.</p>
+          <p className="text-body text-ink">Добавьте блоки или возьмите стандартный набор.</p>
           <div>
             <Button type="button" size="sm" variant="soft" onClick={() => change(STANDARD_TEMPLATE.map((b) => ({ ...b })))}>
               Взять стандартный набор
@@ -142,13 +142,13 @@ export function TeamBlocksTemplate({ initial, onSaved }: { initial: TeamTemplate
       ) : null}
       <FormError message={error ?? undefined} />
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={!dirty || busy} loading={busy} onClick={() => void save(blocks, blocks.length ? "Блоки weekly команды сохранены" : "Блоки убраны: weekly команды как раньше")}>
+        <Button type="button" disabled={!dirty || busy} loading={busy} onClick={() => void save(blocks, blocks.length ? "Блоки weekly команды сохранены" : "Стандартные блоки восстановлены")}>
           <Save className="h-4 w-4" aria-hidden="true" />
           Сохранить блоки
         </Button>
         {initial.blocks && blocks.length ? (
-          <Button type="button" variant="ghost" disabled={busy} onClick={() => void save([], "Блоки убраны: weekly команды как раньше")}>
-            Убрать блоки
+          <Button type="button" variant="ghost" disabled={busy} onClick={() => void save([], "Стандартные блоки восстановлены")}>
+            Вернуть стандартные блоки
           </Button>
         ) : null}
       </div>

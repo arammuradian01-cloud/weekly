@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ListPlus, Plus, X } from "lucide-react";
-import { dictOptions, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import { dictOptions, type DirectionCode } from "@/domain/dictionaries";
 import type { Link, WeeklyEntry } from "@/domain/types";
 import { saveEntryAction, type Result } from "@/app/(app)/weekly/actions";
 import { WEEKLY_LIMITS } from "@/lib/weekly/rules";
@@ -14,7 +14,7 @@ import { usePrototype } from "@/domain/store";
 import { AskColleagueButton } from "@/components/requests/request-dialog";
 import { ACTIVE_DRAFTS, dropEntryDraft, isNetworkError, newDraftKey, putEntryDraft, settleEntryDraft, type DraftEntryInput } from "@/lib/offline/drafts";
 import { entryBlockKey } from "@/lib/weekly-blocks/assemble";
-import { LIVE_FIGURE_KEYS, type TemplateBlock } from "@/lib/weekly-blocks/types";
+import { type TemplateBlock } from "@/lib/weekly-blocks/types";
 
 function hostOf(url: string): string {
   try {
@@ -47,9 +47,6 @@ export function sectionOf(e: Pick<WeeklyEntry, "section" | "type" | "block" | "d
   return entryBlockKey({ section: e.section ?? null, type: e.type, block: e.block, direction: e.direction }, keys);
 }
 
-/** Блок справочника по смысловому блоку: запись остаётся понятной и там, где шаблона нет (лента, выгрузка) */
-const DICT_BLOCK: Record<string, string> = { news: "team", wow: "numbers", month: "numbers", partners: "partners", risks: "risks" };
-
 function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[], template?: readonly TemplateBlock[] | null) {
   return {
     id: isLocalId(e.id) ? undefined : e.id,
@@ -65,8 +62,8 @@ function toInput(e: WeeklyEntry, needHelp: boolean, links: LinkDraft[], template
     help: needHelp ? e.help : undefined,
     // Пустые строки не отправляем. Без названия сервер подпишет ссылку адресом сайта
     links: links.filter((l) => l.url.trim()).map((l) => ({ title: l.title.trim(), url: l.url.trim() })) as Link[],
-    // Шаблона нет: блок записи не трогаем
-    ...(template?.length ? { section: sectionOf(e, template) ?? null } : {}),
+    // Привязку старой записи не меняем при правке текста, даже если её блок исчез из шаблона.
+    ...(isLocalId(e.id) && template?.length ? { section: sectionOf(e, template) ?? null, deriveClassification: true } : {}),
   };
 }
 
@@ -98,6 +95,7 @@ export function EntryForm({
   const baseUpdatedAt = useRef<string | null>(initial.updatedAt ?? null);
   const [offline, setOffline] = useState(false);
   const [needHelp, setNeedHelp] = useState(!!initial.help);
+  const [detailsOpen, setDetailsOpen] = useState(!!(initial.details || initial.impact || initial.help || initial.links.length));
   // Название по умолчанию это адрес сайта: такое название в поле не показываем, чтобы не мешало
   const [links, setLinks] = useState<LinkDraft[]>(() =>
     initial.links.length ? initial.links.map((l) => ({ url: l.url, title: hostOf(l.url) === l.title ? "" : l.title })) : [{ title: "", url: "" }],
@@ -106,6 +104,7 @@ export function EntryForm({
   const [busy, setBusy] = useState(false);
   const [autoState, setAutoState] = useState<"idle" | "saving" | "saved" | "offline">("idle");
   const dirty = useRef(false);
+  const revision = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inFlight = useRef<Promise<unknown> | null>(null);
   const latest = useRef({ e, needHelp, links, template });
@@ -126,15 +125,24 @@ export function EntryForm({
 
   const setLink = (i: number, patch: Partial<LinkDraft>) => {
     dirty.current = true;
+    revision.current += 1;
+    setAutoState("idle");
+    setError(null);
     setLinks((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
   };
   const removeLink = (i: number) => {
     dirty.current = true;
+    revision.current += 1;
+    setAutoState("idle");
+    setError(null);
     setLinks((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : [{ title: "", url: "" }]));
   };
 
   const set = <K extends keyof WeeklyEntry>(key: K, value: WeeklyEntry[K]) => {
     dirty.current = true;
+    revision.current += 1;
+    setAutoState("idle");
+    setError(null);
     setE((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -144,6 +152,7 @@ export function EntryForm({
     if (inFlight.current) await inFlight.current.catch(() => undefined);
     const { e: cur, needHelp: nh, links: ln, template: tpl } = latest.current;
     const sentAt = Date.now();
+    const sentRevision = revision.current;
     const input = toInput(cur, nh, ln, tpl);
     const call = saveEntryAction({ ...input, clientKey: input.id ? undefined : draftKey.current });
     inFlight.current = call;
@@ -159,10 +168,12 @@ export function EntryForm({
     }
     setOffline(false);
     if (result.ok) {
+      dirty.current = revision.current !== sentRevision;
       baseUpdatedAt.current = result.value.updatedAt ?? baseUpdatedAt.current;
       settleEntryDraft(me.slug, draftKey.current, result.value.id, sentAt);
-      setE((prev) => ({ ...prev, id: result.value.id, taskNumber: result.value.taskNumber }));
-      latest.current.e = { ...latest.current.e, id: result.value.id };
+      const classification = { block: result.value.block, type: result.value.type };
+      setE((prev) => ({ ...prev, ...classification, id: result.value.id, taskNumber: result.value.taskNumber }));
+      latest.current.e = { ...latest.current.e, ...classification, id: result.value.id };
       // Упомянули того, кто запись не видит (этап 20): запись сохранилась, но упоминание до него не дошло
       const warning = (result.value as WeeklyEntry & { warning?: string }).warning;
       if (warning) notify(warning, "error");
@@ -198,12 +209,19 @@ export function EntryForm({
 
   const autosave = async () => {
     setAutoState("saving");
-    const result = await persist();
-    if (result.ok) {
-      dirty.current = false;
-      setAutoState("saved");
-      onAutosaved?.(result.value);
-    } else setAutoState(result.offline ? "offline" : "idle");
+    try {
+      const result = await persist();
+      if (result.ok) {
+        setAutoState(dirty.current ? "idle" : "saved");
+        onAutosaved?.(result.value);
+      } else {
+        setAutoState(result.offline ? "offline" : "idle");
+        if (!result.offline) setError(result.error);
+      }
+    } catch {
+      setAutoState("idle");
+      setError("Сервер не ответил: запись сохранена на этом устройстве, попробуйте ещё раз");
+    }
   };
 
   const autosaveRef = useRef(autosave);
@@ -264,7 +282,7 @@ export function EntryForm({
         else setError(result.error);
         return;
       }
-      dirty.current = false;
+      if (dirty.current) return setError("Есть новые правки: сохраните запись ещё раз");
       onSaved(result.value);
     } catch {
       setError("Сервер не ответил: запись сохранена на этом устройстве, попробуйте ещё раз");
@@ -277,8 +295,7 @@ export function EntryForm({
   /** Фраза длиннее предела: автосохранение стоит, и строка состояния внизу формы говорит об этом прямо */
   const paused = e.what.trim().length > WEEKLY_LIMITS.what;
 
-  // «Отмена» у несохранённой записи выбрасывает и черновик на устройстве. «Закрыть» у сохранённой оставляет только то,
-  // что ждёт сети: человек видел, что оно уйдёт само
+  // «Отмена» доступна только до первого сохранения. Сохранённую запись закрывает кнопка сохранения.
   const cancel = () => {
     if (!saved || (autoState !== "offline" && !offline)) dropEntryDraft(me.slug, draftKey.current);
     onCancel();
@@ -286,51 +303,14 @@ export function EntryForm({
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4 sv-card sv-card--soft p-4 sm:p-5">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <SelectField label="Направление" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={dictOptions("DIRECTION", e.direction)} />
-        {template?.length ? (
-          <SelectField
-            label="Блок отчёта"
-            id={`${initial.id}-section`}
-            value={sectionOf(e, template)}
-            onChange={(ev) => {
-              const key = ev.target.value;
-              dirty.current = true;
-              // Блок справочника и тип идут за смысловым блоком: риск остаётся риском и в ленте, и в отчёте CEO
-              const dict = DICT_BLOCK[key] ?? "key-changes";
-              setE((prev) => ({
-                ...prev,
-                section: key,
-                block: dictOptions("WEEKLY_BLOCK").some((o) => o.value === dict) ? dict : prev.block,
-                type: key === "risks" ? "risk" : key === "plan" ? "plan" : prev.type,
-              }));
-            }}
-            // Блоки цифр («Неделя к неделе», «Месяц») собирает ресурс: запись в них не ставится
-            options={template.filter((t) => !LIVE_FIGURE_KEYS.includes(t.key)).map((t) => ({ value: t.key, label: t.title }))}
-            hint="Блоки задал руководитель команды"
-          />
-        ) : (
-          <SelectField label="Блок" id={`${initial.id}-block`} value={e.block} onChange={(ev) => set("block", ev.target.value as BlockCode)} options={dictOptions("WEEKLY_BLOCK", e.block)} />
-        )}
-        <SelectField label="Тип" id={`${initial.id}-type`} value={e.type} onChange={(ev) => set("type", ev.target.value as EntryTypeCode)} options={dictOptions("ENTRY_TYPE", e.type)} />
-      </div>
+      <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
+      <SelectField label="Продукт" id={`${initial.id}-dir`} value={e.direction} onChange={(ev) => set("direction", ev.target.value as DirectionCode)} options={dictOptions("DIRECTION", e.direction)} />
       <TextArea label="Что произошло" id={`${initial.id}-what`} value={e.what} onChange={(ev) => set("what", ev.target.value)} rows={2} counter={{ value: e.what.length, max: WEEKLY_LIMITS.what }} autoFocus />
-      <MentionArea
-        label="Подробнее"
-        id={`${initial.id}-details`}
-        value={e.details ?? ""}
-        onChange={(v) => set("details", v)}
-        rows={3}
-        counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }}
-        hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись на «Моей неделе»"
-      />
       <div className="grid gap-4 sm:grid-cols-2">
-        <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} counter={{ value: (e.impact ?? "").length, max: WEEKLY_LIMITS.impact }} hint="Словами: что это меняет для выручки, маржи или клиентов" />
-        <TextArea label="Цифра или факт" id={`${initial.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} counter={{ value: (e.fact ?? "").length, max: WEEKLY_LIMITS.fact }} hint="Одна цифра или факт, на который опирается запись" />
-      </div>
+        <TextArea label="Цифра или факт" id={`${initial.id}-fact`} value={e.fact ?? ""} onChange={(ev) => set("fact", ev.target.value)} rows={2} counter={{ value: (e.fact ?? "").length, max: WEEKLY_LIMITS.fact }} />
       <div className="flex flex-col gap-2">
         <TextArea label="Что делаем дальше" id={`${initial.id}-next`} value={e.next ?? ""} onChange={(ev) => set("next", ev.target.value)} rows={2} counter={{ value: (e.next ?? "").length, max: WEEKLY_LIMITS.next }} />
-        <div className="flex flex-wrap items-center gap-3">
+        {(e.next ?? "").trim() || e.taskNumber ? <div className="flex flex-wrap items-center gap-3">
           {e.taskNumber ? (
             <span className="text-small text-muted">По записи уже есть задача {e.taskNumber}</span>
           ) : (
@@ -346,8 +326,22 @@ export function EntryForm({
             </Button>
           )}
           {!saved && (e.next ?? "").trim() ? <span className="text-caption text-muted">Сначала сохраните запись</span> : null}
-        </div>
+        </div> : null}
       </div>
+      </div>
+      <details className="border-t border-line pt-3" open={detailsOpen} onToggle={(event) => setDetailsOpen(event.currentTarget.open)}>
+        <summary className="cursor-pointer py-2 text-small font-semibold text-link">{detailsOpen ? "Подробности записи" : "Добавить детали"}</summary>
+        <div className="flex flex-col gap-4 pt-3">
+      <MentionArea
+        label="Подробнее"
+        id={`${initial.id}-details`}
+        value={e.details ?? ""}
+        onChange={(v) => set("details", v)}
+        rows={3}
+        counter={{ value: (e.details ?? "").length, max: WEEKLY_LIMITS.details }}
+        hint="Чтобы позвать коллегу, наберите @ и начало имени: он увидит запись на «Моей неделе»"
+      />
+        <TextArea label="Влияние на бизнес" id={`${initial.id}-impact`} value={e.impact ?? ""} onChange={(ev) => set("impact", ev.target.value)} rows={2} counter={{ value: (e.impact ?? "").length, max: WEEKLY_LIMITS.impact }} hint="Словами: что это меняет для выручки, маржи или клиентов" />
       <div className="flex flex-col gap-2">
         <label className="inline-flex min-h-9 cursor-pointer items-center gap-2 text-body text-ink">
           <input
@@ -355,6 +349,9 @@ export function EntryForm({
             checked={needHelp}
             onChange={(ev) => {
               dirty.current = true;
+    revision.current += 1;
+    setAutoState("idle");
+    setError(null);
               setNeedHelp(ev.target.checked);
             }}
             className="h-4 w-4 accent-blue-700"
@@ -406,6 +403,9 @@ export function EntryForm({
               variant="ghost"
               onClick={() => {
                 dirty.current = true;
+    revision.current += 1;
+    setAutoState("idle");
+    setError(null);
                 setLinks((prev) => [...prev, { title: "", url: "" }]);
               }}
             >
@@ -414,6 +414,9 @@ export function EntryForm({
             </Button>
           </div>
         ) : null}
+      </fieldset>
+        </div>
+      </details>
       </fieldset>
       {error ? (
         <p role="alert" className="sv-alert sv-alert--danger">
@@ -435,9 +438,7 @@ export function EntryForm({
                   ? "Черновик записи сохранён"
                   : ""}
         </span>
-        <Button type="button" variant="ghost" onClick={cancel}>
-          {saved ? "Закрыть" : "Отмена"}
-        </Button>
+        {!saved ? <Button type="button" variant="ghost" onClick={cancel} disabled={busy || autoState === "saving"}>Отмена</Button> : null}
         <Button type="submit" disabled={busy}>
           {busy ? "Сохраняю…" : "Сохранить запись"}
         </Button>

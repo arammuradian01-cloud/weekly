@@ -46,6 +46,7 @@ test.beforeEach(async () => {
 test("лидер подводит итог прошлых планов, переносит невыполненное в план и возвращает сданный weekly в черновик", async ({ page }) => {
   await enter(page, "Рева Тарас");
   await page.goto("/weekly/submit");
+  await page.getByTestId("weekly-attention").locator("summary").first().click();
   await expect(page.getByRole("heading", { name: /Что вы обещали на прошлой неделе/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: /Планы прошлой недели/ })).toBeVisible();
 
@@ -71,6 +72,7 @@ test("лидер подводит итог прошлых планов, пере
 
   // После перезагрузки итоги на месте, перенести второй раз нельзя
   await page.reload();
+  await page.getByTestId("weekly-attention").locator("summary").first().click();
   await expect(page.locator("li").filter({ hasText: "Запустить скоринг на КАСКО" }).getByText("Сделано", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Перенести в план/ })).toHaveCount(0);
   // Открытые задачи Ревы со сроком на неделе входят в долю как «без итога»

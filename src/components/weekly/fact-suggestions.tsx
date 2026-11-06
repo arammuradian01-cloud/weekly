@@ -3,7 +3,7 @@
 // Предложения из фактов недели в шаге «Главное за неделю» (этап 22б, модуль М6): что закрыто, что перенесено, что
 // заблокировано, какие просьбы выполнены. «Добавить» делает из факта запись, её можно сразу поправить.
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { EyeOff, Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import type { WeekKey, WeeklyEntry } from "@/domain/types";
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 
 export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: WeekKey; facts: WeekFact[]; setFacts: (update: (prev: WeekFact[]) => WeekFact[]) => void; onAdded: (entry: WeeklyEntry) => void }) {
   const { notify } = usePrototype();
+  const titleId = useId();
   const [busy, setBusy] = useState<string | null>(null);
   if (!facts.length) return null;
   const drop = (key: string) => setFacts((prev) => prev.filter((f) => f.key !== key));
@@ -49,12 +50,11 @@ export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: Week
   };
 
   return (
-    <section aria-labelledby="facts-title" className="flex flex-col gap-3 sv-card sv-card--soft p-4 sm:p-5">
+    <section aria-labelledby={titleId} className="flex flex-col gap-2 border-t border-line pt-3">
       <div>
-        <h3 id="facts-title" className="text-lead font-semibold text-ink">
-          Из фактов недели <span className="font-normal text-muted">{facts.length}</span>
+        <h3 id={titleId} className="text-small font-semibold text-muted">
+          Предложения из задач и просьб <span className="font-normal">{facts.length}</span>
         </h3>
-        <p className="mt-0.5 text-small text-muted">Ресурс собрал, что произошло с вашими задачами и просьбами. Добавьте нужное записью и поправьте текст.</p>
       </div>
       <ul className="flex flex-col gap-2">
         {facts.map((f) => (
@@ -70,7 +70,7 @@ export function FactSuggestions({ week, facts, setFacts, onAdded }: { week: Week
             <div className="flex shrink-0 gap-1">
               <Button size="sm" variant="secondary" onClick={() => void add(f)} disabled={busy !== null} aria-label={`Добавить записью: ${f.what}`}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                Добавить
+                Принять
               </Button>
               <Button size="sm" variant="ghost" onClick={() => void hide(f)} disabled={busy !== null} aria-label={`Скрыть: ${f.what}`}>
                 <EyeOff className="h-4 w-4" aria-hidden="true" />

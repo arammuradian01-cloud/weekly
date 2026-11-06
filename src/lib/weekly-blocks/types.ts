@@ -65,11 +65,21 @@ export type ReportBlock = {
 /** Блок шаблона weekly команды: стандартный или свой (ключ c:...) */
 export type TemplateBlock = { key: string; title: string };
 
+/** Шаблон для работы: старый набор только из цифр получает виртуальный блок для записей. База не меняется. */
+export function effectiveTemplate(input: unknown): TemplateBlock[] {
+  const blocks = cleanTemplate(input);
+  if (!blocks.length) return STANDARD_TEMPLATE.map((b) => ({ ...b }));
+  if (blocks.every((b) => LIVE_FIGURE_KEYS.includes(b.key))) {
+    return [...blocks, { key: "products", title: "Продукты" }];
+  }
+  return blocks;
+}
+
 /** Подписи продуктов: код направления и название */
 export type Labels = Record<string, string>;
 export type ProductRef = { code: string; label: string };
 
-export const BLOCK_LIMITS = { blocks: 24, lines: 60, text: 600, title: 80, href: 600, source: 80, note: 300, templateBlocks: 16 } as const;
+export const BLOCK_LIMITS = { blocks: 24, lines: 60, text: 600, title: 80, href: 600, source: 80, note: 300, templateBlocks: 12 } as const;
 
 /** Свой блок шаблона: c: и от 4 до 16 строчных латинских букв и цифр */
 export const CUSTOM_KEY = /^c:[a-z0-9]{4,16}$/;
@@ -199,7 +209,8 @@ export function cleanTemplate(input: unknown): TemplateBlock[] {
     if (!title) continue;
     seen.add(key);
     out.push({ key, title });
-    if (out.length >= BLOCK_LIMITS.templateBlocks) break;
+    // Старые шаблоны до 16 блоков читаем целиком. Новый предел проверяется при сохранении.
+    if (out.length >= 16) break;
   }
   return out;
 }

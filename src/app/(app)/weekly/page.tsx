@@ -6,6 +6,7 @@ import { WeeklyFeed, type AuthorFocus } from "@/components/weekly/weekly-feed";
 import { ALL_TEAMS, audienceOf, currentTeam, feedTeamFor, subjectOf } from "@/lib/org/current";
 import { promotableFrom } from "@/lib/org/rhythm";
 import { TOP_TEAM } from "@/domain/teams";
+import { teamTemplate } from "@/lib/weekly-blocks/team";
 import { prisma } from "@/lib/db";
 import type { PersonSlug } from "@/domain/types";
 
@@ -33,6 +34,7 @@ export default async function WeeklyPage({ searchParams }: { searchParams: Promi
   const promoteClosed = !ctx.management && forWeek.week.closed;
   // Этап 39: ссылка «Weekly» из дерева подчинённых открывает ленту с отбором по автору. Если человека нет в ленте
   // выбранной команды, лента подсказывает, в какой из видимых команд он есть
+  const blockTemplate = team.id && team.id !== ALL_TEAMS ? { teamId: team.id, blocks: (await teamTemplate(team.id))! } : null;
   const focus = await authorFocus(typeof author === "string" ? author : undefined, team);
   return (
     <WeeklyFeed
@@ -44,6 +46,7 @@ export default async function WeeklyPage({ searchParams }: { searchParams: Promi
       teamWeek={teamWeek}
       promoteClosed={promoteClosed}
       focus={focus}
+      blockTemplate={blockTemplate}
     />
   );
 }

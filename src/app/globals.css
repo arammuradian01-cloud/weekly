@@ -237,3 +237,14 @@
   --control-md: 56px;
   --row-dense: 60px;
 }
+
+/* При прокрутке к полю учитываем шапку и нижние панели сдачи/навигации. */
+html:has(.weekly-composer) {
+  scroll-padding-block: 5rem calc(12rem + env(safe-area-inset-bottom));
+}
+.weekly-composer :is(button, input, textarea, select, summary) {
+  scroll-margin-block: 1rem;
+}
+@media (min-width: 768px) {
+  html:has(.weekly-composer) { scroll-padding-block: 14rem 6rem; }
+}

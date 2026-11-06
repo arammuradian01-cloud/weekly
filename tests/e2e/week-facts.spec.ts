@@ -42,7 +42,8 @@ test("лидер добавляет факт недели записью, скр
   const before = await thanksCount();
   await enter(page, "Рева Тарас");
   await page.goto("/weekly/submit");
-  const facts = page.getByRole("region", { name: /Из фактов недели/ });
+  const facts = page.getByTestId("weekly-entry-blocks");
+  await expect(page.getByTestId("weekly-block-products").getByRole("region", { name: /Предложения из задач и просьб/ })).toBeVisible();
   await expect(facts).toBeVisible();
   const [{ title }] = await sql(`SELECT title FROM tasks WHERE number = 29`);
   await facts.getByRole("button", { name: `Добавить записью: ${title}` }).click();
@@ -55,12 +56,14 @@ test("лидер добавляет факт недели записью, скр
   await expect(page.getByRole("button", { name: `Скрыть: Заблокирована: ${blocked}` })).toHaveCount(0);
 
   // «В графике», но просрочена и давно без обновлений: в шаге «Обновить задачи» с подсказкой
+  await page.getByTestId("weekly-attention").locator("summary").first().click();
   const [{ seven }] = await sql(`SELECT title AS seven FROM tasks WHERE number = 7`);
   const row = page.locator("li").filter({ hasText: seven }).first();
   await expect(row.getByText(/«В графике», но просрочена на \d+ дн\., 15 дн\. без обновлений/)).toBeVisible();
   await expect(row.getByText("В графике не подтверждено")).toBeVisible();
 
   // Благодарность сохраняется сама, коллега получает событие
+  await page.getByText("Спасибо коллеге", { exact: true }).click();
   await page.getByLabel("Спасибо коллеге, если есть за что").fill("Спасибо @Логинова Светлана за выгрузку по убыткам");
   await expect(page.getByText("Благодарность сохранена")).toBeVisible({ timeout: 8000 });
   await shot(page, "submit");
