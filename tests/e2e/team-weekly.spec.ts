@@ -109,7 +109,7 @@ test("руководитель сектора включает weekly специ
   await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
   const fromTeam = reva.getByRole("main").getByRole("heading", { name: /Из команды/ });
   await expect(fromTeam).toBeVisible();
-  await expect(reva.getByText("Согласовали макет формы расчёта ОСАГО")).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Согласовали макет формы расчёта ОСАГО", exact: true })).toBeVisible();
   await expect(reva.getByText("Форма выйдет в релиз 20 октября")).toBeVisible();
   // Рева может поднять её дальше, в топ-команду
   await expect(reva.getByRole("button", { name: "Наверх" })).toBeVisible();
@@ -117,7 +117,7 @@ test("руководитель сектора включает weekly специ
   // Этап 39: weekly Антонова по отбору полный: и то, что он поднял из сектора
   await reva.goto(`/weekly?author=${(await sql(`SELECT slug FROM people WHERE "fullName" = 'Антонов Дмитрий'`))[0]!.slug}`);
   await expect(reva.getByRole("heading", { name: "Антонов Дмитрий" })).toBeVisible();
-  await expect(reva.getByText("Согласовали макет формы расчёта ОСАГО")).toBeVisible();
+  await expect(reva.getByRole("heading", { name: "Согласовали макет формы расчёта ОСАГО", exact: true })).toBeVisible();
   await reva.close();
 });
 

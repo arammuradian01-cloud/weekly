@@ -2,7 +2,78 @@ import { expect, test } from "@playwright/test";
 import { enter, enterByLink, resetDatabase, sql } from "./helpers";
 import { pickTeam } from "./team-picker";
 
-test.beforeEach(async () => { await resetDatabase(); });
+test.beforeEach(async () => {
+  await resetDatabase();
+  await sql(`DELETE FROM team_weekly_templates WHERE "teamId" = 'top'`);
+});
+test.afterEach(async () => { await sql(`DELETE FROM team_weekly_templates WHERE "teamId" = 'top'`); });
+
+test("возврат к прежней главной фразе во время запроса сохраняется без ухода из поля", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  await page.goto("/weekly/submit");
+  const field = page.getByLabel("Главное одной фразой");
+  const original = "Исходная главная фраза A";
+  const temporary = "Временная главная фраза B";
+  await field.fill(original);
+  await expect(page.getByText(/Черновик сохранён в \d{2}:\d{2}/)).toBeVisible({ timeout: 8000 });
+  let intercepted = false;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/weekly/submit", async (route) => {
+    const request = route.request();
+    if (!intercepted && request.method() === "POST" && request.headers()["next-action"] && request.postData()?.includes(temporary)) {
+      intercepted = true;
+      await pending;
+    }
+    await route.continue();
+  });
+  try {
+    await field.fill(temporary);
+    await expect.poll(() => intercepted, { timeout: 8000 }).toBe(true);
+    await field.fill(original);
+    const response = page.waitForResponse((r) => r.request().method() === "POST" && !!r.request().postData()?.includes(temporary));
+    release();
+    await response;
+    // Начинаем проверку после ответа B, иначе прочитали бы прежнее A до первого запроса.
+    await expect.poll(async () => (await sql(`SELECT r.headline FROM weekly_reports r JOIN people p ON p.id = r."authorId" WHERE p.slug = 'afanasyev' ORDER BY r."updatedAt" DESC LIMIT 1`))[0]?.headline).toBe(original);
+    await expect(field).toBeFocused();
+    await page.reload();
+    await expect(field).toHaveValue(original);
+  } finally { release(); }
+});
+
+test("сдача ждёт последнюю главную фразу после задержанного автосохранения", async ({ page }) => {
+  await enter(page, "Афанасьев Павел");
+  await page.goto("/weekly/submit");
+  await page.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
+  await page.getByLabel("Что произошло").fill("Запись для проверки главной фразы");
+  await page.getByRole("button", { name: "Сохранить запись", exact: true }).click();
+  await expect(page.getByLabel("Что произошло")).toHaveCount(0);
+  let intercepted = false;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/weekly/submit", async (route) => {
+    const request = route.request();
+    if (!intercepted && request.method() === "POST" && request.headers()["next-action"] && request.postData()?.includes("Первый вариант главной фразы")) {
+      intercepted = true;
+      await pending;
+    }
+    await route.continue();
+  });
+  try {
+    await page.getByLabel("Главное одной фразой").fill("Первый вариант главной фразы");
+    await expect.poll(() => intercepted, { timeout: 8000 }).toBe(true);
+    await page.getByLabel("Главное одной фразой").fill("Последний вариант перед сдачей");
+    await page.getByRole("button", { name: "Сдать weekly", exact: true }).click();
+    await expect(page.getByLabel("Главное одной фразой")).not.toBeEditable();
+    release();
+    await expect(page.getByText(/Weekly сдан|Сдан с опозданием/).first()).toBeVisible();
+    const rows = await sql(`SELECT r.headline, r.state FROM weekly_reports r JOIN weekly_entries e ON e."weekId" = r."weekId" AND e."authorId" = r."authorId" WHERE e.what = 'Запись для проверки главной фразы'`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.headline).toBe("Последний вариант перед сдачей");
+    expect(["SUBMITTED", "LATE"]).toContain(rows[0]!.state);
+  } finally { release(); }
+});
 
 test("старые записи сохраняют классификацию; смена продукта при медленном ответе не теряет новый текст", async ({ page }) => {
   test.setTimeout(60000);

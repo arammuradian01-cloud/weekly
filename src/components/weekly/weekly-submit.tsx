@@ -101,6 +101,7 @@ export function WeeklySubmit({
   // Главная фраза тоже сначала ложится в черновик на устройстве (этап 26)
   const setHeadline = (value: string) => {
     setHeadlineState(value);
+    setSavedAt(null);
     // «Смотреть как» (этап 63): черновик выбранного человека на устройство владельца не пишется
     if (canEdit && !viewing) putHeadlineDraft(me.slug, week.key, value, savedHeadline.current);
   };
@@ -114,39 +115,48 @@ export function WeeklySubmit({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedHeadline = useRef(initialReport.headline);
   const pendingHeadline = useRef(initialReport.headline);
+  const headlineQueue = useRef<Promise<unknown>>(Promise.resolve());
   pendingHeadline.current = headline;
 
-  const saveHeadline = useCallback(async () => {
-    const value = pendingHeadline.current;
-    // Фраза за пределом: сервер откажет, сохранять нечего. Строка состояния ниже говорит об этом прямо,
-    // иначе человек видит «Черновик сохранён в 00:12» от прошлого сохранения и дописывает в пустоту
-    if (value.length > HEADLINE_MAX) return false;
-    if (value === savedHeadline.current) return true;
-    setSaving(true);
-    try {
-      const result = await saveHeadlineAction(week.key, value);
-      setOffline(false);
-      if (result.ok) {
-        savedHeadline.current = value;
-        settleHeadlineDraft(me.slug, week.key, value);
-        setWeekly(result.value);
-        setSavedAt(nowTime());
-        return true;
-      } else {
-        // Правило не пускает: черновик не повторяем при каждом открытии
-        dropHeadlineDraft(me.slug, week.key);
-        notify(result.error, "error");
+  const saveHeadline = useCallback(function enqueueHeadline(): Promise<boolean> {
+    // Blur, таймер и сдача могут сработать вместе. Каждый запрос берёт актуальный текст после предыдущего.
+    const operation = headlineQueue.current.then(async () => {
+      const value = pendingHeadline.current;
+      // Фраза за пределом: сервер откажет, сохранять нечего. Строка состояния ниже говорит об этом прямо,
+      // иначе человек видит «Черновик сохранён в 00:12» от прошлого сохранения и дописывает в пустоту
+      if (value.length > HEADLINE_MAX) return false;
+      if (value === savedHeadline.current) return true;
+      setSaving(true);
+      try {
+        const result = await saveHeadlineAction(week.key, value);
+        setOffline(false);
+        if (result.ok) {
+          savedHeadline.current = value;
+          settleHeadlineDraft(me.slug, week.key, value);
+          setWeekly(result.value);
+          setSavedAt(value === pendingHeadline.current ? nowTime() : null);
+          // Пока запрос шёл, текст могли вернуть к предыдущей сохранённой версии: эффект не поставит таймер.
+          // Добавляем актуальную фразу в ту же очередь, не ожидая её внутри текущей операции.
+          if (value !== pendingHeadline.current && canEdit && !viewing) void enqueueHeadline();
+          return true;
+        } else {
+          // Правило не пускает: черновик не повторяем при каждом открытии
+          dropHeadlineDraft(me.slug, week.key);
+          notify(result.error, "error");
+          return false;
+        }
+      } catch (error) {
+        // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
+        if (isNetworkError(error)) setOffline(true);
+        else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
         return false;
+      } finally {
+        setSaving(false);
       }
-    } catch (error) {
-      // Нет сети: фраза осталась в черновике на устройстве и уйдёт, когда связь вернётся
-      if (isNetworkError(error)) setOffline(true);
-      else notify("Сервер не ответил: черновик сохранён на этом устройстве", "error");
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, [week.key, notify, me.slug]);
+    });
+    headlineQueue.current = operation.catch(() => undefined);
+    return operation;
+  }, [week.key, notify, me.slug, canEdit, viewing]);
 
   // Главная фраза сохраняется сама через 2 секунды тишины и сразу, когда вкладку прячут или закрывают
   useEffect(() => {
@@ -440,7 +450,7 @@ export function WeeklySubmit({
       {!writable ? <p className="flex items-center gap-2 text-small text-muted"><Lock className="h-4 w-4" aria-hidden="true" />{week.closed ? `Неделя ${week.number} закрыта: записи правят только владелец и администраторы.` : "Этот weekly открыт только для просмотра."}</p> : null}
       {expectedIn && expectedIn.length === 0 && !submitted ? <p className="text-small text-muted">Weekly от вас не ждут. Важное за неделю можно записать и сдать.</p> : null}
       <section id="step-entries" aria-label="Главное за неделю">
-        <TextArea label="Главное одной фразой" id="headline" value={headline} onChange={(e) => setHeadline(e.target.value)} onBlur={() => void saveHeadline()} rows={2} readOnly={!writable} counter={{ value: headline.length, max: HEADLINE_MAX }} />
+        <TextArea label="Главное одной фразой" id="headline" value={headline} onChange={(e) => setHeadline(e.target.value)} onBlur={() => void saveHeadline()} rows={2} readOnly={!writable || submitting} counter={{ value: headline.length, max: HEADLINE_MAX }} />
       </section>
       {promises.length + owed.length + tasks.length > 0 ? <details className="rounded-control border border-line bg-surface p-4" data-testid="weekly-attention">
         <summary className="cursor-pointer text-small font-semibold">Требуют внимания: {tasks.length} задач{promiseSummary.pending ? `, обещаний без итога: ${promiseSummary.pending}` : ""}</summary>

@@ -119,13 +119,5 @@
     "react-hooks/refs": {
       "count": 1
     }
-  },
-  "src/components/weekly/weekly-submit.tsx": {
-    "react-hooks/refs": {
-      "count": 2
-    },
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    }
   }
 }
