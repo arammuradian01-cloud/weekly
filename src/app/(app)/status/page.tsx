@@ -10,6 +10,7 @@ import { cspMode, hstsValue } from "@/lib/security";
 import { reloadAllowed } from "@/lib/admin/reload";
 import { errorTotals, recentErrors, type ErrorRow } from "@/lib/errors";
 import { loadDepartmentGate } from "@/lib/sheet/department";
+import { loadBackupStatus } from "@/lib/backup-status";
 
 export const metadata: Metadata = { title: "Состояние" };
 export const dynamic = "force-dynamic";
@@ -54,13 +55,14 @@ export default async function StatusPage() {
   // Страница только спрашивает базу и ничего не отмечает: иначе она затирала бы отметку, которую сама показывает,
   // и «последняя удачная проверка» всегда была бы моментом открытия страницы. Отметку ставит только /api/health
   // Два списка отдельно: поток в открытый обработчик не должен выдавливать сбои сервера с главного экрана наблюдения
-  const [db, marks, totals, server, outside, gate] = await Promise.all([
+  const [db, marks, totals, server, outside, gate, backups] = await Promise.all([
     databaseAlive(),
     healthMarks(),
     errorTotals(now),
     recentErrors(20, ["SERVER"]),
     recentErrors(20, ["BROWSER", "CSP"]),
     loadDepartmentGate(),
+    loadBackupStatus(now),
   ]);
   const view: StatusView = {
     db,
@@ -74,6 +76,8 @@ export default async function StatusPage() {
     hsts: hstsValue(),
     reload: reloadAllowed(),
     mirror: { on: gate.on, name: gate.name },
+    backups: { ...backups, copyAt: backups.copyAt ? moscow(backups.copyAt) : null, checkAt: backups.checkAt ? moscow(backups.checkAt) : null,
+      copyFailedAt: backups.copyFailedAt ? moscow(backups.copyFailedAt) : null, checkFailedAt: backups.checkFailedAt ? moscow(backups.checkFailedAt) : null },
     totals,
     server: server.map(shown),
     outside: outside.map(shown),

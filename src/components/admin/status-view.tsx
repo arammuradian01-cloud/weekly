@@ -4,6 +4,7 @@
 
 import { Module, StatusLine, type StatusItem } from "@/components/ui/data";
 import { ClearErrors } from "@/components/admin/status-clear";
+import type { BackupStatus } from "@/lib/backup-status";
 
 export type StatusErrorView = {
   id: string;
@@ -36,6 +37,7 @@ export type StatusView = {
   reload: boolean;
   /** Зеркало в Google: идёт ли отбор по департаменту и по какому */
   mirror: { on: boolean; name: string | null };
+  backups: BackupStatus;
   totals: { day: number; week: number; kinds: number };
   /** Сбои сервера: приходят из onRequestError, подделать их снаружи нельзя */
   server: StatusErrorView[];
@@ -89,6 +91,25 @@ export function StatusPanel({ view }: { view: StatusView }) {
         ]}
       >
         <StatusLine label="Состояние приложения" items={items} />
+      </Module>
+
+      <Module
+        title="Резервные копии"
+        description="Зашифрованные копии во внешнем хранилище. Восстановление проверяется на отдельном сервере"
+        params={[
+          { label: "Последняя подтверждённая копия", value: view.backups.copyAt ?? "ещё не было" },
+          { label: "Последнее проверенное восстановление", value: view.backups.checkAt ?? "ещё не было" },
+          { label: "Последний сбой копирования", value: view.backups.copyFailedAt ?? "не было" },
+          { label: "Последний сбой восстановления", value: view.backups.checkFailedAt ?? "не было" },
+        ]}
+      >
+        <StatusLine label="Состояние резервирования" items={[
+          { label: "Внешняя копия", value: !view.backups.enabled ? "выключена" : view.backups.copyStale ? "требует проверки" : "подтверждена",
+            tone: !view.backups.enabled || view.backups.copyStale ? "warning" : "ok", testId: "status-backup",
+            hint: view.backups.enabled && view.backups.copyStale ? "нет свежей копии за 36 часов или последняя попытка не прошла" : undefined },
+          { label: "Проверка восстановления", value: !view.backups.enabled || !view.backups.restoreEnabled ? "выключена" : view.backups.checkStale ? "требует проверки" : "пройдена",
+            tone: !view.backups.enabled || !view.backups.restoreEnabled || view.backups.checkStale ? "warning" : "ok", testId: "status-backup-restore" },
+        ]} />
       </Module>
 
       <Module

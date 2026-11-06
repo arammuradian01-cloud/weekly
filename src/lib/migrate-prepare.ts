@@ -73,6 +73,8 @@ export async function prepareDatabase(db: Queryable, options: PrepareOptions = {
       WHERE a.datname = current_database()
         AND a.usename = current_user
         AND a.pid <> pg_backend_pid()
+        -- Экспортёр снимка намеренно ждёт pg_dump в открытой транзакции.
+        AND a.application_name <> 'weekly-backup'
         AND coalesce(a.state_change, a.backend_start) < now() - make_interval(secs => $1)
         AND (
           a.state = 'idle in transaction'

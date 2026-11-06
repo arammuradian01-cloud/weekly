@@ -6,6 +6,14 @@ FROM node:22-bookworm-slim AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates curl wget \
   && rm -rf /var/lib/apt/lists/*
+# Клиент 16 совместим с управляемой базой PostgreSQL 16. В Debian bookworm по умолчанию клиент 15.
+# Официальный репозиторий PGDG с проверкой подписи; сервер PostgreSQL в образ не ставится.
+RUN install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsS https://www.postgresql.org/media/keys/ACCC4CF8.asc -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
@@ -42,4 +50,4 @@ EXPOSE 3000
 # процесс под нагрузкой дорастал до 460 МБ и вместе с соседним контейнером во время выкладки не помещался в память
 ENV MIGRATE_TIMEOUT=600 \
     NODE_HEAP_MB=320
-CMD ["sh", "-c", "node dist/start/scripts/migrate-prepare.mjs && timeout -k 10 ${MIGRATE_TIMEOUT} node node_modules/prisma/build/index.js migrate deploy && node dist/start/prisma/seed.mjs && NODE_OPTIONS=\"--max-old-space-size=${NODE_HEAP_MB}\" exec node node_modules/next/dist/bin/next start -H 0.0.0.0 -p ${PORT}"]
+CMD ["sh", "-c", "node dist/start/scripts/migrate-prepare.mjs && node dist/start/scripts/backup-before-migrate.mjs && timeout -k 10 ${MIGRATE_TIMEOUT} node node_modules/prisma/build/index.js migrate deploy && node dist/start/prisma/seed.mjs && exec node dist/start/scripts/start-server.mjs"]

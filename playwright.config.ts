@@ -65,6 +65,9 @@ export default defineConfig({
       // Этап 60: ленты новостей из фикстур tests/fixtures/news вместо сети. next start идёт с NODE_ENV=production,
       // где фикстуры работают только вместе с WEEKLY_E2E=1: на боевом сервере случайный NEWS_FAKE ничего не включит
       NEWS_FAKE: "1",
+      // Ни локальная настройка разработчика, ни переменная CI не включает реальные копии в браузерных тестах.
+      BACKUP_ENABLED: "false",
+      BACKUP_RESTORE_ENABLED: "false",
     },
   },
 });
