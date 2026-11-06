@@ -505,7 +505,7 @@ export function WeeklySubmit({
           {problems.length ? <ul className="text-small text-muted" aria-live="polite">{problems.map((problem) => <li key={problem}>{problem}</li>)}</ul> : <p className="text-small text-muted">Записей в отчёте: {entries.length + promoted.length}. Можно сдавать.</p>}
           {promiseSummary.pending ? <p className="text-small text-muted">Обещаний без итога: {promiseSummary.pending}. Сдать weekly можно, но они будут считаться невыполненными.</p> : null}
           <p className="sr-only">{summaryText(promiseSummary)}</p>
-          <div data-testid="weekly-submit-bar" className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 rounded-panel border border-line bg-surface p-3 shadow-sticky md:hidden"><span className="text-small text-muted">{draft || editing ? "Открыта запись" : `${entries.length + promoted.length} записей`}</span>{submitButton()}</div>
+          {!draft && !editing ? <div data-testid="weekly-submit-bar" className="fixed inset-x-3 bottom-[calc(5rem+env(safe-area-inset-bottom))] z-30 flex items-center justify-between gap-3 rounded-panel border border-line bg-surface p-3 shadow-sticky md:hidden"><span className="text-small text-muted">{entries.length + promoted.length} записей</span>{submitButton()}</div> : null}
         </>}
       </section>
     </div>

@@ -149,7 +149,12 @@ test("сдача по блокам: одна форма, явное сохран
   await page.getByLabel("Главное одной фразой").fill("Тест: согласовали следующий запуск");
   await page.getByRole("button", { name: "Добавить запись: Риски", exact: true }).click();
   await expect(page.getByRole("button", { name: "Добавить запись: Продукты", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toBeDisabled();
+  if (test.info().project.name === "phone") {
+    await expect(page.getByTestId("weekly-submit-bar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toHaveCount(0);
+  } else {
+    await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toBeDisabled();
+  }
   await expect(page.getByLabel("Тип", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Блок отчёта")).toHaveCount(0);
   await expect(page.getByLabel("Цифра или факт")).toBeVisible();
@@ -178,7 +183,12 @@ test("сдача по блокам: одна форма, явное сохран
   await expect(page.getByLabel("Ссылка на артефакт", { exact: true })).toHaveValue("https://example.com/weekly-test");
   // Новые правки после автосохранения нельзя потерять переходом в соседнюю форму или сдачей.
   await page.getByLabel("Что делаем дальше").fill("Завершить согласования завтра");
-  await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toBeDisabled();
+  if (test.info().project.name === "phone") {
+    await expect(page.getByTestId("weekly-submit-bar")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toHaveCount(0);
+  } else {
+    await expect(page.getByRole("button", { name: "Сдать weekly", exact: true })).toBeDisabled();
+  }
   await page.getByRole("button", { name: "Сохранить запись", exact: true }).click();
   await expect(page.getByLabel("Что произошло")).toHaveCount(0);
   if (test.info().project.name === "phone") {
