@@ -1,13 +1,13 @@
-import { prisma } from "@/lib/db";
+import { checkHealth } from "@/lib/health";
 
 export const dynamic = "force-dynamic";
 
-/** Проверка для сервера и мониторинга: приложение живо и видит базу */
+/**
+ * Проверка для сервера и наблюдения: приложение живо и видит базу.
+ * Этап 86: удачная проверка отмечается в базе, страница «Состояние» показывает её время. Сюда же ходит внешний
+ * пинг из GitHub: ответ не 200 — владельцу уходит сообщение в Telegram
+ */
 export async function GET() {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return Response.json({ ok: true, db: true });
-  } catch {
-    return Response.json({ ok: false, db: false }, { status: 503 });
-  }
+  const result = await checkHealth();
+  return Response.json(result, { status: result.ok ? 200 : 503, headers: { "Cache-Control": "no-store" } });
 }

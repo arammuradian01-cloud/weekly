@@ -20,7 +20,7 @@ import type { DeadlineSetting } from "@/lib/week";
 import type { MeetingSetting } from "@/lib/weekly/weeks";
 import type { EditableDictKind } from "@/domain/dictionaries";
 import type { Prisma, Role } from "@/generated/prisma/client";
-import { ReloadProblemsError, planReload, reloadFromBord, type ReloadPlan, type ReloadResult } from "./reload";
+import { RELOAD_DISABLED, ReloadProblemsError, planReload, reloadAllowed, reloadFromBord, type ReloadPlan, type ReloadResult } from "./reload";
 import { deviceSummary, normalizeEmail, revokeOnDeactivate } from "@/lib/login/service";
 import { auditVia } from "@/lib/audit";
 
@@ -555,6 +555,8 @@ const RELOAD_LIMIT = 2_000_000;
 
 async function requireReload(actor: Actor, tasksText: string, weeklyText: string) {
   requirePeople(actor);
+  // Этап 86: сначала переменная окружения, потом всё остальное. Та же проверка стоит и внутри reloadFromBord
+  if (!reloadAllowed()) fail(RELOAD_DISABLED);
   if ((await getStandBanner()) !== "test") {
     fail("Перезаливка доступна только до пилота, пока в настройках выбрана плашка «Тестовый стенд»");
   }

@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync, readFileSync } from "node:fs";
 import { gzipSync } from "node:zlib";
-import { enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
+import { enterByLink, enterManagement, resetDatabase, sql, watchCspRefusals } from "./helpers";
 import { E2E_PASSWORDS } from "./global-setup";
 
 // Этап 62: рынок КАСКО и ОСАГО. Владелец при личном входе загружает пакет рынка (синтетический
@@ -72,6 +72,9 @@ test.beforeEach(async () => {
 
 test("владелец загружает пакет, вкладка и фильтр работают внутри окна и живут в адресе, Рева из списка видит раздел", async ({ page, browser }) => {
   test.setTimeout(150_000);
+  // Этап 86: политика CSP действует, а код дашборда внутри окна встроенный. Если политика его закроет, окно
+  // останется на месте, а цифры не посчитаются: такую поломку видно только по жалобам в консоли
+  const refusals = watchCspRefusals(page);
   await enterByLink(page, "muradyan");
   await page.goto("/market");
   await expect(page.getByRole("heading", { name: "Рынок КАСКО и ОСАГО", level: 1 })).toBeVisible();
@@ -163,6 +166,8 @@ test("владелец загружает пакет, вкладка и филь
   await expect(reva).toHaveURL(/\/market\?tab=osago$/);
   await expect(reva.getByTestId("market-upload")).toHaveCount(0);
   await shot(reva, "reva");
+  // Этап 86: ни одной жалобы политики за весь сценарий, в том числе внутри окна дашборда
+  expect(refusals, refusals.join("\n")).toEqual([]);
 });
 
 test("человек не из списка при личном входе: пункта меню нет, раздел закрыт; режим управления и общий логин видят раздел, но не загружают", async ({ page, browser }) => {

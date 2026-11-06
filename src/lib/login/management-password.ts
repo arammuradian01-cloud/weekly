@@ -9,7 +9,7 @@ import type { ManagementGrant } from "@/lib/session";
 import { TaskRuleError, type Actor } from "@/lib/tasks/service";
 import { formatTime } from "@/lib/week";
 import { checkCurrentPassword } from "./password";
-import { BUSY_ERROR, markAttemptOk, reserveIpAttempt } from "./attempts";
+import { BUSY_ERROR, markAttemptOk, reserveManagementAttempt } from "./attempts";
 import { LOCK_MS } from "@/lib/rate-limit";
 
 export type ManagementPasswordMode = "shared" | "personal";
@@ -72,9 +72,16 @@ export async function checkManagementPassword(actor: Actor, deviceId: string | n
     const kind = managementPasswordKind(managementRoleFor(person.role)!);
     const hash = await getSetting<string | null>(PASSWORD_SETTING_KEYS[kind], null);
     if (!hash) return fail(`Пароль режима управления ещё не задан. Владелец задаёт его командой npm run password -- ${kind}`);
-    const reserved = await reserveIpAttempt(actor.ip ?? "unknown", "MANAGEMENT", now).catch(() => null);
+    // Этап 86: счёт попыток и по адресу, и по человеку: подбор общего пароля роли с разных адресов тоже ограничен
+    const reserved = await reserveManagementAttempt(actor.ip ?? "unknown", person.id, now).catch(() => null);
     if (!reserved) return fail(BUSY_ERROR);
-    if (!reserved.ok) return fail(`Слишком много неверных попыток. Попробовать снова можно в ${formatTime(reserved.until)}`);
+    if (!reserved.ok) {
+      return fail(
+        reserved.scope === "ip"
+          ? `Слишком много неверных попыток с этого адреса. Попробовать снова можно в ${formatTime(reserved.until)}`
+          : `Слишком много неверных попыток. Попробовать снова можно в ${formatTime(reserved.until)}`,
+      );
+    }
     if (!(await verifyPassword(password, hash))) {
       const left = reserved.remaining - 1;
       return fail(left > 0 ? `Неверный пароль. Осталось попыток: ${left}` : `Неверный пароль. Вход закрыт на 15 минут, до ${formatTime(new Date(now.getTime() + LOCK_MS))}`);

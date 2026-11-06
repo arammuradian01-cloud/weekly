@@ -20,6 +20,31 @@ export type ReloadPlan = {
 
 export type ReloadResult = { tasks: number; entries: number; weeks: number[]; nextNumber: number };
 
+/**
+ * Этап 86: перезаливка запускается только при переменной окружения RELOAD_ENABLED=1.
+ *
+ * Перезаливка удаляет все задачи и weekly топ-команды, и до этого этапа её хватало открыть в настройках, пока
+ * выбрана плашка «Тестовый стенд», или запустить командой на сервере: оба пути целиком в руках того, кто уже вошёл.
+ * Теперь нужен ещё и доступ к переменным хостинга, а на боевом стенде переменной просто нет. Проверка стоит в самой
+ * reloadFromBord, то есть на всех путях сразу: и в настройках, и в команде npm run reload:bord
+ */
+export const RELOAD_ENV = "RELOAD_ENABLED";
+export const RELOAD_DISABLED =
+  "Перезаливка выключена: в переменных приложения нет RELOAD_ENABLED=1. Она удаляет все задачи и weekly, поэтому включается только на время работы и потом убирается";
+
+export function reloadAllowed(env: { RELOAD_ENABLED?: string; [key: string]: string | undefined } = process.env): boolean {
+  const value = (env.RELOAD_ENABLED ?? "").trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}
+
+/** Перезаливка запрещена переменными окружения */
+export class ReloadDisabledError extends Error {
+  constructor() {
+    super(RELOAD_DISABLED);
+    this.name = "ReloadDisabledError";
+  }
+}
+
 /** Кто перезаливает: владелец из настроек или скрипт на сервере */
 export type ReloadActor = { personId: string | null; name: string; source: "APP" | "SYSTEM"; ip?: string | null };
 
@@ -69,6 +94,8 @@ export async function planReload(db: PrismaClient, tasksText: string, weeklyText
  * Битая выгрузка останавливает перезаливку до удаления
  */
 export async function reloadFromBord(db: PrismaClient, tasksText: string, weeklyText: string, opts: { batch: string; actor: ReloadActor }): Promise<ReloadResult> {
+  // Этап 86: без RELOAD_ENABLED=1 база не трогается ни с экрана, ни командой
+  if (!reloadAllowed()) throw new ReloadDisabledError();
   const plan = await planReload(db, tasksText, weeklyText);
   if (plan.problems.length) throw new ReloadProblemsError(plan.problems);
 

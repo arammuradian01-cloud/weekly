@@ -1,0 +1,62 @@
+name: Внешний пинг
+
+# Внешний пинг с оповещением (этап 86). Проверка идёт снаружи, из GitHub: если упал сам сервер приложения, сообщить
+# о себе он не может, поэтому пинг и живёт отдельно от стенда.
+#
+# Что делает: раз в 20 минут запрашивает /api/health. Три попытки с паузами (одиночная заминка сети или выкладка
+# приложения не повод будить владельца). Все три не прошли — в Telegram уходит сообщение, и проверка падает,
+# чтобы запуск был видно красным в списке.
+#
+# Адрес и ключи только в секретах репозитория, в коде их нет:
+#   PING_URL           адрес стенда, например https://адрес-стенда
+#   TELEGRAM_BOT_TOKEN ключ бота, выдаёт @BotFather
+#   TELEGRAM_CHAT_ID   номер разговора, куда писать
+# Пока PING_URL не задан, проверка ничего не делает и не падает.
+#
+# Расписание GitHub не точное: запуск может задержаться на несколько минут, особенно в загруженные часы.
+# Это наблюдение, а не замена проверке состояния App Platform: та перезапускает контейнер, этот пинг оповещает людей.
+
+on:
+  schedule:
+    - cron: "7,27,47 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Приложение отвечает
+        env:
+          PING_URL: ${{ secrets.PING_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -u
+          if [ -z "${PING_URL}" ]; then
+            echo "Секрет PING_URL не задан: пинг выключен, ничего не проверяем"
+            exit 0
+          fi
+          url="${PING_URL%/}/api/health"
+          code=""
+          for try in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url" || echo "000")
+            echo "Попытка $try: код ответа $code"
+            if [ "$code" = "200" ]; then
+              echo "Приложение отвечает"
+              exit 0
+            fi
+            if [ "$try" != "3" ]; then sleep 30; fi
+          done
+          text="Weekly не отвечает. Проверка ${url} вернула код ${code} три раза подряд. Если выкладка не идёт, стоит открыть Timeweb и посмотреть контейнер"
+          if [ -n "${TELEGRAM_BOT_TOKEN}" ] && [ -n "${TELEGRAM_CHAT_ID}" ]; then
+            # В журнал проверки уходит только код ответа Telegram: в адресе отправки лежит ключ бота
+            sent=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=${text}" || echo "000")
+            echo "Оповещение в Telegram: код ответа $sent"
+          else
+            echo "Ключи Telegram не заданы: оповещение не отправлено"
+          fi
+          echo "$text"
+          exit 1

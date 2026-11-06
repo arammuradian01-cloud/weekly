@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { RotateCcw } from "lucide-react";
 import { Button, buttonClass } from "@/components/ui/button";
+import { reportBrowserError } from "@/components/errors/reporter";
 
 /**
  * Сбой на странице внутри ресурса. Меню остаётся на месте, черновики weekly уже сохранены на сервере.
@@ -12,6 +13,8 @@ import { Button, buttonClass } from "@/components/ui/button";
 export default function AppError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("Сбой страницы", error);
+    // Этап 86: сбой уходит в общий сбор, владелец видит его на странице «Состояние»
+    reportBrowserError(`Сбой страницы: ${error.message}`, error.digest ?? error.stack);
   }, [error]);
 
   return (
