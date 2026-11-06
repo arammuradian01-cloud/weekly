@@ -143,3 +143,58 @@ export function reserveIpAttempt(ip: string, kind: "TEAM" | "MANAGEMENT", now: D
 export function markAttemptOk(db: Tx | typeof prisma, attemptId: bigint) {
   return db.loginAttempt.update({ where: { id: attemptId }, data: { ok: true } });
 }
+
+/** Ключ счётчика попыток режима управления по человеку: у каждого владельца и администратора свой */
+export const managementKey = (personId: string) => `management:${personId}`;
+
+export type ManagementReserved =
+  | { ok: true; attemptId: bigint; remaining: number }
+  | { ok: false; scope: "ip" | "person"; until: Date };
+
+/**
+ * Попытка включить режим управления общим паролем роли: счёт и по адресу, и по человеку (этап 86).
+ *
+ * Этап 29 считал попытки только по адресу, поэтому подбор общего пароля владельца с разных адресов (а их у домашнего
+ * интернета и мобильной сети много) порога не достигал: на каждом адресе была одна-две попытки. Теперь у каждого
+ * владельца и администратора свой счётчик: 5 неверных попыток закрывают ему режим управления на 15 минут, с какого
+ * бы адреса они ни пришли. Счёт по адресу остался прежним, он никого не ослабляет.
+ *
+ * Личный пароль режима управления (решение о личных паролях владельцев) идёт мимо: его сверяет checkCurrentPassword
+ * вместе с личным входом, там счётчик по человеку есть с этапа 20а.
+ */
+export function reserveManagementAttempt(ip: string, personId: string, now: Date): Promise<ManagementReserved> {
+  const ipKey = `attempt:MANAGEMENT:${ip}`;
+  const personKey = `attempt:${managementKey(personId)}`;
+  // Сначала очередь в процессе, потом транзакция: ждущие запросы не держат соединения базы (этап 29)
+  return serialAll([ipKey, personKey], () =>
+    prisma.$transaction(async (tx): Promise<ManagementReserved> => {
+      await lockTimeout(tx);
+      await advisoryLock(tx, ipKey);
+      await advisoryLock(tx, personKey);
+      const history = { kind: "MANAGEMENT" as const, at: { gte: historySince(now) } };
+      const select = { at: true, ok: true, blocked: true };
+      // Запросы по очереди, а не Promise.all: внутри одной транзакции они всё равно идут по одному соединению
+      const byIpRows = await tx.loginAttempt.findMany({ where: { ...history, ip }, select, orderBy: { at: "asc" } });
+      const byPersonRows = await tx.loginAttempt.findMany({ where: { ...history, personId }, select, orderBy: { at: "asc" } });
+      const blocked = (scope: "ip" | "person", until: Date) =>
+        tx.loginAttempt
+          .create({ data: { ip, kind: "MANAGEMENT", ok: false, blocked: true, personId, login: managementKey(personId), at: now } })
+          .then(() => ({ ok: false, scope, until }) as ManagementReserved);
+      const byIp = computeLockState(
+        byIpRows.filter((a) => !a.blocked),
+        now,
+      );
+      if (byIp.locked && byIp.lockedUntil) return blocked("ip", byIp.lockedUntil);
+      const byPerson = computeLockState(
+        byPersonRows.filter((a) => !a.blocked),
+        now,
+      );
+      if (byPerson.locked && byPerson.lockedUntil) return blocked("person", byPerson.lockedUntil);
+      const row = await tx.loginAttempt.create({
+        data: { ip, kind: "MANAGEMENT", ok: false, personId, login: managementKey(personId), at: now },
+        select: { id: true },
+      });
+      return { ok: true, attemptId: row.id, remaining: Math.min(byIp.remaining, byPerson.remaining) };
+    }, ATTEMPT_TX),
+  );
+}

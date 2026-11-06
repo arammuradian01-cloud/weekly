@@ -110,6 +110,7 @@ export function SettingsView({
   passwords,
   sessionKey,
   banner,
+  reload,
   login,
   absences,
   weeks,
@@ -129,6 +130,8 @@ export function SettingsView({
   sessionKey: "env" | "derived" | "none";
   /** Плашка над страницами: тестовый стенд, пилот или без плашки */
   banner: StandBanner;
+  /** Этап 86: разрешена ли перезаливка переменной RELOAD_ENABLED. Нет: раздел не показываем совсем */
+  reload: boolean;
   /** Вход (этап 9): работает ли общий логин, настроена ли почта, вошёл ли владелец лично */
   login: { team: "on" | "off"; mail: boolean; personal: boolean; passwords?: { withPassword: number; total: number; invitable: number } };
   /** Отсутствия людей с отчётной недели и недели, которые можно отметить (этап 9) */
@@ -232,7 +235,7 @@ export function SettingsView({
           <Group id="stand">
             <BannerSection initial={banner} />
 
-            {banner === "test" ? <ReloadSection /> : null}
+            {banner === "test" && reload ? <ReloadSection /> : null}
 
             <Section title="Google-таблица" description="Куда ресурс зеркалит задачи и weekly">
               <p className="text-body text-ink">

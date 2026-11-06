@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import "./globals.css";
+import { reportBrowserError } from "@/components/errors/reporter";
 
 /**
  * Последний рубеж: сбой в общей оболочке, когда не отрисовалось даже меню.
@@ -10,6 +11,8 @@ import "./globals.css";
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error("Сбой оболочки", error);
+    // Этап 86: здесь нет общей оболочки, поэтому сбой отправляется сам
+    reportBrowserError(`Сбой оболочки: ${error.message}`, error.digest ?? error.stack);
   }, [error]);
 
   return (

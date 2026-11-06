@@ -11,6 +11,7 @@ import { mailConfigured } from "@/lib/mail";
 import { approvalDepartments, loadApprovalSetting } from "@/lib/tasks/approval";
 import { numbersAccessView } from "@/lib/plan/access";
 import { marketSettingsView } from "@/lib/market/access";
+import { reloadAllowed } from "@/lib/admin/reload";
 import { PageHeader } from "@/components/page-header";
 import { SettingsView } from "@/components/admin/settings-view";
 import { Figures } from "@/components/ui/data";
@@ -82,7 +83,7 @@ export default async function SettingsPage() {
           ) : null
         }
       />
-      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} market={market} news={news} contentImport={contentImport} />
+      <SettingsView owner={owner} me={ctx.person.slug} rhythm={rhythm} dicts={dicts} people={people} passwords={passwords} sessionKey={owner ? sessionSecretSource() : "env"} banner={banner} reload={reloadAllowed()} login={{ team: teamLogin, mail: mailConfigured(), personal: ctx.via !== "TEAM", passwords: personal }} absences={absences} weeks={weeks} approval={approval} numbersAccess={numbersAccess} market={market} news={news} contentImport={contentImport} />
     </>
   );
 }

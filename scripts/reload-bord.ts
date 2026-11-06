@@ -2,6 +2,9 @@
 //
 // npm run reload:bord -- --tasks data/bord/zadachi-ДАТА.csv --weekly data/bord/weekly-ceo-ДАТА.csv [--batch bord-ДАТА] [--yes]
 //
+// Этап 86: команда работает только при переменной окружения RELOAD_ENABLED=1. Без неё ни пробный запуск, ни --yes
+// ничего не делают: перезаливка удаляет все задачи и weekly, и одного входа на сервер для этого мало.
+//
 // Без --yes ничего не меняет: проверяет обе выгрузки и пишет, что будет удалено и что загружено.
 // С --yes удаляет все задачи (вместе с комментариями, переносами и ссылками), все записи и сдачи weekly,
 // черновики отчёта CEO и недели, затем загружает выгрузку заново. Люди, справочники, настройки и журнал остаются.
@@ -10,7 +13,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { prisma } from "../src/lib/db";
-import { planReload, reloadFromBord } from "../src/lib/admin/reload";
+import { RELOAD_DISABLED, planReload, reloadAllowed, reloadFromBord } from "../src/lib/admin/reload";
 
 function arg(name: string): string | undefined {
   const args = process.argv.slice(2);
@@ -25,6 +28,8 @@ async function main() {
   if (!tasksFile || !weeklyFile) {
     throw new Error("Укажите обе выгрузки: --tasks <CSV вкладки «Задачи»> --weekly <CSV вкладки «Weekly CEO»>");
   }
+  // Этап 86: без RELOAD_ENABLED=1 даже пробный запуск не начинается, чтобы команду нельзя было довести до --yes
+  if (!reloadAllowed()) throw new Error(RELOAD_DISABLED);
   const batch = arg("--batch") ?? `bord-${new Date().toISOString().slice(0, 10)}`;
   const tasksText = readFileSync(tasksFile, "utf8");
   const weeklyText = readFileSync(weeklyFile, "utf8");
