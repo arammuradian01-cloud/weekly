@@ -107,9 +107,9 @@ describe("миграция удаления «Один на один»", () => {
   });
 
   it("старые записи журнала о встречах один на один читаются словами, экран журнала не падает", async () => {
-    await prisma.auditLog.create({ data: { action: "oneOnOne.topic.add", entity: "one-on-one", entityId: "p-old", actorName: "Рева Тарас", after: "тема" } });
+    const row = await prisma.auditLog.create({ data: { action: "oneOnOne.topic.add", entity: "one-on-one", entityId: "p-old", actorName: "Рева Тарас", after: "тема" } });
     const page = await journalEvents({ limit: 5 });
-    expect(page.events[0]).toMatchObject({ object: "Встреча один на один (раздел удалён)", kind: "system" });
+    expect(page.events.find((event) => event.id === `a${row.id}`)).toMatchObject({ object: "Встреча один на один (раздел удалён)", kind: "system" });
   });
 });
 

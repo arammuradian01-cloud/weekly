@@ -1,7 +1,9 @@
+import { assembleBlocks } from "@/lib/weekly-blocks/assemble";
+import { blocksToLegacy, STANDARD_TEMPLATE } from "@/lib/weekly-blocks/types";
 import { describe, expect, it } from "vitest";
 import { addDays, diffDays, plural } from "@/domain/dates";
 import { deadlineOf, isWeekKey, meetingOf, reportingKey, shiftWeek, weekKeyOf, weekKeyOfMeeting, weekNumberOf } from "@/lib/weekly/weeks";
-import { buildCeoSections, canEditWeekly, splitWhat, submitState } from "@/lib/weekly/rules";
+import { canEditWeekly, splitWhat, submitState } from "@/lib/weekly/rules";
 import { directionLabelKey, entryTypeFor, readWeeklyTable } from "@/lib/weekly/bord-import";
 import { normalizeCell, overdueText, parseCsv, readTasksTable, whereUpdatedFrom } from "@/lib/tasks/bord-import";
 import { issueUndoToken, readUndoToken } from "@/lib/tasks/undo";
@@ -88,20 +90,20 @@ describe("правила weekly", () => {
   it("отчёт CEO раскладывает отмеченные записи по разделам, подписывает продуктом и меняет длинное тире и стрелки на дефис", () => {
     const e = (patch: Partial<WeeklyEntry>): WeeklyEntry => ({ id: "x", week: "2026-09-28", author: "reva", direction: "osago", block: "product", type: "event", what: "Событие.", links: [], ceo: true, ...patch });
     const label = (code: string) => ({ osago: "ОСАГО", deposits: "Депозиты и инвестиции", red: "RED" })[code] ?? code;
-    const s = buildCeoSections(
-      [
+    const entries = [
         e({ what: "Запустили тест — первые итоги.", fact: "+5%" }),
         e({ direction: "deposits", what: "Трафик растёт: SEO +7%, директ +50%", fact: "SEO +7%, директ +50% н/н" }),
         e({ type: "risk", what: "Баг на пути заказ → оплата" }),
         e({ type: "result", what: "Не в отчёт", ceo: false }),
         e({ what: "Договорились", next: "Подписать допсоглашение", author: null }),
         e({ direction: "red", what: "Кросс работает: около 20 700 полисов", fact: "20700 полисов" }),
-      ],
-      label,
-    );
+      ];
+    const products = ["osago", "deposits", "red"].map((code) => ({ code, label: label(code) }));
+    const blocks = assembleBlocks({ template: STANDARD_TEMPLATE, products, entries: entries.filter((e) => e.ceo).map((e) => ({ ...e, section: e.section ?? null, fact: e.fact ?? null, impact: e.impact ?? null, next: e.next ?? null, link: null })), wow: null, month: null, news: [], competitors: [], done: [], atRisk: [], next: [], goals: [], notion: null, focus: null });
+    const s = blocksToLegacy(blocks, Object.fromEntries(products.map((p) => [p.code, p.label])), products.map((p) => p.code));
     // Строки одного продукта подряд, цифра, которая повторяет текст, не дописывается
     expect(s.main).toBe(
-      "- ОСАГО. Запустили тест - первые итоги. +5%\n- ОСАГО. Договорились\n- Депозиты и инвестиции. Трафик растёт: SEO +7%, директ +50%\n- RED. Кросс работает: около 20 700 полисов",
+      "Продукты:\n- ОСАГО. Запустили тест - первые итоги. +5%\n- ОСАГО. Договорились\n- Депозиты и инвестиции. Трафик растёт: SEO +7%, директ +50%\n- RED. Кросс работает: около 20 700 полисов",
     );
     expect(s.risks).toBe("- ОСАГО. Баг на пути заказ - оплата");
     expect(s.next).toBe("- ОСАГО. Подписать допсоглашение");

@@ -8,7 +8,7 @@ import * as weekly from "@/lib/weekly/service";
 import { loadTeamNodes, TOP_TEAM } from "@/lib/org/scope";
 import { expectedOf, leadersOf, slotMoment } from "@/lib/org/rhythm";
 import { structureView } from "@/lib/org/view";
-import { buildCeoSections } from "@/lib/weekly/rules";
+import { assembleCeoBlocks } from "@/lib/weekly-blocks/sources";
 
 const STRUCTURE = [
   ["ФИО", "Должность", "Управление", "Отдел", "Сектор", "Руководитель", "Руководит"],
@@ -154,8 +154,9 @@ describe("наверх", () => {
     // Отчёт CEO: отмеченная запись снизу попадает в отчёт топ-команды, подписана продуктом
     await weekly.setCeoFlag(await owner(), e, true);
     const ceo = await weekly.getWeekView(week, new Date(), { personIds: topIds, authorIds: topIds, shared: true, ceo: true, teamIds: [TOP_TEAM] });
-    const sections = buildCeoSections(ceo.entries, (code) => code.toUpperCase());
-    expect(sections.main).toContain(`- OSAGO. ${inTop.what.replace(/\.$/, "")}`);
+    expect(ceo.entries.some((entry) => entry.id === e && entry.ceo)).toBe(true);
+    const assembled = await assembleCeoBlocks(await owner(), week, new Date());
+    expect(assembled.blocks.find((block) => block.key === "products")?.lines).toEqual(expect.arrayContaining([expect.objectContaining({ product: "osago", text: inTop.what.replace(/\.$/, "") })]));
 
     // Weekly Антонова: запись в «Из команды», сдать можно и без своих записей
     const mine = await weekly.getMyWeekly(antonov.personId, week);

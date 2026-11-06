@@ -184,9 +184,8 @@ test("этап 66: руководитель задаёт блоки weekly ко�
 
   await enterByLink(page, "reva");
   await page.goto("/weekly/team-report?team=e2e-team66");
-  await expect(page.getByText("Блоки weekly команды «Тест 66: команда вкладов» не заданы")).toBeVisible();
+  await page.getByText("Блоки weekly команды", { exact: true }).click();
   const template = page.getByTestId("team-template");
-  await template.getByRole("button", { name: "Взять стандартный набор" }).click();
   await expect(template.getByTestId("team-template-block")).toHaveCount(8);
   // Лишние блоки убираем, свой блок добавляем, порядок меняем
   for (const name of ["Неделя к неделе", "Месяц: к прошлому году, к прошлому месяцу, план продаж", "Конкуренты", "Партнёрский канал"]) {
@@ -204,9 +203,8 @@ test("этап 66: руководитель задаёт блоки weekly ко�
   // Участник сдаёт weekly по блокам команды
   const member = await personal(browser, page, "cheychenets");
   await member.goto("/weekly/submit");
-  await expect(member.getByTestId("weekly-template-hint")).toContainText("Команда «Тест 66: команда вкладов» сдаёт weekly по блокам");
-  await member.getByRole("button", { name: "Добавить запись" }).click();
-  await member.getByLabel("Блок отчёта").selectOption({ label: "Найм и команда" });
+  await expect(member.getByTestId("weekly-template-hint")).toContainText("Блоки команды «Тест 66: команда вкладов»");
+  await member.getByRole("button", { name: "Добавить запись: Найм и команда", exact: true }).click();
   await member.getByLabel("Что произошло").fill("Закрыли вакансию аналитика вкладов");
   await member.getByRole("button", { name: "Сохранить запись" }).click();
   await expect(member.getByText("Закрыли вакансию аналитика вкладов").first()).toBeVisible();

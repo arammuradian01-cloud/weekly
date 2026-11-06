@@ -80,8 +80,8 @@ test("администратор правит справочник, лидер �
   const leader = await (await browser.newContext()).newPage();
   await enter(leader, "Рева Тарас");
   await leader.goto("/weekly/submit");
-  await leader.getByRole("button", { name: "Добавить запись" }).click();
-  const direction = leader.getByLabel("Направление");
+  await leader.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
+  const direction = leader.getByLabel("Продукт");
   await expect(direction.locator("option", { hasText: "Страхование жизни" })).toHaveCount(1);
   await expect(direction.locator("option", { hasText: "КАСКО" })).toHaveCount(0);
   // Лидеру настройки и журнал закрыты

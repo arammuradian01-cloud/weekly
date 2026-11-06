@@ -2,9 +2,8 @@
 // задать каждый руководитель для отчёта своему руководителю.
 //
 // - Шаблон: руководитель команды (руководитель выше, режим управления) выбирает блоки из стандартного набора и свои,
-//   задаёт порядок. Нет шаблона: weekly команды как раньше. У команды страхования и инвестиций (топ-команда) шаблона нет:
-//   её отчёт это отчёт CEO, он и так по смысловым блокам.
-// - Участники сдают записи weekly по блокам шаблона: в форме записи «Блок отчёта», запись помнит блок (weekly_entries.section).
+//   задаёт порядок. Без настройки действует стандартный набор. Топ-команда тоже настраивает блоки для отчёта CEO.
+// - Участники добавляют записи прямо в блоки шаблона; запись помнит блок (weekly_entries.section).
 // - Руководитель видит собранный отчёт команды по блокам (автосборка из weekly своих людей, задач и целей команды, цифр и
 //   новостей по продуктам команды), правит его и отправляет своему руководителю: событие в «Мне», как отправка CEO.
 //
@@ -23,7 +22,7 @@ import { ensureWeek } from "@/lib/weekly/service";
 import { isWeekKey, weekNumberOf } from "@/lib/weekly/weeks";
 import { numbersLevel } from "@/lib/plan/access";
 import { assembleTeamBlocks, blocksMeta, type BlocksMeta } from "./sources";
-import { alignToTemplate, blocksForLevel, cleanBlocks, cleanTemplate, hasBlocksText, keepLockedBlocks, lineText, orderedLines, restoreHiddenFigures, sentBlocks, withLiveBlocks, type ReportBlock, type TemplateBlock, type ViewerLevel } from "./types";
+import { BLOCK_LIMITS, LIVE_FIGURE_KEYS, STANDARD_TEMPLATE, alignToTemplate, blocksForLevel, cleanBlocks, cleanTemplate, effectiveTemplate, hasBlocksText, keepLockedBlocks, lineText, orderedLines, restoreHiddenFigures, sentBlocks, withLiveBlocks, type ReportBlock, type TemplateBlock, type ViewerLevel } from "./types";
 import { auditVia } from "@/lib/audit";
 
 // Шаблон автора записи живёт отдельно (его читает и сохранение записи weekly): отсюда он доступен как раньше
@@ -53,8 +52,8 @@ async function access(actor: Actor, teamId: string): Promise<Access> {
 
 const TOP_TEXT = "Weekly команды страхования и инвестиций это отчёт CEO: он уже по смысловым блокам, его собирают на странице «Отчёт CEO»";
 
-function requireLead(a: Access, what: string) {
-  if (a.node.id === TOP_TEAM) fail(TOP_TEXT);
+function requireLead(a: Access, what: string, template = false) {
+  if (!template && a.node.id === TOP_TEAM) fail(TOP_TEXT);
   if (!a.canLead) fail(`${what}: руководитель команды при личном входе, руководитель выше или режим управления`);
 }
 
@@ -64,11 +63,10 @@ async function audit(db: Prisma.TransactionClient, actor: Actor, action: string,
 
 // ---------- Шаблон ----------
 
-/** Шаблон блоков команды. null: шаблона нет, weekly как раньше */
+/** Шаблон команды; пока руководитель его не менял, действует стандартный набор. */
 export async function teamTemplate(teamId: string): Promise<TemplateBlock[] | null> {
   const row = await prisma.teamWeeklyTemplate.findUnique({ where: { teamId: String(teamId) } });
-  const blocks = row ? cleanTemplate(row.blocks) : [];
-  return blocks.length ? blocks : null;
+  return effectiveTemplate(row?.blocks);
 }
 
 export type TeamTemplateView = { teamId: string; teamName: string; blocks: TemplateBlock[] | null; canEdit: boolean; updatedAt: string | null };
@@ -76,27 +74,26 @@ export type TeamTemplateView = { teamId: string; teamName: string; blocks: Templ
 export async function teamTemplateView(actor: Actor, teamId: string): Promise<TeamTemplateView> {
   const a = await access(actor, teamId);
   const row = await prisma.teamWeeklyTemplate.findUnique({ where: { teamId: a.node.id } });
-  const blocks = row ? cleanTemplate(row.blocks) : [];
-  return { teamId: a.node.id, teamName: a.node.name, blocks: blocks.length ? blocks : null, canEdit: a.canLead && a.node.id !== TOP_TEAM, updatedAt: row?.updatedAt.toISOString() ?? null };
+  return { teamId: a.node.id, teamName: a.node.name, blocks: effectiveTemplate(row?.blocks), canEdit: a.canLead, updatedAt: row?.updatedAt.toISOString() ?? null };
 }
 
 const templateText = (list: TemplateBlock[] | null) => (list?.length ? list.map((b) => b.title).join(", ") : "");
 
-/** Сохранить шаблон блоков команды. Пустой список: шаблон убран, weekly команды как раньше */
+/** Сохранить шаблон; пустой список возвращает стандартные блоки. История записей не меняется. */
 export async function saveTeamTemplate(actor: Actor, teamId: string, input: unknown): Promise<TeamTemplateView> {
   const a = await access(actor, teamId);
-  requireLead(a, "Блоки weekly команды задаёт");
-  const blocks = cleanTemplate(input);
+  requireLead(a, "Блоки weekly команды задаёт", true);
+  if (!Array.isArray(input)) fail("Передайте список блоков");
+  if ((input as unknown[]).length > BLOCK_LIMITS.templateBlocks) fail(`В шаблоне не больше ${BLOCK_LIMITS.templateBlocks} блоков`);
+  const blocks = (input as unknown[]).length ? cleanTemplate(input) : STANDARD_TEMPLATE.map((b) => ({ ...b }));
   if (Array.isArray(input) && input.length && !blocks.length) fail("В шаблоне нет ни одного понятного блока");
+  if (blocks.every((b) => LIVE_FIGURE_KEYS.includes(b.key))) fail("Добавьте хотя бы один блок для записей: например, «Продукты» или свой блок");
   await prisma.$transaction(async (tx) => {
     const before = await tx.teamWeeklyTemplate.findUnique({ where: { teamId: a.node.id } });
     const old = before ? cleanTemplate(before.blocks) : null;
-    if (!blocks.length) await tx.teamWeeklyTemplate.deleteMany({ where: { teamId: a.node.id } });
-    else {
-      const data = { blocks: blocks as unknown as Prisma.InputJsonValue, updatedById: actor.personId };
-      await tx.teamWeeklyTemplate.upsert({ where: { teamId: a.node.id }, update: data, create: { ...data, teamId: a.node.id } });
-    }
-    if (templateText(old) !== templateText(blocks)) await audit(tx, actor, "team.weekly.template", a.node.id, `Блоки weekly команды «${a.node.name}»`, templateText(old) || null, templateText(blocks) || "Шаблон убран: weekly как раньше");
+    const data = { blocks: blocks as unknown as Prisma.InputJsonValue, updatedById: actor.personId };
+    await tx.teamWeeklyTemplate.upsert({ where: { teamId: a.node.id }, update: data, create: { ...data, teamId: a.node.id } });
+    if (templateText(old) !== templateText(blocks)) await audit(tx, actor, "team.weekly.template", a.node.id, `Блоки weekly команды «${a.node.name}»`, templateText(old) || null, templateText(blocks) || "Стандартные блоки");
   });
   return teamTemplateView(actor, a.node.id);
 }

@@ -27,7 +27,7 @@ test("лента weekly: последняя разобранная неделя 
   await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Рева Тарас" })).toBeVisible();
   await page.getByRole("radio", { name: "По блокам" }).click();
-  await expect(page.getByRole("heading", { name: /^Цифры и прогноз/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Продукты/ })).toBeVisible();
 
   // Неделя 38 тоже на месте: её разбирали на встрече 22 сентября
   await page.goto("/weekly?week=2026-09-14");
@@ -88,7 +88,7 @@ test("weekly человека по ссылке: отбор по автору в
   await expect(page.getByRole("heading", { name: /Общее, без автора/ })).toBeVisible();
 });
 
-test("лидер сдаёт weekly в три шага, черновик живёт на сервере", async ({ page }) => {
+test("лидер сдаёт weekly на одной странице, черновик живёт на сервере", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   await page.getByRole("link", { name: "Сдать weekly" }).click();
   await expect(page).toHaveURL(/\/weekly\/submit$/);
@@ -101,7 +101,7 @@ test("лидер сдаёт weekly в три шага, черновик живё
   await expect(page.getByLabel("Главное одной фразой")).toHaveValue("Договорились с двумя дилерами о пилоте");
 
   // Запись тоже сохраняется сама, ещё до кнопки
-  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await page.getByLabel("Что произошло").fill("Два дилера готовы к пилоту в ноябре");
   await page.getByLabel("Цифра или факт").fill("Два письма о намерениях");
   await expect(page.getByText("Черновик записи сохранён")).toBeVisible({ timeout: 8000 });
@@ -130,7 +130,7 @@ test("лидер сдаёт weekly в три шага, черновик живё
 test("удаление записи спрашивает подтверждение и отменяется кнопкой «Отменить» (этап 7)", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   await page.goto("/weekly/submit");
-  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await page.getByLabel("Что произошло").fill("Запись для проверки удаления");
   await page.getByRole("button", { name: "Сохранить запись" }).click();
   const heading = page.getByRole("heading", { name: "Запись для проверки удаления" });
@@ -159,7 +159,7 @@ test("удаление записи спрашивает подтвержден�
 test("по записи weekly ставится задача, человек остаётся на экране сдачи", async ({ page }) => {
   await enter(page, "Афанасьев Павел");
   await page.goto("/weekly/submit");
-  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await page.getByLabel("Что произошло").fill("Партнёр просит новый тариф для такси");
   await page.getByLabel("Что делаем дальше").fill("Подготовить тариф для такси");
   await expect(page.getByText("Черновик записи сохранён")).toBeVisible({ timeout: 8000 });
@@ -219,7 +219,7 @@ test("администратор закрывает неделю, лидер б�
   await enter(leader, "Сахибуллина Алсу");
   await leader.goto("/weekly/submit");
   await expect(leader.getByText(/Неделя \d+ закрыта: записи правят только владелец и администраторы/)).toBeVisible();
-  await expect(leader.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
+  await expect(leader.getByRole("button", { name: "Добавить запись: Продукты", exact: true })).toHaveCount(0);
   await expect(leader.getByRole("button", { name: "Сдать weekly" })).toBeDisabled();
   await leader.close();
 

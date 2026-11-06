@@ -40,6 +40,7 @@ test("переключатель недель на экране сдачи: пр
   test.setTimeout(120_000);
   await enter(page, "Афанасьев Павел");
   await page.goto("/weekly/submit");
+  await page.getByText("Выбрать другую неделю", { exact: true }).click();
   const weeks = page.getByTestId("submit-weeks");
   await expect(weeks).toBeVisible();
   // Отчётная неделя отмечена как текущая страница переключателя
@@ -54,7 +55,7 @@ test("переключатель недель на экране сдачи: пр
   await page.getByLabel("Главное одной фразой").fill("Итоги прошлой недели");
   // Главная фраза уходит на сервер сама через пару секунд: без неё сдача не пройдёт
   await expect(page.getByText(/Черновик сохранён/)).toBeVisible({ timeout: 10_000 });
-  await page.getByRole("button", { name: "Добавить запись" }).click();
+  await page.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await page.getByLabel("Что произошло").fill("Запись за прошлую неделю");
   await page.getByRole("button", { name: "Сохранить запись" }).click();
   await expect(page.getByRole("heading", { name: "Запись за прошлую неделю" })).toBeVisible();
@@ -81,7 +82,7 @@ test("закрытая прошлая неделя: только просмот�
   await expect(page.getByTestId("submit-closed-note")).toContainText("закрыта после встречи");
   await expect(page.getByTestId(`submit-week-${past}`)).toContainText("закрыта");
   await expect(page.getByText("Только просмотр")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Добавить запись" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Добавить запись: Продукты", exact: true })).toHaveCount(0);
   // Права не менялись: поле главной фразы только для чтения (readonly, текст можно выделить), открыть неделю может
   // только владелец или администратор
   await expect(page.getByLabel("Главное одной фразой")).not.toBeEditable();
@@ -131,5 +132,6 @@ test("за будущую неделю weekly не пишут: открывае�
   future.setUTCDate(future.getUTCDate() - ((future.getUTCDay() + 6) % 7) + 14);
   await page.goto(`/weekly/submit?week=${future.toISOString().slice(0, 10)}`);
   await expect(page.getByText("За будущую неделю weekly не пишут")).toBeVisible();
+  await page.getByText("Выбрать другую неделю", { exact: true }).click();
   await expect(page.getByTestId("submit-weeks").getByRole("link", { name: /отчётная/ })).toHaveAttribute("aria-current", "page");
 });

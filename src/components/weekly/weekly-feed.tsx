@@ -7,7 +7,7 @@ import { LayoutList, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, Tr
 import { usePrototype } from "@/domain/store";
 import { formatLong, plural } from "@/domain/dates";
 import { PEOPLE, authorName, personOf } from "@/domain/people";
-import { BLOCKS, DIRECTIONS, ENTRY_TYPES, blockLabel, type BlockCode, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
+import { DIRECTIONS, ENTRY_TYPES, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
 import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
 import { setTeamAction } from "@/app/actions/team";
@@ -18,6 +18,9 @@ import { WeeklyBadge } from "@/components/ui/task-badges";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { Figures } from "@/components/ui/data";
+import { BlockTemplateContext } from "./block-template-context";
+import { entryBlockKey } from "@/lib/weekly-blocks/assemble";
+import type { TemplateBlock } from "@/lib/weekly-blocks/types";
 import { EntryItem } from "./entry-item";
 import { SubmissionStrip } from "./submission-strip";
 import { AbsentBadge, substituteText } from "./absence";
@@ -85,6 +88,7 @@ export function WeeklyFeed({
   teamWeek = null,
   promoteClosed = false,
   focus = null,
+  blockTemplate = null,
 }: {
   view: WeekView;
   myReport: PersonWeekly;
@@ -94,6 +98,7 @@ export function WeeklyFeed({
   promoteClosed?: boolean;
   /** Weekly человека по ссылке из дерева подчинённых (этап 39) */
   focus?: AuthorFocus | null;
+  blockTemplate?: { teamId: string; blocks: TemplateBlock[] } | null;
 }) {
   const { manage, manageRole, observer, me, teamPeople } = usePrototype();
   const week = data.week;
@@ -102,7 +107,10 @@ export function WeeklyFeed({
   const canWrite = canEditWeekly(week, data.reportingKey, { slug: me.slug, management: manageRole, observer }, me.slug);
   const [view, setView] = useState<View>("people");
   const [direction, setDirection] = useState<DirectionCode | "">("");
-  const [block, setBlock] = useState<BlockCode | "">("");
+  const [blockChoice, setBlockChoice] = useState<{ teamId: string; value: string } | null>(null);
+  const block = blockTemplate && blockChoice?.teamId === blockTemplate.teamId && blockTemplate.blocks.some((b) => b.key === blockChoice.value) ? blockChoice.value : "";
+  const setBlock = (value: string) => setBlockChoice(blockTemplate ? { teamId: blockTemplate.teamId, value } : null);
+  const blockKey = (e: WeeklyEntry) => entryBlockKey({ ...e, section: e.section ?? null }, blockTemplate?.blocks.map((b) => b.key) ?? []);
   const [type, setType] = useState<EntryTypeCode | "">("");
   const [author, setAuthorState] = useState<PersonSlug | "">(focus?.here ? focus.slug : "");
   const [helpOnly, setHelpOnly] = useState(false);
@@ -151,7 +159,7 @@ export function WeeklyFeed({
   const entries = all.filter(
     (e) =>
       (!direction || e.direction === direction) &&
-      (!block || e.block === block) &&
+      (!block || blockKey(e) === block) &&
       (!type || e.type === type) &&
       (!author || ofAuthor(e)) &&
       (!helpOnly || !!e.help),
@@ -166,7 +174,7 @@ export function WeeklyFeed({
   // Что включено в раскрывающихся фильтрах: число на кнопке и чипы, когда списки свёрнуты
   const active = [
     direction ? { label: "Направление", value: DIRECTIONS.find((d) => d.code === direction)?.label ?? direction, clear: () => setDirection("") } : null,
-    block ? { label: "Блок", value: blockLabel(block), clear: () => setBlock("") } : null,
+    block ? { label: "Блок", value: blockTemplate?.blocks.find((b) => b.key === block)?.title ?? block, clear: () => setBlock("") } : null,
     type ? { label: "Тип", value: ENTRY_TYPES.find((t) => t.code === type)?.label ?? type, clear: () => setType("") } : null,
     author ? { label: "Автор", value: authorLabel(author, authorOptions), clear: () => setAuthor("") } : null,
   ].filter((f): f is NonNullable<typeof f> => !!f);
@@ -174,7 +182,7 @@ export function WeeklyFeed({
   const myState = myReport.state;
 
   return (
-    <div>
+    <BlockTemplateContext value={blockTemplate?.blocks ?? null}><div>
       {/* Этап 37: шапка как у остальных разделов, под ней ключевые цифры недели строкой (этап 43). Этап 68: в шапке только
           записи за неделю и «в отчёт CEO»; помощь, риски и результаты колонками «Что решить» над лидерами */}
       <PageHeader
@@ -257,7 +265,7 @@ export function WeeklyFeed({
       {/* Этап 43: вид ленты, «Нужна помощь» и кнопка «Фильтры» в одной строке; четыре списка фильтров раскрываются
           по кнопке и на ноутбуке тоже, включённые фильтры видны чипами, чип снимает фильтр */}
       <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Segmented
+        {blockTemplate ? <Segmented
           label="Вид ленты"
           value={view}
           onChange={setView}
@@ -265,7 +273,7 @@ export function WeeklyFeed({
             { value: "people", label: "По людям" },
             { value: "blocks", label: "По блокам" },
           ]}
-        />
+        /> : null}
         {/* Ноль на чипе не показывается: правило строки цифр */}
         <Chip active={helpOnly} onClick={() => setHelpOnly((v) => !v)} count={helpEntriesAll || undefined} disabled={!helpEntriesAll && !helpOnly}>
           Нужна помощь
@@ -307,7 +315,7 @@ export function WeeklyFeed({
       </div>
       <div id={filtersId} className={cn("mt-3 grid-cols-2 gap-3 sm:flex-wrap sm:items-end", showFilters ? "grid sm:flex" : "hidden")}>
         <SelectField label="Направление" id="f-dir" value={direction} onChange={(e) => setDirection(e.target.value as DirectionCode | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...DIRECTIONS.map((d) => ({ value: d.code, label: d.label }))]} />
-        <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value as BlockCode | "")} className="sm:w-48" options={[{ value: "", label: "Все" }, ...BLOCKS.map((b) => ({ value: b.code, label: b.label }))]} />
+        {blockTemplate ? <SelectField label="Блок" id="f-block" value={block} onChange={(e) => setBlock(e.target.value)} className="sm:w-48" options={[{ value: "", label: "Все" }, ...blockTemplate.blocks.map((b) => ({ value: b.key, label: b.title }))]} /> : null}
         <SelectField label="Тип" id="f-type" value={type} onChange={(e) => setType(e.target.value as EntryTypeCode | "")} className="sm:w-36" options={[{ value: "", label: "Все" }, ...ENTRY_TYPES.map((t) => ({ value: t.code, label: t.label }))]} />
         <SelectField label="Автор" id="f-author" value={author} onChange={(e) => setAuthor(e.target.value as PersonSlug | "")} className="sm:w-44" options={[{ value: "", label: "Все" }, ...authorOptions]} />
       </div>
@@ -351,7 +359,7 @@ export function WeeklyFeed({
         >
           {author && !direction && !block && !type && !helpOnly ? "Листайте недели назад или покажите всю команду." : filtersOn ? "Снимите часть фильтров." : null}
         </EmptyState>
-      ) : view === "people" ? (
+      ) : view === "people" || !blockTemplate ? (
         <div className="mt-6 flex flex-col gap-6">
           {!helpOnly && !type ? (
             <CeoDigest
@@ -365,9 +373,9 @@ export function WeeklyFeed({
           <PeopleView reports={data.reports} entries={entries} reporting={week.reporting} feedAuthors={data.authors} promoteFrom={promoteFrom} closed={promoteClosed} only={author || undefined} filtered={filtersOn} />
         </div>
       ) : (
-        <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} />
+        <BlocksView entries={entries} promoteFrom={promoteFrom} closed={promoteClosed} blocks={blockTemplate.blocks} />
       )}
-    </div>
+    </div></BlockTemplateContext>
   );
 }
 
@@ -662,19 +670,17 @@ function PeopleView({
   );
 }
 
-function BlocksView({ entries, promoteFrom, closed }: { entries: WeeklyEntry[]; promoteFrom: PersonSlug[]; closed: boolean }) {
-  // Риски первыми: с них начинается разбор. Дальше порядок справочника, в конце блоки, которые уже скрыли
-  const known = BLOCKS.map((b) => b.code);
-  const order: BlockCode[] = [...new Set(["risks", ...known, ...entries.map((e) => e.block)])];
+function BlocksView({ entries, promoteFrom, closed, blocks }: { entries: WeeklyEntry[]; promoteFrom: PersonSlug[]; closed: boolean; blocks: TemplateBlock[] }) {
+  const keys = blocks.map((b) => b.key);
   return (
     <div className="mt-6 flex flex-col gap-6">
-      {order.map((code) => {
-        const list = entries.filter((e) => e.block === code);
+      {blocks.map(({ key: code, title }) => {
+        const list = entries.filter((e) => entryBlockKey({ ...e, section: e.section ?? null }, keys) === code);
         if (!list.length) return null;
         return (
           <section key={code} aria-labelledby={`blk-${code}`} className="sv-card sv-card--soft">
             <h2 id={`blk-${code}`} className="border-b border-line px-5 py-3 text-title-sm font-semibold text-ink">
-              {blockLabel(code)} <span className="font-normal text-muted">{list.length}</span>
+              {title} <span className="font-normal text-muted">{list.length}</span>
             </h2>
             <ul className="flex flex-col divide-y divide-line">
               {list.map((e) => (

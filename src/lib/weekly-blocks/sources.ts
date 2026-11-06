@@ -34,7 +34,7 @@ import { getSetting } from "@/lib/settings";
 import { TOP_TEAM } from "@/lib/org/scope";
 import { assembleBlocks, type AssembleInput, type EntryInput, type GoalInput, type MonthInput, type MonthProduct, type NewsInput, type SalesWeek, type TaskInput, type WowInput } from "./assemble";
 import { COMPETITORS_KEY, competitorsOf } from "./competitors";
-import { STANDARD_TEMPLATE, draftBlocksOf, type Labels, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
+import { effectiveTemplate, draftBlocksOf, type Labels, type ProductRef, type ReportBlock, type TemplateBlock } from "./types";
 
 export type BlocksMeta = { labels: Labels; order: string[]; products: ProductRef[] };
 
@@ -388,7 +388,8 @@ const actorSig = (actor: Actor) => `${actor.personId}|${actor.role}|${actor.mana
 export async function assembleCeoBlocks(actor: Actor, key: WeekKey, now?: Date): Promise<Assembly> {
   const run = async () => {
     const top = await topPeople();
-    return assemble(actor, key, { teamId: TOP_TEAM, people: top.people, owners: top.owners, ceo: true }, STANDARD_TEMPLATE, null, now ?? new Date());
+    const row = await prisma.teamWeeklyTemplate.findUnique({ where: { teamId: TOP_TEAM } });
+    return assemble(actor, key, { teamId: TOP_TEAM, people: top.people, owners: top.owners, ceo: true }, effectiveTemplate(row?.blocks), null, now ?? new Date());
   };
   return now ? run() : memo(`ceo|${key}|${actorSig(actor)}`, run);
 }

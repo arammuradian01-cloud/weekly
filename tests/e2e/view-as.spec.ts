@@ -49,7 +49,7 @@ test("владелец смотрит как Рева: его неделя и we
   await reva.goto("/weekly/submit");
   await reva.getByLabel("Главное одной фразой").fill("Неделя пилотов с партнёрами");
   await expect(reva.getByText(/Черновик сохранён в \d{2}:\d{2}/)).toBeVisible({ timeout: 8000 });
-  await reva.getByRole("button", { name: "Добавить запись" }).click();
+  await reva.getByRole("button", { name: "Добавить запись: Продукты", exact: true }).click();
   await reva.getByLabel("Что произошло").fill(ENTRY);
   await expect(reva.getByText("Черновик записи сохранён")).toBeVisible({ timeout: 8000 });
   await reva.context().close();
@@ -106,12 +106,14 @@ test("владелец смотрит как Рева: его неделя и we
   await page.goto("/meeting-rating");
   await expect(page.getByText("Оценка встреч в просмотре закрыта")).toBeVisible();
 
-  // Сдать weekly Ревы нельзя: черновик виден, сдача отказывает
+  // Сдать weekly Ревы нельзя: черновик виден, кнопка отключена уже на экране.
+  // Отказ прямому вызову серверного действия проверяется в tests/db/view-as.test.ts.
   await page.goto("/weekly/submit");
   await expect(page.getByTestId("view-as-banner")).toBeVisible();
   await expect(page.getByRole("heading", { name: ENTRY })).toBeVisible();
-  await page.getByRole("button", { name: "Сдать weekly" }).click();
-  await expect(page.getByText(DENIED).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Сдать weekly" })).toBeDisabled();
+  await expect(page.getByLabel("Главное одной фразой")).not.toBeEditable();
+  await expect(page.getByRole("button", { name: /^Добавить запись:/ })).toHaveCount(0);
   await shot(page, "submit-denied");
   // Только weekly той недели, где черновик Ревы: прошлые недели из выгрузки Bord сданы и так
   expect(await sql(`SELECT r.state FROM weekly_reports r JOIN weekly_entries e ON e."weekId" = r."weekId" AND e."authorId" = r."authorId" WHERE e.what = $1`, [ENTRY])).toEqual([{ state: "DRAFT" }]);

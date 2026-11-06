@@ -18,6 +18,8 @@ export type DraftEntryInput = {
   help?: string;
   /** Смысловой блок по шаблону команды (этап 66) */
   section?: string | null;
+  /** Новая форма: сервер вычисляет старую классификацию из выбранного смыслового блока. */
+  deriveClassification?: boolean;
   links: { title: string; url: string }[];
 };
 

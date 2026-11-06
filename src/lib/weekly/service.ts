@@ -20,6 +20,7 @@ import type { EntrySnapshot } from "./undo";
 import { cleanMeetings, type CeoMeeting } from "@/lib/ceo/text";
 import { cleanBlocks, isBlockKey, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { sectionForAuthor } from "@/lib/weekly-blocks/author";
+import { classificationForSection } from "@/lib/weekly-blocks/entry-classification";
 import { commentDto, mentionsIn, namesOf, reactionDto, reactionInclude } from "@/lib/discuss/common";
 import { entryReaders } from "@/lib/discuss/access";
 import { entrySubject, notify, quote } from "@/lib/inbox/notify";
@@ -491,6 +492,8 @@ export type EntryInput = {
    * Это подсказка для отчёта команды по блокам: блок чужого шаблона отчёт просто разложит по смыслу
    */
   section?: string | null;
+  /** Новая форма без селектов старой классификации: выбрать активные значения на сервере. */
+  deriveClassification?: boolean;
   /**
    * Ключ черновика новой записи с устройства (этап 26). Повтор с тем же ключом после обрыва связи правит уже созданную
    * запись, а не создаёт вторую
@@ -511,6 +514,16 @@ export const HEADLINE_CONFLICT = "Главную фразу уже измени�
 async function dictItem(tx: Tx, kind: "DIRECTION" | "WEEKLY_BLOCK" | "ENTRY_TYPE", code: string, message: string, currentId?: string) {
   const item = await tx.dictionaryItem.findFirst({ where: { kind, code } });
   if (!item || (!item.active && item.id !== currentId)) fail(message);
+  return item!;
+}
+
+async function derivedDictItem(tx: Tx, kind: "WEEKLY_BLOCK" | "ENTRY_TYPE", preferred: string) {
+  const items = await tx.dictionaryItem.findMany({
+    where: { kind, active: true, ...(kind === "ENTRY_TYPE" ? { code: { in: [...ENTRY_TYPE_CODES] } } : {}) },
+    orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+  });
+  const item = items.find((row) => row.code === preferred) ?? items[0];
+  if (!item) fail("Нет доступных значений классификации weekly. Попросите администратора проверить справочники");
   return item!;
 }
 
@@ -572,10 +585,21 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
     const { row, info, reporting } = await weekContext(tx, key, existing ? existing.authorId : actor.personId);
     const author = existing ? ((existing.author?.slug as PersonSlug | undefined) ?? null) : actor.slug;
     canEdit(info, reporting, actor, author);
-    if (!(ENTRY_TYPE_CODES as string[]).includes(input.type)) fail("Выберите тип записи");
+    const section = input.section !== undefined
+      ? typeof input.section === "string" && isBlockKey(input.section) ? await sectionForAuthor(existing?.authorId ?? actor.personId, input.section, tx) : null
+      : undefined;
+    if (input.deriveClassification && !existing && !section) fail("Выберите блок отчёта для новой записи");
+    const classification = input.deriveClassification
+      ? existing ? { block: existing.block.code, type: existing.type.code } : classificationForSection(section!)
+      : { block: input.block, type: input.type };
+    if (!(ENTRY_TYPE_CODES as string[]).includes(classification.type)) fail("Выберите тип записи");
     const direction = await dictItem(tx, "DIRECTION", input.direction, "Выберите направление из списка", existing?.directionId);
-    const block = await dictItem(tx, "WEEKLY_BLOCK", input.block, "Выберите блок из списка", existing?.blockId);
-    const type = await dictItem(tx, "ENTRY_TYPE", input.type, "Выберите тип записи", existing?.typeId);
+    const block = input.deriveClassification && !existing
+      ? await derivedDictItem(tx, "WEEKLY_BLOCK", classification.block)
+      : await dictItem(tx, "WEEKLY_BLOCK", classification.block, "Выберите блок из списка", existing?.blockId);
+    const type = input.deriveClassification && !existing
+      ? await derivedDictItem(tx, "ENTRY_TYPE", classification.type)
+      : await dictItem(tx, "ENTRY_TYPE", classification.type, "Выберите тип записи", existing?.typeId);
     const data = {
       directionId: direction.id,
       blockId: block.id,
@@ -588,7 +612,7 @@ export async function saveEntry(actor: Actor, input: EntryInput): Promise<SavedE
       help,
       links: links as unknown as Prisma.InputJsonValue,
       // Блок отчёта команды (этап 66): только блок шаблона, по которому автор записи сдаёт weekly, и не блок цифр
-      ...(input.section !== undefined ? { section: typeof input.section === "string" && isBlockKey(input.section) ? await sectionForAuthor(existing?.authorId ?? actor.personId, input.section, tx) : null } : {}),
+      ...(section !== undefined ? { section } : {}),
     };
     // Черновик с устройства начат со старой версии: если на сервере уже другой текст, поверх не пишем. Тот же текст
     // (ответ на прошлую отправку потерялся по дороге) не конфликт

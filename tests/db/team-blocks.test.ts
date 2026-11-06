@@ -11,7 +11,7 @@ import * as team from "@/lib/weekly-blocks/team";
 import { listInbox } from "@/lib/inbox/service";
 import { dbDate } from "@/lib/tasks/dates";
 import { addDays } from "@/domain/dates";
-import { NUMBERS_HIDDEN_TEXT, type ReportBlock } from "@/lib/weekly-blocks/types";
+import { NUMBERS_HIDDEN_TEXT, STANDARD_TEMPLATE, type ReportBlock } from "@/lib/weekly-blocks/types";
 import { NUMBERS_ACCESS_KEY } from "@/lib/plan/access";
 import { planMonthOfWeek } from "@/lib/plan/brief";
 import { quarterOf } from "@/lib/goals/parse";
@@ -77,10 +77,47 @@ const TEMPLATE = [
 ];
 
 describe("шаблон блоков команды", () => {
-  it("задаёт руководитель команды при личном входе или режим управления; участник и общий логин нет; у топ-команды шаблона нет; журнал", async () => {
+  it("новый шаблон требует обычный блок; старый шаблон только с цифрами читается с виртуальными Продуктами без записи в базу", async () => {
+    const figures = STANDARD_TEMPLATE.filter((b) => b.key === "wow" || b.key === "month");
+    await expectRule(team.saveTeamTemplate(await personal("reva"), teamId, figures), /хотя бы один блок для записей/);
+    await prisma.teamWeeklyTemplate.create({ data: { teamId, blocks: figures, updatedById: await id("reva") } });
+    const expected = [...figures, { key: "products", title: "Продукты" }];
+    expect(await team.teamTemplate(teamId)).toEqual(expected);
+    expect((await team.templateForAuthor(await id("cheychenets")))?.blocks).toEqual(expected);
+    expect((await team.teamTemplateView(await personal("reva"), teamId)).blocks).toEqual(expected);
+    const entry = await weekly.saveEntry(await personal("cheychenets"), { week: key, direction: "deposits", block: "product", type: "result", what: "В старом шаблоне снова можно написать запись", section: "products", deriveClassification: true });
+    await prisma.weeklyEntry.update({ where: { id: entry.id }, data: { importBatch: "t66team" } });
+    expect(entry.section).toBe("products");
+    const report = await team.teamReportView(await personal("reva"), teamId, key);
+    expect(report.blocks.find((b) => b.key === "products")?.lines.some((line) => line.text.includes(entry.what))).toBe(true);
+    expect((await prisma.teamWeeklyTemplate.findUniqueOrThrow({ where: { teamId } })).blocks).toEqual(figures);
+  });
+
+  it("новая форма выбирает действующие справочники на сервере; повтор черновика не меняет классификацию и не дублирует запись", async () => {
+    const hidden = await prisma.dictionaryItem.findMany({ where: { OR: [{ kind: "WEEKLY_BLOCK", code: "product" }, { kind: "ENTRY_TYPE", code: "result" }] } });
+    const author = await personal("cheychenets");
+    const input = { week: key, direction: "deposits", block: "product", type: "result", what: "Запись при скрытой старой классификации", section: "products", deriveClassification: true, clientKey: "test88hiddenvalues" };
+    try {
+      await prisma.dictionaryItem.updateMany({ where: { id: { in: hidden.map((d) => d.id) } }, data: { active: false } });
+      const saved = await weekly.saveEntry(author, input);
+      await prisma.weeklyEntry.update({ where: { id: saved.id }, data: { importBatch: "t66team" } });
+      expect(saved.block).not.toBe("product");
+      expect(saved.type).not.toBe("result");
+      expect(saved.section).toBe("products");
+      const repeated = await weekly.saveEntry(author, { ...input, fact: "Повтор после обрыва ответа" });
+      expect(repeated).toMatchObject({ id: saved.id, block: saved.block, type: saved.type, fact: "Повтор после обрыва ответа" });
+      expect(await prisma.weeklyEntry.count({ where: { clientKey: input.clientKey, authorId: author.personId } })).toBe(1);
+      // Старый интерфейс/API по-прежнему не может выбрать скрытое значение заново.
+      await expectRule(weekly.saveEntry(author, { ...input, clientKey: undefined, deriveClassification: false }), /Выберите блок/);
+    } finally {
+      for (const item of hidden) await prisma.dictionaryItem.update({ where: { id: item.id }, data: { active: item.active } });
+    }
+  });
+
+  it("задаёт руководитель команды при личном входе или режим управления; участник и общий логин нет; топ-команда тоже настраивает шаблон; журнал", async () => {
     await expectRule(team.saveTeamTemplate(await personal("cheychenets"), teamId, TEMPLATE), /руководитель команды/);
     await expectRule(team.saveTeamTemplate(await shared("reva"), teamId, TEMPLATE), /не видите|руководитель команды/);
-    await expectRule(team.saveTeamTemplate(await personal("muradyan", "OWNER"), "top", TEMPLATE), /это отчёт CEO/);
+    expect((await team.saveTeamTemplate(await personal("muradyan", "OWNER"), "top", TEMPLATE)).blocks).toEqual(TEMPLATE);
     const view = await team.saveTeamTemplate(await personal("reva"), teamId, [...TEMPLATE, { key: "products" }, { key: "hack", title: "x" }]);
     expect(view.blocks).toEqual(TEMPLATE);
     expect(view.canEdit).toBe(true);
@@ -88,15 +125,30 @@ describe("шаблон блоков команды", () => {
     expect(await prisma.auditLog.findFirst({ where: { action: "team.weekly.template", entityId: teamId }, orderBy: { id: "desc" } })).toMatchObject({ after: "Продукты, Найм и команда, Риски, План на неделю" });
     // Режим управления тоже задаёт; пустой список убирает шаблон: weekly как раньше
     await team.saveTeamTemplate(await personal("golovkin", "ADMIN"), teamId, []);
-    expect(await team.teamTemplate(teamId)).toBeNull();
-    expect(await prisma.auditLog.findFirst({ where: { action: "team.weekly.template", entityId: teamId }, orderBy: { id: "desc" } })).toMatchObject({ after: "Шаблон убран: weekly как раньше" });
+    expect(await team.teamTemplate(teamId)).toEqual(STANDARD_TEMPLATE);
+    expect(await prisma.auditLog.findFirst({ where: { action: "team.weekly.template", entityId: teamId }, orderBy: { id: "desc" } })).toMatchObject({ after: STANDARD_TEMPLATE.map((b) => b.title).join(", ") });
   });
 
-  it("участник сдаёт weekly по блокам шаблона: шаблон его команды, запись помнит блок; без шаблона как раньше", async () => {
-    expect(await team.templateForAuthor(await id("cheychenets"))).toBeNull();
+  it("стандартный шаблон не переписывает историю; предел 12 проверяется сервером, старые 16 не обрезаются при чтении", async () => {
+    const author = await personal("cheychenets");
+    const saved = await weekly.saveEntry(author, { week: key, direction: "deposits", block: "team", type: "event", what: "Историческая запись без section" });
+    await prisma.weeklyEntry.update({ where: { id: saved.id }, data: { importBatch: "t66team" } });
+    const before = await prisma.weeklyEntry.findUniqueOrThrow({ where: { id: saved.id }, select: { section: true, blockId: true, typeId: true, what: true } });
+    expect((await team.teamTemplateView(await personal("reva"), teamId)).blocks).toEqual(STANDARD_TEMPLATE);
+    expect(await prisma.teamWeeklyTemplate.findUnique({ where: { teamId } })).toBeNull();
+    expect(await prisma.weeklyEntry.findUniqueOrThrow({ where: { id: saved.id }, select: { section: true, blockId: true, typeId: true, what: true } })).toEqual(before);
+    const many = Array.from({ length: 16 }, (_, i) => ({ key: `c:test${String(i).padStart(4, "0")}`, title: `Блок ${i + 1}` }));
+    await expectRule(team.saveTeamTemplate(await personal("reva"), teamId, many.slice(0, 13)), /не больше 12/);
+    expect((await team.saveTeamTemplate(await personal("reva"), teamId, many.slice(0, 12))).blocks).toHaveLength(12);
+    await prisma.teamWeeklyTemplate.update({ where: { teamId }, data: { blocks: many } });
+    expect(await team.teamTemplate(teamId)).toHaveLength(16);
+  });
+
+  it("участник сдаёт weekly по блокам шаблона: шаблон его команды, запись помнит блок; без настройки стандартные восемь блоков", async () => {
+    expect(await team.templateForAuthor(await id("cheychenets"))).toMatchObject({ teamId, blocks: STANDARD_TEMPLATE });
     await team.saveTeamTemplate(await personal("reva"), teamId, TEMPLATE);
     expect(await team.templateForAuthor(await id("cheychenets"))).toMatchObject({ teamId, teamName: "Тест 66 продуктовая команда", blocks: TEMPLATE });
-    expect(await team.templateForAuthor(await id("loginova"))).toBeNull();
+    expect(await team.templateForAuthor(await id("loginova"))).toMatchObject({ blocks: STANDARD_TEMPLATE });
     const author = await personal("cheychenets");
     const saved = await weekly.saveEntry(author, { week: key, direction: "deposits", block: "team", type: "event", what: "Закрыли вакансию аналитика", section: "c:hire0001" });
     expect(saved.section).toBe("c:hire0001");
@@ -139,9 +191,12 @@ describe("отчёт команды по блокам", () => {
     expect(pairs(view.blocks, "c:hire0001")).toEqual([["deposits", "Закрыли вакансию аналитика"]]);
     expect(pairs(view.blocks, "risks")).toContainEqual(["partners", "Агрегатор сдвигает интеграцию"]);
     expect(pairs(view.blocks, "plan").map(([, text]) => text)).toContainEqual(expect.stringMatching(/^Обновить витрину вкладов, срок \d\d\.\d\d$/));
-    // Без шаблона отчёта нет: weekly команды как раньше
+    // Сброс возвращает стандартные блоки и рабочий отчёт
     await team.saveTeamTemplate(await personal("reva"), teamId, []);
-    expect(await team.teamReportView(await personal("reva"), teamId, key)).toMatchObject({ template: null, blocks: [], canEdit: false, sendHint: "Сначала задайте блоки weekly команды" });
+    const reset = await team.teamReportView(await personal("reva"), teamId, key);
+    expect(reset.template).toEqual(STANDARD_TEMPLATE);
+    expect(reset.canEdit).toBe(true);
+    expect(reset.blocks.map((b) => b.key)).toEqual(STANDARD_TEMPLATE.map((b) => b.key));
     await expectRule(team.teamReportView(await personal("muradyan", "OWNER"), "top", key), /это отчёт CEO/);
   });
 
@@ -463,11 +518,11 @@ describe("отчёт команды: правки по проверке", () => 
     // Команда, где у людей только «Департамент» (так их заводит загрузка структуры)
     const outside = await prisma.team.create({ data: { name: "Тест 66 вне страхования", kind: "CUSTOM", leaderId: await id("muradyan") } });
     const owner = await personal("muradyan", "OWNER");
-    await team.saveTeamTemplate(owner, outside.id, [{ key: "wow", title: "Неделя к неделе" }, { key: "month", title: "Месяц" }]);
+    await team.saveTeamTemplate(owner, outside.id, [{ key: "wow", title: "Неделя к неделе" }, { key: "month", title: "Месяц" }, { key: "products", title: "Продукты" }]);
     const view = await team.teamReportView(owner, outside.id, key);
     for (const k of ["wow", "month"]) expect(view.blocks.find((b) => b.key === k)).toMatchObject({ lines: [], note: "Цифр по продуктам команды нет: у людей команды не задано направление продукта" });
     // Команда вкладов и партнёрки: ОСАГО и итог департамента в её отчёт не попадают
-    await team.saveTeamTemplate(await personal("reva"), teamId, [{ key: "month", title: "Месяц" }]);
+    await team.saveTeamTemplate(await personal("reva"), teamId, [{ key: "month", title: "Месяц" }, { key: "products", title: "Продукты" }]);
     const own = await team.teamReportView(await personal("reva"), teamId, key);
     expect(JSON.stringify(own.blocks)).not.toMatch(/ОСАГО|Итого по продуктам/);
   });

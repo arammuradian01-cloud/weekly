@@ -12,11 +12,13 @@ import { collect, measure } from "@/lib/weekly-measure/collect";
 import { fieldShares, movePart, multiTeamPart, survey, type MeasureEntry } from "@/lib/weekly-measure/survey";
 import { surveyText } from "@/lib/weekly-measure/text";
 import { shiftWeek } from "@/lib/weekly/weeks";
+import { TOP_TEAM } from "@/lib/org/scope";
 import type { WeekKey } from "@/domain/types";
 
 const BATCH = "t87measure";
 const TEAM_A = "Тест 87 команда вкладов";
 const TEAM_B = "Тест 87 без шаблона";
+const TOP_NAME = "Команда страхования и инвестиций";
 const TEMPLATE = [
   { key: "products", title: "Продукты" },
   { key: "c:hire0001", title: "Найм и команда" },
@@ -149,22 +151,23 @@ describe("замер живых данных (этап 87)", () => {
     const cheychenets = await id("cheychenets");
     const author = input.authors.find((a) => a.personId === cheychenets)!;
     // В списке команда без шаблона первая, но правило приложения берёт команду с шаблоном
-    expect(author.order).toEqual([teamB, teamA]);
+    expect(author.order).toEqual([teamB, teamA, TOP_TEAM]);
     expect(author.templateTeamId).toBe(teamA);
-    expect(author.showing).toEqual([teamB, teamA]);
+    expect([...author.showing].sort()).toEqual([teamB, teamA, TOP_TEAM].sort());
     const person = multiTeamPart(input).people.find((p) => p.name === "Чейченец Евгений")!;
     expect(person).toMatchObject({ winner: TEAM_A, notFirst: true });
     expect(person.teams).toEqual([
       { name: TEAM_B, blocks: null },
       { name: TEAM_A, blocks: 4 },
+      { name: TOP_NAME, blocks: null },
     ]);
-    // Руководитель команды: weekly от него не ждёт ни одна команда, шаблона у него нет
+    // Руководитель сдаёт в топ-команду по стандартным блокам, а не по шаблону команды, которой руководит.
     const leader = input.authors.find((a) => a.name === "Рева Тарас")!;
-    expect(leader.order).toEqual([]);
-    expect(leader.templateTeamId).toBeNull();
+    expect(leader.order).toEqual([TOP_TEAM]);
+    expect(leader.templateTeamId).toBe(TOP_TEAM);
   });
 
-  it("выборка миграции: блок шаблона сохраняется, забытый блок теряется, запись едет в блок, которого в шаблоне команды нет", async () => {
+  it("выборка: свой блок сохраняется, забытый требует разбора, виртуальные стандартные блоки учитываются", async () => {
     const input = await collect();
     const part = movePart({ ...input, entries: mineOf(input.entries) });
     // Выборка за четыре недели: все пять записей, включая запись прошлой недели
@@ -176,19 +179,18 @@ describe("замер живых данных (этап 87)", () => {
     expect(ghost.flags).toContain("stale-section");
     expect(ghost.toTitle).toBe("Продукты");
 
-    // У руководителя шаблона нет: запись переезжает в блок, которого в шаблоне его команды нет
-    const leader = part.problems.find((p) => p.author === "Рева Тарас")!;
-    expect(leader.flags).toContain("outside-template");
-    expect(leader.team).toBeNull();
-    expect(leader.perTeam).toEqual([{ team: TEAM_A, toTitle: "Продукты", inTemplate: true }]);
+    // Стандартный набор теперь действует без сохранённой настройки: обычная запись руководителя не спорная.
+    expect(part.problems.some((p) => p.author === "Рева Тарас")).toBe(false);
 
     // Человек в двух командах: в отчёте второй команды та же запись окажется в другом блоке
     const split = part.problems.find((p) => p.toTitle === "Найм и команда")!;
     expect(split.flags).toContain("split-teams");
-    expect(split.perTeam).toEqual([
-      { team: TEAM_B, toTitle: "Продукты", inTemplate: false },
+    expect(split.perTeam).toHaveLength(3);
+    expect(split.perTeam).toEqual(expect.arrayContaining([
+      { team: TEAM_B, toTitle: "Продукты", inTemplate: true },
       { team: TEAM_A, toTitle: "Найм и команда", inTemplate: true },
-    ]);
+      { team: TOP_NAME, toTitle: "Продукты", inTemplate: true },
+    ]));
 
     // Выборка за одну неделю: запись прошлой недели в неё не попадает
     const one = movePart({ ...input, recent: 1, entries: mineOf(input.entries) });

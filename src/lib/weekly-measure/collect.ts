@@ -9,10 +9,9 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@/generated/prisma/client";
 import { dbDate, isoFromDbDate } from "@/lib/tasks/dates";
 import { currentReportingKey } from "@/lib/weekly/service";
-import { TOP_TEAM, loadTeamNodes, teamPeopleIds, type TeamNode } from "@/lib/org/scope";
-import { expectingTeams, leadersOf } from "@/lib/org/rhythm";
-import { templateForAuthor } from "@/lib/weekly-blocks/author";
-import { cleanTemplate } from "@/lib/weekly-blocks/types";
+import { loadTeamNodes, teamPeopleIds, type TeamNode } from "@/lib/org/scope";
+import { authorTemplateTeams, templateForAuthor } from "@/lib/weekly-blocks/author";
+import { cleanTemplate, effectiveTemplate } from "@/lib/weekly-blocks/types";
 import { survey, type MeasureAuthor, type MeasureEntry, type MeasureInput, type MeasureTeam, type MeasureWeek, type Survey } from "./survey";
 
 /** Период по умолчанию: 12 недель на привычку и 4 последние недели на выборку миграции (решение 8) */
@@ -41,14 +40,12 @@ const entrySelect = {
 const linkCount = (value: unknown): number => (Array.isArray(value) ? value.filter((l) => !!l && typeof l === "object" && typeof (l as { url?: unknown }).url === "string").length : 0);
 
 /** Команды человека по порядку правила шаблона: сначала те, что ждут его weekly, затем остальные (как в templateForAuthor) */
-function orderOf(personId: string, nodes: TeamNode[], leaders: Set<string>): string[] {
-  const expecting = expectingTeams(personId, nodes, leaders).filter((n) => n.id !== TOP_TEAM);
-  const member = nodes.filter((n) => n.active && n.id !== TOP_TEAM && n.members.includes(personId) && !expecting.some((e) => e.id === n.id));
-  return [...expecting, ...member].map((n) => n.id);
+function orderOf(personId: string, nodes: TeamNode[]): string[] {
+  return authorTemplateTeams(personId, nodes).map((n) => n.id);
 }
 
 /** Команды, чей отчёт видит записи человека: где он руководитель или участник */
-const showingOf = (personId: string, nodes: TeamNode[]): string[] => nodes.filter((n) => n.active && n.id !== TOP_TEAM && teamPeopleIds(n).includes(personId)).map((n) => n.id);
+const showingOf = (personId: string, nodes: TeamNode[]): string[] => nodes.filter((n) => n.active && teamPeopleIds(n).includes(personId)).map((n) => n.id);
 
 export type CollectOptions = { weeks?: number; recent?: number; now?: Date };
 
@@ -91,19 +88,18 @@ export async function collect(opts: CollectOptions = {}): Promise<MeasureInput> 
   }));
 
   const nodes = await loadTeamNodes(prisma);
-  const live = nodes.filter((n) => n.active && n.id !== TOP_TEAM);
+  const live = nodes.filter((n) => n.active);
   const templateRows = await prisma.teamWeeklyTemplate.findMany({ select: { teamId: true, blocks: true } });
   const teams: MeasureTeam[] = live.map((n) => {
     const blocks = cleanTemplate(templateRows.find((r) => r.teamId === n.id)?.blocks ?? null);
-    return { id: n.id, name: n.name, template: blocks.length ? blocks : null };
+    return { id: n.id, name: n.name, template: blocks.length ? blocks : null, effective: effectiveTemplate(blocks) };
   });
 
   // Авторы замера: все, кто сдавал записи за период, и все, кто состоит в двух и более командах
-  const leaders = leadersOf(nodes);
   const everyone = new Set<string>();
   for (const n of live) for (const id of teamPeopleIds(n)) everyone.add(id);
   const candidates = new Set<string>();
-  for (const id of everyone) if (orderOf(id, nodes, leaders).length >= 2) candidates.add(id);
+  for (const id of everyone) if (orderOf(id, nodes).length >= 2) candidates.add(id);
   for (const e of entries) if (e.authorId) candidates.add(e.authorId);
 
   const people = candidates.size ? await prisma.person.findMany({ where: { id: { in: [...candidates] } }, select: { id: true, fullName: true } }) : [];
@@ -113,7 +109,7 @@ export async function collect(opts: CollectOptions = {}): Promise<MeasureInput> 
     authors.push({
       personId: id,
       name: people.find((p) => p.id === id)?.fullName ?? entries.find((e) => e.authorId === id)?.authorName ?? id,
-      order: orderOf(id, nodes, leaders),
+      order: orderOf(id, nodes),
       showing: showingOf(id, nodes),
       templateTeamId: own?.teamId ?? null,
     });

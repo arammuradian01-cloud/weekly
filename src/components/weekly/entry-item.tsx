@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { BlockTemplateContext } from "./block-template-context";
+import { entryBlockKey } from "@/lib/weekly-blocks/assemble";
+import { useContext, useEffect, useState } from "react";
 import { setCeoFlagAction } from "@/app/(app)/weekly/actions";
 import { useRunWeekly } from "./use-weekly";
 import { Coins, CornerDownRight, ExternalLink, HandHelping, Hash, Star } from "lucide-react";
@@ -84,6 +86,9 @@ export function EntryItem({
   compact?: boolean;
 }) {
   const { manage, notify } = usePrototype();
+  const template = useContext(BlockTemplateContext);
+  const section = template ? entryBlockKey({ ...entry, section: entry.section ?? null }, template.map((b) => b.key)) : null;
+  const blockTitle = template?.find((b) => b.key === section)?.title ?? blockLabel(entry.block);
   const run = useRunWeekly();
   const [ceo, setCeo] = useState(entry.ceo);
   useEffect(() => setCeo(entry.ceo), [entry.ceo]);
@@ -100,7 +105,7 @@ export function EntryItem({
       <div className="sv-entry__head">
         <EntryTypeBadge type={entry.type} />
         <span className="sv-entry__dir">
-          {blockLabel(entry.block)} <span aria-hidden="true">/</span> {directionLabel(entry.direction)}
+          {blockTitle} <span aria-hidden="true">/</span> {directionLabel(entry.direction)}
         </span>
         {entry.help ? <span className="sv-tag sv-tag--help">Нужна помощь</span> : null}
         {ceo && !manage ? <CeoTag /> : null}
