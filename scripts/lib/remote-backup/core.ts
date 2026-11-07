@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { databaseName } from "../pg-tools";
@@ -17,6 +17,17 @@ export function ownedKeys(keys: string[], prefix: string): string[] {
   return keys.filter((key) => key.startsWith(prefix) && FILE.test(key.slice(prefix.length))).sort();
 }
 
+export function confirmedKeys(keys: string[], prefix: string): string[] {
+  const present = new Set(keys);
+  return ownedKeys(keys, prefix).filter((key) => present.has(`${key}.ready`));
+}
+
+async function removeConfirmed(store: BackupStore, key: string): Promise<void> {
+  // Сначала убираем отметку: при обрыве удаления оставшийся архив не выглядит подтверждённой копией.
+  await store.remove(`${key}.ready`);
+  await store.remove(key);
+}
+
 export function monthlyPeriod(now: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit" }).formatToParts(now);
   return `${parts.find((p) => p.type === "year")!.value}-${parts.find((p) => p.type === "month")!.value}`;
@@ -24,9 +35,9 @@ export function monthlyPeriod(now: Date): string {
 
 /** Удаляем только файлы своего формата и только после подтверждения новой внешней копии. */
 async function rotate(store: BackupStore, prefix: string, keep: number): Promise<number> {
-  const keys = ownedKeys(await store.list(prefix), prefix);
+  const keys = confirmedKeys(await store.list(prefix), prefix);
   const expired = keys.slice(0, Math.max(0, keys.length - keep));
-  for (const key of expired) await store.remove(key);
+  for (const key of expired) await removeConfirmed(store, key);
   return expired.length;
 }
 
@@ -41,14 +52,21 @@ async function publish(store: BackupStore, key: string, archive: string, dir: st
     await store.remove(key).catch(() => undefined);
     throw error;
   } finally { await rm(downloaded, { force: true }); }
+  // Только после проверки архива публикуем отметку. Её PUT может сохраниться при потерянном ответе:
+  // после этой точки архив не удаляем даже при ошибке, другой процесс уже мог учесть его в ротации.
+  const marker = join(dir, `ready-${randomUUID()}`);
+  try {
+    await writeFile(marker, await fileHash(archive), { flag: "wx", mode: 0o600 });
+    await store.put(`${key}.ready`, marker);
+  } finally { await rm(marker, { force: true }); }
 }
 
 export async function createRemoteBackup(purpose: "daily" | "migration" = "daily", options: Options = {}): Promise<RemoteBackupResult> {
   const config = options.config ?? backupConfig();
   const store = options.store ?? new S3BackupStore(config);
   const now = options.now ?? new Date();
-  const dir = await mkdtemp(join(tmpdir(), "weekly-backup-"));
   const client = clientFor(config.databaseUrl);
+  const dir = await mkdtemp(join(tmpdir(), "weekly-backup-"));
   let connected = false;
   let locked = false;
   try {
@@ -76,7 +94,7 @@ export async function createRemoteBackup(purpose: "daily" | "migration" = "daily
     if (purpose === "daily") {
       const monthlyPrefix = `${config.prefix}/monthly/`;
       const periodPrefix = `${monthlyPrefix}${monthlyPeriod(now)}/`;
-      const existing = ownedKeys(await store.list(periodPrefix), periodPrefix);
+      const existing = confirmedKeys(await store.list(periodPrefix), periodPrefix);
       if (!existing.length) {
         monthlyKey = periodPrefix + name;
         await publish(store, monthlyKey, archive, dir);
@@ -86,13 +104,14 @@ export async function createRemoteBackup(purpose: "daily" | "migration" = "daily
     let deleted = await rotate(store, prefix, purpose === "daily" ? config.keepDaily : config.keepMigration);
     if (purpose === "daily") {
       const monthlyPrefix = `${config.prefix}/monthly/`;
-      const keys = (await store.list(monthlyPrefix)).filter((key) => {
+      const present = new Set(await store.list(monthlyPrefix));
+      const keys = [...present].filter((key) => {
         const [period, name, extra] = key.slice(monthlyPrefix.length).split("/");
-        return /^\d{4}-\d{2}$/.test(period ?? "") && FILE.test(name ?? "") && extra === undefined;
+        return /^\d{4}-\d{2}$/.test(period ?? "") && FILE.test(name ?? "") && extra === undefined && present.has(`${key}.ready`);
       }).sort();
       const periods = [...new Set(keys.map((key) => key.slice(monthlyPrefix.length, monthlyPrefix.length + 7)))].sort();
       const expired = new Set(periods.slice(0, Math.max(0, periods.length - config.keepMonthly)));
-      for (const old of keys) if (expired.has(old.slice(monthlyPrefix.length, monthlyPrefix.length + 7))) { await store.remove(old); deleted++; }
+      for (const old of keys) if (expired.has(old.slice(monthlyPrefix.length, monthlyPrefix.length + 7))) { await removeConfirmed(store, old); deleted++; }
     }
     return { key, monthlyKey, tables: tables.length, deleted };
   } finally {
@@ -111,7 +130,7 @@ export async function verifyRemoteBackup(key?: string, options: Options & { targ
   const target = restoreTarget(config.databaseUrl, options.targetUrl ? { ...process.env, BACKUP_RESTORE_DATABASE_URL: options.targetUrl } : process.env);
   const store = options.store ?? new S3BackupStore(config);
   const prefix = `${config.prefix}/daily/`;
-  const selected = key ?? ownedKeys(await store.list(prefix), prefix).at(-1);
+  const selected = key ?? confirmedKeys(await store.list(prefix), prefix).at(-1);
   if (!selected || !selected.startsWith(`${config.prefix}/`) || !FILE.test(selected.split("/").at(-1)!)) throw new Error("Внешняя копия не найдена");
   const dir = await mkdtemp(join(tmpdir(), "weekly-restore-"));
   const database = `weekly_restore_check_${randomUUID().replaceAll("-", "")}`;

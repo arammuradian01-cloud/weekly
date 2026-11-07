@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { decryptArchive, encryptArchive, fileHash, type Manifest } from "../../scripts/lib/remote-backup/archive";
 import { backupConfig, restoreTarget } from "../../scripts/lib/remote-backup/config";
-import { compareDigests } from "../../scripts/lib/remote-backup/postgres";
-import { monthlyPeriod, ownedKeys } from "../../scripts/lib/remote-backup/core";
+import { clientFor, compareDigests, runPg } from "../../scripts/lib/remote-backup/postgres";
+import { monthlyPeriod, ownedKeys, confirmedKeys } from "../../scripts/lib/remote-backup/core";
 
 describe("аутентифицированная резервная копия", () => {
   let dir: string;
@@ -85,6 +85,27 @@ describe("ограничения внешних копий", () => {
     const name = "weekly-2026-11-06T12-00-00-000Z-12345678-1234-1234-1234-123456789abc.wbk";
     expect(ownedKeys([`one/daily/${name}`, `one/daily/nested/${name}`, `other/daily/${name}`, "one/daily/foreign.dump"], "one/daily/")).toEqual([`one/daily/${name}`]);
     expect(monthlyPeriod(new Date("2026-10-31T22:00:00Z"))).toBe("2026-11");
+    const key = `one/daily/${name}`;
+    expect(confirmedKeys([key], "one/daily/")).toEqual([]);
+    expect(confirmedKeys([`${key}.ready`], "one/daily/")).toEqual([]);
+    expect(confirmedKeys([key, `${key}.ready`], "one/daily/")).toEqual([key]);
+  });
+  it.each(["dbname", "host", "hostaddr", "port", "user", "password", "service", "servicefile", "database", "options", "sslpassword"])(
+    "не допускает переопределение подключения через %s ни в pg, ни в libpq", async (parameter) => {
+      const address = `postgresql://test@target/synthetic_test?${parameter}=private-value`;
+      const message = /параметр адреса/;
+      expect(() => backupConfig({ ...env, DATABASE_URL: address })).toThrow(message);
+      expect(() => restoreTarget(env.DATABASE_URL, { BACKUP_RESTORE_DATABASE_URL: address, BACKUP_RESTORE_ISOLATED: "true" })).toThrow(message);
+      expect(() => clientFor(address, true)).toThrow(message);
+      await expect(runPg("pg_restore", address, [], true)).rejects.toThrow(message);
+      try { clientFor(address); } catch (error) { expect(String(error)).not.toContain("private-value"); }
+    },
+  );
+  it("отклоняет повторные параметры и принимает обычный адрес с настройкой TLS/Prisma", () => {
+    expect(new URL(backupConfig(env).databaseUrl).port).toBe("5432");
+    expect(new URL(restoreTarget(env.DATABASE_URL, { BACKUP_RESTORE_DATABASE_URL: "postgresql://test@target/postgres", BACKUP_RESTORE_ISOLATED: "true" })).port).toBe("5432");
+    expect(() => backupConfig({ ...env, DATABASE_URL: env.DATABASE_URL + "?sslmode=disable&sslmode=require" })).toThrow("повторный");
+    expect(backupConfig({ ...env, DATABASE_URL: env.DATABASE_URL + "?sslmode=require&sslaccept=accept_invalid_certs&schema=public" }).databaseUrl).toContain("schema=public");
   });
   it("сверяет содержимое, число строк и полный набор таблиц", () => {
     const expected = [{ schema: "public", table: "example", rows: 2, sha256: "a".repeat(64) }];

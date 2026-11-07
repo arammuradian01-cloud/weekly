@@ -5,15 +5,16 @@ import pg from "pg";
 import { pgConnectionConfig } from "../../../src/lib/database-url";
 import { libpqUrl, pgTool } from "../pg-tools";
 import type { TableDigest } from "./archive";
+import { backupDatabaseUrl } from "./config";
 
 const exec = promisify(execFile);
 export const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
 export function clientFor(url: string, restore = false): pg.Client {
   const env = restore ? { ...process.env, DB_SSL_ROOT_CERT: process.env.BACKUP_RESTORE_SSL_ROOT_CERT } : process.env;
-  const connection = new URL(url);
+  const connection = backupDatabaseUrl(url);
   connection.searchParams.set("application_name", "weekly-backup");
-  const client = new pg.Client({ ...pgConnectionConfig(connection.toString(), env),
+  const client = new pg.Client({ ...pgConnectionConfig(connection.toString(), env), options: "-c timezone=UTC",
     connectionTimeoutMillis: 15_000, statement_timeout: 600_000, query_timeout: 610_000,
     idle_in_transaction_session_timeout: 720_000 });
   // При разрыве простаивающего соединения pg выдаёт событие вне query(); следующая операция
@@ -24,7 +25,7 @@ export function clientFor(url: string, restore = false): pg.Client {
 
 /** Пароль остаётся в окружении дочернего процесса, а не в аргументах и сообщении execFile. */
 export async function runPg(name: "pg_dump" | "pg_restore", url: string, args: string[], restore = false): Promise<void> {
-  const connection = new URL(libpqUrl(url));
+  const connection = new URL(libpqUrl(backupDatabaseUrl(url).toString()));
   connection.searchParams.delete("sslaccept");
   connection.searchParams.set("application_name", "weekly-backup");
   const root = restore ? process.env.BACKUP_RESTORE_SSL_ROOT_CERT : process.env.DB_SSL_ROOT_CERT;
@@ -34,12 +35,15 @@ export async function runPg(name: "pg_dump" | "pg_restore", url: string, args: s
   }
   const password = decodeURIComponent(connection.password);
   connection.password = "";
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, PGPASSWORD: password, PGCONNECT_TIMEOUT: "15" };
+  // Скрытые настройки libpq не должны перенаправлять URI или добавлять параметры другой сессии.
+  for (const key of ["PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGSERVICE", "PGSERVICEFILE", "PGSYSCONFDIR", "PGOPTIONS"]) delete childEnv[key];
   try {
     // URI нужно передать через --dbname: PGDATABASE трактует его как буквальное имя базы.
     // Кроме того, pg_restore без --dbname только печатает SQL и ничего не восстанавливает.
-    const commandArgs = [`--dbname=${connection.toString()}`, ...args];
+    const commandArgs = ["--no-password", `--dbname=${connection.toString()}`, ...args];
     await exec(pgTool(name), commandArgs, {
-      env: { ...process.env, PGDATABASE: connection.toString(), PGPASSWORD: password, PGCONNECT_TIMEOUT: "15" },
+      env: childEnv,
       timeout: 600_000, maxBuffer: 1024 * 1024,
     });
   } catch {

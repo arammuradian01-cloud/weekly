@@ -5,7 +5,7 @@ import { PgBoss } from "pg-boss";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRemoteBackup, verifyRemoteBackup, extractRemoteBackup } from "../../scripts/lib/remote-backup/core";
+import { createRemoteBackup, verifyRemoteBackup, extractRemoteBackup, confirmedKeys } from "../../scripts/lib/remote-backup/core";
 import { clientFor, identifier } from "../../scripts/lib/remote-backup/postgres";
 import { migrationBackupNeeded } from "../../scripts/lib/remote-backup/migrations";
 import type { BackupConfig } from "../../scripts/lib/remote-backup/config";
@@ -132,11 +132,12 @@ it("сохраняет ежедневную, месячную и предмиг�
     await createRemoteBackup("daily", { config, store, now: new Date(`${date}T12:00:00Z`) });
   }
   const daily = await store.list("weekly-test/daily/");
-  expect(daily).toHaveLength(3); // 2 подтверждённых + чужой manual.dump
+  expect(confirmedKeys(daily, "weekly-test/daily/")).toHaveLength(2);
+  expect(daily).toContain("weekly-test/daily/manual.dump");
   expect(await store.list("weekly-test/monthly/2026-09/")).toHaveLength(0);
-  expect(await store.list("weekly-test/monthly/")).toHaveLength(2);
+  expect((await store.list("weekly-test/monthly/")).filter((key) => key.endsWith(".wbk"))).toHaveLength(2);
   for (const date of ["2026-11-02", "2026-11-03", "2026-11-04"]) await createRemoteBackup("migration", { config, store, now: new Date(date) });
-  expect(await store.list("weekly-test/migration/")).toHaveLength(2);
+  expect(confirmedKeys(await store.list("weekly-test/migration/"), "weekly-test/migration/")).toHaveLength(2);
   expect(await store.list("weekly-test/daily/")).toEqual(daily);
   expect(store.objects.has("foreign/copy.wbk")).toBe(true);
 });
@@ -152,6 +153,89 @@ it("не запускает две копии одновременно и не �
     await prepareDatabase(observer, { staleSeconds: 0, repeatable: () => false });
     expect((await client.query("SELECT 1 AS alive")).rows[0].alive).toBe(1);
   } finally { await client.query("ROLLBACK"); await observer.end(); }
+});
+it.each([false, true])("сохраняет архивы при ошибке PUT отметки (записана: %s), не запускает ротацию", async (saved) => {
+  const markerConfig = { ...config, prefix: "marker-test", keepDaily: 1 };
+  const memory = new MemoryStore();
+  const old = await createRemoteBackup("daily", { config: markerConfig, store: memory, now: new Date("2026-11-01T00:00:00Z") });
+  const ambiguous: BackupStore = {
+    get: memory.get.bind(memory), list: memory.list.bind(memory), remove: memory.remove.bind(memory),
+    put: async (key, path) => {
+      if (key.endsWith(".ready")) {
+        if (saved) await memory.put(key, path);
+        throw new Error("ответ на PUT отметки потерян");
+      }
+      await memory.put(key, path);
+    },
+  };
+  await expect(createRemoteBackup("daily", { config: markerConfig, store: ambiguous, now: new Date("2026-11-02T00:00:00Z") })).rejects.toThrow("ответ на PUT");
+  expect(memory.objects.has(old.key)).toBe(true);
+  const keys = await memory.list("marker-test/daily/");
+  const newArchive = keys.find((key) => key.endsWith(".wbk") && key !== old.key)!;
+  expect(newArchive).toBeTruthy();
+  expect(memory.objects.has(`${newArchive}.ready`)).toBe(saved);
+  const result = await verifyRemoteBackup(undefined, { config: markerConfig, store: memory, targetUrl: targetAdmin });
+  expect(result.key).toBe(saved ? newArchive : old.key);
+});
+it("отклоняет dbname override до записи в существующую базу сервера восстановления", async () => {
+  const before = await target.query("SELECT datname FROM pg_database ORDER BY datname");
+  const redirected = new URL(targetAdmin!);
+  redirected.searchParams.set("dbname", "postgres");
+  await expect(verifyRemoteBackup(undefined, { config, store, targetUrl: redirected.toString() })).rejects.toThrow("параметр адреса");
+  expect((await target.query("SELECT datname FROM pg_database ORDER BY datname")).rows).toEqual(before.rows);
+});
+it("не наследует скрытый маршрут и настройки libpq из окружения", async () => {
+  const overrides = { PGHOSTADDR: "127.0.0.2", PGSERVICE: "weekly_nonexistent_service", PGPORT: "1", PGOPTIONS: "-c role=weekly_nonexistent_role" };
+  const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(overrides)) vi.stubEnv(key, value);
+  try {
+    const isolated = { ...config, prefix: "environment-test" };
+    const memory = new MemoryStore();
+    const result = await createRemoteBackup("daily", { config: isolated, store: memory });
+    expect(await verifyRemoteBackup(undefined, { config: isolated, store: memory, targetUrl: targetAdmin })).toEqual({ key: result.key, tables: result.tables });
+  } finally { for (const [key, value] of Object.entries(previous)) vi.stubEnv(key, value); }
+});
+it("не теряет последнюю подтверждённую копию при потере SQL-lock и сбое пересекающейся загрузки", async () => {
+  const raceConfig = { ...config, prefix: "race-test", keepDaily: 1 };
+  const memory = new MemoryStore();
+  await createRemoteBackup("daily", { config: raceConfig, store: memory, now: new Date("2026-11-01T00:00:00Z") });
+  let releaseUpload!: () => void;
+  const waitingUpload = new Promise<void>((resolve) => { releaseUpload = resolve; });
+  let uploaded!: () => void;
+  const waitingUploaded = new Promise<void>((resolve) => { uploaded = resolve; });
+  let raced = false;
+  let second: Promise<boolean> | undefined;
+  const racing: BackupStore = {
+    put: memory.put.bind(memory), remove: memory.remove.bind(memory),
+    get: async (key, path) => {
+      if (key.includes("2026-11-03T")) {
+        uploaded();
+        await waitingUpload;
+        throw new Error("скачивание второй копии не подтвердилось");
+      }
+      await memory.get(key, path);
+    },
+    list: async (prefix) => {
+      if (prefix === "race-test/daily/" && !raced) {
+        raced = true;
+        // Прерывается только сессия копирования в случайной синтетической базе этого теста.
+        await client.query(`SELECT pg_terminate_backend(l.pid) FROM pg_locks l
+          WHERE l.locktype = 'advisory' AND l.classid = 0 AND l.objid = 890104
+            AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())`);
+        second = createRemoteBackup("daily", { config: raceConfig, store: racing, now: new Date("2026-11-03T00:00:00Z") })
+          .then(() => false, () => true);
+        await waitingUploaded;
+      }
+      return memory.list(prefix);
+    },
+  };
+  let first: Awaited<ReturnType<typeof createRemoteBackup>>;
+  try {
+    first = await createRemoteBackup("daily", { config: raceConfig, store: racing, now: new Date("2026-11-02T00:00:00Z") });
+  } finally { releaseUpload(); }
+  expect(await second).toBe(true);
+  expect(memory.objects.has(first.key)).toBe(true);
+  expect(await verifyRemoteBackup(undefined, { config: raceConfig, store: memory, targetUrl: targetAdmin })).toEqual({ key: first.key, tables: first.tables });
 });
 it("собранный фоновый процесс сохраняет расписание и штатно останавливается; копия включает очередь", async () => {
   // Сценарий обновления: старые очереди уже существуют с прежними пределами.
