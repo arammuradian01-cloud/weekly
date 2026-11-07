@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { PgBoss } from "pg-boss";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -153,6 +154,15 @@ it("не запускает две копии одновременно и не �
   } finally { await client.query("ROLLBACK"); await observer.end(); }
 });
 it("собранный фоновый процесс сохраняет расписание и штатно останавливается; копия включает очередь", async () => {
+  // Сценарий обновления: старые очереди уже существуют с прежними пределами.
+  const oldWorker = new PgBoss(source.toString());
+  oldWorker.on("error", () => {});
+  await oldWorker.start();
+  try {
+    for (const name of ["backup-nightly", "backup-restore-check"]) {
+      await oldWorker.createQueue(name, { retryLimit: 0, retryDelay: 0, expireInSeconds: 900 });
+    }
+  } finally { await oldWorker.stop(); }
   const child = spawn(process.execPath, ["dist/start/scripts/worker.mjs"], { env: {
     ...process.env, DATABASE_URL: source.toString(), BACKUP_ENABLED: "true", BACKUP_RESTORE_ENABLED: "true",
     BACKUP_RESTORE_DATABASE_URL: targetAdmin, BACKUP_RESTORE_ISOLATED: "true",
@@ -175,6 +185,10 @@ it("собранный фоновый процесс сохраняет расп
     expect((await client.query("SELECT name, cron, timezone FROM pgboss.schedule ORDER BY name")).rows).toEqual([
       { name: "backup-nightly", cron: "0 3 * * *", timezone: "Europe/Moscow" },
       { name: "backup-restore-check", cron: "0 4 1 * *", timezone: "Europe/Moscow" },
+    ]);
+    expect((await client.query("SELECT name, retry_limit, retry_delay, expire_seconds FROM pgboss.queue WHERE name IN ('backup-nightly', 'backup-restore-check') ORDER BY name")).rows).toEqual([
+      { name: "backup-nightly", retry_limit: 2, retry_delay: 300, expire_seconds: 3600 },
+      { name: "backup-restore-check", retry_limit: 2, retry_delay: 300, expire_seconds: 3600 },
     ]);
   } finally {
     child.kill("SIGTERM");

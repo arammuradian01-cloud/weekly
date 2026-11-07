@@ -33,12 +33,14 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npx next start -p ${PORT}`,
+    // Общая команда local должна держать сайт работающим и при выключенном резервировании.
+    command: "npm run local",
     // Готовность по robots.txt: тестовая база создаётся в globalSetup уже после старта сервера
     url: `http://localhost:${PORT}/robots.txt`,
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
+      PORT: String(PORT),
       DATABASE_URL: E2E_DATABASE_URL,
       SESSION_SECRET: "e2e-secret-0123456789-0123456789-abcdef",
       APP_URL: `http://localhost:${PORT}`,

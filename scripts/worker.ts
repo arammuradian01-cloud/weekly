@@ -23,7 +23,12 @@ boss.on("error", () => {
 await boss.start();
 const nightly = "backup-nightly";
 const monthly = "backup-restore-check";
-for (const name of [nightly, monthly]) await boss.createQueue(name, { retryLimit: 2, retryDelay: 300, expireInSeconds: 3600 });
+const queueOptions = { retryLimit: 2, retryDelay: 300, expireInSeconds: 3600 };
+for (const name of [nightly, monthly]) {
+  await boss.createQueue(name, queueOptions);
+  // createQueue не меняет существующую очередь: настройки нужны и после обновления прежнего worker.
+  await boss.updateQueue(name, queueOptions);
+}
 await boss.schedule(nightly, "0 3 * * *", null, { tz: "Europe/Moscow", missed: "once" });
 if (checkEnabled) await boss.schedule(monthly, "0 4 1 * *", null, { tz: "Europe/Moscow", missed: "once" });
 else await boss.unschedule(monthly);

@@ -13,7 +13,7 @@
     "build:start": "esbuild scripts/migrate-prepare.ts scripts/backup-before-migrate.ts scripts/worker.ts scripts/start-server.ts scripts/backup-remote.ts prisma/seed.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outbase=. --outdir=dist/start --out-extension:.js=.mjs --log-level=warning",
     "start": "next start -p ${PORT:-3000}",
     "worker": "tsx scripts/worker.ts",
-    "local": "concurrently -k -n web,worker -c blue,green \"npm:start\" \"npm:worker\"",
+    "local": "npm run build:start && node --import dotenv/config dist/start/scripts/start-server.mjs",
     "setup": "tsx scripts/setup.ts",
     "password": "tsx scripts/set-password.ts",
     "management-password": "tsx scripts/management-password.ts",
