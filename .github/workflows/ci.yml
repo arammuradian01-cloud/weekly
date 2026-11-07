@@ -63,6 +63,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      restore-postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/weekly
       SESSION_SECRET: ci-secret-0123456789-0123456789-abcdef
@@ -77,6 +89,13 @@ jobs:
       - run: npx prisma migrate deploy
       - name: Правила задач и weekly на настоящей базе
         run: npm run test:db
+      - name: Клиенты PostgreSQL 16 для копирования и восстановления
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client-16
+      - name: Зашифрованная копия и восстановление на отдельном сервере
+        run: npm run build:start && npm run test:backup
+        env:
+          BACKUP_TEST_SOURCE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+          BACKUP_TEST_TARGET_URL: postgresql://postgres:postgres@127.0.0.1:5433/postgres
       - name: Сверка импорта с выгрузкой таблицы (0 расхождений)
         run: BORD_IMPORT=on npx tsx prisma/seed.ts && npm run reconcile:bord
 
@@ -200,6 +219,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Сборка образа, который собирает App Platform
         run: docker build -t weekly:ci .
+      - name: Клиенты и запуск фонового процесса в готовом образе
+        run: |
+          docker run --rm --entrypoint sh weekly:ci -c 'pg_dump --version | grep " 16." && pg_restore --version | grep " 16." && node dist/start/scripts/backup-before-migrate.mjs && node dist/start/scripts/worker.mjs'
+
 
   # Итог прогона одной отметкой: падение любой работы или любой части сквозных тестов роняет её
   itog:

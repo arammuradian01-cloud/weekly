@@ -12,8 +12,8 @@ describe("команда запуска контейнера", () => {
     expect(cmd).not.toMatch(/\btsx\b/);
   });
 
-  it("шаги идут по порядку: подготовка, миграции с пределом времени, стартовые данные, сайт", () => {
-    const steps = ["dist/start/scripts/migrate-prepare.mjs", "timeout -k 10 ${MIGRATE_TIMEOUT}", "prisma/build/index.js migrate deploy", "dist/start/prisma/seed.mjs", "next/dist/bin/next start"];
+  it("шаги идут по порядку: подготовка, внешняя копия, миграции с пределом времени, стартовые данные, процессы", () => {
+    const steps = ["dist/start/scripts/migrate-prepare.mjs", "dist/start/scripts/backup-before-migrate.mjs", "timeout -k 10 ${MIGRATE_TIMEOUT}", "prisma/build/index.js migrate deploy", "dist/start/prisma/seed.mjs", "exec node dist/start/scripts/start-server.mjs"];
     const at = steps.map((s) => cmd.indexOf(s));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
@@ -23,6 +23,9 @@ describe("команда запуска контейнера", () => {
     const build = pkg.scripts["build:start"]!;
     expect(build).toContain("scripts/migrate-prepare.ts");
     expect(build).toContain("prisma/seed.ts");
+    expect(build).toContain("scripts/worker.ts");
+    expect(build).toContain("scripts/backup-before-migrate.ts");
+    expect(build).toContain("scripts/start-server.ts");
     expect(build).toContain("--outdir=dist/start");
     expect(build).toContain("--out-extension:.js=.mjs");
     expect(pkg.devDependencies.esbuild).toBeTruthy();
@@ -31,6 +34,8 @@ describe("команда запуска контейнера", () => {
 
   it("куча сайта ограничена, предел задаётся переменной", () => {
     expect(dockerfile).toMatch(/NODE_HEAP_MB=\d+/);
-    expect(cmd).toContain('NODE_OPTIONS="--max-old-space-size=${NODE_HEAP_MB}" exec node');
+    const supervisor = readFileSync("scripts/start-server.ts", "utf8");
+    expect(supervisor).toContain("process.env.NODE_HEAP_MB");
+    expect(supervisor).toContain("--max-old-space-size=${heap}");
   });
 });

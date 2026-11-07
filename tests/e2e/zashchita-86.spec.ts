@@ -67,6 +67,8 @@ test("страница «Состояние»: база, проверка, ве�
   await page.goto("/status");
   await expect(page.getByRole("heading", { name: "Состояние", exact: true })).toBeVisible();
   await expect(page.getByTestId("status-db")).toContainText("отвечает");
+  await expect(page.getByTestId("status-backup")).toContainText("выключена");
+  await expect(page.getByTestId("status-backup-restore")).toContainText("выключена");
   await expect(page.getByTestId("status-version")).not.toBeEmpty();
   await expect(page.getByRole("heading", { name: "Проверки и версия" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Защита" })).toBeVisible();
