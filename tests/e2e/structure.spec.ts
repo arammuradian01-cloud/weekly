@@ -100,10 +100,11 @@ test("владелец загружает структуру, команды п�
   const unitField = personModal.getByRole("combobox", { name: "Подразделение", exact: true });
   const unitList = await pickerList(unitField);
   await expect(unitField).toHaveValue("Сектор автострахования");
-  // Небольшой список целиком доступен поверх окна.
+  // Длинные подписи на телефоне требуют прокрутки списка: последний вариант остаётся доступным.
   await unitField.click();
   const units = await unitList.getByRole("option").count();
   expect(units).toBeGreaterThanOrEqual(3);
+  for (let i = 0; i < units - 1; i++) await unitField.press("ArrowDown");
   await expect(unitList.getByRole("option").nth(units - 1)).toBeInViewport({ ratio: 1 });
   await unitField.fill("управление развития");
   await unitList.getByRole("option", { name: /^Управление развития продуктов/ }).click();
