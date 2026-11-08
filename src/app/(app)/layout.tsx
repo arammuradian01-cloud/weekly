@@ -123,6 +123,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       observer={ctx.person.role === "OBSERVER"}
       limited={subject.limited}
       viewing={!!viewAs || !!ctx.viewAsEnded || !!ctx.ownerAsEnded}
+      ownerAs={!!ctx.ownerAs}
       initialTasks={tasks}
       registry={registry}
       team={teamView}
