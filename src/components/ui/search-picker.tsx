@@ -5,6 +5,10 @@
 // из WAI-ARIA: стрелки двигают выбор, Enter выбирает, Escape закрывает список.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import * as Popper from "@radix-ui/react-popper";
+import { Portal } from "@radix-ui/react-portal";
+import { DismissableLayer } from "@radix-ui/react-dismissable-layer";
+import { RemoveScroll } from "react-remove-scroll";
 import { cn } from "@/lib/cn";
 import { searchKey } from "@/domain/search-key";
 
@@ -40,7 +44,6 @@ export function SearchPicker({
   emptyText = "Никого не нашли: проверьте написание",
   className,
   autoFocus,
-  inline = false,
   side = "bottom",
   clearable = true,
 }: {
@@ -57,22 +60,7 @@ export function SearchPicker({
   className?: string;
   /** Поле получает фокус сразу и показывает список: открыли выбор кнопкой «Выбрать цель» */
   autoFocus?: boolean;
-  /**
-   * Список вариантов в потоке под полем, а не поверх (этап 70): в окне с прокруткой (Modal) всплывающий список
-   * обрезается краем окна, а в потоке окно растёт и прокручивается вместе с ним.
-   *
-   * Ставить его можно не всякому полю, и вот почему. Список в потоке сдвигает всё, что под ним. Закрывается он по
-   * уходу фокуса, а фокус уходит уже на нажатии мыши. Значит при нажатии на кнопку под раскрытым списком: нажатие по
-   * кнопке, фокус ушёл, список закрылся, разметка съехала вверх, отпускание попало уже не в кнопку, и события click
-   * не случилось вовсе. Кнопка просто не работает, и не только у автотеста: у человека между нажатием и отпусканием
-   * проходит 50-150 миллисекунд, этого хватает с запасом.
-   *
-   * Поэтому `inline` не ставим первому полю окна (Radix сам отдаёт ему фокус при открытии, и список раскрывается без
-   * просьбы) и полю, под которым есть кнопка, по которой человек нажмёт. Насовсем это снимет этап 89: список уходит
-   * в портал, перестаёт и обрезаться, и двигать разметку, а это свойство исчезает.
-   */
-  inline?: boolean;
-  /** Последнее поле формы раскрывается вверх, чтобы список и кнопки не перекрывали друг друга. */
+  /** Предпочтительная сторона; у края экрана список меняет её сам. */
   side?: "top" | "bottom";
   /**
    * Можно ли оставить поле пустым (этап 70). Нельзя: печать не снимает выбранное, уход из поля без выбора оставляет
@@ -83,12 +71,12 @@ export function SearchPicker({
   const listId = useId();
   const listRef = useRef<HTMLDivElement>(null);
   const listInput = useRef<HTMLInputElement>(null);
-  const pointerKind = useRef<string>("mouse");
   const selected = options.find((o) => o.value === value) ?? null;
   const [query, setQuery] = useState("");
   // Человек начал печатать: до этого список показывает все варианты, даже если в поле стоит выбранный (этап 55)
   const [typed, setTyped] = useState(false);
   const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState<HTMLElement | null>(null);
   const [active, setActive] = useState(0);
   // Пока человек не печатал, выбранный вариант первым: Enter сразу после фокуса оставляет выбор как был, даже если
   // он дальше первой двадцатки
@@ -99,43 +87,27 @@ export function SearchPicker({
   const shown = matched.slice(0, limit);
   const more = matched.length - shown.length;
   const text = open || !selected ? query : selected.label;
-  useEffect(() => {
-    if (!open || inline || side !== "top") return;
-    const list = listRef.current;
-    const field = listInput.current?.parentElement;
-    const dialog = field?.closest<HTMLElement>('[role="dialog"]');
-    if (!list || !field) return;
-    // Ограничиваем высоту местом над полем внутри окна: верхние варианты не уходят за его край.
-    const resize = () => {
-      const top = Math.max(0, dialog?.getBoundingClientRect().top ?? 0) + 8;
-      list.style.maxHeight = `${Math.max(36, Math.min(320, field.getBoundingClientRect().top - top - 4))}px`;
-    };
-    resize();
-    window.addEventListener("resize", resize);
-    dialog?.addEventListener("scroll", resize);
-    return () => {
-      window.removeEventListener("resize", resize);
-      dialog?.removeEventListener("scroll", resize);
-    };
-  }, [open, inline, side]);
   // Активный пункт всегда в видимой части списка: стрелками можно уйти ниже края
   useEffect(() => {
     if (!open) return;
-    listRef.current?.querySelector(`[id="${listId}-${active}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [active, open, listId]);
-
-  // Список в потоке (окно с прокруткой): открылся, и окно прокручивается, чтобы был виден низ списка, но поле ввода
-  // не уходило за верхний край. Прокручиваем только само окно, страницу под ним не трогаем
-  useEffect(() => {
-    if (!open || !inline) return;
     const list = listRef.current;
-    const input = listInput.current;
-    const box = input?.closest<HTMLElement>('[role="dialog"]');
-    if (!list || !input || !box) return;
-    const edge = box.getBoundingClientRect();
-    const below = list.getBoundingClientRect().bottom - edge.bottom + 8;
-    if (below > 0) box.scrollTop += Math.min(below, input.getBoundingClientRect().top - edge.top - 8);
-  }, [open, inline]);
+    const option = document.getElementById(`${listId}-${active}`);
+    if (!list || !option) return;
+    // Прокручиваем только список: scrollIntoView мог бы сдвинуть ещё и страницу под формой.
+    const box = list.getBoundingClientRect();
+    const item = option.getBoundingClientRect();
+    const top = box.top + list.clientTop;
+    const bottom = top + list.clientHeight;
+    if (item.top < top) list.scrollTop -= top - item.top;
+    else if (item.bottom > bottom) list.scrollTop += item.bottom - bottom;
+  }, [active, open, listId]);
+  const changeOpen = (next: boolean) => {
+    setOpen(next);
+    if (!next) {
+      setTyped(false);
+      setQuery("");
+    }
+  };
   const pick = (o: PickerOption) => {
     onChange(o.value);
     setQuery("");
@@ -150,131 +122,143 @@ export function SearchPicker({
   ) : null;
 
   return (
-    <div className={cn("sv-field relative", className)}>
-      <label htmlFor={id} className="sv-label">
-        {label}
-      </label>
-      <input
-        ref={listInput}
-        id={id}
-        className="sv-control w-full"
-        type="text"
-        role="combobox"
-        autoComplete="off"
-        spellCheck={false}
-        aria-expanded={open}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
-        aria-describedby={hint ? `${id}-hint` : undefined}
-        // Выбранное значение для проверок и автотестов: в поле человек видит подпись, а не код (этап 74)
-        data-value={value}
-        placeholder={placeholder}
-        value={text}
-        autoFocus={autoFocus}
-        onFocus={(e) => {
-          // Выбранное остаётся в поле: повторный фокус не стирает текст. Список показывает все варианты, выбранный
-          // подсвечен: чтобы сменить выбор, не нужно сначала стирать поле. Текст выделен: первая буква заменяет его
-          if (selected) {
-            setQuery(selected.label);
-            const input = e.currentTarget;
-            requestAnimationFrame(() => {
-              if (document.activeElement === input) input.select();
-            });
-          }
-          setTyped(false);
-          setOpen(true);
-          setActive(0);
-        }}
-        // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
-        onPointerDown={(e) => {
-          pointerKind.current = e.pointerType;
-        }}
-        onMouseDown={(e) => {
-          // В потоке окна закрытие списка предыдущего поля меняет его высоту. Передаём фокус до стандартной
-          // обработки щелчка: иначе поле уезжает из-под указателя, и Radix возвращает фокус самому окну.
-          // Только мышь: на телефоне фокус из синтетического щелчка может не открыть клавиатуру
-          if (inline && pointerKind.current === "mouse" && document.activeElement !== e.currentTarget) {
-            e.preventDefault();
-            e.currentTarget.focus({ preventScroll: true });
-          }
-          if (!open && document.activeElement === listInput.current) {
-            setTyped(false);
-            setOpen(true);
-            setActive(0);
-          }
-        }}
-        onBlur={() => {
-          setOpen(false);
-          setTyped(false);
-          // Напечатали и ушли, ничего не выбрав: в поле не остаётся текста, который выглядит как выбор. Поле снова
-          // показывает выбранный вариант, если он есть, иначе пусто
-          setQuery("");
-        }}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setTyped(true);
-          setOpen(true);
-          setActive(0);
-          if (value && clearable) onChange("");
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setOpen(true);
-            setActive((i) => Math.min(i + 1, Math.max(shown.length - 1, 0)));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((i) => Math.max(i - 1, 0));
-          } else if (e.key === "Enter" && open && shown[active]) {
-            e.preventDefault();
-            pick(shown[active]!);
-          } else if (e.key === "Escape") {
-            // Первый Escape закрывает список, второй очищает поле (если его можно оставить пустым)
-            if (open) setOpen(false);
-            else {
-              setQuery("");
+    <Popper.Root>
+      <div className={cn("sv-field relative", className)}>
+        <label htmlFor={id} className="sv-label">
+          {label}
+        </label>
+        <Popper.Anchor asChild>
+          <input
+            ref={listInput}
+            id={id}
+            className="sv-control w-full"
+            type="text"
+            role="combobox"
+            autoComplete="off"
+            spellCheck={false}
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
+            aria-describedby={hint ? `${id}-hint` : undefined}
+            // Выбранное значение для проверок и автотестов: в поле человек видит подпись, а не код (этап 74)
+            data-value={value}
+            placeholder={placeholder}
+            value={text}
+            autoFocus={autoFocus}
+            onFocus={(e) => {
+              setDialog(e.currentTarget.closest<HTMLElement>('[role="dialog"]'));
+              // Выбранное остаётся в поле: повторный фокус не стирает текст. Список показывает все варианты, выбранный
+              // подсвечен: чтобы сменить выбор, не нужно сначала стирать поле. Текст выделен: первая буква заменяет его
+              if (selected) {
+                setQuery(selected.label);
+                const input = e.currentTarget;
+                requestAnimationFrame(() => {
+                  if (document.activeElement === input) input.select();
+                });
+              }
               setTyped(false);
+              setOpen(true);
+              setActive(0);
+            }}
+            // Поле уже в фокусе, а список закрыт (выбрали мышью): щелчок открывает его снова
+            onMouseDown={() => {
+              if (!open && document.activeElement === listInput.current) {
+                setTyped(false);
+                setOpen(true);
+                setActive(0);
+              }
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setTyped(true);
+              setOpen(true);
+              setActive(0);
               if (value && clearable) onChange("");
-            }
-          }
-        }}
-      />
-      {inline ? null : hintBlock}
-      {open ? (
-        <div ref={listRef} style={!inline && side === "top" ? { top: "auto", bottom: "calc(100% + 4px)" } : undefined} className={cn("sv-menu m-0", inline && "sv-menu--static mt-1 max-h-none overflow-visible")}>
-          <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
-            {shown.map((o, i) => (
-              <li
-                key={o.value}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === active}
-                // mousedown, а не click: иначе поле теряет фокус и список закрывается раньше выбора
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(o);
-                }}
-                onMouseEnter={() => setActive(i)}
-                className={cn("sv-menu__item items-start justify-between", i === active && "is-active")}
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setOpen(true);
+                setActive((i) => Math.min(i + 1, Math.max(shown.length - 1, 0)));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter" && open && shown[active]) {
+                e.preventDefault();
+                pick(shown[active]!);
+              } else if (e.key === "Escape") {
+                // Первый Escape закрывает список, второй очищает поле (если его можно оставить пустым)
+                if (open) changeOpen(false);
+                else {
+                  setQuery("");
+                  setTyped(false);
+                  if (value && clearable) onChange("");
+                }
+              }
+            }}
+          />
+        </Popper.Anchor>
+        {hintBlock}
+        {open ? <Portal>
+          {/* Слой не создаёт FocusScope: фокус и Tab по-прежнему удерживает родительское окно.
+              Верхний scroll-lock разрешает прокрутку списка и окна, но не страницы под ними. */}
+          <RemoveScroll forwardProps allowPinchZoom enabled={!!dialog} removeScrollBar={false} shards={dialog ? [dialog] : []}>
+            <DismissableLayer
+              asChild
+              onDismiss={() => changeOpen(false)}
+              onEscapeKeyDown={(e) => {
+                // В поле Escape обработает input, не очищая выбор тем же событием.
+                e.preventDefault();
+                if (e.target !== listInput.current) changeOpen(false);
+              }}
+              onInteractOutside={(e) => {
+                if (e.target === listInput.current) e.preventDefault();
+              }}
+            >
+              <Popper.Content
+                ref={listRef}
+                className="sv-menu sv-picker-menu"
+                side={side}
+                align="start"
+                sideOffset={4}
+                collisionPadding={8}
+                hideWhenDetached
               >
-                <span className="min-w-0">
-                  <span className="block text-body text-ink">{o.label}</span>
-                  {o.hint ? <span className="block text-small text-muted">{o.hint}</span> : null}
-                </span>
-                {o.note ? <span className="shrink-0 text-caption text-muted">{o.note}</span> : null}
-              </li>
-            ))}
-          </ul>
-          {!shown.length ? <p className="sv-menu__group m-0">{emptyText}</p> : null}
-          {more > 0 ? <p className="sv-menu__group m-0">Ещё {more}: уточните запрос</p> : null}
-        </div>
-      ) : null}
-      {inline ? hintBlock : null}
-      {/* Сколько нашлось: экранный диктор читает это при вводе */}
-      <span className="sr-only" aria-live="polite">
-        {open ? (matched.length ? `Найдено: ${matched.length}` : emptyText) : ""}
-      </span>
-    </div>
+                <ul id={listId} role="listbox" aria-label={label} className="m-0 list-none p-0">
+                  {shown.map((o, i) => (
+                    <li
+                      key={o.value}
+                      id={`${listId}-${i}`}
+                      role="option"
+                      aria-selected={i === active}
+                      // mousedown, а не click: иначе поле теряет фокус и список закрывается раньше выбора
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pick(o);
+                      }}
+                      onMouseEnter={() => setActive(i)}
+                      className={cn("sv-menu__item items-start justify-between", i === active && "is-active")}
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-body text-ink">{o.label}</span>
+                        {o.hint ? <span className="block text-small text-muted">{o.hint}</span> : null}
+                      </span>
+                      {o.note ? <span className="shrink-0 text-caption text-muted">{o.note}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+                {!shown.length ? <p className="sv-menu__group m-0">{emptyText}</p> : null}
+                {more > 0 ? <p className="sv-menu__group m-0">Ещё {more}: уточните запрос</p> : null}
+              </Popper.Content>
+            </DismissableLayer>
+          </RemoveScroll>
+        </Portal> : null}
+        {/* Сколько нашлось: экранный диктор читает это при вводе */}
+        <span className="sr-only" aria-live="polite">
+          {open ? (matched.length ? `Найдено: ${matched.length}` : emptyText) : ""}
+        </span>
+      </div>
+    </Popper.Root>
   );
 }

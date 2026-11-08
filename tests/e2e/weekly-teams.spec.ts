@@ -1,3 +1,4 @@
+import { pickerList } from "./search-picker";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, enterPersonal, resetDatabase, sql } from "./helpers";
@@ -228,7 +229,7 @@ test("владелец собирает команду поиском из ра�
   await owned.getByRole("button", { name: "Назначить руководителя" }).click();
   const lead = page.getByRole("dialog", { name: "Руководитель: Кросс-продажи и кредиты" });
   await lead.getByRole("combobox", { name: "Руководитель" }).fill("рева");
-  await lead.getByRole("option", { name: /Рева Тарас/ }).click();
+  await (await pickerList(lead.getByRole("combobox", { name: "Руководитель" }))).getByRole("option", { name: /Рева Тарас/ }).click();
   await lead.getByRole("button", { name: "Сохранить" }).click();
   await expect(page.getByText("Команда сохранена").first()).toBeVisible();
   const [after] = await sql('SELECT l.slug AS leader FROM teams t JOIN people l ON l.id = t."leaderId" WHERE t.id = $1', [id]);
@@ -238,21 +239,27 @@ test("владелец собирает команду поиском из ра�
   await owned.getByRole("button", { name: "Назначить руководителя" }).click();
   const up = page.getByRole("dialog", { name: "Руководитель: Кросс-продажи и кредиты" });
   const parentField = up.getByRole("combobox", { name: "Команда выше" });
-  const parentList = up.getByRole("listbox", { name: "Команда выше" });
-  // Переходим из открытого списка руководителя: его закрытие меняет высоту окна, но фокус остаётся в нажатом поле
+  const parentList = await pickerList(parentField);
+  // Tab переводит из открытого списка руководителя в следующее поле без сдвига формы.
   await expect(up.getByRole("combobox", { name: "Руководитель" })).toBeFocused();
-  await expect(up.getByRole("listbox", { name: "Руководитель" })).toBeVisible();
-  await parentField.click();
+  // Первый элемент формы: Shift+Tab остаётся в окне, а Tab с последней кнопки возвращается в поле.
+  await up.getByRole("combobox", { name: "Руководитель" }).press("Shift+Tab");
+  await expect(up.getByRole("button", { name: "Сохранить", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(up.getByRole("combobox", { name: "Руководитель" })).toBeFocused();
+  await expect((await pickerList(up.getByRole("combobox", { name: "Руководитель" })))).toBeVisible();
+  await up.getByRole("combobox", { name: "Руководитель" }).press("Tab");
   await expect(parentField).toBeFocused();
   await expect(parentField).toHaveAttribute("aria-expanded", "true");
-  // Список в потоке окна, не обрезан его прокруткой: видно не меньше шести вариантов целиком
+  // Длинный список прокручивается отдельно от окна: до шестого варианта можно дойти стрелками.
   await expect.poll(() => parentList.getByRole("option").count()).toBeGreaterThanOrEqual(6);
+  for (let i = 0; i < 5; i++) await parentField.press("ArrowDown");
   await expect(parentList.getByRole("option").nth(5)).toBeInViewport({ ratio: 1 });
   await shot(page, "parent-picker");
   await parentField.fill("департамент");
   await expect(parentList.getByRole("option", { name: /^Департамент Money/ })).toBeVisible();
   await parentField.fill("кросс-продажи");
-  await expect(up.getByText("Такой команды нет: проверьте написание").first()).toBeVisible();
+  await expect(page.getByText("Такой команды нет: проверьте написание").first()).toBeVisible();
   await expect(parentList.getByRole("option")).toHaveCount(0);
   await parentField.fill("белова");
   const partners = parentList.getByRole("option", { name: /^Департамент партнёрств/ });
@@ -275,7 +282,7 @@ test("владелец собирает команду поиском из ра�
   const pilot = page.getByRole("dialog", { name: "Новая weekly-команда" });
   await pilot.getByRole("textbox", { name: "Название команды" }).fill("Партнёрский пилот");
   await pilot.getByRole("combobox", { name: "Руководитель" }).fill("белова");
-  await pilot.getByRole("option", { name: /Белова Ольга/ }).click();
+  await (await pickerList(pilot.getByRole("combobox", { name: "Руководитель" }))).getByRole("option", { name: /Белова Ольга/ }).click();
   await pilot.getByLabel("Участники, можно добавить и позже").fill("седов");
   await pilot.getByRole("checkbox", { name: /Седов Максим/ }).check();
   await pilot.getByRole("button", { name: "Создать команду" }).click();

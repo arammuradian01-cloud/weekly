@@ -1,3 +1,4 @@
+import { pickerList } from "./search-picker";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterManagement, resetDatabase, sql } from "./helpers";
@@ -104,7 +105,7 @@ test("владелец собирает повестку, ведёт встре�
   const dialog = page.getByRole("dialog", { name: "Решение встречи" });
   await dialog.getByLabel("Что решили").fill("Доступ от СК запрашивает Тарас до пятницы");
   await dialog.getByRole("combobox", { name: "Владелец решения, если есть" }).fill("рева");
-  await dialog.getByRole("option", { name: /^Рева Тарас/ }).click();
+  await (await pickerList(dialog.getByRole("combobox", { name: "Владелец решения, если есть" }))).getByRole("option", { name: /^Рева Тарас/ }).click();
   await dialog.getByRole("button", { name: "Записать" }).click();
   await expect(page.getByText("Решение записано").first()).toBeVisible();
   await expect(page.getByText("Доступ от СК запрашивает Тарас до пятницы")).toBeVisible();

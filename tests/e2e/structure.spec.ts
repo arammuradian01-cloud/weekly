@@ -1,3 +1,4 @@
+import { pickerList } from "./search-picker";
 import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import { enter, enterByLink, enterManagement, resetDatabase, sql } from "./helpers";
@@ -56,16 +57,16 @@ test("владелец загружает структуру, команды п�
   await expect(page.getByText("Вакансии: PO KASKO")).toBeVisible();
   await shot(page, "units");
 
-  // Этап 74: подразделение выбирают поиском, а не системным списком. Список в потоке окна, краем окна не обрезан,
+  // Этап 74: подразделение выбирают поиском, а не системным списком. Список поверх окна, краем окна не обрезан,
   // и вторая строка пункта говорит вид, подразделение выше и руководителя: одноимённые отделы не спутать
   await page.getByRole("button", { name: "Изменить подразделение: Сектор автострахования" }).click();
   const unitModal = page.getByRole("dialog", { name: "Сектор автострахования" });
   const above = unitModal.getByRole("combobox", { name: "Подразделение выше" });
-  const aboveList = unitModal.getByRole("listbox", { name: "Подразделение выше" });
+  const aboveList = await pickerList(above);
   await expect(above).toHaveAttribute("data-value", /.+/);
   await above.click();
   await expect(above).toHaveAttribute("aria-expanded", "true");
-  // Список раскрывается вверх в пределах окна и не сдвигает кнопки. После поиска единственный пункт должен
+  // Список раскрывается вверх поверх окна и не сдвигает кнопки. После поиска единственный пункт должен
   // выбираться указателем: раньше кнопки перекрывали именно его, хотя проверка видимости проходила.
   const count = await aboveList.getByRole("option").count();
   expect(count).toBeGreaterThanOrEqual(3);
@@ -79,16 +80,14 @@ test("владелец загружает структуру, команды п�
   else await firstAbove.click();
   await expect(above).toHaveValue("Отдел развития продуктов");
   await above.fill("абвгде");
-  await expect(unitModal.getByText("Такого подразделения нет: проверьте написание").first()).toBeVisible();
+  await expect(page.getByText("Такого подразделения нет: проверьте написание").first()).toBeVisible();
   // Поле не бывает пустым: Escape закрывает список, выбор остаётся прежним, а не стирается набранным текстом.
   // Второй раз Escape не нажимаем: в окне он закрывает само окно (этап 55, keepOpenOnListEscape)
   await above.press("Escape");
   await expect(aboveList).toHaveCount(0);
   await expect(above).toHaveAttribute("data-value", /.+/);
   await expect(above).not.toHaveValue("абвгде");
-  // Кнопка под полем нажимается с раскрытым списком. Список здесь всплывающий, а не в потоке, и разметку не двигает:
-  // в потоке нажатие не дошло бы, потому что на mousedown поле теряет фокус, список свёртывается и кнопки прыгают.
-  // Нарочно не закрываем список перед нажатием: иначе правило про inline стеречь некому (см. search-picker.tsx)
+  // Кнопка под полем нажимается с раскрытым списком: закрытие не двигает разметку.
   await above.click();
   await expect(aboveList).toBeVisible();
   await unitModal.getByRole("button", { name: "Отмена" }).click();
@@ -99,30 +98,30 @@ test("владелец загружает структуру, команды п�
   await page.getByRole("button", { name: "Изменить: Антонов Дмитрий" }).click();
   const personModal = page.getByRole("dialog", { name: "Антонов Дмитрий" });
   const unitField = personModal.getByRole("combobox", { name: "Подразделение", exact: true });
-  const unitList = personModal.getByRole("listbox", { name: "Подразделение" });
+  const unitList = await pickerList(unitField);
   await expect(unitField).toHaveValue("Сектор автострахования");
-  // У этого поля список в потоке (`inline`): он не обрезается краем окна с прокруткой, и последний вариант виден
-  // целиком. Это и есть то, зачем этап 70 завёл `inline`
+  // Небольшой список целиком доступен поверх окна.
   await unitField.click();
   const units = await unitList.getByRole("option").count();
   expect(units).toBeGreaterThanOrEqual(3);
   await expect(unitList.getByRole("option").nth(units - 1)).toBeInViewport({ ratio: 1 });
   await unitField.fill("управление развития");
-  await personModal.getByRole("option", { name: /^Управление развития продуктов/ }).click();
+  await unitList.getByRole("option", { name: /^Управление развития продуктов/ }).click();
   // В поле видна подпись, а выбранный код в data-value: по нему и уходит правка
   await expect(unitField).toHaveValue("Управление развития продуктов");
   await expect(unitField).toHaveAttribute("data-value", /.+/);
   // Проверяем первый пункт «Нет», единственный найденный вариант и кнопку под открытым списком.
   const functional = personModal.getByRole("combobox", { name: "Функциональный руководитель" });
   await functional.click();
-  await expect(personModal.getByRole("listbox", { name: "Функциональный руководитель" })).toBeVisible();
-  const noFunctional = personModal.getByRole("option", { name: "Нет", exact: true });
+  const functionalList = await pickerList(functional);
+  await expect(functionalList).toBeVisible();
+  const noFunctional = functionalList.getByRole("option", { name: "Нет", exact: true });
   if (test.info().project.name === "phone") await noFunctional.tap();
   else await noFunctional.click();
   await expect(functional).toHaveAttribute("data-value", "-");
   await expect(functional).toHaveValue("Нет");
   await functional.fill("Тарас");
-  const foundFunctional = personModal.getByRole("listbox", { name: "Функциональный руководитель" }).getByRole("option");
+  const foundFunctional = functionalList.getByRole("option");
   await expect(foundFunctional).toHaveCount(1);
   if (test.info().project.name === "phone") await foundFunctional.tap();
   else await foundFunctional.click();
