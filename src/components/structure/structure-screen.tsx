@@ -283,12 +283,10 @@ function PersonOrgModal({
           placeholder="Название подразделения или руководитель"
           emptyText="Такого подразделения нет: проверьте написание"
           clearable={false}
-          inline
         />
         {/* Людей в компании сотни: выбор с поиском (этап 53). Пусто: не менять */}
-        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" inline />
-        {/* Последнее поле перед кнопками: списку в потоке здесь нельзя (см. inline в search-picker.tsx) — он сдвинул
-            бы кнопки, и нажатие на «Сохранить» с раскрытым списком не дошло бы */}
+        <SearchPicker label="Руководитель" id="po-manager" value={manager} onChange={setManager} options={[{ value: "-", label: "Нет руководителя" }, ...others]} placeholder="Не менять" />
+        {/* Предпочитаем открытие вверх, чтобы оставить кнопки под последним полем доступными. */}
         <SearchPicker label="Функциональный руководитель" id="po-functional" side="top" value={functional} onChange={setFunctional} options={[{ value: "-", label: "Нет" }, ...others]} placeholder="Не менять" hint="Видит задачи человека, но не управляет ими" />
         {/* Список последнего поля раскрывается вверх: кнопки доступны и не перекрывают варианты. */}
         <div className="flex justify-end gap-2">
@@ -331,10 +329,10 @@ function UnitModal({ unit, units, people, onClose, onSave }: { unit: UnitView; u
         }}
       >
         <TextInput label="Название" id="un-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" inline />
+        <SearchPicker label="Руководитель" id="un-head" value={head} onChange={setHead} options={people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position }))} placeholder="Не выделен" hint="Очистите поле, если руководитель не выделен" />
         {!head ? <TextInput label="Пометка о руководителе" id="un-note" value={headNote} onChange={(e) => setHeadNote(e.target.value)} placeholder="Например, роль делят CPO, PMM и CRM Lead" /> : null}
-        {/* Поиск, как и у подразделения человека (этап 74): одноимённые отделы различает вторая строка. Список здесь
-            всплывающий, а не в потоке: это последнее поле перед кнопками (см. inline в search-picker.tsx) */}
+        {/* Поиск, как и у подразделения человека (этап 74): одноимённые отделы различает вторая строка. Предпочитаем
+            открытие вверх, чтобы оставить кнопки под последним полем доступными */}
         <SearchPicker
           label="Подразделение выше"
           id="un-parent"

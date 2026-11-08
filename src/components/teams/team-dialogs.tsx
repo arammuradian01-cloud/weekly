@@ -121,7 +121,7 @@ export function CreateTeamModal({
         }}
       >
         <TextInput label="Название команды" id="team-new-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={NAME_MAX} placeholder="Например, Кросс-продажи с кредитами" autoFocus />
-        {direct && all.length ? <SearchPicker id="team-new-leader" label="Руководитель" value={leader} onChange={setLeader} options={leaders} inline placeholder="Вы" hint="Пусто: руководите командой вы. Руководитель ведёт weekly и задачи команды" /> : null}
+        {direct && all.length ? <SearchPicker id="team-new-leader" label="Руководитель" value={leader} onChange={setLeader} options={leaders} placeholder="Вы" hint="Пусто: руководите командой вы. Руководитель ведёт weekly и задачи команды" /> : null}
         {all.length ? <PeoplePicker id="team-new-people" label="Участники, можно добавить и позже" people={options} value={slugs} onChange={setSlugs} /> : null}
         {external ? <p className="text-small text-muted">Из других веток: {people(external)}. Они войдут после согласия своего руководителя.</p> : null}
         {slugs.length > BATCH_MAX ? <p className="text-small text-danger-ink">За раз можно добавить до {BATCH_MAX} человек.</p> : null}
@@ -253,7 +253,7 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
           if (r !== null) onClose();
         }}
       >
-        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} inline placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
+        <SearchPicker id="team-leader" label="Руководитель" value={leader} onChange={setLeader} options={options} placeholder={top ? "Владелец ресурса" : "Не назначен"} hint={top ? "Этой командой руководит владелец ресурса" : "Очистите поле, если руководителя пока нет"} />
         {!top ? (
           <SearchPicker
             id="team-parent"
@@ -263,7 +263,6 @@ export function LeaderModal({ team, all, owners, parents, onClose }: { team: Wee
             options={parentOptions}
             // Команду выше можно сменить, но не убрать: без неё команда встала бы под топ-команду
             clearable={!team.parent}
-            inline
             placeholder={missing ? missing.name : "Не выбрана"}
             hint={
               missing

@@ -1,3 +1,4 @@
+import { pickerList } from "./search-picker";
 import { expect, test, type Browser, type Page } from "@playwright/test";
 import { execSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -85,9 +86,9 @@ test("цель департамента, цель сектора ниже и з�
   await expect(dialog.getByText("Подобрана по тексту задачи")).toBeVisible();
   // Escape в открытом списке целей закрывает список, а не форму с набранным текстом
   await goalBox.click();
-  await expect(dialog.getByRole("listbox", { name: "Цель" })).toBeVisible();
+  await expect((await pickerList(goalBox))).toBeVisible();
   await antonov.keyboard.press("Escape");
-  await expect(dialog.getByRole("listbox", { name: "Цель" })).toHaveCount(0);
+  await expect((await pickerList(goalBox))).toHaveCount(0);
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("Задача")).toHaveValue("Выкатить форму на весь трафик");
   await dialog.getByLabel("Ответственный").selectOption({ label: "Чемоданова Алиса" });

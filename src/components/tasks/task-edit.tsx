@@ -108,7 +108,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
           </>
         ) : null}
         {can.owner ? (
-          // Этап 74: в большой команде ответственного ищут по фамилии. Список в потоке окна, краем окна не обрезан
+          // Этап 74: в большой команде ответственного ищут по фамилии. Список поверх окна, краем окна не обрезан
           <SearchPicker
             label="Ответственный"
             id="te-owner"
@@ -118,7 +118,6 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
             placeholder="Фамилия или имя"
             emptyText="В команде такого человека нет: проверьте написание"
             clearable={false}
-            inline
           />
         ) : null}
         {can.coExecutors ? (
