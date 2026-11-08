@@ -106,23 +106,24 @@ export default async function MyWeekPage() {
         </div>
       ) : null}
 
+      {/* Якоря очереди нужны уже в исходном HTML: скрытая граница ждала скрипта и могла пропустить переход. */}
+      <MyWeek
+        deadlineText={formatMoment(deadline)}
+        timeLeft={formatDuration(Math.max(0, msLeft))}
+        late={msLeft < 0}
+        weekNumber={week.week}
+        report={mine.report}
+        entriesCount={mine.entries.length}
+        team={team}
+        requests={requests}
+        items={inbox.items}
+        snoozed={inbox.snoozed}
+        missed={missed.map((w) => ({ key: w.key, number: w.number, range: `${formatLong(w.start)} - ${formatLong(w.end)}` }))}
+        promiseStats={stats[0]}
+        meetingText={`Встреча ${WEEKDAYS_ACCUSATIVE[meetingSetting.weekday - 1]}, ${formatLong(meetingDay)}`}
+        meetingDay={meetingDay}
+      />
       <Suspense>
-        <MyWeek
-          deadlineText={formatMoment(deadline)}
-          timeLeft={formatDuration(Math.max(0, msLeft))}
-          late={msLeft < 0}
-          weekNumber={week.week}
-          report={mine.report}
-          entriesCount={mine.entries.length}
-          team={team}
-          requests={requests}
-          items={inbox.items}
-          snoozed={inbox.snoozed}
-          missed={missed.map((w) => ({ key: w.key, number: w.number, range: `${formatLong(w.start)} - ${formatLong(w.end)}` }))}
-          promiseStats={stats[0]}
-          meetingText={`Встреча ${WEEKDAYS_ACCUSATIVE[meetingSetting.weekday - 1]}, ${formatLong(meetingDay)}`}
-          meetingDay={meetingDay}
-        />
         <TaskDrawer />
       </Suspense>
       {/* Новости своих продуктов (этап 60): без новостей блока нет */}
