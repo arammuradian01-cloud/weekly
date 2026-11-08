@@ -20,7 +20,8 @@ test("публичный ответ скрывает роли и чужие ко
   const [task] = await sql(`SELECT t.id, t.number FROM tasks t JOIN people p ON p.id = t."ownerId" WHERE p.slug = 'reva' AND t."archivedAt" IS NULL LIMIT 1`);
   expect(task).toBeTruthy();
   await sql(`INSERT INTO task_comments (id, "taskId", "authorId", text) VALUES ('r93-comment', $1, 'r93-history', 'Комментарий прежнего сотрудника 93')`, [task!.id]);
-  await sql(`INSERT INTO audit_log ("actorId", action, entity, "entityId", field) VALUES ('r93-audit', 'task.update', 'task', $1, 'Историческая правка 93')`, [String(task!.number)]);
+  const historyField = `Историческая правка 93 ${test.info().project.name}`;
+  await sql(`INSERT INTO audit_log ("actorId", action, entity, "entityId", field) VALUES ('r93-audit', 'task.update', 'task', $1, $2)`, [String(task!.number), historyField]);
   await enterPersonal(page, "reva");
   const publicResponse = await page.request.get("/people/structure");
   expect(publicResponse.ok()).toBe(true);
@@ -38,8 +39,8 @@ test("публичный ответ скрывает роли и чужие ко
   await expect(page.getByText("Историк Т.", { exact: true })).toBeVisible();
 
   await page.getByRole("radio", { name: /История/ }).click();
-  await expect(page.getByText("Историческая правка 93", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Редактор О\./)).toBeVisible();
+  await expect(page.getByText(historyField, { exact: true })).toBeVisible();
+  await expect(page.getByRole("listitem").filter({ has: page.getByText(historyField, { exact: true }) }).getByText(/Редактор О\./)).toBeVisible();
 
   const owner = await browser.newContext({ baseURL: new URL(page.url()).origin });
   try {
