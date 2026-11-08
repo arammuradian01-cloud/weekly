@@ -242,9 +242,9 @@ test("владелец собирает команду поиском из ра�
   const parentList = await pickerList(parentField);
   // Tab переводит из открытого списка руководителя в следующее поле без сдвига формы.
   await expect(up.getByRole("combobox", { name: "Руководитель" })).toBeFocused();
-  // Первый элемент формы: Shift+Tab остаётся в окне, а Tab с последней кнопки возвращается в поле.
+  // Первый элемент формы: Shift+Tab идёт на последнюю доступную кнопку («Сохранить» пока выключена).
   await up.getByRole("combobox", { name: "Руководитель" }).press("Shift+Tab");
-  await expect(up.getByRole("button", { name: "Сохранить", exact: true })).toBeFocused();
+  await expect(up.getByRole("button", { name: "Отмена", exact: true })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(up.getByRole("combobox", { name: "Руководитель" })).toBeFocused();
   await expect((await pickerList(up.getByRole("combobox", { name: "Руководитель" })))).toBeVisible();

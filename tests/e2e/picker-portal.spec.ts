@@ -73,7 +73,8 @@ test("стрелки прокручивают длинный список без
   await field.press("Tab");
   await expect(field).toHaveValue("Подразделение 18");
   await expect(field).toHaveAttribute("aria-expanded", "false");
-  await field.click();
+  await page.keyboard.press("Shift+Tab");
+  await expect(field).toBeFocused();
   await field.press("Escape");
   await expect(form).toBeVisible();
   await expect(field).toHaveValue("Подразделение 18");
