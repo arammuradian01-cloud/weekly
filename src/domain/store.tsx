@@ -7,12 +7,16 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { mergeRecent } from "./merge-tasks";
-import { peopleOf, personOf } from "./people";
 import type { Person, PersonSlug, Task } from "./types";
 import type { IsoDate } from "./dates";
 import { addCommentAction, createTaskAction, undoAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
 import type { NewTaskInput } from "@/lib/tasks/service";
-import { applyRegistry, type RegistrySnapshot } from "./registry";
+import type { DirectoryPerson, RegistrySnapshot } from "./registry";
+import { dtoPersonLabels } from "./person-labels";
+import { RegistryContext } from "./registry-context";
+import { createRegistryLookup } from "./registry-lookup";
+import { applyDictionaries } from "./dictionaries";
+import { setStaleDays } from "@/lib/tasks/rules";
 import { ALL_TEAMS, TOP_TEAM } from "./teams";
 
 type Toast = { id: number; text: string; undoToken?: string; onUndo?: () => void; tone?: "error" };
@@ -50,7 +54,7 @@ type Store = {
   leads: string[];
   team: CurrentTeamView;
   /** Люди выбранной команды (руководитель и участники, включённые, без наблюдателей): ответственные, сводки, разбор */
-  teamPeople: Person[];
+  teamPeople: DirectoryPerson[];
   /** Ответ сервера по задаче: обновить её на экране, показать тост с отменой или ошибку. true, если сохранилось */
   applyTaskResult: (result: TaskActionResult, toastText: string) => boolean;
   /** Выполнить действие с задачей на сервере и применить ответ */
@@ -72,7 +76,7 @@ const StoreContext = createContext<Store | null>(null);
 
 export function PrototypeProvider({
   today,
-  me,
+  currentPerson,
   manageRole,
   observer = false,
   initialTasks,
@@ -84,7 +88,7 @@ export function PrototypeProvider({
   children,
 }: {
   today: string;
-  me: PersonSlug;
+  currentPerson: Person;
   /** Люди и справочники из базы: подменяют стартовые значения до отрисовки страниц */
   registry: RegistrySnapshot;
   manageRole: "OWNER" | "ADMIN" | null;
@@ -99,9 +103,12 @@ export function PrototypeProvider({
   viewing?: boolean;
   children: React.ReactNode;
 }) {
-  applyRegistry(registry);
+  applyDictionaries(registry.dicts);
+  setStaleDays(registry.staleDays);
   const router = useRouter();
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const lookup = useMemo(() => createRegistryLookup(registry, dtoPersonLabels(tasks)), [registry, tasks]);
+  const { peopleOf, personOf } = lookup;
   const [toast, setToast] = useState<Toast | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seq = useRef(0);
@@ -176,9 +183,8 @@ export function PrototypeProvider({
     [router],
   );
 
-  // Справочник людей меняется на месте (registry), его версия и есть сигнал пересчитать список
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const teamPeople = useMemo(() => peopleOf(team.people), [team.people, registry.version]);
+  // Список людей принадлежит текущему снимку, без общего состояния между запросами
+  const teamPeople = useMemo(() => peopleOf(team.people), [team.people, peopleOf]);
   const data = useMemo<AppData>(
     () => ({
       today,
@@ -197,7 +203,7 @@ export function PrototypeProvider({
   const store = useMemo<Store>(() => {
     return {
       data,
-      me: personOf(me),
+      me: currentPerson,
       manage: manageRole !== null,
       manageRole,
       observer,
@@ -266,9 +272,9 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, me, manageRole, observer, limited, viewing, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks]);
+  }, [data, currentPerson, manageRole, observer, limited, viewing, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks, personOf]);
 
-  return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+  return <RegistryContext.Provider value={lookup}><StoreContext.Provider value={store}>{children}</StoreContext.Provider></RegistryContext.Provider>;
 }
 
 export function usePrototype(): Store {

@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Прогноз до конца месяца (этап 24, модуль М9). Лидер раз в неделю ставит прогноз по своим линиям и метрикам
 // и называет причину отклонения от бюджета. Строка на неделю хранится как есть: история по неделям и отклонение
 // от прошлого прогноза получаются сами. Видят прогноз те же, кто видит weekly человека
@@ -28,7 +29,7 @@ const metricCode = (db: string): ForecastMetricCode => FORECAST_METRICS.find((m)
 const reasonDb = (code: string | null) => (code ? (FORECAST_REASONS.find((r) => r.code === code)?.db ?? fail("Нет такой причины")) : null);
 const reasonCode = (db: string | null): ForecastReasonCode | null => (db ? (FORECAST_REASONS.find((r) => r.db === db)?.code ?? null) : null);
 
-const include = { week: { select: { start: true } }, author: { select: { slug: true } }, direction: { select: { code: true, label: true } } } satisfies Prisma.ForecastInclude;
+const include = { week: { select: { start: true } }, author: { select: { slug: true, fullName: true, shortName: true } }, direction: { select: { code: true, label: true } } } satisfies Prisma.ForecastInclude;
 type Row = Prisma.ForecastGetPayload<{ include: typeof include }>;
 
 function toView(row: Row, previous: Row | null): ForecastLineView {
@@ -36,6 +37,7 @@ function toView(row: Row, previous: Row | null): ForecastLineView {
   const week = isoFromDbDate(row.week.start) as WeekKey;
   const prev = previous ? { week: isoFromDbDate(previous.week.start) as WeekKey, weekNumber: weekNumberOf(isoFromDbDate(previous.week.start)), forecast: previous.forecast } : null;
   return {
+    peopleLabels: personLabelsOf(row.author),
     id: row.id,
     week,
     weekNumber: weekNumberOf(week),
@@ -205,7 +207,7 @@ export async function forecastHistory(audience: Pick<WeekAudience, "personIds" |
     const idx = keys.indexOf(week);
     if (idx < 0) continue;
     const metric = metricCode(r.metric);
-    const row = out.get(k) ?? { author: r.author.slug as PersonSlug, direction: r.direction.code, directionLabel: r.direction.label, metric, metricLabel: metricLabel(metric), unit: FORECAST_METRICS.find((m) => m.code === metric)?.unit ?? "mln", month: r.month, budget: null, values: keys.map(() => null) };
+    const row = out.get(k) ?? { peopleLabels: personLabelsOf(r.author), author: r.author.slug as PersonSlug, direction: r.direction.code, directionLabel: r.direction.label, metric, metricLabel: metricLabel(metric), unit: FORECAST_METRICS.find((m) => m.code === metric)?.unit ?? "mln", month: r.month, budget: null, values: keys.map(() => null) };
     row.values[idx] = r.forecast;
     row.budget = r.budget ?? row.budget;
     out.set(k, row);

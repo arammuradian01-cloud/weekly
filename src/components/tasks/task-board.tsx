@@ -15,7 +15,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { usePrototype } from "@/domain/store";
-import { ownerName } from "@/domain/people";
+
 import { STATUSES, type StatusCode } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
 import { defaultOrder, isOverdue, overdueDays, permissions } from "@/lib/tasks/rules";
@@ -26,8 +26,10 @@ import { GoalTag, OverdueNote, PriorityTag, StateDot, StatusBadge } from "@/comp
 import { Chip } from "@/components/ui/primitives";
 import { useTaskActions } from "./task-actions";
 import { useOpenTask } from "./task-drawer";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
-function CardBody({ task, today }: { task: Task; today: string }) {
+const CardBody = withRegistryLabels(function CardBody({ task, today }: { task: Task; today: string }) {
+  const { ownerName } = useRegistry();
   const overdue = isOverdue(task, today);
   return (
     <>
@@ -53,7 +55,7 @@ function CardBody({ task, today }: { task: Task; today: string }) {
       {task.goal ? <GoalTag goal={task.goal} link={false} className="mt-2" /> : null}
     </>
   );
-}
+});
 
 function BoardCard({ task, today, onOpen, canMove }: { task: Task; today: string; onOpen: () => void; canMove: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.number, disabled: !canMove });

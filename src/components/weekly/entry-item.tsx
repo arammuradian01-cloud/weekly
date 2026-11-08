@@ -9,11 +9,12 @@ import { useRunWeekly } from "./use-weekly";
 import { Coins, CornerDownRight, ExternalLink, HandHelping, Hash, Star } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { blockLabel, directionLabel, entryTypeLabel, type EntryTypeCode } from "@/domain/dictionaries";
-import { authorName } from "@/domain/people";
+
 import type { WeeklyEntry } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { MentionText } from "@/components/discuss/mention-text";
 import { EntryDiscussion } from "@/components/discuss/entry-discussion";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 // Тип записи тегом дизайн-системы (core/Tag.jsx): результат зелёный, событие голубое, риск жёлтый, план сиреневый
 const TYPE_TAG: Record<EntryTypeCode, string> = {
@@ -65,7 +66,7 @@ function Line({ icon: Icon, label, labels, children, className }: { icon: typeof
  * В ленте запись компактная: тип и блок одной мелкой строкой, заголовок, текст, факт и «дальше» строками с иконкой.
  * Крупно (встреча, страница записи) подписи полей остаются
  */
-export function EntryItem({
+export const EntryItem = withRegistryLabels(function EntryItem({
   entry,
   showAuthor,
   large,
@@ -85,6 +86,7 @@ export function EntryItem({
   /** Компактно (этап 43): лента и сдача weekly. Подписи полей иконками, реакция и обсуждение иконками */
   compact?: boolean;
 }) {
+  const { authorName } = useRegistry();
   const { manage, notify } = usePrototype();
   const template = useContext(BlockTemplateContext);
   const section = template ? entryBlockKey({ ...entry, section: entry.section ?? null }, template.map((b) => b.key)) : null;
@@ -170,4 +172,4 @@ export function EntryItem({
       {discussion && !demo ? <EntryDiscussion entry={entry} large={large} open={discussion === "open"} compact={compact && !large && discussion !== "open"} /> : null}
     </article>
   );
-}
+});

@@ -4,8 +4,8 @@ import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { allPeople } from "@/domain/people";
-import { ALL_TEAMS, TOP_TEAM, teamOf, teamPeople } from "@/domain/teams";
+
+import { ALL_TEAMS, TOP_TEAM, teamPeople } from "@/domain/teams";
 import { addDays } from "@/domain/dates";
 import { dictOptions, PRIORITIES, SOURCES, type DirectionCode, type PriorityCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner } from "@/domain/types";
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { openCommandPalette } from "@/components/shell/command-palette";
 import { REPEAT_KINDS, type RepeatKindCode } from "@/lib/tasks/repeat";
 import { NewTaskGoal } from "@/components/tasks/new-task-goal";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const OPEN_EVENT = "weekly:new-task";
 /** Задачу поставили по записи weekly: форма записи показывает её номер, человек остаётся на экране сдачи */
@@ -48,7 +49,8 @@ function isTyping(target: EventTarget | null): boolean {
 /** «Встреча», если её не скрыли в справочнике, иначе первый видимый источник */
 const defaultSource = (): SourceCode => (SOURCES.some((s) => s.code === "meeting") ? "meeting" : (SOURCES[0]?.code ?? "meeting"));
 
-export function GlobalHotkeys() {
+export const GlobalHotkeys = withRegistryLabels(function GlobalHotkeys() {
+  const { teamOf, allPeople } = useRegistry();
   const { data, me, manage, observer, createTask, team, leads, teamPeople: selectedPeople } = usePrototype();
   // Куда можно поставить задачу: свои команды, команды, которыми руковожу, а в режиме управления любая видимая
   const teamChoices = team.options.filter((o) => manage || o.relation === "member" || o.relation === "leader" || o.relation === "below");
@@ -158,7 +160,7 @@ export function GlobalHotkeys() {
   // Ответственный из людей команды задачи. У команды не из снимка (старый снимок): люди выбранной команды
   const target = teamOf(taskTeam);
   const pool = target
-    ? allPeople().filter((p) => p.active && p.role !== "OBSERVER" && (teamPeople(target).includes(p.slug) || p.slug === me.slug))
+    ? allPeople().filter((p) => p.selectable && (teamPeople(target).includes(p.slug) || p.slug === me.slug))
     : selectedPeople;
   const ownerOptions = [
     ...pool.map((p) => ({ value: p.slug, label: p.slug === me.slug ? `${p.fullName} (я)` : p.fullName })),
@@ -239,4 +241,4 @@ export function GlobalHotkeys() {
       </form>
     </Modal>
   );
-}
+});

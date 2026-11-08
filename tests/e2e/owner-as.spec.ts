@@ -204,11 +204,12 @@ test("общий логин находит поиском человека вн�
   await tapTarget(page, page.getByRole("button", { name: "Войти своим логином" }));
   await shot(page, "choose");
   const search = page.getByLabel("Поиск по ФИО, должности или подразделению");
-  // Человека с личным паролем поиск не находит. Владелец без личного пароля в списке есть, с подписью роли (поправка 23.10)
+  // Человека с личным паролем поиск не находит. Публичный список не раскрывает роли доступа (этап 93).
   await search.fill("логинова");
   await expect(page.getByText("Никого не нашли: проверьте написание")).toBeVisible();
   await search.fill("мурадян");
-  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toContainText("Владелец");
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Мурадян Арам/ })).not.toContainText("Владелец");
   await search.fill("рева");
   await expect(page.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
 
@@ -230,7 +231,7 @@ test("общий логин находит поиском человека вн�
   await expect(page.getByRole("button", { name: /Чемоданова Алиса/ })).toContainText("Сейчас");
 });
 
-test("владелец без личного пароля выбирается по общему логину с подписью роли, но без режима управления; с паролем пропадает", async ({ page, browser }) => {
+test("владелец без личного пароля выбирается по общему логину без публичной роли и режима управления; с паролем пропадает", async ({ page, browser }) => {
   await page.goto("/login");
   await page.getByLabel("Логин").fill("team");
   await page.getByLabel("Пароль").fill(E2E_PASSWORDS.team);

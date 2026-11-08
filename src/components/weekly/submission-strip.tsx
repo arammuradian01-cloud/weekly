@@ -1,12 +1,13 @@
 "use client";
 
-import { PEOPLE } from "@/domain/people";
+
 import type { PersonWeekly } from "@/domain/types";
 import type { WeeklyStateCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
 import { substituteText } from "./absence";
 import { avatarTone } from "@/components/ui/primitives";
 import { initialsOf } from "@/components/people/person-card";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 // Точка состояния на аватаре, как в дизайн-системе (weekly/SubmissionBar.jsx)
 const DOT: Record<WeeklyStateCode, string> = {
@@ -24,7 +25,8 @@ const WORD: Record<WeeklyStateCode, string> = {
 };
 
 /** Полоса сдачи: кто сдал, кто в черновике, у кого weekly не начат. Кого нет на неделе, виден серым с замещающим и в счёт не входит */
-export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[]; className?: string }) {
+export const SubmissionStrip = withRegistryLabels(function SubmissionStrip({ reports, className }: { reports: PersonWeekly[]; className?: string }) {
+  const { PEOPLE, personOf } = useRegistry();
   // Люди в порядке команды, но только те, кого сервер считает участниками weekly (без выключенных и наблюдателей)
   // Кто сдаёт по желанию (специалисты, от кого weekly не ждут, этап 15), виден, только если уже сдал, и в счёт не входит
   const sent = (r: PersonWeekly) => r.state === "submitted" || r.state === "late";
@@ -50,7 +52,7 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
           const away = absent && state !== "submitted" && state !== "late";
           // Слово спрятано только у сдавших вовремя: опоздание, черновик и «не начат» видны словом, не одной точкой
           const sentNow = state === "submitted";
-          const word = away ? `нет на неделе, ${substituteText(absent.substitute)}` : `${WORD[state]}${optional ? " по желанию" : ""}`;
+          const word = away ? `нет на неделе, ${substituteText(absent.substitute, personOf)}` : `${WORD[state]}${optional ? " по желанию" : ""}`;
           return (
             // Этап 50: не начавшие и отсутствующие приглушены серой точкой и цветом имени, а не прозрачностью строки:
             // слово «не начат» при 70% прозрачности падало ниже 3:1 на белом, инициалы ниже 4,5:1
@@ -67,4 +69,4 @@ export function SubmissionStrip({ reports, className }: { reports: PersonWeekly[
       </ul>
     </section>
   );
-}
+});

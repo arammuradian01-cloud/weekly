@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRightLeft, Link2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import { formatShort } from "@/domain/dates";
 import { statusOf } from "@/domain/dictionaries";
 import type { PersonSlug, Task } from "@/domain/types";
@@ -21,17 +21,20 @@ import { PersonSelect } from "@/components/requests/request-parts";
 import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
 import { useTaskPermissions } from "./task-fields";
-import { teamOf, teamPeople } from "@/domain/teams";
+import { teamPeople } from "@/domain/teams";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
 /** Люди команды задачи: им ответственный может передать задачу. Нет данных о команде: выбор не сужаем */
-function teamPeopleOf(id: string): PersonSlug[] | undefined {
+function teamPeopleOf(id: string, teamOf: RegistryLookup["teamOf"]): PersonSlug[] | undefined {
   const team = teamOf(id);
   return team ? teamPeople(team) : undefined;
 }
 
 type Links = { waitsFor: TaskLinkView[]; blocks: TaskLinkView[]; canEdit: boolean };
 
-function LinkRow({ t, onRemove, kind }: { t: TaskLinkView; onRemove?: () => void; kind: "waits" | "blocks" }) {
+const LinkRow = withRegistryLabels(function LinkRow({ t, onRemove, kind }: { t: TaskLinkView; onRemove?: () => void; kind: "waits" | "blocks" }) {
+  const { compactName } = useRegistry();
   const closed = isClosed(t);
   return (
     <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
@@ -63,7 +66,7 @@ function LinkRow({ t, onRemove, kind }: { t: TaskLinkView; onRemove?: () => void
       ) : null}
     </li>
   );
-}
+});
 
 export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLevel?: "h2" | "h3" }) {
   const { applyTaskResult, notify } = usePrototype();
@@ -179,7 +182,8 @@ export function TaskWaits({ task, headingLevel = "h3" }: { task: Task; headingLe
 }
 
 /** «Передать» (этап 21): новый ответственный и комментарий, прежний остаётся соисполнителем */
-export function HandOverButton({ task }: { task: Task }) {
+export const HandOverButton = withRegistryLabels(function HandOverButton({ task }: { task: Task }) {
+  const { compactName, teamOf } = useRegistry();
   const { applyTaskResult, me, manage, limited } = usePrototype();
   const can = useTaskPermissions(task);
   const [open, setOpen] = useState(false);
@@ -229,7 +233,7 @@ export function HandOverButton({ task }: { task: Task }) {
             value={to}
             onChange={setTo}
             exclude={(task.owner === "all" ? me.slug : task.owner) as PersonSlug}
-            only={manage ? undefined : teamPeopleOf(task.team)}
+            only={manage ? undefined : teamPeopleOf(task.team, teamOf)}
           />
           <TextArea label="Почему передаёте" id={`ho-why-${task.number}`} value={comment} onChange={(e) => setComment(e.target.value)} counter={{ value: comment.length, max: 500 }} />
           <FormError message={error ?? undefined} />
@@ -245,4 +249,4 @@ export function HandOverButton({ task }: { task: Task }) {
       </Modal>
     </>
   );
-}
+});

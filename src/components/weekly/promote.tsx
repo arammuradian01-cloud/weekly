@@ -6,13 +6,14 @@
 import { useState } from "react";
 import { ArrowUpFromLine, Check } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import type { PersonSlug, WeeklyEntry } from "@/domain/types";
 import { promoteEntryAction, unpromoteEntryAction } from "@/app/(app)/weekly/actions";
 import { Button } from "@/components/ui/button";
 import { TextInput } from "@/components/ui/primitives";
 import { cn } from "@/lib/cn";
 import { useRunWeekly } from "./use-weekly";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const NOTE_MAX = 150;
 
@@ -95,10 +96,11 @@ export function PromoteControl({ entry, promoteFrom, closed }: { entry: WeeklyEn
 }
 
 /** Подпись под записью: кто уже поднял её наверх */
-export function PromotedNote({ entry, className }: { entry: WeeklyEntry; className?: string }) {
+export const PromotedNote = withRegistryLabels(function PromotedNote({ entry, className }: { entry: WeeklyEntry; className?: string }) {
+  const { compactName } = useRegistry();
   const { me } = usePrototype();
   // Свою отметку человек видит на кнопке «В вашем weekly», здесь только чужие
   const list = (entry.promoted ?? []).filter((p) => p.by !== me.slug);
   if (!list.length) return null;
   return <p className={cn("text-caption text-muted", className)}>Подняли наверх: {list.map((p) => compactName(p.by)).join(", ")}</p>;
-}
+});

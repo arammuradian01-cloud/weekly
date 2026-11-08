@@ -1,18 +1,20 @@
 "use client";
 
 import { useMemo } from "react";
-import { allPeople } from "@/domain/people";
+
 import { findMentionSpans, type MentionPerson } from "@/lib/discuss/mentions";
+import { useRegistry } from "@/domain/registry-context";
 
 /** Люди для упоминаний на экране: все включённые, как на сервере. Вместо id слаг */
 export function useMentionPeople(): (MentionPerson & { slug: string })[] {
+  const { allPeople } = useRegistry();
   return useMemo(
     () =>
       allPeople()
-        .filter((p) => p.active)
+        .filter((p) => p.active !== false)
         .map((p) => ({ id: p.slug, slug: p.slug, fullName: p.fullName, shortName: p.shortName })),
-    // Состав людей меняется только с новой страницей
-    [],
+    // Имена обновляются вместе со снимком текущего пользователя
+    [allPeople],
   );
 }
 

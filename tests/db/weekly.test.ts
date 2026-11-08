@@ -267,7 +267,7 @@ describe("нет на неделе (этап 9)", () => {
       [`${W40}/reva`, "на месте", "нет, замещает Головкин Владислав"],
       [`${W40}/reva`, "нет, замещает Головкин Владислав", "нет, без замещающего"],
     ]);
-    expect(await svc.upcomingAbsences(reva.personId, NOW)).toEqual([{ week: W40, number: 40, start: W40, end: "2026-10-04", substitute: null }]);
+    expect(await svc.upcomingAbsences(reva.personId, NOW)).toEqual([{ peopleLabels: [], week: W40, number: 40, start: W40, end: "2026-10-04", substitute: null }]);
     await svc.removeAbsence(reva, "reva", W40, NOW);
     expect((await svc.getWeekView(W40, NOW)).reports.find((r) => r.author === "reva")?.absent).toBeUndefined();
     expect(await prisma.auditLog.count({ where: { action: "weekly.absence.remove" } })).toBe(1);

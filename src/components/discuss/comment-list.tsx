@@ -3,7 +3,7 @@
 import { cn } from "@/lib/cn";
 import { useEffect, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import { compactName, initials } from "@/domain/people";
+
 import { formatShort } from "@/domain/dates";
 import type { Comment, PersonSlug, ReactionCode } from "@/domain/types";
 import { Avatar } from "@/components/ui/primitives";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { MentionArea } from "./mention-area";
 import { MentionText } from "./mention-text";
 import { CommentReactions } from "./reactions";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Свой комментарий правят 15 минут (этап 20). Сервер проверяет то же самое */
 const EDIT_WINDOW_MS = 15 * 60_000;
@@ -33,7 +34,7 @@ function useNow(): number | null {
 const action = "inline-flex min-h-7 items-center gap-1 rounded-md px-1.5 text-caption font-medium text-muted hover:bg-field hover:text-ink";
 
 /** Комментарии: автор, время, пометка «изменено», упоминания, правка своего в первые 15 минут, удаление, реакции */
-export function CommentList({
+export const CommentList = withRegistryLabels(function CommentList({
   idPrefix,
   comments,
   me,
@@ -52,6 +53,7 @@ export function CommentList({
   onDelete: (id: string) => Promise<boolean>;
   onReact: (id: string, code: ReactionCode, question?: string | null) => Promise<boolean>;
 }) {
+  const { initials, compactName } = useRegistry();
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -150,4 +152,4 @@ export function CommentList({
       })}
     </ol>
   );
-}
+});

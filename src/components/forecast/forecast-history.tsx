@@ -1,11 +1,15 @@
+"use client";
+
 // История прогноза по неделям (этап 24): строка на линию, колонки недели, отклонение последнего от предыдущего
 
 import type { ForecastHistory } from "@/lib/forecast/types";
 import { formatForecast, formatPct, deltaPct, monthLabel } from "@/lib/forecast/codes";
-import { compactName } from "@/domain/people";
-import { cn } from "@/lib/cn";
 
-export function ForecastHistoryTable({ history, showAuthor = true }: { history: ForecastHistory; showAuthor?: boolean }) {
+import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+
+export const ForecastHistoryTable = withRegistryLabels(function ForecastHistoryTable({ history, showAuthor = true }: { history: ForecastHistory; showAuthor?: boolean }) {
+  const { compactName } = useRegistry();
   if (!history.rows.length) return <p className="text-body text-muted">Прогнозов за эти недели пока нет.</p>;
   // Показываем только недели, где хоть у кого-то есть цифра, но не меньше четырёх последних
   const used = history.weeks.map((_, i) => history.rows.some((r) => r.values[i] !== null));
@@ -57,4 +61,4 @@ export function ForecastHistoryTable({ history, showAuthor = true }: { history: 
       </table>
     </div>
   );
-}
+});

@@ -6,7 +6,7 @@ import { flushSync } from "react-dom";
 import { Archive, ArchiveRestore, CalendarClock, Check, Link2, MessageSquare, MoreHorizontal, Pencil, History as HistoryIcon } from "lucide-react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { usePrototype } from "@/domain/store";
-import { authorName, compactName, ownerName, personOf } from "@/domain/people";
+
 import { directionLabel, sourceLabel } from "@/domain/dictionaries";
 import { formatAgo, formatLong, formatShort, plural } from "@/domain/dates";
 import { isOverdue, isStale, overdueDays } from "@/domain/rules";
@@ -15,7 +15,7 @@ import { archiveTaskAction, deleteCommentAction, editCommentAction, getTaskActio
 import { CommentList } from "@/components/discuss/comment-list";
 import { MentionArea } from "@/components/discuss/mention-area";
 import { markSeenAction } from "@/app/actions/inbox";
-import { teamName } from "@/domain/teams";
+
 import { cn } from "@/lib/cn";
 import { isClosed } from "@/lib/tasks/rules";
 import { Button } from "@/components/ui/button";
@@ -30,14 +30,16 @@ import { TaskChecklist, TaskRepeat } from "./task-checklist";
 import { TaskRequests } from "@/components/requests/task-requests";
 import { TaskWaits } from "./task-waits";
 import { TaskGoal } from "./task-goal";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
-function personInitials(slug: string) {
+function personInitials(slug: string, personOf: RegistryLookup["personOf"]) {
   const p = personOf(slug as Parameters<typeof personOf>[0]);
   const [last, first] = p.fullName.split(" ");
   return `${first!.charAt(0)}${last!.charAt(0)}`;
 }
 
-export function TaskCard({
+export const TaskCard = withRegistryLabels(function TaskCard({
   task: listed,
   standalone,
   brief,
@@ -48,6 +50,7 @@ export function TaskCard({
       потому что карточку открыл ведущий, а не сам человек */
   brief?: boolean;
 }) {
+  const { ownerName, compactName, teamName, personOf, authorName } = useRegistry();
   const { data, me, addComment, runTask, notify, team, leads, manage, observer, viewing } = usePrototype();
   // В списке задача могла прийти без текста комментариев: дозагружаем её целиком (этап 14)
   const [loaded, setLoaded] = useState<Task | null>(null);
@@ -119,7 +122,7 @@ export function TaskCard({
     <dl className={cn("grid gap-x-6 gap-y-5", standalone ? "grid-cols-1" : "sm:grid-cols-2")}>
       <Meta label="Ответственный">
         <span className="inline-flex items-center gap-2">
-          {task.owner !== "all" ? <Avatar text={personInitials(task.owner)} size="sm" /> : null}
+          {task.owner !== "all" ? <Avatar text={personInitials(task.owner, personOf)} size="sm" /> : null}
           {ownerName(task.owner)}
         </span>
       </Meta>
@@ -432,17 +435,7 @@ export function TaskCard({
             {history === null && !historyError ? <li className="text-small text-muted">Загружаю историю…</li> : null}
             {history?.length === 0 ? <li className="text-small text-muted">Изменений пока нет.</li> : null}
             {(history ?? []).map((h) => (
-              <li key={h.id} className="text-small">
-                <p className="text-caption text-muted">
-                  {formatShort(h.at)}
-                  {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by as Parameters<typeof compactName>[0])}
-                </p>
-                <p className="text-ink">
-                  <span className="font-medium">{h.field}</span>
-                  {h.before ? <span className="text-muted">: было «{h.before}»</span> : null}
-                  {h.after ? <span>{h.before ? ", стало" : ":"} «{h.after}»</span> : null}
-                </p>
-              </li>
+              <HistoryRow key={h.id} h={h} />
             ))}
           </ol>
         )}
@@ -486,10 +479,10 @@ export function TaskCard({
       <TaskEditModal task={task} open={editing} onOpenChange={setEditing} />
     </>
   );
-}
+});
 
 /** Команда задачи и перенос в другую команду: режим управления или руководитель обеих команд (этап 14) */
-function TaskTeam({
+const TaskTeam = withRegistryLabels(function TaskTeam({
   task,
   options,
   movable,
@@ -504,6 +497,7 @@ function TaskTeam({
   manage: boolean;
   onMove: (to: string) => void;
 }) {
+  const { teamName } = useRegistry();
   const targets = options.filter((o) => o.id !== task.team && (manage || leads.includes(o.id)));
   if (!movable || !targets.length) return <>{teamName(task.team)}</>;
   return (
@@ -527,7 +521,7 @@ function TaskTeam({
       </select>
     </span>
   );
-}
+});
 
 /** Поле «Начало» в карточке задачи (этап 68): дата, «Изменить» и «Убрать»; без начала кнопка «Задать». Не позже срока */
 function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; onSave: (start: string | null) => Promise<boolean> }) {
@@ -619,3 +613,20 @@ function TaskStart({ task, editable, onSave }: { task: Task; editable: boolean; 
     </span>
   );
 }
+
+const HistoryRow = withRegistryLabels(function HistoryRow({ h }: { h: HistoryItem }) {
+  const { compactName } = useRegistry();
+  return (
+    <li className="text-small">
+      <p className="text-caption text-muted">
+        {formatShort(h.at)}
+        {h.time ? `, ${h.time}` : ""}, {h.by === "system" ? "из таблицы" : compactName(h.by as Parameters<typeof compactName>[0])}
+      </p>
+      <p className="text-ink">
+        <span className="font-medium">{h.field}</span>
+        {h.before ? <span className="text-muted">: было «{h.before}»</span> : null}
+        {h.after ? <span>{h.before ? ", стало" : ":"} «{h.after}»</span> : null}
+      </p>
+    </li>
+  );
+});

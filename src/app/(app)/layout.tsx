@@ -66,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Задачи из базы (этап 3). Архив виден только владельцу в режиме управления
   const [tasks, registry, lagging, banner, owner, inbox, slugs, marketAccess, leaderReport] = await Promise.all([
     listTasks({ archived: ctx.management?.role === "OWNER", reader, team: team.id && team.id !== ALL_TEAMS ? team.id : undefined }),
-    loadRegistry(),
+    loadRegistry({ management: !!ctx.management, visibleTeams: team.scope.visible }),
     // Отставание таблицы видят только в режиме управления: остальным оно ничего не говорит
     ctx.management ? syncLagging() : Promise.resolve(false),
     getStandBanner(),
@@ -84,6 +84,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     market: canSeeMarketWith({ slug: ctx.person.slug, role: ctx.person.role, active: ctx.person.active, via: ctx.via, management: ctx.management?.role ?? null }, marketAccess),
     leaderReport,
   };
+  const ownDirection = ctx.person.defaultDirectionId ? await prisma.dictionaryItem.findUnique({ where: { id: ctx.person.defaultDirectionId }, select: { code: true } }) : null;
   const teamView = { id: team.id, name: team.name, people: slugs.map((p) => p.slug), options: team.options };
   // «Смотреть как» (этап 63): выбор открывает владелец при личном входе в режиме управления, во время просмотра плашка
   const viewAs = ctx.viewAs
@@ -118,7 +119,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <PrototypeProvider
       today={today}
-      me={ctx.person.slug}
+      currentPerson={{ slug: ctx.person.slug, fullName: ctx.person.fullName, shortName: ctx.person.shortName, role: ctx.person.role, zone: ctx.person.zone, direction: ownDirection?.code ?? "department" }}
       manageRole={ctx.management?.role ?? null}
       observer={ctx.person.role === "OBSERVER"}
       limited={subject.limited}

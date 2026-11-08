@@ -9,7 +9,7 @@ import { FileInput } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { addDays } from "@/domain/dates";
 import { dictOptions, type DirectionCode } from "@/domain/dictionaries";
-import { allPeople } from "@/domain/people";
+
 import type { PersonSlug } from "@/domain/types";
 import type { MeetingView } from "@/domain/meeting";
 import { intakeAction } from "@/app/(app)/meeting/actions";
@@ -20,18 +20,21 @@ import { Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
 import { PersonSelect, DueField } from "@/components/requests/request-parts";
+import type { RegistryLookup } from "@/domain/registry-lookup";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Row = NotionCandidate & { on: boolean; owner: string; dueDate: string; direction: string };
 
 /** Кто имелся в виду: имя или фамилия из текста к человеку команды */
-function guessOwner(who: string | undefined, fallback: string): string {
+function guessOwner(who: string | undefined, fallback: string, allPeople: RegistryLookup["allPeople"]): string {
   if (!who) return fallback;
   const q = who.toLowerCase();
   const hit = allPeople().find((p) => p.fullName.toLowerCase().split(/\s+/).some((w) => w.startsWith(q.split(/\s+/)[0]!)));
   return hit?.slug ?? fallback;
 }
 
-export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone: (m: MeetingView) => void }) {
+export const NotionIntake = withRegistryLabels(function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone: (m: MeetingView) => void }) {
+  const { allPeople } = useRegistry();
   const { data, me, notify } = usePrototype();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
@@ -47,7 +50,7 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
     const found = parseNotion(text);
     if (!found.length) return setError("В тексте не нашлось строк, похожих на задачи или решения. Вставьте список из разбора встречи");
     setError(null);
-    setRows(found.map((c) => ({ ...c, on: true, owner: guessOwner(c.who, me.slug), dueDate: defaultDue, direction: me.direction ?? defaultDirection })));
+    setRows(found.map((c) => ({ ...c, on: true, owner: guessOwner(c.who, me.slug, allPeople), dueDate: defaultDue, direction: me.direction ?? defaultDirection })));
   };
   const update = (key: string, patch: Partial<Row>) => setRows((prev) => prev?.map((r) => (r.key === key ? { ...r, ...patch } : r)) ?? prev);
 
@@ -136,4 +139,4 @@ export function NotionIntake({ meeting, onDone }: { meeting: MeetingView; onDone
       </Modal>
     </>
   );
-}
+});

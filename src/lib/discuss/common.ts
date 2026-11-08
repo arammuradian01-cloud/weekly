@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Общее для обсуждений (этап 20): реакции, правка комментариев, люди для упоминаний.
 // Модуль не зависит от сервисов задач и weekly: его используют оба.
 
@@ -21,11 +22,12 @@ export function isReactionCode(value: unknown): value is ReactionCode {
   return typeof value === "string" && value in REACTION_KIND;
 }
 
-export const reactionInclude = { person: { select: { slug: true } } } satisfies Prisma.ReactionInclude;
+export const reactionInclude = { person: { select: { slug: true, fullName: true, shortName: true } } } satisfies Prisma.ReactionInclude;
 type ReactionRow = Prisma.ReactionGetPayload<{ include: typeof reactionInclude }>;
 
 export function reactionDto(r: ReactionRow): ReactionView {
   return {
+    peopleLabels: personLabelsOf(r),
     id: r.id,
     kind: REACTION_CODE[r.kind],
     by: r.person.slug as PersonSlug,
@@ -37,6 +39,7 @@ export function reactionDto(r: ReactionRow): ReactionView {
 /** Комментарий для экрана: дата и время по Москве, момент для окна правки, пометка «изменено» */
 export function commentDto(c: { id: string; text: string; at: Date; editedAt: Date | null; author: { slug: string }; reactions?: ReactionRow[] }): Comment {
   return {
+    peopleLabels: personLabelsOf(c),
     id: c.id,
     author: c.author.slug as PersonSlug,
     text: c.text,

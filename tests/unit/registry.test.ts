@@ -8,7 +8,7 @@ import { isStale, staleDays } from "@/lib/tasks/rules";
 import { slugify, uniqueSlug } from "@/lib/translit";
 
 const base = {
-  people: PEOPLE.map((p) => ({ ...p, active: true })),
+  people: PEOPLE.map((p) => ({ ...p, active: true, selectable: true })),
   dicts: {
     DIRECTION: DIRECTIONS.map((d) => ({ ...d, active: true })),
     WEEKLY_BLOCK: BLOCKS.map((d) => ({ ...d, active: true })),
@@ -27,9 +27,9 @@ describe("снимок людей и справочников", () => {
       staleDays: 14,
       people: [
         ...base.people.filter((p) => p.slug !== "afanasyev"),
-        { slug: "afanasyev", fullName: "Афанасьев Павел", shortName: "Павел", role: "LEADER", zone: "", direction: "partners", active: false },
-        { slug: "novikova", fullName: "Новикова Анна", shortName: "Анна", role: "LEADER", zone: "Ипотека", direction: "red", active: true },
-        { slug: "ceo", fullName: "CEO", shortName: "CEO", role: "OBSERVER", zone: "Чтение", direction: "department", active: true },
+        { slug: "afanasyev", fullName: "Афанасьев Павел", shortName: "Павел", role: "LEADER", zone: "", direction: "partners", active: false, selectable: false },
+        { slug: "novikova", fullName: "Новикова Анна", shortName: "Анна", role: "LEADER", zone: "Ипотека", direction: "red", active: true, selectable: true },
+        { slug: "ceo", fullName: "CEO", shortName: "CEO", role: "OBSERVER", zone: "Чтение", direction: "department", active: true, selectable: true },
       ],
       dicts: base.dicts,
       teams: [],
@@ -93,7 +93,7 @@ describe("люди выбранной команды (этап 14)", () => {
       version: "teams-1",
       staleDays: 14,
       ...structuredClone(base),
-      people: [...base.people, { slug: "ivanova", fullName: "Иванова Мария", shortName: "Мария", role: "EMPLOYEE", zone: "", direction: "osago", active: true }],
+      people: [...base.people, { slug: "ivanova", fullName: "Иванова Мария", shortName: "Мария", role: "EMPLOYEE", zone: "", direction: "osago", active: true, selectable: true }],
       teams: [{ id: "t1", name: "Сектор ОСАГО", kind: "UNIT", leader: "reva", parent: "top", members: ["ivanova"], active: true }],
     });
     // Список общий для всех запросов сервера: в нём все включённые люди

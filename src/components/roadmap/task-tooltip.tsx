@@ -13,6 +13,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Task } from "@/domain/types";
 import type { IsoDate } from "@/domain/dates";
+import { useRegistry } from "@/domain/registry-context";
 import { taskTip, type TaskTip } from "@/lib/tasks/task-tip";
 
 /** Одна подсказка на карту: видна всегда не больше одной */
@@ -25,12 +26,13 @@ type Shown = { number: number; tip: TaskTip; anchor: Anchor };
 const GAP = 8;
 
 export function useTaskTip(today: IsoDate) {
+  const { ownerName } = useRegistry();
   const [shown, setShown] = useState<Shown | null>(null);
 
   const show = (task: Task, el: Element | null | undefined) => {
     if (!el) return;
     const r = el.getBoundingClientRect();
-    setShown({ number: task.number, tip: taskTip(task, today), anchor: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } });
+    setShown({ number: task.number, tip: taskTip(task, today, ownerName), anchor: { top: r.top, bottom: r.bottom, left: r.left, right: r.right } });
   };
   /** Прячет подсказку этой задачи: подсказку другой задачи, которая уже открылась, не гасит */
   const hide = (number?: number) => setShown((cur) => (cur && number !== undefined && cur.number !== number ? cur : null));

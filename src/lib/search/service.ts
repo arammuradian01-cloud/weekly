@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Общий поиск (этап 25, модуль М10): задачи, записи weekly, комментарии, решения и люди одним запросом.
 // Слова ищутся с русскими словоформами (словарь russian в PostgreSQL), последнее слово по началу, чтобы находить
 // по мере набора. Человек видит в результатах только то, что видит и так: доступ проверяется теми же правилами,
@@ -104,7 +105,7 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
   for (const r of rawEntries) {
     const e = entryById.get(r.id);
     if (!e || !seesEntryRow(e)) continue;
-    entryHits.push({ kind: "entry", id: e.id, week: isoFromDbDate(e.week.start), weekNumber: e.week.isoNumber, author: e.authorId ? (names.get(e.authorId)?.slug ?? null) : null, snippet: r.snippet, what: e.what });
+    entryHits.push({ peopleLabels: personLabelsOf(e.authorId ? names.get(e.authorId) : null), kind: "entry", id: e.id, week: isoFromDbDate(e.week.start), weekNumber: e.week.isoNumber, author: e.authorId ? (names.get(e.authorId)?.slug ?? null) : null, snippet: r.snippet, what: e.what });
     if (entryHits.length >= perKind) break;
   }
 
@@ -152,11 +153,11 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
     if (c.source === "task") {
       const row = tcById.get(c.id);
       if (!row) continue;
-      commentHits.push({ kind: "comment", id: row.id, snippet: c.snippet, author: names.get(row.authorId)?.slug ?? "", task: { number: row.task.number, title: row.task.title } });
+      commentHits.push({ peopleLabels: personLabelsOf(names.get(row.authorId)), kind: "comment", id: row.id, snippet: c.snippet, author: names.get(row.authorId)?.slug ?? "", task: { number: row.task.number, title: row.task.title } });
     } else {
       const row = ecById.get(c.id);
       if (!row || !seesEntry(scope, nodes, { authorId: row.entry.authorId, ceo: row.entry.ceo, promotedBy: row.entry.promotions.map((p) => p.byId) }, subject.id)) continue;
-      commentHits.push({ kind: "comment", id: row.id, snippet: c.snippet, author: names.get(row.authorId)?.slug ?? "", entry: { id: row.entry.id, week: isoFromDbDate(row.entry.week.start), what: row.entry.what } });
+      commentHits.push({ peopleLabels: personLabelsOf(names.get(row.authorId)), kind: "comment", id: row.id, snippet: c.snippet, author: names.get(row.authorId)?.slug ?? "", entry: { id: row.entry.id, week: isoFromDbDate(row.entry.week.start), what: row.entry.what } });
     }
     if (commentHits.length >= perKind) break;
   }
@@ -185,7 +186,7 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
   for (const r of rawDecisions) {
     const d = decisionById.get(r.id);
     if (!d) continue;
-    decisionHits.push({ kind: "decision", id: d.id, snippet: r.snippet, text: d.text, date: isoFromDbDate(d.date), status: d.status === "ACTIVE" ? "active" : "cancelled", owner: d.ownerId ? (names.get(d.ownerId)?.slug ?? null) : null });
+    decisionHits.push({ peopleLabels: personLabelsOf(d.ownerId ? names.get(d.ownerId) : null), kind: "decision", id: d.id, snippet: r.snippet, text: d.text, date: isoFromDbDate(d.date), status: d.status === "ACTIVE" ? "active" : "cancelled", owner: d.ownerId ? (names.get(d.ownerId)?.slug ?? null) : null });
     if (decisionHits.length >= perKind) break;
   }
 
@@ -212,9 +213,10 @@ export async function search(subject: ScopeSubject, raw: string, where: "palette
   return { query, hits, total: hits.length, truncated };
 }
 
-function taskHit(t: { number: number; title: string; status: Prisma.TaskGetPayload<{ select: { status: true } }>["status"]; due: Date; ownerId: string | null; ownerAll: boolean }, snippet: string, names: Map<string, { slug: string }>): SearchHit {
+function taskHit(t: { number: number; title: string; status: Prisma.TaskGetPayload<{ select: { status: true } }>["status"]; due: Date; ownerId: string | null; ownerAll: boolean }, snippet: string, names: Map<string, { slug: string; fullName: string; shortName: string }>): SearchHit {
   const code = statusCode(t.status);
   return {
+    peopleLabels: personLabelsOf(t.ownerId ? names.get(t.ownerId) : null),
     kind: "task",
     number: t.number,
     title: t.title,

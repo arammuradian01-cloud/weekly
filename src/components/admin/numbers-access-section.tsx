@@ -1,6 +1,6 @@
 "use client";
 
-import { TOP_TEAM, teamName } from "@/domain/teams";
+import { TOP_TEAM } from "@/domain/teams";
 import { useId, useState } from "react";
 import { X } from "lucide-react";
 import { saveNumbersAccessAction } from "@/app/(app)/settings/actions";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { plural } from "@/domain/dates";
 import type { NumbersAccessView } from "@/lib/plan/access";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Group = { units: string[]; people: string[] };
 
@@ -74,7 +75,8 @@ function LevelFields({ prefix, value, onChange, view }: { prefix: string; value:
  * Доступ к цифрам прогноза (этап 57, решение Арама 21.10: уровень видимости настраивается, весь топ-менеджмент видит
  * основные цифры). Два уровня: все цифры и основные. Кто видит цифры всегда, написано в описании
  */
-export function NumbersAccessSection({ initial }: { initial: NumbersAccessView }) {
+export const NumbersAccessSection = withRegistryLabels(function NumbersAccessSection({ initial }: { initial: NumbersAccessView }) {
+  const { teamName } = useRegistry();
   const headingId = useId();
   const run = useRunAction();
   const [view, setView] = useState(initial);
@@ -138,4 +140,4 @@ export function NumbersAccessSection({ initial }: { initial: NumbersAccessView }
       </form>
     </section>
   );
-}
+});

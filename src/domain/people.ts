@@ -1,17 +1,8 @@
 import type { Owner, Person, PersonSlug } from "./types";
 
-// Люди приходят из базы (этап 5): layout передаёт их снимок, экран подменяет им стартовый состав ниже.
-// PEOPLE: включённые люди, кроме наблюдателей; их выбирают в списках. Подписи старых записей берутся из полного списка
-export const PEOPLE: Person[] = [
-  { slug: "muradyan", fullName: "Мурадян Арам", shortName: "Арам", role: "OWNER", zone: "Департамент целиком", direction: "department" },
-  { slug: "golovkin", fullName: "Головкин Владислав", shortName: "Влад", role: "ADMIN", zone: "Департамент, ОСАГО", direction: "osago" },
-  { slug: "reva", fullName: "Рева Тарас", shortName: "Тарас", role: "LEADER", zone: "Продукт и CJM по всем линиям", direction: "product" },
-  { slug: "loginova", fullName: "Логинова Светлана", shortName: "Света", role: "LEADER", zone: "RED: ДВС, ипотека, ВЗР, ИФЛ", direction: "red" },
-  { slug: "fatyanov", fullName: "Фатьянов Евгений", shortName: "Евгений Ф.", role: "LEADER", zone: "КАСКО", direction: "kasko" },
-  { slug: "sakhibullina", fullName: "Сахибуллина Алсу", shortName: "Алсу", role: "LEADER", zone: "Партнёрский канал", direction: "partners" },
-  { slug: "afanasyev", fullName: "Афанасьев Павел", shortName: "Павел", role: "LEADER", zone: "Партнёрский канал", direction: "partners" },
-  { slug: "cheychenets", fullName: "Чейченец Евгений", shortName: "Евгений Ч.", role: "LEADER", zone: "Депозиты и инвестиции", direction: "deposits" },
-];
+// Совместимость чистых функций и старых unit-фикстур. В приложении используется RegistryContext:
+// общий изменяемый PEOPLE не заполняется из серверного снимка.
+export const PEOPLE: Person[] = [];
 
 export type PersonEntry = Person & { active: boolean; position?: string | null };
 
@@ -19,7 +10,6 @@ const ALL_PEOPLE: PersonEntry[] = PEOPLE.map((p) => ({ ...p, active: true }));
 
 /** Подменить стартовый состав людьми из базы. Массив PEOPLE меняется на месте: в нём все включённые люди, кроме наблюдателей */
 export function applyPeople(list: PersonEntry[]) {
-  if (!list.length) return;
   ALL_PEOPLE.splice(0, ALL_PEOPLE.length, ...list);
   PEOPLE.splice(0, PEOPLE.length, ...list.filter((p) => p.active && p.role !== "OBSERVER").map(({ active: _active, position: _position, ...p }) => p));
 }

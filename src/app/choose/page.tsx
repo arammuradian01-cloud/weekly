@@ -3,8 +3,6 @@ import { teamChoosable, teamChoosableWhere } from "@/lib/org/people";
 import { prisma } from "@/lib/db";
 import { requireSignedIn } from "@/lib/auth";
 import { chooseProfile, logout } from "@/app/actions/auth";
-import { roleLabelOf } from "@/lib/roles";
-import { ownerLabels } from "@/lib/login/primary";
 import { Wordmark } from "@/components/brand/wordmark";
 import { buttonClass } from "@/components/ui/button";
 import { ChooseList } from "./choose-list";
@@ -23,14 +21,13 @@ export default async function ChoosePage({ searchParams }: { searchParams: Promi
     orderBy: [{ fullName: "asc" }],
   });
   // Подписи ролей владельцев (этап 69): «Владелец», «Совладелец» или подпись, которую задал главный владелец
-  const owners = await ownerLabels();
   const people = rows.map((p) => ({
     id: p.id,
     fullName: p.fullName,
     position: p.position ?? (p.unit ? null : p.zone || null),
     unit: p.unit?.name ?? null,
     // Подпись роли только у тех, кого в списке мало: владельцы, администраторы и наблюдатели
-    badge: p.role === "OWNER" || p.role === "ADMIN" || p.role === "OBSERVER" ? roleLabelOf(p, owners) : null,
+    badge: null,
   }));
   // Профиль, выбранный раньше на этом устройстве, больше не открывается по общему логину: человек задал личный пароль
   const previous = session.personId ? await prisma.person.findUnique({ where: { id: session.personId }, select: { fullName: true, active: true, role: true, passwordHash: true } }) : null;

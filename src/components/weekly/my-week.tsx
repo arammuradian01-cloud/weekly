@@ -11,7 +11,7 @@ import { attentionTotal, eventCount, hotTasks, notesByTask, queueCounts, queueFi
 import { MeQueue } from "@/components/inbox/me-queue";
 import { diffDays, formatShort, plural, toCalendar, weekdayShort, type IsoDate } from "@/domain/dates";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import { isMine } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { buttonClass } from "@/components/ui/button";
@@ -25,6 +25,7 @@ import type { PersonWeekly, WeekKey } from "@/domain/types";
 import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { PromiseStats } from "./promise-stats";
 import { submitWeekHref } from "@/lib/weekly/weeks";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Прошлая неделя без сданного weekly (этап 76): номер, понедельник для ссылки и даты словами */
 export type MissedWeekLine = { key: WeekKey; number: number; range: string };
@@ -38,7 +39,7 @@ export type MissedWeekLine = { key: WeekKey; number: number; range: string };
  *
  * История: этап 44 сетка 2:1, этап 68 крупный срок, счётчики и плитка встречи
  */
-export function MyWeek({
+export const MyWeek = withRegistryLabels(function MyWeek({
   timeLeft,
   late,
   weekNumber,
@@ -77,6 +78,7 @@ export function MyWeek({
   /** День встречи для плитки даты (этап 68) */
   meetingDay?: IsoDate;
 }) {
+  const { compactName, personOf } = useRegistry();
   const { data, me } = usePrototype();
   const { open } = useOpenTask();
   const weekly = report;
@@ -97,7 +99,7 @@ export function MyWeek({
   // Несданные weekly за прошлые недели тоже ждут человека: красная строка сверху попадает в это же число
   const attention = attentionTotal(counts, missed.length);
   const weeklySub = weekly.absent && !submitted
-    ? `На этой неделе вас нет, ${substituteText(weekly.absent.substitute)}`
+    ? `На этой неделе вас нет, ${substituteText(weekly.absent.substitute, personOf)}`
     : submitted
       ? (weekly.submittedAt ? submittedText(weekly.submittedAt).replace(/^с/, "С") : state === "late" ? "Сдан с опозданием" : "Сдан")
       : late
@@ -269,4 +271,4 @@ export function MyWeek({
       </aside>
     </div>
   );
-}
+});

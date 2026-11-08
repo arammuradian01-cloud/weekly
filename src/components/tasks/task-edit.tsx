@@ -6,8 +6,8 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Plus, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { PEOPLE, personOf, positionOf } from "@/domain/people";
-import { teamOf, teamPeople } from "@/domain/teams";
+
+import { teamPeople } from "@/domain/teams";
 import { dictOptions, type DirectionCode, type SourceCode } from "@/domain/dictionaries";
 import type { Owner, PersonSlug, Task } from "@/domain/types";
 import { addLinkAction, assignOwnerAction, editTaskAction, removeLinkAction, setCoExecutorsAction, type TaskActionResult } from "@/app/(app)/tasks/actions";
@@ -17,8 +17,10 @@ import { Button } from "@/components/ui/button";
 import { PeoplePicker } from "@/components/teams/people-picker";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { useTaskPermissions } from "./task-fields";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
-export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: boolean; onOpenChange: (open: boolean) => void }) {
+export const TaskEditModal = withRegistryLabels(function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { teamOf, PEOPLE, personOf, positionOf } = useRegistry();
   const { applyTaskResult } = usePrototype();
   const can = useTaskPermissions(task);
   const [title, setTitle] = useState(task.title);
@@ -150,7 +152,7 @@ export function TaskEditModal({ task, open, onOpenChange }: { task: Task; open: 
       </form>
     </Modal>
   );
-}
+});
 
 /** Ссылки на артефакты: добавляет и убирает любой участник задачи */
 export function TaskLinks({ task }: { task: Task }) {

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import { addDays, formatLong } from "@/domain/dates";
 import type { DecisionView } from "@/domain/meeting";
 import { cancelDecisionAction, searchDecisionsAction } from "@/app/(app)/meeting/actions";
@@ -17,13 +17,15 @@ import { Figures } from "@/components/ui/data";
 import { Modal } from "@/components/ui/overlays";
 import { Segmented, TextArea } from "@/components/ui/primitives";
 import { FormError } from "@/components/ui/field";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Status = "active" | "cancelled" | "all";
 
 /** Сколько решений отдаёт сервер за раз (listDecisions) */
 const DECISIONS_LIMIT = 200;
 
-export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { initial: DecisionView[]; teamIds?: string[]; /** Запрос из адреса: сервер уже отобрал по нему */ initialQuery?: string }) {
+export const DecisionsJournal = withRegistryLabels(function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { initial: DecisionView[]; teamIds?: string[]; /** Запрос из адреса: сервер уже отобрал по нему */ initialQuery?: string }) {
+  const { compactName } = useRegistry();
   const { notify, manage, leads, data } = usePrototype();
   const [query, setQuery] = useState(initialQuery);
   const [status, setStatus] = useState<Status>("all");
@@ -195,4 +197,4 @@ export function DecisionsJournal({ initial, teamIds, initialQuery = "" }: { init
       </Modal>
     </div>
   );
-}
+});

@@ -247,7 +247,7 @@ export function WeeklyStrip({ cells }: { cells: LeaderCard["weekly"]["cells"] })
 }
 
 export function weeklySummary(c: LeaderCard): string {
-  return c.leader && !c.leader.active ? "Weekly не считается" : c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Законченных недель со сдачей ещё нет";
+  return c.leader && c.leader.active === false ? "Weekly не считается" : c.weekly.optional ? "Weekly от лидера не ждут" : c.weekly.due ? `Вовремя ${c.weekly.onTime} из ${c.weekly.due}` : "Законченных недель со сдачей ещё нет";
 }
 
 export const staleLabel = (days: number) => `Без обновлений дольше ${days} ${plural(days, "дня", "дней", "дней")}`;

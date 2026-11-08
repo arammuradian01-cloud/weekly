@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Встреча 2.0 на сервере (этап 23, модуль М7). У недели и команды один объект «Встреча»: повестка собирается сама из
 // поручений прошлой встречи, зависших просьб и предложений, рисков и блокеров, вопросов к записям, лидеров по очереди.
 // Ведущий ведёт живой режим: его текущий пункт хранится в базе, экраны участников идут за ним через живые обновления.
@@ -66,17 +67,17 @@ const OVERDUE_DAYS = 7;
 const meetingInclude = {
   week: { select: { start: true, isoNumber: true } },
   team: { select: { id: true, name: true } },
-  leader: { select: { slug: true } },
+  leader: { select: { slug: true, fullName: true, shortName: true } },
   items: {
     where: { removedAt: null },
     orderBy: [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }],
     include: {
-      task: { select: { number: true, title: true, status: true, state: true, due: true, owner: { select: { slug: true } }, ownerAll: true } },
-      entry: { select: { id: true, what: true, author: { select: { slug: true } } } },
-      request: { select: { number: true, text: true, status: true, author: { select: { slug: true } }, addressee: { select: { slug: true } } } },
-      person: { select: { slug: true } },
+      task: { select: { number: true, title: true, status: true, state: true, due: true, owner: { select: { slug: true, fullName: true, shortName: true } }, ownerAll: true } },
+      entry: { select: { id: true, what: true, author: { select: { slug: true, fullName: true, shortName: true } } } },
+      request: { select: { number: true, text: true, status: true, author: { select: { slug: true, fullName: true, shortName: true } }, addressee: { select: { slug: true, fullName: true, shortName: true } } } },
+      person: { select: { slug: true, fullName: true, shortName: true } },
       initiative: { select: { id: true, title: true, state: true, note: true } },
-      discussedBy: { select: { slug: true } },
+      discussedBy: { select: { slug: true, fullName: true, shortName: true } },
       decisions: { include: decisionIncludeInner(), orderBy: { createdAt: "asc" as const } },
     },
   },
@@ -85,8 +86,8 @@ const meetingInclude = {
 
 function decisionIncludeInner() {
   return {
-    owner: { select: { slug: true } },
-    createdBy: { select: { slug: true } },
+    owner: { select: { slug: true, fullName: true, shortName: true } },
+    createdBy: { select: { slug: true, fullName: true, shortName: true } },
     tasks: { include: { task: { select: { number: true, title: true } } } },
     meeting: { select: { week: { select: { start: true, isoNumber: true } }, team: { select: { name: true } } } },
   } satisfies Prisma.DecisionInclude;
@@ -97,6 +98,7 @@ type DecisionRow = Prisma.DecisionGetPayload<{ include: ReturnType<typeof decisi
 
 export function decisionDto(d: DecisionRow): DecisionView {
   return {
+    peopleLabels: personLabelsOf([d.owner, d.createdBy]),
     id: d.id,
     text: d.text,
     owner: (d.owner?.slug as PersonSlug | undefined) ?? null,
@@ -116,6 +118,7 @@ export function decisionDto(d: DecisionRow): DecisionView {
 function itemDto(i: MeetingRow["items"][number], marketNote: string | null = null): AgendaItemView {
   const note = i.kind === "MARKET" ? marketNote : i.note;
   return {
+    peopleLabels: personLabelsOf(i),
     id: i.id,
     kind: KIND_CODE[i.kind],
     title: i.title,
@@ -180,7 +183,7 @@ function participantsOf(nodes: TeamNode[], node: TeamNode): string[] {
 // ---------- Чтение ----------
 
 async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> {
-  const people = await db.person.findMany({ where: { id: { in: participantsOf(a.nodes, a.node) }, active: true }, select: { slug: true }, orderBy: { sortOrder: "asc" } });
+  const people = await db.person.findMany({ where: { id: { in: participantsOf(a.nodes, a.node) }, active: true }, select: { slug: true, fullName: true, shortName: true }, orderBy: { sortOrder: "asc" } });
   const { meeting } = await weekSettings();
   const key = isoFromDbDate(row.week.start);
   const slot = teamMeeting(key, a.node, meetingOf(key, meeting));
@@ -190,6 +193,7 @@ async function toView(db: Db, a: Access, row: MeetingRow): Promise<MeetingView> 
   const canOpenMarket = await canSeeMarket({ personId: a.actor.personId, via: a.actor.via, management: a.actor.management }, db);
   const marketNote = canOpenMarket && row.items.some((i) => i.kind === "MARKET") ? await marketAgendaNoteNow(isoFromDbDate(row.date), db) : null;
   return {
+    peopleLabels: personLabelsOf(row.leader),
     id: row.id,
     week: key,
     weekNumber: row.week.isoNumber,

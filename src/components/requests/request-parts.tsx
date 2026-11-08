@@ -4,12 +4,13 @@
 
 import { addDays, type IsoDate } from "@/domain/dates";
 import { REQUEST_STATUS, type RequestStatusCode } from "@/domain/requests";
-import { allPeople } from "@/domain/people";
+
 import type { PersonSlug } from "@/domain/types";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { TextInput } from "@/components/ui/primitives";
 import { SearchPicker } from "@/components/ui/search-picker";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const TONE: Record<(typeof REQUEST_STATUS)[RequestStatusCode]["tone"], BadgeTone> = { warning: "yellow", info: "blue", success: "green", neutral: "gray" };
 
@@ -64,7 +65,7 @@ export function DueField({ id, label, value, onChange, today }: { id: string; la
  * Людей в компании несколько сотен, и системный список на столько строк не годится: человека в нём не найти, особенно
  * с телефона (этап 74). Поле с поиском по фамилии, имени и должности. Пустое поле: никто не выбран
  */
-export function PersonSelect({
+export const PersonSelect = withRegistryLabels(function PersonSelect({
   id,
   label,
   value,
@@ -82,8 +83,9 @@ export function PersonSelect({
   only?: PersonSlug[];
   placeholder?: string;
 }) {
+  const { allPeople } = useRegistry();
   const people = allPeople()
-    .filter((p) => p.active && p.role !== "OBSERVER" && p.slug !== exclude && (!only || only.includes(p.slug)))
+    .filter((p) => p.selectable && p.slug !== exclude && (!only || only.includes(p.slug)))
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
   const options = people.map((p) => ({ value: p.slug, label: p.fullName, hint: p.position || p.zone || null }));
   return (
@@ -97,4 +99,4 @@ export function PersonSelect({
       emptyText={only ? "В команде такого человека нет: проверьте написание" : "Никого не нашли: проверьте написание"}
     />
   );
-}
+});

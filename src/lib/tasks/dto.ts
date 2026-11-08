@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Задача из базы в том виде, в каком её показывают экраны (тип Task из src/domain/types.ts).
 
 import type { Prisma } from "@/generated/prisma/client";
@@ -8,23 +9,23 @@ import { isoFromDbDate, moscowIso } from "./dates";
 import { commentDto, reactionInclude } from "@/lib/discuss/common";
 
 export const taskInclude = {
-  owner: { select: { slug: true } },
-  createdBy: { select: { slug: true } },
+  owner: { select: { slug: true, fullName: true, shortName: true } },
+  createdBy: { select: { slug: true, fullName: true, shortName: true } },
   direction: { select: { code: true } },
-  coExecutors: { select: { personId: true, person: { select: { slug: true, sortOrder: true } } } },
-  transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true } } } },
-  comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" } } } },
+  coExecutors: { select: { personId: true, person: { select: { slug: true, fullName: true, shortName: true, sortOrder: true } } } },
+  transfers: { orderBy: [{ at: { sort: "asc", nulls: "first" } }, { id: "asc" }], include: { by: { select: { slug: true, fullName: true, shortName: true } } } },
+  comments: { orderBy: { at: "asc" }, include: { author: { select: { slug: true, fullName: true, shortName: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" } } } },
   links: { orderBy: { at: "asc" } },
   goal: { select: { id: true, title: true, code: true, quarter: true } },
   // Какие задачи эта ждёт (этап 21): номер, срок и закрыта ли. Названия карточка грузит отдельно, с проверкой доступа
   waitsFor: { select: { blocker: { select: { number: true, due: true, status: true, archivedAt: true } } } },
   // Чек-лист и повтор (этап 25)
-  checklist: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], include: { doneBy: { select: { slug: true } } } },
+  checklist: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], include: { doneBy: { select: { slug: true, fullName: true, shortName: true } } } },
   repeatOf: { select: { number: true } },
   repeatNext: { select: { number: true } },
   // Согласование (этап 54): кто согласует задачу человеку из другого департамента
-  approver: { select: { slug: true } },
-  approvalFrom: { select: { slug: true } },
+  approver: { select: { slug: true, fullName: true, shortName: true } },
+  approvalFrom: { select: { slug: true, fullName: true, shortName: true } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskRow = Prisma.TaskGetPayload<{ include: typeof taskInclude }>;
@@ -67,6 +68,7 @@ export function toTaskDto(row: TaskRow): Task {
   const comments: Comment[] = row.comments.map(commentDto);
   const due = isoFromDbDate(row.due);
   return {
+    peopleLabels: personLabelsOf(row),
     number: row.number,
     title: row.title,
     outcome: row.outcome,

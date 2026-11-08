@@ -15,7 +15,7 @@ import { Collapsible, revealCollapsible } from "@/components/ui/collapsible";
 import { cn } from "@/lib/cn";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView } from "@/domain/types";
-import { compactName } from "@/domain/people";
+
 import { promiseShare, summaryText, type PromiseSummary } from "@/lib/weekly/promises";
 import type { PromiseHistory } from "@/lib/weekly/promise-service";
 import { cleanDash } from "@/lib/weekly/rules";
@@ -34,6 +34,7 @@ import { useRunWeekly } from "@/components/weekly/use-weekly";
 import { BlocksEditor } from "@/components/weekly-blocks/blocks-editor";
 import { CeoAssembled } from "./ceo-assembled";
 import { CompetitorsSetting } from "./competitors-setting";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Promises = { people: { slug: PersonSlug; summary: PromiseSummary }[]; total: PromiseSummary; snapshotAt?: string };
 
@@ -71,7 +72,7 @@ export type CeoBlocksMeta = { labels: Labels; order: string[]; products: Product
  * разбора встречи и задач; каждый блок можно поправить, скрыть, поднять или опустить и собрать заново. «Отправить CEO»
  * только в приложении: снимок блоков, событие CEO в очереди «Ждёт вас»
  */
-export function CeoReport({
+export const CeoReport = withRegistryLabels(function CeoReport({
   view,
   saved,
   history,
@@ -112,6 +113,7 @@ export function CeoReport({
   /** Кто может отправить CEO и кому уйдёт */
   send: { can: boolean; hint: string | null; recipients: string[] };
 }) {
+  const { compactName } = useRegistry();
   const thanks = useMemo(() => view.reports.filter((r) => r.thanks), [view.reports]);
   const { notify } = usePrototype();
   const run = useRunWeekly();
@@ -179,7 +181,7 @@ export function CeoReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saved]);
 
-  const thanksList = useMemo(() => thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })), [thanks]);
+  const thanksList = useMemo(() => thanks.map((r) => ({ name: compactName(r.author), text: r.thanks! })), [thanks, compactName]);
   const fullText = useMemo(
     () =>
       ceoBlocksText({
@@ -667,4 +669,4 @@ export function CeoReport({
       </Modal>
     </div>
   );
-}
+});

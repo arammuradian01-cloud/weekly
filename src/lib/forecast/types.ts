@@ -1,3 +1,4 @@
+import type { PersonLabel } from "@/domain/person-labels";
 // Прогноз до конца месяца (этап 24): типы экранов без базы
 
 import type { PersonSlug, WeekKey } from "@/domain/types";
@@ -14,6 +15,7 @@ export type ForecastLineInput = {
 };
 
 export type ForecastLineView = ForecastLineInput & {
+  peopleLabels?: PersonLabel[];
   id: string;
   week: WeekKey;
   weekNumber: number;
@@ -47,5 +49,5 @@ export type ForecastSummary = {
 };
 export type ForecastHistory = {
   weeks: { key: WeekKey; number: number }[];
-  rows: { author: PersonSlug; direction: string; directionLabel: string; metric: ForecastMetricCode; metricLabel: string; unit: "mln" | "count"; month: string; budget: number | null; values: (number | null)[] }[];
+  rows: { peopleLabels?: PersonLabel[]; author: PersonSlug; direction: string; directionLabel: string; metric: ForecastMetricCode; metricLabel: string; unit: "mln" | "count"; month: string; budget: number | null; values: (number | null)[] }[];
 };

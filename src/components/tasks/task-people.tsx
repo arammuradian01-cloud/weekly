@@ -5,16 +5,18 @@
 
 import { usePrototype } from "@/domain/store";
 import { formatShort } from "@/domain/dates";
-import { personOf } from "@/domain/people";
+
 import { isOverdue, isStale } from "@/domain/rules";
 import type { PersonSlug, Task } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { EmptyState } from "@/components/empty-state";
 import { useOpenTask } from "./task-drawer";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const OPEN = ["proposed", "in-progress", "clarify"];
 
-export function TaskPeople() {
+export const TaskPeople = withRegistryLabels(function TaskPeople() {
+  const { personOf } = useRegistry();
   const { data, teamPeople } = usePrototype();
   const openTask = useOpenTask();
   const open = data.teamTasks.filter((t) => OPEN.includes(t.status) && !t.archived && t.owner !== "all");
@@ -85,7 +87,7 @@ export function TaskPeople() {
       </table>
     </div>
   );
-}
+});
 
 function Chip({ task: t, today, onOpen }: { task: Task; today: string; onOpen: () => void }) {
   const overdue = isOverdue(t, today);

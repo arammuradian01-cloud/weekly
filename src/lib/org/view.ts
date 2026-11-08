@@ -4,7 +4,7 @@
 import { prisma } from "@/lib/db";
 import type { Role, UnitKind } from "@/generated/prisma/enums";
 import { UNIT_KIND_LABELS } from "./service";
-import { TOP_TEAM, loadTeamNodes } from "./scope";
+import { TOP_TEAM, loadTeamNodes, scopeOf } from "./scope";
 import type { TeamRhythm } from "./rhythm";
 import { weeklyLights } from "./panel";
 import { dbDate, moscowToday } from "@/lib/tasks/dates";
@@ -19,7 +19,7 @@ export type UnitView = {
   active: boolean;
   head: { slug: string; fullName: string; position: string | null } | null;
   headNote: string | null;
-  people: { slug: string; fullName: string; position: string | null; manager: string | null; functional: string | null; role: Role; active: boolean }[];
+  people: { slug: string; fullName: string; position: string | null; manager: string | null; functional: string | null; role?: Role; active?: boolean }[];
   /** null: вакансии этому человеку не видны */
   vacancies: string[] | null;
   /** Сколько человек во всей ветке, включая подразделения ниже */
@@ -45,27 +45,28 @@ export type TeamView = {
   weekly: { expected: number; submitted: number; late: number; absent: number; deadline: string; passed: boolean; closed: boolean };
 };
 
-export type StructureView = { units: UnitView[]; teams: TeamView[]; unplaced: { slug: string; fullName: string; position: string | null; role: Role }[] };
+export type StructureView = { units: UnitView[]; teams: TeamView[]; unplaced: { slug: string; fullName: string; position: string | null; role?: Role }[] };
 
-export async function structureView(viewer: { id: string; role: Role; limited?: boolean }, opts: { includeInactive?: boolean } = {}): Promise<StructureView> {
+export async function structureView(viewer: { id: string; role: Role; limited?: boolean }, opts: { includeInactive?: boolean; management?: boolean } = {}): Promise<StructureView> {
   const [units, people, vacancies, teams, open, overdue, nodes] = await Promise.all([
-    prisma.orgUnit.findMany({ where: opts.includeInactive ? {} : { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { head: { select: { slug: true, fullName: true, position: true } } } }),
+    prisma.orgUnit.findMany({ where: opts.includeInactive ? {} : { active: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { head: { select: { slug: true, fullName: true, position: true, active: true } } } }),
     prisma.person.findMany({
       where: opts.includeInactive ? {} : { active: true },
       orderBy: [{ sortOrder: "asc" }, { fullName: "asc" }],
-      include: { manager: { select: { fullName: true } }, functionalManager: { select: { fullName: true } } },
+      include: { manager: { select: { fullName: true, active: true } }, functionalManager: { select: { fullName: true, active: true } } },
     }),
     prisma.vacancy.findMany({ where: { closedAt: null }, orderBy: { createdAt: "asc" } }),
     prisma.team.findMany({
       where: opts.includeInactive ? {} : { active: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-      include: { leader: { select: { slug: true, fullName: true } }, members: { include: { person: { select: { slug: true, fullName: true, position: true, active: true, sortOrder: true } } } } },
+      include: { leader: { select: { slug: true, fullName: true, active: true } }, members: { include: { person: { select: { slug: true, fullName: true, position: true, active: true, sortOrder: true } } } } },
     }),
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY", "PROPOSED"] }, archivedAt: null }, _count: { _all: true } }),
     prisma.task.groupBy({ by: ["teamId"], where: { status: { in: ["IN_PROGRESS", "CLARIFY"] }, archivedAt: null, due: { lt: dbDate(moscowToday()) } }, _count: { _all: true } }),
     loadTeamNodes(prisma),
   ]);
   // Сдача weekly за отчётную неделю по командам (этап 15): тот же счёт, что в панели «Мои команды»
+  const visibleTeams = new Set(scopeOf(nodes, viewer).visible);
   const lights = await weeklyLights(nodes);
   const weeklyOf = (id: string): TeamView["weekly"] => lights.light(nodes.find((n) => n.id === id)!);
   const overdueByTeam = new Map(overdue.map((o) => [o.teamId, o._count._all]));
@@ -113,19 +114,20 @@ export async function structureView(viewer: { id: string; role: Role; limited?: 
       parentId: u.parentId,
       depth,
       active: u.active,
-      head: u.head,
+      head: u.head && (opts.management || u.head.active) ? { slug: u.head.slug, fullName: u.head.fullName, position: u.head.position } : null,
       headNote: u.headNote,
-      people: (peopleOf.get(u.id) ?? []).map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, manager: p.manager?.fullName ?? null, functional: p.functionalManager?.fullName ?? null, role: p.role, active: p.active })),
+      people: (peopleOf.get(u.id) ?? []).map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, manager: p.manager && (opts.management || p.manager.active) ? p.manager.fullName : null, functional: p.functionalManager && (opts.management || p.functionalManager.active) ? p.functionalManager.fullName : null, ...(opts.management ? { role: p.role, active: p.active } : {}) })),
       vacancies: allVacancies || headed.has(u.id) ? vacancies.filter((v) => v.unitId === u.id).map((v) => v.position) : null,
       total: total(u.id),
     })),
     teams: teams
+      .filter((t) => opts.management || visibleTeams.has(t.id))
       .map((t) => ({
         id: t.id,
         name: t.name,
         kind: t.kind,
-        leader: t.leader,
-        parentId: t.parentId,
+        leader: t.leader && (opts.management || t.leader.active) ? { slug: t.leader.slug, fullName: t.leader.fullName } : null,
+        parentId: opts.management || (t.parentId && visibleTeams.has(t.parentId)) ? t.parentId : null,
         unitId: t.unitId,
         active: t.active,
         members: t.members
@@ -139,6 +141,6 @@ export async function structureView(viewer: { id: string; role: Role; limited?: 
         weekly: weeklyOf(t.id),
       }))
       .sort((a, b) => Number(b.id === TOP_TEAM) - Number(a.id === TOP_TEAM)),
-    unplaced: people.filter((p) => !p.unitId && p.active).map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, role: p.role })),
+    unplaced: people.filter((p) => !p.unitId && p.active).map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, ...(opts.management ? { role: p.role } : {}) })),
   };
 }

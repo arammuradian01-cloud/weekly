@@ -9,7 +9,7 @@
 // карточке заметка главной строкой, ответственный, команда и цель одной строкой, у долгого поиска и тишины метка
 // «в повестке встречи». Текст на цветной подложке цветом её тона: серый на ней в тёмной теме не держит 4,5:1.
 
-import { TOP_TEAM, teamName } from "@/domain/teams";
+import { TOP_TEAM } from "@/domain/teams";
 import { useEffect, useId, useState } from "react";
 import { Plus } from "lucide-react";
 import type { InitiativeView, InitiativesPage } from "@/lib/initiatives/service";
@@ -29,6 +29,7 @@ import { markSeenAction } from "@/app/actions/inbox";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { cn } from "@/lib/cn";
 import { Figures } from "@/components/ui/data";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const when = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long" }).format(new Date(iso));
 /** Фраза с точкой в конце, без двойной: «...в ноябре.» и «Почему?» остаются как есть */
@@ -268,7 +269,8 @@ function StateColumns({ group, items, target, canManage, busy, onDialog }: { gro
   );
 }
 
-function Card({ item, highlighted, canManage, busy, onDialog }: { item: InitiativeView; highlighted: boolean; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
+const Card = withRegistryLabels(function Card({ item, highlighted, canManage, busy, onDialog }: { item: InitiativeView; highlighted: boolean; canManage: boolean; busy: boolean; onDialog: (d: Dialog) => void }) {
+  const { teamName } = useRegistry();
   const id = useId();
   const other: StateCode = item.state === "searching" ? "doing" : "searching";
   return (
@@ -283,7 +285,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
         </h3>
         <p className="text-caption text-muted">
           {item.owner.fullName}
-          {item.owner.active ? "" : " (выключен)"}
+          {item.owner.active === false ? " (выключен)" : ""}
           {item.team.id !== "top" ? `, команда «${item.team.name}»${item.team.active ? "" : ` выключена, разбирается на встрече команды «${teamName(TOP_TEAM)}»`}` : ""}
           {item.goal ? `, цель ${item.goal.code ?? item.goal.title}` : ""}
         </p>
@@ -351,7 +353,7 @@ function Card({ item, highlighted, canManage, busy, onDialog }: { item: Initiati
       ) : null}
     </article>
   );
-}
+});
 
 function NoteDialog({
   dialog,

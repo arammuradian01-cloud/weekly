@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Repeat, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import type { Task } from "@/domain/types";
 import { REPEAT_KINDS, REPEAT_MODES, repeatLabel, type RepeatKindCode, type RepeatModeCode } from "@/lib/tasks/repeat";
 import { addChecklistItemAction, editChecklistItemAction, removeChecklistItemAction, setRepeatAction, toggleChecklistItemAction } from "@/app/(app)/tasks/actions";
@@ -16,6 +16,7 @@ import { SelectField, TextInput } from "@/components/ui/primitives";
 import { isClosed } from "@/domain/rules";
 import { cn } from "@/lib/cn";
 import { useTaskPermissions } from "./task-fields";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** «2 из 5» для списков и карточки */
 export function checklistProgress(task: Pick<Task, "checklist">): { done: number; total: number } | null {
@@ -24,7 +25,8 @@ export function checklistProgress(task: Pick<Task, "checklist">): { done: number
   return { done: list.filter((c) => c.done).length, total: list.length };
 }
 
-export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headingLevel?: "h2" | "h3" }) {
+export const TaskChecklist = withRegistryLabels(function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headingLevel?: "h2" | "h3" }) {
+  const { compactName } = useRegistry();
   const { runTask, observer } = usePrototype();
   const can = useTaskPermissions(task);
   const [text, setText] = useState("");
@@ -150,7 +152,7 @@ export function TaskChecklist({ task, headingLevel = "h3" }: { task: Task; headi
       ) : null}
     </section>
   );
-}
+});
 
 /** Повтор задачи в карточке: подпись и окно настройки */
 export function TaskRepeat({ task }: { task: Task }) {

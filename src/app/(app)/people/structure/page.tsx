@@ -21,7 +21,7 @@ export default async function StructurePage({ searchParams }: { searchParams: Pr
   const ctx = await requireContext();
   const owner = ctx.management?.role === "OWNER";
   const subject = subjectOf(ctx);
-  const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner }), peopleTree(subject)]);
+  const [view, tree] = await Promise.all([structureView({ id: ctx.person.id, role: ctx.person.role, limited: subject.limited }, { includeInactive: owner, management: !!ctx.management }), peopleTree(subject)]);
   // Люди для правки подразделений и руководителей: только владельцу
   const candidates = owner ? await memberCandidates(await currentActor()) : [];
   // Запросы в команды из других веток (этап 53) решают в «Weekly-командах», здесь только сколько их. По общему логину нет

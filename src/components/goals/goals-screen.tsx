@@ -17,8 +17,8 @@ import { plural } from "@/domain/dates";
 import Link from "next/link";
 import { FACT_STALE_DAYS } from "@/lib/goals/progress";
 import { usePrototype } from "@/domain/store";
-import { allPeople } from "@/domain/people";
-import { teamOf, teamPeople } from "@/domain/teams";
+
+import { teamPeople } from "@/domain/teams";
 import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlays";
 import { Segmented, SelectField, TextArea, TextInput } from "@/components/ui/primitives";
@@ -38,6 +38,7 @@ import { GoalsTable } from "./goals-table";
 import { GoalsTree } from "./goals-tree";
 import { GoalsCards, QuarterBar } from "./goals-cards";
 import { GoalsPeopleFilter } from "./goals-people-filter";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const RESULTS: { value: GoalResult; label: string }[] = [
   { value: "IN_PROGRESS", label: "Идёт" },
@@ -343,7 +344,7 @@ export function GoalsScreen({
   );
 }
 
-function GoalModal({
+const GoalModal = withRegistryLabels(function GoalModal({
   mode,
   goal,
   parent,
@@ -364,6 +365,7 @@ function GoalModal({
   onClose: () => void;
   run: Run;
 }) {
+  const { teamOf, allPeople } = useRegistry();
   const [team, setTeam] = useState(goal?.team.id ?? (defaultTeam && teams.some((x) => x.id === defaultTeam) ? defaultTeam : (teams[0]?.id ?? "")));
   const [title, setTitle] = useState(goal?.title ?? "");
   const [code, setCode] = useState(goal?.code ?? "");
@@ -374,7 +376,7 @@ function GoalModal({
   const [description, setDescription] = useState(goal?.description ?? "");
   const [parentId, setParentId] = useState(goal?.parentId ?? parent?.id ?? "");
   const t = teamOf(team);
-  const people = t ? allPeople().filter((p) => p.active && teamPeople(t).includes(p.slug)) : allPeople().filter((p) => p.active);
+  const people = t ? allPeople().filter((p) => p.active !== false && teamPeople(t).includes(p.slug)) : allPeople().filter((p) => p.active !== false);
   const [owner, setOwner] = useState(goal?.owner?.slug ?? t?.leader ?? "");
   const parents = goals.filter((g) => g.id !== goal?.id);
   // Цель с задачами, целями ниже или фактом не удаляется: её снимают итогом «Снята»
@@ -436,7 +438,7 @@ function GoalModal({
       </form>
     </Modal>
   );
-}
+});
 
 function MarkModal({ goal, onClose, run }: { goal: GoalNode; onClose: () => void; run: Run }) {
   const [atRisk, setAtRisk] = useState(goal.atRisk);

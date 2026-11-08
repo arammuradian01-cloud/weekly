@@ -41,14 +41,14 @@ function stateText(task: Task): string {
 }
 
 /** Текст подсказки по задаче: заголовок, описание и строки под ним */
-export function taskTip(task: Task, today: IsoDate): TaskTip {
+export function taskTip(task: Task, today: IsoDate, nameOf: typeof ownerName = ownerName): TaskTip {
   const title = `${task.number}. ${clean(task.title)}`;
   const description = clean(task.outcome) || null;
   const rows: TaskTipRow[] = [{ label: "Срок", text: dueText(task, today) }, { label: "Состояние", text: stateText(task) }];
   if (task.status === "proposed" && proposedLate(task, today)) rows.push({ label: "Предложена", text: "срок уже прошёл" });
   if (task.state === "blocked" && clean(task.blockedBy)) rows.push({ label: "Чем заблокирована", text: clean(task.blockedBy) });
   if (task.state === "at-risk" && clean(task.riskNote)) rows.push({ label: "Что вернёт в график", text: clean(task.riskNote) });
-  rows.push({ label: "Ответственный", text: ownerName(task.owner) });
+  rows.push({ label: "Ответственный", text: nameOf(task.owner) });
   if (clean(task.where)) rows.push({ label: "Где сейчас", text: clean(task.where) });
   // Отдельной строки «для диктора» здесь нет: подсказка связана с полосой через aria-describedby, и диктор читает
   // её разметку целиком. Вторая копия того же текста читалась бы дважды

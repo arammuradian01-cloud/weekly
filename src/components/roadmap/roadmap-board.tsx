@@ -18,7 +18,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { ownerName, personOf } from "@/domain/people";
+
 import { DIRECTIONS, directionLabel, type PriorityCode } from "@/domain/dictionaries";
 import { formatShort, plural } from "@/domain/dates";
 import { isOverdue, overdueDays, permissions } from "@/lib/tasks/rules";
@@ -38,6 +38,7 @@ import { useOpenTask } from "@/components/tasks/task-drawer";
 import { buildTimeline, canMoveBar, type TimelineRange } from "@/lib/tasks/timeline";
 import { RoadmapTimeline, type TimelineSection } from "./roadmap-timeline";
 import { GoalCard, GoalGroupHeading, NoGoalHeading } from "./roadmap-goals";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Широкий экран: сетка сроков. Уже: список. На сервере и до гидратации список */
 const WIDE = "(min-width: 1280px)";
@@ -60,7 +61,8 @@ function useMedia(query: string): boolean {
   );
 }
 
-function RoadmapCard({ task, today, onOpen, onPriority, canPriority, showGoal = true }: { task: Task; today: string; onOpen: () => void; onPriority: (next: PriorityCode) => void; canPriority: boolean; showGoal?: boolean }) {
+const RoadmapCard = withRegistryLabels(function RoadmapCard({ task, today, onOpen, onPriority, canPriority, showGoal = true }: { task: Task; today: string; onOpen: () => void; onPriority: (next: PriorityCode) => void; canPriority: boolean; showGoal?: boolean }) {
+  const { ownerName } = useRegistry();
   const overdue = isOverdue(task, today);
   return (
     <li>
@@ -91,7 +93,7 @@ function RoadmapCard({ task, today, onOpen, onPriority, canPriority, showGoal = 
       </div>
     </li>
   );
-}
+});
 
 /** Сколько карточек в ячейке видно сразу: остальные по кнопке «Ещё», чтобы одна длинная ячейка не растягивала доску */
 const CELL_LIMIT = 4;
@@ -172,7 +174,8 @@ function summaryText(group: RoadmapGroupBy, where: string, tasks: { total: numbe
   return `${where} ${goalsWord} и ${goals.total} ${plural(goals.total, "задача", "задачи", "задач")}, без цели ${goals.noGoal.length}${tail}`;
 }
 
-export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: RoadmapGoal[] } | null }) {
+export const RoadmapBoard = withRegistryLabels(function RoadmapBoard({ goals }: { goals: { quarter: string; goals: RoadmapGoal[] } | null }) {
+  const { personOf } = useRegistry();
   const { data, teamPeople, me, team, runTask, viewing } = usePrototype();
   const viewer = useViewer();
   const { open } = useOpenTask();
@@ -543,4 +546,4 @@ export function RoadmapBoard({ goals }: { goals: { quarter: string; goals: Roadm
       )}
     </div>
   );
-}
+});

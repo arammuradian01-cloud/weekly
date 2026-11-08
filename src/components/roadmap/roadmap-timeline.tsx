@@ -14,7 +14,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronRight, Star, Target } from "lucide-react";
 import type { Task } from "@/domain/types";
 import { diffDays, formatLong, formatShort, plural, type IsoDate } from "@/domain/dates";
-import { ownerName } from "@/domain/people";
+
 import { IMPORTANCE_LABEL } from "@/lib/tasks/roadmap";
 import { barOf, dayAtX, dragSpan, handleInside, HANDLE_PX, spanPlan, type Bar, type DragMode, type TimelineRange } from "@/lib/tasks/timeline";
 import type { GoalLine, GoalTimelineRow } from "@/lib/tasks/roadmap-goals";
@@ -25,6 +25,7 @@ import { TextArea } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
 import { GoalStatus, goalHref, goalName, goalOrigin, goalProgressText, goalSpanText, groupCount } from "./roadmap-goals";
 import { TaskTipBubble, useTaskTip } from "./task-tooltip";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Span = { start: IsoDate; end: IsoDate };
 /** abs: тянут обрезанный край, он встаёт на дату под указателем; left: левый край трека на экране */
@@ -115,7 +116,7 @@ function EdgeHandle({ side, inside, dashed = false, onPointerDown }: { side: "st
   );
 }
 
-export function RoadmapTimeline({
+export const RoadmapTimeline = withRegistryLabels(function RoadmapTimeline({
   range,
   sections,
   today,
@@ -141,6 +142,7 @@ export function RoadmapTimeline({
   onOpen: (number: number) => void;
   runTask: (action: () => Promise<TaskActionResult>, toastText: string) => Promise<boolean>;
 }) {
+  const { ownerName } = useRegistry();
   const [preview, setPreview] = useState<Record<number, Span>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [reason, setReason] = useState("");
@@ -600,4 +602,4 @@ export function RoadmapTimeline({
       </Modal>
     </div>
   );
-}
+});

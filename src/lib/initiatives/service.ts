@@ -71,7 +71,7 @@ export type InitiativeView = {
   direction: { code: string; label: string } | null;
   /** Департамент: подразделение команды инициативы, иначе ответственного. null: не нашли в структуре */
   department: { id: string; name: string } | null;
-  owner: { slug: string; fullName: string; active: boolean };
+  owner: { slug: string; fullName: string; active?: boolean };
   team: { id: string; name: string; active: boolean };
   goal: { id: string; code: string | null; title: string; quarter: string } | null;
   state: StateCode;
@@ -118,7 +118,7 @@ function toView(r: Row, actor: Actor, now: Date, units: Map<string, UnitRow>): I
     why: r.why,
     direction: r.direction,
     department: departmentOf(r.team.unitId, units) ?? departmentOf(r.owner.unitId, units),
-    owner: { slug: r.owner.slug, fullName: r.owner.fullName, active: r.owner.active },
+    owner: { slug: r.owner.slug, fullName: r.owner.fullName, ...(actor.management ? { active: r.owner.active } : {}) },
     team: { id: r.team.id, name: r.team.name, active: r.team.active },
     goal: r.goal,
     state,

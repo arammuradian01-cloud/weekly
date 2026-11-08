@@ -1,3 +1,5 @@
+"use client";
+
 // Блок «Цифры недели» и сводка прогноза (этап 24): показываются в отчёте CEO, на встрече и на странице прогноза.
 // Данные приходят с сервера, компонент только рисует
 
@@ -5,9 +7,10 @@ import Link from "next/link";
 import type { WeekNumbers } from "@/lib/numbers/text";
 import type { ForecastSummary } from "@/lib/forecast/types";
 import { formatForecast, formatPct } from "@/lib/forecast/codes";
-import { compactName } from "@/domain/people";
+
 import { formatShort } from "@/domain/dates";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Искра из последних недель: без библиотек, одна линия */
 function Spark({ points }: { points: (number | null)[] }) {
@@ -89,7 +92,8 @@ export function WeekNumbersBlock({
 }
 
 /** Сводка прогноза недели по направлениям: бюджет, прогноз, отклонения, причина */
-export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuthor = true, compact = false, embedded = false }: { summary: ForecastSummary; headingLevel?: "h2" | "h3"; showAuthor?: boolean; compact?: boolean; /** Внутри сворачиваемого блока: без своей рамки (этап 47) */ embedded?: boolean }) {
+export const ForecastSummaryBlock = withRegistryLabels(function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuthor = true, compact = false, embedded = false }: { summary: ForecastSummary; headingLevel?: "h2" | "h3"; showAuthor?: boolean; compact?: boolean; /** Внутри сворачиваемого блока: без своей рамки (этап 47) */ embedded?: boolean }) {
+  const { compactName } = useRegistry();
   return (
     <section aria-labelledby="forecast-summary" className={cn("px-5 py-4", !embedded && "sv-card sv-card--soft")}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -153,4 +157,4 @@ export function ForecastSummaryBlock({ summary, headingLevel: H = "h2", showAuth
       )}
     </section>
   );
-}
+});
