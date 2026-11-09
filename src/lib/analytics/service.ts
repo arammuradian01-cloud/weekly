@@ -45,8 +45,8 @@ export type AreaGoals = { quarter: string; total: number; onTrack: number; atRis
 
 export type LeaderCard = {
   key: string;
-  /** active: false, если руководителя выключили в ресурсе или он наблюдатель: его weekly не считается. note: почему */
-  leader: { slug: PersonSlug; fullName: string; position: string | null; active: boolean; note: string | null } | null;
+  /** Технический статус и его причина передаются только в режиме управления. */
+  leader: { slug: PersonSlug; fullName: string; position: string | null; active?: boolean; note?: string | null } | null;
   teams: { id: string; name: string; below: boolean }[];
   people: number;
   /** Свой weekly лидера по отчётным неделям. optional: weekly от него нигде не ждут */
@@ -98,7 +98,7 @@ function pickTeam(nodes: TeamNode[], allowed: Set<string>, personId: string, req
   return ordered.find((n) => n.leaderId === personId)?.id ?? ordered[0]?.id ?? null;
 }
 
-export async function teamAnalytics(subject: ScopeSubject, requested: string | null | undefined, now = new Date()): Promise<Analytics | null> {
+export async function teamAnalytics(subject: ScopeSubject, requested: string | null | undefined, now = new Date(), management = false): Promise<Analytics | null> {
   const [nodes, staleDays, reporting, settings] = await Promise.all([loadTeamNodes(prisma), getSetting<number>("tasks.staleDays", 14), currentReportingKey(now), weekSettings()]);
   const allowed = analyticsTeams(nodes, subject);
   const id = pickTeam(nodes, allowed, subject.id, requested);
@@ -344,8 +344,8 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
     const cells = reportingWeeks.map((wk) => ({ key: wk, number: weekNumberOf(wk), cell: leaderId ? cellOf(leaderId, wk, !optional) : ("none" as WeeklyCell) }));
     return {
       key,
-      leader: leader
-        ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position, active: counted, note: !leader.active ? "выключен в ресурсе" : leader.role === "OBSERVER" ? "наблюдатель" : null }
+      leader: leader && (management || leader.active)
+        ? { slug: leader.slug as PersonSlug, fullName: leader.fullName, position: leader.position, ...(management ? { active: counted, note: !leader.active ? "выключен в ресурсе" : leader.role === "OBSERVER" ? "наблюдатель" : null } : {}) }
         : null,
       teams: teams.map((t) => ({ id: t.id, name: t.name, below: active.some((c) => c.parentId === t.id && c.id !== t.id && allowed.has(c.id)) })),
       people: a.people.size,
@@ -366,9 +366,10 @@ export async function teamAnalytics(subject: ScopeSubject, requested: string | n
 
   const options = orderTeams(active.filter((n) => allowed.has(n.id))).map(({ node, depth }) => ({ id: node.id, name: node.name, depth }));
   const ancestors = ancestorsOf(nodes, id).reverse();
+  const visible = new Set(scopeOf(nodes, subject).visible);
   return {
     team: { id, name: selected.name },
-    path: [...ancestors.filter((x) => x !== id).map((x) => ({ id: x, name: byId.get(x)?.name ?? "Команда", link: allowed.has(x) })), { id, name: selected.name, link: false }],
+    path: [...ancestors.filter((x) => x !== id && visible.has(x)).map((x) => ({ id: x, name: byId.get(x)?.name ?? "Команда", link: allowed.has(x) })), { id, name: selected.name, link: false }],
     options,
     weekly: weeklySeries(subtree),
     tasks: total.series,

@@ -91,7 +91,7 @@ const teamSelect = {
   active: true,
   leaderId: true,
   parentId: true,
-  leader: { select: { slug: true, fullName: true, position: true, unit: { select: { name: true, active: true } } } },
+  leader: { select: { slug: true, fullName: true, position: true, active: true, unit: { select: { name: true, active: true } } } },
   members: { select: { personId: true, external: true, auto: true, person: { select: { slug: true, fullName: true, position: true, active: true, unit: { select: { name: true, active: true } } } } } },
   joinRequests: {
     where: { status: "PENDING" as const },
@@ -130,7 +130,7 @@ function teamOf(ctx: ViewContext, row: TeamRow, parent: { id: string; name: stri
     kind: row.kind,
     project: row.project,
     active: row.active,
-    leader: row.leader ? { slug: row.leader.slug, fullName: row.leader.fullName, position: row.leader.position, unit: unitName(row.leader.unit) } : null,
+    leader: row.leader && (actor.management || row.leader.active) ? { slug: row.leader.slug, fullName: row.leader.fullName, position: row.leader.position, unit: unitName(row.leader.unit) } : null,
     parent,
     members: row.members
       .filter((m) => m.person.active && m.personId !== row.leaderId)
@@ -173,7 +173,7 @@ export async function teamsView(actor: Actor): Promise<WeeklyTeamsView> {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const openBy = new Map(open.map((o) => [o.teamId, o._count._all]));
   const parentOf = (row: TeamRow) => {
-    const parent = row.parentId ? byId.get(row.parentId) : undefined;
+    const parent = row.parentId && (all || scope.visible.includes(row.parentId)) ? byId.get(row.parentId) : undefined;
     return parent ? { id: parent.id, name: parent.name } : null;
   };
 
@@ -184,11 +184,11 @@ export async function teamsView(actor: Actor): Promise<WeeklyTeamsView> {
     picks
       ? prisma.person.findMany({
           where: { active: true, role: { not: "OBSERVER" } },
-          select: { slug: true, fullName: true, position: true, role: true, unitId: true, unit: { select: { name: true, active: true } }, manager: { select: { slug: true } } },
+          select: { slug: true, fullName: true, position: true, role: true, unitId: true, unit: { select: { name: true, active: true } }, manager: { select: { slug: true, active: true } } },
           orderBy: [{ fullName: "asc" }],
         })
       : Promise.resolve([]),
-    picks ? prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, name: true, kind: true, parentId: true, head: { select: { slug: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }) : Promise.resolve([]),
+    picks ? prisma.orgUnit.findMany({ where: { active: true }, select: { id: true, name: true, kind: true, parentId: true, head: { select: { slug: true, active: true } } }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }) : Promise.resolve([]),
     // Решение по запросу принимают, войдя лично: под общим логином профиль выбирают сами
     personal ? org.joinRequestsFor(actor).then((r) => r.toApprove) : Promise.resolve([]),
   ]);
@@ -201,8 +201,8 @@ export async function teamsView(actor: Actor): Promise<WeeklyTeamsView> {
   return {
     teams,
     closed: owner ? rows.filter((r) => !r.active).map((r) => ({ id: r.id, name: r.name, kind: r.kind })) : [],
-    people: people.map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, unit: unitName(p.unit), unitId: p.unitId, manager: p.manager?.slug ?? null })),
-    units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head?.slug ?? null })),
+    people: people.map((p) => ({ slug: p.slug, fullName: p.fullName, position: p.position, unit: unitName(p.unit), unitId: p.unitId, manager: p.manager && (actor.management || p.manager.active) ? p.manager.slug : null })),
+    units: units.map((u) => ({ id: u.id, name: u.name, kind: u.kind, parentId: u.parentId, head: u.head && (actor.management || u.head.active) ? u.head.slug : null })),
     parents,
     owners,
     toApprove,
@@ -215,21 +215,21 @@ export async function teamsView(actor: Actor): Promise<WeeklyTeamsView> {
 }
 
 /**
- * Команда из адреса (?team=) для карточки: свежие данные одной команды, в том числе той, которой нет в списке
- * человека (ссылка из «Мне»: только просмотр, права те же, что везде). Закрытой или неизвестной команды нет. Смена
+ * Команда из адреса (?team=) для карточки: только в пределах доступа пользователя.
+ * Закрытой, недоступной или неизвестной команды нет. Смена
  * команды на экране пересчитывает только это, а не весь экран (этап 70)
  */
 export async function focusTeam(actor: Actor, id: string): Promise<WeeklyTeam | null> {
   const ctx = await viewContext(actor);
   const node = ctx.nodes.find((n) => n.id === id && n.active);
-  if (!node) return null;
+  if (!node || (!ctx.all && !ctx.scope.visible.includes(id))) return null;
   const [row, openTasks, lights] = await Promise.all([
     prisma.team.findUnique({ where: { id }, select: teamSelect }),
     prisma.task.count({ where: { teamId: id, status: { in: [...OPEN] }, archivedAt: null } }),
     weeklyLights(ctx.nodes),
   ]);
   if (!row) return null;
-  const parent = row.parentId ? ctx.nodes.find((n) => n.id === row.parentId) : undefined;
+  const parent = row.parentId && (ctx.all || ctx.scope.visible.includes(row.parentId)) ? ctx.nodes.find((n) => n.id === row.parentId) : undefined;
   return teamOf(ctx, row, parent ? { id: parent.id, name: parent.name } : null, lights.light(node), openTasks);
 }
 

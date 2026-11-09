@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChartLine, ChevronLeft, ChevronRight, ClipboardCopy, Link2, ListPlus, Maximize2, Pause, Play, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, personOf } from "@/domain/people";
+
 import { isClosed } from "@/domain/rules";
 import { formatLong, formatShort, plural } from "@/domain/dates";
 import type { PersonSlug, WeekView, WeeklyEntry } from "@/domain/types";
@@ -41,6 +41,8 @@ import { PersonSelect } from "@/components/requests/request-parts";
 import { EntryItem } from "@/components/weekly/entry-item";
 import { cn } from "@/lib/cn";
 import { NotionIntake } from "./notion-intake";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
 const DECISIONS = "decisions";
 
@@ -95,7 +97,8 @@ export function MeetingLive({ view, meeting: initial, canLead, team, numbers, no
   return <LiveBody view={view} meeting={meeting} canLead={meeting.canLead || canLead} projector={projector} busy={busy} run={run} me={me.slug} team={team} numbers={numbers} notion={projector ? null : notion} weekNav={nav} />;
 }
 
-function Header({ view, team, meeting, projector, weekNav, children }: { view: WeekView; team: { id: string; name: string }; meeting: MeetingView | null; projector: boolean; weekNav?: React.ReactNode; children?: React.ReactNode }) {
+const Header = withRegistryLabels(function Header({ view, team, meeting, projector, weekNav, children }: { view: WeekView; team: { id: string; name: string }; meeting: MeetingView | null; projector: boolean; weekNav?: React.ReactNode; children?: React.ReactNode }) {
+  const { compactName } = useRegistry();
   const status = meeting?.status;
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -136,11 +139,12 @@ function Header({ view, team, meeting, projector, weekNav, children }: { view: W
       </div>
     </div>
   );
-}
+});
 
 type Run = (fn: () => Promise<{ ok: true; value: MeetingView } | { ok: false; error: string }>, done?: string) => Promise<boolean>;
 
-function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers, notion, weekNav }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode; notion?: React.ReactNode; weekNav?: React.ReactNode }) {
+const LiveBody = withRegistryLabels(function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numbers, notion, weekNav }: { view: WeekView; meeting: MeetingView; canLead: boolean; projector: boolean; busy: boolean; run: Run; me: PersonSlug; team: { id: string; name: string }; numbers?: React.ReactNode; notion?: React.ReactNode; weekNav?: React.ReactNode }) {
+  const { compactName, personOf } = useRegistry();
   const steps = useMemo(() => [...meeting.items.map((i) => i.id), DECISIONS], [meeting.items]);
   const leading = canLead && meeting.status === "live" && meeting.leader === me;
   // Участник идёт за ведущим, пока сам не перелистнёт. Ведущий всегда на своём пункте
@@ -256,8 +260,8 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
                 <button
                   type="button"
                   onClick={() => go(id)}
-                  title={it ? agendaLabel(it) : "Решения"}
-                  aria-label={it ? agendaLabel(it) : "Решения"}
+                  title={it ? agendaLabel(it, personOf) : "Решения"}
+                  aria-label={it ? agendaLabel(it, personOf) : "Решения"}
                   aria-current={isCurrent ? "step" : undefined}
                   className="flex h-6 w-full items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
                 >
@@ -338,7 +342,7 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
               <span className="hidden max-w-60 truncate font-normal lg:inline" aria-hidden="true">
                 : {(() => {
                   const next = meeting.items.find((x) => x.id === steps[index + 1]);
-                  return next ? agendaLabel(next) : "решения";
+                  return next ? agendaLabel(next, personOf) : "решения";
                 })()}
               </span>
             ) : null}
@@ -365,16 +369,17 @@ function LiveBody({ view, meeting, canLead, projector, busy, run, me, team, numb
       </Modal>
     </div>
   );
-}
+});
 
 /** Короткая подпись пункта в повестке: поручение по номеру и названию задачи, weekly по имени, остальное как есть */
-function agendaLabel(i: AgendaItemView): string {
+function agendaLabel(i: AgendaItemView, personOf: RegistryLookup["personOf"]): string {
   if (i.kind === "person" && i.person) return personOf(i.person).fullName;
   if (i.kind === "follow-up" && i.task) return `${i.task.number} ${i.task.title}`;
   return i.title;
 }
 
-function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, summary = true }: { meeting: MeetingView; current: string; onSelect: (id: string) => void; canLead: boolean; busy: boolean; run: Run; discussed: number; summary?: boolean }) {
+const Agenda = withRegistryLabels(function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, summary = true }: { meeting: MeetingView; current: string; onSelect: (id: string) => void; canLead: boolean; busy: boolean; run: Run; discussed: number; summary?: boolean }) {
+  const { compactName, personOf } = useRegistry();
   const blocks = AGENDA_BLOCKS.map((b) => ({ ...b, items: meeting.items.filter((i) => blockOf(i.kind) === b.code) })).filter((b) => b.items.length);
   const row = (i: AgendaItemView) => (
     <li key={i.id} className="group flex items-start gap-1">
@@ -389,7 +394,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
         )}
       >
         {i.discussed ? <Check className="mt-0.5 h-4 w-4 shrink-0" aria-label="обсуждено" /> : <span className="mt-0.5 inline-block h-4 w-4 shrink-0 rounded-full ring-1 ring-current opacity-40" aria-hidden="true" />}
-        <span className="min-w-0 break-words">{agendaLabel(i)}</span>
+        <span className="min-w-0 break-words">{agendaLabel(i, personOf)}</span>
       </button>
       {canLead && meeting.status !== "done" && !i.decisions.length ? (
         <button
@@ -456,7 +461,7 @@ function Agenda({ meeting, current, onSelect, canLead, busy, run, discussed, sum
       </button>
     </nav>
   );
-}
+});
 
 /** Группа поручений одного человека в повестке. Открывается сама, когда текущий пункт попадает внутрь, даже если её
     до этого свернули руками; свернуть обратно можно в любой момент */
@@ -479,7 +484,8 @@ function AgendaGroup({ owner, name, hasCurrent, current, count, done, children }
   );
 }
 
-function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed }: { view: WeekView; meeting: MeetingView; item: AgendaItemView; canLead: boolean; busy: boolean; run: Run; projector: boolean; elapsed: number }) {
+const ItemBody = withRegistryLabels(function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed }: { view: WeekView; meeting: MeetingView; item: AgendaItemView; canLead: boolean; busy: boolean; run: Run; projector: boolean; elapsed: number }) {
+  const { compactName } = useRegistry();
   const { data } = usePrototype();
   const { open } = useOpenTask();
   const actions = useTaskActions();
@@ -612,9 +618,10 @@ function ItemBody({ view, meeting, item, canLead, busy, run, projector, elapsed 
       {!followUp ? leadActions : null}
     </div>
   );
-}
+});
 
-function PersonStep({ view, slug, projector }: { view: WeekView; slug: PersonSlug; projector: boolean }) {
+const PersonStep = withRegistryLabels(function PersonStep({ view, slug, projector }: { view: WeekView; slug: PersonSlug; projector: boolean }) {
+  const { personOf } = useRegistry();
   const weekly = view.reports.find((w) => w.author === slug);
   const own = view.entries.filter((e) => e.author === slug && (!view.authors || view.authors.includes(slug)));
   const raised = view.entries.filter((e) => e.author !== slug && e.promoted?.some((x) => x.by === slug));
@@ -642,7 +649,7 @@ function PersonStep({ view, slug, projector }: { view: WeekView; slug: PersonSlu
       {!own.length && !raised.length ? <p className="mt-6 text-title text-muted">Записей за неделю нет.</p> : null}
     </>
   );
-}
+});
 
 function EntryBlock({ view, entryId, projector }: { view: WeekView; entryId: string; projector: boolean }) {
   const entry = view.entries.find((e) => e.id === entryId);
@@ -660,7 +667,8 @@ function EntryBlock({ view, entryId, projector }: { view: WeekView; entryId: str
   );
 }
 
-function DecisionList({ decisions, compact }: { decisions: DecisionView[]; compact?: boolean }) {
+const DecisionList = withRegistryLabels(function DecisionList({ decisions, compact }: { decisions: DecisionView[]; compact?: boolean }) {
+  const { compactName } = useRegistry();
   if (!decisions.length) return null;
   return (
     <ul className={cn("flex flex-col divide-y divide-line sv-card sv-card--soft", compact && "text-small")}>
@@ -676,7 +684,7 @@ function DecisionList({ decisions, compact }: { decisions: DecisionView[]; compa
       ))}
     </ul>
   );
-}
+});
 
 function DecisionButton({ meeting, itemId, run, busy, taskNumber }: { meeting: MeetingView; itemId: string | null; run: Run; busy: boolean; taskNumber?: number }) {
   const { me } = usePrototype();

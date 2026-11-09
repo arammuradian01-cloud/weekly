@@ -1,3 +1,5 @@
+import type { PersonLabel } from "@/domain/person-labels";
+import { personLabelsOf } from "@/lib/person-labels";
 // Просьбы коллегам (этап 21, модуль М4 плана Weekly 2.0).
 //
 // Просьба: от кого, кому, что нужно, к какому сроку и, если есть, к какой задаче или записи weekly.
@@ -105,6 +107,7 @@ function toView(a: Access, row: Row, now: Date): RequestView {
       ? { id: row.entry.id, what: row.entry.what }
       : null;
   return {
+    peopleLabels: personLabelsOf([row.author, row.addressee]),
     number: row.number,
     status,
     text: row.text,
@@ -412,7 +415,7 @@ export async function requestsForTask(actor: Actor, taskNumber: number, now = ne
   return rows.filter((r) => seesRequest(a, r)).map((r) => toView(a, r, now));
 }
 
-export type StaleProposal = { number: number; title: string; owner: PersonSlug | null; createdBy: PersonSlug | null; days: number };
+export type StaleProposal = { peopleLabels?: PersonLabel[]; number: number; title: string; owner: PersonSlug | null; createdBy: PersonSlug | null; days: number };
 
 /**
  * Что зависло, для встречи: просьбы без ответа больше 2 рабочих дней и принятые, но просроченные, где автор или адресат
@@ -445,7 +448,7 @@ export async function stuckForMeeting(actor: Actor, teamIds: string[], now = new
         createdAt: { lte: staleSince },
         OR: [{ teamId: { in: teamIds } }, ...(ids.length ? [{ ownerId: { in: ids } }] : [])],
       },
-      include: { owner: { select: { slug: true } }, createdBy: { select: { slug: true } }, coExecutors: { select: { personId: true } } },
+      include: { owner: { select: { slug: true, fullName: true, shortName: true } }, createdBy: { select: { slug: true, fullName: true, shortName: true } }, coExecutors: { select: { personId: true } } },
       orderBy: { createdAt: "asc" },
       take: 100,
     }),
@@ -457,6 +460,7 @@ export async function stuckForMeeting(actor: Actor, teamIds: string[], now = new
   const proposals = proposed
     .filter((t) => !CLOSED_DB.includes(t.status) && seesTask(a.scope, t, actor.personId))
     .map((t) => ({
+      peopleLabels: personLabelsOf([t.owner, t.createdBy]),
       number: t.number,
       title: t.title,
       owner: (t.owner?.slug as PersonSlug | undefined) ?? null,

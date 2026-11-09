@@ -53,7 +53,7 @@ test.beforeEach(async () => {
 });
 test.afterAll(restore);
 
-test("подписи владельцев видны везде, оба владельца управляют доступом", async ({ page, browser }) => {
+test("подписи владельцев видны в управлении и своём профиле, оба владельца управляют доступом", async ({ page, browser }) => {
   test.setTimeout(150_000);
   await enterByLink(page, "muradyan");
   await enterManagement(page, "owner");
@@ -115,10 +115,11 @@ test("подписи владельцев видны везде, оба влад
   await team.getByRole("button", { name: "Войти" }).click();
   await expect(team).toHaveURL(/\/choose$/);
   // Этап 71: по общему логину только люди без личного пароля. Главный владелец вошёл по ссылке и задал пароль: его в
-  // списке нет. Совладелец пароля ещё не задал: он в списке со своей подписью (поправка 23.10)
+  // списке нет. Совладелец пароля ещё не задал: он в списке, но без роли доступа (этап 93).
   await expect(team.getByRole("button", { name: /Рева Тарас/ })).toBeVisible();
   await expect(team.getByRole("button", { name: /Мурадян Арам/ })).toHaveCount(0);
-  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).toContainText("Владелец");
+  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).toBeVisible();
+  await expect(team.getByRole("button", { name: /Головкин Владислав/ })).not.toContainText("Владелец");
   await expect(team.getByRole("button", { name: /Головкин Владислав/ })).not.toContainText("Совладелец");
   await shot(team, "choose");
   await team.context().close();

@@ -1,3 +1,5 @@
+import { personLabelsOf } from "@/lib/person-labels";
+import type { PersonLabel } from "@/domain/person-labels";
 // Обсуждение записей weekly (этап 20): короткая ветка комментариев под записью, реакции, вопросы к встрече.
 //
 // Правила:
@@ -73,7 +75,7 @@ async function warningFor(tx: Tx, mentioned: string[], reach: string[]): Promise
   return { warning: `Упоминание не дошло: ${names.join(", ")} ${names.length > 1 ? "не видят" : "не видит"} эту запись` };
 }
 
-const commentInclude = { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } } } satisfies Prisma.EntryCommentInclude;
+const commentInclude = { author: { select: { slug: true, fullName: true, shortName: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } } } satisfies Prisma.EntryCommentInclude;
 
 /** Комментарий к записи weekly */
 export async function addEntryComment(actor: Actor, entryId: string, text: string): Promise<CommentResult> {
@@ -305,6 +307,7 @@ async function audit(tx: Tx, actor: Actor, action: string, entryId: string, fiel
 
 /** Вопрос к встрече: что спросили, кто, к какой записи или задаче */
 export type MeetingQuestion = {
+  peopleLabels?: PersonLabel[];
   id: string;
   question: string;
   by: PersonSlug;
@@ -324,9 +327,9 @@ export async function meetingQuestions(actor: Actor, key: WeekKey, entryIds: { c
   const scope = await loadScope(prisma, subjectOf(actor));
   const nodes = await loadTeamNodes(prisma);
   const include = {
-    person: { select: { slug: true } },
-    entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } },
-    entryComment: { include: { entry: { include: { ...accessInclude, author: { select: { slug: true } }, week: { select: { start: true } } } } } },
+    person: { select: { slug: true, fullName: true, shortName: true } },
+    entry: { include: { ...accessInclude, author: { select: { slug: true, fullName: true, shortName: true } }, week: { select: { start: true } } } },
+    entryComment: { include: { entry: { include: { ...accessInclude, author: { select: { slug: true, fullName: true, shortName: true } }, week: { select: { start: true } } } } } },
     taskComment: { include: { task: { include: { coExecutors: true } } } },
   } satisfies Prisma.ReactionInclude;
   const past = { gte: dbDate(from), lt: dbDate(key) };
@@ -371,6 +374,7 @@ export async function meetingQuestions(actor: Actor, key: WeekKey, entryIds: { c
       const week = isoFromDbDate(entry.week.start);
       out.push({
         id: r.id,
+        peopleLabels: personLabelsOf([r.person, entry?.author]),
         question: r.question ?? "",
         by: r.person.slug as PersonSlug,
         discussed: r.discussedAt !== null,
@@ -383,6 +387,7 @@ export async function meetingQuestions(actor: Actor, key: WeekKey, entryIds: { c
       if (!seesTask(scope, task, actor.personId)) continue;
       out.push({
         id: r.id,
+        peopleLabels: personLabelsOf(r.person),
         question: r.question ?? "",
         by: r.person.slug as PersonSlug,
         discussed: r.discussedAt !== null,

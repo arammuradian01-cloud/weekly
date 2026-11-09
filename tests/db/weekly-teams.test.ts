@@ -160,13 +160,11 @@ describe("список команд по тому, кто смотрит", () =>
     expect(view.teams[0]!.rights).toEqual(NO_RIGHTS);
     expect(view.people).toEqual([]);
     expect(view.units).toEqual([]);
-    // Команда из адреса, где его нет (ссылка из «Мне»): карточка только для просмотра, в списке её нет
+    // Прямой адрес не раскрывает состав команды вне доступа (правило справочника, этап 93)
     const money = await teamOf(MONEY);
     expect(view.teams.map((t) => t.id)).not.toContain(money.id);
     const focused = await teams.focusTeam(await personal("Котов"), money.id);
-    expect(focused?.id).toBe(money.id);
-    expect(focused?.rights).toEqual(NO_RIGHTS);
-    expect(focused?.relation).toBe("other");
+    expect(focused).toBeNull();
     expect(await teams.focusTeam(await personal("Котов"), "нет-такой-команды")).toBeNull();
   });
 

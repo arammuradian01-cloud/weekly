@@ -1,3 +1,5 @@
+import { personLabelsOf } from "@/lib/person-labels";
+import type { WithPersonLabels } from "@/domain/person-labels";
 // Задачи на сервере (раздел 4 ТЗ). Каждое действие проверяет права по матрице раздела 2,
 // меняет задачу в одной транзакции и пишет в журнал, что было и что стало.
 
@@ -303,14 +305,16 @@ export async function getTask(number: number, reader?: TaskReader): Promise<Task
 export async function taskHistory(number: number): Promise<HistoryItem[]> {
   const [rows, people] = await Promise.all([
     prisma.auditLog.findMany({ where: { entity: "task", entityId: String(number) }, orderBy: [{ at: "desc" }, { id: "desc" }], take: 200 }),
-    prisma.person.findMany({ select: { id: true, slug: true } }),
+    prisma.person.findMany({ select: { id: true, slug: true, fullName: true, shortName: true } }),
   ]);
   const slugOf = new Map(people.map((p) => [p.id, p.slug as PersonSlug]));
+  const personById = new Map(people.map((p) => [p.id, p]));
   const text = (v: unknown) => (v === null || v === undefined ? undefined : typeof v === "string" ? v : JSON.stringify(v));
   // История начинается с последнего создания или импорта задачи с этим номером: если задачу удалили
   // и завели заново (повторный импорт), прежние записи журнала остаются в журнале, но не в карточке
   const start = rows.findIndex((r) => r.action === "task.import" || r.action === "task.create" || r.action === "task.propose");
   return (start >= 0 ? rows.slice(0, start + 1) : rows).map((r) => ({
+    peopleLabels: personLabelsOf(r.actorId ? personById.get(r.actorId) : null),
     id: String(r.id),
     at: moscowIso(r.at),
     time: r.source === "APP" ? moscowTime(r.at) : "",
@@ -798,21 +802,21 @@ export async function removeDependency(actor: Actor, number: number, blockerNumb
   });
 }
 
-export type TaskLinkView = { number: number; title: string | null; due: IsoDate; status: StatusCode; owner: PersonSlug | null; late: boolean };
+export type TaskLinkView = WithPersonLabels & { number: number; title: string | null; due: IsoDate; status: StatusCode; owner: PersonSlug | null; late: boolean };
 
 /** Связи задачи для карточки: что она ждёт и кто ждёт её. Чужие задачи без названия */
 export async function taskLinks(actor: Actor, number: number): Promise<{ waitsFor: TaskLinkView[]; blocks: TaskLinkView[]; canEdit: boolean; existing: string | null } | null> {
   const scope = await scopeOfActor(prisma, actor);
   const row = await prisma.task.findUnique({ where: { number }, include: taskInclude });
   if (!row || !canSeeRow(scope, row, actor.personId)) return null;
-  const select = { id: true, number: true, title: true, due: true, status: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, owner: { select: { slug: true } }, coExecutors: { select: { personId: true } } } as const;
+  const select = { id: true, number: true, title: true, due: true, status: true, teamId: true, ownerId: true, createdById: true, approverId: true, archivedAt: true, owner: { select: { slug: true, fullName: true, shortName: true } }, coExecutors: { select: { personId: true } } } as const;
   const [waits, blocks] = await Promise.all([
     prisma.taskDependency.findMany({ where: { taskId: row.id }, select: { blocker: { select } }, orderBy: { createdAt: "asc" } }),
     prisma.taskDependency.findMany({ where: { blockerId: row.id }, select: { task: { select } }, orderBy: { createdAt: "asc" } }),
   ]);
   const view = (t: (typeof waits)[number]["blocker"], late: boolean): TaskLinkView => {
     const visible = !t.archivedAt && canSeeRow(scope, t, actor.personId);
-    return { number: t.number, title: visible ? t.title : null, due: isoFromDbDate(t.due), status: statusCode(t.status), owner: visible ? ((t.owner?.slug as PersonSlug | undefined) ?? null) : null, late };
+    return { peopleLabels: visible ? personLabelsOf(t.owner) : [], number: t.number, title: visible ? t.title : null, due: isoFromDbDate(t.due), status: statusCode(t.status), owner: visible ? ((t.owner?.slug as PersonSlug | undefined) ?? null) : null, late };
   };
   const open = (s: TaskStatus) => !CLOSED_DB.includes(s);
   const can = permissions(toTaskDto(row), { ...viewerOf(actor, scope), people: await slugsOf(prisma, scope.leadPeople) });

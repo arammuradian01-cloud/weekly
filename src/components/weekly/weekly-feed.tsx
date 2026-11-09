@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { LayoutList, Lock, LockOpen, MonitorPlay, PenLine, SlidersHorizontal, TrendingUp, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
 import { formatLong, plural } from "@/domain/dates";
-import { PEOPLE, authorName, personOf } from "@/domain/people";
+
 import { DIRECTIONS, ENTRY_TYPES, type DirectionCode, type EntryTypeCode } from "@/domain/dictionaries";
 import type { PersonSlug, PersonWeekly, WeekInfo, WeekView, WeeklyEntry } from "@/domain/types";
 import { assignEntryAuthorAction, setTeamWeekClosedAction, setWeekClosedAction } from "@/app/(app)/weekly/actions";
@@ -29,6 +29,8 @@ import { PromoteControl, PromotedNote } from "./promote";
 import { WeekSwitcher } from "./week-switcher";
 import { submitWeekHref } from "@/lib/weekly/weeks";
 import { canEditWeekly } from "@/lib/weekly/rules";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
 type View = "people" | "blocks";
 
@@ -81,7 +83,7 @@ function TeamWeekLock({ week, team }: { week: WeekInfo; team: { id: string; name
 
 type TeamWeek = { id: string; name: string } | null;
 
-export function WeeklyFeed({
+export const WeeklyFeed = withRegistryLabels(function WeeklyFeed({
   view: data,
   myReport,
   promoteFrom = [],
@@ -100,6 +102,7 @@ export function WeeklyFeed({
   focus?: AuthorFocus | null;
   blockTemplate?: { teamId: string; blocks: TemplateBlock[] } | null;
 }) {
+  const { personOf } = useRegistry();
   const { manage, manageRole, observer, me, teamPeople } = usePrototype();
   const week = data.week;
   // Этап 73+81: кнопки «Сдать» ведут на выбранную неделю, а не на отчётную, поэтому сначала считаем, можно ли вообще
@@ -176,7 +179,7 @@ export function WeeklyFeed({
     direction ? { label: "Направление", value: DIRECTIONS.find((d) => d.code === direction)?.label ?? direction, clear: () => setDirection("") } : null,
     block ? { label: "Блок", value: blockTemplate?.blocks.find((b) => b.key === block)?.title ?? block, clear: () => setBlock("") } : null,
     type ? { label: "Тип", value: ENTRY_TYPES.find((t) => t.code === type)?.label ?? type, clear: () => setType("") } : null,
-    author ? { label: "Автор", value: authorLabel(author, authorOptions), clear: () => setAuthor("") } : null,
+    author ? { label: "Автор", value: authorLabel(author, authorOptions, personOf), clear: () => setAuthor("") } : null,
   ].filter((f): f is NonNullable<typeof f> => !!f);
   const selected = active.length;
   const myState = myReport.state;
@@ -337,7 +340,7 @@ export function WeeklyFeed({
         </EmptyState>
       ) : entries.length === 0 ? (
         <EmptyState
-          title={author && !direction && !block && !type && !helpOnly ? `${authorLabel(author, authorOptions)}: за неделю ${week.number} записей нет` : "Под эти фильтры записей нет"}
+          title={author && !direction && !block && !type && !helpOnly ? `${authorLabel(author, authorOptions, personOf)}: за неделю ${week.number} записей нет` : "Под эти фильтры записей нет"}
           className="mt-6"
           action={
             filtersOn ? (
@@ -377,9 +380,9 @@ export function WeeklyFeed({
       )}
     </div></BlockTemplateContext>
   );
-}
+});
 
-function authorLabel(slug: PersonSlug, options: { value: string; label: string }[]): string {
+function authorLabel(slug: PersonSlug, options: { value: string; label: string }[], personOf: RegistryLookup["personOf"]): string {
   return options.find((o) => o.value === slug)?.label ?? personOf(slug).fullName;
 }
 
@@ -423,7 +426,7 @@ const DIGEST_LIMIT = 3;
  * чтение CEO. В строке автор, что произошло и одна вторая строка: просьба о помощи, цифра или «дальше».
  * Пустая колонка не показывается, без всех трёх блока нет
  */
-function CeoDigest({
+const CeoDigest = withRegistryLabels(function CeoDigest({
   help,
   risks,
   results,
@@ -436,6 +439,7 @@ function CeoDigest({
   onHelp: () => void;
   onType: (type: EntryTypeCode) => void;
 }) {
+  const { authorName } = useRegistry();
   const cols = [
     { id: "help", title: "Нужна помощь", dot: "bg-warning", list: help, second: (e: WeeklyEntry) => e.help, secondTone: "text-warning-ink", more: onHelp },
     { id: "risk", title: "Риски", dot: "bg-danger", list: risks, second: (e: WeeklyEntry) => e.fact || e.next, secondTone: "text-text-secondary", more: () => onType("risk") },
@@ -473,9 +477,9 @@ function CeoDigest({
       ))}
     </div>
   );
-}
+});
 
-function PeopleView({
+const PeopleView = withRegistryLabels(function PeopleView({
   reports,
   entries,
   reporting,
@@ -496,6 +500,7 @@ function PeopleView({
   /** Включён любой отбор (тип, «Нужна помощь», направление, блок, автор): карточки не сворачиваются, иначе отобранное спрятано */
   filtered?: boolean;
 }) {
+  const { PEOPLE, personOf } = useRegistry();
   const { manage, teamPeople, me } = usePrototype();
   const run = useRunWeekly();
   const rank = { submitted: 0, late: 0, draft: 1, "not-started": 2 } as const;
@@ -597,7 +602,7 @@ function PeopleView({
               {weekly?.headline ? (
                 <p className="mt-2 text-lead leading-snug text-ink">{weekly.headline}</p>
               ) : weekly?.absent ? (
-                <p className="mt-2 text-body text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p>
+                <p className="mt-2 text-body text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute, personOf)}</p>
               ) : reporting ? (
                 <p className="mt-2 text-body text-muted">{state === "not-started" ? "Weekly ещё не начат" : "Главная фраза пока не написана"}</p>
               ) : null}
@@ -668,7 +673,7 @@ function PeopleView({
       })}
     </div>
   );
-}
+});
 
 function BlocksView({ entries, promoteFrom, closed, blocks }: { entries: WeeklyEntry[]; promoteFrom: PersonSlug[]; closed: boolean; blocks: TemplateBlock[] }) {
   const keys = blocks.map((b) => b.key);

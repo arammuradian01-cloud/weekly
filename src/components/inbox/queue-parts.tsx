@@ -46,4 +46,3 @@ export function ShowAll({ total, open, onToggle, controls, label }: { total: num
     </button>
   );
 }
-

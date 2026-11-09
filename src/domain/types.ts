@@ -1,3 +1,4 @@
+import type { PersonLabel } from "./person-labels";
 // Модель данных экранов. Повторяет раздел 8 ТЗ; задачи и weekly приходят в этом виде из базы (этапы 3 и 4).
 
 import type { IsoDate } from "./dates";
@@ -37,13 +38,15 @@ export type Transfer = { from: IsoDate | null; to: IsoDate; by: PersonSlug | nul
 export type ReactionCode = "accepted" | "question" | "discuss" | "thanks";
 
 /** Реакция. У «Обсудить на встрече» вопрос и отметка «обсуждено» */
-export type ReactionView = { id: string; kind: ReactionCode; by: PersonSlug; question?: string; discussed?: boolean };
+export type ReactionView = {
+  peopleLabels?: PersonLabel[]; id: string; kind: ReactionCode; by: PersonSlug; question?: string; discussed?: boolean };
 
 /**
  * Комментарий к задаче или к записи weekly. moment: момент в ISO, по нему экран знает, можно ли ещё править (15 минут).
  * edited: автор поправил текст (этап 20). Упоминания экран находит в тексте сам, по списку людей
  */
 export type Comment = {
+  peopleLabels?: PersonLabel[];
   id: string;
   author: PersonSlug;
   text: string;
@@ -55,6 +58,7 @@ export type Comment = {
 };
 
 export type HistoryItem = {
+  peopleLabels?: import("./person-labels").PersonLabel[];
   id: string;
   at: IsoDate;
   time: string;
@@ -71,6 +75,7 @@ export type HistoryItem = {
 export type Link = { id?: string; title: string; url: string };
 
 export type Task = {
+  peopleLabels?: PersonLabel[];
   number: number;
   title: string;
   outcome: string;
@@ -154,6 +159,7 @@ export type WeekInfo = {
 };
 
 export type WeeklyEntry = {
+  peopleLabels?: PersonLabel[];
   id: string;
   week: WeekKey;
   /** Запись сделана из факта недели (этап 22): факт не предлагается, пока запись есть */
@@ -186,6 +192,7 @@ export type WeeklyEntry = {
 };
 
 export type PersonWeekly = {
+  peopleLabels?: PersonLabel[];
   week: WeekKey;
   author: PersonSlug;
   headline: string;
@@ -204,6 +211,7 @@ export type PersonWeekly = {
 
 /** Всё про одну неделю для ленты, режима встречи и отчёта CEO */
 export type WeekView = {
+  peopleLabels?: PersonLabel[];
   week: WeekInfo;
   /** Соседние недели для переключателя. next = null: дальше отчётной недели не листаем */
   prev: WeekKey;
@@ -222,6 +230,7 @@ export type WeekView = {
 };
 
 export type JournalEvent = {
+  peopleLabels?: PersonLabel[];
   id: string;
   /** Адрес, с которого пришла правка: только у событий ресурса */
   ip?: string;

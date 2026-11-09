@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { personOf } from "@/domain/people";
-import { teamOf } from "@/domain/teams";
+
+
 import { formatLong, formatShort } from "@/domain/dates";
 import { isClosedThisWeek, isOverdue, overdueDays } from "@/domain/rules";
 import type { PersonSlug, Task } from "@/domain/types";
@@ -15,9 +15,11 @@ import { OverdueNote, StatusBadge } from "@/components/ui/task-badges";
 import { openNewTask } from "@/components/prototype/new-task";
 import { PrioritySelect, StateSelect, StatusSelect } from "./task-fields";
 import { useOpenTask } from "./task-drawer";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Разбор на встрече: по каждому лидеру подряд критичные, просроченные, заблокированные и закрытые за неделю */
-export function MeetingReview() {
+export const MeetingReview = withRegistryLabels(function MeetingReview() {
+  const { teamOf, personOf } = useRegistry();
   const { data, manage, teamPeople, team } = usePrototype();
   // Выключенные с открытыми задачами тоже разбираются: их задачи надо передать
   const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !teamPeople.some((p) => p.slug === t.owner)).map((t) => t.owner))];
@@ -113,7 +115,7 @@ export function MeetingReview() {
       </section>
     </div>
   );
-}
+});
 
 function ReviewBlock({ title, empty, tasks, danger }: { title: string; empty: string; tasks: Task[]; danger?: boolean }) {
   const { data } = usePrototype();

@@ -24,7 +24,7 @@ export default async function TeamPage() {
     node && node.id !== TOP_TEAM ? `${node.rhythm.deadline ? `, сдача ${slotText(node.rhythm.deadline)}` : ""}${node.rhythm.specialists ? ", сдают все" : ""}` : "";
   return (
     <Section title={team.id ? team.name : "Команда"} hint={`Задачи и weekly за отчётную неделю${rhythm}`}>
-      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} owners={await ownerLabels()} />
+      <TeamSummary reports={reports} weekNumber={weekNumberOf(key)} owners={ctx.management ? await ownerLabels() : { primary: null, titles: {} }} />
     </Section>
   );
 }

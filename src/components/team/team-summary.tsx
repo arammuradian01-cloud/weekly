@@ -1,19 +1,21 @@
 "use client";
+import type { DirectoryPerson } from "@/domain/registry";
 
 import { usePrototype } from "@/domain/store";
-import { personOf, positionOf } from "@/domain/people";
+
 import { TOP_TEAM } from "@/domain/teams";
 import { isClosedThisWeek, isOverdue, isStale } from "@/domain/rules";
-import type { Person, PersonWeekly, Task } from "@/domain/types";
+import type { PersonWeekly, Task } from "@/domain/types";
 import { AbsentBadge, substituteText } from "@/components/weekly/absence";
 import { roleLabelOf, type OwnerLabels } from "@/lib/roles";
 import { cn } from "@/lib/cn";
 import { WeeklyBadge } from "@/components/ui/task-badges";
 import { Figures } from "@/components/ui/data";
 import { PersonName } from "@/components/people/person-card";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type Row = {
-  person: Person;
+  person: DirectoryPerson;
   total: number;
   inWork: number;
   overdue: number;
@@ -25,7 +27,7 @@ type Row = {
 const NO_OWNERS: OwnerLabels = { primary: null, titles: {} };
 
 /** Сводка по каждому, как сводка по лидерам над таблицей задач сейчас (раздел 4 ТЗ) */
-export function TeamSummary({
+export const TeamSummary = withRegistryLabels(function TeamSummary({
   reports,
   weekNumber,
   owners = NO_OWNERS,
@@ -35,6 +37,7 @@ export function TeamSummary({
   /** Главный владелец и подписи владельцев: остальные владельцы подписаны «Совладелец» (этап 52) или своей подписью (этап 69) */
   owners?: OwnerLabels;
 }) {
+  const { personOf, positionOf } = useRegistry();
   const { data, me, teamPeople } = usePrototype();
   // Выключенные с открытыми задачами остаются в сводке, пока их задачи не передали другим
   const gone = [...new Set(data.teamTasks.filter((t) => t.owner !== "all" && !t.archived && (t.status === "in-progress" || t.status === "clarify") && !teamPeople.some((p) => p.slug === t.owner)).map((t) => t.owner))].map(personOf);
@@ -106,7 +109,7 @@ export function TeamSummary({
                     <PersonName slug={r.person.slug} name={r.person.fullName} className="font-semibold text-ink" fallbackHref={`/tasks/review?person=${r.person.slug}`} />
                     {r.person.slug === me.slug ? <span className="ml-2 text-caption text-muted">это вы</span> : null}
                     <span className="block text-caption text-muted">
-                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone}` : `${roleLabelOf(r.person, owners)}, ${r.person.zone}`}
+                      {positionOf(r.person.slug) ? `${positionOf(r.person.slug)}, ${r.person.zone ?? ""}` : `${(r.person.role ? roleLabelOf({ role: r.person.role, slug: r.person.slug }, owners) : "Участник")}, ${r.person.zone ?? ""}`}
                     </span>
                   </th>
                   <td className="is-num" data-label="Всего">{num(r.total)}</td>
@@ -119,7 +122,7 @@ export function TeamSummary({
                     {absentNow(weekly) ? (
                       <>
                         <AbsentBadge />
-                        <span className="mt-1 block text-caption text-muted">{substituteText(weekly!.absent!.substitute)}</span>
+                        <span className="mt-1 block text-caption text-muted">{substituteText(weekly!.absent!.substitute, personOf)}</span>
                       </>
                     ) : (
                       <WeeklyOrAbove weekly={weekly} />
@@ -146,7 +149,7 @@ export function TeamSummary({
       </p>
     </div>
   );
-}
+});
 
 /** Weekly руководителя команды сдаётся в команду выше: его подчинённым он не показывается (этап 14) */
 function WeeklyOrAbove({ weekly }: { weekly: PersonWeekly | undefined }) {

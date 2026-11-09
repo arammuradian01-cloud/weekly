@@ -87,11 +87,11 @@ export function hasFilters(p: ListParams): boolean {
  * в строке списка, и по её коду («РТ-1») задачу искали, а поиск её не знал. Слова по отдельности: «отчёт иванов»
  * находит «Иванов» в ответственном и «отчет» в названии, как ищут командная строка, цели и команды
  */
-export function matchesText(task: Task, q: string): boolean {
+export function matchesText(task: Task, q: string, nameOf: typeof ownerName = ownerName): boolean {
   const query = searchKey(q);
   if (!query) return true;
   if (/^\d+$/.test(query)) return String(task.number) === query || searchKey(task.title).includes(query);
-  const hay = searchKey([task.title, task.outcome, task.where, ownerName(task.owner), task.goal?.code ?? "", task.goal?.title ?? ""].join(" "));
+  const hay = searchKey([task.title, task.outcome, task.where, nameOf(task.owner), task.goal?.code ?? "", task.goal?.title ?? ""].join(" "));
   return query.split(" ").every((w) => hay.includes(w));
 }
 
@@ -141,7 +141,7 @@ export function quickPredicate(key: QuickFilter, me: { slug: string; role: Role 
 }
 
 /** Отобрать задачи по параметрам. Архив и закрытые решаются здесь же */
-export function applyListParams(tasks: Task[], p: ListParams, me: { slug: string; role: Role }, today: IsoDate): Task[] {
+export function applyListParams(tasks: Task[], p: ListParams, me: { slug: string; role: Role }, today: IsoDate, nameOf: typeof ownerName = ownerName): Task[] {
   const preds = p.filters.map((f) => quickPredicate(f, me, today));
   return tasks.filter(
     (t) =>
@@ -149,7 +149,7 @@ export function applyListParams(tasks: Task[], p: ListParams, me: { slug: string
       (p.archive || p.closed || !isClosed(t)) &&
       (!p.owner || t.owner === p.owner) &&
       (!p.direction || t.direction === p.direction) &&
-      matchesText(t, p.q) &&
+      matchesText(t, p.q, nameOf) &&
       preds.every((f) => f(t)),
   );
 }
@@ -157,7 +157,7 @@ export function applyListParams(tasks: Task[], p: ListParams, me: { slug: string
 const STATUS_ORDER = ["proposed", "in-progress", "clarify", "partial", "done", "failed", "cancelled"];
 
 /** Сортировка по колонке. Без колонки прежний порядок: просроченные и критичные вперёд, потом по сроку */
-export function sortTasks(tasks: Task[], sort: SortKey | null, dir: SortDir, today: IsoDate): Task[] {
+export function sortTasks(tasks: Task[], sort: SortKey | null, dir: SortDir, today: IsoDate, nameOf: typeof ownerName = ownerName): Task[] {
   if (!sort) return defaultOrder(tasks, today);
   const sign = dir === "desc" ? -1 : 1;
   const cmp = (a: Task, b: Task): number => {
@@ -167,7 +167,7 @@ export function sortTasks(tasks: Task[], sort: SortKey | null, dir: SortDir, tod
       case "title":
         return a.title.localeCompare(b.title, "ru");
       case "owner":
-        return ownerName(a.owner).localeCompare(ownerName(b.owner), "ru");
+        return nameOf(a.owner).localeCompare(nameOf(b.owner), "ru");
       case "priority":
         return priorityOf(a.priority).rank - priorityOf(b.priority).rank;
       case "status":

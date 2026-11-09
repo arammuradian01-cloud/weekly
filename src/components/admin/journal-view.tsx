@@ -3,7 +3,7 @@
 import { Fragment, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { compactName } from "@/domain/people";
+
 import { formatAgo, formatLong, formatShort } from "@/domain/dates";
 import type { IsoDate } from "@/domain/dates";
 import { WEEKDAYS } from "@/lib/admin/labels";
@@ -13,6 +13,7 @@ import { SelectField } from "@/components/ui/primitives";
 import { buttonClass } from "@/components/ui/button";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const KINDS: { value: JournalEvent["kind"] | ""; label: string }[] = [
   { value: "", label: "Все события" },
@@ -55,7 +56,8 @@ function dayLabel(iso: IsoDate, today: IsoDate): string {
   return `${formatLong(iso)}, ${WEEKDAYS[day - 1]}`;
 }
 
-export function JournalView({ page, people, query, today }: { page: JournalPage; people: { slug: string; fullName: string; active: boolean }[]; query: JournalQuery; /** Сегодня по Москве: для подписей «Сегодня» и «Вчера» */ today: IsoDate }) {
+export const JournalView = withRegistryLabels(function JournalView({ page, people, query, today }: { page: JournalPage; people: { slug: string; fullName: string; active: boolean }[]; query: JournalQuery; /** Сегодня по Москве: для подписей «Сегодня» и «Вчера» */ today: IsoDate }) {
+  const { compactName } = useRegistry();
   const router = useRouter();
   const pathname = usePathname();
   const [pending, start] = useTransition();
@@ -187,7 +189,7 @@ export function JournalView({ page, people, query, today }: { page: JournalPage;
       ) : null}
     </div>
   );
-}
+});
 
 /** Задача открывается по ссылке прямо из журнала */
 function ObjectLabel({ e }: { e: JournalEvent }) {

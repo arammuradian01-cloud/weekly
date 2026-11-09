@@ -9,7 +9,7 @@ import { unstable_rethrow, usePathname, useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Search, Plus, CornerDownLeft, FileText, ListChecks, Newspaper, Gavel, Users, CalendarCheck2, Target, LayoutDashboard, MessageSquareText, UserRound, TrendingUp, BarChart3, Eye, EyeOff, Undo2, UserRoundCog, Map as MapIcon, type LucideIcon } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName } from "@/domain/people";
+
 import { formatShort } from "@/domain/dates";
 import { statusOf, type StatusCode } from "@/domain/dictionaries";
 import { cn } from "@/lib/cn";
@@ -19,6 +19,7 @@ import { openNewTask } from "@/components/prototype/new-task";
 import { stopViewAsAction } from "@/app/actions/view-as";
 import { openViewAs } from "./view-as";
 import { openOwnerAs, returnToOwnProfile } from "./owner-as";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 const OPEN_EVENT = "weekly:command-palette";
 
@@ -357,7 +358,8 @@ function ItemRow({ item }: { item: Item }) {
 }
 
 /** Заголовок результата: что это и откуда */
-export function HitTitle({ hit: h }: { hit: SearchHit }) {
+export const HitTitle = withRegistryLabels(function HitTitle({ hit: h }: { hit: SearchHit }) {
+  const { compactName } = useRegistry();
   if (h.kind === "task") {
     return (
       <span className={cn("block text-body font-medium", h.closed ? "text-muted" : "text-ink")}>
@@ -377,4 +379,4 @@ export function HitTitle({ hit: h }: { hit: SearchHit }) {
       {h.position ? <span className="ml-2 text-caption font-normal text-muted">{h.position}</span> : null}
     </span>
   );
-}
+});

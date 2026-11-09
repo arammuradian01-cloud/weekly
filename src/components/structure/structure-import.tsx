@@ -3,7 +3,7 @@
 // Загрузка структуры из таблицы (этап 14): файл CSV или ячейки, вставленные из Google-таблицы.
 // Сначала проверка: что добавится, изменится и уйдёт. База меняется только по кнопке «Загрузить».
 
-import { TOP_TEAM, teamName } from "@/domain/teams";
+import { TOP_TEAM } from "@/domain/teams";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { StructurePlan } from "@/lib/org/import";
@@ -13,8 +13,10 @@ import { Button } from "@/components/ui/button";
 import { TextArea } from "@/components/ui/primitives";
 import { FileField } from "@/components/ui/file-field";
 import { applyStructureAction, previewStructureAction } from "@/app/(app)/people/structure/actions";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
-export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+export const StructureImport = withRegistryLabels(function StructureImport({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { teamName } = useRegistry();
   const [text, setText] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
   const [plan, setPlan] = useState<StructurePlan | null>(null);
@@ -103,7 +105,7 @@ export function StructureImport({ open, onOpenChange }: { open: boolean; onOpenC
       </div>
     </Drawer>
   );
-}
+});
 
 function PlanView({ plan }: { plan: StructurePlan }) {
   return (

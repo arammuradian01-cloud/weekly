@@ -14,7 +14,7 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const ctx = await requireContext();
   const { team } = await searchParams;
   const subject = subjectOf(ctx);
-  const data = await teamAnalytics(subject, team ?? null);
+  const data = await teamAnalytics(subject, team ?? null, new Date(), !!ctx.management);
   // Анонимная оценка встреч (этап 29): те же права, что у аналитики
   const rating = data ? await ratingResults(subject, data.team.id) : null;
   return (

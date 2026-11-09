@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
-import { PEOPLE, authorName, personOf } from "@/domain/people";
+
 import { usePrototype } from "@/domain/store";
-import { teamOf } from "@/domain/teams";
+
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { WeeklyBadge } from "@/components/ui/task-badges";
@@ -14,12 +14,14 @@ import { EntryItem } from "./entry-item";
 import { AbsentBadge, absentLine, substituteText } from "./absence";
 import type { MeetingQuestion } from "@/lib/discuss/service";
 import { MeetingQuestions, type StuckItems } from "./meeting-questions";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /**
  * Режим встречи: крупный шрифт для экрана в переговорной.
  * Сначала риски и запросы помощи, потом лидеры по очереди (раздел 3 ТЗ).
  */
-export function MeetingMode({ view, questions = [], stuck = { requests: [], proposals: [] } }: { view: WeekView; questions?: MeetingQuestion[]; stuck?: StuckItems }) {
+export const MeetingMode = withRegistryLabels(function MeetingMode({ view, questions = [], stuck = { requests: [], proposals: [] } }: { view: WeekView; questions?: MeetingQuestion[]; stuck?: StuckItems }) {
+  const { PEOPLE, personOf, teamOf, authorName } = useRegistry();
   // Сервер выбирает отчётную неделю либо неделю, которую явно открыли в архиве.
   const week = view.week.number;
   const entries = view.entries;
@@ -28,7 +30,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
   // Руководитель выбранной команды (в топ-команде владелец) рассказывает последним
   const { team } = usePrototype();
   const lead = teamOf(team.id)?.leader;
-  const last = (p: { slug: string; role: string }) => Number(p.slug === lead || p.role === "OWNER");
+  const last = (p: { slug: string }) => Number(p.slug === lead);
   // Свои записи ленты и записи, поднятые наверх людьми команды (этап 15): поднятые рассказывает тот, кто их поднял
   const own = (e: WeeklyEntry) => !view.authors || (!!e.author && view.authors.includes(e.author));
   const raisedBy = (slug: string) => (view.authors && !view.authors.includes(slug) ? [] : entries.filter((e) => e.author !== slug && e.promoted?.some((x) => x.by === slug)));
@@ -107,7 +109,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
           <>
             <h1 className="text-display-sm font-semibold leading-tight text-ink sm:text-display">Риски и запросы помощи</h1>
             <p className="mt-2 text-title text-muted">Неделя {week}. С этого начинаем</p>
-            {absentLine(view.reports) ? <p className="mt-3 text-title-sm text-ink">Нет на этой неделе: {absentLine(view.reports)}.</p> : null}
+            {absentLine(view.reports, personOf) ? <p className="mt-3 text-title-sm text-ink">Нет на этой неделе: {absentLine(view.reports, personOf)}.</p> : null}
             {risky.length === 0 ? <p className="mt-8 text-title text-muted">Рисков и запросов помощи на этой неделе нет.</p> : null}
             <ul className="mt-8 flex flex-col gap-8">
               {risky.map((e) => (
@@ -140,7 +142,7 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
               {weekly?.absent && weekly.state !== "submitted" && weekly.state !== "late" ? <AbsentBadge /> : <WeeklyBadge state={weekly?.state ?? "not-started"} />}
             </div>
             {weekly?.headline ? <p className="mt-3 max-w-[60ch] text-headline leading-snug text-ink">{weekly.headline}</p> : null}
-            {weekly?.absent && !weekly.headline ? <p className="mt-3 text-title text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute)}</p> : null}
+            {weekly?.absent && !weekly.headline ? <p className="mt-3 text-title text-muted">Нет на этой неделе, {substituteText(weekly.absent.substitute, personOf)}</p> : null}
             <h2 className="sr-only">Записи weekly</h2>
             <ul className="mt-8 flex flex-col gap-8">
               {entries
@@ -187,4 +189,4 @@ export function MeetingMode({ view, questions = [], stuck = { requests: [], prop
       </div>
     </div>
   );
-}
+});

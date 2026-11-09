@@ -3,15 +3,17 @@
 // Строки и списки просьб (этап 21): очередь «Ждёт вас» на «Моей неделе» (этап 44, с этапа 76 там же счётчики), «Жду от коллег».
 
 import Link from "next/link";
-import { compactName } from "@/domain/people";
+
 import { formatShort } from "@/domain/dates";
 import { currentDue, type RequestView } from "@/domain/requests";
 import { EmptyState } from "@/components/empty-state";
 import { cn } from "@/lib/cn";
 import { RequestActions } from "./request-actions";
 import { RequestBadge } from "./request-parts";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
-export function RequestRow({ request, mode }: { request: RequestView; mode: "incoming" | "outgoing" | "any" }) {
+export const RequestRow = withRegistryLabels(function RequestRow({ request, mode }: { request: RequestView; mode: "incoming" | "outgoing" | "any" }) {
+  const { compactName } = useRegistry();
   const r = request;
   const active = r.status === "open" || r.status === "accepted";
   const who = mode === "incoming" ? `от ${compactName(r.author)}` : mode === "outgoing" ? `${compactName(r.addressee)}` : `${compactName(r.author)}, адресат ${compactName(r.addressee)}`;
@@ -53,7 +55,7 @@ export function RequestRow({ request, mode }: { request: RequestView; mode: "inc
       <RequestActions request={r} />
     </li>
   );
-}
+});
 
 export function RequestList({
   items,

@@ -70,7 +70,7 @@ export async function weeklyReaders(personId: string): Promise<{ team: string; l
 export type ReportWithComments = { report: SentReport; comments: ReportCommentsView };
 
 /** Weekly одного сотрудника в «Полученных» */
-export type PersonWeeklyRow = Awaited<ReturnType<typeof peopleWeekly>>[number];
+export type PersonWeeklyRow = Omit<Awaited<ReturnType<typeof peopleWeekly>>[number], "inactive"> & { inactive?: boolean };
 
 /** Сводный заголовок раздела: что открыто и за какую неделю */
 export type LeaderReportView = {
@@ -176,7 +176,7 @@ export async function leaderReportView(actor: Actor, params: { week?: string; te
     ceo: ceo?.current?.key === key ? ceo : null,
     teams: scope.teams.map((t) => ({ id: t.id, name: t.name })),
     team: team ? { id: team.id, name: team.name } : null,
-    people,
+    people: people.map(({ inactive, ...r }) => ({ ...r, ...(actor.management ? { inactive } : {}) })),
     expected: { required: required.length, submitted: required.filter((r) => done(r.state)).length, absent: people.filter((r) => !r.inactive && r.absent).length },
   };
 }

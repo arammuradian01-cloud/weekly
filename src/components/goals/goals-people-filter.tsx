@@ -4,14 +4,15 @@ import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { NO_OWNER, NO_OWNER_LABEL, selectedLabels, selectionState, toggleSlug, type OwnerRef } from "@/lib/goals/by-person";
-import { personOf } from "@/domain/people";
+
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /**
  * Чьи цели показать: три взаимоисключающих состояния (все, мои, выбранные) и меню выбора нескольких людей.
  * «Выбранные» открывают меню: выбор набирают в нём. Отбор только среди владельцев уже доступных целей, новых прав он не даёт.
  * people и selected уже согласованы с целями квартала: человека, которого в них нет, здесь не будет
  */
-export function GoalsPeopleFilter({ people, unowned, selected, me, mineAvailable, onChange }: {
+export const GoalsPeopleFilter = withRegistryLabels(function GoalsPeopleFilter({ people, unowned, selected, me, mineAvailable, onChange }: {
   people: OwnerRef[];
   /** В квартале есть цели без владельца: они считаются целями руководителя команды */
   unowned: boolean;
@@ -21,6 +22,7 @@ export function GoalsPeopleFilter({ people, unowned, selected, me, mineAvailable
   mineAvailable: boolean;
   onChange: (slugs: string[]) => void;
 }) {
+  const { personOf } = useRegistry();
   const state = selectionState(selected, me);
   const labels = selectedLabels(selected, (slug) => people.find((p) => p.slug === slug)?.fullName ?? (slug === me ? "Я" : personOf(slug).fullName));
   const item = (active: boolean) => cn("sv-segment__item", active && "is-active");
@@ -73,7 +75,7 @@ export function GoalsPeopleFilter({ people, unowned, selected, me, mineAvailable
       {labels.length ? <p className="m-0 text-small text-muted" data-testid="goals-people-selected">Выбраны: {labels.join(", ")}</p> : null}
     </div>
   );
-}
+});
 
 function PersonItem({ label, checked, onChange }: { label: string; checked: boolean; onChange: (on: boolean) => void }) {
   return (

@@ -21,18 +21,20 @@ import { useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Check, ChevronDown, CornerDownLeft, Search, Settings2, Users, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { ALL_TEAMS, teamOf } from "@/domain/teams";
-import { personOf } from "@/domain/people";
+import { ALL_TEAMS } from "@/domain/teams";
+
 import { matchTeam, readRecent, rememberRecent, teamHint, teamSections, type TeamPick } from "@/domain/team-picker";
 import { setTeamAction } from "@/app/actions/team";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** Пункт окна: команда или «Все мои команды». key уникален в окне: одна команда бывает и в «Ваших», и в «Недавних» */
 type Row = { key: string; id: string; name: string; hint: string; depth: number; note: string | null; index: number };
 
 const ALL_ROW = { id: ALL_TEAMS, name: "Все мои команды", hint: "Задачи и weekly всех команд из списка вместе" };
 
-export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
+export const TeamSwitcher = withRegistryLabels(function TeamSwitcher({ compact = false }: { compact?: boolean }) {
+  const { teamOf, personOf } = useRegistry();
   const { team, notify, me, viewing, ownerAs } = usePrototype();
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -52,7 +54,7 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
       const parent = entry?.parent && visible.has(entry.parent) ? (teamOf(entry.parent)?.name ?? null) : null;
       return { ...o, leader: entry?.leader ? personOf(entry.leader).fullName : null, parent };
     });
-  }, [team.options]);
+  }, [team.options, teamOf, personOf]);
 
   const sections = useMemo(() => {
     const rowOf = (section: string, t: TeamPick, indent: boolean): Omit<Row, "index"> => ({
@@ -278,4 +280,4 @@ export function TeamSwitcher({ compact = false }: { compact?: boolean }) {
       </Dialog.Root>
     </div>
   );
-}
+});

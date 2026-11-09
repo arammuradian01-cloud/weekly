@@ -1,3 +1,4 @@
+import type { PersonLabel } from "@/domain/person-labels";
 // Просьбы коллегам (этап 21, модуль М4 плана Weekly 2.0): типы и подписи для экранов. Без обращения к базе.
 
 import type { IsoDate } from "./dates";
@@ -29,6 +30,7 @@ export type RequestCan = {
 };
 
 export type RequestView = {
+  peopleLabels?: PersonLabel[];
   number: number;
   status: RequestStatusCode;
   text: string;

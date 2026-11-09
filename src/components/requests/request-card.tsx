@@ -5,19 +5,21 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { compactName, ownerName } from "@/domain/people";
+
 import { formatLong } from "@/domain/dates";
 import { isActiveRequest, type RequestView } from "@/domain/requests";
 import { Meta } from "@/components/ui/primitives";
 import { RequestActions } from "./request-actions";
 import { RequestBadge } from "./request-parts";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type HistoryRow = { at: string; by: string | null; field: string; before: string | null; after: string | null };
 
 const moment = (iso: string) =>
   new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-export function RequestCard({ request, history }: { request: RequestView; history: HistoryRow[] }) {
+export const RequestCard = withRegistryLabels(function RequestCard({ request, history }: { request: RequestView; history: HistoryRow[] }) {
+  const { ownerName, compactName } = useRegistry();
   const [r, setR] = useState(request);
   useEffect(() => setR(request), [request]);
   const active = isActiveRequest(r.status);
@@ -84,4 +86,4 @@ export function RequestCard({ request, history }: { request: RequestView; histor
       </section>
     </div>
   );
-}
+});

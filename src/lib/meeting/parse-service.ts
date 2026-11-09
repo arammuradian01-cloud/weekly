@@ -1,3 +1,4 @@
+import type { PersonLabel } from "@/domain/person-labels";
 // Разбор встречи из Notion (этап 61). Решение Арама 21.10: Excel-борд больше не главный, главное приложение. Ведущий
 // встречи даёт ссылку на страницу встречи в Notion, ресурс читает её через внутреннюю интеграцию, разбирает текст (Claude
 // по API, без ключа или при сбое правилами) и показывает итоги встречи, черновик weekly для CEO и черновики задач.
@@ -79,6 +80,7 @@ const isStale = (row: { status: MeetingParseStatus; startedAt: Date; lastBeatAt:
 export type CreatedTask = { number: number; title: string; owner: PersonSlug | null; proposed: boolean; approval: "pending" | "informed" | null; approver: string | null };
 
 export type ParseView = {
+  peopleLabels?: PersonLabel[];
   id: string;
   meetingId: string;
   team: { id: string; name: string };
@@ -533,6 +535,9 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
   const stored = resultOf(row.result);
   // Цель в черновике хранится подобранной: пересчёт при сохранении черновика и при создании задач, а не на каждом показе
   const result: ParseResult = { ...stored, ceo: canSeeCeo ? stored.ceo : EMPTY_RESULT.ceo };
+  const created = await createdTasks(row.taskNumbers);
+  const labelSlugs = [...new Set([...result.tasks.flatMap((t) => [t.owner, ...t.coExecutors]), ...result.decisions.map((d) => d.owner), ...created.map((t) => t.owner)].filter((slug): slug is string => !!slug))];
+  const peopleLabels = await prisma.person.findMany({ where: { slug: { in: labelSlugs } }, select: { slug: true, fullName: true, shortName: true } });
   return {
     id: row.id,
     meetingId: row.meetingId,
@@ -550,6 +555,7 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     pageText: canSeeText ? row.pageText : "",
     canSeeText,
     result,
+    peopleLabels,
     startedAt: row.startedAt.toISOString(),
     finishedAt: row.finishedAt?.toISOString() ?? null,
     stale: isStale(row, now),
@@ -561,7 +567,7 @@ async function toView(actor: Actor, row: ParseRow, rights: { canLead: boolean; t
     ceoSentBy: row.ceoSentBy?.fullName ?? null,
     tasksCreatedAt: row.tasksCreatedAt?.toISOString() ?? null,
     tasksCreatedBy: row.tasksCreatedBy?.fullName ?? null,
-    createdTasks: await createdTasks(row.taskNumbers),
+    createdTasks: created,
     decisionsCreated: row.decisionsCreated,
     canEdit: rights.canLead && ready,
     canRetry: rights.canLead && !row.ceoSentAt && !row.tasksCreatedAt && (row.status !== "PENDING" || isStale(row, now)),

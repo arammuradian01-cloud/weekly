@@ -8,7 +8,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, ChevronsUpDown, OctagonAlert, Repeat, Search, SquareCheck, Target, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, initials as personInitials, ownerName, positionOf } from "@/domain/people";
+
 import { greenOutside } from "@/lib/tasks/green-outside";
 import { DIRECTIONS, PRIORITIES, directionLabel, priorityOf } from "@/domain/dictionaries";
 import { formatShort } from "@/domain/dates";
@@ -27,11 +27,13 @@ import { useOpenTask } from "./task-drawer";
 import { SavedViews } from "./saved-views";
 import { BulkBar, useBulkSelection } from "./bulk-actions";
 import { checklistProgress } from "./task-checklist";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /** «Все ответственные» в поле с поиском: пустого значения у поля нет, оно приходит, пока человек печатает (этап 74) */
 const ANY_OWNER = "__any";
 
-export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
+export const TaskList = withRegistryLabels(function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
+  const { ownerName, positionOf } = useRegistry();
   const { data, me, manageRole, manage, leads, teamPeople, observer, limited } = usePrototype();
   const params = useSearchParams();
   const router = useRouter();
@@ -82,8 +84,8 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
   const counts = Object.fromEntries(QUICK_FILTERS.map((f) => [f.key, base.filter(quickPredicate(f.key, me, today)).length])) as Record<QuickFilter, number>;
   const archivedCount = data.teamTasks.filter((t) => t.archived).length;
 
-  const filtered = useMemo(() => sortTasks(applyListParams(data.teamTasks, { ...p, archive }, me, today), p.sort, p.dir, today), [data.teamTasks, p, archive, me, today]);
-  const closedCount = useMemo(() => applyListParams(data.teamTasks, { ...p, archive, closed: true }, me, today).filter((t) => isClosed(t)).length, [data.teamTasks, p, archive, me, today]);
+  const filtered = useMemo(() => sortTasks(applyListParams(data.teamTasks, { ...p, archive }, me, today, ownerName), p.sort, p.dir, today, ownerName), [data.teamTasks, p, archive, me, today, ownerName]);
+  const closedCount = useMemo(() => applyListParams(data.teamTasks, { ...p, archive, closed: true }, me, today, ownerName).filter((t) => isClosed(t)).length, [data.teamTasks, p, archive, me, today, ownerName]);
 
   const groups = useMemo(() => {
     if (p.group === "none") return [{ key: "all", title: "", tasks: filtered }];
@@ -109,7 +111,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
     const titleOf = (k: string) =>
       p.group === "owner" ? ownerName(k as Task["owner"]) : p.group === "direction" ? directionLabel(k as Task["direction"]) : priorityOf(k as Task["priority"]).label;
     return order.map((k) => ({ key: k, title: titleOf(k), tasks: filtered.filter((t) => keyOf(t) === k) })).filter((g) => g.tasks.length > 0);
-  }, [filtered, p.group, teamPeople]);
+  }, [filtered, p.group, teamPeople, ownerName]);
 
   // Рисуем не всё (этап 74): у владельца в списке бывают тысячи задач, и экран от них встаёт. Предел на разметку, а не
   // на отбор: счётчики, массовые действия и поиск по-прежнему считают все отобранные задачи
@@ -280,7 +282,7 @@ export function TaskList({ views = [] }: { views?: SavedViewDto[] }) {
       {canBulk && !archive ? <BulkBar selection={bulk} tasks={filtered} shown={shownNumbers} /> : null}
     </div>
   );
-}
+});
 
 const SORT_LABELS: Record<SortKey, string> = { number: "по номеру", title: "по названию", owner: "по ответственному", priority: "по приоритету", status: "по статусу", due: "по сроку", updated: "по обновлению" };
 
@@ -329,7 +331,7 @@ function GoalCell({ goal, className }: { goal: NonNullable<Task["goal"]>; classN
   );
 }
 
-export function TaskTable({
+export const TaskTable = withRegistryLabels(function TaskTable({
   groups,
   showOwner = true,
   onOpen,
@@ -353,6 +355,7 @@ export function TaskTable({
   /** Флажки для массовых действий (этап 25) */
   selection?: Selection;
 }) {
+  const { initials: personInitials, ownerName, compactName } = useRegistry();
   const { data } = usePrototype();
   const { open: openTask } = useOpenTask();
   const open = onOpen ?? openTask;
@@ -531,4 +534,4 @@ export function TaskTable({
       </div>
     </div>
   );
-}
+});

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { MessagesSquare } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { authorName, compactName } from "@/domain/people";
+
 import type { MeetingQuestion } from "@/lib/discuss/service";
 import type { StaleProposal } from "@/lib/requests/service";
 import { currentDue, type RequestView } from "@/domain/requests";
@@ -14,6 +14,7 @@ import { setDiscussedAction } from "@/app/(app)/weekly/discuss-actions";
 import { weekNumberOf } from "@/lib/weekly/weeks";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 /**
  * Вопросы к встрече (этап 20): «Обсудить на встрече» к записям и комментариям. Необсуждённые сверху,
@@ -22,7 +23,8 @@ import { Button } from "@/components/ui/button";
 /** Что зависло (этап 21): просьбы без ответа больше 2 рабочих дней и просроченные принятые, предложения без ответа 3 дня */
 export type StuckItems = { requests: RequestView[]; proposals: StaleProposal[] };
 
-export function MeetingQuestions({ week, questions, stuck = { requests: [], proposals: [] } }: { week: number; questions: MeetingQuestion[]; stuck?: StuckItems }) {
+export const MeetingQuestions = withRegistryLabels(function MeetingQuestions({ week, questions, stuck = { requests: [], proposals: [] } }: { week: number; questions: MeetingQuestion[]; stuck?: StuckItems }) {
+  const { compactName, authorName } = useRegistry();
   const { notify, observer } = usePrototype();
   const [list, setList] = useState(questions);
   const [busy, setBusy] = useState<string | null>(null);
@@ -118,4 +120,4 @@ export function MeetingQuestions({ week, questions, stuck = { requests: [], prop
       ) : null}
     </>
   );
-}
+});

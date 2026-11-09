@@ -3,10 +3,12 @@
 import { useRef, useState } from "react";
 import * as Menu from "@radix-ui/react-dropdown-menu";
 import { Check, CircleHelp, Heart, MessagesSquare, SmilePlus } from "lucide-react";
-import { compactName } from "@/domain/people";
+
 import type { PersonSlug, ReactionCode, ReactionView } from "@/domain/types";
 import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
 export const REACTIONS: { code: ReactionCode; label: string; Icon: typeof Check }[] = [
   { code: "accepted", label: "Принято", Icon: Check },
@@ -18,7 +20,7 @@ export const REACTIONS: { code: ReactionCode; label: string; Icon: typeof Check 
 const labelOf = (code: ReactionCode) => REACTIONS.find((r) => r.code === code)!.label;
 
 /** Кто поставил реакцию: «Тарас Р., Алсу С.» */
-function whoText(list: ReactionView[]): string {
+function whoText(list: ReactionView[], compactName: RegistryLookup["compactName"]): string {
   return list.map((r) => compactName(r.by)).join(", ");
 }
 
@@ -116,7 +118,7 @@ function ReactionMenu({ reactions, me, disabled, onPick, icon = false }: { react
  * Реакции на запись (этап 20): четыре кнопки с числом. В ленте (compact) только поставленные реакции и меню. Повторное нажатие снимает свою реакцию.
  * «Обсудить на встрече» сначала просит вопрос. Ниже вопросы к встрече и отметка «обсуждено»
  */
-export function ReactionBar({
+export const ReactionBar = withRegistryLabels(function ReactionBar({
   id,
   reactions,
   me,
@@ -140,6 +142,7 @@ export function ReactionBar({
   /** Что стоит в конце строки реакций справа: в ленте кнопка обсуждения иконкой рядом с меню реакции (этап 43) */
   trailing?: React.ReactNode;
 }) {
+  const { compactName } = useRegistry();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState<ReactionCode | null>(null);
   const questions = reactions.filter((r) => r.kind === "discuss");
@@ -165,7 +168,7 @@ export function ReactionBar({
                 type="button"
                 disabled={readOnly || busy !== null}
                 aria-pressed={mine}
-                title={list.length ? `${label}: ${whoText(list)}` : label}
+                title={list.length ? `${label}: ${whoText(list, compactName)}` : label}
                 onClick={() => void press(code)}
                 className={cn("sv-reaction disabled:cursor-default", large && "sv-reaction--lg", mine && "is-mine")}
               >
@@ -218,10 +221,10 @@ export function ReactionBar({
       ) : null}
     </div>
   );
-}
+});
 
 /** Реакции на комментарий: поставленные реакции с числом и меню, чтобы добавить свою. Компактно, чтобы не шуметь */
-export function CommentReactions({
+export const CommentReactions = withRegistryLabels(function CommentReactions({
   id,
   reactions,
   me,
@@ -234,6 +237,7 @@ export function CommentReactions({
   readOnly?: boolean;
   onToggle: ToggleReaction;
 }) {
+  const { compactName } = useRegistry();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const toggle = async (code: ReactionCode, question?: string | null) => {
@@ -256,7 +260,7 @@ export function CommentReactions({
               type="button"
               disabled={readOnly || busy}
               aria-pressed={mine}
-              title={`${label}: ${whoText(list)}`}
+              title={`${label}: ${whoText(list, compactName)}`}
               aria-label={`${label}: ${list.length}`}
               onClick={() => (code === "discuss" && !mine ? setAsking(true) : void toggle(code))}
               className={cn("sv-reaction !h-7 !px-2", mine && "is-mine")}
@@ -279,4 +283,4 @@ export function CommentReactions({
       ))}
     </div>
   );
-}
+});

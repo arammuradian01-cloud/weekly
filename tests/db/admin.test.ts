@@ -52,7 +52,7 @@ describe("справочники", () => {
     await admin.renameDictItem(a, "ENTRY_TYPE", "plan", "План на неделю");
     const log = await lastAudit("settings.dict.rename");
     expect([log?.field, log?.before, log?.after]).toEqual(["Типы записей: название", "План", "План на неделю"]);
-    const reg = await loadRegistry();
+    const reg = await loadRegistry({ management: true, visibleTeams: [] });
     expect(reg.dicts.ENTRY_TYPE.find((d) => d.code === "plan")?.label).toBe("План на неделю");
   });
 
@@ -71,7 +71,7 @@ describe("справочники", () => {
     await expect(weekly.saveEntry(reva, { week: rk, direction: "kasko", block: "product", type: "event", what: "Новая" })).rejects.toThrow(/направление из списка/);
     await expect(tasks.createTask(a, { title: "С КАСКО", outcome: "Итог", owner: "reva", direction: "kasko", due })).rejects.toThrow(/направление из списка/);
     // Подпись в снимке для экранов осталась, но в выборе значения нет
-    const reg = await loadRegistry();
+    const reg = await loadRegistry({ management: true, visibleTeams: [] });
     expect(reg.dicts.DIRECTION.find((d) => d.code === "kasko")).toEqual({ code: "kasko", label: "КАСКО", active: false });
 
     const sources = await prisma.dictionaryItem.findMany({ where: { kind: "TASK_SOURCE" } });
@@ -93,7 +93,7 @@ describe("люди и роли", () => {
     expect(p.slug).toBe("novikova");
     const log = await lastAudit("settings.person.create");
     expect(log?.after).toBe("Новикова Анна, лидер, Ипотека");
-    const reg = await loadRegistry();
+    const reg = await loadRegistry({ management: true, visibleTeams: [] });
     expect(reg.people.find((x) => x.slug === "novikova")).toMatchObject({ fullName: "Новикова Анна", shortName: "Анна", direction: "red", active: true });
     const t = await tasks.createTask(o, { title: "Познакомиться с командой", outcome: "Встреча проведена", owner: "novikova", direction: "red", due });
     expect(t.task.owner).toBe("novikova");
@@ -148,7 +148,7 @@ describe("ритм недели", () => {
       ["День встречи", "вторник", "среда"],
       ["Давно не обновлялась, дней", "14", "10"],
     ]);
-    expect((await loadRegistry()).staleDays).toBe(10);
+    expect((await loadRegistry({ management: true, visibleTeams: [] })).staleDays).toBe(10);
     // Повтор тех же значений ничего не пишет
     expect(await admin.saveRhythm(a, { deadlineWeekday: 2, deadlineTime: "12:00", meetingWeekday: 3, staleDays: 10 }, NOW)).toEqual({ changed: 0, weeks: 0 });
   });

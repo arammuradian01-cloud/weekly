@@ -11,7 +11,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ExternalLink, RefreshCw, Save, Send, Sparkles, X } from "lucide-react";
 import { usePrototype } from "@/domain/store";
-import { compactName, personOf } from "@/domain/people";
+
 import { dictOptions } from "@/domain/dictionaries";
 import { formatLong, plural } from "@/domain/dates";
 import type { PersonSlug } from "@/domain/types";
@@ -29,13 +29,15 @@ import { FormError } from "@/components/ui/field";
 import { PersonSelect } from "@/components/requests/request-parts";
 import { CeoAssembled } from "@/components/ceo/ceo-assembled";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
+import type { RegistryLookup } from "@/domain/registry-lookup";
 
 export type ParseTab = "summary" | "ceo" | "tasks";
 
 const moment = (iso: string) =>
   new Intl.DateTimeFormat("ru-RU", { timeZone: "Europe/Moscow", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }).format(new Date(iso)).replace(" в ", ", ");
 
-const personName = (slug: string) => personOf(slug as PersonSlug).fullName;
+const personName = (slug: string, personOf: RegistryLookup["personOf"]) => personOf(slug as PersonSlug).fullName;
 
 export function NotionParseScreen({ view, initialTab }: { view: ParseView; initialTab: ParseTab }) {
   return (
@@ -349,7 +351,8 @@ function List({ title, items, empty }: { title: string; items: React.ReactNode[]
   );
 }
 
-function Summary({ view }: { view: ParseView }) {
+const Summary = withRegistryLabels(function Summary({ view }: { view: ParseView }) {
+  const { compactName } = useRegistry();
   const r = view.result;
   return (
     <div className="flex flex-col gap-6 pt-4">
@@ -383,7 +386,7 @@ function Summary({ view }: { view: ParseView }) {
       )}
     </div>
   );
-}
+});
 
 type TabProps = { view: ParseView; dirty: boolean; busy: Busy; setBusy: (b: Busy) => void; save: () => Promise<void>; persist: () => Promise<string | true> };
 
@@ -539,7 +542,7 @@ function CeoTab({ view, ceo, edit, dirty, busy, setBusy, save, persist }: TabPro
   );
 }
 
-function TasksTab({
+const TasksTab = withRegistryLabels(function TasksTab({
   view,
   tasks,
   edit,
@@ -550,6 +553,7 @@ function TasksTab({
   setBusy,
   save,
 }: TabProps & { tasks: ParseTaskDraft[]; edit: (key: string, p: Partial<ParseTaskDraft>) => void; decisions: ParseDecision[]; editDecision: (key: string | undefined, p: Partial<ParseDecision>) => void }) {
+  const { compactName, personOf } = useRegistry();
   const router = useRouter();
   const { notify, data } = usePrototype();
   const [error, setError] = useState<string | null>(null);
@@ -636,7 +640,7 @@ function TasksTab({
                   Записать решение {i + 1}
                 </label>
                 <TextArea label={`Текст решения ${i + 1}`} id={`decision-${d.key ?? i}`} value={d.text} rows={2} maxLength={1000} readOnly={!view.canEdit} onChange={(e) => editDecision(d.key, { text: e.target.value })} />
-                {d.owner ? <p className="text-small text-muted">Владелец: {personName(d.owner)}</p> : d.ownerText ? <p className="text-small text-muted">Владелец в тексте: {d.ownerText}</p> : null}
+                {d.owner ? <p className="text-small text-muted">Владелец: {personName(d.owner, personOf)}</p> : d.ownerText ? <p className="text-small text-muted">Владелец в тексте: {d.ownerText}</p> : null}
               </li>
             ))}
           </ol>
@@ -664,9 +668,10 @@ function TasksTab({
       ) : null}
     </div>
   );
-}
+});
 
-function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: number; task: ParseTaskDraft; edit: (p: Partial<ParseTaskDraft>) => void; readOnly: boolean; today: string; team: string }) {
+const DraftCard = withRegistryLabels(function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: number; task: ParseTaskDraft; edit: (p: Partial<ParseTaskDraft>) => void; readOnly: boolean; today: string; team: string }) {
+  const { compactName, personOf } = useRegistry();
   const id = `draft-${t.key}`;
   const noOwner = t.on && !t.owner;
   // Поля, от которых зависит цель, поменяли на экране: цель проверится при сохранении или создании
@@ -698,7 +703,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1">
           {readOnly ? (
-            <TextInput label="Ответственный" id={`${id}-owner`} value={t.owner ? personName(t.owner) : "не выбран"} readOnly />
+            <TextInput label="Ответственный" id={`${id}-owner`} value={t.owner ? personName(t.owner, personOf) : "не выбран"} readOnly />
           ) : (
             <PersonSelect id={`${id}-owner`} label="Ответственный" value={t.owner ?? ""} onChange={(v) => change({ owner: v || null, coExecutors: t.coExecutors.filter((c) => c !== v) }, true)} exclude={"" as PersonSlug} />
           )}
@@ -721,7 +726,7 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
                 <li key={c} className="inline-flex items-center gap-1 rounded-full bg-field px-2.5 py-1 text-small text-ink">
                   {compactName(c as PersonSlug)}
                   {!readOnly ? (
-                    <button type="button" aria-label={`Убрать соисполнителя ${personName(c)}`} onClick={() => change({ coExecutors: t.coExecutors.filter((x) => x !== c) }, true)} className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-surface">
+                    <button type="button" aria-label={`Убрать соисполнителя ${personName(c, personOf)}`} onClick={() => change({ coExecutors: t.coExecutors.filter((x) => x !== c) }, true)} className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-surface">
                       <X className="h-3.5 w-3.5" aria-hidden="true" />
                     </button>
                   ) : null}
@@ -757,4 +762,4 @@ function DraftCard({ index, task: t, edit, readOnly, today, team }: { index: num
       </div>
     </li>
   );
-}
+});

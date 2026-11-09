@@ -1,3 +1,5 @@
+import type { PersonLabel } from "@/domain/person-labels";
+import { personLabelsOf } from "@/lib/person-labels";
 // Weekly на сервере (раздел 3 ТЗ): недели, сдача в четыре шага, черновик на сервере, лента, отчёт CEO.
 // Права проверяются здесь же: экран только прячет то, что нельзя.
 
@@ -82,14 +84,14 @@ function weekInfo(row: WeekRow, reporting: WeekKey): WeekInfo {
 
 export const entryInclude = {
   week: { select: { start: true } },
-  author: { select: { slug: true } },
+  author: { select: { slug: true, fullName: true, shortName: true } },
   direction: { select: { code: true, label: true } },
   block: { select: { code: true, label: true } },
   type: { select: { code: true, label: true } },
   tasks: { select: { number: true }, orderBy: { number: "asc" as const }, take: 1 },
-  promotions: { select: { note: true, byId: true, by: { select: { slug: true } } }, orderBy: { createdAt: "asc" as const } },
+  promotions: { select: { note: true, byId: true, by: { select: { slug: true, fullName: true, shortName: true } } }, orderBy: { createdAt: "asc" as const } },
   // Обсуждение под записью (этап 20)
-  comments: { orderBy: { at: "asc" as const }, include: { author: { select: { slug: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } } } },
+  comments: { orderBy: { at: "asc" as const }, include: { author: { select: { slug: true, fullName: true, shortName: true } }, reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } } } },
   reactions: { include: reactionInclude, orderBy: { createdAt: "asc" as const } },
 } satisfies Prisma.WeeklyEntryInclude;
 
@@ -97,6 +99,7 @@ export type EntryRow = Prisma.WeeklyEntryGetPayload<{ include: typeof entryInclu
 
 export function toEntryDto(e: EntryRow): WeeklyEntry {
   return {
+    peopleLabels: personLabelsOf(e),
     id: e.id,
     week: isoFromDbDate(e.week.start),
     author: (e.author?.slug as PersonSlug | undefined) ?? null,
@@ -189,7 +192,7 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
   if (target > reporting) target = reporting;
   const row = await ensureWeek(prisma, target);
   const [reports, entries, people, absences, teams] = await Promise.all([
-    prisma.weeklyReport.findMany({ where: { weekId: row.id }, include: { author: { select: { slug: true } } } }),
+    prisma.weeklyReport.findMany({ where: { weekId: row.id }, include: { author: { select: { slug: true, fullName: true, shortName: true } } } }),
     prisma.weeklyEntry.findMany({ where: { AND: [{ weekId: row.id }, scope] }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     // Люди ленты: от кого ждём weekly и остальные участники, которые могут сдать по желанию (этап 15)
     prisma.person.findMany({
@@ -205,6 +208,8 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
     absenceMap(row.id),
     weekTeams(prisma, row.id),
   ]);
+  const substituteSlugs = people.map((p) => absences.get(p.id)).filter((slug): slug is string => !!slug);
+  const substitutes = await prisma.person.findMany({ where: { slug: { in: substituteSlugs } }, select: { slug: true, fullName: true, shortName: true } });
   const byAuthor = new Map(reports.map((r) => [r.author.slug, r]));
   const expected = audience ? new Set(audience.personIds) : null;
   const authorSlugs = audience ? await slugsOfIds(audience.authorIds ?? audience.personIds) : null;
@@ -225,6 +230,7 @@ export async function getWeekView(key: WeekKey | null, now = new Date(), audienc
       return {
         week: target,
         author: p.slug as PersonSlug,
+        peopleLabels: personLabelsOf([p, substitutes.find((s) => s.slug === absences.get(p.id))]),
         headline: r?.headline ?? "",
         ...(r?.thanks ? { thanks: r.thanks } : {}),
         state: r ? STATE_CODE[r.state] : "not-started",
@@ -256,7 +262,7 @@ function keepNotes(e: WeeklyEntry, allowed: (slug: PersonSlug) => boolean): Week
 
 async function slugsOfIds(ids: string[]): Promise<PersonSlug[]> {
   if (!ids.length) return [];
-  return (await prisma.person.findMany({ where: { id: { in: ids } }, select: { slug: true } })).map((p) => p.slug as PersonSlug);
+  return (await prisma.person.findMany({ where: { id: { in: ids } }, select: { slug: true, fullName: true, shortName: true } })).map((p) => p.slug as PersonSlug);
 }
 
 /** Свой срок человека, если он раньше срока департамента: команда ниже сдаёт раньше */
@@ -273,7 +279,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
   const [report, entries, absence, teams, promoted] = await Promise.all([
     prisma.weeklyReport.findUnique({ where: { weekId_authorId: { weekId: row.id, authorId: personId } } }),
     prisma.weeklyEntry.findMany({ where: { weekId: row.id, authorId: personId }, include: entryInclude, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
-    prisma.absence.findUnique({ where: { personId_weekId: { personId, weekId: row.id } }, include: { substitute: { select: { slug: true } } } }),
+    prisma.absence.findUnique({ where: { personId_weekId: { personId, weekId: row.id } }, include: { substitute: { select: { slug: true, fullName: true, shortName: true } } } }),
     weekTeams(prisma, row.id),
     prisma.weeklyEntry.findMany({ where: { weekId: row.id, promotions: { some: { byId: personId } } }, include: entryInclude, orderBy: [{ createdAt: "asc" }] }),
   ]);
@@ -290,6 +296,7 @@ export async function getMyWeekly(personId: string, key: WeekKey, now = new Date
     report: {
       week: key,
       author: person.slug as PersonSlug,
+      peopleLabels: personLabelsOf([person, absence?.substitute]),
       headline: report?.headline ?? "",
       ...(report?.thanks ? { thanks: report.thanks } : {}),
       state: report ? STATE_CODE[report.state] : "not-started",
@@ -749,7 +756,7 @@ export async function restoreEntry(actor: Actor, snapshot: EntrySnapshot): Promi
     const week = await tx.week.findUnique({ where: { id: snapshot.weekId } });
     if (!week) return fail("Неделя этой записи больше не существует");
     const { info, reporting } = await weekContext(tx, isoFromDbDate(week.start), snapshot.authorId);
-    const author = snapshot.authorId ? await tx.person.findUnique({ where: { id: snapshot.authorId }, select: { slug: true } }) : null;
+    const author = snapshot.authorId ? await tx.person.findUnique({ where: { id: snapshot.authorId }, select: { slug: true, fullName: true, shortName: true } }) : null;
     canEdit(info, reporting, actor, (author?.slug as PersonSlug | undefined) ?? null);
     const saved = await tx.weeklyEntry.create({
       data: {
@@ -1135,14 +1142,14 @@ export type { IsoDate };
 
 /** Кто отсутствует на неделе: id человека и короткое имя замещающего */
 async function absenceMap(weekId: string): Promise<Map<string, PersonSlug | null>> {
-  const rows = await prisma.absence.findMany({ where: { weekId }, include: { substitute: { select: { slug: true } } } });
+  const rows = await prisma.absence.findMany({ where: { weekId }, include: { substitute: { select: { slug: true, fullName: true, shortName: true } } } });
   return new Map(rows.map((a) => [a.personId, (a.substitute?.slug as PersonSlug | undefined) ?? null]));
 }
 
 /** На сколько недель вперёд можно отметить отсутствие */
 export const ABSENCE_WEEKS_AHEAD = 12;
 
-export type AbsenceView = { week: WeekKey; number: number; start: string; end: string; substitute: PersonSlug | null };
+export type AbsenceView = { peopleLabels?: PersonLabel[]; week: WeekKey; number: number; start: string; end: string; substitute: PersonSlug | null };
 
 async function absenceTarget(actor: Actor, slug: string, key: WeekKey, now: Date) {
   if (actor.role === "OBSERVER") fail("Наблюдатель отсутствие не отмечает");
@@ -1186,7 +1193,7 @@ export async function setAbsence(actor: Actor, input: { slug: string; week: Week
     });
     const describe = (name: string | null | undefined) => (name ? `нет, замещает ${name}` : "нет, без замещающего");
     await audit(tx, actor, "weekly.absence.set", "weekly", `${input.week}/${person.slug}`, "Отсутствие", before ? describe(before.substitute?.fullName) : "на месте", describe(substitute?.fullName));
-    return { week: input.week, number: week.isoNumber, start: input.week, end: weekEndOf(input.week), substitute: (substitute?.slug as PersonSlug | undefined) ?? null };
+    return { peopleLabels: personLabelsOf(substitute), week: input.week, number: week.isoNumber, start: input.week, end: weekEndOf(input.week), substitute: (substitute?.slug as PersonSlug | undefined) ?? null };
   });
 }
 
@@ -1205,12 +1212,12 @@ export async function upcomingAbsences(personId: string, now = new Date()): Prom
   const reporting = await currentReportingKey(now);
   const rows = await prisma.absence.findMany({
     where: { personId, week: { start: { gte: dbDate(reporting) } } },
-    include: { week: true, substitute: { select: { slug: true } } },
+    include: { week: true, substitute: { select: { slug: true, fullName: true, shortName: true } } },
     orderBy: { week: { start: "asc" } },
   });
   return rows.map((a) => {
     const key = isoFromDbDate(a.week.start);
-    return { week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null };
+    return { peopleLabels: personLabelsOf(a.substitute), week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null };
   });
 }
 
@@ -1219,13 +1226,13 @@ export async function upcomingAbsencesAll(now = new Date()): Promise<Record<stri
   const reporting = await currentReportingKey(now);
   const rows = await prisma.absence.findMany({
     where: { week: { start: { gte: dbDate(reporting) } } },
-    include: { week: true, person: { select: { slug: true } }, substitute: { select: { slug: true } } },
+    include: { week: true, person: { select: { slug: true, fullName: true, shortName: true } }, substitute: { select: { slug: true, fullName: true, shortName: true } } },
     orderBy: { week: { start: "asc" } },
   });
   const out: Record<string, AbsenceView[]> = {};
   for (const a of rows) {
     const key = isoFromDbDate(a.week.start);
-    (out[a.person.slug] ??= []).push({ week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null });
+    (out[a.person.slug] ??= []).push({ peopleLabels: personLabelsOf(a.substitute), week: key, number: a.week.isoNumber, start: key, end: weekEndOf(key), substitute: (a.substitute?.slug as PersonSlug | undefined) ?? null });
   }
   return out;
 }

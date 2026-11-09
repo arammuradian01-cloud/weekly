@@ -1,3 +1,4 @@
+import type { WithPersonLabels } from "@/domain/person-labels";
 // Общий поиск без базы (этап 25): типы результатов, запрос к словарю, маркеры подсветки. Нужен и серверу, и экранам
 
 import type { IsoDate } from "@/domain/dates";
@@ -6,12 +7,14 @@ import type { WeekKey } from "@/domain/types";
 export const SEARCH_MIN = 2;
 export const SEARCH_MAX = 200;
 
-export type SearchHit =
+type SearchHitData =
   | { kind: "task"; number: number; title: string; snippet: string; status: string; due: IsoDate; owner: string | null; closed: boolean }
   | { kind: "entry"; id: string; week: WeekKey; weekNumber: number; author: string | null; snippet: string; what: string }
   | { kind: "comment"; id: string; snippet: string; author: string; task?: { number: number; title: string }; entry?: { id: string; week: WeekKey; what: string } }
   | { kind: "decision"; id: string; snippet: string; text: string; date: IsoDate; status: "active" | "cancelled"; owner: string | null }
   | { kind: "person"; slug: string; fullName: string; position: string | null; snippet: string };
+
+export type SearchHit = SearchHitData & WithPersonLabels;
 
 export type SearchResult = { query: string; hits: SearchHit[]; total: number; truncated: boolean };
 

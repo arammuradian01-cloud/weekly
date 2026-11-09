@@ -1,3 +1,4 @@
+import type { PersonLabel } from "@/domain/person-labels";
 // Встреча 2.0 (этап 23, модуль М7): типы для экранов. Повестка, пункты, решения, протокол.
 
 import type { IsoDate } from "./dates";
@@ -40,6 +41,7 @@ export function blockOf(kind: AgendaKindCode): AgendaBlock {
 }
 
 export type AgendaItemView = {
+  peopleLabels?: PersonLabel[];
   id: string;
   kind: AgendaKindCode;
   title: string;
@@ -59,6 +61,7 @@ export type AgendaItemView = {
 };
 
 export type DecisionView = {
+  peopleLabels?: PersonLabel[];
   id: string;
   text: string;
   owner: PersonSlug | null;
@@ -71,6 +74,7 @@ export type DecisionView = {
 };
 
 export type MeetingView = {
+  peopleLabels?: PersonLabel[];
   id: string;
   week: WeekKey;
   weekNumber: number;

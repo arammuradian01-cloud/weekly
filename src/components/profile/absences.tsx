@@ -11,6 +11,7 @@ import { SelectField } from "@/components/ui/primitives";
 import { useRunWeekly as useRunAction } from "@/components/weekly/use-weekly";
 import { substituteText } from "@/components/weekly/absence";
 import { cn } from "@/lib/cn";
+import { useRegistry, withRegistryLabels } from "@/domain/registry-context";
 
 type WeekOption = { value: string; label: string };
 
@@ -20,7 +21,7 @@ const rangeOf = (a: { number: number; start: string; end: string }) => `неде
  * «Нет на неделе»: отпуск или больничный с замещающим (этап 9). Weekly за эту неделю не ждём.
  * Без slug: свой профиль. Со slug: владелец отмечает коллегу в списке людей
  */
-export function Absences({
+export const Absences = withRegistryLabels(function Absences({
   absences,
   weeks,
   people,
@@ -31,6 +32,7 @@ export function Absences({
   people: { value: string; label: string }[];
   slug?: string | null;
 }) {
+  const { personOf } = useRegistry();
   const run = useRunAction();
   const set = (week: string, substitute: string | null) => (slug ? setAbsenceForAction(slug, week, substitute) : setAbsenceAction(week, substitute));
   const remove = (week: string) => (slug ? removeAbsenceForAction(slug, week) : removeAbsenceAction(week));
@@ -49,7 +51,7 @@ export function Absences({
                 <CalendarOff className="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
                 <div>
                   <p className="text-body font-medium text-ink">{rangeOf(a).replace(/^н/, "Н")}</p>
-                  <p className="text-caption text-muted">{substituteText(a.substitute).replace(/^з/, "З").replace(/^б/, "Б")}</p>
+                  <p className="text-caption text-muted">{substituteText(a.substitute, personOf).replace(/^з/, "З").replace(/^б/, "Б")}</p>
                 </div>
               </div>
               <Button
@@ -101,4 +103,4 @@ export function Absences({
       ) : null}
     </div>
   );
-}
+});

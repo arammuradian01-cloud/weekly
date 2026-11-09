@@ -1,3 +1,4 @@
+import { personLabelsOf } from "@/lib/person-labels";
 // Журнал для страницы «Журнал»: события из базы в виде, понятном экрану (раздел 6 ТЗ).
 // Фильтры и подгрузка идут на сервере: журнал хранится без срока, за год это десятки тысяч строк.
 
@@ -208,6 +209,7 @@ export async function journalEvents(filter: JournalFilter = {}, now = new Date()
 
   const safeRows = await protectReportAudit(rows, filter.actor);
   const events = safeRows.map((r) => ({
+    peopleLabels: personLabelsOf(people.find((p) => p.id === r.actorId)),
     id: `a${r.id}`,
     at: moscowIso(r.at),
     time: moscowTime(r.at),
