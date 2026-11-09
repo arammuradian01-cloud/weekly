@@ -50,6 +50,8 @@ type Store = {
    * к себе». Черновики на устройстве и автосохранение выключены
    */
   viewing: boolean;
+  /** Владелец работает от имени сотрудника: правки разрешены, личные настройки устройства не меняются. */
+  ownerAs: boolean;
   /** Команды, которыми человек руководит, с командами ниже (этап 14) */
   leads: string[];
   team: CurrentTeamView;
@@ -85,6 +87,7 @@ export function PrototypeProvider({
   leads = [],
   limited = false,
   viewing = false,
+  ownerAs = false,
   children,
 }: {
   today: string;
@@ -101,6 +104,7 @@ export function PrototypeProvider({
   limited?: boolean;
   /** «Смотреть как» (этап 63): только просмотр, на устройстве ничего не пишется от имени выбранного человека */
   viewing?: boolean;
+  ownerAs?: boolean;
   children: React.ReactNode;
 }) {
   applyDictionaries(registry.dicts);
@@ -209,6 +213,7 @@ export function PrototypeProvider({
       observer,
       limited,
       viewing,
+      ownerAs,
       leads,
       team,
       teamPeople,
@@ -272,7 +277,7 @@ export function PrototypeProvider({
         }
       },
     };
-  }, [data, currentPerson, manageRole, observer, limited, viewing, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks, personOf]);
+  }, [data, currentPerson, manageRole, observer, limited, viewing, ownerAs, leads, team, teamPeople, toast, showToast, applyTaskResult, applyTasks, personOf]);
 
   return <RegistryContext.Provider value={lookup}><StoreContext.Provider value={store}>{children}</StoreContext.Provider></RegistryContext.Provider>;
 }

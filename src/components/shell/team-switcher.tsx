@@ -35,7 +35,7 @@ const ALL_ROW = { id: ALL_TEAMS, name: "Все мои команды", hint: "З
 
 export const TeamSwitcher = withRegistryLabels(function TeamSwitcher({ compact = false }: { compact?: boolean }) {
   const { teamOf, personOf } = useRegistry();
-  const { team, notify, me, viewing } = usePrototype();
+  const { team, notify, me, viewing, ownerAs } = usePrototype();
   const router = useRouter();
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -103,7 +103,7 @@ export const TeamSwitcher = withRegistryLabels(function TeamSwitcher({ compact =
   const onOpenChange = (next: boolean) => {
     // «Недавние» читаются при каждом открытии: команду могли сменить в другой вкладке того же браузера
     if (next) {
-      setRecent(readRecent(me.slug));
+      setRecent(viewing || ownerAs ? [] : readRecent(me.slug));
       setQuery("");
       setCursor(0);
     }
@@ -116,7 +116,7 @@ export const TeamSwitcher = withRegistryLabels(function TeamSwitcher({ compact =
     // Свои команды и так сверху, в «Недавних» они не нужны. В просмотре «Смотреть как» и во входе владельца в чужой
     // профиль устройство владельца чужими «Недавними» не засоряем
     const own = team.options.some((o) => o.id === row.id && (o.relation === "leader" || o.relation === "member"));
-    if (row.id !== ALL_TEAMS && !own && !viewing) setRecent(rememberRecent(me.slug, row.id));
+    if (row.id !== ALL_TEAMS && !own && !viewing && !ownerAs) setRecent(rememberRecent(me.slug, row.id));
     start(async () => {
       const r = await setTeamAction(row.id);
       if (!r.ok) notify(r.error, "error");

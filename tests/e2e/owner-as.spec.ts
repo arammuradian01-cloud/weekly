@@ -57,6 +57,35 @@ async function openProfileMenu(page: Page) {
   await page.getByRole("button", { name: /^Профиль:/ }).filter({ visible: true }).first().click();
 }
 
+test("чужой профиль не читает и не меняет недавние команды сотрудника", async ({ page }) => {
+  const [child] = await sql(`SELECT child.id, child.name FROM teams child
+    JOIN teams parent ON parent.id = child."parentId"
+    JOIN people leader ON leader.id = parent."leaderId"
+    WHERE leader.slug = 'reva' AND child.active = true LIMIT 1`);
+  expect(child).toBeTruthy();
+  await enterPersonal(page, "muradyan");
+  const key = "weekly-recent-teams:reva";
+  const before = JSON.stringify([child!.id]);
+  await page.evaluate(({ key, before }) => localStorage.setItem(key, before), { key, before });
+  await openProfileMenu(page);
+  await page.getByRole("menuitem", { name: "Сменить профиль" }).click();
+  const dialog = page.getByRole("dialog", { name: "Сменить профиль" });
+  await dialog.getByLabel("Поиск по ФИО, должности или подразделению").fill("Рева Тарас");
+  await dialog.getByRole("button", { name: /Рева Тарас/ }).click();
+  await page.getByRole("dialog", { name: /Войти в профиль Рева/ }).getByRole("button", { name: "Войти" }).click();
+  await expect(page.getByTestId("owner-as-banner")).toBeVisible();
+  const switcher = page.locator('[data-testid="team-switcher"], [data-testid="team-switcher-m"]').filter({ visible: true }).first();
+  await switcher.click();
+  const picker = page.getByTestId("team-picker");
+  await expect(picker.getByText("Недавние", { exact: true })).toHaveCount(0);
+  // Удаляем историю: выбор подкоманды не должен заново создать её от чужого имени.
+  await page.evaluate((key) => localStorage.removeItem(key), key);
+  await picker.getByRole("combobox").fill(String(child!.name));
+  await picker.locator(`[role="option"][data-team="${child!.id}"]`).first().click();
+  await expect(switcher).toContainText(String(child!.name));
+  expect(await page.evaluate((key) => localStorage.getItem(key), key)).toBeNull();
+});
+
 test("возврат из чужого профиля сохраняет активный черновик weekly до окончания отправки", async ({ page }) => {
   await enterPersonal(page, "muradyan");
   await openProfileMenu(page);
